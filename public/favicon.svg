@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Alice">
+  <rect width="32" height="32" rx="8" fill="#0B0B0C"/>
+  <path fill="#D4D0C8" d="M15.1 7.4 7.6 5.1 9.4 10.8Z"/>
+  <path fill="#D4D0C8" d="M16.9 7.4 24.4 5.1 22.6 10.8Z"/>
+  <path fill="none" stroke="#D4D0C8" stroke-width="2.2" stroke-linecap="round" d="M16 11.2c-5.5 1.5-5.5 8.5 0 10"/>
+  <path fill="none" stroke="#D4D0C8" stroke-width="2.2" stroke-linecap="round" d="M16 11.2c5.5 1.5 5.5 8.5 0 10"/>
+  <rect x="15" y="7.2" width="2" height="18.4" rx="1" fill="#D4D0C8"/>
+</svg>
