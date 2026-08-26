@@ -118,7 +118,6 @@ export interface Attachment {
 
 export interface Message {
   id: string;
-  id: string;
   role: "user" | "assistant";
   content: string;
   createdAt: number;
