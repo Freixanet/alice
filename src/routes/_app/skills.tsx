@@ -1,40 +1,71 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CatalogPage } from "@/components/catalog-page";
 import { LearnSkillButton } from "@/components/learn-skill";
-import { skills, SKILL_CATEGORIES } from "@/lib/catalog";
-import { useHermes } from "@/lib/store";
+import { mutateHermes } from "@/lib/hermes-live";
+import { useHermesLive } from "@/lib/use-hermes-live";
 
 export const Route = createFileRoute("/_app/skills")({
   component: SkillsPage,
 });
 
 function SkillsPage() {
-  const isSkillOn = useHermes((s) => s.isSkillOn);
-  const toggleSkill = useHermes((s) => s.toggleSkill);
+  const { data, error, loading, setData } = useHermesLive();
+  const rows = data?.skills ?? [];
+  const groups = [...new Map(rows.map((s) => [s.group, s.groupLabel])).entries()].map(
+    ([id, label]) => ({ id, label }),
+  );
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <CatalogPage
-        kicker="Skills"
-        title="Habilidades"
-        description="Documentos que Hermes carga solo cuando hacen falta. Activa las que usas; el resto no ocupan contexto."
-        action={<LearnSkillButton />}
-        groups={SKILL_CATEGORIES}
-        rows={skills.map((s) => ({
-          id: s.id,
-          title: s.title,
-          name: s.name,
-          description: s.description,
-          group: s.category,
-          groupLabel: SKILL_CATEGORIES.find((c) => c.id === s.category)?.label ?? s.category,
-          trust: s.trust,
-          version: s.version,
-          meta: s.source,
-          enabled: isSkillOn(s.id),
-        }))}
-        onToggle={toggleSkill}
-        chatPrompt={(row) => `Usa la skill ${row.name} para `}
-      />
+      {loading ? (
+        <p className="px-6 py-8 text-sm text-muted-foreground">Leyendo las skills de Hermes…</p>
+      ) : error ? (
+        <p className="px-6 py-8 text-sm text-muted-foreground">{error}</p>
+      ) : (
+        <CatalogPage
+          kicker="Skills"
+          title="Habilidades"
+          description={
+            data?.writable
+              ? "Las skills instaladas en tu Hermes. El interruptor las activa o las deja fuera del contexto."
+              : "Las skills instaladas en tu Hermes. Conecta el agente para activarlas o apagarlas desde aquí."
+          }
+          action={<LearnSkillButton />}
+          groups={groups}
+          empty="Hermes no tiene skills en este perfil."
+          rows={rows.map((s) => ({
+            id: s.id,
+            title: s.title,
+            name: s.name,
+            description: s.description,
+            group: s.group,
+            groupLabel: s.groupLabel,
+            meta: s.provenance,
+            enabled: s.enabled,
+          }))}
+          onToggle={
+            data?.writable
+              ? (id) => {
+                  const row = rows.find((s) => s.id === id);
+                  if (!row || !data) return;
+                  const enabled = !row.enabled;
+                  setData({
+                    ...data,
+                    skills: data.skills.map((s) => (s.id === id ? { ...s, enabled } : s)),
+                  });
+                  void mutateHermes({ action: "toggle-skill", name: row.name, enabled }).then((r) => {
+                    if (r.ok) return;
+                    setData({
+                      ...data,
+                      skills: data.skills.map((s) => (s.id === id ? { ...s, enabled: row.enabled } : s)),
+                    });
+                  });
+                }
+              : undefined
+          }
+          chatPrompt={(row) => `Usa la skill ${row.name} para `}
+        />
+      )}
     </div>
   );
 }

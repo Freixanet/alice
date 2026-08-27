@@ -7,8 +7,11 @@ dist
 .grok
 .env
 .env.*
+.env*
 !.env.example
 *.local
+*.crt
+*.key
 .DS_Store
 .project_id
 .node_modules.lock

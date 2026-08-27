@@ -92,6 +92,71 @@
     0 2px 4px 0 rgb(0 0 0 / 0.06);
 }
 
+/* Accent tokens must be unlayered: `[data-theme]` above is unlayered, and
+   unlayered rules beat `@layer base` even when the accent selector is more
+   specific — so Color in Ajustes used to change `data-accent` and nothing else. */
+html[data-accent="sage"] {
+  --primary: #9aaf9c;
+  --primary-foreground: #0b0b0c;
+  --ring: #9aaf9c;
+  --accent: color-mix(in oklab, #9aaf9c 22%, #1c1c1e);
+}
+html[data-accent="sky"] {
+  --primary: #7fa3bf;
+  --primary-foreground: #0b0b0c;
+  --ring: #7fa3bf;
+  --accent: color-mix(in oklab, #7fa3bf 22%, #1c1c1e);
+}
+html[data-accent="violet"] {
+  --primary: #a392be;
+  --primary-foreground: #0b0b0c;
+  --ring: #a392be;
+  --accent: color-mix(in oklab, #a392be 22%, #1c1c1e);
+}
+html[data-accent="rose"] {
+  --primary: #c49293;
+  --primary-foreground: #0b0b0c;
+  --ring: #c49293;
+  --accent: color-mix(in oklab, #c49293 22%, #1c1c1e);
+}
+html[data-accent="amber"] {
+  --primary: #c4a574;
+  --primary-foreground: #0b0b0c;
+  --ring: #c4a574;
+  --accent: color-mix(in oklab, #c4a574 22%, #1c1c1e);
+}
+
+html[data-theme="light"][data-accent="sage"] {
+  --primary: #4f6d55;
+  --primary-foreground: #f4f3ef;
+  --ring: #4f6d55;
+  --accent: color-mix(in oklab, #4f6d55 28%, #eceae4);
+}
+html[data-theme="light"][data-accent="sky"] {
+  --primary: #3d6580;
+  --primary-foreground: #f4f3ef;
+  --ring: #3d6580;
+  --accent: color-mix(in oklab, #3d6580 28%, #eceae4);
+}
+html[data-theme="light"][data-accent="violet"] {
+  --primary: #65548a;
+  --primary-foreground: #f4f3ef;
+  --ring: #65548a;
+  --accent: color-mix(in oklab, #65548a 28%, #eceae4);
+}
+html[data-theme="light"][data-accent="rose"] {
+  --primary: #8f5456;
+  --primary-foreground: #f4f3ef;
+  --ring: #8f5456;
+  --accent: color-mix(in oklab, #8f5456 28%, #eceae4);
+}
+html[data-theme="light"][data-accent="amber"] {
+  --primary: #8a6a38;
+  --primary-foreground: #f4f3ef;
+  --ring: #8a6a38;
+  --accent: color-mix(in oklab, #8a6a38 28%, #eceae4);
+}
+
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
@@ -110,66 +175,6 @@
 
   html[data-font="lg"] {
     font-size: 18px;
-  }
-
-  html[data-accent="sage"] {
-    --primary: #9aaf9c;
-    --primary-foreground: #0b0b0c;
-    --ring: #9aaf9c;
-  }
-
-  html[data-accent="sky"] {
-    --primary: #7fa3bf;
-    --primary-foreground: #0b0b0c;
-    --ring: #7fa3bf;
-  }
-
-  html[data-accent="violet"] {
-    --primary: #a392be;
-    --primary-foreground: #0b0b0c;
-    --ring: #a392be;
-  }
-
-  html[data-accent="rose"] {
-    --primary: #c49293;
-    --primary-foreground: #0b0b0c;
-    --ring: #c49293;
-  }
-
-  html[data-accent="amber"] {
-    --primary: #c4a574;
-    --primary-foreground: #0b0b0c;
-    --ring: #c4a574;
-  }
-
-  html[data-theme="light"][data-accent="sage"] {
-    --primary: #4f6d55;
-    --primary-foreground: #f4f3ef;
-    --ring: #4f6d55;
-  }
-
-  html[data-theme="light"][data-accent="sky"] {
-    --primary: #3d6580;
-    --primary-foreground: #f4f3ef;
-    --ring: #3d6580;
-  }
-
-  html[data-theme="light"][data-accent="violet"] {
-    --primary: #65548a;
-    --primary-foreground: #f4f3ef;
-    --ring: #65548a;
-  }
-
-  html[data-theme="light"][data-accent="rose"] {
-    --primary: #8f5456;
-    --primary-foreground: #f4f3ef;
-    --ring: #8f5456;
-  }
-
-  html[data-theme="light"][data-accent="amber"] {
-    --primary: #8a6a38;
-    --primary-foreground: #f4f3ef;
-    --ring: #8a6a38;
   }
 
   body {

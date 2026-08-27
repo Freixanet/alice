@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import {
   addons,
   channels,
@@ -20,10 +20,12 @@ import type {
   Webhook,
 } from "./types";
 import type { GatewayMeta, GatewayPlace, GatewayStatus, HermesModelOption } from "./gateway";
-import { forgetHermesSecret } from "./gateway";
+import { forgetHermesSecret, unionHermesModels } from "./gateway";
 import { uid } from "./utils";
+import { cockpitIsOwner, cockpitUserId, COCKPIT_STORE } from "./auth/cockpit-user";
 
 const welcomeId = "welcome";
+const freshId = "fresh";
 
 function seedConversation(): Conversation {
   return {
@@ -39,6 +41,16 @@ function seedConversation(): Conversation {
         createdAt: Date.now() - 1000 * 60 * 8,
       },
     ],
+  };
+}
+
+function seedBlankChat(): Conversation {
+  return {
+    id: freshId,
+    title: "Nuevo chat",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messages: [],
   };
 }
 
@@ -128,13 +140,13 @@ export const useHermes = create<HermesState>()(
   persist(
     (set, get) => ({
       hydrated: false,
-      theme: "dark",
+      theme: "light",
       fontSize: "md",
       accent: "stone",
       sidebarCollapsed: false,
       focusMode: false,
       compact: false,
-      model: "grok-4.5",
+      model: "hermes-agent",
       modelProvider: "",
       profile: "default",
       skillEnabled: {},
@@ -142,8 +154,8 @@ export const useHermes = create<HermesState>()(
       addonEnabled: {},
       channelStatus: {},
       pinned: ["hermes-core", "grok", "web_search", "memory"],
-      conversations: [seedConversation()],
-      activeId: welcomeId,
+      conversations: [seedBlankChat(), seedConversation()],
+      activeId: freshId,
       memories: seedMemories,
       jobs: seedJobs,
       hooks: seedWebhooks,
@@ -354,40 +366,37 @@ export const useHermes = create<HermesState>()(
       setGatewayUrl: (url) => set({ gatewayUrl: url }),
       setGatewayChecking: () => set({ gatewayStatus: "checking", gatewayError: null }),
       setGatewayLive: (meta) => {
-        const ids = new Set((meta.models ?? []).map((m) => m.id));
-        const keep = ids.size === 0 || ids.has(get().model);
-        const chosen =
-          keep
-            ? meta.models?.find((m) => m.id === get().model)
-            : meta.models?.find((m) => m.id === meta.model);
+        const models = unionHermesModels(get().gatewayMeta?.models, meta.models ?? []);
+        const currentId = get().model;
+        const currentProvider = get().modelProvider;
+        const stillSelected = models.some(
+          (m) => m.id === currentId && (!currentProvider || m.provider === currentProvider),
+        );
+        const chosen = stillSelected
+          ? models.find((m) => m.id === currentId && (!currentProvider || m.provider === currentProvider))
+          : models.find((m) => m.id === meta.model);
         set({
           gatewayOn: true,
           gatewayStatus: "live",
-          gatewayMeta: meta,
+          gatewayMeta: { ...meta, models },
           gatewayError: null,
-          ...(keep
-            ? chosen?.provider
+          ...(stillSelected
+            ? chosen?.provider && !currentProvider
               ? { modelProvider: chosen.provider }
-              : meta.provider
-                ? { modelProvider: meta.provider }
-                : {}
+              : {}
             : {
                 model: meta.model,
                 modelProvider: chosen?.provider || meta.provider || "",
               }),
         });
       },
-      setGatewayModels: (models, current) => {
+      setGatewayModels: (models) => {
         const meta = get().gatewayMeta;
         if (!meta) return;
-        const nextModel = current?.model || meta.model;
-        const nextProvider = current?.provider || meta.provider;
         set({
           gatewayMeta: {
             ...meta,
-            models,
-            model: nextModel,
-            provider: nextProvider,
+            models: unionHermesModels(meta.models, models),
           },
         });
       },
@@ -415,13 +424,53 @@ export const useHermes = create<HermesState>()(
       },
     }),
     {
-      name: "hermes-cockpit-v1",
-      version: 2,
+      name: COCKPIT_STORE,
+      storage: createJSONStorage(() => ({
+        getItem(name) {
+          if (typeof localStorage === "undefined") return null;
+          const user = cockpitUserId();
+          if (!user) return null;
+          const key = `${name}:${user}`;
+          const mine = localStorage.getItem(key);
+          if (mine) return mine;
+          if (!cockpitIsOwner()) return null;
+          const legacy = localStorage.getItem(name);
+          if (legacy) {
+            localStorage.setItem(key, legacy);
+            return legacy;
+          }
+          return null;
+        },
+        setItem(name, value) {
+          if (typeof localStorage === "undefined") return;
+          const user = cockpitUserId();
+          if (!user) return;
+          localStorage.setItem(`${name}:${user}`, value);
+        },
+        removeItem(name) {
+          if (typeof localStorage === "undefined") return;
+          const user = cockpitUserId();
+          if (!user) return;
+          localStorage.removeItem(`${name}:${user}`);
+        },
+      })),
+      version: 4,
       migrate: (persisted) => {
         if (persisted && typeof persisted === "object") {
           const next = { ...(persisted as Record<string, unknown>) };
           delete next.gatewayKey;
+          if (next.gatewayOn && next.gatewayMeta && typeof next.gatewayMeta === "object") {
+            next.gatewayStatus = "live";
+          }
           if (typeof next.modelProvider !== "string") {
+            next.modelProvider = "";
+          }
+          if (
+            next.model === "gpt-5.6-luna" ||
+            next.model === "grok-4.5" ||
+            next.model === "claude-sonnet"
+          ) {
+            next.model = "hermes-agent";
             next.modelProvider = "";
           }
           if (next.fontSize !== "sm" && next.fontSize !== "md" && next.fontSize !== "lg") {
@@ -437,7 +486,11 @@ export const useHermes = create<HermesState>()(
           ) {
             next.accent = "stone";
           }
-          if (next.gatewayPlace !== "cloud" && next.gatewayPlace !== "mac") {
+          if (
+            next.gatewayPlace !== "cloud" &&
+            next.gatewayPlace !== "mac" &&
+            next.gatewayPlace !== "device"
+          ) {
             next.gatewayPlace = "cloud";
           }
           return next;
@@ -469,6 +522,8 @@ export const useHermes = create<HermesState>()(
         gatewayUrl: s.gatewayUrl,
         gatewayPlace: s.gatewayPlace,
         gatewayOn: s.gatewayOn,
+        gatewayStatus: s.gatewayStatus === "live" ? "live" : "idle",
+        gatewayMeta: s.gatewayMeta,
       }),
       onRehydrateStorage: () => () => {
         useHermes.getState().setHydrated();

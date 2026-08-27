@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { getMacSessionKey, probeGateway } from "./gateway";
+import { getMacSessionKey, listHermesModels, probeGateway } from "./gateway";
+import { getDeviceSessionKey } from "./hermes-direct";
 import { useHermes } from "./store";
 
 export function useGatewayHealth() {
@@ -10,17 +11,23 @@ export function useGatewayHealth() {
   const setChecking = useHermes((s) => s.setGatewayChecking);
   const setLive = useHermes((s) => s.setGatewayLive);
   const setDown = useHermes((s) => s.setGatewayDown);
+  const setGatewayModels = useHermes((s) => s.setGatewayModels);
 
   useEffect(() => {
     if (!hydrated) return;
     if (!on || !url) return;
-    if (place === "mac" && !getMacSessionKey()) return;
     const ctrl = new AbortController();
-    setChecking();
+    const alreadyLive = useHermes.getState().gatewayStatus === "live";
+    if (!alreadyLive) setChecking();
     void (async () => {
       const result = await probeGateway({
         url,
-        key: place === "mac" ? getMacSessionKey() ?? undefined : undefined,
+        key:
+          place === "mac"
+            ? getMacSessionKey() ?? undefined
+            : place === "device"
+              ? getDeviceSessionKey() ?? undefined
+              : undefined,
         place,
         save: false,
         signal: ctrl.signal,
@@ -37,10 +44,13 @@ export function useGatewayHealth() {
           mode: result.mode,
           place,
         });
-      } else {
-        setDown(result.error);
+        const listed = await listHermesModels({ refresh: true, signal: ctrl.signal });
+        if (!ctrl.signal.aborted && listed.ok) setGatewayModels(listed.models);
+        return;
       }
+      if (alreadyLive && result.code !== "unauthorized") return;
+      setDown(result.error);
     })();
     return () => ctrl.abort();
-  }, [hydrated, on, url, place, setChecking, setLive, setDown]);
+  }, [hydrated, on, url, place, setChecking, setLive, setDown, setGatewayModels]);
 }

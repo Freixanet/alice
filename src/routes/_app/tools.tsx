@@ -1,37 +1,70 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CatalogPage } from "@/components/catalog-page";
-import { tools, TOOLSETS } from "@/lib/catalog";
-import { useHermes } from "@/lib/store";
+import { mutateHermes } from "@/lib/hermes-live";
+import { useHermesLive } from "@/lib/use-hermes-live";
 
 export const Route = createFileRoute("/_app/tools")({
   component: ToolsPage,
 });
 
 function ToolsPage() {
-  const isToolOn = useHermes((s) => s.isToolOn);
-  const toggleTool = useHermes((s) => s.toggleTool);
+  const { data, error, loading, setData } = useHermesLive();
+  const rows = data?.toolsets ?? [];
+  const groups = [...new Set(rows.map((t) => t.platform || "cli"))].map((id) => ({
+    id,
+    label: id === "cli" ? "CLI" : id,
+  }));
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <CatalogPage
-        kicker="Tools"
-        title="Herramientas"
-        description="El registro nativo de Hermes. Las del núcleo siguen cargadas; el resto se encienden por toolset."
-        groups={TOOLSETS}
-        rows={tools.map((t) => ({
-          id: t.id,
-          title: t.name,
-          name: t.name,
-          description: t.description,
-          group: t.toolset,
-          groupLabel: TOOLSETS.find((s) => s.id === t.toolset)?.label ?? t.toolset,
-          version: t.core ? "núcleo" : undefined,
-          meta: t.core ? "Siempre en el conjunto base" : undefined,
-          enabled: isToolOn(t.id),
-        }))}
-        onToggle={toggleTool}
-        chatPrompt={(row) => `Usa ${row.name} para `}
-      />
+      {loading ? (
+        <p className="px-6 py-8 text-sm text-muted-foreground">Leyendo las herramientas de Hermes…</p>
+      ) : error ? (
+        <p className="px-6 py-8 text-sm text-muted-foreground">{error}</p>
+      ) : (
+        <CatalogPage
+          kicker="Tools"
+          title="Herramientas"
+          description={
+            data?.writable
+              ? "Toolsets de tu Hermes. Los del núcleo y los que tienes configurados ahora."
+              : "Toolsets de tu Hermes. Conecta el agente para activarlos o apagarlos desde aquí."
+          }
+          groups={groups}
+          empty="Hermes no tiene toolsets visibles."
+          rows={rows.map((t) => ({
+            id: t.id,
+            title: t.label,
+            name: t.name,
+            description: t.description,
+            group: t.platform || "cli",
+            groupLabel: t.platform === "cli" || !t.platform ? "CLI" : t.platform,
+            meta: t.tools.slice(0, 6).join(", ") || (t.configured === false ? "Sin claves" : undefined),
+            enabled: t.enabled,
+          }))}
+          onToggle={
+            data?.writable
+              ? (id) => {
+                  const row = rows.find((t) => t.id === id);
+                  if (!row || !data) return;
+                  const enabled = !row.enabled;
+                  setData({
+                    ...data,
+                    toolsets: data.toolsets.map((t) => (t.id === id ? { ...t, enabled } : t)),
+                  });
+                  void mutateHermes({ action: "toggle-toolset", name: row.name, enabled }).then((r) => {
+                    if (r.ok) return;
+                    setData({
+                      ...data,
+                      toolsets: data.toolsets.map((t) => (t.id === id ? { ...t, enabled: row.enabled } : t)),
+                    });
+                  });
+                }
+              : undefined
+          }
+          chatPrompt={(row) => `Usa ${row.name} para `}
+        />
+      )}
     </div>
   );
 }

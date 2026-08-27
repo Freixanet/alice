@@ -28,6 +28,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: "/approvals", hint: "Cómo pedir permiso" },
   { cmd: "/browser", hint: "El navegador" },
   { cmd: "/cron", hint: "Tareas programadas" },
+  { cmd: "/projects", hint: "Proyectos" },
   { cmd: "/learn", hint: "Aprende una habilidad" },
   { cmd: "/resume", hint: "Sigue un chat anterior" },
   { cmd: "/sessions", hint: "Tus sesiones" },
