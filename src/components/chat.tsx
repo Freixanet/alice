@@ -366,30 +366,34 @@ export function ChatView() {
               firstIsUser ? "pt-[10vh]" : "pt-8",
             )}
           >
-            {conv.messages.map((m) => (
-              <article
-                key={m.id}
-                className={cn("flex flex-col gap-2", m.role === "user" && "items-end")}
-              >
-                {m.role === "user" ? null : (
-                  <p className="text-2xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
-                    Alice
-                  </p>
-                )}
-                <div
-                  className={cn(
-                    "max-w-[42rem] whitespace-pre-wrap text-sm leading-relaxed",
-                    m.role === "user"
-                      ? "rounded-xl bg-card px-4 py-3 shadow-border"
-                      : "text-foreground",
-                    m.error && "text-destructive",
-                  )}
+            {conv.messages.map((m) => {
+              const text =
+                m.role === "assistant" ? m.content.replace(/^\s+/, "") : m.content;
+              return (
+                <article
+                  key={m.id}
+                  className={cn("flex flex-col gap-2", m.role === "user" && "items-end")}
                 >
-                  {(m.role === "assistant" ? m.content.replace(/^\s+/, "") : m.content) ||
-                    (m.pending ? "…" : "")}
-                </div>
-              </article>
-            ))}
+                  {m.role === "user" ? null : (
+                    <p className="text-2xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
+                      Alice
+                    </p>
+                  )}
+                  <div
+                    className={cn(
+                      "max-w-[42rem] whitespace-pre-wrap text-sm leading-relaxed",
+                      m.role === "user"
+                        ? "rounded-xl bg-card px-4 py-3 shadow-border"
+                        : "text-foreground",
+                      m.error && "text-destructive",
+                    )}
+                  >
+                    {text}
+                    {m.pending ? <ReplyPending trail={Boolean(text)} /> : null}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </div>
       )}
@@ -629,6 +633,20 @@ export function ChatView() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ReplyPending({ trail = false }: { trail?: boolean }) {
+  return (
+    <span
+      className={cn("alice-typing", trail && "alice-typing-trail")}
+      role="status"
+      aria-label="Alice está respondiendo"
+    >
+      <span aria-hidden />
+      <span aria-hidden />
+      <span aria-hidden />
+    </span>
   );
 }
 
