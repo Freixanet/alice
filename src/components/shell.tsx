@@ -243,7 +243,8 @@ export function AppShell() {
           aria-hidden={mobileSidebarOffset === 0}
           inert={mobileSidebarOffset === 0}
           className={cn(
-            "fixed inset-y-0 left-0 z-30 flex bg-popover text-popover-foreground shadow-border md:hidden",
+            "fixed inset-y-0 left-0 z-30 flex bg-popover text-popover-foreground md:hidden",
+            mobileSidebarOffset > 0 && "shadow-border",
             mobileSidebarOffset === 0 && "pointer-events-none",
             mobileSidebarDragging ? "transition-none" : "transition-transform duration-300 ease-out",
           )}
