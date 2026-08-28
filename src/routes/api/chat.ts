@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { GatewayError, type ChatEvent } from "@/lib/gateway";
 import { ndjsonResponse, resolveAliceGate, streamHermesProxy } from "@/lib/gateway.server";
 
-const FAIL = "No se ha podido conectar.";
+const FAIL = "Couldn’t connect.";
 
 type Incoming = {
   messages?: Array<{ role: string; content: string }>;
@@ -69,7 +69,7 @@ export const Route = createFileRoute("/api/chat")({
         return ndjsonResponse(async (send) => {
           send({
             type: "error",
-            message: "Conecta tu Hermes para hablar con él.",
+            message: "Go back to Connect and paste the Hermes key.",
           } satisfies ChatEvent);
         }, 400);
       },

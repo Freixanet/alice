@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listHermesMemory, type HermesMemoryProfile } from "@/lib/gateway";
+import { dateLocale, localizeError } from "@/lib/i18n";
 import { useHermes } from "@/lib/store";
+import { useLocale, useT } from "@/lib/use-i18n";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/memory")({
@@ -13,6 +15,8 @@ export const Route = createFileRoute("/_app/memory")({
 });
 
 function MemoryPage() {
+  const t = useT();
+  const locale = useLocale();
   const gatewayOn = useHermes((s) => s.gatewayOn);
   const gatewayStatus = useHermes((s) => s.gatewayStatus);
   const live = gatewayOn && gatewayStatus === "live";
@@ -63,9 +67,9 @@ function MemoryPage() {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 pb-20 sm:px-6">
         <PageHeader
-          kicker="Hermes"
-          title="Memoria"
-          description="Soul, perfil de usuario y notas que tu agente guarda entre sesiones. Lo lee de SOUL.md, USER.md y MEMORY.md."
+          kicker={t("memory.kicker")}
+          title={t("memory.title")}
+          description={t("memory.description")}
         />
 
         {profiles.length > 1 ? (
@@ -83,7 +87,7 @@ function MemoryPage() {
                 )}
               >
                 {p.name}
-                {p.current ? " · actual" : ""}
+                {p.current ? ` · ${t("memory.current")}` : ""}
               </button>
             ))}
           </div>
@@ -92,30 +96,30 @@ function MemoryPage() {
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Buscar en soul, perfil y notas…"
+          placeholder={t("memory.search")}
           className="max-w-sm"
         />
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">Leyendo a Hermes…</p>
+          <p className="text-sm text-muted-foreground">{t("memory.loading")}</p>
         ) : error ? (
           <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
-            {error}
+            {localizeError(locale, error)}
           </div>
         ) : !profile ? (
           <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
-            No hay memoria de Hermes en este Mac.{" "}
+            {t("memory.empty")}{" "}
             <Link to="/connect" className="text-foreground underline-offset-2 hover:underline">
-              Conéctalo
+              {t("memory.connectIt")}
             </Link>
             .
           </div>
         ) : (
           <Tabs defaultValue="soul">
             <TabsList>
-              <TabsTrigger value="soul">Soul</TabsTrigger>
-              <TabsTrigger value="user">Perfil</TabsTrigger>
-              <TabsTrigger value="notes">Notas</TabsTrigger>
+              <TabsTrigger value="soul">{t("memory.soul")}</TabsTrigger>
+              <TabsTrigger value="user">{t("memory.user")}</TabsTrigger>
+              <TabsTrigger value="notes">{t("memory.notes")}</TabsTrigger>
             </TabsList>
             <TabsContent value="soul">
               {soulText && soulMatch ? (
@@ -124,11 +128,7 @@ function MemoryPage() {
                 </article>
               ) : (
                 <EmptyStore
-                  text={
-                    query
-                      ? "Nada coincide en el soul."
-                      : "Este perfil no tiene SOUL.md."
-                  }
+                  text={query ? t("memory.noSoulMatch") : t("memory.noSoul")}
                 />
               )}
             </TabsContent>
@@ -149,11 +149,7 @@ function MemoryPage() {
                 </ul>
               ) : (
                 <EmptyStore
-                  text={
-                    query
-                      ? "Nada coincide en el perfil."
-                      : "Hermes aún no ha guardado un perfil de usuario."
-                  }
+                  text={query ? t("memory.noUserMatch") : t("memory.noUser")}
                 />
               )}
             </TabsContent>
@@ -174,11 +170,7 @@ function MemoryPage() {
                 </ul>
               ) : (
                 <EmptyStore
-                  text={
-                    query
-                      ? "Nada coincide en las notas."
-                      : "Hermes aún no ha guardado notas."
-                  }
+                  text={query ? t("memory.noNotesMatch") : t("memory.noNotes")}
                 />
               )}
             </TabsContent>
@@ -200,15 +192,17 @@ function StoreHeader({
   limit: number;
   count: number;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const pct = limit > 0 ? Math.min(100, Math.round((chars / limit) * 100)) : 0;
   return (
     <div className="flex flex-wrap items-center gap-2 text-2xs text-muted-foreground">
       <Badge variant="outline">{file}</Badge>
       <span>
-        {count} {count === 1 ? "entrada" : "entradas"}
+        {count} {count === 1 ? t("memory.entry") : t("memory.entries")}
       </span>
       <span className="tabular-nums">
-        {chars.toLocaleString("es")} / {limit.toLocaleString("es")} · {pct}%
+        {chars.toLocaleString(dateLocale(locale))} / {limit.toLocaleString(dateLocale(locale))} · {pct}%
       </span>
     </div>
   );

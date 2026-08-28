@@ -3,13 +3,17 @@ import { PageHeader } from "@/components/catalog-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { mutateHermes } from "@/lib/hermes-live";
+import { dateLocale, localizeError, type Locale } from "@/lib/i18n";
 import { useHermesLive } from "@/lib/use-hermes-live";
+import { useLocale, useT } from "@/lib/use-i18n";
 
 export const Route = createFileRoute("/_app/cron")({
   component: CronPage,
 });
 
 function CronPage() {
+  const t = useT();
+  const locale = useLocale();
   const { data, error, loading, setData } = useHermesLive();
   const jobs = data?.cron ?? [];
 
@@ -17,17 +21,17 @@ function CronPage() {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 pb-20 sm:px-6">
         <PageHeader
-          kicker="Cron"
-          title="Tareas"
-          description="Los trabajos programados de tu Hermes. Lo que corre solo, en el horario que tú le diste."
+          kicker={t("cron.kicker")}
+          title={t("cron.title")}
+          description={t("cron.description")}
         />
         {loading ? (
-          <p className="text-sm text-muted-foreground">Leyendo las tareas de Hermes…</p>
+          <p className="text-sm text-muted-foreground">{t("cron.loading")}</p>
         ) : error ? (
-          <p className="text-sm text-muted-foreground">{error}</p>
+          <p className="text-sm text-muted-foreground">{localizeError(locale, error)}</p>
         ) : jobs.length === 0 ? (
           <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
-            Hermes no tiene tareas programadas.
+            {t("cron.empty")}
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -38,14 +42,14 @@ function CronPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="font-medium">{job.name}</h2>
                       <Badge variant={job.enabled ? "live" : "outline"}>
-                        {job.enabled ? "Activa" : "Pausada"}
+                        {job.enabled ? t("cron.active") : t("cron.paused")}
                       </Badge>
                       {job.origin ? <Badge variant="mute">{job.origin}</Badge> : null}
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">{job.schedule}</p>
                     <p className="mt-2 text-2xs text-muted-foreground">
-                      {job.lastStatus ? `Última: ${job.lastStatus}` : "Sin ejecuciones"}
-                      {job.nextRunAt ? ` · siguiente ${formatStamp(job.nextRunAt)}` : ""}
+                      {job.lastStatus ? t("cron.last", { status: job.lastStatus }) : t("cron.none")}
+                      {job.nextRunAt ? ` · ${t("cron.next", { when: formatStamp(locale, job.nextRunAt) })}` : ""}
                     </p>
                   </div>
                   {data?.writable ? (
@@ -73,7 +77,7 @@ function CronPage() {
                         });
                       }}
                     >
-                      {job.enabled ? "Pausar" : "Reanudar"}
+                      {job.enabled ? t("cron.pause") : t("cron.resume")}
                     </Button>
                   ) : null}
                 </div>
@@ -86,10 +90,10 @@ function CronPage() {
   );
 }
 
-function formatStamp(value: string) {
+function formatStamp(locale: Locale, value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return new Intl.DateTimeFormat("es", {
+  return new Intl.DateTimeFormat(dateLocale(locale), {
     day: "numeric",
     month: "short",
     hour: "2-digit",

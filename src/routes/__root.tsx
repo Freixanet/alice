@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { LocaleDocumentLang } from "@/lib/use-i18n";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Alice";
@@ -14,7 +15,7 @@ export const Route = createRootRoute({
       { name: "theme-color", content: "#f4f3ef" },
       {
         name: "description",
-        content: "Alice: chat, skills, tools y memoria.",
+        content: "Alice: chat, skills, tools, and memory.",
       },
     ],
     links: [
@@ -31,12 +32,13 @@ export const Route = createRootRoute({
     ],
   }),
   component: () => (
-    <html lang="es" data-theme="light" suppressHydrationWarning>
+    <html lang="en" data-theme="light" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body className="antialiased">
         <PreviewHostBridge />
+        <LocaleDocumentLang />
         <AuthProvider>
           <Outlet />
         </AuthProvider>

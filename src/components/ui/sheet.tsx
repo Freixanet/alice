@@ -2,6 +2,7 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/use-i18n";
 
 const Sheet = DialogPrimitive.Root;
 const SheetTrigger = DialogPrimitive.Trigger;
@@ -45,12 +46,17 @@ const SheetContent = React.forwardRef<
       {children}
       <DialogPrimitive.Close className="absolute top-4 right-4 rounded-sm text-muted-foreground hover:text-foreground">
         <X className="size-4" />
-        <span className="sr-only">Cerrar</span>
+        <SheetCloseLabel />
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
 ));
 SheetContent.displayName = "SheetContent";
+
+function SheetCloseLabel() {
+  const t = useT();
+  return <span className="sr-only">{t("settings.close")}</span>;
+}
 
 function SheetHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("flex flex-col gap-1.5 p-6 pr-12", className)} {...props} />;

@@ -16,7 +16,9 @@ import {
 } from "@/lib/gateway";
 import { authHeaders } from "@/lib/auth/client";
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
+import { dateLocale, localizeError, type Locale, type MsgKey } from "@/lib/i18n";
 import { useHermesLive } from "@/lib/use-hermes-live";
+import { useLocale, useT } from "@/lib/use-i18n";
 import { useHermes } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/connect")({
@@ -24,6 +26,8 @@ export const Route = createFileRoute("/_app/connect")({
 });
 
 function ConnectPage() {
+  const t = useT();
+  const locale = useLocale();
   const place = useHermes((s) => s.gatewayPlace);
   const setPlace = useHermes((s) => s.setGatewayPlace);
   const url = useHermes((s) => s.gatewayUrl);
@@ -129,7 +133,7 @@ function ConnectPage() {
         model: endpointModel,
       });
       if (!result.ok) {
-        setEndpointError(result.error || "No se ha podido guardar.");
+        setEndpointError(result.error || t("error.saveEndpoint"));
         return;
       }
       setEndpointKey("");
@@ -137,7 +141,7 @@ function ConnectPage() {
       if (result.models?.length) setGatewayModels(result.models);
       if (result.model) setModel(result.model, result.provider);
     } catch {
-      setEndpointError("No se ha podido guardar.");
+      setEndpointError(t("error.saveEndpoint"));
     } finally {
       setEndpointBusy(false);
     }
@@ -147,40 +151,40 @@ function ConnectPage() {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-8 pb-20 sm:px-6">
         <PageHeader
-          kicker="Gateway"
-          title="Conectar"
-          description="Pega la dirección de tu Hermes y la clave. Local o en internet: Alice lo deduce."
+          kicker={t("connect.kicker")}
+          title={t("connect.title")}
+          description={t("connect.description")}
         />
 
         <section className="space-y-3">
           <div className="flex flex-col gap-4 rounded-xl bg-card p-4 shadow-border">
             <label className="flex flex-col gap-1.5 text-sm">
-              Dirección
+              {t("connect.address")}
               <Input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://tu-hermes o http://127.0.0.1:8642"
+                placeholder={t("connect.addressPlaceholder")}
                 autoComplete="off"
               />
             </label>
             <label className="flex flex-col gap-1.5 text-sm">
-              Clave
+              {t("connect.key")}
               <Input
                 type="password"
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
-                placeholder={live ? "Ya conectado — pega otra para cambiar" : "La clave de tu Hermes"}
+                placeholder={live ? t("connect.keyConnected") : t("connect.keyPlaceholder")}
                 autoComplete="off"
               />
             </label>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            {error ? <p className="text-sm text-destructive">{localizeError(locale, error)}</p> : null}
             <div className="flex flex-wrap items-center gap-2">
               <Button onClick={() => void connect()} disabled={busy || !url.trim() || (!key.trim() && !live)}>
-                {busy ? "Comprobando…" : live ? "Volver a conectar" : "Conectar"}
+                {busy ? t("connect.checking") : live ? t("connect.reconnect") : t("connect.connect")}
               </Button>
               {live ? (
                 <Button variant="ghost" onClick={forget}>
-                  Olvidar
+                  {t("connect.forget")}
                 </Button>
               ) : null}
             </div>
@@ -189,14 +193,14 @@ function ConnectPage() {
 
         {live && meta ? (
           <section className="space-y-3">
-            <h2 className="text-sm font-medium">Estado</h2>
+            <h2 className="text-sm font-medium">{t("connect.status")}</h2>
             <div className="rounded-xl bg-card px-4 py-4 shadow-border">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="live">En línea</Badge>
+                <Badge variant="live">{t("connect.online")}</Badge>
                 <span className="text-sm">{meta.model}</span>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                {meta.platform ?? "Hermes"} · {meta.place === "cloud" ? "remoto" : "local"}
+                {meta.platform ?? "Hermes"} · {meta.place === "cloud" ? t("connect.remote") : t("connect.local")}
               </p>
             </div>
           </section>
@@ -210,71 +214,71 @@ function ConnectPage() {
 
         {place !== "device" ? (
         <section className="space-y-3">
-          <h2 className="text-sm font-medium">Proveedor de inferencia</h2>
+          <h2 className="text-sm font-medium">{t("connect.provider")}</h2>
           <div className="flex flex-col gap-4 rounded-xl bg-card p-4 shadow-border">
             <p className="text-sm text-muted-foreground">
-              Cualquier API compatible con OpenAI. Lo guarda Hermes y sale en el selector.
+              {t("connect.providerHint")}
             </p>
             <label className="flex flex-col gap-1.5 text-sm">
-              Nombre
+              {t("connect.name")}
               <Input
                 value={endpointName}
                 onChange={(e) => {
                   setEndpointName(e.target.value);
                   setEndpointOk(false);
                 }}
-                placeholder="El nombre que quieras"
+                placeholder={t("connect.namePlaceholder")}
                 autoComplete="off"
                 disabled={!live}
               />
             </label>
             <label className="flex flex-col gap-1.5 text-sm">
-              Dirección
+              {t("connect.address")}
               <Input
                 value={endpointUrl}
                 onChange={(e) => {
                   setEndpointUrl(e.target.value);
                   setEndpointOk(false);
                 }}
-                placeholder="https://api.ejemplo.com/v1"
+                placeholder={t("connect.endpointPlaceholder")}
                 autoComplete="off"
                 disabled={!live}
               />
             </label>
             <label className="flex flex-col gap-1.5 text-sm">
-              Clave
+              {t("connect.key")}
               <Input
                 type="password"
                 value={endpointKey}
                 onChange={(e) => setEndpointKey(e.target.value)}
-                placeholder="Si el endpoint la pide"
+                placeholder={t("connect.endpointKeyPlaceholder")}
                 autoComplete="off"
                 disabled={!live}
               />
             </label>
             <label className="flex flex-col gap-1.5 text-sm">
-              Modelo
+              {t("connect.model")}
               <Input
                 value={endpointModel}
                 onChange={(e) => setEndpointModel(e.target.value)}
-                placeholder="Opcional. Si está vacío, Hermes lista los del endpoint."
+                placeholder={t("connect.modelPlaceholder")}
                 autoComplete="off"
                 disabled={!live}
               />
             </label>
             {!live ? (
-              <p className="text-sm text-muted-foreground">Conecta tu Hermes arriba para añadirlo.</p>
+              <p className="text-sm text-muted-foreground">{t("connect.connectFirst")}</p>
             ) : null}
-            {endpointError ? <p className="text-sm text-destructive">{endpointError}</p> : null}
+            {endpointError ? <p className="text-sm text-destructive">{localizeError(locale, endpointError)}</p> : null}
             {endpointOk ? (
-              <p className="text-sm text-muted-foreground">Guardado. Ya está en el selector del chat.</p>
+              <p className="text-sm text-muted-foreground">{t("connect.saved")}</p>
             ) : null}
             <div>
               <Button
                 onClick={() => void addEndpoint()}
                 disabled={!live || endpointBusy || !endpointUrl.trim()}
               >
-                {endpointBusy ? "Guardando…" : "Añadir a Hermes"}
+                {endpointBusy ? t("connect.saving") : t("connect.addToHermes")}
               </Button>
             </div>
           </div>
@@ -294,11 +298,14 @@ function HermesLiveSections({
   error: string | null;
   data: ReturnType<typeof useHermesLive>["data"];
 }) {
+  const t = useT();
+  const locale = useLocale();
+
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Leyendo canales y sesiones de Hermes…</p>;
+    return <p className="text-sm text-muted-foreground">{t("connect.readingLive")}</p>;
   }
   if (error) {
-    return <p className="text-sm text-muted-foreground">{error}</p>;
+    return <p className="text-sm text-muted-foreground">{localizeError(locale, error)}</p>;
   }
   if (!data) return null;
 
@@ -311,10 +318,10 @@ function HermesLiveSections({
   return (
     <>
       <section className="space-y-3">
-        <h2 className="text-sm font-medium">Canales</h2>
+        <h2 className="text-sm font-medium">{t("connect.channels")}</h2>
         {channels.length === 0 ? (
           <div className="rounded-xl bg-card px-4 py-8 text-center text-sm text-muted-foreground shadow-border">
-            Hermes no tiene canales de mensajería configurados.
+            {t("connect.noChannels")}
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -323,14 +330,14 @@ function HermesLiveSections({
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{channel.name}</h3>
                   <Badge variant={channel.enabled ? "live" : "outline"}>
-                    {channelLabel(channel.state)}
+                    {channelLabel(t, channel.state)}
                   </Badge>
                 </div>
                 {channel.description ? (
                   <p className="mt-1 text-sm text-muted-foreground">{channel.description}</p>
                 ) : null}
                 {channel.error ? (
-                  <p className="mt-1 text-sm text-destructive">{channel.error}</p>
+                  <p className="mt-1 text-sm text-destructive">{localizeError(locale, channel.error)}</p>
                 ) : null}
               </li>
             ))}
@@ -340,7 +347,7 @@ function HermesLiveSections({
 
       {pending.length > 0 || approved.length > 0 ? (
         <section className="space-y-3">
-          <h2 className="text-sm font-medium">Emparejamiento</h2>
+          <h2 className="text-sm font-medium">{t("connect.pairing")}</h2>
           <ul className="flex flex-col gap-2">
             {pending.map((row) => (
               <li
@@ -349,7 +356,7 @@ function HermesLiveSections({
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{row.user || row.platform}</h3>
-                  <Badge variant="warn">Pendiente</Badge>
+                  <Badge variant="warn">{t("connect.pending")}</Badge>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {prettyPlatform(row.platform)}
@@ -364,7 +371,7 @@ function HermesLiveSections({
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{row.user || row.platform}</h3>
-                  <Badge variant="live">Aprobado</Badge>
+                  <Badge variant="live">{t("connect.approved")}</Badge>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{prettyPlatform(row.platform)}</p>
               </li>
@@ -374,13 +381,13 @@ function HermesLiveSections({
       ) : null}
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium">Sesiones de Hermes</h2>
+        <h2 className="text-sm font-medium">{t("connect.sessions")}</h2>
         <p className="text-sm text-muted-foreground">
-          Las conversaciones que guarda tu agente. No son los chats de este cockpit.
+          {t("connect.sessionsHint")}
         </p>
         {sessions.length === 0 ? (
           <div className="rounded-xl bg-card px-4 py-8 text-center text-sm text-muted-foreground shadow-border">
-            No hay sesiones recientes, o el dashboard no las ha enviado.
+            {t("connect.noSessions")}
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -389,8 +396,8 @@ function HermesLiveSections({
                 <h3 className="font-medium">{session.title || session.id}</h3>
                 <p className="mt-1 text-2xs text-muted-foreground">
                   {session.source ? prettyPlatform(session.source) : "Hermes"}
-                  {typeof session.messages === "number" ? ` · ${session.messages} mensajes` : ""}
-                  {session.updatedAt ? ` · ${formatStamp(session.updatedAt)}` : ""}
+                  {typeof session.messages === "number" ? ` · ${t("connect.messages", { count: session.messages })}` : ""}
+                  {session.updatedAt ? ` · ${formatStamp(locale, session.updatedAt)}` : ""}
                 </p>
               </li>
             ))}
@@ -400,14 +407,14 @@ function HermesLiveSections({
 
       {webhooks.length > 0 ? (
         <section className="space-y-3">
-          <h2 className="text-sm font-medium">Webhooks</h2>
+          <h2 className="text-sm font-medium">{t("connect.webhooks")}</h2>
           <ul className="flex flex-col gap-2">
             {webhooks.map((hook) => (
               <li key={hook.name} className="rounded-xl bg-card px-4 py-4 shadow-border">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{hook.name}</h3>
                   <Badge variant={hook.enabled ? "live" : "outline"}>
-                    {hook.enabled ? "Activo" : "Apagado"}
+                    {hook.enabled ? t("connect.active") : t("connect.off")}
                   </Badge>
                 </div>
                 {hook.event ? (
@@ -422,22 +429,23 @@ function HermesLiveSections({
   );
 }
 
-function channelLabel(state: string) {
-  const map: Record<string, string> = {
-    connected: "Conectado",
-    disabled: "Apagado",
-    not_configured: "Sin configurar",
-    pending_restart: "Reinicio pendiente",
-    gateway_stopped: "Gateway parado",
-    startup_failed: "Fallo al arrancar",
-    disconnected: "Desconectado",
-    fatal: "Error",
-    "en config": "En config",
-    "en tareas": "En tareas",
-    activo: "Activo",
-    apagado: "Apagado",
+function channelLabel(t: ReturnType<typeof useT>, state: string) {
+  const map: Record<string, MsgKey> = {
+    connected: "channel.connected",
+    disabled: "channel.disabled",
+    not_configured: "channel.not_configured",
+    pending_restart: "channel.pending_restart",
+    gateway_stopped: "channel.gateway_stopped",
+    startup_failed: "channel.startup_failed",
+    disconnected: "channel.disconnected",
+    fatal: "channel.fatal",
+    "en config": "channel.config",
+    "en tareas": "channel.jobs",
+    activo: "channel.on",
+    apagado: "channel.off",
   };
-  return map[state] ?? state;
+  const key = map[state];
+  return key ? t(key) : state;
 }
 
 function prettyPlatform(id: string) {
@@ -452,11 +460,11 @@ function prettyPlatform(id: string) {
   return map[id] ?? id;
 }
 
-function formatStamp(value: string) {
+function formatStamp(locale: Locale, value: string) {
   const n = Number(value);
   const d = new Date(!Number.isNaN(n) && n > 1_000_000_000 ? (n < 1e12 ? n * 1000 : n) : value);
   if (Number.isNaN(d.getTime())) return value;
-  return new Intl.DateTimeFormat("es", {
+  return new Intl.DateTimeFormat(dateLocale(locale), {
     day: "numeric",
     month: "short",
     hour: "2-digit",

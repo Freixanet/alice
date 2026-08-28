@@ -33,7 +33,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-const FAIL = "No se ha podido conectar.";
+const FAIL = "Couldn’t connect.";
 
 const V4_BLOCK = [
   "0.0.0.0/8",
@@ -295,6 +295,55 @@ export function readGateCookie(
   return null;
 }
 
+async function ensureGateTable(
+  sql: Awaited<ReturnType<typeof import("@/lib/db").getSql>>,
+) {
+  await sql.query(
+    `create table if not exists hermes_gate (
+      user_id text not null primary key,
+      token text not null,
+      updated_at timestamptz not null default now()
+    )`,
+  );
+}
+
+async function loadStoredGate(userId: string): Promise<GateSecret | null> {
+  try {
+    const { getSql } = await import("@/lib/db");
+    const sql = await getSql();
+    await ensureGateTable(sql);
+    const rows = await sql.query<{ token: string }>(
+      `select token from hermes_gate where user_id = $1 limit 1`,
+      [userId],
+    );
+    const token = rows[0]?.token;
+    return token ? openGate(token) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function persistUserGate(userId: string | null, token: string | null) {
+  if (!userId) return;
+  try {
+    const { getSql } = await import("@/lib/db");
+    const sql = await getSql();
+    await ensureGateTable(sql);
+    if (!token) {
+      await sql.query(`delete from hermes_gate where user_id = $1`, [userId]);
+      return;
+    }
+    await sql.query(
+      `insert into hermes_gate (user_id, token, updated_at)
+       values ($1, $2, now())
+       on conflict (user_id) do update set token = excluded.token, updated_at = now()`,
+      [userId, token],
+    );
+  } catch {
+    // Cookie still carries the session when the table is unavailable.
+  }
+}
+
 export async function resolveAliceGate(request: Request): Promise<{
   saved: GateSecret | null;
   owner: boolean;
@@ -307,7 +356,8 @@ export async function resolveAliceGate(request: Request): Promise<{
   const user = await getSessionUser();
   const owner = await isLocalHermesOwner(user?.id ?? null, user?.email);
   const local = localHermesAvailable();
-  const saved = readGateCookie(request, { userId: user?.id ?? null, owner });
+  const fromCookie = readGateCookie(request, { userId: user?.id ?? null, owner });
+  const saved = fromCookie ?? (user?.id ? await loadStoredGate(user.id) : null);
   return { saved, owner, local, userId: user?.id ?? null, email: user?.email ?? null };
 }
 
@@ -350,7 +400,7 @@ export async function probeHermes(
       return { ok: false, code: "not_hermes", error: FAIL };
     }
     if (modelsRes.status === 401 || modelsRes.status === 403) {
-      return { ok: false, code: "unauthorized", error: "La clave no es correcta." };
+      return { ok: false, code: "unauthorized", error: "The key is not correct." };
     }
     if (!modelsRes.ok) {
       return { ok: false, code: "not_hermes", error: FAIL };
@@ -761,14 +811,14 @@ function hermesDetail(body: Record<string, unknown> | null, fallback = FAIL): st
 }
 
 function friendlyHermesSaveError(status: number, body: Record<string, unknown> | null): string {
-  if (status === 401 || status === 403) return "La clave de Hermes no es correcta.";
-  if (status === 409) return "Ese endpoint ya está en Hermes. Míralo en el selector del chat.";
+  if (status === 401 || status === 403) return "The key is not correct.";
+  if (status === 409) return "That endpoint is already in Hermes. Check the chat picker.";
   const detail = hermesDetail(body, "");
   if (detail && !/^not found$/i.test(detail)) return detail;
   if (status === 404 || status === 405) {
-    return "Este Hermes no tiene el panel de configuración en esa dirección. Si el chat va por otro puerto, prueba el dashboard (suele ser 9119).";
+    return "This Hermes has no settings panel at that address. If chat uses another port, try the dashboard (often 9119).";
   }
-  return "Hermes no ha podido guardar el endpoint.";
+  return "Hermes couldn’t save the endpoint.";
 }
 
 function isMissingRoute(status: number): boolean {
@@ -1070,14 +1120,14 @@ export async function saveHermesCustomEndpointServer(opts: {
   const llm = normalizeLlmBaseUrl(opts.baseUrl);
   try {
     if (opts.place !== "mac" && isPrivateHostname(new URL(llm).hostname)) {
-      return { ok: false, error: "Ese endpoint es local. Elige «En este Mac»." };
+      return { ok: false, error: "That endpoint is local. Choose “On this Mac”." };
     }
   } catch {
-    return { ok: false, error: "Revisa la dirección del endpoint." };
+    return { ok: false, error: "Check the address." };
   }
   const apiKey = opts.apiKey.trim();
   if (apiKey.length > 256) {
-    return { ok: false, error: "Revisa la clave del endpoint." };
+    return { ok: false, error: "The endpoint key is not correct." };
   }
   let name = opts.name.trim();
   if (!name) {
@@ -1095,7 +1145,7 @@ export async function saveHermesCustomEndpointServer(opts: {
     discovered = await probeOpenAiModels(llm, apiKey, ctrl);
   } catch (e) {
     if ((e as Error).name === "AbortError") {
-      return { ok: false, error: "El endpoint no ha respondido a tiempo." };
+      return { ok: false, error: "The model didn’t respond in time." };
     }
   }
 
@@ -1118,7 +1168,7 @@ export async function saveHermesCustomEndpointServer(opts: {
       if (!isMissingRoute(probe.status)) break;
     } catch (e) {
       if ((e as Error).name === "AbortError") {
-        return { ok: false, error: "Hermes no ha respondido a tiempo." };
+        return { ok: false, error: "The model didn’t respond in time." };
       }
     }
     if (discovered.length) break;
@@ -1138,7 +1188,7 @@ export async function saveHermesCustomEndpointServer(opts: {
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") {
-        return { ok: false, error: "Hermes no ha respondido a tiempo." };
+        return { ok: false, error: "The model didn’t respond in time." };
       }
     }
   }
@@ -1147,7 +1197,7 @@ export async function saveHermesCustomEndpointServer(opts: {
   if (!model) {
     return {
       ok: false,
-      error: "Ese endpoint no ha listado modelos. Escribe uno, por ejemplo glm-5.3-flash.",
+      error: "That endpoint listed no models. Type one, for example glm-5.3-flash.",
     };
   }
   const models = discovered.length ? discovered : [model];
@@ -1218,7 +1268,7 @@ export async function saveHermesCustomEndpointServer(opts: {
         persist,
       };
     }
-    if (saved.kind === "abort") return { ok: false, error: "Hermes no ha respondido a tiempo." };
+    if (saved.kind === "abort") return { ok: false, error: "The model didn’t respond in time." };
     if (saved.kind === "error") return { ok: false, error: saved.error };
   }
 
@@ -1274,7 +1324,7 @@ export async function streamOpenAiEndpoint(opts: {
   } catch (e) {
     if ((e as Error).name === "AbortError") {
       return ndjsonResponse(async (send) => {
-        send({ type: "error", message: "El modelo no ha respondido a tiempo." });
+        send({ type: "error", message: "The model didn’t respond in time." });
       }, 504);
     }
     return ndjsonResponse(async (send) => {
@@ -1283,7 +1333,7 @@ export async function streamOpenAiEndpoint(opts: {
   }
   if (upstream.status === 401 || upstream.status === 403) {
     return ndjsonResponse(async (send) => {
-      send({ type: "error", message: "La clave del endpoint no es correcta." });
+      send({ type: "error", message: "The endpoint key is not correct." });
     }, 401);
   }
   if (!upstream.ok || !upstream.body) {
@@ -1346,7 +1396,7 @@ export async function streamHermesProxy(opts: {
 
   if (upstream.status === 401 || upstream.status === 403) {
     return ndjsonResponse(async (send) => {
-      send({ type: "error", message: "La clave no es correcta." });
+      send({ type: "error", message: "The key is not correct." });
     }, 401);
   }
   if (!upstream.ok || !upstream.body) {
@@ -1366,7 +1416,7 @@ export async function streamHermesProxy(opts: {
       if (ev.type === "error") return;
     }
     if (emitted === 0) {
-      send({ type: "error", message: "Hermes no ha enviado texto. Prueba de nuevo o cambia de modelo." });
+      send({ type: "error", message: "Hermes sent no text. Try again or switch models." });
     }
   });
 }

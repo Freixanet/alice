@@ -5,15 +5,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import type { MsgKey } from "@/lib/i18n";
 import { useHermes } from "@/lib/store";
 import type { Trust } from "@/lib/types";
+import { useT } from "@/lib/use-i18n";
 import { cn } from "@/lib/utils";
 
-const TRUST_LABEL: Record<Trust, string> = {
-  builtin: "Núcleo",
-  official: "Oficial",
-  trusted: "De confianza",
-  community: "Comunidad",
+const TRUST_LABEL: Record<Trust, MsgKey> = {
+  builtin: "catalog.trust.builtin",
+  official: "catalog.trust.official",
+  trusted: "catalog.trust.trusted",
+  community: "catalog.trust.community",
 };
 
 export function PageHeader({
@@ -75,6 +77,7 @@ export function CatalogPage({
   chatPrompt: (row: CatalogRow) => string;
   empty?: string;
 }) {
+  const t = useT();
   const [q, setQ] = useState("");
   const [group, setGroup] = useState("all");
   const navigate = useNavigate();
@@ -103,12 +106,12 @@ export function CatalogPage({
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Buscar…"
+          placeholder={t("catalog.search")}
           className="max-w-sm"
         />
         <div className="flex flex-wrap gap-1.5">
           <FilterChip active={group === "all"} onClick={() => setGroup("all")}>
-            Todas
+            {t("catalog.all")}
           </FilterChip>
           {groups.map((g) => (
             <FilterChip key={g.id} active={group === g.id} onClick={() => setGroup(g.id)}>
@@ -120,7 +123,7 @@ export function CatalogPage({
       <ul className="flex flex-col gap-2">
         {filtered.length === 0 ? (
           <li className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
-            {rows.length === 0 ? empty || "Nada aquí." : "Nada con ese filtro."}
+            {rows.length === 0 ? empty || t("catalog.empty") : t("catalog.noFilter")}
           </li>
         ) : (
           filtered.map((row) => (
@@ -130,7 +133,7 @@ export function CatalogPage({
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-medium">{row.title}</h2>
                     {row.trust ? (
-                      <Badge variant="outline">{TRUST_LABEL[row.trust]}</Badge>
+                      <Badge variant="outline">{t(TRUST_LABEL[row.trust])}</Badge>
                     ) : null}
                     {row.version ? <Badge variant="mute">{row.version}</Badge> : null}
                   </div>
@@ -144,7 +147,7 @@ export function CatalogPage({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="Usar en el chat"
+                    aria-label={t("catalog.useInChat")}
                     onClick={() => useInChat(row)}
                   >
                     <MessageSquare className="size-4" />
@@ -153,7 +156,7 @@ export function CatalogPage({
                     checked={row.enabled}
                     disabled={!onToggle}
                     onCheckedChange={() => onToggle?.(row.id)}
-                    aria-label={`Activar ${row.title}`}
+                    aria-label={t("catalog.enable", { title: row.title })}
                   />
                 </div>
               </div>

@@ -40,6 +40,8 @@ import { useHermes } from "@/lib/store";
 import type { Conversation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
+import { displayChatTitle } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/use-i18n";
 
 export function AppShell() {
   useGatewayHealth();
@@ -169,11 +171,12 @@ function CollapsedRail({
   onOpenSettings: () => void;
 }) {
   const user = useCurrentUser();
-  const mark = accountMark(user?.displayName, user?.primaryEmail);
+  const t = useT();
+  const mark = accountMark(user?.displayName, user?.primaryEmail, t("shell.you"));
   return (
     <div className="flex h-full w-full flex-col py-3">
       <div className="flex w-full justify-center">
-        <IconBtn label="Abrir barra" onClick={onExpand}>
+        <IconBtn label={t("shell.openSidebar")} onClick={onExpand}>
           <span className="relative grid size-7 place-items-center">
             <Mark className="size-7 group-hover:hidden" />
             <span className="hidden group-hover:grid">
@@ -183,14 +186,14 @@ function CollapsedRail({
         </IconBtn>
       </div>
       <nav className="mt-5 flex w-full flex-col items-center gap-1">
-        <IconBtn label="Nuevo chat" onClick={onNewChat}>
+        <IconBtn label={t("shell.newChat")} onClick={onNewChat}>
           <RailGlyph icon={SquarePen} heavy />
         </IconBtn>
-        <IconBtn label="Buscar" onClick={onSearch}>
+        <IconBtn label={t("shell.search")} onClick={onSearch}>
           <RailGlyph icon={Search} heavy />
         </IconBtn>
         {NAV.map((item) => (
-          <IconLink key={item.to} to={item.to} label={item.label} active={pathname === item.to}>
+          <IconLink key={item.to} to={item.to} label={t(item.labelKey)} active={pathname === item.to}>
             <RailGlyph icon={item.icon} />
           </IconLink>
         ))}
@@ -198,7 +201,7 @@ function CollapsedRail({
       <div className="mt-auto flex w-full justify-center pb-2">
         <button
           type="button"
-          aria-label="Ajustes"
+          aria-label={t("shell.settings")}
           onClick={onOpenSettings}
           className="relative grid size-7 place-items-center rounded-full bg-foreground p-0 text-[11px] font-medium text-background"
         >
@@ -206,7 +209,7 @@ function CollapsedRail({
           {live ? (
             <span
               className="absolute -right-px -bottom-px size-2 rounded-full bg-live ring-2 ring-background"
-              title="Tu agente"
+              title={t("shell.agentLive")}
             />
           ) : null}
         </button>
@@ -252,8 +255,10 @@ function ExpandedSidebar({
   );
   const deleting = conversations.find((c) => c.id === deleteId);
   const user = useCurrentUser();
-  const mark = accountMark(user?.displayName, user?.primaryEmail);
-  const label = user?.displayName || user?.primaryEmail?.split("@")[0] || "Tú";
+  const t = useT();
+  const locale = useLocale();
+  const mark = accountMark(user?.displayName, user?.primaryEmail, t("shell.you"));
+  const label = user?.displayName || user?.primaryEmail?.split("@")[0] || t("shell.you");
 
   function saveRename() {
     if (!renameId) return;
@@ -268,7 +273,7 @@ function ExpandedSidebar({
         chat={c}
         active={c.id === activeId}
         onSelect={() => onSelectChat(c.id)}
-        onShare={() => void shareChat(c)}
+        onShare={() => void shareChat(c, t("shell.shareText", { title: displayChatTitle(locale, c.title) }))}
         onRename={() => {
           setRenameValue(c.title);
           setRenameId(c.id);
@@ -287,10 +292,10 @@ function ExpandedSidebar({
           <Wordmark className="text-3xl" />
         </Link>
         <div className="ml-auto flex items-center">
-          <IconBtn label="Buscar" onClick={onSearch}>
+          <IconBtn label={t("shell.search")} onClick={onSearch}>
             <RailGlyph icon={Search} heavy />
           </IconBtn>
-          <IconBtn label="Cerrar barra" onClick={onCollapse}>
+          <IconBtn label={t("shell.closeSidebar")} onClick={onCollapse}>
             <RailGlyph icon={PanelLeft} />
           </IconBtn>
         </div>
@@ -308,14 +313,14 @@ function ExpandedSidebar({
             )}
           >
             <RailGlyph icon={item.icon} />
-            {item.label}
+            {t(item.labelKey)}
           </Link>
         ))}
       </nav>
       <ScrollArea className="min-h-0 flex-1 px-2 py-1">
         {pinned.length > 0 ? (
           <>
-            <p className="mt-8 px-2 pb-1 text-2xs font-medium text-muted-foreground">Fijados</p>
+            <p className="mt-8 px-2 pb-1 text-2xs font-medium text-muted-foreground">{t("shell.pinned")}</p>
             <ul className="flex flex-col gap-0.5">{pinned.map(row)}</ul>
           </>
         ) : null}
@@ -325,7 +330,7 @@ function ExpandedSidebar({
             pinned.length > 0 ? "mt-5" : "mt-8",
           )}
         >
-          Chats
+          {t("shell.chats")}
         </p>
         <ul className="flex flex-col gap-0.5">{rest.map(row)}</ul>
       </ScrollArea>
@@ -341,13 +346,13 @@ function ExpandedSidebar({
               {live ? (
                 <span
                   className="absolute -right-px -bottom-px size-2 rounded-full bg-live ring-2 ring-background"
-                  title="Tu agente"
+                  title={t("shell.agentLive")}
                 />
               ) : null}
             </span>
             <span className="truncate text-sm">{label}</span>
           </button>
-          <IconBtn label="Nuevo chat" onClick={onNewChat}>
+          <IconBtn label={t("shell.newChat")} onClick={onNewChat}>
             <RailGlyph icon={SquarePen} heavy />
           </IconBtn>
         </div>
@@ -355,8 +360,8 @@ function ExpandedSidebar({
       <Dialog open={Boolean(renameId)} onOpenChange={(open) => !open && setRenameId(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Renombrar</DialogTitle>
-            <DialogDescription>El nombre aparece en el historial.</DialogDescription>
+            <DialogTitle>{t("shell.renameTitle")}</DialogTitle>
+            <DialogDescription>{t("shell.renameHint")}</DialogDescription>
           </DialogHeader>
           <Input
             value={renameValue}
@@ -375,14 +380,14 @@ function ExpandedSidebar({
               className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => setRenameId(null)}
             >
-              Cancelar
+              {t("shell.cancel")}
             </button>
             <button
               type="button"
               className="rounded-lg bg-foreground px-3 py-2 text-sm text-background"
               onClick={saveRename}
             >
-              Guardar
+              {t("shell.save")}
             </button>
           </div>
         </DialogContent>
@@ -390,9 +395,11 @@ function ExpandedSidebar({
       <Dialog open={Boolean(deleteId)} onOpenChange={(open) => !open && setDeleteId(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Eliminar chat</DialogTitle>
+            <DialogTitle>{t("shell.deleteChat")}</DialogTitle>
             <DialogDescription>
-              Se borrará «{deleting?.title}». No se puede deshacer.
+              {t("shell.deleteChatHint", {
+                title: displayChatTitle(locale, deleting?.title ?? ""),
+              })}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
@@ -401,7 +408,7 @@ function ExpandedSidebar({
               className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => setDeleteId(null)}
             >
-              Cancelar
+              {t("shell.cancel")}
             </button>
             <button
               type="button"
@@ -411,7 +418,7 @@ function ExpandedSidebar({
                 setDeleteId(null);
               }}
             >
-              Eliminar
+              {t("shell.delete")}
             </button>
           </div>
         </DialogContent>
@@ -438,6 +445,8 @@ function ChatRow({
   onDelete: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const t = useT();
+  const locale = useLocale();
   return (
     <li className="group relative">
       <button
@@ -450,13 +459,13 @@ function ChatRow({
             : "text-muted-foreground hover:bg-accent hover:text-foreground",
         )}
       >
-        {chat.title}
+        {displayChatTitle(locale, chat.title)}
       </button>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            aria-label="Opciones del chat"
+            aria-label={t("shell.chatOptions")}
             className={cn(
               "absolute top-1/2 right-1 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground",
               menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
@@ -468,15 +477,15 @@ function ChatRow({
         <DropdownMenuContent align="end" className="min-w-40">
           <DropdownMenuItem onSelect={onShare}>
             <Share className="size-4" />
-            Compartir
+            {t("shell.share")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onRename}>
             <Pencil className="size-4" />
-            Renombrar
+            {t("shell.rename")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onPin}>
             {chat.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-            {chat.pinned ? "Desfijar" : "Fijar"}
+            {chat.pinned ? t("shell.unpin") : t("shell.pin")}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -484,7 +493,7 @@ function ChatRow({
             className="text-destructive focus:bg-destructive/10 focus:text-destructive"
           >
             <Trash2 className="size-4" />
-            Eliminar
+            {t("shell.delete")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -492,9 +501,9 @@ function ChatRow({
   );
 }
 
-async function shareChat(chat: Conversation) {
+async function shareChat(chat: Conversation, text: string) {
   const url = window.location.origin + "/";
-  const payload = { title: chat.title, text: `Chat en Alice: ${chat.title}`, url };
+  const payload = { title: chat.title, text, url };
   try {
     if (navigator.share) {
       await navigator.share(payload);
@@ -510,9 +519,9 @@ async function shareChat(chat: Conversation) {
   }
 }
 
-function accountMark(name?: string | null, email?: string | null) {
-  const src = (name || email || "Tú").trim();
-  return src.charAt(0).toUpperCase() || "T";
+function accountMark(name?: string | null, email?: string | null, fallback = "You") {
+  const src = (name || email || fallback).trim();
+  return src.charAt(0).toUpperCase() || "Y";
 }
 
 function RailGlyph({ icon: Icon, heavy = false }: { icon: LucideIcon; heavy?: boolean }) {
@@ -599,14 +608,16 @@ function CommandPalette({
   onOpenSettings: () => void;
 }) {
   const navigate = useNavigate();
+  const t = useT();
+  const locale = useLocale();
   const items = useMemo(() => NAV, []);
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
       <Command>
-        <CommandInput placeholder="Buscar en Alice…" />
+        <CommandInput placeholder={t("shell.searchAlice")} />
         <CommandList>
-          <CommandEmpty>Nada coincide.</CommandEmpty>
-          <CommandGroup heading="Ir">
+          <CommandEmpty>{t("shell.noMatch")}</CommandEmpty>
+          <CommandGroup heading={t("shell.go")}>
             {items.map((item) => (
               <CommandItem
                 key={item.to}
@@ -616,7 +627,7 @@ function CommandPalette({
                 }}
               >
                 <item.icon className="size-4" />
-                {item.label}
+                {t(item.labelKey)}
               </CommandItem>
             ))}
             <CommandItem
@@ -626,10 +637,10 @@ function CommandPalette({
               }}
             >
               <SETTINGS_NAV.icon className="size-4" />
-              {SETTINGS_NAV.label}
+              {t(SETTINGS_NAV.labelKey)}
             </CommandItem>
           </CommandGroup>
-          <CommandGroup heading="Chats">
+          <CommandGroup heading={t("shell.chats")}>
             {conversations.map((c) => (
               <CommandItem
                 key={c.id}
@@ -638,7 +649,7 @@ function CommandPalette({
                   onPickChat(c.id);
                 }}
               >
-                {c.title}
+                {displayChatTitle(locale, c.title)}
               </CommandItem>
             ))}
           </CommandGroup>

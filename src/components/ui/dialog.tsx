@@ -2,6 +2,7 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/use-i18n";
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -40,12 +41,17 @@ const DialogContent = React.forwardRef<
       {children}
       <DialogPrimitive.Close className="absolute top-4 right-4 rounded-sm text-muted-foreground transition-opacity hover:text-foreground focus-visible:outline-none">
         <X className="size-4" />
-        <span className="sr-only">Cerrar</span>
+        <DialogCloseLabel />
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
 ));
 DialogContent.displayName = DialogPrimitive.Content.displayName;
+
+function DialogCloseLabel() {
+  const t = useT();
+  return <span className="sr-only">{t("settings.close")}</span>;
+}
 
 function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("flex flex-col gap-1.5", className)} {...props} />;

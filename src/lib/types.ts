@@ -123,6 +123,7 @@ export interface Message {
   createdAt: number;
   pending?: boolean;
   error?: string;
+  incomplete?: boolean;
   attachments?: Attachment[];
   tools?: Array<{
     id: string;

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { authHeaders } from "./auth/client";
 import { getMacSessionKey, listHermesModels, probeGateway } from "./gateway";
 import { getDeviceSessionKey } from "./hermes-direct";
 import { useHermes } from "./store";
@@ -20,6 +21,24 @@ export function useGatewayHealth() {
     const alreadyLive = useHermes.getState().gatewayStatus === "live";
     if (!alreadyLive) setChecking();
     void (async () => {
+      if (place !== "device") {
+        try {
+          const res = await fetch("/api/hermes", {
+            method: "POST",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ action: "status" }),
+            signal: ctrl.signal,
+          });
+          const data = (await res.json()) as { hasKey?: boolean };
+          if (ctrl.signal.aborted) return;
+          if (!data.hasKey) {
+            setDown("Go back to Connect and paste the Hermes key.");
+            return;
+          }
+        } catch {
+          if (ctrl.signal.aborted) return;
+        }
+      }
       const result = await probeGateway({
         url,
         key:
@@ -48,7 +67,7 @@ export function useGatewayHealth() {
         if (!ctrl.signal.aborted && listed.ok) setGatewayModels(listed.models);
         return;
       }
-      if (alreadyLive && result.code !== "unauthorized") return;
+      if (alreadyLive && (result.code === "unreachable" || result.code === "cors")) return;
       setDown(result.error);
     })();
     return () => ctrl.abort();

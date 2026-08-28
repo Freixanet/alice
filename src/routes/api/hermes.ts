@@ -3,6 +3,7 @@ import {
   jsonWithCookie,
   listHermesModelsServer,
   modelsFromEndpoints,
+  persistUserGate,
   probeHermes,
   resolveAliceGate,
   saveHermesCustomEndpointServer,
@@ -32,7 +33,7 @@ type Incoming = {
   jobId?: string;
 };
 
-const FAIL = "No se ha podido conectar.";
+const FAIL = "Couldn’t connect.";
 
 export const Route = createFileRoute("/api/hermes")({
   server: {
@@ -47,7 +48,7 @@ export const Route = createFileRoute("/api/hermes")({
 
         const { saved, owner, local, userId } = await resolveAliceGate(request);
         if (!userId) {
-          return jsonWithCookie({ ok: false, error: "Entra para continuar." }, 401);
+          return jsonWithCookie({ ok: false, error: "Sign in to continue." }, 401);
         }
         const macOk = owner && local;
 
@@ -67,6 +68,7 @@ export const Route = createFileRoute("/api/hermes")({
         }
 
         if (body.action === "forget") {
+          await persistUserGate(userId, null);
           return jsonWithCookie({ ok: true }, 200, null);
         }
 
@@ -82,7 +84,7 @@ export const Route = createFileRoute("/api/hermes")({
             return jsonWithCookie(result, 200);
           } catch {
             return jsonWithCookie(
-              { ok: false, error: "No se ha podido leer la memoria de Hermes." },
+              { ok: false, error: "Couldn’t read Hermes memory." },
               502,
             );
           }
@@ -102,7 +104,7 @@ export const Route = createFileRoute("/api/hermes")({
             return jsonWithCookie(result, 200);
           } catch {
             return jsonWithCookie(
-              { ok: false, error: "No se ha podido leer el estado de Hermes." },
+              { ok: false, error: "Couldn’t read Hermes status." },
               502,
             );
           }
@@ -116,7 +118,7 @@ export const Route = createFileRoute("/api/hermes")({
           body.action === "cron-resume"
         ) {
           if (!saved?.u || !saved?.k) {
-            return jsonWithCookie({ ok: false, error: "Conecta tu Hermes primero." }, 400);
+            return jsonWithCookie({ ok: false, error: "Connect your Hermes first." }, 400);
           }
           try {
             const { mutateHermesLive } = await import("@/lib/hermes-live.server");
@@ -135,11 +137,11 @@ export const Route = createFileRoute("/api/hermes")({
               },
             );
             return jsonWithCookie(
-              ok ? { ok: true } : { ok: false, error: "Hermes no ha podido guardar el cambio." },
+              ok ? { ok: true } : { ok: false, error: "Hermes couldn’t save the change." },
               ok ? 200 : 502,
             );
           } catch {
-            return jsonWithCookie({ ok: false, error: "Hermes no ha podido guardar el cambio." }, 502);
+            return jsonWithCookie({ ok: false, error: "Hermes couldn’t save the change." }, 502);
           }
         }
 
@@ -196,11 +198,11 @@ export const Route = createFileRoute("/api/hermes")({
 
         if (body.action === "custom-endpoint") {
           if (!saved?.u || !saved?.k) {
-            return jsonWithCookie({ ok: false, error: "Conecta tu Hermes primero." }, 400);
+            return jsonWithCookie({ ok: false, error: "Connect your Hermes first." }, 400);
           }
           const endpointUrl = typeof body.endpointUrl === "string" ? body.endpointUrl.trim() : "";
           if (!endpointUrl) {
-            return jsonWithCookie({ ok: false, error: "Falta la dirección." }, 400);
+            return jsonWithCookie({ ok: false, error: "Address is missing." }, 400);
           }
           try {
             const result = await saveHermesCustomEndpointServer({
@@ -223,6 +225,7 @@ export const Route = createFileRoute("/api/hermes")({
               ep: upsertStoredEndpoint(saved.ep, result.persist),
               ...(userId ? { uid: userId } : {}),
             });
+            await persistUserGate(userId, token);
             return jsonWithCookie(
               { ok: true, model: result.model, provider: result.provider, models: result.models },
               200,
@@ -232,14 +235,14 @@ export const Route = createFileRoute("/api/hermes")({
             if (e instanceof GatewayError) {
               const message =
                 e.code === "private"
-                  ? "Tu Hermes es local. Elige «En este Mac»."
+                  ? "Your Hermes is local. Choose “On this Mac”."
                   : e.code === "unauthorized"
-                    ? "La clave de Hermes no es correcta."
-                    : "Hermes no responde. Vuelve a conectarlo arriba.";
+                    ? "The key is not correct."
+                    : "Hermes isn’t responding. Reconnect it above.";
               return jsonWithCookie({ ok: false, error: message }, 502);
             }
             return jsonWithCookie(
-              { ok: false, error: "Hermes no responde. Vuelve a conectarlo arriba." },
+              { ok: false, error: "Hermes isn’t responding. Reconnect it above." },
               502,
             );
           }
@@ -261,7 +264,7 @@ export const Route = createFileRoute("/api/hermes")({
             {
               ok: false,
               code: "private",
-              error: "Conecta tu Hermes con una dirección pública.",
+              error: "Connect your Hermes with a public address.",
             },
             400,
           );
@@ -283,7 +286,7 @@ export const Route = createFileRoute("/api/hermes")({
 
         if (body.action === "connect" && result.ok) {
           if (!userId) {
-            return jsonWithCookie({ ok: false, error: "Entra para continuar." }, 401);
+            return jsonWithCookie({ ok: false, error: "Sign in to continue." }, 401);
           }
           const token = sealGate({
             k: key,
@@ -292,6 +295,7 @@ export const Route = createFileRoute("/api/hermes")({
             ep: saved?.ep,
             ...(userId ? { uid: userId } : {}),
           });
+          await persistUserGate(userId, token);
           return jsonWithCookie(result, 200, token);
         }
 

@@ -25,7 +25,7 @@ import {
   webhooksFromApi,
 } from "./hermes-live-parse";
 
-const FAIL = "No se ha podido conectar.";
+const FAIL = "Couldn’t connect.";
 const DEVICE_KEY = "alice-device-hermes-key";
 
 export const DEFAULT_DEVICE_HERMES = "http://127.0.0.1:8642";
@@ -70,7 +70,7 @@ function corsFail(): ProbeResult {
     ok: false,
     code: "cors",
     error:
-      "Este navegador no alcanza tu Hermes. Ábrelo en el mismo ordenador, o deja que Hermes acepte este origen (CORS).",
+      "This browser can’t reach your Hermes. Open it on the same computer, or let Hermes allow this origin (CORS).",
   };
 }
 
@@ -103,7 +103,7 @@ export async function probeHermesDirect(opts: {
       return { ok: false, code: "not_hermes", error: FAIL };
     }
     if (modelsRes.status === 401 || modelsRes.status === 403) {
-      return { ok: false, code: "unauthorized", error: "La clave no es correcta." };
+      return { ok: false, code: "unauthorized", error: "The key is not correct." };
     }
     if (!modelsRes.ok) return { ok: false, code: "not_hermes", error: FAIL };
 
@@ -212,7 +212,7 @@ export async function* streamHermesDirect(opts: {
   }
 
   if (upstream.status === 401 || upstream.status === 403) {
-    yield { type: "error", message: "La clave no es correcta." };
+    yield { type: "error", message: "The key is not correct." };
     return;
   }
   if (!upstream.ok || !upstream.body) {
@@ -231,7 +231,7 @@ export async function* streamHermesDirect(opts: {
   if (emitted === 0) {
     yield {
       type: "error",
-      message: "Hermes no ha enviado texto. Prueba de nuevo o cambia de modelo.",
+      message: "Hermes sent no text. Try again or switch models.",
     };
   }
 }
@@ -418,7 +418,7 @@ export async function listHermesLiveDirect(opts: {
       projects: projectsFromApi(apiProjects),
     } satisfies HermesLive;
   } catch {
-    return { ok: false, error: "No se ha podido leer el estado de Hermes." };
+    return { ok: false, error: "Couldn’t read Hermes status." };
   }
 }
 
@@ -468,8 +468,8 @@ export async function mutateHermesDirect(opts: {
         "POST",
       );
     }
-    return ok ? { ok: true } : { ok: false, error: "Hermes no ha podido guardar el cambio." };
+    return ok ? { ok: true } : { ok: false, error: "Hermes couldn’t save the change." };
   } catch {
-    return { ok: false, error: "Hermes no ha podido guardar el cambio." };
+    return { ok: false, error: "Hermes couldn’t save the change." };
   }
 }

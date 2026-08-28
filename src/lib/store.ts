@@ -21,8 +21,10 @@ import type {
 } from "./types";
 import type { GatewayMeta, GatewayPlace, GatewayStatus, HermesModelOption } from "./gateway";
 import { forgetHermesSecret, unionHermesModels } from "./gateway";
-import { uid } from "./utils";
+import type { Locale } from "./i18n";
+import { isLocale } from "./i18n";
 import { cockpitIsOwner, cockpitUserId, COCKPIT_STORE } from "./auth/cockpit-user";
+import { uid } from "./utils";
 
 const welcomeId = "welcome";
 const freshId = "fresh";
@@ -30,7 +32,7 @@ const freshId = "fresh";
 function seedConversation(): Conversation {
   return {
     id: welcomeId,
-    title: "Bienvenida",
+    title: "Welcome",
     createdAt: Date.now() - 1000 * 60 * 8,
     updatedAt: Date.now() - 1000 * 60 * 8,
     messages: [
@@ -47,7 +49,7 @@ function seedConversation(): Conversation {
 function seedBlankChat(): Conversation {
   return {
     id: freshId,
-    title: "Nuevo chat",
+    title: "New chat",
     createdAt: Date.now(),
     updatedAt: Date.now(),
     messages: [],
@@ -63,6 +65,7 @@ interface HermesState {
   theme: Theme;
   fontSize: FontSize;
   accent: Accent;
+  locale: Locale;
   sidebarCollapsed: boolean;
   focusMode: boolean;
   compact: boolean;
@@ -92,6 +95,7 @@ interface HermesState {
   setTheme: (theme: Theme) => void;
   setFontSize: (size: FontSize) => void;
   setAccent: (accent: Accent) => void;
+  setLocale: (locale: Locale) => void;
   setSidebarCollapsed: (v: boolean) => void;
   setFocusMode: (v: boolean) => void;
   toggleFocus: () => void;
@@ -143,6 +147,7 @@ export const useHermes = create<HermesState>()(
       theme: "light",
       fontSize: "md",
       accent: "stone",
+      locale: "en",
       sidebarCollapsed: false,
       focusMode: false,
       compact: false,
@@ -164,9 +169,9 @@ export const useHermes = create<HermesState>()(
         {
           id: "a1",
           kind: "skill",
-          title: "Instalar docker-management no cambia nada",
+          title: "Installing docker-management changes nothing",
           detail:
-            "La skill ya está en el catálogo. Hermes quiere marcarla como de uso diario y anclarla.",
+            "The skill is already in the catalog. Hermes wants to mark it as daily-use and pin it.",
           targetId: "docker-management",
         },
       ],
@@ -181,6 +186,7 @@ export const useHermes = create<HermesState>()(
       setTheme: (theme) => set({ theme }),
       setFontSize: (fontSize) => set({ fontSize }),
       setAccent: (accent) => set({ accent }),
+      setLocale: (locale) => set({ locale }),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       setFocusMode: (v) => set({ focusMode: v }),
       toggleFocus: () => set({ focusMode: !get().focusMode }),
@@ -239,7 +245,7 @@ export const useHermes = create<HermesState>()(
         const id = uid();
         const conv: Conversation = {
           id,
-          title: "Nuevo chat",
+          title: "New chat",
           createdAt: Date.now(),
           updatedAt: Date.now(),
           messages: [],
@@ -284,10 +290,10 @@ export const useHermes = create<HermesState>()(
                   ...c,
                   updatedAt: Date.now(),
                   title:
-                    c.title === "Nuevo chat" &&
+                    (c.title === "New chat" || c.title === "Nuevo chat") &&
                     message.role === "user" &&
                     !message.content.startsWith("/")
-                      ? message.content.slice(0, 42) || "Nuevo chat"
+                      ? message.content.slice(0, 42) || "New chat"
                       : c.title,
                   messages: [...c.messages, message],
                 }
@@ -462,8 +468,8 @@ export const useHermes = create<HermesState>()(
           if (next.gatewayOn && next.gatewayMeta && typeof next.gatewayMeta === "object") {
             next.gatewayStatus = "live";
           }
-          if (typeof next.modelProvider !== "string") {
-            next.modelProvider = "";
+          if (!isLocale(next.locale)) {
+            next.locale = "en";
           }
           if (
             next.model === "gpt-5.6-luna" ||
@@ -501,6 +507,7 @@ export const useHermes = create<HermesState>()(
         theme: s.theme,
         fontSize: s.fontSize,
         accent: s.accent,
+        locale: s.locale,
         sidebarCollapsed: s.sidebarCollapsed,
         focusMode: s.focusMode,
         compact: s.compact,

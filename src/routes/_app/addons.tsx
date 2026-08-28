@@ -1,33 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CatalogPage } from "@/components/catalog-page";
 import { mutateHermes } from "@/lib/hermes-live";
+import { localizeError } from "@/lib/i18n";
 import { useHermesLive } from "@/lib/use-hermes-live";
+import { useLocale, useT } from "@/lib/use-i18n";
 
 export const Route = createFileRoute("/_app/addons")({
   component: AddonsPage,
 });
 
 function AddonsPage() {
+  const t = useT();
+  const locale = useLocale();
   const { data, error, loading, setData } = useHermesLive();
   const rows = data?.mcp ?? [];
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       {loading ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">Leyendo los complementos de Hermes…</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">{t("addons.loading")}</p>
       ) : error ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">{error}</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">{localizeError(locale, error)}</p>
       ) : (
         <CatalogPage
-          kicker="MCP"
-          title="Complementos"
-          description={
-            data?.writable
-              ? "Servidores MCP configurados en tu Hermes."
-              : "Servidores MCP configurados en tu Hermes. Conecta el agente para activarlos o apagarlos desde aquí."
-          }
+          kicker={t("addons.kicker")}
+          title={t("addons.title")}
+          description={data?.writable ? t("addons.descOn") : t("addons.descOff")}
           groups={[{ id: "mcp", label: "MCP" }]}
-          empty="No hay servidores MCP configurados."
+          empty={t("addons.empty")}
           rows={rows.map((a) => ({
             id: a.id,
             title: a.name,
@@ -57,7 +57,7 @@ function AddonsPage() {
                 }
               : undefined
           }
-          chatPrompt={(row) => `Usa el MCP ${row.title} para `}
+          chatPrompt={(row) => t("addons.prompt", { title: row.title })}
         />
       )}
     </div>

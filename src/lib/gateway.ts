@@ -73,13 +73,13 @@ export class GatewayError extends Error {
   }
 }
 
-const FAIL = "No se ha podido conectar.";
+const FAIL = "Couldn’t connect.";
 
 export function friendlyProbeError(code?: ProbeCode): string {
-  if (code === "unauthorized") return "La clave no es correcta.";
-  if (code === "invalid") return "Revisa la dirección.";
+  if (code === "unauthorized") return "The key is not correct.";
+  if (code === "invalid") return "Check the address.";
   if (code === "cors") {
-    return "Este navegador no alcanza tu Hermes. Ábrelo en el mismo ordenador, o deja que Hermes acepte este origen (CORS).";
+    return "This browser can’t reach your Hermes. Open it on the same computer, or let Hermes allow this origin (CORS).";
   }
   return FAIL;
 }
@@ -239,7 +239,7 @@ export function prettyProvider(value?: string): string {
     openrouter: "OpenRouter",
     "openai-codex": "Codex",
     "openai-api": "OpenAI",
-    custom: "Personalizado",
+    custom: "Custom",
   };
   return labels[key] ?? value;
 }
@@ -755,8 +755,8 @@ export async function listHermesMemory(opts?: { signal?: AbortSignal }): Promise
     });
     const data = (await res.json()) as HermesMemoryResult;
     if (data && data.ok && Array.isArray(data.profiles)) return data;
-    return { ok: false, error: "No se ha podido leer la memoria de Hermes." };
+    return { ok: false, error: "Couldn’t read Hermes memory." };
   } catch {
-    return { ok: false, error: "No se ha podido leer la memoria de Hermes." };
+    return { ok: false, error: "Couldn’t read Hermes memory." };
   }
 }

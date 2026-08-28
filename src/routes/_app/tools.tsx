@@ -1,16 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CatalogPage } from "@/components/catalog-page";
 import { mutateHermes } from "@/lib/hermes-live";
+import { localizeError } from "@/lib/i18n";
 import { useHermesLive } from "@/lib/use-hermes-live";
+import { useLocale, useT } from "@/lib/use-i18n";
 
 export const Route = createFileRoute("/_app/tools")({
   component: ToolsPage,
 });
 
 function ToolsPage() {
+  const t = useT();
+  const locale = useLocale();
   const { data, error, loading, setData } = useHermesLive();
   const rows = data?.toolsets ?? [];
-  const groups = [...new Set(rows.map((t) => t.platform || "cli"))].map((id) => ({
+  const groups = [...new Set(rows.map((tool) => tool.platform || "cli"))].map((id) => ({
     id,
     label: id === "cli" ? "CLI" : id,
   }));
@@ -18,51 +22,47 @@ function ToolsPage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       {loading ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">Leyendo las herramientas de Hermes…</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">{t("tools.loading")}</p>
       ) : error ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">{error}</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">{localizeError(locale, error)}</p>
       ) : (
         <CatalogPage
-          kicker="Tools"
-          title="Herramientas"
-          description={
-            data?.writable
-              ? "Toolsets de tu Hermes. Los del núcleo y los que tienes configurados ahora."
-              : "Toolsets de tu Hermes. Conecta el agente para activarlos o apagarlos desde aquí."
-          }
+          kicker={t("tools.kicker")}
+          title={t("tools.title")}
+          description={data?.writable ? t("tools.descOn") : t("tools.descOff")}
           groups={groups}
-          empty="Hermes no tiene toolsets visibles."
-          rows={rows.map((t) => ({
-            id: t.id,
-            title: t.label,
-            name: t.name,
-            description: t.description,
-            group: t.platform || "cli",
-            groupLabel: t.platform === "cli" || !t.platform ? "CLI" : t.platform,
-            meta: t.tools.slice(0, 6).join(", ") || (t.configured === false ? "Sin claves" : undefined),
-            enabled: t.enabled,
+          empty={t("tools.empty")}
+          rows={rows.map((tool) => ({
+            id: tool.id,
+            title: tool.label,
+            name: tool.name,
+            description: tool.description,
+            group: tool.platform || "cli",
+            groupLabel: tool.platform === "cli" || !tool.platform ? "CLI" : tool.platform,
+            meta: tool.tools.slice(0, 6).join(", ") || (tool.configured === false ? t("tools.noKeys") : undefined),
+            enabled: tool.enabled,
           }))}
           onToggle={
             data?.writable
               ? (id) => {
-                  const row = rows.find((t) => t.id === id);
+                  const row = rows.find((tool) => tool.id === id);
                   if (!row || !data) return;
                   const enabled = !row.enabled;
                   setData({
                     ...data,
-                    toolsets: data.toolsets.map((t) => (t.id === id ? { ...t, enabled } : t)),
+                    toolsets: data.toolsets.map((tool) => (tool.id === id ? { ...tool, enabled } : tool)),
                   });
                   void mutateHermes({ action: "toggle-toolset", name: row.name, enabled }).then((r) => {
                     if (r.ok) return;
                     setData({
                       ...data,
-                      toolsets: data.toolsets.map((t) => (t.id === id ? { ...t, enabled: row.enabled } : t)),
+                      toolsets: data.toolsets.map((tool) => (tool.id === id ? { ...tool, enabled: row.enabled } : tool)),
                     });
                   });
                 }
               : undefined
           }
-          chatPrompt={(row) => `Usa ${row.name} para `}
+          chatPrompt={(row) => t("tools.prompt", { name: row.name })}
         />
       )}
     </div>

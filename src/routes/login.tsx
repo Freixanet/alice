@@ -12,6 +12,8 @@ import {
   type SocialProviderId,
 } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import type { MsgKey } from "@/lib/i18n";
+import { useT } from "@/lib/use-i18n";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -21,6 +23,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
+  const t = useT();
   const { user, isPending } = useCurrentUserState();
   const navigate = useNavigate();
   const { error: oauthError } = Route.useSearch();
@@ -30,7 +33,7 @@ function LoginPage() {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState<"form" | SocialProviderId | null>(null);
   const [error, setError] = useState<string | null>(
-    oauthError ? friendlyOAuthError(oauthError) : null,
+    oauthError ? friendlyOAuthError(oauthError, t) : null,
   );
 
   if (!authEnabled) return <Navigate to="/" />;
@@ -48,7 +51,7 @@ function LoginPage() {
           name: name.trim() || email.trim().split("@")[0] || "Alice",
         });
         if (err) {
-          setError(friendlyAuthError(err.message));
+          setError(friendlyAuthError(err.message, t));
           return;
         }
         if (data?.token) setBearerToken(data.token);
@@ -58,7 +61,7 @@ function LoginPage() {
           password,
         });
         if (err) {
-          setError(friendlyAuthError(err.message));
+          setError(friendlyAuthError(err.message, t));
           return;
         }
         if (data?.token) setBearerToken(data.token);
@@ -66,7 +69,7 @@ function LoginPage() {
       await authClient.getSession();
       await navigate({ to: "/" });
     } catch {
-      setError("No se ha podido entrar.");
+      setError(t("login.fail"));
     } finally {
       setBusy(null);
     }
@@ -78,11 +81,7 @@ function LoginPage() {
     try {
       await signInWithSocial(provider);
     } catch {
-      setError(
-        provider === "google"
-          ? "No se ha podido entrar con Google."
-          : "No se ha podido entrar con Apple.",
-      );
+      setError(provider === "google" ? t("login.failGoogle") : t("login.failApple"));
       setBusy(null);
     }
   }
@@ -95,10 +94,10 @@ function LoginPage() {
           <Wordmark className="text-4xl" />
         </div>
         <h1 className="font-serif text-3xl tracking-tight">
-          {mode === "in" ? "Entra" : "Crea tu cuenta"}
+          {mode === "in" ? t("login.titleIn") : t("login.titleUp")}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Cada cuenta conecta su propio Hermes. Crea una o entra.
+          {t("login.subtitle")}
         </p>
         <div className="mt-6 flex flex-col gap-2">
           {LOGIN_SOCIAL.filter((provider) => provider.id !== "apple").map((provider) => (
@@ -110,20 +109,24 @@ function LoginPage() {
               onClick={() => void continueWith(provider.id)}
             >
               {provider.id === "google" ? <GoogleMark /> : <AppleMark />}
-              {busy === provider.id ? "Un momento…" : `Continuar con ${provider.label}`}
+              {busy === provider.id
+                ? t("login.wait")
+                : provider.id === "google"
+                  ? t("login.continueGoogle")
+                  : t("login.continueApple")}
             </Button>
           ))}
         </div>
         <div className="relative my-6">
           <div className="h-px bg-border" />
           <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-xs text-muted-foreground">
-            o
+            {t("login.or")}
           </span>
         </div>
         <form className="flex flex-col gap-3" onSubmit={(e) => void submit(e)}>
           {mode === "up" ? (
             <label className="flex flex-col gap-1.5 text-sm">
-              Nombre
+              {t("login.name")}
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -132,7 +135,7 @@ function LoginPage() {
             </label>
           ) : null}
           <label className="flex flex-col gap-1.5 text-sm">
-            Correo
+            {t("login.email")}
             <Input
               type="email"
               value={email}
@@ -142,7 +145,7 @@ function LoginPage() {
             />
           </label>
           <label className="flex flex-col gap-1.5 text-sm">
-            Contraseña
+            {t("login.password")}
             <Input
               type="password"
               value={password}
@@ -154,11 +157,11 @@ function LoginPage() {
           </label>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <Button type="submit" disabled={busy !== null || !email.trim() || password.length < 8}>
-            {busy === "form" ? "Un momento…" : mode === "in" ? "Entrar" : "Crear cuenta"}
+            {busy === "form" ? t("login.wait") : mode === "in" ? t("login.enter") : t("login.create")}
           </Button>
         </form>
         <p className="mt-4 text-sm text-muted-foreground">
-          {mode === "in" ? "¿Aún no tienes cuenta?" : "¿Ya tienes cuenta?"}{" "}
+          {mode === "in" ? t("login.noAccount") : t("login.hasAccount")}{" "}
           <button
             type="button"
             className="text-foreground underline-offset-2 hover:underline"
@@ -167,7 +170,7 @@ function LoginPage() {
               setError(null);
             }}
           >
-            {mode === "in" ? "Créala" : "Entra"}
+            {mode === "in" ? t("login.createIt") : t("login.signInInstead")}
           </button>
         </p>
       </div>
@@ -206,20 +209,20 @@ function AppleMark() {
   );
 }
 
-function friendlyOAuthError(code: string) {
+function friendlyOAuthError(code: string, t: (key: MsgKey) => string) {
   const m = code.toLowerCase();
   if (m.includes("state") || m.includes("please_restart")) {
-    return "Google no ha podido cerrar el login. Vuelve a pulsar Continuar con Google.";
+    return t("login.googleRestart");
   }
-  if (m.includes("denied") || m.includes("access_denied")) return "Has cancelado el acceso de Google.";
-  return "No se ha podido entrar con Google.";
+  if (m.includes("denied") || m.includes("access_denied")) return t("login.googleDenied");
+  return t("login.failGoogle");
 }
 
-function friendlyAuthError(message?: string) {
+function friendlyAuthError(message: string | undefined, t: (key: MsgKey) => string) {
   const m = (message || "").toLowerCase();
-  if (m.includes("already") || m.includes("exists")) return "Ese correo ya tiene cuenta.";
+  if (m.includes("already") || m.includes("exists")) return t("login.emailExists");
   if (m.includes("invalid") || m.includes("credential") || m.includes("password")) {
-    return "El correo o la contraseña no coinciden.";
+    return t("login.badCredentials");
   }
-  return "No se ha podido entrar.";
+  return t("login.fail");
 }

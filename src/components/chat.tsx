@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Camera, ChevronDown, Image as ImageIcon, Paperclip, Plus } from "lucide-react";
+import { Camera, ChevronDown, Image as ImageIcon, Paperclip, Plus, RotateCw } from "lucide-react";
 import { Mark } from "@/components/logo";
 import {
   DropdownMenu,
@@ -22,6 +22,8 @@ import {
 import { getDeviceSessionKey, streamHermesDirect } from "@/lib/hermes-direct";
 import { authHeaders } from "@/lib/auth/client";
 import { matchSlash } from "@/lib/slash";
+import { displayMessageContent, slashHint, t as tr } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/use-i18n";
 import { useHermes } from "@/lib/store";
 import type { Attachment, Message } from "@/lib/types";
 import { cn, uid } from "@/lib/utils";
@@ -56,11 +58,16 @@ export function ChatView() {
   const filesRef = useRef<HTMLInputElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const t = useT();
+  const locale = useLocale();
   const conv = conversations.find((c) => c.id === activeId) ?? conversations[0];
   const slash = matchSlash(draft);
   const live = gatewayOn && gatewayStatus === "live";
   const empty = !conv || conv.messages.length === 0;
   const firstIsUser = Boolean(conv?.messages[0] && conv.messages[0].role === "user");
+  const lastAssistantId = conv
+    ? [...conv.messages].reverse().find((msg) => msg.role === "assistant")?.id
+    : undefined;
   const modelChoices = live ? (gatewayMeta?.models ?? []) : [];
   const currentChoice =
     modelChoices.find((m) => m.id === model && (!provider || m.provider === provider)) ??
@@ -131,6 +138,12 @@ export function ChatView() {
       newChat();
       return;
     }
+    if (text === "/retry") {
+      setDraft("");
+      const last = [...conv.messages].reverse().find((m) => m.role === "assistant" && !m.pending);
+      if (last && (last.error || last.incomplete)) void retry(last.id);
+      return;
+    }
     const user: Message = {
       id: uid(),
       role: "user",
@@ -149,16 +162,56 @@ export function ChatView() {
     });
     setDraft("");
     setFiles([]);
+    await runStream(conv.id, assistantId, [...conv.messages, user]);
+  }
+
+  async function retry(assistantId: string) {
+    if (sending || !conv) return;
+    const latest =
+      useHermes.getState().conversations.find((c) => c.id === conv.id) ?? conv;
+    const idx = latest.messages.findIndex((m) => m.id === assistantId);
+    if (idx < 0) return;
+    const history = latest.messages.slice(0, idx);
+    if (!history.some((m) => m.role === "user")) return;
+    patchMessage(conv.id, assistantId, {
+      content: "",
+      pending: true,
+      error: undefined,
+      incomplete: undefined,
+      tools: undefined,
+    });
+    await runStream(conv.id, assistantId, history);
+  }
+
+  async function runStream(
+    conversationId: string,
+    assistantId: string,
+    history: Message[],
+  ) {
     setSending(true);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    const payload = history
+      .filter((m) => m.content.trim())
+      .map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }));
+    const fail = (message: string) => {
+      patchMessage(conversationId, assistantId, {
+        pending: false,
+        error: message,
+        incomplete: undefined,
+        content: message,
+      });
+    };
     try {
       const apply = (ev: ChatEvent, acc: { content: string; tools: NonNullable<Message["tools"]> }) => {
         if (ev.type === "delta") {
           const chunk = acc.content ? ev.text : ev.text.replace(/^\s+/, "");
           if (!chunk) return "continue" as const;
           acc.content += chunk;
-          patchMessage(conv.id, assistantId, { content: acc.content, pending: true });
+          patchMessage(conversationId, assistantId, { content: acc.content, pending: true });
           return "continue" as const;
         }
         if (ev.type === "tool") {
@@ -168,12 +221,13 @@ export function ChatView() {
             status: ev.status,
             detail: ev.detail,
           });
-          patchMessage(conv.id, assistantId, { tools: [...acc.tools], pending: true });
+          patchMessage(conversationId, assistantId, { tools: [...acc.tools], pending: true });
           return "continue" as const;
         }
-        patchMessage(conv.id, assistantId, {
+        patchMessage(conversationId, assistantId, {
           pending: false,
           error: ev.message,
+          incomplete: undefined,
           content: acc.content || ev.message,
         });
         return "stop" as const;
@@ -184,32 +238,24 @@ export function ChatView() {
       if (gatewayPlace === "device") {
         const key = getDeviceSessionKey();
         if (!key || !gatewayUrl) {
-          patchMessage(conv.id, assistantId, {
-            pending: false,
-            error: "Conecta tu Hermes en este equipo.",
-            content: "Conecta tu Hermes en este equipo.",
-          });
+          fail(tr("en", "error.connectDevice"));
           return;
         }
         for await (const ev of streamHermesDirect({
           url: gatewayUrl,
           key,
-          conversationId: conv.id,
+          conversationId,
           model,
           provider,
-          messages: [...conv.messages, user]
-            .filter((m) => m.content.trim())
-            .map((m) => ({
-              role: m.role as "user" | "assistant",
-              content: m.content,
-            })),
+          messages: payload,
           signal: ctrl.signal,
         })) {
           if (apply(ev, acc) === "stop") return;
         }
-        patchMessage(conv.id, assistantId, {
-          content: acc.content || "Sin respuesta.",
+        patchMessage(conversationId, assistantId, {
+          content: acc.content || tr("en", "chat.noReply"),
           pending: false,
+          incomplete: !acc.content,
         });
       } else {
       const res = await fetch("/api/chat", {
@@ -217,23 +263,19 @@ export function ChatView() {
         headers: authHeaders({ "Content-Type": "application/json" }),
         signal: ctrl.signal,
         body: JSON.stringify({
-          conversationId: conv.id,
+          conversationId,
           model,
           provider,
-          messages: [...conv.messages, user]
-            .filter((m) => m.content.trim())
-            .map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
+          messages: payload,
         }),
       });
+      const ct = res.headers.get("content-type") ?? "";
       if (!res.body) {
-        patchMessage(conv.id, assistantId, {
-          pending: false,
-          error: "No se ha podido responder.",
-          content: "No se ha podido responder.",
-        });
+        fail(tr("en", "error.noReply"));
+        return;
+      }
+      if (!res.ok && ct.includes("application/json") && !ct.includes("ndjson")) {
+        fail(tr("en", "error.noReply"));
         return;
       }
       const reader = res.body.getReader();
@@ -255,7 +297,7 @@ export function ChatView() {
               const chunk = content ? ev.text : ev.text.replace(/^\s+/, "");
               if (!chunk) continue;
               content += chunk;
-              patchMessage(conv.id, assistantId, { content, pending: true });
+              patchMessage(conversationId, assistantId, { content, pending: true });
             } else if (ev.type === "tool") {
               tools.push({
                 id: uid(),
@@ -263,11 +305,12 @@ export function ChatView() {
                 status: ev.status,
                 detail: ev.detail,
               });
-              patchMessage(conv.id, assistantId, { tools: [...tools], pending: true });
+              patchMessage(conversationId, assistantId, { tools: [...tools], pending: true });
             } else if (ev.type === "error") {
-              patchMessage(conv.id, assistantId, {
+              patchMessage(conversationId, assistantId, {
                 pending: false,
                 error: ev.message,
+                incomplete: undefined,
                 content: content || ev.message,
               });
               return;
@@ -277,20 +320,17 @@ export function ChatView() {
           }
         }
       }
-      patchMessage(conv.id, assistantId, {
-        content: content || "Sin respuesta.",
+      patchMessage(conversationId, assistantId, {
+        content: content || tr("en", "chat.noReply"),
         pending: false,
+        incomplete: !content,
       });
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") {
-        patchMessage(conv.id, assistantId, { pending: false });
+        patchMessage(conversationId, assistantId, { pending: false, incomplete: true });
       } else {
-        patchMessage(conv.id, assistantId, {
-          pending: false,
-          error: "No se ha podido conectar.",
-          content: "No se ha podido conectar.",
-        });
+        fail(tr("en", "error.connect"));
       }
     } finally {
       setSending(false);
@@ -352,10 +392,10 @@ export function ChatView() {
         <div className="flex flex-col items-center px-6 text-center">
           <Mark className="size-7 text-foreground" />
           <h1 className="mt-5 font-serif text-3xl tracking-tight sm:text-4xl">
-            ¿En qué trabajamos?
+            {t("chat.emptyTitle")}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Hablas con Alice. Una cosa cada vez.
+            {t("chat.emptyHint")}
           </p>
         </div>
       ) : (
@@ -366,9 +406,17 @@ export function ChatView() {
               firstIsUser ? "pt-[10vh]" : "pt-8",
             )}
           >
-            {conv.messages.map((m) => {
+            {conv.messages.map((m, i) => {
               const text =
-                m.role === "assistant" ? m.content.replace(/^\s+/, "") : m.content;
+                m.role === "assistant"
+                  ? displayMessageContent(locale, m.content.replace(/^\s+/, ""))
+                  : m.content;
+              const canRetry =
+                m.role === "assistant" &&
+                !m.pending &&
+                Boolean(m.error || m.incomplete) &&
+                lastAssistantId === m.id &&
+                conv.messages.slice(0, i).some((msg) => msg.role === "user");
               return (
                 <article
                   key={m.id}
@@ -391,6 +439,18 @@ export function ChatView() {
                     {text}
                     {m.pending ? <ReplyPending trail={Boolean(text)} /> : null}
                   </div>
+                  {canRetry ? (
+                    <button
+                      type="button"
+                      disabled={sending}
+                      onClick={() => void retry(m.id)}
+                      aria-label={t("chat.retry")}
+                      className="inline-flex w-fit items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground disabled:opacity-40"
+                    >
+                      <RotateCw className="size-3" />
+                      {t("chat.retry")}
+                    </button>
+                  ) : null}
                 </article>
               );
             })}
@@ -417,7 +477,7 @@ export function ChatView() {
                     onClick={() => setDraft(item.cmd + " ")}
                   >
                     <span className="font-mono text-xs">{item.cmd}</span>
-                    <span className="text-muted-foreground">{item.hint}</span>
+                    <span className="text-muted-foreground">{slashHint(locale, item.cmd)}</span>
                   </button>
                 </li>
               ))}
@@ -445,7 +505,7 @@ export function ChatView() {
                   void send();
                 }
               }}
-              placeholder="Habla con Alice..."
+              placeholder={t("chat.placeholder")}
               rows={2}
               className="min-h-[2.5rem] w-full bg-transparent py-1 pl-2 pr-0 text-[15px] placeholder:text-muted-foreground/70"
             />
@@ -492,7 +552,7 @@ export function ChatView() {
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    aria-label="Añadir"
+                    aria-label={t("chat.add")}
                     className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <Plus className="size-4" />
@@ -505,7 +565,7 @@ export function ChatView() {
                     }}
                   >
                     <Camera className="size-4" />
-                    Cámara
+                    {t("chat.camera")}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => {
@@ -513,7 +573,7 @@ export function ChatView() {
                     }}
                   >
                     <ImageIcon className="size-4" />
-                    Galería
+                    {t("chat.gallery")}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => {
@@ -521,7 +581,7 @@ export function ChatView() {
                     }}
                   >
                     <Paperclip className="size-4" />
-                    Archivos
+                    {t("chat.files")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -551,7 +611,7 @@ export function ChatView() {
                 >
                   {!live ? (
                     <DropdownMenuItem onSelect={() => void navigate({ to: "/connect" })}>
-                      Conecta tu Hermes
+                      {t("chat.connectHermes")}
                     </DropdownMenuItem>
                   ) : (
                     <>
@@ -568,14 +628,14 @@ export function ChatView() {
                             }
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
-                          placeholder="Escribe el modelo..."
+                          placeholder={t("chat.modelPlaceholder")}
                           className="h-8 px-2"
                           autoComplete="off"
                         />
                       </div>
                       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                         {modelsLoading && modelChoices.length === 0 ? (
-                          <DropdownMenuItem disabled>Cargando modelos…</DropdownMenuItem>
+                          <DropdownMenuItem disabled>{t("chat.loadingModels")}</DropdownMenuItem>
                         ) : visibleGroups.length === 0 ? (
                           <DropdownMenuItem
                             onSelect={() => {
@@ -583,8 +643,8 @@ export function ChatView() {
                             }}
                           >
                             {modelQuery.trim()
-                              ? `Usar ${modelQuery.trim()}`
-                              : "Ningún modelo en Hermes"}
+                              ? t("chat.useModel", { model: modelQuery.trim() })
+                              : t("chat.noModels")}
                           </DropdownMenuItem>
                         ) : (
                           visibleGroups.map((group, i) => (
@@ -613,7 +673,7 @@ export function ChatView() {
               </DropdownMenu>
               <button
                 type="button"
-                aria-label={sending ? "Parar" : "Enviar"}
+                aria-label={sending ? t("chat.stop") : t("chat.send")}
                 disabled={!sending && !draft.trim()}
                 onClick={() => (sending ? abortRef.current?.abort() : void send())}
                 className="ml-auto grid size-9 place-items-center rounded-full bg-muted text-foreground disabled:opacity-40"
@@ -637,11 +697,12 @@ export function ChatView() {
 }
 
 function ReplyPending({ trail = false }: { trail?: boolean }) {
+  const t = useT();
   return (
     <span
       className={cn("alice-typing", trail && "alice-typing-trail")}
       role="status"
-      aria-label="Alice está respondiendo"
+      aria-label={t("chat.pending")}
     >
       <span aria-hidden />
       <span aria-hidden />

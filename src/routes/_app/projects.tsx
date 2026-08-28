@@ -1,13 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageHeader } from "@/components/catalog-page";
 import { Badge } from "@/components/ui/badge";
+import { localizeError } from "@/lib/i18n";
 import { useHermesLive } from "@/lib/use-hermes-live";
+import { useLocale, useT } from "@/lib/use-i18n";
 
 export const Route = createFileRoute("/_app/projects")({
   component: ProjectsPage,
 });
 
 function ProjectsPage() {
+  const t = useT();
+  const locale = useLocale();
   const { data, error, loading } = useHermesLive();
   const projects = (data?.projects ?? []).filter((p) => !p.archived);
 
@@ -15,19 +19,17 @@ function ProjectsPage() {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 pb-20 sm:px-6">
         <PageHeader
-          kicker="Hermes"
-          title="Proyectos"
-          description="Los proyectos nombrados de tu Hermes: una carpeta, un nombre, el contexto con el que trabaja."
+          kicker={t("projects.kicker")}
+          title={t("projects.title")}
+          description={t("projects.description")}
         />
         {loading ? (
-          <p className="text-sm text-muted-foreground">Leyendo los proyectos de Hermes…</p>
+          <p className="text-sm text-muted-foreground">{t("projects.loading")}</p>
         ) : error ? (
-          <p className="text-sm text-muted-foreground">{error}</p>
+          <p className="text-sm text-muted-foreground">{localizeError(locale, error)}</p>
         ) : projects.length === 0 ? (
           <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
-            {data?.writable
-              ? "Hermes no tiene proyectos nombrados todavía."
-              : "Conecta tu Hermes para ver sus proyectos."}
+            {data?.writable ? t("projects.emptyOn") : t("projects.emptyOff")}
           </div>
         ) : (
           <ul className="flex flex-col gap-2">

@@ -9,28 +9,29 @@ import {
   Sparkles,
   Wrench,
 } from "lucide-react";
+import type { MsgKey } from "./i18n";
 
 export type NavItem = {
   to: string;
-  label: string;
-  hint: string;
+  labelKey: MsgKey;
+  hintKey: MsgKey;
   icon: LucideIcon;
   shortcut?: string;
 };
 
 export const NAV: NavItem[] = [
-  { to: "/skills", label: "Habilidades", hint: "Skills", icon: Sparkles },
-  { to: "/tools", label: "Herramientas", hint: "Tools", icon: Wrench },
-  { to: "/addons", label: "Complementos", hint: "MCP", icon: Puzzle },
-  { to: "/projects", label: "Proyectos", hint: "Carpetas de Hermes", icon: FolderKanban },
-  { to: "/memory", label: "Memoria", hint: "Lo que recuerda", icon: Blocks },
-  { to: "/cron", label: "Tareas", hint: "Cron", icon: Clock },
-  { to: "/connect", label: "Conectar", hint: "Tu agente, canales", icon: Cable },
+  { to: "/skills", labelKey: "nav.skills", hintKey: "nav.skillsHint", icon: Sparkles },
+  { to: "/tools", labelKey: "nav.tools", hintKey: "nav.toolsHint", icon: Wrench },
+  { to: "/addons", labelKey: "nav.addons", hintKey: "nav.addonsHint", icon: Puzzle },
+  { to: "/projects", labelKey: "nav.projects", hintKey: "nav.projectsHint", icon: FolderKanban },
+  { to: "/memory", labelKey: "nav.memory", hintKey: "nav.memoryHint", icon: Blocks },
+  { to: "/cron", labelKey: "nav.cron", hintKey: "nav.cronHint", icon: Clock },
+  { to: "/connect", labelKey: "nav.connect", hintKey: "nav.connectHint", icon: Cable },
 ];
 
 export const SETTINGS_NAV: NavItem = {
   to: "/settings",
-  label: "Ajustes",
-  hint: "Perfil y opciones",
+  labelKey: "nav.settings",
+  hintKey: "nav.settingsHint",
   icon: Settings,
 };

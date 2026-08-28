@@ -11,24 +11,24 @@ import type {
 } from "./hermes-live";
 
 const SKILL_GROUPS: Record<string, string> = {
-  "software-development": "Desarrollo",
-  productivity: "Productividad",
-  research: "Investigación",
-  creative: "Creativo",
+  "software-development": "Development",
+  productivity: "Productivity",
+  research: "Research",
+  creative: "Creative",
   github: "GitHub",
   mlops: "MLOps",
-  "autonomous-ai-agents": "Agentes",
+  "autonomous-ai-agents": "Agents",
   apple: "Apple",
-  email: "Correo",
-  health: "Salud",
+  email: "Email",
+  health: "Health",
   media: "Media",
-  "note-taking": "Notas",
-  "smart-home": "Casa",
+  "note-taking": "Notes",
+  "smart-home": "Home",
   "social-media": "Social",
-  "data-science": "Datos",
+  "data-science": "Data",
   mcp: "MCP",
-  fitness: "Salud",
-  "hermes-desktop-plugins": "Escritorio",
+  fitness: "Health",
+  "hermes-desktop-plugins": "Desktop",
 };
 
 export function asRec(value: unknown): Record<string, unknown> {

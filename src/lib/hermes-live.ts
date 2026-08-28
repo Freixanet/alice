@@ -108,7 +108,7 @@ export async function listHermesLive(opts?: { signal?: AbortSignal }): Promise<H
       const { getDeviceSessionKey, listHermesLiveDirect } = await import("./hermes-direct");
       const url = useHermes.getState().gatewayUrl;
       const key = getDeviceSessionKey();
-      if (!url || !key) return { ok: false, error: "Conecta tu Hermes en este equipo." };
+      if (!url || !key) return { ok: false, error: "Connect your Hermes on this computer." };
       return listHermesLiveDirect({ url, key, signal: opts?.signal });
     }
     const res = await fetch("/api/hermes", {
@@ -122,10 +122,10 @@ export async function listHermesLive(opts?: { signal?: AbortSignal }): Promise<H
     const message =
       data && "error" in data && typeof data.error === "string" && data.error.trim()
         ? data.error
-        : "No se ha podido leer el estado de Hermes.";
+        : "Couldn’t read Hermes status.";
     return { ok: false, error: message };
   } catch {
-    return { ok: false, error: "No se ha podido leer el estado de Hermes." };
+    return { ok: false, error: "Couldn’t read Hermes status." };
   }
 }
 
@@ -142,7 +142,7 @@ export async function mutateHermes(opts: {
       const { getDeviceSessionKey, mutateHermesDirect } = await import("./hermes-direct");
       const url = useHermes.getState().gatewayUrl;
       const key = getDeviceSessionKey();
-      if (!url || !key) return { ok: false, error: "Conecta tu Hermes en este equipo." };
+      if (!url || !key) return { ok: false, error: "Connect your Hermes on this computer." };
       return mutateHermesDirect({ url, key, ...opts });
     }
     const res = await fetch("/api/hermes", {
@@ -153,6 +153,6 @@ export async function mutateHermes(opts: {
     const data = (await res.json()) as { ok?: boolean; error?: string };
     return { ok: Boolean(data.ok), error: data.error };
   } catch {
-    return { ok: false, error: "Hermes no ha podido guardar el cambio." };
+    return { ok: false, error: "Hermes couldn’t save the change." };
   }
 }
