@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { MoreHorizontal, PanelLeft, Pencil, Pin, PinOff, Search, Share, SquarePen, Trash2, type LucideIcon } from "lucide-react";
 import { Mark, Wordmark } from "@/components/logo";
@@ -62,6 +62,7 @@ export function AppShell() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const mobileSwipeStart = useRef<{ x: number; y: number } | null>(null);
   const t = useT();
   const settingsFromRoute = pathname === "/settings";
   const settingsVisible = settingsOpen || settingsFromRoute;
@@ -104,9 +105,37 @@ export function AppShell() {
     void navigate({ to: "/" });
   }
 
+  function startMobileSidebarSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    if (mobileSidebarOpen || !event.isPrimary || event.button !== 0) {
+      mobileSwipeStart.current = null;
+      return;
+    }
+    mobileSwipeStart.current = { x: event.clientX, y: event.clientY };
+  }
+
+  function finishMobileSidebarSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    const start = mobileSwipeStart.current;
+    mobileSwipeStart.current = null;
+    if (!start || !event.isPrimary || mobileSidebarOpen || window.matchMedia("(min-width: 768px)").matches) {
+      return;
+    }
+    const horizontal = event.clientX - start.x;
+    const vertical = Math.abs(event.clientY - start.y);
+    if (horizontal >= 64 && horizontal > vertical * 1.5) {
+      setMobileSidebarOpen(true);
+    }
+  }
+
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex h-dvh overflow-hidden bg-background">
+      <div
+        className="flex h-dvh touch-pan-y overflow-hidden bg-background"
+        onPointerDownCapture={startMobileSidebarSwipe}
+        onPointerUpCapture={finishMobileSidebarSwipe}
+        onPointerCancelCapture={() => {
+          mobileSwipeStart.current = null;
+        }}
+      >
         <aside
           className={cn(
             "hidden h-full shrink-0 flex-col border-r border-border md:flex",
@@ -221,8 +250,8 @@ function CollapsedRail({
     <div className="flex h-full w-full flex-col py-3">
       <div className="flex w-full justify-center">
         <IconBtn label={t("shell.openSidebar")} onClick={onExpand}>
-          <span className="relative grid size-7 place-items-center">
-            <Mark className="size-7 group-hover:hidden" />
+          <span className="relative grid size-8 place-items-center">
+            <Mark className="size-8 group-hover:hidden" />
             <span className="hidden group-hover:grid">
               <RailGlyph icon={PanelLeft} />
             </span>
@@ -306,7 +335,6 @@ function ExpandedSidebar({
   const t = useT();
   const locale = useLocale();
   const mark = accountMark(user?.displayName, user?.primaryEmail, t("shell.you"));
-  const label = user?.displayName || user?.primaryEmail?.split("@")[0] || t("shell.you");
 
   function saveRename() {
     if (!renameId) return;
@@ -336,7 +364,7 @@ function ExpandedSidebar({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-1 px-3 py-3">
         <Link to="/" className="flex min-w-0 items-center gap-2 text-foreground">
-          <Mark className="size-7 shrink-0" />
+          <Mark className="size-8 shrink-0" />
           <Wordmark className="text-3xl" />
         </Link>
         <div className="ml-auto flex items-center">
@@ -381,7 +409,7 @@ function ExpandedSidebar({
               "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm",
               pathname === item.to
                 ? "bg-accent text-foreground"
-                : "text-foreground/80 hover:bg-accent hover:text-foreground",
+                : "text-foreground/90 hover:bg-accent hover:text-foreground",
             )}
           >
             <RailGlyph icon={item.icon} />
@@ -406,27 +434,30 @@ function ExpandedSidebar({
         </p>
         <ul className="flex flex-col gap-0.5">{rest.map(row)}</ul>
       </ScrollArea>
-      <div className="mt-auto border-t border-border px-3 py-3">
-        <div className="flex items-center gap-2">
+      <div className="mt-auto px-5 py-3">
+        <div className="flex items-center justify-between">
           <button
             type="button"
+            aria-label={t("shell.settings")}
             onClick={onOpenSettings}
-            className="flex min-w-0 flex-1 items-center gap-2 text-left text-foreground"
+            className="relative grid size-10 shrink-0 place-items-center rounded-full bg-foreground text-sm font-medium text-background"
           >
-            <span className="relative grid size-7 shrink-0 place-items-center rounded-full bg-foreground text-[11px] font-medium text-background">
-              {mark}
-              {live ? (
-                <span
-                  className="absolute -right-px -bottom-px size-2 rounded-full bg-live ring-2 ring-background"
-                  title={t("shell.agentLive")}
-                />
-              ) : null}
-            </span>
-            <span className="truncate text-sm">{label}</span>
+            {mark}
+            {live ? (
+              <span
+                className="absolute right-0 bottom-0 size-2.5 rounded-full bg-live ring-2 ring-background"
+                title={t("shell.agentLive")}
+              />
+            ) : null}
           </button>
-          <IconBtn label={t("shell.newChat")} onClick={onNewChat}>
+          <button
+            type="button"
+            aria-label={t("shell.newChat")}
+            onClick={onNewChat}
+            className="grid size-10 place-items-center rounded-full bg-card text-foreground shadow-border hover:bg-accent"
+          >
             <RailGlyph icon={SquarePen} heavy />
-          </IconBtn>
+          </button>
         </div>
       </div>
       <Dialog open={Boolean(renameId)} onOpenChange={(open) => !open && setRenameId(null)}>
@@ -602,7 +633,7 @@ function RailGlyph({ icon: Icon, heavy = false }: { icon: LucideIcon; heavy?: bo
       size={16}
       strokeWidth={2}
       className={cn(
-        "shrink-0",
+        "shrink-0 text-foreground/90",
         heavy &&
           "[&_circle]:[stroke-width:1.5px] [&_circle]:[vector-effect:non-scaling-stroke] [&_path]:[stroke-width:1.5px] [&_path]:[vector-effect:non-scaling-stroke]",
       )}

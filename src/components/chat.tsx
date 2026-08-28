@@ -390,7 +390,7 @@ export function ChatView() {
     >
       {empty ? (
         <div className="flex flex-col items-center px-6 text-center">
-          <Mark className="size-7 text-foreground" />
+          <Mark className="size-10 text-foreground" />
           <h1 className="mt-5 font-serif text-3xl tracking-tight sm:text-4xl">
             {t("chat.emptyTitle")}
           </h1>
