@@ -103,41 +103,43 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={!mobile}>
-      <DialogContent className="!inset-0 !h-dvh !w-full !max-w-none !translate-x-0 !translate-y-0 !rounded-none flex flex-row gap-0 overflow-hidden p-0 sm:!top-1/2 sm:!left-1/2 sm:!h-[min(38rem,85vh)] sm:!w-[calc(100%-2rem)] sm:!max-w-3xl sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:!rounded-xl [&>button]:hidden">
+      <DialogContent className="!inset-0 !h-dvh !w-full !max-w-none !translate-x-0 !translate-y-0 !rounded-none flex flex-col gap-0 overflow-hidden p-0 md:!top-1/2 md:!left-1/2 md:!h-[min(38rem,85vh)] md:!w-[calc(100%-2rem)] md:!max-w-3xl md:!-translate-x-1/2 md:!-translate-y-1/2 md:!rounded-xl md:flex-row [&>button]:hidden">
         <DialogDescription className="sr-only">{t("settings.title")}</DialogDescription>
-        <nav className="flex w-52 shrink-0 flex-col border-r border-border p-3">
-          <DialogClose asChild>
-            <button
-              type="button"
-              aria-label={t("settings.close")}
-              className="mb-3 grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X className="size-4" />
-            </button>
-          </DialogClose>
-          <div className="relative mb-3">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("settings.search")}
-              aria-label={t("settings.search")}
-              className="h-9 rounded-lg pl-8 text-sm"
-            />
+        <nav className="flex w-full shrink-0 flex-col border-b border-border p-3 md:w-52 md:border-r md:border-b-0">
+          <div className="mb-3 flex min-w-0 items-center gap-2 md:block">
+            <DialogClose asChild>
+              <button
+                type="button"
+                aria-label={t("settings.close")}
+                className="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground md:mb-3 md:size-8 md:rounded-md"
+              >
+                <X className="size-4" />
+              </button>
+            </DialogClose>
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("settings.search")}
+                aria-label={t("settings.search")}
+                className="h-9 rounded-lg pl-8 text-sm"
+              />
+            </div>
           </div>
-          <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+          <ul className="flex shrink-0 gap-1 overflow-x-auto pb-1 md:min-h-0 md:flex-1 md:flex-col md:gap-0.5 md:overflow-y-auto md:pb-0">
             {filtered.length === 0 ? (
               <li className="px-2.5 py-2 text-sm text-muted-foreground">{t("settings.noMatch")}</li>
             ) : (
               filtered.map((s) => {
                 const on = s.id === current?.id;
                 return (
-                  <li key={s.id}>
+                  <li key={s.id} className="shrink-0 md:shrink">
                     <button
                       type="button"
                       onClick={() => setSectionId(s.id)}
                       className={cn(
-                        "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm",
+                        "flex w-full items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-left text-sm",
                         on
                           ? "bg-accent text-foreground"
                           : "text-foreground/80 hover:bg-accent hover:text-foreground",
@@ -152,11 +154,11 @@ export function SettingsDialog({
             )}
           </ul>
         </nav>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6">
             {current ? (
               <>
-                <DialogTitle className="mb-5 text-xl font-medium tracking-tight">
+                <DialogTitle className="mb-4 text-xl font-medium tracking-tight md:mb-5">
                   {current.label}
                 </DialogTitle>
                 {current.id === "general" ? <GeneralSection /> : null}
@@ -226,7 +228,7 @@ function GeneralSection() {
         </div>
       </SettingRow>
       <SettingRow label={t("settings.color")} hint={t("settings.colorHint")}>
-        <div className="flex flex-wrap justify-end gap-2" role="radiogroup" aria-label={t("settings.color")}>
+        <div className="flex flex-wrap justify-start gap-2 md:justify-end" role="radiogroup" aria-label={t("settings.color")}>
           {ACCENTS.map((opt) => (
             <button
               key={opt.id}
@@ -503,12 +505,12 @@ function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-4">
+    <div className="flex flex-col items-start gap-3 py-4 md:flex-row md:items-center md:justify-between md:gap-4">
       <div className="min-w-0">
         <p className="text-sm font-medium">{label}</p>
         {hint ? <p className="mt-0.5 text-sm text-muted-foreground">{hint}</p> : null}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="w-full md:w-auto md:shrink-0">{children}</div>
     </div>
   );
 }

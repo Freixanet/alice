@@ -184,8 +184,14 @@ export function AppShell() {
     if (!start || !event.isPrimary || !start.dragging) {
       return;
     }
+    settleMobileSidebar();
+  }
+
+  function settleMobileSidebar() {
+    const open = mobileSidebarOffsetRef.current >= mobileSidebarWidth / 2;
     setMobileSidebarDragging(false);
-    setMobileSidebarOpen(mobileSidebarOffsetRef.current >= mobileSidebarWidth / 2);
+    setMobileSidebarOpen(open);
+    updateMobileSidebarOffset(open ? mobileSidebarWidth : 0);
   }
 
   return (
@@ -196,8 +202,7 @@ export function AppShell() {
         onPointerMoveCapture={moveMobileSidebarSwipe}
         onPointerUpCapture={finishMobileSidebarSwipe}
         onPointerCancelCapture={() => {
-          setMobileSidebarDragging(false);
-          setMobileSidebarOpen(mobileSidebarOffsetRef.current >= mobileSidebarWidth / 2);
+          settleMobileSidebar();
           mobileSwipeStart.current = null;
         }}
       >
@@ -458,7 +463,7 @@ function ExpandedSidebar({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 w-full flex-col">
       <div className="flex items-center gap-1 px-3 py-3">
         <Link to="/" className="flex min-w-0 items-center gap-2 text-foreground">
           <Mark className="size-8 shrink-0" />
