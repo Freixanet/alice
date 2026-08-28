@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import {
   Tooltip,
   TooltipContent,
@@ -60,6 +61,8 @@ export function AppShell() {
   const gatewayStatus = useHermes((s) => s.gatewayStatus);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const t = useT();
   const settingsFromRoute = pathname === "/settings";
   const settingsVisible = settingsOpen || settingsFromRoute;
 
@@ -106,7 +109,7 @@ export function AppShell() {
       <div className="flex h-dvh overflow-hidden bg-background">
         <aside
           className={cn(
-            "flex h-full shrink-0 flex-col border-r border-border",
+            "hidden h-full shrink-0 flex-col border-r border-border md:flex",
             collapsed ? "w-14" : "w-64",
           )}
         >
@@ -136,6 +139,47 @@ export function AppShell() {
             />
           )}
         </aside>
+        <button
+          type="button"
+          aria-label={t("shell.openSidebar")}
+          onClick={() => setMobileSidebarOpen(true)}
+          className="fixed top-[max(1rem,env(safe-area-inset-top))] left-[max(1rem,env(safe-area-inset-left))] z-40 grid size-10 place-items-center rounded-full bg-card text-foreground shadow-border transition-colors hover:bg-accent md:hidden"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5 fill-none stroke-current">
+            <path d="M4 8h16M4 16h10" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
+        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+          <SheetContent side="left" className="w-[min(20rem,88vw)] p-0 [&>button]:hidden md:hidden">
+            <SheetTitle className="sr-only">{t("shell.openSidebar")}</SheetTitle>
+            <ExpandedSidebar
+              pathname={pathname}
+              live={live}
+              conversations={conversations}
+              activeId={activeId}
+              onCollapse={() => setMobileSidebarOpen(false)}
+              onSearch={() => {
+                setMobileSidebarOpen(false);
+                setSearchOpen(true);
+              }}
+              onNewChat={() => {
+                setMobileSidebarOpen(false);
+                startChat();
+              }}
+              onOpenSettings={() => {
+                setMobileSidebarOpen(false);
+                setSettingsOpen(true);
+              }}
+              closeWithSheet
+              onNavigate={() => setMobileSidebarOpen(false)}
+              onSelectChat={(id) => {
+                setMobileSidebarOpen(false);
+                selectChat(id);
+                void navigate({ to: "/" });
+              }}
+            />
+          </SheetContent>
+        </Sheet>
         <div className="flex min-w-0 flex-1 flex-col">
           <Outlet />
         </div>
@@ -227,6 +271,8 @@ function ExpandedSidebar({
   onSearch,
   onNewChat,
   onOpenSettings,
+  closeWithSheet = false,
+  onNavigate,
   onSelectChat,
 }: {
   pathname: string;
@@ -237,6 +283,8 @@ function ExpandedSidebar({
   onSearch: () => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
+  closeWithSheet?: boolean;
+  onNavigate?: () => void;
   onSelectChat: (id: string) => void;
 }) {
   const renameChat = useHermes((s) => s.renameChat);
@@ -292,12 +340,35 @@ function ExpandedSidebar({
           <Wordmark className="text-3xl" />
         </Link>
         <div className="ml-auto flex items-center">
-          <IconBtn label={t("shell.search")} onClick={onSearch}>
-            <RailGlyph icon={Search} heavy />
-          </IconBtn>
-          <IconBtn label={t("shell.closeSidebar")} onClick={onCollapse}>
-            <RailGlyph icon={PanelLeft} />
-          </IconBtn>
+          {closeWithSheet ? (
+            <button
+              type="button"
+              aria-label={t("shell.search")}
+              onClick={onSearch}
+              className="grid size-8 place-items-center rounded-md p-0 text-foreground/80 hover:bg-accent hover:text-foreground"
+            >
+              <RailGlyph icon={Search} heavy />
+            </button>
+          ) : (
+            <IconBtn label={t("shell.search")} onClick={onSearch}>
+              <RailGlyph icon={Search} heavy />
+            </IconBtn>
+          )}
+          {closeWithSheet ? (
+            <SheetClose asChild>
+              <button
+                type="button"
+                aria-label={t("shell.closeSidebar")}
+                className="grid size-8 place-items-center rounded-md p-0 text-foreground/80 hover:bg-accent hover:text-foreground"
+              >
+                <RailGlyph icon={PanelLeft} />
+              </button>
+            </SheetClose>
+          ) : (
+            <IconBtn label={t("shell.closeSidebar")} onClick={onCollapse}>
+              <RailGlyph icon={PanelLeft} />
+            </IconBtn>
+          )}
         </div>
       </div>
       <nav className="mt-3 flex flex-col gap-0.5 px-2">
@@ -305,6 +376,7 @@ function ExpandedSidebar({
           <Link
             key={item.to}
             to={item.to}
+            onClick={onNavigate}
             className={cn(
               "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm",
               pathname === item.to

@@ -26,7 +26,7 @@ SheetOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const SheetContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
-    side?: "right" | "bottom";
+    side?: "left" | "right" | "bottom";
   }
 >(({ className, children, side = "right", ...props }, ref) => (
   <DialogPrimitive.Portal>
@@ -35,6 +35,8 @@ const SheetContent = React.forwardRef<
       ref={ref}
       className={cn(
         "fixed z-50 flex flex-col bg-popover text-popover-foreground shadow-border",
+        side === "left" &&
+          "inset-y-0 left-0 h-full w-full max-w-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left",
         side === "right" &&
           "inset-y-0 right-0 h-full w-full max-w-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right",
         side === "bottom" &&
