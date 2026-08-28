@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import {
   Tooltip,
   TooltipContent,
@@ -62,7 +61,17 @@ export function AppShell() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const mobileSwipeStart = useRef<{ x: number; y: number } | null>(null);
+  const [mobileSidebarWidth, setMobileSidebarWidth] = useState(320);
+  const [mobileSidebarOffset, setMobileSidebarOffset] = useState(0);
+  const [mobileSidebarDragging, setMobileSidebarDragging] = useState(false);
+  const mobileSidebarOffsetRef = useRef(0);
+  const mobileSwipeStart = useRef<{
+    x: number;
+    y: number;
+    offset: number;
+    dragging: boolean;
+    cancelled: boolean;
+  } | null>(null);
   const t = useT();
   const settingsFromRoute = pathname === "/settings";
   const settingsVisible = settingsOpen || settingsFromRoute;
@@ -98,6 +107,28 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [navigate, newChat]);
 
+  useEffect(() => {
+    function updateMobileSidebarWidth() {
+      if (window.matchMedia("(min-width: 768px)").matches) {
+        setMobileSidebarOpen(false);
+        setMobileSidebarOffset(0);
+        mobileSidebarOffsetRef.current = 0;
+        return;
+      }
+      setMobileSidebarWidth(Math.min(320, Math.round(window.innerWidth * 0.88)));
+    }
+    updateMobileSidebarWidth();
+    window.addEventListener("resize", updateMobileSidebarWidth);
+    return () => window.removeEventListener("resize", updateMobileSidebarWidth);
+  }, []);
+
+  useEffect(() => {
+    if (mobileSwipeStart.current?.dragging) return;
+    const offset = mobileSidebarOpen ? mobileSidebarWidth : 0;
+    setMobileSidebarOffset(offset);
+    mobileSidebarOffsetRef.current = offset;
+  }, [mobileSidebarOpen, mobileSidebarWidth]);
+
   const live = gatewayOn && gatewayStatus === "live";
 
   function startChat() {
@@ -105,25 +136,56 @@ export function AppShell() {
     void navigate({ to: "/" });
   }
 
+  function updateMobileSidebarOffset(offset: number) {
+    const next = Math.max(0, Math.min(mobileSidebarWidth, offset));
+    mobileSidebarOffsetRef.current = next;
+    setMobileSidebarOffset(next);
+  }
+
   function startMobileSidebarSwipe(event: React.PointerEvent<HTMLDivElement>) {
-    if (mobileSidebarOpen || !event.isPrimary || event.button !== 0) {
+    if (
+      !event.isPrimary ||
+      event.button !== 0 ||
+      window.matchMedia("(min-width: 768px)").matches
+    ) {
       mobileSwipeStart.current = null;
       return;
     }
-    mobileSwipeStart.current = { x: event.clientX, y: event.clientY };
+    mobileSwipeStart.current = {
+      x: event.clientX,
+      y: event.clientY,
+      offset: mobileSidebarOffsetRef.current,
+      dragging: false,
+      cancelled: false,
+    };
+  }
+
+  function moveMobileSidebarSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    const start = mobileSwipeStart.current;
+    if (!start || !event.isPrimary || start.cancelled) return;
+    const horizontal = event.clientX - start.x;
+    const vertical = Math.abs(event.clientY - start.y);
+    if (!start.dragging) {
+      if (Math.abs(horizontal) < 8) return;
+      if (Math.abs(horizontal) <= vertical * 1.15) {
+        start.cancelled = true;
+        return;
+      }
+      start.dragging = true;
+      setMobileSidebarDragging(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    updateMobileSidebarOffset(start.offset + horizontal);
   }
 
   function finishMobileSidebarSwipe(event: React.PointerEvent<HTMLDivElement>) {
     const start = mobileSwipeStart.current;
     mobileSwipeStart.current = null;
-    if (!start || !event.isPrimary || mobileSidebarOpen || window.matchMedia("(min-width: 768px)").matches) {
+    if (!start || !event.isPrimary || !start.dragging) {
       return;
     }
-    const horizontal = event.clientX - start.x;
-    const vertical = Math.abs(event.clientY - start.y);
-    if (horizontal >= 64 && horizontal > vertical * 1.5) {
-      setMobileSidebarOpen(true);
-    }
+    setMobileSidebarDragging(false);
+    setMobileSidebarOpen(mobileSidebarOffsetRef.current >= mobileSidebarWidth / 2);
   }
 
   return (
@@ -131,8 +193,11 @@ export function AppShell() {
       <div
         className="flex h-dvh touch-pan-y overflow-hidden bg-background"
         onPointerDownCapture={startMobileSidebarSwipe}
+        onPointerMoveCapture={moveMobileSidebarSwipe}
         onPointerUpCapture={finishMobileSidebarSwipe}
         onPointerCancelCapture={() => {
+          setMobileSidebarDragging(false);
+          setMobileSidebarOpen(mobileSidebarOffsetRef.current >= mobileSidebarWidth / 2);
           mobileSwipeStart.current = null;
         }}
       >
@@ -168,48 +233,80 @@ export function AppShell() {
             />
           )}
         </aside>
+        <aside
+          aria-label={t("shell.openSidebar")}
+          aria-hidden={mobileSidebarOffset === 0}
+          inert={mobileSidebarOffset === 0}
+          className={cn(
+            "fixed inset-y-0 left-0 z-30 flex bg-popover text-popover-foreground shadow-border md:hidden",
+            mobileSidebarOffset === 0 && "pointer-events-none",
+            mobileSidebarDragging ? "transition-none" : "transition-transform duration-300 ease-out",
+          )}
+          style={{
+            width: mobileSidebarWidth,
+            transform: `translateX(${mobileSidebarOffset - mobileSidebarWidth}px)`,
+          }}
+        >
+          <ExpandedSidebar
+            mobile
+            pathname={pathname}
+            live={live}
+            conversations={conversations}
+            activeId={activeId}
+            onCollapse={() => setMobileSidebarOpen(false)}
+            onSearch={() => {
+              setMobileSidebarOpen(false);
+              setSearchOpen(true);
+            }}
+            onNewChat={() => {
+              setMobileSidebarOpen(false);
+              startChat();
+            }}
+            onOpenSettings={() => {
+              setMobileSidebarOpen(false);
+              setSettingsOpen(true);
+            }}
+            onNavigate={() => setMobileSidebarOpen(false)}
+            onSelectChat={(id) => {
+              setMobileSidebarOpen(false);
+              selectChat(id);
+              void navigate({ to: "/" });
+            }}
+          />
+        </aside>
         <button
           type="button"
-          aria-label={t("shell.openSidebar")}
-          onClick={() => setMobileSidebarOpen(true)}
-          className="fixed top-[max(1rem,env(safe-area-inset-top))] left-[max(1rem,env(safe-area-inset-left))] z-40 grid size-10 place-items-center rounded-full bg-card text-foreground shadow-border transition-colors hover:bg-accent md:hidden"
+          aria-label={mobileSidebarOpen ? t("shell.closeSidebar") : t("shell.openSidebar")}
+          onClick={() => setMobileSidebarOpen((open) => !open)}
+          className={cn(
+            "fixed top-[max(1rem,env(safe-area-inset-top))] left-[max(1rem,env(safe-area-inset-left))] z-40 grid size-10 place-items-center rounded-full bg-card text-foreground shadow-border transition-colors hover:bg-accent md:hidden",
+            mobileSidebarDragging ? "transition-none" : "transition-transform duration-300 ease-out",
+          )}
+          style={{ transform: `translateX(${mobileSidebarOffset}px)` }}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5 fill-none stroke-current">
             <path d="M4 8h16M4 16h10" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
-        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-          <SheetContent side="left" className="w-[min(20rem,88vw)] p-0 [&>button]:hidden md:hidden">
-            <SheetTitle className="sr-only">{t("shell.openSidebar")}</SheetTitle>
-            <ExpandedSidebar
-              pathname={pathname}
-              live={live}
-              conversations={conversations}
-              activeId={activeId}
-              onCollapse={() => setMobileSidebarOpen(false)}
-              onSearch={() => {
-                setMobileSidebarOpen(false);
-                setSearchOpen(true);
-              }}
-              onNewChat={() => {
-                setMobileSidebarOpen(false);
-                startChat();
-              }}
-              onOpenSettings={() => {
-                setMobileSidebarOpen(false);
-                setSettingsOpen(true);
-              }}
-              closeWithSheet
-              onNavigate={() => setMobileSidebarOpen(false)}
-              onSelectChat={(id) => {
-                setMobileSidebarOpen(false);
-                selectChat(id);
-                void navigate({ to: "/" });
-              }}
-            />
-          </SheetContent>
-        </Sheet>
-        <div className="flex min-w-0 flex-1 flex-col">
+        <button
+          type="button"
+          aria-label={t("shell.closeSidebar")}
+          aria-hidden={mobileSidebarOffset === 0}
+          tabIndex={mobileSidebarOffset === 0 ? -1 : 0}
+          onClick={() => setMobileSidebarOpen(false)}
+          className="fixed inset-0 z-20 bg-background/35 transition-opacity duration-300 md:hidden"
+          style={{
+            opacity: mobileSidebarWidth ? mobileSidebarOffset / mobileSidebarWidth : 0,
+            pointerEvents: mobileSidebarOffset > 0 ? "auto" : "none",
+          }}
+        />
+        <div
+          className={cn(
+            "relative z-10 flex min-w-0 flex-1 flex-col",
+            mobileSidebarDragging ? "transition-none" : "transition-transform duration-300 ease-out",
+          )}
+          style={{ transform: `translateX(${mobileSidebarOffset}px)` }}
+        >
           <Outlet />
         </div>
         <CommandPalette
@@ -300,7 +397,7 @@ function ExpandedSidebar({
   onSearch,
   onNewChat,
   onOpenSettings,
-  closeWithSheet = false,
+  mobile = false,
   onNavigate,
   onSelectChat,
 }: {
@@ -312,7 +409,7 @@ function ExpandedSidebar({
   onSearch: () => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
-  closeWithSheet?: boolean;
+  mobile?: boolean;
   onNavigate?: () => void;
   onSelectChat: (id: string) => void;
 }) {
@@ -368,12 +465,12 @@ function ExpandedSidebar({
           <Wordmark className="text-3xl" />
         </Link>
         <div className="ml-auto flex items-center">
-          {closeWithSheet ? (
+          {mobile ? (
             <button
               type="button"
               aria-label={t("shell.search")}
               onClick={onSearch}
-              className="grid size-8 place-items-center rounded-md p-0 text-foreground/80 hover:bg-accent hover:text-foreground"
+              className="grid size-10 place-items-center rounded-full bg-card text-foreground shadow-border hover:bg-accent"
             >
               <RailGlyph icon={Search} heavy />
             </button>
@@ -382,21 +479,11 @@ function ExpandedSidebar({
               <RailGlyph icon={Search} heavy />
             </IconBtn>
           )}
-          {closeWithSheet ? (
-            <SheetClose asChild>
-              <button
-                type="button"
-                aria-label={t("shell.closeSidebar")}
-                className="grid size-8 place-items-center rounded-md p-0 text-foreground/80 hover:bg-accent hover:text-foreground"
-              >
-                <RailGlyph icon={PanelLeft} />
-              </button>
-            </SheetClose>
-          ) : (
+          {!mobile ? (
             <IconBtn label={t("shell.closeSidebar")} onClick={onCollapse}>
               <RailGlyph icon={PanelLeft} />
             </IconBtn>
-          )}
+          ) : null}
         </div>
       </div>
       <nav className="mt-3 flex flex-col gap-0.5 px-2">

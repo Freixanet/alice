@@ -61,8 +61,17 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useT();
+  const [mobile, setMobile] = useState(false);
   const [sectionId, setSectionId] = useState<SectionId>("general");
   const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const update = () => setMobile(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -93,8 +102,8 @@ export function SettingsDialog({
   }, [current, sectionId]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(38rem,85vh)] max-w-3xl flex-row gap-0 overflow-hidden p-0 [&>button]:hidden">
+    <Dialog open={open} onOpenChange={onOpenChange} modal={!mobile}>
+      <DialogContent className="!inset-0 !h-dvh !w-full !max-w-none !translate-x-0 !translate-y-0 !rounded-none flex flex-row gap-0 overflow-hidden p-0 sm:!top-1/2 sm:!left-1/2 sm:!h-[min(38rem,85vh)] sm:!w-[calc(100%-2rem)] sm:!max-w-3xl sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:!rounded-xl [&>button]:hidden">
         <DialogDescription className="sr-only">{t("settings.title")}</DialogDescription>
         <nav className="flex w-52 shrink-0 flex-col border-r border-border p-3">
           <DialogClose asChild>
