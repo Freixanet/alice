@@ -321,9 +321,6 @@ export async function* streamHermesDirect(opts: {
       headers: headers(token, {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
-        ...(opts.conversationId
-          ? { "X-Hermes-Session-Key": opts.conversationId.slice(0, 256) }
-          : {}),
       }),
       signal,
       cache: "no-store",
@@ -451,9 +448,6 @@ export async function setHermesModelDirect(opts: {
       method: "POST",
       headers: headers(token, {
         "Content-Type": "application/json",
-        ...(opts.conversationId
-          ? { "X-Hermes-Session-Key": opts.conversationId.slice(0, 256) }
-          : {}),
       }),
       signal: ctrl,
       cache: "no-store",
