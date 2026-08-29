@@ -114,6 +114,8 @@ function bases(url: string): string[] {
   const out = [base];
   try {
     const u = new URL(base);
+    if (!out.includes(u.origin)) out.push(u.origin);
+    if (u.hostname.toLowerCase().endsWith(".ts.net")) return out;
     if (u.port !== "9119") {
       const dash = `${u.protocol}//${u.hostname}:9119`;
       if (!out.includes(dash)) out.push(dash);
@@ -475,10 +477,12 @@ async function dashboardGet(
   signal?: AbortSignal,
 ): Promise<unknown> {
   const token = assertGatewayKey(key);
-  const ctrl = signal ?? AbortSignal.timeout(12_000);
   const hdrs = headers(token);
   for (const apiBase of bases(url)) {
     try {
+      const ctrl = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(8_000)])
+        : AbortSignal.timeout(8_000);
       const res = await fetch(`${apiBase}${path}`, {
         headers: hdrs,
         signal: ctrl,
@@ -494,7 +498,7 @@ async function dashboardGet(
         continue;
       }
     } catch (e) {
-      if ((e as Error).name === "AbortError") throw e;
+      if (signal?.aborted && (e as Error).name === "AbortError") throw e;
     }
   }
   return null;
@@ -545,7 +549,7 @@ export async function listHermesLiveDirect(opts: {
       apiHooks,
       apiProjects,
     ] = await Promise.all([
-      dashboardGet(opts.url, opts.key, "/api/skills", opts.signal),
+      dashboardGet(opts.url, opts.key, "/skills", opts.signal),
       dashboardGet(opts.url, opts.key, "/api/tools/toolsets", opts.signal),
       dashboardGet(opts.url, opts.key, "/api/mcp/servers", opts.signal),
       dashboardGet(opts.url, opts.key, "/api/cron/jobs", opts.signal),

@@ -183,7 +183,7 @@ const en = {
   "connect.savedForAccount":
     "Saved for this account. Alice reconnects automatically after a refresh or your next sign-in.",
   "connect.savedForDevice":
-    "Saved for this browser session. Alice reconnects after a refresh or when you sign back in here.",
+    "Saved for this account. Alice reconnects automatically after a refresh or your next sign-in.",
   "connect.remote": "remote",
   "connect.local": "local",
   "connect.provider": "Inference provider",
@@ -644,7 +644,7 @@ const es: Record<MsgKey, string> = {
   "connect.savedForAccount":
     "Guardado para esta cuenta. Alice se reconecta automáticamente al recargar o volver a iniciar sesión.",
   "connect.savedForDevice":
-    "Guardado para esta sesión del navegador. Alice se reconecta al recargar o al volver a iniciar sesión aquí.",
+    "Guardado para esta cuenta. Alice se reconecta automáticamente al recargar o volver a iniciar sesión.",
   "connect.remote": "remoto",
   "connect.local": "local",
   "connect.provider": "Proveedor de inferencia",
