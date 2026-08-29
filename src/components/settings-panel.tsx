@@ -31,7 +31,7 @@ import {
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
 import { authEnabled, signOut } from "@/lib/auth/client";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
-import { useHermes, type Accent, type FontSize } from "@/lib/store";
+import { useHermes, type Accent, type DesignMode, type FontSize } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/use-i18n";
@@ -196,9 +196,32 @@ function GeneralSection() {
   const setCompact = useHermes((s) => s.setCompact);
   const focusMode = useHermes((s) => s.focusMode);
   const setFocusMode = useHermes((s) => s.setFocusMode);
+  const designMode = useHermes((s) => s.designMode);
+  const setDesignMode = useHermes((s) => s.setDesignMode);
 
   return (
     <div className="divide-y divide-border">
+      <SettingRow label={t("settings.designMode")} hint={t("settings.designModeHint")}>
+        <div className="flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("settings.designMode")}>
+          {(["classic", "experimental"] as DesignMode[]).map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={designMode === id}
+              onClick={() => setDesignMode(id)}
+              className={cn(
+                "h-8 rounded-md px-2.5 text-xs font-medium",
+                designMode === id
+                  ? "bg-card text-foreground shadow-border"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t(id === "classic" ? "settings.designClassic" : "settings.designExperimental")}
+            </button>
+          ))}
+        </div>
+      </SettingRow>
       <SettingRow label={t("settings.lightTheme")} hint={t("settings.lightThemeHint")}>
         <Switch
           checked={theme === "light"}

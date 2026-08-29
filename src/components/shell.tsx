@@ -50,6 +50,7 @@ export function AppShell() {
   const theme = useHermes((s) => s.theme);
   const fontSize = useHermes((s) => s.fontSize);
   const accent = useHermes((s) => s.accent);
+  const designMode = useHermes((s) => s.designMode);
   const collapsed = useHermes((s) => s.sidebarCollapsed);
   const setCollapsed = useHermes((s) => s.setSidebarCollapsed);
   const conversations = useHermes((s) => s.conversations);
@@ -88,7 +89,11 @@ export function AppShell() {
     root.dataset.theme = theme;
     root.dataset.font = fontSize;
     root.dataset.accent = accent;
-  }, [theme, fontSize, accent]);
+    root.dataset.design = designMode;
+    return () => {
+      delete root.dataset.design;
+    };
+  }, [theme, fontSize, accent, designMode]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -197,7 +202,7 @@ export function AppShell() {
   return (
     <TooltipProvider delayDuration={200}>
       <div
-        className="flex h-dvh touch-pan-y overflow-hidden bg-background"
+        className="alice-app flex h-dvh touch-pan-y overflow-hidden bg-background"
         onPointerDownCapture={startMobileSidebarSwipe}
         onPointerMoveCapture={moveMobileSidebarSwipe}
         onPointerUpCapture={finishMobileSidebarSwipe}
@@ -308,7 +313,7 @@ export function AppShell() {
         />
         <div
           className={cn(
-            "relative z-10 flex min-w-0 flex-1 flex-col",
+            "alice-main relative z-10 flex min-w-0 flex-1 flex-col",
             mobileSidebarDragging ? "transition-none" : "transition-transform duration-300 ease-out",
           )}
           style={{ transform: `translateX(${mobileSidebarOffset}px)` }}

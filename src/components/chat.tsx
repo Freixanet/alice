@@ -389,7 +389,7 @@ export function ChatView() {
       )}
     >
       {empty ? (
-        <div className="flex flex-col items-center px-6 text-center">
+        <div className="alice-empty-state flex flex-col items-center px-6 text-center">
           <Mark className="size-10 text-foreground" />
           <h1 className="mt-5 font-serif text-3xl tracking-tight sm:text-4xl">
             {t("chat.emptyTitle")}
@@ -402,7 +402,7 @@ export function ChatView() {
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
           <div
             className={cn(
-              "mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pb-36 sm:px-6",
+              "alice-message-list mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pb-36 sm:px-6",
               firstIsUser ? "pt-[10vh]" : "pt-8",
             )}
           >
@@ -429,9 +429,9 @@ export function ChatView() {
                   )}
                   <div
                     className={cn(
-                      "max-w-[42rem] whitespace-pre-wrap text-sm leading-relaxed",
+                      "alice-message max-w-[42rem] whitespace-pre-wrap text-sm leading-relaxed",
                       m.role === "user"
-                        ? "rounded-xl bg-card px-4 py-3 shadow-border"
+                        ? "alice-user-message rounded-xl bg-card px-4 py-3 shadow-border"
                         : "text-foreground",
                       m.error && "text-destructive",
                     )}
@@ -495,7 +495,7 @@ export function ChatView() {
               ))}
             </ul>
           ) : null}
-          <div className="rounded-2xl bg-card px-4 pb-3 pt-3 shadow-border">
+          <div className="alice-composer rounded-2xl bg-card px-4 pb-3 pt-3 shadow-border">
             <Textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

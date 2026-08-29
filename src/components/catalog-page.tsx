@@ -30,7 +30,7 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <header className="alice-page-header flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="space-y-1.5">
         <p className="text-2xs font-medium tracking-[0.16em] text-muted-foreground uppercase">
           {kicker}
@@ -93,7 +93,7 @@ export function CatalogPage({
     });
   }, [rows, q, group]);
 
-  function useInChat(row: CatalogRow) {
+  function startChatWith(row: CatalogRow) {
     newChat();
     setDraft(chatPrompt(row));
     void navigate({ to: "/" });
@@ -120,14 +120,14 @@ export function CatalogPage({
           ))}
         </div>
       </div>
-      <ul className="flex flex-col gap-2">
+      <ul className="alice-record-list flex flex-col gap-2">
         {filtered.length === 0 ? (
           <li className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
             {rows.length === 0 ? empty || t("catalog.empty") : t("catalog.noFilter")}
           </li>
         ) : (
           filtered.map((row) => (
-            <li key={row.id} className="rounded-xl bg-card px-4 py-4 shadow-border">
+            <li key={row.id} className="alice-record rounded-xl bg-card px-4 py-4 shadow-border">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -148,7 +148,7 @@ export function CatalogPage({
                     variant="ghost"
                     size="icon-sm"
                     aria-label={t("catalog.useInChat")}
-                    onClick={() => useInChat(row)}
+                    onClick={() => startChatWith(row)}
                   >
                     <MessageSquare className="size-4" />
                   </Button>

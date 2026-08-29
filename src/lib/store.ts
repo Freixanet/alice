@@ -59,6 +59,7 @@ function seedBlankChat(): Conversation {
 export type Theme = "dark" | "light";
 export type FontSize = "sm" | "md" | "lg";
 export type Accent = "stone" | "sage" | "sky" | "violet" | "rose" | "amber";
+export type DesignMode = "classic" | "experimental";
 
 interface HermesState {
   hydrated: boolean;
@@ -69,6 +70,7 @@ interface HermesState {
   sidebarCollapsed: boolean;
   focusMode: boolean;
   compact: boolean;
+  designMode: DesignMode;
   model: string;
   modelProvider: string;
   profile: string;
@@ -100,6 +102,7 @@ interface HermesState {
   setFocusMode: (v: boolean) => void;
   toggleFocus: () => void;
   setCompact: (v: boolean) => void;
+  setDesignMode: (mode: DesignMode) => void;
   setModel: (id: string, provider?: string) => void;
   setProfile: (name: string) => void;
   isSkillOn: (id: string) => boolean;
@@ -151,6 +154,7 @@ export const useHermes = create<HermesState>()(
       sidebarCollapsed: false,
       focusMode: false,
       compact: false,
+      designMode: "classic",
       model: "hermes-agent",
       modelProvider: "",
       profile: "default",
@@ -191,6 +195,7 @@ export const useHermes = create<HermesState>()(
       setFocusMode: (v) => set({ focusMode: v }),
       toggleFocus: () => set({ focusMode: !get().focusMode }),
       setCompact: (v) => set({ compact: v }),
+      setDesignMode: (designMode) => set({ designMode }),
       setModel: (id, provider) =>
         set({
           model: id,
@@ -460,7 +465,7 @@ export const useHermes = create<HermesState>()(
           localStorage.removeItem(`${name}:${user}`);
         },
       })),
-      version: 4,
+      version: 5,
       migrate: (persisted) => {
         if (persisted && typeof persisted === "object") {
           const next = { ...(persisted as Record<string, unknown>) };
@@ -481,6 +486,9 @@ export const useHermes = create<HermesState>()(
           }
           if (next.fontSize !== "sm" && next.fontSize !== "md" && next.fontSize !== "lg") {
             next.fontSize = "md";
+          }
+          if (next.designMode !== "classic" && next.designMode !== "experimental") {
+            next.designMode = "classic";
           }
           if (
             next.accent !== "stone" &&
@@ -511,6 +519,7 @@ export const useHermes = create<HermesState>()(
         sidebarCollapsed: s.sidebarCollapsed,
         focusMode: s.focusMode,
         compact: s.compact,
+        designMode: s.designMode,
         model: s.model,
         modelProvider: s.modelProvider,
         profile: s.profile,
