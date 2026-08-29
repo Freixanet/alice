@@ -172,6 +172,14 @@ html[data-alice-app] {
   --input: rgb(236 236 234 / 0.2);
 }
 
+html[data-alice-app],
+html[data-alice-app] body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 html[data-theme="light"][data-alice-app] {
   --card: #fffcf7;
   --composer: #fffcf7;
@@ -205,7 +213,7 @@ html[data-alice-app]
   body
   .rounded-full:not(button[aria-label]):not([role="radio"]):not(
     [role="switch"]
-  ) {
+  ):not(.alice-switch-thumb) {
   border-radius: var(--radius-md) !important;
 }
 
