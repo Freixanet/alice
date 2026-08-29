@@ -25,7 +25,7 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --text-2xs: 0.6875rem;
+  --text-2xs: 0.75rem;
   --text-2xs--line-height: 1rem;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
@@ -194,12 +194,18 @@ html[data-alice-app] [role="menu"].shadow-border {
   border: 1px solid var(--border);
 }
 
-html[data-alice-app] body :where(.rounded-sm, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl),
+html[data-alice-app]
+  body
+  :where(.rounded-sm, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl),
 html[data-alice-app] :where([role="dialog"], [role="menu"]) {
   border-radius: var(--radius-md) !important;
 }
 
-html[data-alice-app] body .rounded-full:not(button[aria-label]):not([role="radio"]):not([role="switch"]) {
+html[data-alice-app]
+  body
+  .rounded-full:not(button[aria-label]):not([role="radio"]):not(
+    [role="switch"]
+  ) {
   border-radius: var(--radius-md) !important;
 }
 
@@ -211,7 +217,9 @@ html[data-alice-app] .alice-page-header {
 html[data-alice-app] .alice-record-list,
 html[data-alice-app] .alice-main ul.flex.flex-col.gap-2 {
   gap: 0;
-  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 
 html[data-alice-app] .alice-record,
@@ -220,6 +228,14 @@ html[data-alice-app] .alice-main ul.flex.flex-col.gap-2 > li.shadow-border {
   border-top: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
+}
+
+html[data-alice-app] .alice-record:first-child,
+html[data-alice-app]
+  .alice-main
+  ul.flex.flex-col.gap-2
+  > li.shadow-border:first-child {
+  border-top: 0;
 }
 
 html[data-alice-app] .alice-empty-state {
@@ -236,8 +252,11 @@ html[data-alice-app] .alice-message-list {
   gap: 1.75rem;
 }
 
+html[data-alice-app] .alice-chat-scroller {
+  scrollbar-gutter: stable both-edges;
+}
+
 html[data-alice-app] .alice-user-message {
-  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: color-mix(in oklab, var(--card) 72%, transparent);
 }
@@ -253,6 +272,10 @@ html[data-alice-app] :where([role="dialog"], [role="menu"]) {
 }
 
 @media (max-width: 767px) {
+  html[data-alice-app] :where(input, textarea, select) {
+    font-size: 16px !important;
+  }
+
   html[data-alice-app] .alice-page-header {
     margin-top: 3rem;
   }
@@ -333,47 +356,43 @@ html[data-alice-app] :where([role="dialog"], [role="menu"]) {
 
 @keyframes alice-dot {
   0%,
-  70%,
+  65%,
   100% {
     transform: translateY(0);
-    opacity: 0.22;
+    opacity: 0.28;
   }
-  20% {
-    transform: translateY(-3px);
-    opacity: 1;
+  30% {
+    transform: translateY(-1px);
+    opacity: 0.82;
   }
 }
 
 .alice-typing {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   height: 1em;
-  padding-bottom: 0.12em;
+  color: var(--muted-foreground);
   vertical-align: baseline;
 }
 
 .alice-typing > span {
   display: block;
   flex-shrink: 0;
-  width: 5px;
-  height: 5px;
+  width: 3px;
+  height: 3px;
   border-radius: 999px;
   background: currentColor;
-  opacity: 0.22;
-  animation: alice-dot 1.4s cubic-bezier(0.37, 0, 0.18, 1) infinite;
+  opacity: 0.28;
+  animation: alice-dot 1.25s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .alice-typing > span:nth-child(2) {
-  animation-delay: 0.15s;
+  animation-delay: 0.14s;
 }
 
 .alice-typing > span:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-.alice-typing-trail {
-  margin-inline-start: 0.4em;
+  animation-delay: 0.28s;
 }
 
 @media (prefers-reduced-motion: reduce) {

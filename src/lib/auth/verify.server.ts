@@ -15,13 +15,17 @@ import { nativeSocialEnabled } from "./social.server";
 
 /** True when a real database is configured server-side. */
 const databaseConfigured = Boolean(process.env.DATABASE_URL?.trim());
+const authExplicitlyDisabled = process.env.VITE_AUTH_ENABLED?.trim() === "false";
 
 /** Re-export so callers can branch on it without importing `server.ts`. */
 export { authConfigured };
 
 /** True when Alice has real user sessions (email/password, social, and/or broker). */
 export function sessionsEnabled() {
-  return authConfigured || emailAndPasswordEnabled || nativeSocialEnabled;
+  return (
+    !authExplicitlyDisabled &&
+    (authConfigured || emailAndPasswordEnabled || nativeSocialEnabled)
+  );
 }
 
 if (databaseConfigured && !sessionsEnabled()) {
@@ -63,7 +67,9 @@ export type VerifiedUser = { id: string; email: string | null };
 export async function getSessionUser(
   bearerToken?: string,
 ): Promise<VerifiedUser | null> {
-  if (!authConfigured && !emailAndPasswordEnabled && !nativeSocialEnabled) return null;
+  if (!sessionsEnabled()) {
+    return databaseConfigured ? null : { id: DEV_USER_ID, email: null };
+  }
   const request = getRequest();
   if (!request) return null;
   let headers = request.headers;

@@ -120,6 +120,7 @@ interface HermesState {
   pinChat: (id: string) => void;
   appendMessage: (conversationId: string, message: Message) => void;
   patchMessage: (conversationId: string, messageId: string, patch: Partial<Message>) => void;
+  truncateConversationAfter: (conversationId: string, messageId: string) => void;
   addMemory: (item: Omit<MemoryItem, "id" | "updatedAt">) => void;
   removeMemory: (id: string) => void;
   toggleJob: (id: string) => void;
@@ -314,6 +315,20 @@ export const useHermes = create<HermesState>()(
                 }
               : c,
           ),
+        }),
+      truncateConversationAfter: (conversationId, messageId) =>
+        set({
+          conversations: get().conversations.map((c) => {
+            if (c.id !== conversationId) return c;
+            const index = c.messages.findIndex((m) => m.id === messageId);
+            return index < 0
+              ? c
+              : {
+                  ...c,
+                  updatedAt: Date.now(),
+                  messages: c.messages.slice(0, index + 1),
+                };
+          }),
         }),
       addMemory: (item) =>
         set({

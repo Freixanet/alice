@@ -8,6 +8,7 @@ import {
   parseSkillNames,
   readSse,
   type ChatEvent,
+  type HermesChatContent,
   type HermesModelOption,
   type ProbeResult,
 } from "./gateway";
@@ -103,7 +104,11 @@ export async function probeHermesDirect(opts: {
       return { ok: false, code: "not_hermes", error: FAIL };
     }
     if (modelsRes.status === 401 || modelsRes.status === 403) {
-      return { ok: false, code: "unauthorized", error: "The key is not correct." };
+      return {
+        ok: false,
+        code: "unauthorized",
+        error: "The key is not correct.",
+      };
     }
     if (!modelsRes.ok) return { ok: false, code: "not_hermes", error: FAIL };
 
@@ -134,7 +139,10 @@ export async function probeHermesDirect(opts: {
         redirect: "manual",
       });
       if (cap.ok) {
-        const body = (await cap.json()) as { platform?: unknown; model?: unknown };
+        const body = (await cap.json()) as {
+          platform?: unknown;
+          model?: unknown;
+        };
         if (typeof body.platform === "string") platform = body.platform;
         if (typeof body.model === "string" && body.model) model = body.model;
       }
@@ -154,9 +162,18 @@ export async function probeHermesDirect(opts: {
     }
 
     if (opts.save) setDeviceSessionKey(token);
-    return { ok: true, model, provider, models, platform, skills, mode: "direct" };
+    return {
+      ok: true,
+      model,
+      provider,
+      models,
+      platform,
+      skills,
+      mode: "direct",
+    };
   } catch (e) {
-    if (e instanceof GatewayError) return { ok: false, code: e.code, error: e.message };
+    if (e instanceof GatewayError)
+      return { ok: false, code: e.code, error: e.message };
     return corsFail();
   }
 }
@@ -164,7 +181,7 @@ export async function probeHermesDirect(opts: {
 export async function* streamHermesDirect(opts: {
   url: string;
   key: string;
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  messages: Array<{ role: "user" | "assistant"; content: HermesChatContent }>;
   conversationId?: string;
   model?: string;
   provider?: string;
@@ -200,7 +217,10 @@ export async function* streamHermesDirect(opts: {
   let upstream: Response;
   try {
     upstream = await post(requestedModel, requestedProvider);
-    if (!upstream.ok && (requestedModel !== "hermes-agent" || requestedProvider)) {
+    if (
+      !upstream.ok &&
+      (requestedModel !== "hermes-agent" || requestedProvider)
+    ) {
       const retry = await post("hermes-agent", "");
       if (retry.ok) upstream = retry;
     }
@@ -258,7 +278,7 @@ export async function listHermesModelsDirect(opts: {
       redirect: "manual",
     });
     if (!res.ok) return { ok: false, models: [] };
-    let acc = parseHermesModelOptions(await res.json());
+    const acc = parseHermesModelOptions(await res.json());
     const extra = await enrichWithModelOptions(
       base,
       token,
@@ -328,7 +348,12 @@ export async function setHermesModelDirect(opts: {
   }
 }
 
-async function dashboardGet(url: string, key: string, path: string, signal?: AbortSignal): Promise<unknown> {
+async function dashboardGet(
+  url: string,
+  key: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
   const token = assertGatewayKey(key);
   const ctrl = signal ?? AbortSignal.timeout(12_000);
   const hdrs = headers(token);
@@ -389,18 +414,32 @@ export async function listHermesLiveDirect(opts: {
   signal?: AbortSignal;
 }): Promise<HermesLiveResult> {
   try {
-    const [apiSkills, apiTools, apiMcp, apiCron, apiChannels, apiSessions, apiPairing, apiHooks, apiProjects] =
-      await Promise.all([
-        dashboardGet(opts.url, opts.key, "/api/skills", opts.signal),
-        dashboardGet(opts.url, opts.key, "/api/tools/toolsets", opts.signal),
-        dashboardGet(opts.url, opts.key, "/api/mcp/servers", opts.signal),
-        dashboardGet(opts.url, opts.key, "/api/cron/jobs", opts.signal),
-        dashboardGet(opts.url, opts.key, "/api/messaging/platforms", opts.signal),
-        dashboardGet(opts.url, opts.key, "/api/sessions?limit=20&order=recent", opts.signal),
-        dashboardGet(opts.url, opts.key, "/api/pairing", opts.signal),
-        dashboardGet(opts.url, opts.key, "/api/webhooks", opts.signal),
-        dashboardGet(opts.url, opts.key, "/api/projects", opts.signal),
-      ]);
+    const [
+      apiSkills,
+      apiTools,
+      apiMcp,
+      apiCron,
+      apiChannels,
+      apiSessions,
+      apiPairing,
+      apiHooks,
+      apiProjects,
+    ] = await Promise.all([
+      dashboardGet(opts.url, opts.key, "/api/skills", opts.signal),
+      dashboardGet(opts.url, opts.key, "/api/tools/toolsets", opts.signal),
+      dashboardGet(opts.url, opts.key, "/api/mcp/servers", opts.signal),
+      dashboardGet(opts.url, opts.key, "/api/cron/jobs", opts.signal),
+      dashboardGet(opts.url, opts.key, "/api/messaging/platforms", opts.signal),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        "/api/sessions?limit=20&order=recent",
+        opts.signal,
+      ),
+      dashboardGet(opts.url, opts.key, "/api/pairing", opts.signal),
+      dashboardGet(opts.url, opts.key, "/api/webhooks", opts.signal),
+      dashboardGet(opts.url, opts.key, "/api/projects", opts.signal),
+    ]);
     return {
       ok: true,
       writable: true,
@@ -425,18 +464,35 @@ export async function listHermesLiveDirect(opts: {
 export async function mutateHermesDirect(opts: {
   url: string;
   key: string;
-  action: "toggle-skill" | "toggle-toolset" | "toggle-mcp" | "cron-pause" | "cron-resume";
+  action:
+    | "toggle-skill"
+    | "toggle-toolset"
+    | "toggle-mcp"
+    | "cron-pause"
+    | "cron-resume"
+    | "cron-create"
+    | "project-create";
   name?: string;
   enabled?: boolean;
   jobId?: string;
+  prompt?: string;
+  schedule?: string;
+  path?: string;
+  description?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   try {
     let ok = false;
     if (opts.action === "toggle-skill" && opts.name) {
-      ok = await dashboardSend(opts.url, opts.key, "/api/skills/toggle", "PUT", {
-        name: opts.name,
-        enabled: Boolean(opts.enabled),
-      });
+      ok = await dashboardSend(
+        opts.url,
+        opts.key,
+        "/api/skills/toggle",
+        "PUT",
+        {
+          name: opts.name,
+          enabled: Boolean(opts.enabled),
+        },
+      );
     } else if (opts.action === "toggle-toolset" && opts.name) {
       ok = await dashboardSend(
         opts.url,
@@ -467,8 +523,29 @@ export async function mutateHermesDirect(opts: {
         `/api/cron/jobs/${encodeURIComponent(opts.jobId)}/resume`,
         "POST",
       );
+    } else if (
+      opts.action === "cron-create" &&
+      opts.name &&
+      opts.prompt &&
+      opts.schedule
+    ) {
+      ok = await dashboardSend(opts.url, opts.key, "/api/cron/jobs", "POST", {
+        name: opts.name,
+        prompt: opts.prompt,
+        schedule: opts.schedule,
+        deliver: "local",
+      });
+    } else if (opts.action === "project-create" && opts.name) {
+      ok = await dashboardSend(opts.url, opts.key, "/api/projects", "POST", {
+        name: opts.name,
+        description: opts.description || undefined,
+        primary_path: opts.path || undefined,
+        folders: opts.path ? [opts.path] : [],
+      });
     }
-    return ok ? { ok: true } : { ok: false, error: "Hermes couldn’t save the change." };
+    return ok
+      ? { ok: true }
+      : { ok: false, error: "Hermes couldn’t save the change." };
   } catch {
     return { ok: false, error: "Hermes couldn’t save the change." };
   }

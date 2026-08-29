@@ -29,7 +29,6 @@ import {
   mcpFromApi,
   pairingList,
   prettyName,
-  projectFromUnknown,
   projectsFromApi,
   sessionsFromApi,
   skillsFromApi,
@@ -47,7 +46,12 @@ const SKIP_DIRS = new Set([
   "dist",
 ]);
 
-type Gate = { url: string; key: string; place?: GatewayPlace; signal?: AbortSignal };
+type Gate = {
+  url: string;
+  key: string;
+  place?: GatewayPlace;
+  signal?: AbortSignal;
+};
 
 async function readUtf8(path: string): Promise<string> {
   try {
@@ -63,7 +67,8 @@ function parseFrontmatter(text: string): { name: string; description: string } {
   if (end < 0) return { name: "", description: "" };
   const block = text.slice(4, end);
   const name = /(?:^|\n)name:\s*["']?([^\n"']+)/.exec(block)?.[1]?.trim() ?? "";
-  const folded = /(?:^|\n)description:\s*[|>][^\n]*\n((?:[ \t]+[^\n]*\n?)*)/.exec(block);
+  const folded =
+    /(?:^|\n)description:\s*[|>][^\n]*\n((?:[ \t]+[^\n]*\n?)*)/.exec(block);
   if (folded) {
     const description = folded[1]
       .split("\n")
@@ -78,7 +83,11 @@ function parseFrontmatter(text: string): { name: string; description: string } {
   return { name, description };
 }
 
-async function walkSkillFiles(dir: string, acc: string[], depth = 0): Promise<void> {
+async function walkSkillFiles(
+  dir: string,
+  acc: string[],
+  depth = 0,
+): Promise<void> {
   if (depth > 6 || acc.length > 400) return;
   let entries;
   try {
@@ -106,7 +115,12 @@ async function skillsFromDisk(): Promise<HermesSkillRow[]> {
     const raw = await readUtf8(file);
     const meta = parseFrontmatter(raw);
     const parts = file.split("/skills/")[1]?.split("/") ?? [];
-    const folder = parts.length > 2 ? parts[0] : parts[0] === "SKILL.md" ? "otras" : parts[0];
+    const folder =
+      parts.length > 2
+        ? parts[0]
+        : parts[0] === "SKILL.md"
+          ? "otras"
+          : parts[0];
     const id = meta.name || parts[parts.length - 2] || file;
     if (seen.has(id)) continue;
     seen.add(id);
@@ -130,7 +144,11 @@ async function skillsFromDisk(): Promise<HermesSkillRow[]> {
       enabled: !disabled.has(id),
     });
   }
-  return out.sort((a, b) => a.groupLabel.localeCompare(b.groupLabel) || a.title.localeCompare(b.title));
+  return out.sort(
+    (a, b) =>
+      a.groupLabel.localeCompare(b.groupLabel) ||
+      a.title.localeCompare(b.title),
+  );
 }
 
 async function disabledSkillsFromDisk(): Promise<string[]> {
@@ -151,7 +169,9 @@ print(json.dumps({k:cfg.get(k) for k in keep}))`;
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const run = promisify(execFile);
-    const { stdout } = await run("python3", ["-c", script, file], { timeout: 5000 });
+    const { stdout } = await run("python3", ["-c", script, file], {
+      timeout: 5000,
+    });
     return asRec(JSON.parse(stdout));
   } catch {
     return {};
@@ -161,14 +181,18 @@ print(json.dumps({k:cfg.get(k) for k in keep}))`;
 async function toolsetsFromDisk(): Promise<HermesToolsetRow[]> {
   const cfg = await loadConfigDoc();
   const platforms = asRec(cfg.platform_toolsets);
-  const cli = Array.isArray(platforms.cli) ? platforms.cli.map(str).filter(Boolean) : [];
+  const cli = Array.isArray(platforms.cli)
+    ? platforms.cli.map(str).filter(Boolean)
+    : [];
   const enabled = new Set(cli);
   const names = enabled.size ? [...enabled] : ["hermes-cli"];
   return names.map((name) => ({
     id: name,
     name,
     label: prettyName(name),
-    description: name.startsWith("hermes-") ? "Toolset de Hermes para este canal." : "Toolset nativo de Hermes.",
+    description: name.startsWith("hermes-")
+      ? "Toolset de Hermes para este canal."
+      : "Toolset nativo de Hermes.",
     enabled: true,
     tools: [],
     platform: "cli",
@@ -209,7 +233,8 @@ async function channelsFromDisk(): Promise<HermesChannelRow[]> {
   const known = ["whatsapp", "telegram", "discord", "slack", "signal"];
   const seen = new Map<string, HermesChannelRow>();
   for (const id of known) {
-    if (!cfg[id] || typeof cfg[id] !== "object" || Array.isArray(cfg[id])) continue;
+    if (!cfg[id] || typeof cfg[id] !== "object" || Array.isArray(cfg[id]))
+      continue;
     seen.set(id, {
       id,
       name: prettyName(id),
@@ -258,7 +283,9 @@ print(json.dumps(out))`;
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const run = promisify(execFile);
-    const { stdout } = await run("python3", ["-c", script, file], { timeout: 5000 });
+    const { stdout } = await run("python3", ["-c", script, file], {
+      timeout: 5000,
+    });
     return projectsFromApi(JSON.parse(stdout));
   } catch {
     return [];
@@ -278,7 +305,12 @@ export async function fetchHermesLive(opts?: {
   const local = localHermesAvailable();
   const readDisk = owner && local && opts?.local !== false;
   const gate: Gate | null = writable
-    ? { url: opts!.url!, key: opts!.key!, place: opts?.place, signal: opts?.signal }
+    ? {
+        url: opts!.url!,
+        key: opts!.key!,
+        place: opts?.place,
+        signal: opts?.signal,
+      }
     : null;
 
   const empty = {
@@ -320,18 +352,27 @@ export async function fetchHermesLive(opts?: {
   let webhooks: HermesWebhookRow[] = [];
 
   if (gate) {
-    const [apiSkills, apiTools, apiMcp, apiCron, apiChannels, apiSessions, apiPairing, apiHooks, apiProjects] =
-      await Promise.all([
-        hermesDashboardGet(gate, "/api/skills"),
-        hermesDashboardGet(gate, "/api/tools/toolsets"),
-        hermesDashboardGet(gate, "/api/mcp/servers"),
-        hermesDashboardGet(gate, "/api/cron/jobs"),
-        hermesDashboardGet(gate, "/api/messaging/platforms"),
-        hermesDashboardGet(gate, "/api/sessions?limit=20&order=recent"),
-        hermesDashboardGet(gate, "/api/pairing"),
-        hermesDashboardGet(gate, "/api/webhooks"),
-        hermesDashboardGet(gate, "/api/projects"),
-      ]);
+    const [
+      apiSkills,
+      apiTools,
+      apiMcp,
+      apiCron,
+      apiChannels,
+      apiSessions,
+      apiPairing,
+      apiHooks,
+      apiProjects,
+    ] = await Promise.all([
+      hermesDashboardGet(gate, "/api/skills"),
+      hermesDashboardGet(gate, "/api/tools/toolsets"),
+      hermesDashboardGet(gate, "/api/mcp/servers"),
+      hermesDashboardGet(gate, "/api/cron/jobs"),
+      hermesDashboardGet(gate, "/api/messaging/platforms"),
+      hermesDashboardGet(gate, "/api/sessions?limit=20&order=recent"),
+      hermesDashboardGet(gate, "/api/pairing"),
+      hermesDashboardGet(gate, "/api/webhooks"),
+      hermesDashboardGet(gate, "/api/projects"),
+    ]);
     const nextSkills = skillsFromApi(apiSkills);
     if (nextSkills.length) skills = nextSkills;
     const nextTools = toolsetsFromApi(apiTools);
@@ -369,9 +410,23 @@ export async function fetchHermesLive(opts?: {
 }
 
 export async function mutateHermesLive(
-  opts: { url: string; key: string; place?: GatewayPlace; signal?: AbortSignal },
+  opts: {
+    url: string;
+    key: string;
+    place?: GatewayPlace;
+    signal?: AbortSignal;
+    local?: boolean;
+  },
   action: string,
-  body: { name?: string; enabled?: boolean; jobId?: string },
+  body: {
+    name?: string;
+    enabled?: boolean;
+    jobId?: string;
+    prompt?: string;
+    schedule?: string;
+    path?: string;
+    description?: string;
+  },
 ): Promise<boolean> {
   if (action === "toggle-skill" && body.name) {
     return hermesDashboardSend(opts, "/api/skills/toggle", "PUT", {
@@ -396,10 +451,70 @@ export async function mutateHermesLive(
     );
   }
   if (action === "cron-pause" && body.jobId) {
-    return hermesDashboardSend(opts, `/api/cron/jobs/${encodeURIComponent(body.jobId)}/pause`, "POST");
+    return hermesDashboardSend(
+      opts,
+      `/api/cron/jobs/${encodeURIComponent(body.jobId)}/pause`,
+      "POST",
+    );
   }
   if (action === "cron-resume" && body.jobId) {
-    return hermesDashboardSend(opts, `/api/cron/jobs/${encodeURIComponent(body.jobId)}/resume`, "POST");
+    return hermesDashboardSend(
+      opts,
+      `/api/cron/jobs/${encodeURIComponent(body.jobId)}/resume`,
+      "POST",
+    );
+  }
+  if (action === "cron-create" && body.name && body.prompt && body.schedule) {
+    return hermesDashboardSend(opts, "/api/cron/jobs", "POST", {
+      name: body.name,
+      prompt: body.prompt,
+      schedule: body.schedule,
+      deliver: "local",
+    });
+  }
+  if (action === "project-create" && body.name) {
+    const created = await hermesDashboardSend(opts, "/api/projects", "POST", {
+      name: body.name,
+      description: body.description || undefined,
+      primary_path: body.path || undefined,
+      folders: body.path ? [body.path] : [],
+    });
+    if (created) return true;
+    if (opts.local) {
+      return createProjectLocally({
+        name: body.name,
+        path: body.path,
+        description: body.description,
+      });
+    }
   }
   return false;
+}
+
+async function createProjectLocally(body: {
+  name: string;
+  path?: string;
+  description?: string;
+}): Promise<boolean> {
+  const { execFile } = await import("node:child_process");
+  const { access } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { promisify } = await import("node:util");
+  const executable = join(
+    getHermesHomeDir(),
+    "hermes-agent",
+    "venv",
+    "bin",
+    "hermes",
+  );
+  try {
+    await access(executable);
+    const args = ["project", "create", body.name];
+    if (body.path) args.push(body.path, "--primary", body.path);
+    if (body.description) args.push("--description", body.description);
+    await promisify(execFile)(executable, args, { timeout: 12_000 });
+    return true;
+  } catch {
+    return false;
+  }
 }

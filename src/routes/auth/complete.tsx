@@ -15,7 +15,7 @@ function AuthCompletePage() {
 
   useEffect(() => {
     if (!token) {
-      void navigate({ to: "/login" });
+      void navigate({ to: "/login", search: { error: undefined } });
       return;
     }
     setBearerToken(token);

@@ -1,6 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Camera, ChevronDown, Image as ImageIcon, Paperclip, Plus, RotateCw } from "lucide-react";
+import {
+  Camera,
+  Check,
+  ChevronDown,
+  Copy,
+  Image as ImageIcon,
+  Paperclip,
+  Plus,
+  RotateCw,
+  Share2,
+  X,
+} from "lucide-react";
 import { Mark } from "@/components/logo";
 import {
   DropdownMenu,
@@ -11,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input, Textarea } from "@/components/ui/input";
-import type { ChatEvent } from "@/lib/gateway";
+import type { ChatEvent, HermesChatContent } from "@/lib/gateway";
 import {
   getMacSessionKey,
   groupHermesModels,
@@ -35,6 +46,9 @@ export function ChatView() {
   const setDraft = useHermes((s) => s.setDraft);
   const appendMessage = useHermes((s) => s.appendMessage);
   const patchMessage = useHermes((s) => s.patchMessage);
+  const truncateConversationAfter = useHermes(
+    (s) => s.truncateConversationAfter,
+  );
   const newChat = useHermes((s) => s.newChat);
   const model = useHermes((s) => s.model);
   const provider = useHermes((s) => s.modelProvider);
@@ -51,6 +65,7 @@ export function ChatView() {
   const [attachOpen, setAttachOpen] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelQuery, setModelQuery] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -64,14 +79,14 @@ export function ChatView() {
   const slash = matchSlash(draft);
   const live = gatewayOn && gatewayStatus === "live";
   const empty = !conv || conv.messages.length === 0;
-  const firstIsUser = Boolean(conv?.messages[0] && conv.messages[0].role === "user");
-  const lastAssistantId = conv
-    ? [...conv.messages].reverse().find((msg) => msg.role === "assistant")?.id
-    : undefined;
+  const firstIsUser = Boolean(
+    conv?.messages[0] && conv.messages[0].role === "user",
+  );
   const modelChoices = live ? (gatewayMeta?.models ?? []) : [];
   const currentChoice =
-    modelChoices.find((m) => m.id === model && (!provider || m.provider === provider)) ??
-    modelChoices.find((m) => m.id === model);
+    modelChoices.find(
+      (m) => m.id === model && (!provider || m.provider === provider),
+    ) ?? modelChoices.find((m) => m.id === model);
   const currentLabel = live
     ? (currentChoice?.label ?? prettyModelLabel(model) ?? "Hermes")
     : "Hermes";
@@ -83,8 +98,8 @@ export function ChatView() {
       .map((group) => ({
         ...group,
         models: group.models.filter((m) =>
-          [m.id, m.label, m.provider, m.providerName, group.name].some((value) =>
-            (value || "").toLowerCase().includes(modelFilter),
+          [m.id, m.label, m.provider, m.providerName, group.name].some(
+            (value) => (value || "").toLowerCase().includes(modelFilter),
           ),
         ),
       }))
@@ -104,10 +119,12 @@ export function ChatView() {
   useEffect(() => {
     if (!live) return;
     const ctrl = new AbortController();
-    void listHermesModels({ refresh: true, signal: ctrl.signal }).then((result) => {
-      if (ctrl.signal.aborted || !result.ok) return;
-      setGatewayModels(result.models);
-    });
+    void listHermesModels({ refresh: true, signal: ctrl.signal }).then(
+      (result) => {
+        if (ctrl.signal.aborted || !result.ok) return;
+        setGatewayModels(result.models);
+      },
+    );
     return () => ctrl.abort();
   }, [live, setGatewayModels]);
 
@@ -115,11 +132,13 @@ export function ChatView() {
     if (!modelsOpen || !live) return;
     const ctrl = new AbortController();
     setModelsLoading(true);
-    void listHermesModels({ refresh: true, signal: ctrl.signal }).then((result) => {
-      if (ctrl.signal.aborted) return;
-      if (result.ok) setGatewayModels(result.models);
-      setModelsLoading(false);
-    });
+    void listHermesModels({ refresh: true, signal: ctrl.signal }).then(
+      (result) => {
+        if (ctrl.signal.aborted) return;
+        if (result.ok) setGatewayModels(result.models);
+        setModelsLoading(false);
+      },
+    );
     return () => {
       ctrl.abort();
       setModelsLoading(false);
@@ -140,7 +159,9 @@ export function ChatView() {
     }
     if (text === "/retry") {
       setDraft("");
-      const last = [...conv.messages].reverse().find((m) => m.role === "assistant" && !m.pending);
+      const last = [...conv.messages]
+        .reverse()
+        .find((m) => m.role === "assistant" && !m.pending);
       if (last && (last.error || last.incomplete)) void retry(last.id);
       return;
     }
@@ -173,6 +194,7 @@ export function ChatView() {
     if (idx < 0) return;
     const history = latest.messages.slice(0, idx);
     if (!history.some((m) => m.role === "user")) return;
+    truncateConversationAfter(conv.id, assistantId);
     patchMessage(conv.id, assistantId, {
       content: "",
       pending: true,
@@ -183,6 +205,32 @@ export function ChatView() {
     await runStream(conv.id, assistantId, history);
   }
 
+  async function copyResponse(messageId: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(messageId);
+      window.setTimeout(
+        () =>
+          setCopiedId((current) => (current === messageId ? null : current)),
+        1_600,
+      );
+    } catch {
+      // Clipboard access can be unavailable in restricted browser contexts.
+    }
+  }
+
+  async function shareResponse(messageId: string, text: string) {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Alice", text });
+        return;
+      } catch (error) {
+        if ((error as Error).name === "AbortError") return;
+      }
+    }
+    await copyResponse(messageId, text);
+  }
+
   async function runStream(
     conversationId: string,
     assistantId: string,
@@ -191,12 +239,23 @@ export function ChatView() {
     setSending(true);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    let latestAttachmentMessage = -1;
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      if (history[index].attachments?.length) {
+        latestAttachmentMessage = index;
+        break;
+      }
+    }
     const payload = history
-      .filter((m) => m.content.trim())
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+      .map((message, index) => ({
+        role: message.role as "user" | "assistant",
+        content: hermesContent(message, index === latestAttachmentMessage),
+      }))
+      .filter((message) =>
+        typeof message.content === "string"
+          ? Boolean(message.content.trim())
+          : message.content.length > 0,
+      );
     const fail = (message: string) => {
       patchMessage(conversationId, assistantId, {
         pending: false,
@@ -206,22 +265,26 @@ export function ChatView() {
       });
     };
     try {
-      const apply = (ev: ChatEvent, acc: { content: string; tools: NonNullable<Message["tools"]> }) => {
+      const apply = (
+        ev: ChatEvent,
+        acc: { content: string; tools: NonNullable<Message["tools"]> },
+      ) => {
         if (ev.type === "delta") {
           const chunk = acc.content ? ev.text : ev.text.replace(/^\s+/, "");
           if (!chunk) return "continue" as const;
           acc.content += chunk;
-          patchMessage(conversationId, assistantId, { content: acc.content, pending: true });
+          patchMessage(conversationId, assistantId, {
+            content: acc.content,
+            pending: true,
+          });
           return "continue" as const;
         }
         if (ev.type === "tool") {
-          acc.tools.push({
-            id: uid(),
-            name: ev.name,
-            status: ev.status,
-            detail: ev.detail,
+          mergeToolEvent(acc.tools, ev);
+          patchMessage(conversationId, assistantId, {
+            tools: [...acc.tools],
+            pending: true,
           });
-          patchMessage(conversationId, assistantId, { tools: [...acc.tools], pending: true });
           return "continue" as const;
         }
         patchMessage(conversationId, assistantId, {
@@ -258,77 +321,85 @@ export function ChatView() {
           incomplete: !acc.content,
         });
       } else {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        signal: ctrl.signal,
-        body: JSON.stringify({
-          conversationId,
-          model,
-          provider,
-          messages: payload,
-        }),
-      });
-      const ct = res.headers.get("content-type") ?? "";
-      if (!res.body) {
-        fail(tr("en", "error.noReply"));
-        return;
-      }
-      if (!res.ok && ct.includes("application/json") && !ct.includes("ndjson")) {
-        fail(tr("en", "error.noReply"));
-        return;
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let content = "";
-      const tools: NonNullable<Message["tools"]> = [];
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const ev = JSON.parse(line) as ChatEvent;
-            if (ev.type === "delta") {
-              const chunk = content ? ev.text : ev.text.replace(/^\s+/, "");
-              if (!chunk) continue;
-              content += chunk;
-              patchMessage(conversationId, assistantId, { content, pending: true });
-            } else if (ev.type === "tool") {
-              tools.push({
-                id: uid(),
-                name: ev.name,
-                status: ev.status,
-                detail: ev.detail,
-              });
-              patchMessage(conversationId, assistantId, { tools: [...tools], pending: true });
-            } else if (ev.type === "error") {
-              patchMessage(conversationId, assistantId, {
-                pending: false,
-                error: ev.message,
-                incomplete: undefined,
-                content: content || ev.message,
-              });
-              return;
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            conversationId,
+            model,
+            provider,
+            messages: payload,
+          }),
+        });
+        const ct = res.headers.get("content-type") ?? "";
+        if (!res.body) {
+          fail(tr("en", "error.noReply"));
+          return;
+        }
+        if (
+          !res.ok &&
+          ct.includes("application/json") &&
+          !ct.includes("ndjson")
+        ) {
+          fail(tr("en", "error.noReply"));
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let content = "";
+        const tools: NonNullable<Message["tools"]> = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const ev = JSON.parse(line) as ChatEvent;
+              if (ev.type === "delta") {
+                const chunk = content ? ev.text : ev.text.replace(/^\s+/, "");
+                if (!chunk) continue;
+                content += chunk;
+                patchMessage(conversationId, assistantId, {
+                  content,
+                  pending: true,
+                });
+              } else if (ev.type === "tool") {
+                mergeToolEvent(tools, ev);
+                patchMessage(conversationId, assistantId, {
+                  tools: [...tools],
+                  pending: true,
+                });
+              } else if (ev.type === "error") {
+                patchMessage(conversationId, assistantId, {
+                  pending: false,
+                  error: ev.message,
+                  incomplete: undefined,
+                  content: content || ev.message,
+                });
+                return;
+              }
+            } catch {
+              // skip malformed
             }
-          } catch {
-            // skip malformed
           }
         }
-      }
-      patchMessage(conversationId, assistantId, {
-        content: content || tr("en", "chat.noReply"),
-        pending: false,
-        incomplete: !content,
-      });
+        patchMessage(conversationId, assistantId, {
+          content: content || tr("en", "chat.noReply"),
+          pending: false,
+          incomplete: !content,
+        });
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") {
-        patchMessage(conversationId, assistantId, { pending: false, incomplete: true });
+        patchMessage(conversationId, assistantId, {
+          pending: false,
+          incomplete: true,
+        });
       } else {
         fail(tr("en", "error.connect"));
       }
@@ -346,9 +417,9 @@ export function ChatView() {
       url: gatewayUrl,
       key:
         gatewayPlace === "mac"
-          ? getMacSessionKey() ?? undefined
+          ? (getMacSessionKey() ?? undefined)
           : gatewayPlace === "device"
-            ? getDeviceSessionKey() ?? undefined
+            ? (getDeviceSessionKey() ?? undefined)
             : undefined,
       place: gatewayPlace,
       model: id,
@@ -376,7 +447,13 @@ export function ChatView() {
     for (const file of Array.from(list)) {
       const kind = file.type.startsWith("image/") ? "image" : "file";
       const dataUrl = await readFile(file);
-      next.push({ id: uid(), name: file.name, mime: file.type || "application/octet-stream", kind, dataUrl });
+      next.push({
+        id: uid(),
+        name: file.name,
+        mime: file.type || "application/octet-stream",
+        kind,
+        dataUrl,
+      });
     }
     setFiles((prev) => [...prev, ...next]);
   }
@@ -399,10 +476,13 @@ export function ChatView() {
           </p>
         </div>
       ) : (
-        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          ref={scroller}
+          className="alice-chat-scroller min-h-0 flex-1 overflow-y-auto"
+        >
           <div
             className={cn(
-              "alice-message-list mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pb-36 sm:px-6",
+              "alice-message-list mx-auto flex w-full max-w-[45rem] flex-col gap-6 px-4 pb-28 sm:px-6",
               firstIsUser ? "pt-[10vh]" : "pt-8",
             )}
           >
@@ -411,45 +491,84 @@ export function ChatView() {
                 m.role === "assistant"
                   ? displayMessageContent(locale, m.content.replace(/^\s+/, ""))
                   : m.content;
-              const canRetry =
+              const canTryAgain =
                 m.role === "assistant" &&
                 !m.pending &&
-                Boolean(m.error || m.incomplete) &&
-                lastAssistantId === m.id &&
                 conv.messages.slice(0, i).some((msg) => msg.role === "user");
               return (
                 <article
                   key={m.id}
-                  className={cn("flex flex-col gap-2", m.role === "user" && "items-end")}
+                  className={cn(
+                    "flex flex-col gap-2",
+                    m.role === "user" && "items-end",
+                  )}
                 >
                   {m.role === "user" ? null : (
                     <p className="text-2xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
                       Alice
                     </p>
                   )}
-                  <div
-                    className={cn(
-                      "alice-message max-w-[42rem] whitespace-pre-wrap text-sm leading-relaxed",
-                      m.role === "user"
-                        ? "alice-user-message rounded-xl bg-card px-4 py-3 shadow-border"
-                        : "text-foreground",
-                      m.error && "text-destructive",
-                    )}
-                  >
-                    {text}
-                    {m.pending ? <ReplyPending trail={Boolean(text)} /> : null}
-                  </div>
-                  {canRetry ? (
-                    <button
-                      type="button"
-                      disabled={sending}
-                      onClick={() => void retry(m.id)}
-                      aria-label={t("chat.retry")}
-                      className="inline-flex w-fit items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground disabled:opacity-40"
+                  {text || m.pending ? (
+                    <div
+                      className={cn(
+                        "alice-message max-w-[42rem] whitespace-pre-wrap text-base leading-relaxed",
+                        m.role === "user"
+                          ? "alice-user-message rounded-xl bg-card px-4 py-3"
+                          : "text-foreground",
+                        m.error && "text-destructive",
+                      )}
                     >
-                      <RotateCw className="size-3" />
-                      {t("chat.retry")}
-                    </button>
+                      {m.role === "assistant" ? (
+                        <AssistantContent text={text} />
+                      ) : (
+                        text
+                      )}
+                      {m.pending && !text ? <ReplyPending /> : null}
+                    </div>
+                  ) : null}
+                  {m.attachments?.length ? (
+                    <MessageAttachments attachments={m.attachments} />
+                  ) : null}
+                  {m.tools?.length ? <ToolActivity tools={m.tools} /> : null}
+                  {m.role === "assistant" && !m.pending && text ? (
+                    <div className="-ml-1 flex items-center" role="group">
+                      <button
+                        type="button"
+                        onClick={() => void copyResponse(m.id, text)}
+                        aria-label={t(
+                          copiedId === m.id ? "chat.copied" : "chat.copy",
+                        )}
+                        title={t(
+                          copiedId === m.id ? "chat.copied" : "chat.copy",
+                        )}
+                        className="grid h-10 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground md:size-7"
+                      >
+                        {copiedId === m.id ? (
+                          <Check className="size-3.5" />
+                        ) : (
+                          <Copy className="size-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void shareResponse(m.id, text)}
+                        aria-label={t("chat.share")}
+                        title={t("chat.share")}
+                        className="grid h-10 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground md:size-7"
+                      >
+                        <Share2 className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canTryAgain || sending}
+                        onClick={() => void retry(m.id)}
+                        aria-label={t("chat.tryAgain")}
+                        title={t("chat.tryAgain")}
+                        className="grid h-10 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-35 md:size-7"
+                      >
+                        <RotateCw className="size-3.5" />
+                      </button>
+                    </div>
                   ) : null}
                 </article>
               );
@@ -461,12 +580,10 @@ export function ChatView() {
       <div
         className={cn(
           "px-4 sm:px-6",
-          empty
-            ? "mt-8 w-full max-w-2xl"
-            : "pointer-events-none absolute inset-x-0 bottom-0 pb-5",
+          empty ? "mt-8 w-full max-w-2xl" : "w-full pb-5",
         )}
       >
-        <div className={cn("mx-auto w-full max-w-2xl", !empty && "pointer-events-auto")}>
+        <div className="mx-auto w-full max-w-2xl">
           {slash.length > 0 ? (
             <ul className="mb-2 overflow-hidden rounded-2xl bg-card py-1 shadow-border">
               {slash.map((item) => (
@@ -477,7 +594,9 @@ export function ChatView() {
                     onClick={() => setDraft(item.cmd + " ")}
                   >
                     <span className="font-mono text-xs">{item.cmd}</span>
-                    <span className="text-muted-foreground">{slashHint(locale, item.cmd)}</span>
+                    <span className="text-muted-foreground">
+                      {slashHint(locale, item.cmd)}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -488,9 +607,22 @@ export function ChatView() {
               {files.map((f) => (
                 <li
                   key={f.id}
-                  className="rounded-full bg-card px-2.5 py-1 text-2xs text-muted-foreground shadow-border"
+                  className="flex min-w-0 items-center gap-1 rounded-md bg-card py-1 pl-3 pr-1 text-2xs text-muted-foreground shadow-border"
                 >
-                  {f.name}
+                  <span className="max-w-48 truncate">{f.name}</span>
+                  <button
+                    type="button"
+                    aria-label={t("chat.removeAttachment", { name: f.name })}
+                    title={t("chat.removeAttachment", { name: f.name })}
+                    onClick={() =>
+                      setFiles((current) =>
+                        current.filter((file) => file.id !== f.id),
+                      )
+                    }
+                    className="grid size-8 shrink-0 place-items-center rounded-md hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -507,7 +639,7 @@ export function ChatView() {
               }}
               placeholder={t("chat.placeholder")}
               rows={2}
-              className="min-h-[2.5rem] w-full bg-transparent py-1 pl-2 pr-0 text-[15px] placeholder:text-muted-foreground/70"
+              className="min-h-[2.5rem] w-full bg-transparent py-1 pl-2 pr-0 text-base placeholder:text-muted-foreground/70 md:text-base"
             />
             <div className="mt-1 flex items-center gap-1.5">
               <input
@@ -535,6 +667,7 @@ export function ChatView() {
               <input
                 ref={filesRef}
                 type="file"
+                accept="image/*,text/*,.md,.markdown,.json,.csv,.ts,.tsx,.js,.jsx,.py,.html,.css,.xml,.yaml,.yml"
                 multiple
                 className="hidden"
                 onChange={(e) => {
@@ -589,7 +722,10 @@ export function ChatView() {
                 open={modelsOpen}
                 onOpenChange={(open) => {
                   setModelsOpen(open);
-                  if (open) setAttachOpen(false);
+                  if (open) {
+                    setAttachOpen(false);
+                    window.setTimeout(() => modelSearchRef.current?.focus(), 0);
+                  }
                 }}
               >
                 <DropdownMenuTrigger asChild>
@@ -604,13 +740,11 @@ export function ChatView() {
                 <DropdownMenuContent
                   align="start"
                   className="flex max-h-80 min-w-64 flex-col overflow-hidden p-1"
-                  onOpenAutoFocus={(e) => {
-                    e.preventDefault();
-                    window.setTimeout(() => modelSearchRef.current?.focus(), 0);
-                  }}
                 >
                   {!live ? (
-                    <DropdownMenuItem onSelect={() => void navigate({ to: "/connect" })}>
+                    <DropdownMenuItem
+                      onSelect={() => void navigate({ to: "/connect" })}
+                    >
                       {t("chat.connectHermes")}
                     </DropdownMenuItem>
                   ) : (
@@ -635,11 +769,14 @@ export function ChatView() {
                       </div>
                       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                         {modelsLoading && modelChoices.length === 0 ? (
-                          <DropdownMenuItem disabled>{t("chat.loadingModels")}</DropdownMenuItem>
+                          <DropdownMenuItem disabled>
+                            {t("chat.loadingModels")}
+                          </DropdownMenuItem>
                         ) : visibleGroups.length === 0 ? (
                           <DropdownMenuItem
                             onSelect={() => {
-                              if (modelQuery.trim()) pickModel(modelQuery.trim());
+                              if (modelQuery.trim())
+                                pickModel(modelQuery.trim());
                             }}
                           >
                             {modelQuery.trim()
@@ -650,9 +787,13 @@ export function ChatView() {
                           visibleGroups.map((group, i) => (
                             <div key={group.slug}>
                               {i > 0 ? <DropdownMenuSeparator /> : null}
-                              <DropdownMenuLabel>{group.name}</DropdownMenuLabel>
+                              <DropdownMenuLabel>
+                                {group.name}
+                              </DropdownMenuLabel>
                               {group.models.map((m) => {
-                                const on = m.id === model && (!provider || m.provider === provider);
+                                const on =
+                                  m.id === model &&
+                                  (!provider || m.provider === provider);
                                 return (
                                   <DropdownMenuItem
                                     key={`${m.provider}:${m.id}`}
@@ -674,11 +815,18 @@ export function ChatView() {
               <button
                 type="button"
                 aria-label={sending ? t("chat.stop") : t("chat.send")}
-                disabled={!sending && !draft.trim()}
-                onClick={() => (sending ? abortRef.current?.abort() : void send())}
+                disabled={!sending && !draft.trim() && files.length === 0}
+                onClick={() =>
+                  sending ? abortRef.current?.abort() : void send()
+                }
                 className="ml-auto grid size-9 place-items-center rounded-full bg-muted text-foreground disabled:opacity-40"
               >
-                <svg viewBox="0 0 16 16" className="size-3.5" fill="none" aria-hidden>
+                <svg
+                  viewBox="0 0 16 16"
+                  className="size-3.5"
+                  fill="none"
+                  aria-hidden
+                >
                   <path
                     d="M8 12.5V3.5M8 3.5 3.5 8M8 3.5 12.5 8"
                     stroke="currentColor"
@@ -696,19 +844,121 @@ export function ChatView() {
   );
 }
 
-function ReplyPending({ trail = false }: { trail?: boolean }) {
+function ReplyPending() {
   const t = useT();
   return (
-    <span
-      className={cn("alice-typing", trail && "alice-typing-trail")}
-      role="status"
-      aria-label={t("chat.pending")}
-    >
+    <span className="alice-typing" role="status" aria-label={t("chat.pending")}>
       <span aria-hidden />
       <span aria-hidden />
       <span aria-hidden />
     </span>
   );
+}
+
+function AssistantContent({ text }: { text: string }) {
+  const imagePattern =
+    /!\[([^\]]*)\]\(((?:data:image\/(?:png|jpe?g|gif|webp|bmp);base64,[A-Za-z0-9+/=]+)|(?:https?:\/\/[^)\s]+))\)/gi;
+  const parts: ReactNode[] = [];
+  let start = 0;
+  let match: RegExpExecArray | null;
+  while ((match = imagePattern.exec(text))) {
+    if (match.index > start) parts.push(text.slice(start, match.index));
+    parts.push(
+      <img
+        key={`${match.index}-${match[2].slice(0, 32)}`}
+        src={match[2]}
+        alt={match[1] || "Image from Hermes"}
+        className="my-3 max-h-[32rem] w-auto max-w-full rounded-md object-contain"
+      />,
+    );
+    start = imagePattern.lastIndex;
+  }
+  if (start < text.length) parts.push(text.slice(start));
+  return <>{parts}</>;
+}
+
+function MessageAttachments({ attachments }: { attachments: Attachment[] }) {
+  return (
+    <div className="flex max-w-[42rem] flex-wrap justify-end gap-2">
+      {attachments.map((attachment) =>
+        attachment.kind === "image" && attachment.dataUrl ? (
+          <img
+            key={attachment.id}
+            src={attachment.dataUrl}
+            alt={attachment.name}
+            className="max-h-64 max-w-64 rounded-md object-cover"
+          />
+        ) : (
+          <span
+            key={attachment.id}
+            className="max-w-64 truncate rounded-md bg-card px-3 py-2 text-sm text-muted-foreground"
+          >
+            {attachment.name}
+          </span>
+        ),
+      )}
+    </div>
+  );
+}
+
+function ToolActivity({ tools }: { tools: NonNullable<Message["tools"]> }) {
+  return (
+    <ul className="flex flex-col gap-1 text-2xs text-muted-foreground">
+      {tools.map((tool) => (
+        <li key={tool.id} className="flex min-w-0 items-center gap-2">
+          <span
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              tool.status === "done"
+                ? "bg-live"
+                : "animate-pulse bg-muted-foreground",
+            )}
+            aria-hidden
+          />
+          <span className="font-mono">{tool.name}</span>
+          {tool.detail && tool.detail !== tool.name ? (
+            <span className="truncate">{tool.detail}</span>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function mergeToolEvent(
+  tools: NonNullable<Message["tools"]>,
+  event: Extract<ChatEvent, { type: "tool" }>,
+) {
+  if (event.status === "start" && event.callId) {
+    const existing = tools.find((tool) => tool.callId === event.callId);
+    if (existing) {
+      if (event.detail) existing.detail = event.detail;
+      return;
+    }
+  }
+  if (event.status === "done") {
+    const running = [...tools]
+      .reverse()
+      .find(
+        (tool) =>
+          tool.status === "start" &&
+          (event.callId
+            ? tool.callId === event.callId
+            : tool.name === event.name),
+      );
+    if (running) {
+      running.status = "done";
+      if (event.detail) running.detail = event.detail;
+      return;
+    }
+  }
+  tools.push({
+    id: uid(),
+    callId: event.callId,
+    name: event.name,
+    status: event.status,
+    detail: event.detail,
+  });
 }
 
 function readFile(file: File): Promise<string> {
@@ -718,4 +968,58 @@ function readFile(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+function hermesContent(
+  message: Message,
+  includeAttachments: boolean,
+): HermesChatContent {
+  if (!includeAttachments || !message.attachments?.length)
+    return message.content;
+  const text = [message.content];
+  const images: Exclude<HermesChatContent, string> = [];
+  for (const attachment of message.attachments) {
+    if (
+      attachment.kind === "image" &&
+      attachment.dataUrl?.startsWith("data:image/")
+    ) {
+      images.push({
+        type: "image_url",
+        image_url: { url: attachment.dataUrl, detail: "auto" },
+      });
+      continue;
+    }
+    const contents = textAttachment(attachment);
+    if (contents) text.push(`Attached file — ${attachment.name}:\n${contents}`);
+  }
+  const combined = text.filter(Boolean).join("\n\n").slice(0, 60_000);
+  if (images.length === 0) return combined;
+  return [
+    ...(combined ? [{ type: "text" as const, text: combined }] : []),
+    ...images,
+  ];
+}
+
+function textAttachment(attachment: Attachment): string {
+  if (!attachment.dataUrl) return "";
+  const textual =
+    attachment.mime.startsWith("text/") ||
+    /(?:json|javascript|typescript|xml|yaml|csv)/i.test(attachment.mime) ||
+    /\.(?:md|markdown|json|csv|ts|tsx|js|jsx|py|html|css|xml|ya?ml)$/i.test(
+      attachment.name,
+    );
+  if (!textual) return "";
+  const comma = attachment.dataUrl.indexOf(",");
+  if (comma < 0) return "";
+  try {
+    const metadata = attachment.dataUrl.slice(0, comma);
+    const payload = attachment.dataUrl.slice(comma + 1);
+    if (!metadata.includes(";base64"))
+      return decodeURIComponent(payload).slice(0, 50_000);
+    const binary = atob(payload);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes).slice(0, 50_000);
+  } catch {
+    return "";
+  }
 }

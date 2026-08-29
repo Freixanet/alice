@@ -52,4 +52,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
+// Component consumers also need the variants when composing button-like controls.
+// eslint-disable-next-line react-refresh/only-export-components
 export { Button, buttonVariants };

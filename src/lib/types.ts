@@ -31,7 +31,8 @@ export type AddonKind = "plugin" | "mcp" | "bundle";
 
 export type ChannelStatus = "connected" | "paused" | "off";
 
-export type MemoryKind = "preference" | "project" | "procedure" | "person" | "fact";
+export type MemoryKind =
+  "preference" | "project" | "procedure" | "person" | "fact";
 
 export type JobStatus = "active" | "paused" | "ran";
 
@@ -127,6 +128,7 @@ export interface Message {
   attachments?: Attachment[];
   tools?: Array<{
     id: string;
+    callId?: string;
     name: string;
     status: "start" | "done";
     detail?: string;

@@ -48,10 +48,32 @@ export type HermesMemoryResult =
 
 export type ChatEvent =
   | { type: "delta"; text: string }
-  | { type: "tool"; name: string; status: "start" | "done"; detail?: string }
+  | {
+      type: "tool";
+      name: string;
+      status: "start" | "done";
+      detail?: string;
+      callId?: string;
+    }
   | { type: "error"; message: string };
 
-export type ProbeCode = "invalid" | "private" | "unauthorized" | "unreachable" | "cors" | "not_hermes";
+export type HermesChatContent =
+  | string
+  | Array<
+      | { type: "text"; text: string }
+      | {
+          type: "image_url";
+          image_url: { url: string; detail?: "auto" | "low" | "high" };
+        }
+    >;
+
+export type ProbeCode =
+  | "invalid"
+  | "private"
+  | "unauthorized"
+  | "unreachable"
+  | "cors"
+  | "not_hermes";
 
 export type ProbeResult =
   | {
@@ -146,8 +168,9 @@ export function normalizeLlmBaseUrl(raw: string): string {
 export function assertGatewayKey(raw: string): string {
   const k = raw.trim();
   if (k.length < 8 || k.length > 256) throw new GatewayError("invalid", FAIL);
-  if (/[\u0000-\u001f\u007f]/.test(k)) {
-    throw new GatewayError("invalid", FAIL);
+  for (const char of k) {
+    const code = char.charCodeAt(0);
+    if (code <= 31 || code === 127) throw new GatewayError("invalid", FAIL);
   }
   return k;
 }
@@ -158,6 +181,7 @@ export function isPrivateHostname(host: string): boolean {
     h === "localhost" ||
     h.endsWith(".localhost") ||
     h.endsWith(".local") ||
+    h.endsWith(".ts.net") ||
     h === "::1" ||
     h === "0.0.0.0" ||
     h === "metadata.google.internal" ||
@@ -218,7 +242,11 @@ export async function forgetHermesSecret() {
 }
 
 export function providerSlug(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
 export function prettyProvider(value?: string): string {
@@ -274,7 +302,11 @@ export function groupHermesModels(models: HermesModelOption[]): Array<{
   name: string;
   models: HermesModelOption[];
 }> {
-  const groups: Array<{ slug: string; name: string; models: HermesModelOption[] }> = [];
+  const groups: Array<{
+    slug: string;
+    name: string;
+    models: HermesModelOption[];
+  }> = [];
   const index = new Map<string, number>();
   for (const m of models) {
     const slug = m.provider || "hermes";
@@ -299,14 +331,23 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function optionFromUnknown(value: unknown, provider = "", providerName?: string): HermesModelOption | null {
+function optionFromUnknown(
+  value: unknown,
+  provider = "",
+  providerName?: string,
+): HermesModelOption | null {
   if (typeof value === "string" && value.trim()) {
     const id = value.trim();
     return { id, label: prettyModelLabel(id), provider, providerName };
   }
   const rec = asRecord(value);
   if (!rec) return null;
-  const id = typeof rec.id === "string" ? rec.id : typeof rec.model === "string" ? rec.model : "";
+  const id =
+    typeof rec.id === "string"
+      ? rec.id
+      : typeof rec.model === "string"
+        ? rec.model
+        : "";
   if (!id) return null;
   const label =
     typeof rec.label === "string"
@@ -336,12 +377,17 @@ function parsePickerProviders(rec: Record<string, unknown>): {
     if (!row) continue;
     const slug = typeof row.slug === "string" ? row.slug.trim() : "";
     if (!slug) continue;
-    const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : prettyProvider(slug);
+    const name =
+      typeof row.name === "string" && row.name.trim()
+        ? row.name.trim()
+        : prettyProvider(slug);
     const listed = Array.isArray(row.models) ? row.models : [];
     if (listed.length === 0) continue;
     const unavailable = new Set(
       Array.isArray(row.unavailable_models)
-        ? row.unavailable_models.filter((m): m is string => typeof m === "string")
+        ? row.unavailable_models.filter(
+            (m): m is string => typeof m === "string",
+          )
         : [],
     );
     for (const item of listed) {
@@ -440,7 +486,9 @@ export async function enrichWithModelOptions(
     "/api/model/options?refresh=1&include_unconfigured=1",
     "/api/model/options",
     "/api/models",
-    ...(refresh ? ["/api/model/options?refresh=1", "/api/models?refresh=1"] : []),
+    ...(refresh
+      ? ["/api/model/options?refresh=1", "/api/models?refresh=1"]
+      : []),
   ];
   const headerSets: HeadersInit[] = [
     {
@@ -452,24 +500,24 @@ export async function enrichWithModelOptions(
   ];
   for (const path of paths) {
     for (const headers of headerSets) {
-    try {
-      const res = await fetch(`${base}${path}`, {
-        headers,
-        signal,
-        cache: "no-store",
-        redirect: "manual",
-      });
-      if (!res.ok) continue;
-      const parsed = parseHermesModelOptions(await res.json());
-      if (parsed.models.length === 0) continue;
-      return {
-        models: unionHermesModels(fallback.models, parsed.models),
-        currentModel: parsed.currentModel || fallback.currentModel,
-        currentProvider: parsed.currentProvider || fallback.currentProvider,
-      };
-    } catch {
-      // try next
-    }
+      try {
+        const res = await fetch(`${base}${path}`, {
+          headers,
+          signal,
+          cache: "no-store",
+          redirect: "manual",
+        });
+        if (!res.ok) continue;
+        const parsed = parseHermesModelOptions(await res.json());
+        if (parsed.models.length === 0) continue;
+        return {
+          models: unionHermesModels(fallback.models, parsed.models),
+          currentModel: parsed.currentModel || fallback.currentModel,
+          currentProvider: parsed.currentProvider || fallback.currentProvider,
+        };
+      } catch {
+        // try next
+      }
     }
   }
   return fallback;
@@ -486,10 +534,10 @@ export async function* readSse(
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
-      for (const line of lines) {
-        const payload = sseData(line);
+      const frames = buf.split(/\r?\n\r?\n/);
+      buf = frames.pop() ?? "";
+      for (const frame of frames) {
+        const payload = sseData(frame);
         if (payload) yield payload;
       }
     }
@@ -501,12 +549,23 @@ export async function* readSse(
   }
 }
 
-function sseData(line: string): string | null {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("data:")) return null;
-  const data = trimmed.slice(5).trim();
-  if (!data || data === "[DONE]") return null;
-  return data;
+function sseData(frame: string): string | null {
+  let event = "";
+  const data: string[] = [];
+  for (const rawLine of frame.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).trim());
+  }
+  const payload = data.join("\n");
+  if (!payload || payload === "[DONE]") return null;
+  if (!event) return payload;
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    return JSON.stringify({ ...parsed, type: event });
+  } catch {
+    return payload;
+  }
 }
 
 function textFromContent(content: unknown): string {
@@ -529,12 +588,18 @@ export function eventFromChunk(chunk: string): ChatEvent | null {
     const json = JSON.parse(chunk) as {
       type?: string;
       delta?: string;
+      tool_name?: string;
+      tool?: string;
+      preview?: string;
+      label?: string;
+      status?: string;
+      toolCallId?: string;
       error?: { message?: string } | string;
       hermes?: { error?: string; failed?: boolean };
       choices?: Array<{
         delta?: {
           content?: unknown;
-          tool_calls?: Array<{ function?: { name?: string } }>;
+          tool_calls?: Array<{ id?: string; function?: { name?: string } }>;
         };
         message?: { content?: unknown };
         finish_reason?: string | null;
@@ -548,8 +613,31 @@ export function eventFromChunk(chunk: string): ChatEvent | null {
     if (json.choices?.[0]?.finish_reason === "error") {
       return { type: "error", message: FAIL };
     }
-    if (json.type === "assistant.delta" && typeof json.delta === "string" && json.delta) {
+    if (
+      json.type === "assistant.delta" &&
+      typeof json.delta === "string" &&
+      json.delta
+    ) {
       return { type: "delta", text: json.delta };
+    }
+    if (json.type === "tool.started") {
+      const name = json.tool_name || json.tool;
+      if (name)
+        return { type: "tool", name, status: "start", detail: json.preview };
+    }
+    if (json.type === "tool.completed" || json.type === "tool.failed") {
+      const name = json.tool_name || json.tool;
+      if (name)
+        return { type: "tool", name, status: "done", detail: json.preview };
+    }
+    if (json.type === "hermes.tool.progress" && json.tool) {
+      return {
+        type: "tool",
+        name: json.tool,
+        status: json.status === "completed" ? "done" : "start",
+        detail: json.label,
+        callId: json.toolCallId,
+      };
     }
     const delta = json.choices?.[0]?.delta;
     const deltaText = textFromContent(delta?.content);
@@ -558,7 +646,12 @@ export function eventFromChunk(chunk: string): ChatEvent | null {
     if (messageText) return { type: "delta", text: messageText };
     const toolName = delta?.tool_calls?.[0]?.function?.name;
     if (toolName) {
-      return { type: "tool", name: toolName, status: "start" };
+      return {
+        type: "tool",
+        name: toolName,
+        status: "start",
+        callId: delta?.tool_calls?.[0]?.id,
+      };
     }
     return null;
   } catch {
@@ -578,7 +671,8 @@ export async function probeGateway(opts: {
   signal?: AbortSignal;
 }): Promise<ProbeResult> {
   if (opts.place === "device") {
-    const { getDeviceSessionKey, probeHermesDirect } = await import("./hermes-direct");
+    const { getDeviceSessionKey, probeHermesDirect } =
+      await import("./hermes-direct");
     const key = opts.key || getDeviceSessionKey() || "";
     return probeHermesDirect({
       url: opts.url,
@@ -627,7 +721,8 @@ export async function listHermesModels(opts?: {
     const { useHermes } = await import("./store");
     const place = useHermes.getState().gatewayPlace;
     if (place === "device") {
-      const { getDeviceSessionKey, listHermesModelsDirect } = await import("./hermes-direct");
+      const { getDeviceSessionKey, listHermesModelsDirect } =
+        await import("./hermes-direct");
       const url = useHermes.getState().gatewayUrl;
       const key = getDeviceSessionKey();
       if (!url || !key) return { ok: false, models: [] };
@@ -641,7 +736,10 @@ export async function listHermesModels(opts?: {
     const res = await fetch("/api/hermes", {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ action: "models", refresh: Boolean(opts?.refresh) }),
+      body: JSON.stringify({
+        action: "models",
+        refresh: Boolean(opts?.refresh),
+      }),
       signal: opts?.signal,
     });
     const data = (await res.json()) as {
@@ -713,7 +811,8 @@ export async function setHermesModel(opts: {
   conversationId?: string;
 }): Promise<{ ok: boolean }> {
   if (opts.place === "device") {
-    const { getDeviceSessionKey, setHermesModelDirect } = await import("./hermes-direct");
+    const { getDeviceSessionKey, setHermesModelDirect } =
+      await import("./hermes-direct");
     const key = opts.key || getDeviceSessionKey();
     if (!key) return { ok: false };
     return setHermesModelDirect({
@@ -745,7 +844,9 @@ export async function setHermesModel(opts: {
   }
 }
 
-export async function listHermesMemory(opts?: { signal?: AbortSignal }): Promise<HermesMemoryResult> {
+export async function listHermesMemory(opts?: {
+  signal?: AbortSignal;
+}): Promise<HermesMemoryResult> {
   try {
     const res = await fetch("/api/hermes", {
       method: "POST",

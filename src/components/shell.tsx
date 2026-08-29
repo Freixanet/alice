@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { MoreHorizontal, PanelLeft, Pencil, Pin, PinOff, Search, Share, SquarePen, Trash2, type LucideIcon } from "lucide-react";
+import {
+  Link,
+  Outlet,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
+import {
+  MoreHorizontal,
+  PanelLeft,
+  Pencil,
+  Pin,
+  PinOff,
+  Search,
+  Share,
+  SquarePen,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { Mark, Wordmark } from "@/components/logo";
 import { SettingsDialog } from "@/components/settings-panel";
 import {
@@ -89,6 +105,12 @@ export function AppShell() {
     root.dataset.font = fontSize;
     root.dataset.accent = accent;
     root.dataset.aliceApp = "";
+    const themeColor = getComputedStyle(root)
+      .getPropertyValue("--background")
+      .trim();
+    document
+      .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+      ?.setAttribute("content", themeColor);
     return () => {
       delete root.dataset.aliceApp;
     };
@@ -119,7 +141,9 @@ export function AppShell() {
         mobileSidebarOffsetRef.current = 0;
         return;
       }
-      setMobileSidebarWidth(Math.min(320, Math.round(window.innerWidth * 0.88)));
+      setMobileSidebarWidth(
+        Math.min(320, Math.round(window.innerWidth * 0.88)),
+      );
     }
     updateMobileSidebarWidth();
     window.addEventListener("resize", updateMobileSidebarWidth);
@@ -248,9 +272,11 @@ export function AppShell() {
           inert={mobileSidebarOffset === 0}
           className={cn(
             "fixed inset-y-0 left-0 z-30 flex bg-popover text-popover-foreground md:hidden",
-            mobileSidebarOffset > 0 && "shadow-border",
+            mobileSidebarOffset > 0 && "border-r border-border",
             mobileSidebarOffset === 0 && "pointer-events-none",
-            mobileSidebarDragging ? "transition-none" : "transition-transform duration-300 ease-out",
+            mobileSidebarDragging
+              ? "transition-none"
+              : "transition-transform duration-300 ease-out",
           )}
           style={{
             width: mobileSidebarWidth,
@@ -286,15 +312,23 @@ export function AppShell() {
         </aside>
         <button
           type="button"
-          aria-label={mobileSidebarOpen ? t("shell.closeSidebar") : t("shell.openSidebar")}
+          aria-label={
+            mobileSidebarOpen ? t("shell.closeSidebar") : t("shell.openSidebar")
+          }
           onClick={() => setMobileSidebarOpen((open) => !open)}
           className={cn(
             "fixed top-[max(1rem,env(safe-area-inset-top))] left-[max(1rem,env(safe-area-inset-left))] z-40 grid size-10 place-items-center rounded-full bg-card text-foreground shadow-border transition-colors hover:bg-accent md:hidden",
-            mobileSidebarDragging ? "transition-none" : "transition-transform duration-300 ease-out",
+            mobileSidebarDragging
+              ? "transition-none"
+              : "transition-transform duration-300 ease-out",
           )}
           style={{ transform: `translateX(${mobileSidebarOffset}px)` }}
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5 fill-none stroke-current">
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="size-5 fill-none stroke-current"
+          >
             <path d="M4 8h16M4 16h10" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
@@ -306,14 +340,18 @@ export function AppShell() {
           onClick={() => setMobileSidebarOpen(false)}
           className="fixed inset-0 z-20 bg-background/35 transition-opacity duration-300 md:hidden"
           style={{
-            opacity: mobileSidebarWidth ? mobileSidebarOffset / mobileSidebarWidth : 0,
+            opacity: mobileSidebarWidth
+              ? mobileSidebarOffset / mobileSidebarWidth
+              : 0,
             pointerEvents: mobileSidebarOffset > 0 ? "auto" : "none",
           }}
         />
         <div
           className={cn(
             "alice-main relative z-10 flex min-w-0 flex-1 flex-col",
-            mobileSidebarDragging ? "transition-none" : "transition-transform duration-300 ease-out",
+            mobileSidebarDragging
+              ? "transition-none"
+              : "transition-transform duration-300 ease-out",
           )}
           style={{ transform: `translateX(${mobileSidebarOffset}px)` }}
         >
@@ -329,7 +367,10 @@ export function AppShell() {
           }}
           onOpenSettings={() => setSettingsOpen(true)}
         />
-        <SettingsDialog open={settingsVisible} onOpenChange={handleSettingsOpenChange} />
+        <SettingsDialog
+          open={settingsVisible}
+          onOpenChange={handleSettingsOpenChange}
+        />
       </div>
     </TooltipProvider>
   );
@@ -352,7 +393,11 @@ function CollapsedRail({
 }) {
   const user = useCurrentUser();
   const t = useT();
-  const mark = accountMark(user?.displayName, user?.primaryEmail, t("shell.you"));
+  const mark = accountMark(
+    user?.displayName,
+    user?.primaryEmail,
+    t("shell.you"),
+  );
   return (
     <div className="flex h-full w-full flex-col py-3">
       <div className="flex w-full justify-center">
@@ -373,7 +418,12 @@ function CollapsedRail({
           <RailGlyph icon={Search} heavy />
         </IconBtn>
         {NAV.map((item) => (
-          <IconLink key={item.to} to={item.to} label={t(item.labelKey)} active={pathname === item.to}>
+          <IconLink
+            key={item.to}
+            to={item.to}
+            label={t(item.labelKey)}
+            active={pathname === item.to}
+          >
             <RailGlyph icon={item.icon} />
           </IconLink>
         ))}
@@ -383,7 +433,7 @@ function CollapsedRail({
           type="button"
           aria-label={t("shell.settings")}
           onClick={onOpenSettings}
-          className="relative grid size-7 place-items-center rounded-full bg-foreground p-0 text-[11px] font-medium text-background"
+          className="relative grid size-7 place-items-center rounded-full bg-foreground p-0 text-xs font-medium text-background"
         >
           {mark}
           {live ? (
@@ -430,18 +480,28 @@ function ExpandedSidebar({
   const [renameValue, setRenameValue] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const pinned = useMemo(
-    () => conversations.filter((c) => c.pinned).sort((a, b) => b.updatedAt - a.updatedAt),
+    () =>
+      conversations
+        .filter((c) => c.pinned)
+        .sort((a, b) => b.updatedAt - a.updatedAt),
     [conversations],
   );
   const rest = useMemo(
-    () => conversations.filter((c) => !c.pinned).sort((a, b) => b.updatedAt - a.updatedAt),
+    () =>
+      conversations
+        .filter((c) => !c.pinned)
+        .sort((a, b) => b.updatedAt - a.updatedAt),
     [conversations],
   );
   const deleting = conversations.find((c) => c.id === deleteId);
   const user = useCurrentUser();
   const t = useT();
   const locale = useLocale();
-  const mark = accountMark(user?.displayName, user?.primaryEmail, t("shell.you"));
+  const mark = accountMark(
+    user?.displayName,
+    user?.primaryEmail,
+    t("shell.you"),
+  );
 
   function saveRename() {
     if (!renameId) return;
@@ -456,7 +516,12 @@ function ExpandedSidebar({
         chat={c}
         active={c.id === activeId}
         onSelect={() => onSelectChat(c.id)}
-        onShare={() => void shareChat(c, t("shell.shareText", { title: displayChatTitle(locale, c.title) }))}
+        onShare={() =>
+          void shareChat(
+            c,
+            t("shell.shareText", { title: displayChatTitle(locale, c.title) }),
+          )
+        }
         onRename={() => {
           setRenameValue(c.title);
           setRenameId(c.id);
@@ -469,9 +534,15 @@ function ExpandedSidebar({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
-      <div className="flex items-center gap-1 px-3 py-3">
-        <Link to="/" className="flex min-w-0 items-center gap-2 text-foreground">
-          <Mark className="size-8 shrink-0" />
+      <div
+        className={cn(
+          "flex items-center gap-1 pl-[18px]",
+          mobile
+            ? "pb-3 pr-4 pt-[max(1rem,env(safe-area-inset-top))]"
+            : "py-3 pr-3",
+        )}
+      >
+        <Link to="/" className="flex min-w-0 items-center text-foreground">
           <Wordmark className="text-3xl" />
         </Link>
         <div className="ml-auto flex items-center">
@@ -517,7 +588,9 @@ function ExpandedSidebar({
       <ScrollArea className="min-h-0 flex-1 px-2 py-1">
         {pinned.length > 0 ? (
           <>
-            <p className="mt-8 px-2 pb-1 text-2xs font-medium text-muted-foreground">{t("shell.pinned")}</p>
+            <p className="mt-8 px-2 pb-1 text-2xs font-medium text-muted-foreground">
+              {t("shell.pinned")}
+            </p>
             <ul className="flex flex-col gap-0.5">{pinned.map(row)}</ul>
           </>
         ) : null}
@@ -557,7 +630,10 @@ function ExpandedSidebar({
           </button>
         </div>
       </div>
-      <Dialog open={Boolean(renameId)} onOpenChange={(open) => !open && setRenameId(null)}>
+      <Dialog
+        open={Boolean(renameId)}
+        onOpenChange={(open) => !open && setRenameId(null)}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{t("shell.renameTitle")}</DialogTitle>
@@ -592,7 +668,10 @@ function ExpandedSidebar({
           </div>
         </DialogContent>
       </Dialog>
-      <Dialog open={Boolean(deleteId)} onOpenChange={(open) => !open && setDeleteId(null)}>
+      <Dialog
+        open={Boolean(deleteId)}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{t("shell.deleteChat")}</DialogTitle>
@@ -653,7 +732,7 @@ function ChatRow({
         type="button"
         onClick={onSelect}
         className={cn(
-          "w-full truncate rounded-lg py-2 pr-8 pl-2.5 text-left text-sm",
+          "w-full truncate rounded-lg py-2 pr-8 pl-2.5 text-left text-sm group-hover:bg-accent",
           active
             ? "bg-accent text-foreground"
             : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -667,8 +746,10 @@ function ChatRow({
             type="button"
             aria-label={t("shell.chatOptions")}
             className={cn(
-              "absolute top-1/2 right-1 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground",
-              menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+              "absolute top-1/2 right-1 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:text-foreground focus-visible:outline-none",
+              menuOpen
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
             )}
           >
             <MoreHorizontal className="size-4" />
@@ -684,7 +765,11 @@ function ChatRow({
             {t("shell.rename")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onPin}>
-            {chat.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+            {chat.pinned ? (
+              <PinOff className="size-4" />
+            ) : (
+              <Pin className="size-4" />
+            )}
             {chat.pinned ? t("shell.unpin") : t("shell.pin")}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -719,12 +804,22 @@ async function shareChat(chat: Conversation, text: string) {
   }
 }
 
-function accountMark(name?: string | null, email?: string | null, fallback = "You") {
+function accountMark(
+  name?: string | null,
+  email?: string | null,
+  fallback = "You",
+) {
   const src = (name || email || fallback).trim();
   return src.charAt(0).toUpperCase() || "Y";
 }
 
-function RailGlyph({ icon: Icon, heavy = false }: { icon: LucideIcon; heavy?: boolean }) {
+function RailGlyph({
+  icon: Icon,
+  heavy = false,
+}: {
+  icon: LucideIcon;
+  heavy?: boolean;
+}) {
   return (
     <Icon
       size={16}
@@ -783,7 +878,9 @@ function IconLink({
           aria-label={label}
           className={cn(
             "grid size-8 place-items-center rounded-md p-0",
-            active ? "bg-accent text-foreground" : "text-foreground/80 hover:bg-accent hover:text-foreground",
+            active
+              ? "bg-accent text-foreground"
+              : "text-foreground/80 hover:bg-accent hover:text-foreground",
           )}
         >
           {children}

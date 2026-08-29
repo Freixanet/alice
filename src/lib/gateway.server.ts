@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from "node:crypto";
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -28,6 +33,7 @@ import {
   type HermesMemoryResult,
   type HermesMemoryStore,
   type HermesModelOption,
+  type HermesChatContent,
   type ProbeResult,
 } from "./gateway";
 
@@ -109,12 +115,18 @@ export async function assertPublicHermesUrl(raw: string): Promise<string> {
   return base;
 }
 
-export async function resolveHermesBase(raw: string, place?: GatewayPlace): Promise<string> {
+export async function resolveHermesBase(
+  raw: string,
+  place?: GatewayPlace,
+): Promise<string> {
   if (place === "mac") return normalizeGatewayUrl(raw);
   return assertPublicHermesUrl(raw);
 }
 
-function hermesHeaders(key: string, extra?: Record<string, string>): HeadersInit {
+function hermesHeaders(
+  key: string,
+  extra?: Record<string, string>,
+): HeadersInit {
   return {
     Authorization: `Bearer ${key}`,
     "X-Hermes-Session-Token": key,
@@ -147,7 +159,8 @@ let ephemeralCookieKey: Buffer | null = null;
 
 function cookieKey(): Buffer {
   const s =
-    process.env.HERMES_COOKIE_SECRET?.trim() || process.env.BETTER_AUTH_SECRET?.trim();
+    process.env.HERMES_COOKIE_SECRET?.trim() ||
+    process.env.BETTER_AUTH_SECRET?.trim();
   if (s) return createHash("sha256").update(s).digest();
   if (!ephemeralCookieKey) ephemeralCookieKey = randomBytes(32);
   return ephemeralCookieKey;
@@ -156,7 +169,10 @@ function cookieKey(): Buffer {
 export function sealGate(data: GateSecret): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", cookieKey(), iv);
-  const enc = Buffer.concat([cipher.update(JSON.stringify(data), "utf8"), cipher.final()]);
+  const enc = Buffer.concat([
+    cipher.update(JSON.stringify(data), "utf8"),
+    cipher.final(),
+  ]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, enc]).toString("base64url");
 }
@@ -170,13 +186,25 @@ export function openGate(token: string): GateSecret | null {
     const enc = buf.subarray(28);
     const decipher = createDecipheriv("aes-256-gcm", cookieKey(), iv);
     decipher.setAuthTag(tag);
-    const json = Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
+    const json = Buffer.concat([
+      decipher.update(enc),
+      decipher.final(),
+    ]).toString("utf8");
     const data = JSON.parse(json) as Partial<GateSecret>;
     if (typeof data.k !== "string" || typeof data.u !== "string") return null;
     if (data.p !== "cloud" && data.p !== "mac") data.p = "cloud";
     const ep = parseStoredEndpoints(data.ep);
-    const uid = typeof data.uid === "string" && data.uid.trim() ? data.uid.trim() : undefined;
-    return { k: data.k, u: data.u, p: data.p ?? "cloud", ...(ep.length ? { ep } : {}), ...(uid ? { uid } : {}) };
+    const uid =
+      typeof data.uid === "string" && data.uid.trim()
+        ? data.uid.trim()
+        : undefined;
+    return {
+      k: data.k,
+      u: data.u,
+      p: data.p ?? "cloud",
+      ...(ep.length ? { ep } : {}),
+      ...(uid ? { uid } : {}),
+    };
   } catch {
     return null;
   }
@@ -194,21 +222,36 @@ function parseStoredEndpoints(raw: unknown): StoredEndpoint[] {
     const m = typeof rec.m === "string" ? rec.m.trim().slice(0, 128) : "";
     if (!s || !u || !m) continue;
     const ms = idsFromUnknown(rec.ms).slice(0, 32);
-    out.push({ n: n || s, s, u, k, m, ...(ms.length ? { ms } : {}), d: rec.d === true });
+    out.push({
+      n: n || s,
+      s,
+      u,
+      k,
+      m,
+      ...(ms.length ? { ms } : {}),
+      d: rec.d === true,
+    });
     if (out.length >= 8) break;
   }
   return out;
 }
 
-export function upsertStoredEndpoint(list: StoredEndpoint[] | undefined, next: StoredEndpoint): StoredEndpoint[] {
+export function upsertStoredEndpoint(
+  list: StoredEndpoint[] | undefined,
+  next: StoredEndpoint,
+): StoredEndpoint[] {
   const current = list ? [...list] : [];
-  const idx = current.findIndex((item) => item.s === next.s || item.u === next.u);
+  const idx = current.findIndex(
+    (item) => item.s === next.s || item.u === next.u,
+  );
   if (idx >= 0) current[idx] = next;
   else current.push(next);
   return current.slice(-8);
 }
 
-export function modelsFromEndpoints(list: StoredEndpoint[] | undefined): HermesModelOption[] {
+export function modelsFromEndpoints(
+  list: StoredEndpoint[] | undefined,
+): HermesModelOption[] {
   if (!list?.length) return [];
   const models: HermesModelOption[] = [];
   const seen = new Set<string>();
@@ -242,7 +285,10 @@ export function matchStoredEndpoint(
   return null;
 }
 
-function mergeModelLists(base: HermesModelOption[], extra: HermesModelOption[]): HermesModelOption[] {
+function mergeModelLists(
+  base: HermesModelOption[],
+  extra: HermesModelOption[],
+): HermesModelOption[] {
   const seen = new Set(base.map((item) => `${item.provider}:${item.id}`));
   const out = [...base];
   for (const item of extra) {
@@ -254,7 +300,11 @@ function mergeModelLists(base: HermesModelOption[], extra: HermesModelOption[]):
   return out;
 }
 
-async function probeOpenAiModels(llm: string, apiKey: string, signal: AbortSignal): Promise<string[]> {
+async function probeOpenAiModels(
+  llm: string,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<string[]> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   const res = await fetch(`${llm}/models`, {
@@ -323,7 +373,10 @@ async function loadStoredGate(userId: string): Promise<GateSecret | null> {
   }
 }
 
-export async function persistUserGate(userId: string | null, token: string | null) {
+export async function persistUserGate(
+  userId: string | null,
+  token: string | null,
+) {
   if (!userId) return;
   try {
     const { getSql } = await import("@/lib/db");
@@ -352,13 +405,23 @@ export async function resolveAliceGate(request: Request): Promise<{
   email: string | null;
 }> {
   const { getSessionUser } = await import("@/lib/auth/verify.server");
-  const { isLocalHermesOwner, localHermesAvailable } = await import("@/lib/auth/owner.server");
+  const { isLocalHermesOwner, localHermesAvailable } =
+    await import("@/lib/auth/owner.server");
   const user = await getSessionUser();
   const owner = await isLocalHermesOwner(user?.id ?? null, user?.email);
   const local = localHermesAvailable();
-  const fromCookie = readGateCookie(request, { userId: user?.id ?? null, owner });
+  const fromCookie = readGateCookie(request, {
+    userId: user?.id ?? null,
+    owner,
+  });
   const saved = fromCookie ?? (user?.id ? await loadStoredGate(user.id) : null);
-  return { saved, owner, local, userId: user?.id ?? null, email: user?.email ?? null };
+  return {
+    saved,
+    owner,
+    local,
+    userId: user?.id ?? null,
+    email: user?.email ?? null,
+  };
 }
 
 export function gateSetCookie(value: string | null): string {
@@ -400,7 +463,11 @@ export async function probeHermes(
       return { ok: false, code: "not_hermes", error: FAIL };
     }
     if (modelsRes.status === 401 || modelsRes.status === 403) {
-      return { ok: false, code: "unauthorized", error: "The key is not correct." };
+      return {
+        ok: false,
+        code: "unauthorized",
+        error: "The key is not correct.",
+      };
     }
     if (!modelsRes.ok) {
       return { ok: false, code: "not_hermes", error: FAIL };
@@ -442,7 +509,10 @@ export async function probeHermes(
         redirect: "manual",
       });
       if (cap.ok) {
-        const body = (await cap.json()) as { platform?: unknown; model?: unknown };
+        const body = (await cap.json()) as {
+          platform?: unknown;
+          model?: unknown;
+        };
         if (typeof body.platform === "string") platform = body.platform;
         if (typeof body.model === "string" && body.model) model = body.model;
       }
@@ -465,14 +535,23 @@ export async function probeHermes(
     const fromDisk = await modelsFromLocalHermesHome();
     models = unionHermesModels(fromDisk, models);
 
-    return { ok: true, model, provider, models, platform, skills, mode: "proxy" };
+    return {
+      ok: true,
+      model,
+      provider,
+      models,
+      platform,
+      skills,
+      mode: "proxy",
+    };
   } catch (e) {
-    if (e instanceof GatewayError) return { ok: false, code: e.code, error: FAIL };
+    if (e instanceof GatewayError)
+      return { ok: false, code: e.code, error: FAIL };
     return { ok: false, code: "unreachable", error: FAIL };
   }
 }
 
-type ChatTurn = { role: "user" | "assistant"; content: string };
+type ChatTurn = { role: "user" | "assistant"; content: HermesChatContent };
 
 export async function listHermesModelsServer(
   url: string,
@@ -480,7 +559,11 @@ export async function listHermesModelsServer(
   signal?: AbortSignal,
   refresh = false,
   place?: GatewayPlace,
-): Promise<{ models: HermesModelOption[]; currentModel?: string; currentProvider?: string }> {
+): Promise<{
+  models: HermesModelOption[];
+  currentModel?: string;
+  currentProvider?: string;
+}> {
   const base = await resolveHermesBase(url, place);
   const token = assertGatewayKey(key);
   const ctrl = signal ?? AbortSignal.timeout(20_000);
@@ -508,7 +591,8 @@ export async function listHermesModelsServer(
     }
     try {
       const fromCfg = await modelsFromHermesConfigApi(apiBase, token, ctrl);
-      if (fromCfg.length) acc = { ...acc, models: unionHermesModels(acc.models, fromCfg) };
+      if (fromCfg.length)
+        acc = { ...acc, models: unionHermesModels(acc.models, fromCfg) };
     } catch (e) {
       if ((e as Error).name === "AbortError") throw e;
     }
@@ -534,13 +618,18 @@ async function modelsFromHermesConfigApi(
   if (!res.ok) return [];
   const raw = await hermesJson(res);
   const cfg =
-    raw && (raw.model !== undefined || raw.fallback_providers !== undefined || raw.providers !== undefined)
+    raw &&
+    (raw.model !== undefined ||
+      raw.fallback_providers !== undefined ||
+      raw.providers !== undefined)
       ? raw
       : asObj(raw?.config);
   return modelsFromConfigDoc(cfg);
 }
 
-function modelsFromConfigDoc(cfg: Record<string, unknown>): HermesModelOption[] {
+function modelsFromConfigDoc(
+  cfg: Record<string, unknown>,
+): HermesModelOption[] {
   const out: HermesModelOption[] = [];
   const seen = new Set<string>();
   const push = (id: string, provider: string, providerName?: string) => {
@@ -560,20 +649,35 @@ function modelsFromConfigDoc(cfg: Record<string, unknown>): HermesModelOption[] 
   const model = asObj(cfg.model);
   if (typeof cfg.model === "string") push(cfg.model, "");
   else {
-    const id = typeof model.default === "string" ? model.default : typeof model.name === "string" ? model.name : "";
+    const id =
+      typeof model.default === "string"
+        ? model.default
+        : typeof model.name === "string"
+          ? model.name
+          : "";
     const provider = typeof model.provider === "string" ? model.provider : "";
     push(id, provider);
   }
-  const fallbacks = Array.isArray(cfg.fallback_providers) ? cfg.fallback_providers : [];
+  const fallbacks = Array.isArray(cfg.fallback_providers)
+    ? cfg.fallback_providers
+    : [];
   for (const item of fallbacks) {
     const rec = asObj(item);
-    push(typeof rec.model === "string" ? rec.model : "", typeof rec.provider === "string" ? rec.provider : "");
+    push(
+      typeof rec.model === "string" ? rec.model : "",
+      typeof rec.provider === "string" ? rec.provider : "",
+    );
   }
   const providers = asObj(cfg.providers);
   for (const [slug, raw] of Object.entries(providers)) {
     const rec = asObj(raw);
     const name = typeof rec.name === "string" ? rec.name : prettyProvider(slug);
-    const one = typeof rec.model === "string" ? rec.model : typeof rec.default === "string" ? rec.default : "";
+    const one =
+      typeof rec.model === "string"
+        ? rec.model
+        : typeof rec.default === "string"
+          ? rec.default
+          : "";
     push(one, slug, name);
     for (const id of idsFromUnknown(rec.models)) push(id, slug, name);
   }
@@ -592,7 +696,9 @@ def scrub(o):
   return o
 print(json.dumps(scrub(cfg)))`;
   try {
-    const { stdout } = await execFileAsync("python3", ["-c", script, file], { timeout: 5000 });
+    const { stdout } = await execFileAsync("python3", ["-c", script, file], {
+      timeout: 5000,
+    });
     const cfg = JSON.parse(stdout) as Record<string, unknown>;
     return modelsFromConfigDoc(asObj(cfg));
   } catch {
@@ -607,13 +713,25 @@ function hermesHomeDir() {
 function splitMemoryEntries(raw: string): string[] {
   const text = raw.replace(/^\uFEFF/, "").trim();
   if (!text) return [];
-  if (text.includes("§")) return text.split(/\s*§\s*/).map((s) => s.trim()).filter(Boolean);
-  return text.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean);
+  if (text.includes("§"))
+    return text
+      .split(/\s*§\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  return text
+    .split(/\n{2,}/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function memoryStore(raw: string, limit: number): HermesMemoryStore {
   const text = raw.replace(/^\uFEFF/, "").trim();
-  return { raw: text, entries: splitMemoryEntries(text), chars: text.length, limit };
+  return {
+    raw: text,
+    entries: splitMemoryEntries(text),
+    chars: text.length,
+    limit,
+  };
 }
 
 async function readUtf8(path: string): Promise<string> {
@@ -624,11 +742,17 @@ async function readUtf8(path: string): Promise<string> {
   }
 }
 
-async function localHermesProfiles(): Promise<Array<{ name: string; dir: string }>> {
+async function localHermesProfiles(): Promise<
+  Array<{ name: string; dir: string }>
+> {
   const home = hermesHomeDir();
-  const out: Array<{ name: string; dir: string }> = [{ name: "default", dir: home }];
+  const out: Array<{ name: string; dir: string }> = [
+    { name: "default", dir: home },
+  ];
   try {
-    const entries = await readdir(join(home, "profiles"), { withFileTypes: true });
+    const entries = await readdir(join(home, "profiles"), {
+      withFileTypes: true,
+    });
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
       out.push({ name: entry.name, dir: join(home, "profiles", entry.name) });
@@ -639,7 +763,10 @@ async function localHermesProfiles(): Promise<Array<{ name: string; dir: string 
   return out;
 }
 
-async function profileFromDir(name: string, dir: string): Promise<HermesMemoryProfile> {
+async function profileFromDir(
+  name: string,
+  dir: string,
+): Promise<HermesMemoryProfile> {
   const [soul, user, notes] = await Promise.all([
     readUtf8(join(dir, "SOUL.md")),
     readUtf8(join(dir, "memories", "USER.md")),
@@ -661,7 +788,9 @@ export async function fetchHermesMemory(opts?: {
   local?: boolean;
 }): Promise<HermesMemoryResult> {
   const locals = opts?.local === false ? [] : await localHermesProfiles();
-  const profiles = await Promise.all(locals.map((p) => profileFromDir(p.name, p.dir)));
+  const profiles = await Promise.all(
+    locals.map((p) => profileFromDir(p.name, p.dir)),
+  );
   let active = "default";
 
   if (opts?.url && opts.key) {
@@ -711,7 +840,8 @@ export async function fetchHermesMemory(opts?: {
     }
   }
 
-  if (!profiles.some((p) => p.name === active) && profiles[0]) active = profiles[0].name;
+  if (!profiles.some((p) => p.name === active) && profiles[0])
+    active = profiles[0].name;
   return {
     ok: true,
     active,
@@ -731,7 +861,8 @@ export async function setHermesModelServer(opts: {
   const base = await resolveHermesBase(opts.url, opts.place);
   const token = assertGatewayKey(opts.key);
   const ctrl = opts.signal ?? AbortSignal.timeout(12_000);
-  const provider = (opts.provider || "").trim() || providerSlug(opts.provider || "");
+  const provider =
+    (opts.provider || "").trim() || providerSlug(opts.provider || "");
   const headers = hermesHeaders(token, { "Content-Type": "application/json" });
   try {
     const setRes = await fetch(`${base}/api/model/set`, {
@@ -778,7 +909,9 @@ export async function setHermesModelServer(opts: {
   }
 }
 
-async function hermesJson(res: Response): Promise<Record<string, unknown> | null> {
+async function hermesJson(
+  res: Response,
+): Promise<Record<string, unknown> | null> {
   try {
     const body = await res.json();
     return body && typeof body === "object" && !Array.isArray(body)
@@ -789,9 +922,13 @@ async function hermesJson(res: Response): Promise<Record<string, unknown> | null
   }
 }
 
-function hermesDetail(body: Record<string, unknown> | null, fallback = FAIL): string {
+function hermesDetail(
+  body: Record<string, unknown> | null,
+  fallback = FAIL,
+): string {
   if (!body) return fallback;
-  if (typeof body.detail === "string" && body.detail.trim()) return body.detail.trim();
+  if (typeof body.detail === "string" && body.detail.trim())
+    return body.detail.trim();
   if (Array.isArray(body.detail)) {
     const parts = body.detail
       .map((item) => {
@@ -805,14 +942,20 @@ function hermesDetail(body: Record<string, unknown> | null, fallback = FAIL): st
       .filter(Boolean);
     if (parts.length) return parts.join(" ");
   }
-  if (typeof body.message === "string" && body.message.trim()) return body.message.trim();
-  if (typeof body.error === "string" && body.error.trim()) return body.error.trim();
+  if (typeof body.message === "string" && body.message.trim())
+    return body.message.trim();
+  if (typeof body.error === "string" && body.error.trim())
+    return body.error.trim();
   return fallback;
 }
 
-function friendlyHermesSaveError(status: number, body: Record<string, unknown> | null): string {
+function friendlyHermesSaveError(
+  status: number,
+  body: Record<string, unknown> | null,
+): string {
   if (status === 401 || status === 403) return "The key is not correct.";
-  if (status === 409) return "That endpoint is already in Hermes. Check the chat picker.";
+  if (status === 409)
+    return "That endpoint is already in Hermes. Check the chat picker.";
   const detail = hermesDetail(body, "");
   if (detail && !/^not found$/i.test(detail)) return detail;
   if (status === 404 || status === 405) {
@@ -850,7 +993,12 @@ export function getHermesHomeDir() {
 }
 
 export async function hermesDashboardGet(
-  opts: { url: string; key: string; place?: GatewayPlace; signal?: AbortSignal },
+  opts: {
+    url: string;
+    key: string;
+    place?: GatewayPlace;
+    signal?: AbortSignal;
+  },
   path: string,
 ): Promise<unknown> {
   const base = await resolveHermesBase(opts.url, opts.place);
@@ -881,7 +1029,12 @@ export async function hermesDashboardGet(
 }
 
 export async function hermesDashboardSend(
-  opts: { url: string; key: string; place?: GatewayPlace; signal?: AbortSignal },
+  opts: {
+    url: string;
+    key: string;
+    place?: GatewayPlace;
+    signal?: AbortSignal;
+  },
   path: string,
   method: string,
   body?: unknown,
@@ -915,7 +1068,12 @@ function idsFromUnknown(value: unknown): string[] {
     if (typeof item === "string" && item.trim()) ids.push(item.trim());
     else if (item && typeof item === "object" && !Array.isArray(item)) {
       const rec = item as Record<string, unknown>;
-      const id = typeof rec.id === "string" ? rec.id : typeof rec.model === "string" ? rec.model : "";
+      const id =
+        typeof rec.id === "string"
+          ? rec.id
+          : typeof rec.model === "string"
+            ? rec.model
+            : "";
       if (id.trim()) ids.push(id.trim());
     }
   }
@@ -953,11 +1111,21 @@ async function saveViaCustomEndpoints(
   payload: unknown,
 ): Promise<SaveAttempt> {
   try {
-    const save = await hermesPost(`${apiBase}/api/providers/custom-endpoints`, headers, ctrl, payload);
+    const save = await hermesPost(
+      `${apiBase}/api/providers/custom-endpoints`,
+      headers,
+      ctrl,
+      payload,
+    );
     if (save.status === 401 || save.status === 403) return { kind: "auth" };
     if (save.status === 409) return { kind: "ok", provider: "custom" };
-    if (isMissingRoute(save.status) || save.status === 422) return { kind: "missing" };
-    if (!save.ok) return { kind: "error", error: friendlyHermesSaveError(save.status, await hermesJson(save)) };
+    if (isMissingRoute(save.status) || save.status === 422)
+      return { kind: "missing" };
+    if (!save.ok)
+      return {
+        kind: "error",
+        error: friendlyHermesSaveError(save.status, await hermesJson(save)),
+      };
     return { kind: "ok", provider: "custom" };
   } catch (e) {
     if ((e as Error).name === "AbortError") return { kind: "abort" };
@@ -981,7 +1149,12 @@ async function saveViaModelSet(
     api_key: apiKey,
   };
   try {
-    let setRes = await hermesPost(`${apiBase}/api/model/set`, headers, ctrl, assignBody);
+    let setRes = await hermesPost(
+      `${apiBase}/api/model/set`,
+      headers,
+      ctrl,
+      assignBody,
+    );
     let setJson = await hermesJson(setRes);
     if (setJson?.confirm_required === true) {
       setRes = await hermesPost(`${apiBase}/api/model/set`, headers, ctrl, {
@@ -991,9 +1164,13 @@ async function saveViaModelSet(
       setJson = await hermesJson(setRes);
     }
     if (setRes.status === 401 || setRes.status === 403) return { kind: "auth" };
-    if (isMissingRoute(setRes.status) || setRes.status === 422) return { kind: "missing" };
+    if (isMissingRoute(setRes.status) || setRes.status === 422)
+      return { kind: "missing" };
     if (!setRes.ok && setJson?.ok !== true) {
-      return { kind: "error", error: friendlyHermesSaveError(setRes.status, setJson) };
+      return {
+        kind: "error",
+        error: friendlyHermesSaveError(setRes.status, setJson),
+      };
     }
     return { kind: "ok", provider: "custom" };
   } catch (e) {
@@ -1024,7 +1201,11 @@ async function saveViaConfig(
     });
     if (get.status === 401 || get.status === 403) return { kind: "auth" };
     if (isMissingRoute(get.status)) return { kind: "missing" };
-    if (!get.ok) return { kind: "error", error: friendlyHermesSaveError(get.status, await hermesJson(get)) };
+    if (!get.ok)
+      return {
+        kind: "error",
+        error: friendlyHermesSaveError(get.status, await hermesJson(get)),
+      };
 
     const currentRaw = await hermesJson(get);
     const current =
@@ -1047,7 +1228,9 @@ async function saveViaConfig(
       ...(opts.apiKey ? { api_key: opts.apiKey } : {}),
     };
 
-    const legacy = Array.isArray(current?.custom_providers) ? [...current.custom_providers] : [];
+    const legacy = Array.isArray(current?.custom_providers)
+      ? [...current.custom_providers]
+      : [];
     const entry = {
       name: opts.name,
       base_url: opts.llm,
@@ -1057,7 +1240,11 @@ async function saveViaConfig(
     };
     const idx = legacy.findIndex((item) => {
       const rec = asObj(item);
-      return rec.name === opts.name || rec.base_url === opts.llm || rec.api === opts.llm;
+      return (
+        rec.name === opts.name ||
+        rec.base_url === opts.llm ||
+        rec.api === opts.llm
+      );
     });
     if (idx >= 0) legacy[idx] = { ...asObj(legacy[idx]), ...entry };
     else legacy.push(entry);
@@ -1089,7 +1276,10 @@ async function saveViaConfig(
       if (put.ok) return { kind: "ok", provider: "custom" };
       if (isMissingRoute(put.status)) return { kind: "missing" };
       if (put.status === 422) continue;
-      return { kind: "error", error: friendlyHermesSaveError(put.status, await hermesJson(put)) };
+      return {
+        kind: "error",
+        error: friendlyHermesSaveError(put.status, await hermesJson(put)),
+      };
     }
     return { kind: "missing" };
   } catch (e) {
@@ -1120,7 +1310,10 @@ export async function saveHermesCustomEndpointServer(opts: {
   const llm = normalizeLlmBaseUrl(opts.baseUrl);
   try {
     if (opts.place !== "mac" && isPrivateHostname(new URL(llm).hostname)) {
-      return { ok: false, error: "That endpoint is local. Choose “On this Mac”." };
+      return {
+        ok: false,
+        error: "That endpoint is local. Choose “On this Mac”.",
+      };
     }
   } catch {
     return { ok: false, error: "Check the address." };
@@ -1151,12 +1344,17 @@ export async function saveHermesCustomEndpointServer(opts: {
 
   for (const apiBase of managementBases(base, opts.place)) {
     try {
-      const probe = await hermesPost(`${apiBase}/api/providers/custom-endpoints/validate`, headers, ctrl, {
-        name,
-        base_url: llm,
-        api_key: apiKey || null,
-        model: opts.model || "auto",
-      });
+      const probe = await hermesPost(
+        `${apiBase}/api/providers/custom-endpoints/validate`,
+        headers,
+        ctrl,
+        {
+          name,
+          base_url: llm,
+          api_key: apiKey || null,
+          model: opts.model || "auto",
+        },
+      );
       if (probe.status === 401 || probe.status === 403) {
         continue;
       }
@@ -1173,11 +1371,16 @@ export async function saveHermesCustomEndpointServer(opts: {
     }
     if (discovered.length) break;
     try {
-      const alt = await hermesPost(`${apiBase}/api/providers/validate`, headers, ctrl, {
-        key: "OPENAI_BASE_URL",
-        value: llm,
-        api_key: apiKey,
-      });
+      const alt = await hermesPost(
+        `${apiBase}/api/providers/validate`,
+        headers,
+        ctrl,
+        {
+          key: "OPENAI_BASE_URL",
+          value: llm,
+          api_key: apiKey,
+        },
+      );
       if (alt.status === 401 || alt.status === 403) {
         continue;
       }
@@ -1197,7 +1400,8 @@ export async function saveHermesCustomEndpointServer(opts: {
   if (!model) {
     return {
       ok: false,
-      error: "That endpoint listed no models. Type one, for example glm-5.3-flash.",
+      error:
+        "That endpoint listed no models. Type one, for example glm-5.3-flash.",
     };
   }
   const models = discovered.length ? discovered : [model];
@@ -1223,20 +1427,45 @@ export async function saveHermesCustomEndpointServer(opts: {
   for (const apiBase of managementBases(base, opts.place)) {
     const attempts: SaveAttempt[] = [];
     for (const payload of endpointPayloads) {
-      const result = await saveViaCustomEndpoints(apiBase, headers, ctrl, payload);
+      const result = await saveViaCustomEndpoints(
+        apiBase,
+        headers,
+        ctrl,
+        payload,
+      );
       attempts.push(result);
-      if (result.kind === "ok" || result.kind === "auth" || result.kind === "abort" || result.kind === "error") {
+      if (
+        result.kind === "ok" ||
+        result.kind === "auth" ||
+        result.kind === "abort" ||
+        result.kind === "error"
+      ) {
         break;
       }
     }
     const terminal = () =>
       attempts.find(
         (result) =>
-          result.kind === "ok" || result.kind === "auth" || result.kind === "abort" || result.kind === "error",
+          result.kind === "ok" ||
+          result.kind === "auth" ||
+          result.kind === "abort" ||
+          result.kind === "error",
       );
-    if (!terminal()) attempts.push(await saveViaModelSet(apiBase, headers, ctrl, model, llm, apiKey));
+    if (!terminal())
+      attempts.push(
+        await saveViaModelSet(apiBase, headers, ctrl, model, llm, apiKey),
+      );
     if (!terminal()) {
-      attempts.push(await saveViaConfig(apiBase, headers, ctrl, { name, slug, llm, apiKey, model, models }));
+      attempts.push(
+        await saveViaConfig(apiBase, headers, ctrl, {
+          name,
+          slug,
+          llm,
+          apiKey,
+          model,
+          models,
+        }),
+      );
     }
     const saved =
       terminal() ??
@@ -1248,7 +1477,11 @@ export async function saveHermesCustomEndpointServer(opts: {
         apiBase,
         token,
         ctrl,
-        { models: [], currentModel: model, currentProvider: saved.provider || slug || "custom" },
+        {
+          models: [],
+          currentModel: model,
+          currentProvider: saved.provider || slug || "custom",
+        },
         true,
       );
       const persist: StoredEndpoint = {
@@ -1268,7 +1501,8 @@ export async function saveHermesCustomEndpointServer(opts: {
         persist,
       };
     }
-    if (saved.kind === "abort") return { ok: false, error: "The model didn’t respond in time." };
+    if (saved.kind === "abort")
+      return { ok: false, error: "The model didn’t respond in time." };
     if (saved.kind === "error") return { ok: false, error: saved.error };
   }
 
@@ -1298,7 +1532,8 @@ export async function streamOpenAiEndpoint(opts: {
 }): Promise<Response> {
   const model =
     (opts.model || "").trim() &&
-    (opts.endpoint.m === opts.model || opts.endpoint.ms?.includes(opts.model || ""))
+    (opts.endpoint.m === opts.model ||
+      opts.endpoint.ms?.includes(opts.model || ""))
       ? opts.model!.trim()
       : opts.endpoint.m;
   const headers: Record<string, string> = {
@@ -1337,9 +1572,12 @@ export async function streamOpenAiEndpoint(opts: {
     }, 401);
   }
   if (!upstream.ok || !upstream.body) {
-    return ndjsonResponse(async (send) => {
-      send({ type: "error", message: FAIL });
-    }, upstream.status >= 400 ? upstream.status : 502);
+    return ndjsonResponse(
+      async (send) => {
+        send({ type: "error", message: FAIL });
+      },
+      upstream.status >= 400 ? upstream.status : 502,
+    );
   }
   return ndjsonResponse(async (send) => {
     for await (const chunk of readSse(upstream.body!)) {
@@ -1364,7 +1602,9 @@ export async function streamHermesProxy(opts: {
   const token = assertGatewayKey(opts.key);
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(180_000)]);
   const custom = matchStoredEndpoint(opts.endpoints, opts.model, opts.provider);
-  const requestedModel = custom?.d ? "hermes-agent" : opts.model?.trim() || "hermes-agent";
+  const requestedModel = custom?.d
+    ? "hermes-agent"
+    : opts.model?.trim() || "hermes-agent";
   const requestedProvider = custom?.d ? "" : opts.provider?.trim() || "";
 
   const post = (model: string, provider: string) =>
@@ -1389,7 +1629,10 @@ export async function streamHermesProxy(opts: {
     });
 
   let upstream = await post(requestedModel, requestedProvider);
-  if (!upstream.ok && (requestedModel !== "hermes-agent" || requestedProvider)) {
+  if (
+    !upstream.ok &&
+    (requestedModel !== "hermes-agent" || requestedProvider)
+  ) {
     const retry = await post("hermes-agent", "");
     if (retry.ok) upstream = retry;
   }
@@ -1401,9 +1644,12 @@ export async function streamHermesProxy(opts: {
   }
   if (!upstream.ok || !upstream.body) {
     const detail = hermesDetail(await hermesJson(upstream), FAIL);
-    return ndjsonResponse(async (send) => {
-      send({ type: "error", message: detail });
-    }, upstream.status >= 400 ? upstream.status : 502);
+    return ndjsonResponse(
+      async (send) => {
+        send({ type: "error", message: detail });
+      },
+      upstream.status >= 400 ? upstream.status : 502,
+    );
   }
 
   return ndjsonResponse(async (send) => {
@@ -1416,7 +1662,10 @@ export async function streamHermesProxy(opts: {
       if (ev.type === "error") return;
     }
     if (emitted === 0) {
-      send({ type: "error", message: "Hermes sent no text. Try again or switch models." });
+      send({
+        type: "error",
+        message: "Hermes sent no text. Try again or switch models.",
+      });
     }
   });
 }
@@ -1451,7 +1700,11 @@ export function ndjsonResponse(
   });
 }
 
-export function jsonWithCookie(body: unknown, status: number, cookie?: string | null) {
+export function jsonWithCookie(
+  body: unknown,
+  status: number,
+  cookie?: string | null,
+) {
   const headers = new Headers({
     "Content-Type": "application/json",
     "Cache-Control": "no-store",

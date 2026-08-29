@@ -54,11 +54,16 @@ const en = {
   "chat.send": "Send",
   "chat.stop": "Stop",
   "chat.retry": "Retry",
+  "chat.copy": "Copy",
+  "chat.copied": "Copied",
+  "chat.share": "Share",
+  "chat.tryAgain": "Try again",
   "chat.pending": "Alice is responding",
   "chat.add": "Add",
   "chat.camera": "Camera",
   "chat.gallery": "Gallery",
   "chat.files": "Files",
+  "chat.removeAttachment": "Remove {name}",
   "chat.connectHermes": "Connect your Hermes",
   "chat.modelPlaceholder": "Type the model...",
   "chat.loadingModels": "Loading models…",
@@ -77,10 +82,12 @@ const en = {
   "settings.profile": "Profile",
   "settings.account": "Account",
   "settings.shortcuts": "Shortcuts",
-  "settings.keywords.general": "appearance theme light dark text size color accent compact focus language",
+  "settings.keywords.general":
+    "appearance theme light dark text size color accent compact focus language",
   "settings.keywords.model": "model hermes provider inference",
   "settings.keywords.profile": "profile context",
-  "settings.keywords.account": "account email session sign out login phone mobile tailscale",
+  "settings.keywords.account":
+    "account email session sign out login phone mobile tailscale",
   "settings.keywords.shortcuts": "shortcut keyboard command search send",
   "settings.lightTheme": "Light theme",
   "settings.lightThemeHint": "Warm paper. Dark stays the working theme.",
@@ -109,16 +116,19 @@ const en = {
   "settings.connectIt": "Connect it",
   "settings.modelsFromAgentRest": "to see the ones it has now.",
   "settings.noProviders": "Hermes has no authenticated providers right now. In",
-  "settings.noProvidersRest": "you can add any OpenAI-compatible inference API.",
+  "settings.noProvidersRest":
+    "you can add any OpenAI-compatible inference API.",
   "settings.current": "Current",
-  "settings.profileHint": "This is the Hermes profile. Soul, user profile, and notes live in",
+  "settings.profileHint":
+    "This is the Hermes profile. Soul, user profile, and notes live in",
   "settings.thisSession": "This session",
   "settings.signOut": "Sign out",
   "settings.signingOut": "Signing out…",
   "settings.macAccount": "This is the account on this Mac.",
   "settings.onPhone": "On your phone",
   "settings.onPhoneHint": "In Safari, this address:",
-  "settings.onPhoneRest": "Share → Add to Home Screen. This Mac needs to stay awake. Other people can create their own account at the same address and connect their Hermes.",
+  "settings.onPhoneRest":
+    "Share → Add to Home Screen. This Mac needs to stay awake. Other people can create their own account at the same address and connect their Hermes.",
   "settings.shortcut.search": "Search all of Hermes",
   "settings.shortcut.newChat": "New chat",
   "settings.shortcut.focus": "Focus mode",
@@ -127,7 +137,8 @@ const en = {
 
   "login.titleIn": "Sign in",
   "login.titleUp": "Create your account",
-  "login.subtitle": "Each account connects its own Hermes. Create one or sign in.",
+  "login.subtitle":
+    "Each account connects its own Hermes. Create one or sign in.",
   "login.continueGoogle": "Continue with Google",
   "login.continueApple": "Continue with Apple",
   "login.wait": "One moment…",
@@ -144,15 +155,18 @@ const en = {
   "login.fail": "Couldn’t sign in.",
   "login.failGoogle": "Couldn’t sign in with Google.",
   "login.failApple": "Couldn’t sign in with Apple.",
-  "login.googleRestart": "Google couldn’t finish sign-in. Tap Continue with Google again.",
+  "login.googleRestart":
+    "Google couldn’t finish sign-in. Tap Continue with Google again.",
   "login.googleDenied": "You cancelled Google access.",
   "login.emailExists": "That email already has an account.",
   "login.badCredentials": "Email or password doesn’t match.",
 
   "connect.kicker": "Gateway",
   "connect.title": "Connect",
-  "connect.description": "Copy the address and connection key from Hermes. Alice handles the rest.",
-  "connect.setupHint": "Paste these two values once. Alice remembers this Hermes for your account.",
+  "connect.description":
+    "Copy the address and connection key from Hermes. Alice handles the rest.",
+  "connect.setupHint":
+    "Paste these two values once. Alice remembers this Hermes for your account.",
   "connect.address": "Hermes address",
   "connect.addressPlaceholder": "https://your-hermes or http://127.0.0.1:8642",
   "connect.key": "Connection key",
@@ -166,19 +180,23 @@ const en = {
   "connect.forget": "Disconnect and forget",
   "connect.status": "Status",
   "connect.online": "Online",
-  "connect.savedForAccount": "Saved for this account. Alice reconnects automatically after a refresh or your next sign-in.",
-  "connect.savedForDevice": "Saved for this browser session. Alice reconnects after a refresh or when you sign back in here.",
+  "connect.savedForAccount":
+    "Saved for this account. Alice reconnects automatically after a refresh or your next sign-in.",
+  "connect.savedForDevice":
+    "Saved for this browser session. Alice reconnects after a refresh or when you sign back in here.",
   "connect.remote": "remote",
   "connect.local": "local",
   "connect.provider": "Inference provider",
   "connect.advanced": "Advanced: add an inference provider",
-  "connect.providerHint": "Any OpenAI-compatible API. Hermes stores it and it shows up in the picker.",
+  "connect.providerHint":
+    "Any OpenAI-compatible API. Hermes stores it and it shows up in the picker.",
   "connect.name": "Name",
   "connect.namePlaceholder": "Whatever you want to call it",
   "connect.endpointPlaceholder": "https://api.example.com/v1",
   "connect.endpointKeyPlaceholder": "If the endpoint requires one",
   "connect.model": "Model",
-  "connect.modelPlaceholder": "Optional. If empty, Hermes lists the endpoint’s models.",
+  "connect.modelPlaceholder":
+    "Optional. If empty, Hermes lists the endpoint’s models.",
   "connect.connectFirst": "Connect your Hermes above to add one.",
   "connect.saved": "Saved. It’s in the chat picker now.",
   "connect.saving": "Saving…",
@@ -190,8 +208,10 @@ const en = {
   "connect.pending": "Pending",
   "connect.approved": "Approved",
   "connect.sessions": "Hermes sessions",
-  "connect.sessionsHint": "Conversations your agent stores. Not the chats in this cockpit.",
-  "connect.noSessions": "No recent sessions, or the dashboard didn’t send them.",
+  "connect.sessionsHint":
+    "Conversations your agent stores. Not the chats in this cockpit.",
+  "connect.noSessions":
+    "No recent sessions, or the dashboard didn’t send them.",
   "connect.messages": "{count} messages",
   "connect.webhooks": "Webhooks",
   "connect.active": "On",
@@ -224,16 +244,20 @@ const en = {
   "skills.kicker": "Skills",
   "skills.title": "Skills",
   "skills.loading": "Reading Hermes skills…",
-  "skills.descOn": "Skills installed on your Hermes. The switch puts them in or out of context.",
-  "skills.descOff": "Skills installed on your Hermes. Connect the agent to turn them on or off from here.",
+  "skills.descOn":
+    "Skills installed on your Hermes. The switch puts them in or out of context.",
+  "skills.descOff":
+    "Skills installed on your Hermes. Connect the agent to turn them on or off from here.",
   "skills.empty": "Hermes has no skills in this profile.",
   "skills.prompt": "Use the {name} skill to ",
 
   "tools.kicker": "Tools",
   "tools.title": "Tools",
   "tools.loading": "Reading Hermes tools…",
-  "tools.descOn": "Toolsets on your Hermes. Core ones and the ones you have configured.",
-  "tools.descOff": "Toolsets on your Hermes. Connect the agent to turn them on or off from here.",
+  "tools.descOn":
+    "Toolsets on your Hermes. Core ones and the ones you have configured.",
+  "tools.descOff":
+    "Toolsets on your Hermes. Connect the agent to turn them on or off from here.",
   "tools.empty": "Hermes has no visible toolsets.",
   "tools.noKeys": "No keys",
   "tools.prompt": "Use {name} to ",
@@ -242,20 +266,37 @@ const en = {
   "addons.title": "Add-ons",
   "addons.loading": "Reading Hermes add-ons…",
   "addons.descOn": "MCP servers configured on your Hermes.",
-  "addons.descOff": "MCP servers configured on your Hermes. Connect the agent to turn them on or off from here.",
+  "addons.descOff":
+    "MCP servers configured on your Hermes. Connect the agent to turn them on or off from here.",
   "addons.empty": "No MCP servers configured.",
   "addons.prompt": "Use the {title} MCP to ",
 
   "projects.kicker": "Hermes",
   "projects.title": "Projects",
-  "projects.description": "Named projects on your Hermes: a folder, a name, the context it works with.",
+  "projects.description":
+    "Named projects on your Hermes: a folder, a name, the context it works with.",
   "projects.loading": "Reading Hermes projects…",
   "projects.emptyOn": "Hermes has no named projects yet.",
   "projects.emptyOff": "Connect your Hermes to see its projects.",
+  "projects.new": "New project",
+  "projects.createTitle": "Create a project",
+  "projects.createDescription":
+    "Give Hermes a name and the folder it should use as context.",
+  "projects.name": "Name",
+  "projects.namePlaceholder": "Website redesign",
+  "projects.folder": "Folder on the Hermes computer",
+  "projects.folderPlaceholder": "/Users/you/Projects/website",
+  "projects.about": "Description (optional)",
+  "projects.aboutPlaceholder": "What this project is for",
+  "projects.cancel": "Cancel",
+  "projects.create": "Create project",
+  "projects.creating": "Creating…",
+  "projects.createError": "Hermes couldn’t create the project.",
 
   "cron.kicker": "Cron",
   "cron.title": "Jobs",
-  "cron.description": "Scheduled jobs on your Hermes. What runs on its own, on the schedule you gave it.",
+  "cron.description":
+    "Scheduled jobs on your Hermes. What runs on its own, on the schedule you gave it.",
   "cron.loading": "Reading Hermes jobs…",
   "cron.empty": "Hermes has no scheduled jobs.",
   "cron.active": "Active",
@@ -265,10 +306,30 @@ const en = {
   "cron.next": "next {when}",
   "cron.pause": "Pause",
   "cron.resume": "Resume",
+  "cron.new": "New job",
+  "cron.createTitle": "Create a scheduled job",
+  "cron.createDescription":
+    "Tell Hermes what to do and when. Alice handles the schedule format.",
+  "cron.name": "Name",
+  "cron.namePlaceholder": "Morning briefing",
+  "cron.instructions": "Instructions",
+  "cron.instructionsPlaceholder":
+    "Prepare a concise briefing with today’s priorities.",
+  "cron.frequency": "Frequency",
+  "cron.daily": "Every day",
+  "cron.weekdays": "Weekdays",
+  "cron.weekly": "Every Monday",
+  "cron.hourly": "Every hour",
+  "cron.time": "Time",
+  "cron.cancel": "Cancel",
+  "cron.create": "Create job",
+  "cron.creating": "Creating…",
+  "cron.createError": "Hermes couldn’t create the job.",
 
   "memory.kicker": "Hermes",
   "memory.title": "Memory",
-  "memory.description": "Soul, user profile, and notes your agent keeps between sessions. It reads SOUL.md, USER.md, and MEMORY.md.",
+  "memory.description":
+    "Soul, user profile, and notes your agent keeps between sessions. It reads SOUL.md, USER.md, and MEMORY.md.",
   "memory.search": "Search soul, profile, and notes…",
   "memory.loading": "Reading Hermes…",
   "memory.current": "current",
@@ -288,7 +349,8 @@ const en = {
 
   "learn.button": "Learn a skill",
   "learn.title": "Learn a skill",
-  "learn.hint": "A directory, a URL, or some notes. Hermes turns it into a skill and asks before writing.",
+  "learn.hint":
+    "A directory, a URL, or some notes. Hermes turns it into a skill and asks before writing.",
   "learn.directory": "Directory",
   "learn.url": "URL",
   "learn.describe": "Or describe it",
@@ -303,7 +365,8 @@ const en = {
   "error.connect": "Couldn’t connect.",
   "error.badKey": "The key is not correct.",
   "error.badUrl": "Check the address.",
-  "error.cors": "This browser can’t reach your Hermes. Open it on the same computer, or let Hermes allow this origin (CORS).",
+  "error.cors":
+    "This browser can’t reach your Hermes. Open it on the same computer, or let Hermes allow this origin (CORS).",
   "error.signIn": "Sign in to continue.",
   "error.connectFirst": "Connect your Hermes first.",
   "error.connectPublic": "Connect your Hermes with a public address.",
@@ -441,11 +504,16 @@ const es: Record<MsgKey, string> = {
   "chat.send": "Enviar",
   "chat.stop": "Parar",
   "chat.retry": "Reintentar",
+  "chat.copy": "Copiar",
+  "chat.copied": "Copiado",
+  "chat.share": "Compartir",
+  "chat.tryAgain": "Probar de nuevo",
   "chat.pending": "Alice está respondiendo",
   "chat.add": "Añadir",
   "chat.camera": "Cámara",
   "chat.gallery": "Galería",
   "chat.files": "Archivos",
+  "chat.removeAttachment": "Quitar {name}",
   "chat.connectHermes": "Conecta tu Hermes",
   "chat.modelPlaceholder": "Escribe el modelo...",
   "chat.loadingModels": "Cargando modelos…",
@@ -464,13 +532,16 @@ const es: Record<MsgKey, string> = {
   "settings.profile": "Perfil",
   "settings.account": "Cuenta",
   "settings.shortcuts": "Atajos",
-  "settings.keywords.general": "apariencia tema claro oscuro texto tamaño color acento compacto foco idioma language",
+  "settings.keywords.general":
+    "apariencia tema claro oscuro texto tamaño color acento compacto foco idioma language",
   "settings.keywords.model": "modelo hermes proveedor inferencia",
   "settings.keywords.profile": "perfil contexto",
-  "settings.keywords.account": "cuenta correo sesión salir login móvil teléfono tailscale",
+  "settings.keywords.account":
+    "cuenta correo sesión salir login móvil teléfono tailscale",
   "settings.keywords.shortcuts": "atajo teclado comando buscar enviar",
   "settings.lightTheme": "Tema claro",
-  "settings.lightThemeHint": "Papel cálido. El oscuro sigue siendo el de trabajo.",
+  "settings.lightThemeHint":
+    "Papel cálido. El oscuro sigue siendo el de trabajo.",
   "settings.fontSize": "Tamaño del texto",
   "settings.fontSizeHint": "Para leer con calma, sin apretar.",
   "settings.font.sm": "Pequeño",
@@ -496,16 +567,19 @@ const es: Record<MsgKey, string> = {
   "settings.connectIt": "Conéctalo",
   "settings.modelsFromAgentRest": "para ver los que tiene ahora.",
   "settings.noProviders": "Hermes no tiene proveedores autenticados ahora. En",
-  "settings.noProvidersRest": "puedes añadir cualquier API de inferencia compatible con OpenAI.",
+  "settings.noProvidersRest":
+    "puedes añadir cualquier API de inferencia compatible con OpenAI.",
   "settings.current": "Actual",
-  "settings.profileHint": "Este es el perfil de Hermes. Soul, perfil de usuario y notas están en",
+  "settings.profileHint":
+    "Este es el perfil de Hermes. Soul, perfil de usuario y notas están en",
   "settings.thisSession": "Esta sesión",
   "settings.signOut": "Cerrar sesión",
   "settings.signingOut": "Saliendo…",
   "settings.macAccount": "Esta es la cuenta de este Mac.",
   "settings.onPhone": "En el móvil",
   "settings.onPhoneHint": "En Safari, esta dirección:",
-  "settings.onPhoneRest": "Compartir → Añadir a pantalla de inicio. Este Mac tiene que estar despierto. Otras personas pueden crear su cuenta en esta misma dirección y conectar su Hermes.",
+  "settings.onPhoneRest":
+    "Compartir → Añadir a pantalla de inicio. Este Mac tiene que estar despierto. Otras personas pueden crear su cuenta en esta misma dirección y conectar su Hermes.",
   "settings.shortcut.search": "Buscar en todo Hermes",
   "settings.shortcut.newChat": "Nuevo chat",
   "settings.shortcut.focus": "Modo foco",
@@ -531,15 +605,18 @@ const es: Record<MsgKey, string> = {
   "login.fail": "No se ha podido entrar.",
   "login.failGoogle": "No se ha podido entrar con Google.",
   "login.failApple": "No se ha podido entrar con Apple.",
-  "login.googleRestart": "Google no ha podido cerrar el login. Vuelve a pulsar Continuar con Google.",
+  "login.googleRestart":
+    "Google no ha podido cerrar el login. Vuelve a pulsar Continuar con Google.",
   "login.googleDenied": "Has cancelado el acceso de Google.",
   "login.emailExists": "Ese correo ya tiene cuenta.",
   "login.badCredentials": "El correo o la contraseña no coinciden.",
 
   "connect.kicker": "Gateway",
   "connect.title": "Conectar",
-  "connect.description": "Copia la dirección y la clave de conexión desde Hermes. Alice se ocupa del resto.",
-  "connect.setupHint": "Pega estos dos datos una sola vez. Alice recordará este Hermes para tu cuenta.",
+  "connect.description":
+    "Copia la dirección y la clave de conexión desde Hermes. Alice se ocupa del resto.",
+  "connect.setupHint":
+    "Pega estos dos datos una sola vez. Alice recordará este Hermes para tu cuenta.",
   "connect.address": "Dirección de Hermes",
   "connect.addressPlaceholder": "https://tu-hermes o http://127.0.0.1:8642",
   "connect.key": "Clave de conexión",
@@ -553,19 +630,23 @@ const es: Record<MsgKey, string> = {
   "connect.forget": "Desconectar y olvidar",
   "connect.status": "Estado",
   "connect.online": "En línea",
-  "connect.savedForAccount": "Guardado para esta cuenta. Alice se reconecta automáticamente al recargar o volver a iniciar sesión.",
-  "connect.savedForDevice": "Guardado para esta sesión del navegador. Alice se reconecta al recargar o al volver a iniciar sesión aquí.",
+  "connect.savedForAccount":
+    "Guardado para esta cuenta. Alice se reconecta automáticamente al recargar o volver a iniciar sesión.",
+  "connect.savedForDevice":
+    "Guardado para esta sesión del navegador. Alice se reconecta al recargar o al volver a iniciar sesión aquí.",
   "connect.remote": "remoto",
   "connect.local": "local",
   "connect.provider": "Proveedor de inferencia",
   "connect.advanced": "Avanzado: añadir un proveedor de inferencia",
-  "connect.providerHint": "Cualquier API compatible con OpenAI. Lo guarda Hermes y sale en el selector.",
+  "connect.providerHint":
+    "Cualquier API compatible con OpenAI. Lo guarda Hermes y sale en el selector.",
   "connect.name": "Nombre",
   "connect.namePlaceholder": "El nombre que quieras",
   "connect.endpointPlaceholder": "https://api.ejemplo.com/v1",
   "connect.endpointKeyPlaceholder": "Si el endpoint la pide",
   "connect.model": "Modelo",
-  "connect.modelPlaceholder": "Opcional. Si está vacío, Hermes lista los del endpoint.",
+  "connect.modelPlaceholder":
+    "Opcional. Si está vacío, Hermes lista los del endpoint.",
   "connect.connectFirst": "Conecta tu Hermes arriba para añadirlo.",
   "connect.saved": "Guardado. Ya está en el selector del chat.",
   "connect.saving": "Guardando…",
@@ -577,8 +658,10 @@ const es: Record<MsgKey, string> = {
   "connect.pending": "Pendiente",
   "connect.approved": "Aprobado",
   "connect.sessions": "Sesiones de Hermes",
-  "connect.sessionsHint": "Las conversaciones que guarda tu agente. No son los chats de este cockpit.",
-  "connect.noSessions": "No hay sesiones recientes, o el dashboard no las ha enviado.",
+  "connect.sessionsHint":
+    "Las conversaciones que guarda tu agente. No son los chats de este cockpit.",
+  "connect.noSessions":
+    "No hay sesiones recientes, o el dashboard no las ha enviado.",
   "connect.messages": "{count} mensajes",
   "connect.webhooks": "Webhooks",
   "connect.active": "Activo",
@@ -611,16 +694,20 @@ const es: Record<MsgKey, string> = {
   "skills.kicker": "Skills",
   "skills.title": "Habilidades",
   "skills.loading": "Leyendo las skills de Hermes…",
-  "skills.descOn": "Las skills instaladas en tu Hermes. El interruptor las activa o las deja fuera del contexto.",
-  "skills.descOff": "Las skills instaladas en tu Hermes. Conecta el agente para activarlas o apagarlas desde aquí.",
+  "skills.descOn":
+    "Las skills instaladas en tu Hermes. El interruptor las activa o las deja fuera del contexto.",
+  "skills.descOff":
+    "Las skills instaladas en tu Hermes. Conecta el agente para activarlas o apagarlas desde aquí.",
   "skills.empty": "Hermes no tiene skills en este perfil.",
   "skills.prompt": "Usa la skill {name} para ",
 
   "tools.kicker": "Tools",
   "tools.title": "Herramientas",
   "tools.loading": "Leyendo las herramientas de Hermes…",
-  "tools.descOn": "Toolsets de tu Hermes. Los del núcleo y los que tienes configurados ahora.",
-  "tools.descOff": "Toolsets de tu Hermes. Conecta el agente para activarlos o apagarlos desde aquí.",
+  "tools.descOn":
+    "Toolsets de tu Hermes. Los del núcleo y los que tienes configurados ahora.",
+  "tools.descOff":
+    "Toolsets de tu Hermes. Conecta el agente para activarlos o apagarlos desde aquí.",
   "tools.empty": "Hermes no tiene toolsets visibles.",
   "tools.noKeys": "Sin claves",
   "tools.prompt": "Usa {name} para ",
@@ -629,20 +716,37 @@ const es: Record<MsgKey, string> = {
   "addons.title": "Complementos",
   "addons.loading": "Leyendo los complementos de Hermes…",
   "addons.descOn": "Servidores MCP configurados en tu Hermes.",
-  "addons.descOff": "Servidores MCP configurados en tu Hermes. Conecta el agente para activarlos o apagarlos desde aquí.",
+  "addons.descOff":
+    "Servidores MCP configurados en tu Hermes. Conecta el agente para activarlos o apagarlos desde aquí.",
   "addons.empty": "No hay servidores MCP configurados.",
   "addons.prompt": "Usa el MCP {title} para ",
 
   "projects.kicker": "Hermes",
   "projects.title": "Proyectos",
-  "projects.description": "Los proyectos nombrados de tu Hermes: una carpeta, un nombre, el contexto con el que trabaja.",
+  "projects.description":
+    "Los proyectos nombrados de tu Hermes: una carpeta, un nombre, el contexto con el que trabaja.",
   "projects.loading": "Leyendo los proyectos de Hermes…",
   "projects.emptyOn": "Hermes no tiene proyectos nombrados todavía.",
   "projects.emptyOff": "Conecta tu Hermes para ver sus proyectos.",
+  "projects.new": "Nuevo proyecto",
+  "projects.createTitle": "Crear un proyecto",
+  "projects.createDescription":
+    "Dale a Hermes un nombre y la carpeta que debe usar como contexto.",
+  "projects.name": "Nombre",
+  "projects.namePlaceholder": "Rediseño de la web",
+  "projects.folder": "Carpeta en el ordenador de Hermes",
+  "projects.folderPlaceholder": "/Users/tu-nombre/Projects/web",
+  "projects.about": "Descripción (opcional)",
+  "projects.aboutPlaceholder": "Para qué sirve este proyecto",
+  "projects.cancel": "Cancelar",
+  "projects.create": "Crear proyecto",
+  "projects.creating": "Creando…",
+  "projects.createError": "Hermes no ha podido crear el proyecto.",
 
   "cron.kicker": "Cron",
   "cron.title": "Tareas",
-  "cron.description": "Los trabajos programados de tu Hermes. Lo que corre solo, en el horario que tú le diste.",
+  "cron.description":
+    "Los trabajos programados de tu Hermes. Lo que corre solo, en el horario que tú le diste.",
   "cron.loading": "Leyendo las tareas de Hermes…",
   "cron.empty": "Hermes no tiene tareas programadas.",
   "cron.active": "Activa",
@@ -652,10 +756,30 @@ const es: Record<MsgKey, string> = {
   "cron.next": "siguiente {when}",
   "cron.pause": "Pausar",
   "cron.resume": "Reanudar",
+  "cron.new": "Nueva tarea",
+  "cron.createTitle": "Crear una tarea programada",
+  "cron.createDescription":
+    "Dile a Hermes qué debe hacer y cuándo. Alice se ocupa del formato del horario.",
+  "cron.name": "Nombre",
+  "cron.namePlaceholder": "Resumen de la mañana",
+  "cron.instructions": "Instrucciones",
+  "cron.instructionsPlaceholder":
+    "Prepara un resumen conciso con las prioridades de hoy.",
+  "cron.frequency": "Frecuencia",
+  "cron.daily": "Cada día",
+  "cron.weekdays": "De lunes a viernes",
+  "cron.weekly": "Cada lunes",
+  "cron.hourly": "Cada hora",
+  "cron.time": "Hora",
+  "cron.cancel": "Cancelar",
+  "cron.create": "Crear tarea",
+  "cron.creating": "Creando…",
+  "cron.createError": "Hermes no ha podido crear la tarea.",
 
   "memory.kicker": "Hermes",
   "memory.title": "Memoria",
-  "memory.description": "Soul, perfil de usuario y notas que tu agente guarda entre sesiones. Lo lee de SOUL.md, USER.md y MEMORY.md.",
+  "memory.description":
+    "Soul, perfil de usuario y notas que tu agente guarda entre sesiones. Lo lee de SOUL.md, USER.md y MEMORY.md.",
   "memory.search": "Buscar en soul, perfil y notas…",
   "memory.loading": "Leyendo a Hermes…",
   "memory.current": "actual",
@@ -675,7 +799,8 @@ const es: Record<MsgKey, string> = {
 
   "learn.button": "Aprender una skill",
   "learn.title": "Aprender una skill",
-  "learn.hint": "Un directorio, una URL o unas notas. Hermes lo convierte en una habilidad y te pide confirmación antes de escribir.",
+  "learn.hint":
+    "Un directorio, una URL o unas notas. Hermes lo convierte en una habilidad y te pide confirmación antes de escribir.",
   "learn.directory": "Directorio",
   "learn.url": "URL",
   "learn.describe": "O descríbela",
@@ -690,13 +815,15 @@ const es: Record<MsgKey, string> = {
   "error.connect": "No se ha podido conectar.",
   "error.badKey": "La clave no es correcta.",
   "error.badUrl": "Revisa la dirección.",
-  "error.cors": "Este navegador no alcanza tu Hermes. Ábrelo en el mismo ordenador, o deja que Hermes acepte este origen (CORS).",
+  "error.cors":
+    "Este navegador no alcanza tu Hermes. Ábrelo en el mismo ordenador, o deja que Hermes acepte este origen (CORS).",
   "error.signIn": "Entra para continuar.",
   "error.connectFirst": "Conecta tu Hermes primero.",
   "error.connectPublic": "Conecta tu Hermes con una dirección pública.",
   "error.connectDevice": "Conecta tu Hermes en este equipo.",
   "error.reconnectKey": "Vuelve a Conectar y pega la clave de Hermes.",
-  "error.noText": "Hermes no ha enviado texto. Prueba de nuevo o cambia de modelo.",
+  "error.noText":
+    "Hermes no ha enviado texto. Prueba de nuevo o cambia de modelo.",
   "error.noReply": "No se ha podido responder.",
   "error.timedOut": "El modelo no ha respondido a tiempo.",
   "error.endpointKey": "La clave del endpoint no es correcta.",
@@ -827,7 +954,11 @@ export function isLocale(value: unknown): value is Locale {
   return value === "en" || value === "es";
 }
 
-export function t(locale: Locale, key: MsgKey, vars?: Record<string, string | number>): string {
+export function t(
+  locale: Locale,
+  key: MsgKey,
+  vars?: Record<string, string | number>,
+): string {
   let out = catalogs[locale][key] ?? catalogs.en[key];
   if (vars) {
     for (const [name, value] of Object.entries(vars)) {
@@ -837,7 +968,10 @@ export function t(locale: Locale, key: MsgKey, vars?: Record<string, string | nu
   return out;
 }
 
-export function localizeError(locale: Locale, message: string | undefined): string {
+export function localizeError(
+  locale: Locale,
+  message: string | undefined,
+): string {
   if (!message) return t(locale, "error.connect");
   const key = ERROR_KEYS[message];
   return key ? t(locale, key) : message;
@@ -855,16 +989,25 @@ export function displayMessageContent(locale: Locale, content: string): string {
   return key ? t(locale, key) : content;
 }
 
-export function skillGroupLabel(locale: Locale, group: string, fallback?: string): string {
+export function skillGroupLabel(
+  locale: Locale,
+  group: string,
+  fallback?: string,
+): string {
   const id = group === "otras" || group === "other" ? "other" : group;
   const key = `skill.group.${id}` as MsgKey;
   if (key in catalogs.en) return t(locale, key);
-  return fallback || group.replace(/[_-]+/g, " ").replace(/\b([a-z])/g, (c) => c.toUpperCase());
+  return (
+    fallback ||
+    group.replace(/[_-]+/g, " ").replace(/\b([a-z])/g, (c) => c.toUpperCase())
+  );
 }
 
 export function displayChatTitle(locale: Locale, title: string): string {
-  if (title === "Nuevo chat" || title === "New chat") return t(locale, "chat.newTitle");
-  if (title === "Bienvenida" || title === "Welcome") return t(locale, "chat.welcomeTitle");
+  if (title === "Nuevo chat" || title === "New chat")
+    return t(locale, "chat.newTitle");
+  if (title === "Bienvenida" || title === "Welcome")
+    return t(locale, "chat.welcomeTitle");
   return title;
 }
 

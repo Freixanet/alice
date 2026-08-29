@@ -100,15 +100,19 @@ export type HermesLive = {
 
 export type HermesLiveResult = HermesLive | { ok: false; error: string };
 
-export async function listHermesLive(opts?: { signal?: AbortSignal }): Promise<HermesLiveResult> {
+export async function listHermesLive(opts?: {
+  signal?: AbortSignal;
+}): Promise<HermesLiveResult> {
   try {
     const { useHermes } = await import("./store");
     const place = useHermes.getState().gatewayPlace;
     if (place === "device") {
-      const { getDeviceSessionKey, listHermesLiveDirect } = await import("./hermes-direct");
+      const { getDeviceSessionKey, listHermesLiveDirect } =
+        await import("./hermes-direct");
       const url = useHermes.getState().gatewayUrl;
       const key = getDeviceSessionKey();
-      if (!url || !key) return { ok: false, error: "Connect your Hermes on this computer." };
+      if (!url || !key)
+        return { ok: false, error: "Connect your Hermes on this computer." };
       return listHermesLiveDirect({ url, key, signal: opts?.signal });
     }
     const res = await fetch("/api/hermes", {
@@ -120,7 +124,10 @@ export async function listHermesLive(opts?: { signal?: AbortSignal }): Promise<H
     const data = (await res.json()) as HermesLiveResult;
     if (data && data.ok) return data;
     const message =
-      data && "error" in data && typeof data.error === "string" && data.error.trim()
+      data &&
+      "error" in data &&
+      typeof data.error === "string" &&
+      data.error.trim()
         ? data.error
         : "Couldn’t read Hermes status.";
     return { ok: false, error: message };
@@ -130,19 +137,32 @@ export async function listHermesLive(opts?: { signal?: AbortSignal }): Promise<H
 }
 
 export async function mutateHermes(opts: {
-  action: "toggle-skill" | "toggle-toolset" | "toggle-mcp" | "cron-pause" | "cron-resume";
+  action:
+    | "toggle-skill"
+    | "toggle-toolset"
+    | "toggle-mcp"
+    | "cron-pause"
+    | "cron-resume"
+    | "cron-create"
+    | "project-create";
   name?: string;
   enabled?: boolean;
   jobId?: string;
+  prompt?: string;
+  schedule?: string;
+  path?: string;
+  description?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   try {
     const { useHermes } = await import("./store");
     const place = useHermes.getState().gatewayPlace;
     if (place === "device") {
-      const { getDeviceSessionKey, mutateHermesDirect } = await import("./hermes-direct");
+      const { getDeviceSessionKey, mutateHermesDirect } =
+        await import("./hermes-direct");
       const url = useHermes.getState().gatewayUrl;
       const key = getDeviceSessionKey();
-      if (!url || !key) return { ok: false, error: "Connect your Hermes on this computer." };
+      if (!url || !key)
+        return { ok: false, error: "Connect your Hermes on this computer." };
       return mutateHermesDirect({ url, key, ...opts });
     }
     const res = await fetch("/api/hermes", {

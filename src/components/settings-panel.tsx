@@ -123,7 +123,7 @@ export function SettingsDialog({
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t("settings.search")}
                 aria-label={t("settings.search")}
-                className="h-9 rounded-lg pl-8 text-sm"
+                className="h-9 rounded-lg pl-8"
               />
             </div>
           </div>
@@ -265,7 +265,7 @@ function GeneralSection() {
               aria-checked={locale === id}
               onClick={() => setLocale(id)}
               className={cn(
-                "h-7 rounded-md px-2 text-[11px] font-medium tracking-wide",
+                "h-7 rounded-md px-2 text-xs font-medium tracking-wide",
                 locale === id
                   ? "bg-card text-foreground shadow-border"
                   : "text-muted-foreground hover:text-foreground",
