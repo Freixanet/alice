@@ -196,7 +196,7 @@ function ConnectPage() {
     }
   }
 
-  const corsCommand = `hermes config set gateway.api_server.cors_origins ${appOrigin} && hermes gateway restart`;
+  const corsCommand = `hermes config set API_SERVER_CORS_ORIGINS ${appOrigin} && sudo hermes gateway restart`;
 
   async function copyCorsCommand() {
     try {
