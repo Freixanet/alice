@@ -209,6 +209,10 @@ html[data-alice-app]
   border-radius: var(--radius-md) !important;
 }
 
+html[data-alice-app] .alice-switch-thumb {
+  border-radius: 9999px !important;
+}
+
 html[data-alice-app] .alice-page-header {
   border-bottom: 1px solid var(--border);
   padding-bottom: 1.25rem;
