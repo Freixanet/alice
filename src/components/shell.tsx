@@ -50,7 +50,6 @@ export function AppShell() {
   const theme = useHermes((s) => s.theme);
   const fontSize = useHermes((s) => s.fontSize);
   const accent = useHermes((s) => s.accent);
-  const designMode = useHermes((s) => s.designMode);
   const collapsed = useHermes((s) => s.sidebarCollapsed);
   const setCollapsed = useHermes((s) => s.setSidebarCollapsed);
   const conversations = useHermes((s) => s.conversations);
@@ -89,11 +88,11 @@ export function AppShell() {
     root.dataset.theme = theme;
     root.dataset.font = fontSize;
     root.dataset.accent = accent;
-    root.dataset.design = designMode;
+    root.dataset.aliceApp = "";
     return () => {
-      delete root.dataset.design;
+      delete root.dataset.aliceApp;
     };
-  }, [theme, fontSize, accent, designMode]);
+  }, [theme, fontSize, accent]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

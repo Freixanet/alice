@@ -59,7 +59,6 @@ function seedBlankChat(): Conversation {
 export type Theme = "dark" | "light";
 export type FontSize = "sm" | "md" | "lg";
 export type Accent = "stone" | "sage" | "sky" | "violet" | "rose" | "amber";
-export type DesignMode = "classic" | "experimental";
 
 interface HermesState {
   hydrated: boolean;
@@ -70,7 +69,6 @@ interface HermesState {
   sidebarCollapsed: boolean;
   focusMode: boolean;
   compact: boolean;
-  designMode: DesignMode;
   model: string;
   modelProvider: string;
   profile: string;
@@ -102,7 +100,6 @@ interface HermesState {
   setFocusMode: (v: boolean) => void;
   toggleFocus: () => void;
   setCompact: (v: boolean) => void;
-  setDesignMode: (mode: DesignMode) => void;
   setModel: (id: string, provider?: string) => void;
   setProfile: (name: string) => void;
   isSkillOn: (id: string) => boolean;
@@ -135,6 +132,7 @@ interface HermesState {
   enabledAddonNames: () => string[];
   setGatewayPlace: (place: GatewayPlace) => void;
   setGatewayUrl: (url: string) => void;
+  restoreGateway: (connection: { url: string; place: GatewayPlace }) => void;
   setGatewayChecking: () => void;
   setGatewayLive: (meta: GatewayMeta) => void;
   setGatewayModels: (models: HermesModelOption[], current?: { model?: string; provider?: string }) => void;
@@ -154,7 +152,6 @@ export const useHermes = create<HermesState>()(
       sidebarCollapsed: false,
       focusMode: false,
       compact: false,
-      designMode: "classic",
       model: "hermes-agent",
       modelProvider: "",
       profile: "default",
@@ -195,7 +192,6 @@ export const useHermes = create<HermesState>()(
       setFocusMode: (v) => set({ focusMode: v }),
       toggleFocus: () => set({ focusMode: !get().focusMode }),
       setCompact: (v) => set({ compact: v }),
-      setDesignMode: (designMode) => set({ designMode }),
       setModel: (id, provider) =>
         set({
           model: id,
@@ -375,6 +371,15 @@ export const useHermes = create<HermesState>()(
         addons.filter((a) => get().isAddonOn(a.id)).map((a) => a.name),
       setGatewayPlace: (place) => set({ gatewayPlace: place }),
       setGatewayUrl: (url) => set({ gatewayUrl: url }),
+      restoreGateway: ({ url, place }) =>
+        set((state) => ({
+          gatewayUrl: url,
+          gatewayPlace: place,
+          gatewayOn: true,
+          gatewayStatus:
+            state.gatewayStatus === "live" && state.gatewayUrl === url ? "live" : "idle",
+          gatewayError: null,
+        })),
       setGatewayChecking: () => set({ gatewayStatus: "checking", gatewayError: null }),
       setGatewayLive: (meta) => {
         const models = unionHermesModels(get().gatewayMeta?.models, meta.models ?? []);
@@ -465,7 +470,7 @@ export const useHermes = create<HermesState>()(
           localStorage.removeItem(`${name}:${user}`);
         },
       })),
-      version: 5,
+      version: 6,
       migrate: (persisted) => {
         if (persisted && typeof persisted === "object") {
           const next = { ...(persisted as Record<string, unknown>) };
@@ -487,9 +492,7 @@ export const useHermes = create<HermesState>()(
           if (next.fontSize !== "sm" && next.fontSize !== "md" && next.fontSize !== "lg") {
             next.fontSize = "md";
           }
-          if (next.designMode !== "classic" && next.designMode !== "experimental") {
-            next.designMode = "classic";
-          }
+          delete next.designMode;
           if (
             next.accent !== "stone" &&
             next.accent !== "sage" &&
@@ -519,7 +522,6 @@ export const useHermes = create<HermesState>()(
         sidebarCollapsed: s.sidebarCollapsed,
         focusMode: s.focusMode,
         compact: s.compact,
-        designMode: s.designMode,
         model: s.model,
         modelProvider: s.modelProvider,
         profile: s.profile,

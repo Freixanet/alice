@@ -15,14 +15,16 @@ import { useHermes } from "../store";
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const user = useCurrentUser();
+  const userId = user?.id ?? null;
+  const isDevFallback = Boolean(user?.isDevFallback);
 
   useEffect(() => {
-    if (!user || user.isDevFallback) {
-      setCockpitIdentity({ id: user?.isDevFallback ? user.id : null, owner: Boolean(user?.isDevFallback) });
-      if (user?.isDevFallback) void useHermes.persist.rehydrate();
+    if (!userId || isDevFallback) {
+      setCockpitIdentity({ id: isDevFallback ? userId : null, owner: isDevFallback });
+      if (isDevFallback) void useHermes.persist.rehydrate();
       return;
     }
-    setCockpitIdentity({ id: user.id, owner: false });
+    setCockpitIdentity({ id: userId, owner: false });
     const ctrl = new AbortController();
     void fetch("/api/hermes", {
       method: "POST",
@@ -30,18 +32,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ action: "status" }),
       signal: ctrl.signal,
     })
-      .then((res) => res.json() as Promise<{ owner?: boolean }>)
-      .then((data) => {
+      .then(
+        (res) =>
+          res.json() as Promise<{
+            owner?: boolean;
+            hasKey?: boolean;
+            url?: string;
+            place?: "cloud" | "mac";
+          }>,
+      )
+      .then(async (data) => {
         if (ctrl.signal.aborted) return;
-        setCockpitIdentity({ id: user.id, owner: Boolean(data.owner) });
-        void useHermes.persist.rehydrate();
+        setCockpitIdentity({ id: userId, owner: Boolean(data.owner) });
+        await useHermes.persist.rehydrate();
+        if (ctrl.signal.aborted) return;
+        const state = useHermes.getState();
+        if (
+          data.hasKey &&
+          data.url &&
+          (data.place === "cloud" || data.place === "mac") &&
+          (!state.gatewayOn || !state.gatewayUrl)
+        ) {
+          state.restoreGateway({ url: data.url, place: data.place });
+        }
       })
       .catch(() => {
         if (ctrl.signal.aborted) return;
         void useHermes.persist.rehydrate();
       });
     return () => ctrl.abort();
-  }, [user?.id, user?.isDevFallback]);
+  }, [userId, isDevFallback]);
 
   return <>{children}</>;
 }

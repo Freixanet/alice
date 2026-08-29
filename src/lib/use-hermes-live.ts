@@ -9,6 +9,12 @@ export function useHermesLive() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!live) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     const ctrl = new AbortController();
     setLoading(true);
     void listHermesLive({ signal: ctrl.signal }).then((result) => {

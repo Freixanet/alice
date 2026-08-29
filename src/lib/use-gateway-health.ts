@@ -18,9 +18,15 @@ export function useGatewayHealth() {
     if (!hydrated) return;
     if (!on || !url) return;
     const ctrl = new AbortController();
-    const alreadyLive = useHermes.getState().gatewayStatus === "live";
-    if (!alreadyLive) setChecking();
-    void (async () => {
+    let timer: number | undefined;
+
+    function schedule(ms: number) {
+      if (!ctrl.signal.aborted) timer = window.setTimeout(() => void check(), ms);
+    }
+
+    async function check() {
+      const alreadyLive = useHermes.getState().gatewayStatus === "live";
+      if (!alreadyLive) setChecking();
       if (place !== "device") {
         try {
           const res = await fetch("/api/hermes", {
@@ -33,6 +39,7 @@ export function useGatewayHealth() {
           if (ctrl.signal.aborted) return;
           if (!data.hasKey) {
             setDown("Go back to Connect and paste the Hermes key.");
+            schedule(30_000);
             return;
           }
         } catch {
@@ -65,11 +72,19 @@ export function useGatewayHealth() {
         });
         const listed = await listHermesModels({ refresh: true, signal: ctrl.signal });
         if (!ctrl.signal.aborted && listed.ok) setGatewayModels(listed.models);
+        schedule(60_000);
         return;
       }
-      if (alreadyLive && (result.code === "unreachable" || result.code === "cors")) return;
-      setDown(result.error);
-    })();
-    return () => ctrl.abort();
+      if (!(alreadyLive && (result.code === "unreachable" || result.code === "cors"))) {
+        setDown(result.error);
+      }
+      schedule(15_000);
+    }
+
+    void check();
+    return () => {
+      ctrl.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, [hydrated, on, url, place, setChecking, setLive, setDown, setGatewayModels]);
 }

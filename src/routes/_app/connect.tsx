@@ -44,6 +44,7 @@ function ConnectPage() {
   const setGatewayModels = useHermes((s) => s.setGatewayModels);
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editingConnection, setEditingConnection] = useState(false);
   const [endpointName, setEndpointName] = useState("");
   const [endpointUrl, setEndpointUrl] = useState("");
   const [endpointKey, setEndpointKey] = useState("");
@@ -52,7 +53,13 @@ function ConnectPage() {
   const [endpointError, setEndpointError] = useState<string | null>(null);
   const [endpointOk, setEndpointOk] = useState(false);
   const liveState = useHermesLive();
-  const [gate, setGate] = useState<{ owner: boolean; local: boolean } | null>(null);
+  const [gate, setGate] = useState<{
+    owner: boolean;
+    local: boolean;
+    hasKey: boolean;
+    url?: string;
+    place?: "cloud" | "mac";
+  } | null>(null);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -62,10 +69,34 @@ function ConnectPage() {
       body: JSON.stringify({ action: "status" }),
       signal: ctrl.signal,
     })
-      .then((res) => res.json() as Promise<{ owner?: boolean; local?: boolean }>)
+      .then(
+        (res) =>
+          res.json() as Promise<{
+            owner?: boolean;
+            local?: boolean;
+            hasKey?: boolean;
+            url?: string;
+            place?: "cloud" | "mac";
+          }>,
+      )
       .then((data) => {
         if (ctrl.signal.aborted) return;
-        setGate({ owner: Boolean(data.owner), local: Boolean(data.local) });
+        setGate({
+          owner: Boolean(data.owner),
+          local: Boolean(data.local),
+          hasKey: Boolean(data.hasKey),
+          url: data.url,
+          place: data.place,
+        });
+        const state = useHermes.getState();
+        if (
+          data.hasKey &&
+          data.url &&
+          (data.place === "cloud" || data.place === "mac") &&
+          (!state.gatewayOn || !state.gatewayUrl)
+        ) {
+          state.restoreGateway({ url: data.url, place: data.place });
+        }
       })
       .catch(() => {});
     return () => ctrl.abort();
@@ -90,8 +121,13 @@ function ConnectPage() {
           : nextPlace === "device"
             ? getDeviceSessionKey()
             : null;
-      const token = assertGatewayKey(key || stored || "");
-      if (nextPlace === "mac") setMacSessionKey(token);
+      const enteredKey = key.trim();
+      const token =
+        nextPlace === "device" ? assertGatewayKey(enteredKey || stored || "") : enteredKey ? assertGatewayKey(enteredKey) : undefined;
+      if (!token && !gate?.hasKey && !live) {
+        throw new Error("missing-key");
+      }
+      if (nextPlace === "mac" && token) setMacSessionKey(token);
       const result = await probeGateway({
         url: normalized,
         key: token,
@@ -100,6 +136,17 @@ function ConnectPage() {
       });
       if (result.ok) {
         setKey("");
+        setEditingConnection(false);
+        setGate((current) =>
+          current
+            ? {
+                ...current,
+                hasKey: true,
+                url: normalized,
+                place: nextPlace === "device" ? undefined : nextPlace,
+              }
+            : current,
+        );
         setLive({
           model: result.model,
           provider: result.provider,
@@ -156,40 +203,43 @@ function ConnectPage() {
           description={t("connect.description")}
         />
 
-        <section className="space-y-3">
-          <div className="flex flex-col gap-4 rounded-xl bg-card p-4 shadow-border">
-            <label className="flex flex-col gap-1.5 text-sm">
-              {t("connect.address")}
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder={t("connect.addressPlaceholder")}
-                autoComplete="off"
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              {t("connect.key")}
-              <Input
-                type="password"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder={live ? t("connect.keyConnected") : t("connect.keyPlaceholder")}
-                autoComplete="off"
-              />
-            </label>
-            {error ? <p className="text-sm text-destructive">{localizeError(locale, error)}</p> : null}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={() => void connect()} disabled={busy || !url.trim() || (!key.trim() && !live)}>
-                {busy ? t("connect.checking") : live ? t("connect.reconnect") : t("connect.connect")}
-              </Button>
-              {live ? (
-                <Button variant="ghost" onClick={forget}>
-                  {t("connect.forget")}
+        {!live || editingConnection ? (
+          <section className="space-y-3">
+            <div className="flex flex-col gap-4 rounded-xl bg-card p-4 shadow-border">
+              {!live ? <p className="text-sm text-muted-foreground">{t("connect.setupHint")}</p> : null}
+              <label className="flex flex-col gap-1.5 text-sm">
+                {t("connect.address")}
+                <Input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder={t("connect.addressPlaceholder")}
+                  autoComplete="off"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                {t("connect.key")}
+                <Input
+                  type="password"
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  placeholder={live || gate?.hasKey ? t("connect.keyConnected") : t("connect.keyPlaceholder")}
+                  autoComplete="off"
+                />
+              </label>
+              {error ? <p className="text-sm text-destructive">{localizeError(locale, error)}</p> : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => void connect()} disabled={busy || !url.trim() || (!key.trim() && !live && !gate?.hasKey)}>
+                  {busy ? t("connect.checking") : live ? t("connect.reconnect") : t("connect.connect")}
                 </Button>
-              ) : null}
+                {live ? (
+                  <Button variant="ghost" onClick={() => setEditingConnection(false)}>
+                    {t("connect.cancel")}
+                  </Button>
+                ) : null}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
 
         {live && meta ? (
           <section className="space-y-3">
@@ -202,6 +252,24 @@ function ConnectPage() {
               <p className="mt-2 text-sm text-muted-foreground">
                 {meta.platform ?? "Hermes"} · {meta.place === "cloud" ? t("connect.remote") : t("connect.local")}
               </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t(meta.place === "device" ? "connect.savedForDevice" : "connect.savedForAccount")}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => setEditingConnection(true)}>
+                  {t("connect.change")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    forget();
+                    setGate((current) => (current ? { ...current, hasKey: false } : current));
+                  }}
+                >
+                  {t("connect.forget")}
+                </Button>
+              </div>
             </div>
           </section>
         ) : null}
@@ -212,77 +280,67 @@ function ConnectPage() {
           data={liveState.data}
         />
 
-        {place !== "device" ? (
-        <section className="space-y-3">
-          <h2 className="text-sm font-medium">{t("connect.provider")}</h2>
-          <div className="flex flex-col gap-4 rounded-xl bg-card p-4 shadow-border">
-            <p className="text-sm text-muted-foreground">
-              {t("connect.providerHint")}
-            </p>
-            <label className="flex flex-col gap-1.5 text-sm">
-              {t("connect.name")}
-              <Input
-                value={endpointName}
-                onChange={(e) => {
-                  setEndpointName(e.target.value);
-                  setEndpointOk(false);
-                }}
-                placeholder={t("connect.namePlaceholder")}
-                autoComplete="off"
-                disabled={!live}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              {t("connect.address")}
-              <Input
-                value={endpointUrl}
-                onChange={(e) => {
-                  setEndpointUrl(e.target.value);
-                  setEndpointOk(false);
-                }}
-                placeholder={t("connect.endpointPlaceholder")}
-                autoComplete="off"
-                disabled={!live}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              {t("connect.key")}
-              <Input
-                type="password"
-                value={endpointKey}
-                onChange={(e) => setEndpointKey(e.target.value)}
-                placeholder={t("connect.endpointKeyPlaceholder")}
-                autoComplete="off"
-                disabled={!live}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              {t("connect.model")}
-              <Input
-                value={endpointModel}
-                onChange={(e) => setEndpointModel(e.target.value)}
-                placeholder={t("connect.modelPlaceholder")}
-                autoComplete="off"
-                disabled={!live}
-              />
-            </label>
-            {!live ? (
-              <p className="text-sm text-muted-foreground">{t("connect.connectFirst")}</p>
-            ) : null}
-            {endpointError ? <p className="text-sm text-destructive">{localizeError(locale, endpointError)}</p> : null}
-            {endpointOk ? (
-              <p className="text-sm text-muted-foreground">{t("connect.saved")}</p>
-            ) : null}
-            <div>
-              <Button
-                onClick={() => void addEndpoint()}
-                disabled={!live || endpointBusy || !endpointUrl.trim()}
-              >
-                {endpointBusy ? t("connect.saving") : t("connect.addToHermes")}
-              </Button>
+        {live && place !== "device" ? (
+          <details className="rounded-xl bg-card shadow-border">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium">{t("connect.advanced")}</summary>
+            <div className="flex flex-col gap-4 border-t border-border p-4">
+              <p className="text-sm text-muted-foreground">{t("connect.providerHint")}</p>
+              <label className="flex flex-col gap-1.5 text-sm">
+                {t("connect.name")}
+                <Input
+                  value={endpointName}
+                  onChange={(e) => {
+                    setEndpointName(e.target.value);
+                    setEndpointOk(false);
+                  }}
+                  placeholder={t("connect.namePlaceholder")}
+                  autoComplete="off"
+                  disabled={!live}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                {t("connect.address")}
+                <Input
+                  value={endpointUrl}
+                  onChange={(e) => {
+                    setEndpointUrl(e.target.value);
+                    setEndpointOk(false);
+                  }}
+                  placeholder={t("connect.endpointPlaceholder")}
+                  autoComplete="off"
+                  disabled={!live}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                {t("connect.key")}
+                <Input
+                  type="password"
+                  value={endpointKey}
+                  onChange={(e) => setEndpointKey(e.target.value)}
+                  placeholder={t("connect.endpointKeyPlaceholder")}
+                  autoComplete="off"
+                  disabled={!live}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                {t("connect.model")}
+                <Input
+                  value={endpointModel}
+                  onChange={(e) => setEndpointModel(e.target.value)}
+                  placeholder={t("connect.modelPlaceholder")}
+                  autoComplete="off"
+                  disabled={!live}
+                />
+              </label>
+              {endpointError ? <p className="text-sm text-destructive">{localizeError(locale, endpointError)}</p> : null}
+              {endpointOk ? <p className="text-sm text-muted-foreground">{t("connect.saved")}</p> : null}
+              <div>
+                <Button onClick={() => void addEndpoint()} disabled={!live || endpointBusy || !endpointUrl.trim()}>
+                  {endpointBusy ? t("connect.saving") : t("connect.addToHermes")}
+                </Button>
+              </div>
             </div>
-          </div>
-        </section>
+          </details>
         ) : null}
       </div>
     </div>

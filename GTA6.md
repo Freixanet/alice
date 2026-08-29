@@ -1,9 +1,9 @@
-# Alice GTA6 — Experimental Anti-Slop Design Guide
+# Alice GTA6 — Anti-Slop Design Guide
 
 This is an independently authored design guide for Alice. It is not Shipper.now's
 private `gta6.md`, does not reproduce that file, and makes no claim of affiliation.
-Its purpose is to make one reversible, testable visual mode that removes common
-AI-generated interface habits without erasing Alice's identity.
+Its purpose is to define Alice's visual system and remove common AI-generated
+interface habits without erasing the product's identity.
 
 ## Identity that stays
 
@@ -20,7 +20,7 @@ AI-generated interface habits without erasing Alice's identity.
 - **Connect and Settings — Configure:** labels, controls, validation and progressive
   disclosure dominate. Decoration must never compete with the task.
 
-## Strict experimental rules
+## Strict rules
 
 1. No box shadows, gradients, glassmorphism, glow, blur, or floating glass surfaces.
 2. Do not use a rounded card as the default grouping mechanism. Prefer alignment,
@@ -38,7 +38,9 @@ AI-generated interface habits without erasing Alice's identity.
 ## Visual system
 
 - Surfaces: use the page background, one restrained raised surface, and a 1px border.
-- Radius: 4–8px for fields and panels; full circles only for the exceptions above.
+- Radius: 8px for every standalone field, button, message, composer, popover and
+  dialog. Integrated list rows and full-screen mobile sheets use 0; full circles
+  remain exclusive to the functional exceptions above.
 - Spacing: use a 4px base rhythm; lists are denser than prose and settings.
 - Typography: preserve the current families; use serif sparingly for page identity.
 - Color: one accent at a time; neutral surfaces carry structure. Meet WCAG AA.
@@ -53,9 +55,9 @@ AI-generated interface habits without erasing Alice's identity.
 
 ## Completion audit
 
-- Compare Original and Experimental on Chat, a populated record list, Connect,
-  Memory and Settings at desktop and mobile widths.
-- In Experimental, computed styles contain no box shadow, gradient or backdrop filter.
+- Review Chat, a populated record list, Connect, Memory and Settings at desktop
+  and mobile widths after every visual change.
+- Computed styles contain no box shadow, gradient or backdrop filter.
 - Verify light/dark themes, accent selection, keyboard focus, scrolling and reduced motion.
 - A visual change is complete only if it improves hierarchy without hiding information
   or changing behavior.
