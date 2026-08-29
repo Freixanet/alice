@@ -45,7 +45,6 @@ export function setDeviceSessionKey(key: string | null) {
 function headers(token: string, extra?: Record<string, string>): HeadersInit {
   return {
     Authorization: `Bearer ${token}`,
-    "X-Hermes-Session-Token": token,
     Accept: "application/json",
     ...extra,
   };

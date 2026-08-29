@@ -491,12 +491,12 @@ export async function enrichWithModelOptions(
       : []),
   ];
   const headerSets: HeadersInit[] = [
+    { Authorization: `Bearer ${token}`, Accept: "application/json" },
     {
       Authorization: `Bearer ${token}`,
       "X-Hermes-Session-Token": token,
       Accept: "application/json",
     },
-    { Authorization: `Bearer ${token}`, Accept: "application/json" },
   ];
   for (const path of paths) {
     for (const headers of headerSets) {
