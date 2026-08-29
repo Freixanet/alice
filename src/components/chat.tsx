@@ -462,7 +462,8 @@ export function ChatView() {
     <div
       className={cn(
         "relative flex min-h-0 flex-1 flex-col",
-        empty && "items-center justify-center pb-[10vh]",
+        empty &&
+          "items-center justify-center overflow-hidden overscroll-none pb-[10vh]",
       )}
     >
       {empty ? (
