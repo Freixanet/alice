@@ -192,7 +192,9 @@ export function openGate(token: string): GateSecret | null {
     ]).toString("utf8");
     const data = JSON.parse(json) as Partial<GateSecret>;
     if (typeof data.k !== "string" || typeof data.u !== "string") return null;
-    if (data.p !== "cloud" && data.p !== "mac") data.p = "cloud";
+    if (data.p !== "cloud" && data.p !== "mac" && data.p !== "device") {
+      data.p = "cloud";
+    }
     const ep = parseStoredEndpoints(data.ep);
     const uid =
       typeof data.uid === "string" && data.uid.trim()

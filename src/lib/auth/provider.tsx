@@ -2,6 +2,10 @@ import { useEffect, type ReactNode } from "react";
 import { authHeaders } from "./client";
 import { setCockpitIdentity } from "./cockpit-user";
 import { useCurrentUser } from "./use-current-user";
+import {
+  loadSavedDeviceConnection,
+  setDeviceSessionKey,
+} from "../hermes-direct";
 import { useHermes } from "../store";
 
 /**
@@ -20,10 +24,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!userId || isDevFallback) {
-      setCockpitIdentity({ id: isDevFallback ? userId : null, owner: isDevFallback });
+      if (!isDevFallback) setDeviceSessionKey(null);
+      setCockpitIdentity({
+        id: isDevFallback ? userId : null,
+        owner: isDevFallback,
+      });
       if (isDevFallback) void useHermes.persist.rehydrate();
       return;
     }
+    setDeviceSessionKey(null);
     setCockpitIdentity({ id: userId, owner: false });
     const ctrl = new AbortController();
     void fetch("/api/hermes", {
@@ -38,20 +47,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             owner?: boolean;
             hasKey?: boolean;
             url?: string;
-            place?: "cloud" | "mac";
+            place?: "cloud" | "mac" | "device";
           }>,
       )
       .then(async (data) => {
         if (ctrl.signal.aborted) return;
         setCockpitIdentity({ id: userId, owner: Boolean(data.owner) });
+        if (data.hasKey && data.url && data.place === "device") {
+          await loadSavedDeviceConnection({
+            url: data.url,
+            signal: ctrl.signal,
+          });
+        }
+        if (ctrl.signal.aborted) return;
         await useHermes.persist.rehydrate();
         if (ctrl.signal.aborted) return;
         const state = useHermes.getState();
         if (
           data.hasKey &&
           data.url &&
-          (data.place === "cloud" || data.place === "mac") &&
-          (!state.gatewayOn || !state.gatewayUrl)
+          (data.place === "cloud" ||
+            data.place === "mac" ||
+            data.place === "device") &&
+          (!state.gatewayOn ||
+            !state.gatewayUrl ||
+            state.gatewayUrl !== data.url ||
+            state.gatewayPlace !== data.place)
         ) {
           state.restoreGateway({ url: data.url, place: data.place });
         }

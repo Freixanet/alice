@@ -671,15 +671,48 @@ export async function probeGateway(opts: {
   signal?: AbortSignal;
 }): Promise<ProbeResult> {
   if (opts.place === "device") {
-    const { getDeviceSessionKey, probeHermesDirect } =
-      await import("./hermes-direct");
-    const key = opts.key || getDeviceSessionKey() || "";
-    return probeHermesDirect({
+    const {
+      getDeviceSessionKey,
+      loadSavedDeviceConnection,
+      probeHermesDirect,
+      saveDeviceConnection,
+    } = await import("./hermes-direct");
+    let key = opts.key || getDeviceSessionKey() || "";
+    if (!key) {
+      const saved = await loadSavedDeviceConnection({
+        url: opts.url,
+        signal: opts.signal,
+      });
+      key = saved?.key ?? "";
+    }
+    if (!key) {
+      return {
+        ok: false,
+        code: "invalid",
+        error: "Enter the Hermes key once to reconnect it.",
+      };
+    }
+    const result = await probeHermesDirect({
       url: opts.url,
       key,
       save: opts.save,
       signal: opts.signal,
     });
+    if (result.ok && opts.save) {
+      const saved = await saveDeviceConnection({
+        url: opts.url,
+        key,
+        signal: opts.signal,
+      });
+      if (!saved) {
+        return {
+          ok: false,
+          code: "unreachable",
+          error: "Hermes connected, but Alice couldn’t remember it. Try again.",
+        };
+      }
+    }
+    return result;
   }
   try {
     const res = await fetch("/api/hermes", {

@@ -32,7 +32,7 @@ type GateStatus = {
   local: boolean;
   hasKey: boolean;
   url?: string;
-  place?: "cloud" | "mac";
+  place?: "cloud" | "mac" | "device";
 };
 
 async function readGateStatus(signal?: AbortSignal): Promise<GateStatus> {
@@ -105,8 +105,13 @@ function ConnectPage() {
         if (
           data.hasKey &&
           data.url &&
-          (data.place === "cloud" || data.place === "mac") &&
-          (!state.gatewayOn || !state.gatewayUrl)
+          (data.place === "cloud" ||
+            data.place === "mac" ||
+            data.place === "device") &&
+          (!state.gatewayOn ||
+            !state.gatewayUrl ||
+            state.gatewayUrl !== data.url ||
+            state.gatewayPlace !== data.place)
         ) {
           state.restoreGateway({ url: data.url, place: data.place });
         }
@@ -146,7 +151,9 @@ function ConnectPage() {
       const enteredKey = key.trim();
       const token =
         nextPlace === "device"
-          ? assertGatewayKey(enteredKey || stored || "")
+          ? enteredKey
+            ? assertGatewayKey(enteredKey)
+            : stored || undefined
           : enteredKey
             ? assertGatewayKey(enteredKey)
             : undefined;
@@ -169,7 +176,7 @@ function ConnectPage() {
                 ...current,
                 hasKey: true,
                 url: normalized,
-                place: nextPlace === "device" ? undefined : nextPlace,
+                place: nextPlace,
               }
             : current,
         );

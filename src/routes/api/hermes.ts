@@ -13,7 +13,13 @@ import {
   fetchHermesMemory,
 } from "@/lib/gateway.server";
 import type { GatewayPlace } from "@/lib/gateway";
-import { GatewayError } from "@/lib/gateway";
+import {
+  assertGatewayKey,
+  GatewayError,
+  isPrivateHostname,
+  normalizeGatewayUrl,
+} from "@/lib/gateway";
+import type { GateSecret } from "@/lib/gateway.server";
 
 type Incoming = {
   action?: string;
@@ -38,6 +44,21 @@ type Incoming = {
 };
 
 const FAIL = "Couldn’t connect.";
+
+function effectiveSavedPlace(
+  saved: GateSecret | null,
+  macOk: boolean,
+): GatewayPlace | undefined {
+  if (!saved) return undefined;
+  if (saved.p === "mac" && macOk) return "mac";
+  try {
+    const host = new URL(normalizeGatewayUrl(saved.u)).hostname;
+    if (isPrivateHostname(host)) return "device";
+  } catch {
+    // Keep the stored place; validation happens before a connection is saved.
+  }
+  return saved.p;
+}
 
 export const Route = createFileRoute("/api/hermes")({
   server: {
@@ -68,13 +89,52 @@ export const Route = createFileRoute("/api/hermes")({
               ok: true,
               hasKey: Boolean(saved?.k),
               url: saved?.u,
-              place: saved?.p,
+              place: effectiveSavedPlace(saved, macOk),
               owner,
               local,
               userId,
             },
             200,
           );
+        }
+
+        if (body.action === "device-secret") {
+          if (
+            !saved?.u ||
+            !saved.k ||
+            effectiveSavedPlace(saved, macOk) !== "device"
+          ) {
+            return jsonWithCookie({ ok: false }, 404);
+          }
+          return jsonWithCookie({ ok: true, url: saved.u, key: saved.k }, 200);
+        }
+
+        if (body.action === "store-device") {
+          try {
+            const url = normalizeGatewayUrl(body.url ?? "");
+            const key = assertGatewayKey(body.key ?? "");
+            const host = new URL(url).hostname;
+            if (!isPrivateHostname(host)) {
+              return jsonWithCookie(
+                { ok: false, code: "invalid", error: FAIL },
+                400,
+              );
+            }
+            const token = sealGate({
+              k: key,
+              u: url,
+              p: "device",
+              ...(saved?.u === url && saved.ep ? { ep: saved.ep } : {}),
+              uid: userId,
+            });
+            await persistUserGate(userId, token);
+            return jsonWithCookie({ ok: true }, 200, token);
+          } catch {
+            return jsonWithCookie(
+              { ok: false, code: "invalid", error: FAIL },
+              400,
+            );
+          }
         }
 
         if (body.action === "forget") {

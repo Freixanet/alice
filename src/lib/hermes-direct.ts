@@ -13,6 +13,7 @@ import {
   type ProbeResult,
 } from "./gateway";
 import type { HermesLive, HermesLiveResult } from "./hermes-live";
+import { authHeaders } from "./auth/client";
 import {
   asRec,
   channelsFromApi,
@@ -40,6 +41,64 @@ export function setDeviceSessionKey(key: string | null) {
   if (typeof sessionStorage === "undefined") return;
   if (key) sessionStorage.setItem(DEVICE_KEY, key);
   else sessionStorage.removeItem(DEVICE_KEY);
+}
+
+export async function loadSavedDeviceConnection(opts?: {
+  url?: string;
+  signal?: AbortSignal;
+}): Promise<{ url: string; key: string } | null> {
+  try {
+    const res = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ action: "device-secret" }),
+      signal: opts?.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      ok?: boolean;
+      url?: unknown;
+      key?: unknown;
+    };
+    if (
+      !data.ok ||
+      typeof data.url !== "string" ||
+      typeof data.key !== "string"
+    ) {
+      return null;
+    }
+    const url = normalizeGatewayUrl(data.url);
+    if (opts?.url && normalizeGatewayUrl(opts.url) !== url) return null;
+    const key = assertGatewayKey(data.key);
+    setDeviceSessionKey(key);
+    return { url, key };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveDeviceConnection(opts: {
+  url: string;
+  key: string;
+  signal?: AbortSignal;
+}): Promise<boolean> {
+  try {
+    const res = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        action: "store-device",
+        url: normalizeGatewayUrl(opts.url),
+        key: assertGatewayKey(opts.key),
+      }),
+      signal: opts.signal,
+      cache: "no-store",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 function headers(token: string, extra?: Record<string, string>): HeadersInit {
