@@ -101,7 +101,7 @@ export function friendlyProbeError(code?: ProbeCode): string {
   if (code === "unauthorized") return "The key is not correct.";
   if (code === "invalid") return "Check the address.";
   if (code === "cors") {
-    return "This browser can’t reach your Hermes. Open it on the same computer, or let Hermes allow this origin (CORS).";
+    return "Hermes is online, but it hasn’t allowed Alice yet (CORS).";
   }
   return FAIL;
 }

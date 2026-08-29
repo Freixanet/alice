@@ -13,10 +13,16 @@ import {
   probeGateway,
   saveHermesCustomEndpoint,
   setMacSessionKey,
+  type ProbeCode,
 } from "@/lib/gateway";
 import { authHeaders } from "@/lib/auth/client";
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
-import { dateLocale, localizeError, type Locale, type MsgKey } from "@/lib/i18n";
+import {
+  dateLocale,
+  localizeError,
+  type Locale,
+  type MsgKey,
+} from "@/lib/i18n";
 import { useHermesLive } from "@/lib/use-hermes-live";
 import { useLocale, useT } from "@/lib/use-i18n";
 import { useHermes } from "@/lib/store";
@@ -80,8 +86,16 @@ function ConnectPage() {
   const [endpointOk, setEndpointOk] = useState(false);
   const liveState = useHermesLive();
   const [gate, setGate] = useState<GateStatus | null>(null);
+  const [connectionIssue, setConnectionIssue] = useState<ProbeCode | null>(
+    null,
+  );
+  const [appOrigin, setAppOrigin] = useState(
+    "https://alice-ten-phi.vercel.app",
+  );
+  const [commandCopied, setCommandCopied] = useState(false);
 
   useEffect(() => {
+    setAppOrigin(window.location.origin);
     const ctrl = new AbortController();
     void readGateStatus(ctrl.signal)
       .then((data) => {
@@ -105,6 +119,8 @@ function ConnectPage() {
 
   async function connect() {
     setBusy(true);
+    setConnectionIssue(null);
+    setCommandCopied(false);
     setChecking();
     try {
       let currentGate = gate;
@@ -129,7 +145,11 @@ function ConnectPage() {
             : null;
       const enteredKey = key.trim();
       const token =
-        nextPlace === "device" ? assertGatewayKey(enteredKey || stored || "") : enteredKey ? assertGatewayKey(enteredKey) : undefined;
+        nextPlace === "device"
+          ? assertGatewayKey(enteredKey || stored || "")
+          : enteredKey
+            ? assertGatewayKey(enteredKey)
+            : undefined;
       if (!token && !currentGate?.hasKey && !live) {
         throw new Error("missing-key");
       }
@@ -164,12 +184,26 @@ function ConnectPage() {
           place: nextPlace,
         });
       } else {
+        setConnectionIssue(result.code);
         setDown(result.error);
       }
     } catch (e) {
-      setDown(friendlyProbeError((e as { code?: "invalid" }).code));
+      const code = (e as { code?: ProbeCode }).code;
+      setConnectionIssue(code ?? "unreachable");
+      setDown(friendlyProbeError(code));
     } finally {
       setBusy(false);
+    }
+  }
+
+  const corsCommand = `hermes config set gateway.api_server.cors_origins ${appOrigin} && hermes gateway restart`;
+
+  async function copyCorsCommand() {
+    try {
+      await navigator.clipboard.writeText(corsCommand);
+      setCommandCopied(true);
+    } catch {
+      setCommandCopied(false);
     }
   }
 
@@ -212,12 +246,19 @@ function ConnectPage() {
         {!live || editingConnection ? (
           <section className="space-y-3">
             <div className="flex flex-col gap-4 rounded-xl bg-card p-4 shadow-border">
-              {!live ? <p className="text-sm text-muted-foreground">{t("connect.setupHint")}</p> : null}
+              {!live ? (
+                <p className="text-sm text-muted-foreground">
+                  {t("connect.setupHint")}
+                </p>
+              ) : null}
               <label className="flex flex-col gap-1.5 text-sm">
                 {t("connect.address")}
                 <Input
                   value={url}
-                  onChange={(e) => setUrl(e.target.value)}
+                  onChange={(e) => {
+                    setUrl(e.target.value);
+                    setConnectionIssue(null);
+                  }}
                   placeholder={t("connect.addressPlaceholder")}
                   autoComplete="off"
                 />
@@ -228,17 +269,68 @@ function ConnectPage() {
                   type="password"
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
-                  placeholder={live || gate?.hasKey ? t("connect.keyConnected") : t("connect.keyPlaceholder")}
+                  placeholder={
+                    live || gate?.hasKey
+                      ? t("connect.keyConnected")
+                      : t("connect.keyPlaceholder")
+                  }
                   autoComplete="off"
                 />
               </label>
-              {error ? <p className="text-sm text-destructive">{localizeError(locale, error)}</p> : null}
+              {error ? (
+                <p className="text-sm text-destructive">
+                  {localizeError(locale, error)}
+                </p>
+              ) : null}
+              {connectionIssue === "cors" ? (
+                <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-medium">
+                      {t("connect.mobileCorsTitle")}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {t("connect.mobileCorsHint")}
+                    </p>
+                  </div>
+                  <code className="block overflow-x-auto whitespace-nowrap rounded-md bg-muted px-3 py-2.5 font-mono text-xs text-foreground">
+                    {corsCommand}
+                  </code>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void copyCorsCommand()}
+                    >
+                      {commandCopied
+                        ? t("connect.commandCopied")
+                        : t("connect.copyCommand")}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {t("connect.mobileCorsRetry")}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
-                <Button onClick={() => void connect()} disabled={busy || !url.trim() || (!key.trim() && !live && !gate?.hasKey)}>
-                  {busy ? t("connect.checking") : live ? t("connect.reconnect") : t("connect.connect")}
+                <Button
+                  onClick={() => void connect()}
+                  disabled={
+                    busy ||
+                    !url.trim() ||
+                    (!key.trim() && !live && !gate?.hasKey)
+                  }
+                >
+                  {busy
+                    ? t("connect.checking")
+                    : live
+                      ? t("connect.reconnect")
+                      : t("connect.connect")}
                 </Button>
                 {live ? (
-                  <Button variant="ghost" onClick={() => setEditingConnection(false)}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setEditingConnection(false)}
+                  >
                     {t("connect.cancel")}
                   </Button>
                 ) : null}
@@ -256,13 +348,24 @@ function ConnectPage() {
                 <span className="text-sm">{meta.model}</span>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                {meta.platform ?? "Hermes"} · {meta.place === "cloud" ? t("connect.remote") : t("connect.local")}
+                {meta.platform ?? "Hermes"} ·{" "}
+                {meta.place === "cloud"
+                  ? t("connect.remote")
+                  : t("connect.local")}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                {t(meta.place === "device" ? "connect.savedForDevice" : "connect.savedForAccount")}
+                {t(
+                  meta.place === "device"
+                    ? "connect.savedForDevice"
+                    : "connect.savedForAccount",
+                )}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => setEditingConnection(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditingConnection(true)}
+                >
                   {t("connect.change")}
                 </Button>
                 <Button
@@ -270,7 +373,9 @@ function ConnectPage() {
                   size="sm"
                   onClick={() => {
                     forget();
-                    setGate((current) => (current ? { ...current, hasKey: false } : current));
+                    setGate((current) =>
+                      current ? { ...current, hasKey: false } : current,
+                    );
                   }}
                 >
                   {t("connect.forget")}
@@ -288,9 +393,13 @@ function ConnectPage() {
 
         {live && place !== "device" ? (
           <details className="rounded-xl bg-card shadow-border">
-            <summary className="cursor-pointer px-4 py-3 text-sm font-medium">{t("connect.advanced")}</summary>
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+              {t("connect.advanced")}
+            </summary>
             <div className="flex flex-col gap-4 border-t border-border p-4">
-              <p className="text-sm text-muted-foreground">{t("connect.providerHint")}</p>
+              <p className="text-sm text-muted-foreground">
+                {t("connect.providerHint")}
+              </p>
               <label className="flex flex-col gap-1.5 text-sm">
                 {t("connect.name")}
                 <Input
@@ -338,11 +447,24 @@ function ConnectPage() {
                   disabled={!live}
                 />
               </label>
-              {endpointError ? <p className="text-sm text-destructive">{localizeError(locale, endpointError)}</p> : null}
-              {endpointOk ? <p className="text-sm text-muted-foreground">{t("connect.saved")}</p> : null}
+              {endpointError ? (
+                <p className="text-sm text-destructive">
+                  {localizeError(locale, endpointError)}
+                </p>
+              ) : null}
+              {endpointOk ? (
+                <p className="text-sm text-muted-foreground">
+                  {t("connect.saved")}
+                </p>
+              ) : null}
               <div>
-                <Button onClick={() => void addEndpoint()} disabled={!live || endpointBusy || !endpointUrl.trim()}>
-                  {endpointBusy ? t("connect.saving") : t("connect.addToHermes")}
+                <Button
+                  onClick={() => void addEndpoint()}
+                  disabled={!live || endpointBusy || !endpointUrl.trim()}
+                >
+                  {endpointBusy
+                    ? t("connect.saving")
+                    : t("connect.addToHermes")}
                 </Button>
               </div>
             </div>
@@ -366,10 +488,18 @@ function HermesLiveSections({
   const locale = useLocale();
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">{t("connect.readingLive")}</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("connect.readingLive")}
+      </p>
+    );
   }
   if (error) {
-    return <p className="text-sm text-muted-foreground">{localizeError(locale, error)}</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {localizeError(locale, error)}
+      </p>
+    );
   }
   if (!data) return null;
 
@@ -390,7 +520,10 @@ function HermesLiveSections({
         ) : (
           <ul className="flex flex-col gap-2">
             {channels.map((channel) => (
-              <li key={channel.id} className="rounded-xl bg-card px-4 py-4 shadow-border">
+              <li
+                key={channel.id}
+                className="rounded-xl bg-card px-4 py-4 shadow-border"
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{channel.name}</h3>
                   <Badge variant={channel.enabled ? "live" : "outline"}>
@@ -398,10 +531,14 @@ function HermesLiveSections({
                   </Badge>
                 </div>
                 {channel.description ? (
-                  <p className="mt-1 text-sm text-muted-foreground">{channel.description}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {channel.description}
+                  </p>
                 ) : null}
                 {channel.error ? (
-                  <p className="mt-1 text-sm text-destructive">{localizeError(locale, channel.error)}</p>
+                  <p className="mt-1 text-sm text-destructive">
+                    {localizeError(locale, channel.error)}
+                  </p>
                 ) : null}
               </li>
             ))}
@@ -437,7 +574,9 @@ function HermesLiveSections({
                   <h3 className="font-medium">{row.user || row.platform}</h3>
                   <Badge variant="live">{t("connect.approved")}</Badge>
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">{prettyPlatform(row.platform)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {prettyPlatform(row.platform)}
+                </p>
               </li>
             ))}
           </ul>
@@ -456,12 +595,19 @@ function HermesLiveSections({
         ) : (
           <ul className="flex flex-col gap-2">
             {sessions.map((session) => (
-              <li key={session.id} className="rounded-xl bg-card px-4 py-4 shadow-border">
+              <li
+                key={session.id}
+                className="rounded-xl bg-card px-4 py-4 shadow-border"
+              >
                 <h3 className="font-medium">{session.title || session.id}</h3>
                 <p className="mt-1 text-2xs text-muted-foreground">
                   {session.source ? prettyPlatform(session.source) : "Hermes"}
-                  {typeof session.messages === "number" ? ` · ${t("connect.messages", { count: session.messages })}` : ""}
-                  {session.updatedAt ? ` · ${formatStamp(locale, session.updatedAt)}` : ""}
+                  {typeof session.messages === "number"
+                    ? ` · ${t("connect.messages", { count: session.messages })}`
+                    : ""}
+                  {session.updatedAt
+                    ? ` · ${formatStamp(locale, session.updatedAt)}`
+                    : ""}
                 </p>
               </li>
             ))}
@@ -474,7 +620,10 @@ function HermesLiveSections({
           <h2 className="text-sm font-medium">{t("connect.webhooks")}</h2>
           <ul className="flex flex-col gap-2">
             {webhooks.map((hook) => (
-              <li key={hook.name} className="rounded-xl bg-card px-4 py-4 shadow-border">
+              <li
+                key={hook.name}
+                className="rounded-xl bg-card px-4 py-4 shadow-border"
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{hook.name}</h3>
                   <Badge variant={hook.enabled ? "live" : "outline"}>
@@ -482,7 +631,9 @@ function HermesLiveSections({
                   </Badge>
                 </div>
                 {hook.event ? (
-                  <p className="mt-1 text-sm text-muted-foreground">{hook.event}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {hook.event}
+                  </p>
                 ) : null}
               </li>
             ))}
@@ -526,7 +677,9 @@ function prettyPlatform(id: string) {
 
 function formatStamp(locale: Locale, value: string) {
   const n = Number(value);
-  const d = new Date(!Number.isNaN(n) && n > 1_000_000_000 ? (n < 1e12 ? n * 1000 : n) : value);
+  const d = new Date(
+    !Number.isNaN(n) && n > 1_000_000_000 ? (n < 1e12 ? n * 1000 : n) : value,
+  );
   if (Number.isNaN(d.getTime())) return value;
   return new Intl.DateTimeFormat(dateLocale(locale), {
     day: "numeric",

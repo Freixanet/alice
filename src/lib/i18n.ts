@@ -216,6 +216,12 @@ const en = {
   "connect.webhooks": "Webhooks",
   "connect.active": "On",
   "connect.off": "Off",
+  "connect.mobileCorsTitle": "Allow Alice on mobile",
+  "connect.mobileCorsHint":
+    "Hermes is running, but it must allow this Alice address. On the computer or server running Hermes, open Terminal and paste this once:",
+  "connect.copyCommand": "Copy command",
+  "connect.commandCopied": "Copied",
+  "connect.mobileCorsRetry": "Then come back here and connect again.",
 
   "channel.connected": "Connected",
   "channel.disabled": "Off",
@@ -365,8 +371,13 @@ const en = {
   "error.connect": "Couldn’t connect.",
   "error.badKey": "The key is not correct.",
   "error.badUrl": "Check the address.",
-  "error.cors":
-    "This browser can’t reach your Hermes. Open it on the same computer, or let Hermes allow this origin (CORS).",
+  "error.cors": "Hermes is online, but it hasn’t allowed Alice yet (CORS).",
+  "error.localhostPhone":
+    "This address points to this phone. Use the HTTPS or Tailscale address shown by Hermes.",
+  "error.tailscaleDown":
+    "Hermes isn’t reachable. Open Tailscale on this phone and make sure Hermes is running.",
+  "error.hermesUnreachable":
+    "Hermes isn’t reachable. Make sure it’s running and this phone can open its address.",
   "error.signIn": "Sign in to continue.",
   "error.connectFirst": "Connect your Hermes first.",
   "error.connectPublic": "Connect your Hermes with a public address.",
@@ -666,6 +677,12 @@ const es: Record<MsgKey, string> = {
   "connect.webhooks": "Webhooks",
   "connect.active": "Activo",
   "connect.off": "Apagado",
+  "connect.mobileCorsTitle": "Permitir Alice en el móvil",
+  "connect.mobileCorsHint":
+    "Hermes está funcionando, pero debe permitir esta dirección de Alice. En el ordenador o servidor donde se ejecuta Hermes, abre Terminal y pega esto una sola vez:",
+  "connect.copyCommand": "Copiar comando",
+  "connect.commandCopied": "Copiado",
+  "connect.mobileCorsRetry": "Después vuelve aquí y conecta otra vez.",
 
   "channel.connected": "Conectado",
   "channel.disabled": "Apagado",
@@ -816,7 +833,13 @@ const es: Record<MsgKey, string> = {
   "error.badKey": "La clave no es correcta.",
   "error.badUrl": "Revisa la dirección.",
   "error.cors":
-    "Este navegador no alcanza tu Hermes. Ábrelo en el mismo ordenador, o deja que Hermes acepte este origen (CORS).",
+    "Hermes está en línea, pero todavía no ha permitido Alice (CORS).",
+  "error.localhostPhone":
+    "Esta dirección apunta a este móvil. Usa la dirección HTTPS o de Tailscale que muestra Hermes.",
+  "error.tailscaleDown":
+    "Hermes no está accesible. Abre Tailscale en este móvil y comprueba que Hermes esté funcionando.",
+  "error.hermesUnreachable":
+    "Hermes no está accesible. Comprueba que esté funcionando y que este móvil pueda abrir su dirección.",
   "error.signIn": "Entra para continuar.",
   "error.connectFirst": "Conecta tu Hermes primero.",
   "error.connectPublic": "Conecta tu Hermes con una dirección pública.",
@@ -912,6 +935,16 @@ const ERROR_KEYS: Record<string, MsgKey> = {
   [es["error.badUrl"]]: "error.badUrl",
   [en["error.cors"]]: "error.cors",
   [es["error.cors"]]: "error.cors",
+  [en["error.localhostPhone"]]: "error.localhostPhone",
+  [es["error.localhostPhone"]]: "error.localhostPhone",
+  [en["error.tailscaleDown"]]: "error.tailscaleDown",
+  [es["error.tailscaleDown"]]: "error.tailscaleDown",
+  [en["error.hermesUnreachable"]]: "error.hermesUnreachable",
+  [es["error.hermesUnreachable"]]: "error.hermesUnreachable",
+  "This browser can’t reach your Hermes. Open it on the same computer, or let Hermes allow this origin (CORS).":
+    "error.cors",
+  "Este navegador no alcanza tu Hermes. Ábrelo en el mismo ordenador, o deja que Hermes acepte este origen (CORS).":
+    "error.cors",
   [en["error.signIn"]]: "error.signIn",
   [es["error.signIn"]]: "error.signIn",
   [en["error.connectFirst"]]: "error.connectFirst",

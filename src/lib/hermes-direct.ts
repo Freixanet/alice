@@ -66,13 +66,73 @@ function bases(url: string): string[] {
   return out;
 }
 
+const CORS_ERROR = "Hermes is online, but it hasn’t allowed Alice yet (CORS).";
+
 function corsFail(): ProbeResult {
   return {
     ok: false,
     code: "cors",
-    error:
-      "This browser can’t reach your Hermes. Open it on the same computer, or let Hermes allow this origin (CORS).",
+    error: CORS_ERROR,
   };
+}
+
+function unreachableFail(base: string): ProbeResult {
+  let hostname = "";
+  try {
+    hostname = new URL(base).hostname.toLowerCase();
+  } catch {
+    // The URL has already been normalized; keep the general fallback.
+  }
+
+  if (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1"
+  ) {
+    return {
+      ok: false,
+      code: "unreachable",
+      error:
+        "This address points to this phone. Use the HTTPS or Tailscale address shown by Hermes.",
+    };
+  }
+
+  if (hostname.endsWith(".ts.net")) {
+    return {
+      ok: false,
+      code: "unreachable",
+      error:
+        "Hermes isn’t reachable. Open Tailscale on this phone and make sure Hermes is running.",
+    };
+  }
+
+  return {
+    ok: false,
+    code: "unreachable",
+    error:
+      "Hermes isn’t reachable. Make sure it’s running and this phone can open its address.",
+  };
+}
+
+async function reachableWithoutCors(
+  base: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (signal?.aborted) return false;
+  try {
+    const reachabilitySignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(5_000)])
+      : AbortSignal.timeout(5_000);
+    await fetch(`${base}/v1/models`, {
+      mode: "no-cors",
+      credentials: "omit",
+      cache: "no-store",
+      signal: reachabilitySignal,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function probeHermesDirect(opts: {
@@ -96,9 +156,11 @@ export async function probeHermesDirect(opts: {
       });
     } catch (e) {
       if ((e as Error).name === "AbortError") {
-        return { ok: false, code: "unreachable", error: FAIL };
+        return unreachableFail(base);
       }
-      return corsFail();
+      return (await reachableWithoutCors(base, opts.signal))
+        ? corsFail()
+        : unreachableFail(base);
     }
     if (modelsRes.status >= 300 && modelsRes.status < 400) {
       return { ok: false, code: "not_hermes", error: FAIL };
