@@ -89,7 +89,9 @@ export function CatalogPage({
     return rows.filter((row) => {
       if (group !== "all" && row.group !== group) return false;
       if (!n) return true;
-      return `${row.title} ${row.name} ${row.description}`.toLowerCase().includes(n);
+      return `${row.title} ${row.name} ${row.description}`
+        .toLowerCase()
+        .includes(n);
     });
   }, [rows, q, group]);
 
@@ -101,7 +103,12 @@ export function CatalogPage({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 pb-20 sm:px-6">
-      <PageHeader kicker={kicker} title={title} description={description} action={action} />
+      <PageHeader
+        kicker={kicker}
+        title={title}
+        description={description}
+        action={action}
+      />
       <div className="flex flex-col gap-3">
         <Input
           value={q}
@@ -114,7 +121,11 @@ export function CatalogPage({
             {t("catalog.all")}
           </FilterChip>
           {groups.map((g) => (
-            <FilterChip key={g.id} active={group === g.id} onClick={() => setGroup(g.id)}>
+            <FilterChip
+              key={g.id}
+              active={group === g.id}
+              onClick={() => setGroup(g.id)}
+            >
               {g.label}
             </FilterChip>
           ))}
@@ -123,21 +134,32 @@ export function CatalogPage({
       <ul className="alice-record-list flex flex-col gap-2">
         {filtered.length === 0 ? (
           <li className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
-            {rows.length === 0 ? empty || t("catalog.empty") : t("catalog.noFilter")}
+            {rows.length === 0
+              ? empty || t("catalog.empty")
+              : t("catalog.noFilter")}
           </li>
         ) : (
           filtered.map((row) => (
-            <li key={row.id} className="alice-record rounded-xl bg-card px-4 py-4 shadow-border">
+            <li
+              key={row.id}
+              className="alice-record rounded-xl bg-card px-4 py-4 shadow-border"
+            >
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-medium">{row.title}</h2>
                     {row.trust ? (
-                      <Badge variant="outline">{t(TRUST_LABEL[row.trust])}</Badge>
+                      <Badge variant="outline">
+                        {t(TRUST_LABEL[row.trust])}
+                      </Badge>
                     ) : null}
-                    {row.version ? <Badge variant="mute">{row.version}</Badge> : null}
+                    {row.version ? (
+                      <Badge variant="mute">{row.version}</Badge>
+                    ) : null}
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{row.description}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {row.description}
+                  </p>
                   <p className="mt-2 text-2xs text-muted-foreground">
                     {row.groupLabel}
                     {row.meta ? ` · ${row.meta}` : ""}

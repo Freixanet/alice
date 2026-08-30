@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "vite.config.ts",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "scripts/*.mjs",
+    "src/lib/auth/isolation.server.ts",
+    "src/lib/auth/popup.server.ts",
+    "src/router.tsx",
+    "src/routes/**/*.{ts,tsx}",
+    "tests/**/*.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "server/**/*.ts",
+    "scripts/*.mjs",
+    "tests/**/*.ts"
+  ],
+  "ignore": ["src/routeTree.gen.ts", "scripts/grok-pwa-shared.d.mts"],
+  "ignoreDependencies": ["lightningcss", "tailwindcss", "tw-animate-css"]
+}

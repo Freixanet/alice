@@ -81,7 +81,9 @@ function LoginPage() {
     try {
       await signInWithSocial(provider);
     } catch {
-      setError(provider === "google" ? t("login.failGoogle") : t("login.failApple"));
+      setError(
+        provider === "google" ? t("login.failGoogle") : t("login.failApple"),
+      );
       setBusy(null);
     }
   }
@@ -100,22 +102,24 @@ function LoginPage() {
           {t("login.subtitle")}
         </p>
         <div className="mt-6 flex flex-col gap-2">
-          {LOGIN_SOCIAL.filter((provider) => provider.id !== "apple").map((provider) => (
-            <Button
-              key={provider.id}
-              type="button"
-              variant="outline"
-              disabled={busy !== null}
-              onClick={() => void continueWith(provider.id)}
-            >
-              {provider.id === "google" ? <GoogleMark /> : <AppleMark />}
-              {busy === provider.id
-                ? t("login.wait")
-                : provider.id === "google"
-                  ? t("login.continueGoogle")
-                  : t("login.continueApple")}
-            </Button>
-          ))}
+          {LOGIN_SOCIAL.filter((provider) => provider.id !== "apple").map(
+            (provider) => (
+              <Button
+                key={provider.id}
+                type="button"
+                variant="outline"
+                disabled={busy !== null}
+                onClick={() => void continueWith(provider.id)}
+              >
+                {provider.id === "google" ? <GoogleMark /> : <AppleMark />}
+                {busy === provider.id
+                  ? t("login.wait")
+                  : provider.id === "google"
+                    ? t("login.continueGoogle")
+                    : t("login.continueApple")}
+              </Button>
+            ),
+          )}
         </div>
         <div className="relative my-6">
           <div className="h-px bg-border" />
@@ -156,8 +160,15 @@ function LoginPage() {
             />
           </label>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <Button type="submit" disabled={busy !== null || !email.trim() || password.length < 8}>
-            {busy === "form" ? t("login.wait") : mode === "in" ? t("login.enter") : t("login.create")}
+          <Button
+            type="submit"
+            disabled={busy !== null || !email.trim() || password.length < 8}
+          >
+            {busy === "form"
+              ? t("login.wait")
+              : mode === "in"
+                ? t("login.enter")
+                : t("login.create")}
           </Button>
         </form>
         <p className="mt-4 text-sm text-muted-foreground">
@@ -214,14 +225,23 @@ function friendlyOAuthError(code: string, t: (key: MsgKey) => string) {
   if (m.includes("state") || m.includes("please_restart")) {
     return t("login.googleRestart");
   }
-  if (m.includes("denied") || m.includes("access_denied")) return t("login.googleDenied");
+  if (m.includes("denied") || m.includes("access_denied"))
+    return t("login.googleDenied");
   return t("login.failGoogle");
 }
 
-function friendlyAuthError(message: string | undefined, t: (key: MsgKey) => string) {
+function friendlyAuthError(
+  message: string | undefined,
+  t: (key: MsgKey) => string,
+) {
   const m = (message || "").toLowerCase();
-  if (m.includes("already") || m.includes("exists")) return t("login.emailExists");
-  if (m.includes("invalid") || m.includes("credential") || m.includes("password")) {
+  if (m.includes("already") || m.includes("exists"))
+    return t("login.emailExists");
+  if (
+    m.includes("invalid") ||
+    m.includes("credential") ||
+    m.includes("password")
+  ) {
     return t("login.badCredentials");
   }
   return t("login.fail");

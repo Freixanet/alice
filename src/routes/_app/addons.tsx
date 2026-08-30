@@ -18,14 +18,20 @@ function AddonsPage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       {loading ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">{t("addons.loading")}</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">
+          {t("addons.loading")}
+        </p>
       ) : error ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">{localizeError(locale, error)}</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">
+          {localizeError(locale, error)}
+        </p>
       ) : (
         <CatalogPage
           kicker={t("addons.kicker")}
           title={t("addons.title")}
-          description={data?.writable ? t("addons.descOn") : t("addons.descOff")}
+          description={
+            data?.writable ? t("addons.descOn") : t("addons.descOff")
+          }
           groups={[{ id: "mcp", label: "MCP" }]}
           empty={t("addons.empty")}
           rows={rows.map((a) => ({
@@ -45,13 +51,21 @@ function AddonsPage() {
                   const enabled = !row.enabled;
                   setData({
                     ...data,
-                    mcp: data.mcp.map((a) => (a.id === id ? { ...a, enabled } : a)),
+                    mcp: data.mcp.map((a) =>
+                      a.id === id ? { ...a, enabled } : a,
+                    ),
                   });
-                  void mutateHermes({ action: "toggle-mcp", name: row.name, enabled }).then((r) => {
+                  void mutateHermes({
+                    action: "toggle-mcp",
+                    name: row.name,
+                    enabled,
+                  }).then((r) => {
                     if (r.ok) return;
                     setData({
                       ...data,
-                      mcp: data.mcp.map((a) => (a.id === id ? { ...a, enabled: row.enabled } : a)),
+                      mcp: data.mcp.map((a) =>
+                        a.id === id ? { ...a, enabled: row.enabled } : a,
+                      ),
                     });
                   });
                 }

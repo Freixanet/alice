@@ -12,8 +12,9 @@ import {
   type HermesModelOption,
   type ProbeResult,
 } from "./gateway";
-import type { HermesLive, HermesLiveResult } from "./hermes-live";
+import type { HermesLive, HermesLiveResult } from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
+import { setDeviceSessionKey } from "./hermes-secret-client";
 import {
   asRec,
   channelsFromApi,
@@ -28,20 +29,13 @@ import {
 } from "./hermes-live-parse";
 
 const FAIL = "Couldn’t connect.";
-const DEVICE_KEY = "alice-device-hermes-key";
 
 export const DEFAULT_DEVICE_HERMES = "http://127.0.0.1:8642";
 
-export function getDeviceSessionKey(): string | null {
-  if (typeof sessionStorage === "undefined") return null;
-  return sessionStorage.getItem(DEVICE_KEY);
-}
-
-export function setDeviceSessionKey(key: string | null) {
-  if (typeof sessionStorage === "undefined") return;
-  if (key) sessionStorage.setItem(DEVICE_KEY, key);
-  else sessionStorage.removeItem(DEVICE_KEY);
-}
+export {
+  getDeviceSessionKey,
+  setDeviceSessionKey,
+} from "./hermes-secret-client";
 
 export async function loadSavedDeviceConnection(opts?: {
   url?: string;

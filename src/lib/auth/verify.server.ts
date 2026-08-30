@@ -15,7 +15,8 @@ import { nativeSocialEnabled } from "./social.server";
 
 /** True when a real database is configured server-side. */
 const databaseConfigured = Boolean(process.env.DATABASE_URL?.trim());
-const authExplicitlyDisabled = process.env.VITE_AUTH_ENABLED?.trim() === "false";
+const authExplicitlyDisabled =
+  process.env.VITE_AUTH_ENABLED?.trim() === "false";
 
 /** Re-export so callers can branch on it without importing `server.ts`. */
 export { authConfigured };

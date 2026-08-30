@@ -88,7 +88,8 @@ export const skills: Skill[] = [
     id: "research-brief",
     name: "research-brief",
     title: "Research brief",
-    description: "Summarize sources and make clear what’s fact and what’s hypothesis.",
+    description:
+      "Summarize sources and make clear what’s fact and what’s hypothesis.",
     category: "research",
     trust: "trusted",
     version: "0.2",

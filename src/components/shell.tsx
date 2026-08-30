@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Link,
   Outlet,
@@ -99,7 +99,7 @@ export function AppShell() {
     }
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = theme;
     root.dataset.font = fontSize;

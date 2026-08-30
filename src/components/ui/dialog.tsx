@@ -53,7 +53,10 @@ function DialogCloseLabel() {
   return <span className="sr-only">{t("settings.close")}</span>;
 }
 
-function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+function DialogHeader({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("flex flex-col gap-1.5", className)} {...props} />;
 }
 

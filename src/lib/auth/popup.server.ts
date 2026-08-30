@@ -29,7 +29,9 @@ type PopupMessage = {
  * Handle `GET /auth/popup`. Invoked by the Vite `authPopupPlugin` (dev / live
  * preview). Do not re-export this from a React route file.
  */
-export async function handleAuthPopupRequest(request: Request): Promise<Response> {
+export async function handleAuthPopupRequest(
+  request: Request,
+): Promise<Response> {
   const url = new URL(request.url);
   const done = url.searchParams.get("done") === "1";
 
@@ -39,7 +41,9 @@ export async function handleAuthPopupRequest(request: Request): Promise<Response
     const message: PopupMessage = {
       source: "grok-auth-popup",
       token,
-      ...(errored ? { error: url.searchParams.get("error") ?? "sign_in_failed" } : {}),
+      ...(errored
+        ? { error: url.searchParams.get("error") ?? "sign_in_failed" }
+        : {}),
     };
     return new Response(completionHtml(message), {
       status: 200,

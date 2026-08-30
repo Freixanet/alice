@@ -7,13 +7,16 @@ import { DEV_USER_ID, sessionsEnabled } from "./verify.server";
 export const DEFAULT_OWNER_EMAIL = "marcfreixanet@gmail.com";
 
 export function pinnedOwnerEmail(): string {
-  return (process.env.ALICE_OWNER_EMAIL?.trim() || DEFAULT_OWNER_EMAIL).toLowerCase();
+  return (
+    process.env.ALICE_OWNER_EMAIL?.trim() || DEFAULT_OWNER_EMAIL
+  ).toLowerCase();
 }
 
 /** True when this process can read ~/.hermes (this Mac). Off on Vercel. */
 export function localHermesAvailable(): boolean {
   const explicit = process.env.ALICE_LOCAL_HERMES?.trim().toLowerCase();
-  if (explicit === "0" || explicit === "false" || explicit === "off") return false;
+  if (explicit === "0" || explicit === "false" || explicit === "off")
+    return false;
   if (explicit === "1" || explicit === "true" || explicit === "on") return true;
   if (process.env.VERCEL) return false;
   return true;
@@ -70,9 +73,10 @@ async function ensureOwnerPassword(
   const password = ownerPassword();
   if (!password) return;
   let user = (
-    await sql.query<{ id: string }>(`select id from "user" where lower(email) = $1 limit 1`, [
-      pinned,
-    ])
+    await sql.query<{ id: string }>(
+      `select id from "user" where lower(email) = $1 limit 1`,
+      [pinned],
+    )
   )[0];
   if (!user) {
     const id = randomBytes(16).toString("hex");
@@ -91,10 +95,10 @@ async function ensureOwnerPassword(
     )
   )[0];
   if (cred) {
-    await sql.query(`update "account" set password = $1, "updatedAt" = now() where id = $2`, [
-      hash,
-      cred.id,
-    ]);
+    await sql.query(
+      `update "account" set password = $1, "updatedAt" = now() where id = $2`,
+      [hash, cred.id],
+    );
     return;
   }
   await sql.query(
@@ -105,7 +109,9 @@ async function ensureOwnerPassword(
   );
 }
 
-const claimRef = globalThis as typeof globalThis & { __aliceOwnerClaim__?: Promise<void> };
+const claimRef = globalThis as typeof globalThis & {
+  __aliceOwnerClaim__?: Promise<void>;
+};
 
 /**
  * Point the in-memory test owner (first `@local.test` user) at the Google email
@@ -152,7 +158,9 @@ async function claimOwnerIdentity(
   await claimRef.__aliceOwnerClaim__;
 }
 
-const ownerBoot = globalThis as typeof globalThis & { __aliceOwnerPasswordBoot__?: Promise<void> };
+const ownerBoot = globalThis as typeof globalThis & {
+  __aliceOwnerPasswordBoot__?: Promise<void>;
+};
 if (typeof window === "undefined") {
   ownerBoot.__aliceOwnerPasswordBoot__ ??= (async () => {
     await ensureDbReady();

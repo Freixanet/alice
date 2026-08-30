@@ -14,17 +14,23 @@ function ToolsPage() {
   const locale = useLocale();
   const { data, error, loading, setData } = useHermesLive();
   const rows = data?.toolsets ?? [];
-  const groups = [...new Set(rows.map((tool) => tool.platform || "cli"))].map((id) => ({
-    id,
-    label: id === "cli" ? "CLI" : id,
-  }));
+  const groups = [...new Set(rows.map((tool) => tool.platform || "cli"))].map(
+    (id) => ({
+      id,
+      label: id === "cli" ? "CLI" : id,
+    }),
+  );
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       {loading ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">{t("tools.loading")}</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">
+          {t("tools.loading")}
+        </p>
       ) : error ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">{localizeError(locale, error)}</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">
+          {localizeError(locale, error)}
+        </p>
       ) : (
         <CatalogPage
           kicker={t("tools.kicker")}
@@ -38,8 +44,11 @@ function ToolsPage() {
             name: tool.name,
             description: tool.description,
             group: tool.platform || "cli",
-            groupLabel: tool.platform === "cli" || !tool.platform ? "CLI" : tool.platform,
-            meta: tool.tools.slice(0, 6).join(", ") || (tool.configured === false ? t("tools.noKeys") : undefined),
+            groupLabel:
+              tool.platform === "cli" || !tool.platform ? "CLI" : tool.platform,
+            meta:
+              tool.tools.slice(0, 6).join(", ") ||
+              (tool.configured === false ? t("tools.noKeys") : undefined),
             enabled: tool.enabled,
           }))}
           onToggle={
@@ -50,13 +59,23 @@ function ToolsPage() {
                   const enabled = !row.enabled;
                   setData({
                     ...data,
-                    toolsets: data.toolsets.map((tool) => (tool.id === id ? { ...tool, enabled } : tool)),
+                    toolsets: data.toolsets.map((tool) =>
+                      tool.id === id ? { ...tool, enabled } : tool,
+                    ),
                   });
-                  void mutateHermes({ action: "toggle-toolset", name: row.name, enabled }).then((r) => {
+                  void mutateHermes({
+                    action: "toggle-toolset",
+                    name: row.name,
+                    enabled,
+                  }).then((r) => {
                     if (r.ok) return;
                     setData({
                       ...data,
-                      toolsets: data.toolsets.map((tool) => (tool.id === id ? { ...tool, enabled: row.enabled } : tool)),
+                      toolsets: data.toolsets.map((tool) =>
+                        tool.id === id
+                          ? { ...tool, enabled: row.enabled }
+                          : tool,
+                      ),
                     });
                   });
                 }

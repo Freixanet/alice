@@ -1,28 +1,25 @@
 import { authHeaders } from "./auth/client";
+import {
+  unionHermesModels,
+  type ChatEvent,
+  type GatewayPlace,
+  type HermesModelOption,
+  type ProbeCode,
+} from "./gateway-contracts";
 
-export type GatewayMode = "direct" | "proxy";
-
-export type GatewayPlace = "cloud" | "mac" | "device";
-
-export type GatewayStatus = "idle" | "checking" | "live" | "down";
-
-export type HermesModelOption = {
-  id: string;
-  label: string;
-  provider: string;
-  providerName?: string;
-};
-
-export type GatewayMeta = {
-  model: string;
-  provider?: string;
-  models?: HermesModelOption[];
-  platform?: string;
-  skills?: string[];
-  probedAt: number;
-  mode: GatewayMode;
-  place?: GatewayPlace;
-};
+export type {
+  ChatEvent,
+  GatewayMeta,
+  GatewayMode,
+  GatewayPlace,
+  GatewayStatus,
+  HermesChatContent,
+  HermesModelOption,
+  ProbeCode,
+  ProbeResult,
+} from "./gateway-contracts";
+export { unionHermesModels } from "./gateway-contracts";
+export { getMacSessionKey, setMacSessionKey } from "./hermes-secret-client";
 
 export const HERMES_USER_CHAR_LIMIT = 1375;
 export const HERMES_NOTES_CHAR_LIMIT = 2200;
@@ -46,47 +43,6 @@ export type HermesMemoryResult =
   | { ok: true; active: string; profiles: HermesMemoryProfile[] }
   | { ok: false; error: string };
 
-export type ChatEvent =
-  | { type: "delta"; text: string }
-  | {
-      type: "tool";
-      name: string;
-      status: "start" | "done";
-      detail?: string;
-      callId?: string;
-    }
-  | { type: "error"; message: string };
-
-export type HermesChatContent =
-  | string
-  | Array<
-      | { type: "text"; text: string }
-      | {
-          type: "image_url";
-          image_url: { url: string; detail?: "auto" | "low" | "high" };
-        }
-    >;
-
-export type ProbeCode =
-  | "invalid"
-  | "private"
-  | "unauthorized"
-  | "unreachable"
-  | "cors"
-  | "not_hermes";
-
-export type ProbeResult =
-  | {
-      ok: true;
-      model: string;
-      provider?: string;
-      models?: HermesModelOption[];
-      platform?: string;
-      skills?: string[];
-      mode: GatewayMode;
-    }
-  | { ok: false; code: ProbeCode; error: string };
-
 export class GatewayError extends Error {
   code: ProbeCode;
   constructor(code: ProbeCode, message: string) {
@@ -106,21 +62,17 @@ export function friendlyProbeError(code?: ProbeCode): string {
   return FAIL;
 }
 
-let macSessionKey: string | null = null;
-
-export function setMacSessionKey(key: string | null) {
-  macSessionKey = key;
-}
-
-export function getMacSessionKey() {
-  return macSessionKey;
-}
-
 export function normalizeGatewayUrl(raw: string): string {
   let s = raw.trim();
   if (!s) throw new GatewayError("invalid", FAIL);
   if (s.length > 512) throw new GatewayError("invalid", FAIL);
-  if (!/^https?:\/\//i.test(s)) s = `http://${s}`;
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(s) && !/^https?:\/\//i.test(s)) {
+    throw new GatewayError("invalid", FAIL);
+  }
+  if (!/^https?:\/\//i.test(s)) {
+    const host = s.split(/[/:]/, 1)[0] ?? "";
+    s = `${isPrivateHostname(host) ? "http" : "https"}://${s}`;
+  }
   let u: URL;
   try {
     u = new URL(s);
@@ -222,25 +174,6 @@ export function inferGatewayPlace(
   return "device";
 }
 
-export async function forgetHermesSecret() {
-  setMacSessionKey(null);
-  try {
-    const { setDeviceSessionKey } = await import("./hermes-direct");
-    setDeviceSessionKey(null);
-  } catch {
-    //
-  }
-  try {
-    await fetch("/api/hermes", {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ action: "forget" }),
-    });
-  } catch {
-    // local forget is enough
-  }
-}
-
 export function providerSlug(value: string): string {
   return value
     .trim()
@@ -279,22 +212,6 @@ export function prettyModelLabel(id: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b([a-z])/g, (c) => c.toUpperCase());
-}
-
-export function unionHermesModels(
-  current: HermesModelOption[] | undefined,
-  incoming: HermesModelOption[],
-): HermesModelOption[] {
-  const out: HermesModelOption[] = [];
-  const seen = new Set<string>();
-  for (const item of [...incoming, ...(current ?? [])]) {
-    const key = `${item.provider}:${item.id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-    if (out.length >= 400) break;
-  }
-  return out;
 }
 
 export function groupHermesModels(models: HermesModelOption[]): Array<{
@@ -424,9 +341,12 @@ export function parseHermesModelOptions(body: unknown): {
       : Array.isArray(rec?.models)
         ? rec.models
         : [];
-  const models = list
-    .map((item) => optionFromUnknown(item))
-    .filter((m): m is HermesModelOption => m !== null);
+  const models = unionHermesModels(
+    undefined,
+    list
+      .map((item) => optionFromUnknown(item))
+      .filter((m): m is HermesModelOption => m !== null),
+  );
   const currentModel =
     (typeof rec?.model === "string" && rec.model) ||
     (typeof rec?.current_model === "string" && rec.current_model) ||
@@ -659,139 +579,6 @@ export function eventFromChunk(chunk: string): ChatEvent | null {
   }
 }
 
-type HermesActionResult = ProbeResult & {
-  models?: HermesModelOption[];
-};
-
-export async function probeGateway(opts: {
-  url: string;
-  key?: string;
-  place: GatewayPlace;
-  save?: boolean;
-  signal?: AbortSignal;
-}): Promise<ProbeResult> {
-  if (opts.place === "device") {
-    const {
-      getDeviceSessionKey,
-      loadSavedDeviceConnection,
-      probeHermesDirect,
-      saveDeviceConnection,
-    } = await import("./hermes-direct");
-    let key = opts.key || getDeviceSessionKey() || "";
-    if (!key) {
-      const saved = await loadSavedDeviceConnection({
-        url: opts.url,
-        signal: opts.signal,
-      });
-      key = saved?.key ?? "";
-    }
-    if (!key) {
-      return {
-        ok: false,
-        code: "invalid",
-        error: "Enter the Hermes key once to reconnect it.",
-      };
-    }
-    const result = await probeHermesDirect({
-      url: opts.url,
-      key,
-      save: opts.save,
-      signal: opts.signal,
-    });
-    if (result.ok && opts.save) {
-      const saved = await saveDeviceConnection({
-        url: opts.url,
-        key,
-        signal: opts.signal,
-      });
-      if (!saved) {
-        return {
-          ok: false,
-          code: "unreachable",
-          error: "Hermes connected, but Alice couldn’t remember it. Try again.",
-        };
-      }
-    }
-    return result;
-  }
-  try {
-    const res = await fetch("/api/hermes", {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        action: opts.save ? "connect" : "probe",
-        url: opts.url,
-        key: opts.key,
-        place: opts.place,
-      }),
-      signal: opts.signal,
-    });
-    const data = (await res.json()) as HermesActionResult;
-    if (data.ok) return data;
-    return {
-      ok: false,
-      code: (data as { code?: ProbeCode }).code ?? "unreachable",
-      error: friendlyProbeError((data as { code?: ProbeCode }).code),
-    };
-  } catch (e) {
-    if ((e as Error).name === "AbortError") {
-      return { ok: false, code: "unreachable", error: friendlyProbeError() };
-    }
-    return { ok: false, code: "cors", error: friendlyProbeError() };
-  }
-}
-
-export async function listHermesModels(opts?: {
-  refresh?: boolean;
-  signal?: AbortSignal;
-}): Promise<{
-  ok: boolean;
-  models: HermesModelOption[];
-  currentModel?: string;
-  currentProvider?: string;
-}> {
-  try {
-    const { useHermes } = await import("./store");
-    const place = useHermes.getState().gatewayPlace;
-    if (place === "device") {
-      const { getDeviceSessionKey, listHermesModelsDirect } =
-        await import("./hermes-direct");
-      const url = useHermes.getState().gatewayUrl;
-      const key = getDeviceSessionKey();
-      if (!url || !key) return { ok: false, models: [] };
-      return listHermesModelsDirect({
-        url,
-        key,
-        refresh: opts?.refresh,
-        signal: opts?.signal,
-      });
-    }
-    const res = await fetch("/api/hermes", {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        action: "models",
-        refresh: Boolean(opts?.refresh),
-      }),
-      signal: opts?.signal,
-    });
-    const data = (await res.json()) as {
-      ok?: boolean;
-      models?: HermesModelOption[];
-      currentModel?: string;
-      currentProvider?: string;
-    };
-    return {
-      ok: Boolean(data.ok),
-      models: Array.isArray(data.models) ? data.models : [],
-      currentModel: data.currentModel,
-      currentProvider: data.currentProvider,
-    };
-  } catch {
-    return { ok: false, models: [] };
-  }
-}
-
 export async function saveHermesCustomEndpoint(opts: {
   name?: string;
   baseUrl: string;
@@ -832,48 +619,6 @@ export async function saveHermesCustomEndpoint(opts: {
     };
   } catch {
     return { ok: false, error: FAIL, models: [] };
-  }
-}
-
-export async function setHermesModel(opts: {
-  url: string;
-  key?: string;
-  place: GatewayPlace;
-  model: string;
-  provider?: string;
-  conversationId?: string;
-}): Promise<{ ok: boolean }> {
-  if (opts.place === "device") {
-    const { getDeviceSessionKey, setHermesModelDirect } =
-      await import("./hermes-direct");
-    const key = opts.key || getDeviceSessionKey();
-    if (!key) return { ok: false };
-    return setHermesModelDirect({
-      url: opts.url,
-      key,
-      model: opts.model,
-      provider: opts.provider,
-      conversationId: opts.conversationId,
-    });
-  }
-  try {
-    const res = await fetch("/api/hermes", {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        action: "set-model",
-        url: opts.url,
-        key: opts.key,
-        place: opts.place,
-        model: opts.model,
-        provider: opts.provider,
-        conversationId: opts.conversationId,
-      }),
-    });
-    const data = (await res.json()) as { ok?: boolean };
-    return { ok: Boolean(data.ok) };
-  } catch {
-    return { ok: false };
   }
 }
 

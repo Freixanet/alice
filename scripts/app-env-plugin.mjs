@@ -18,7 +18,10 @@ export function appEnvPlugin() {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const pathOnly = (req.url ?? "").split("?", 1)[0];
-        if (pathOnly !== APP_ENV_ROUTE || (req.method ?? "GET").toUpperCase() !== "GET") {
+        if (
+          pathOnly !== APP_ENV_ROUTE ||
+          (req.method ?? "GET").toUpperCase() !== "GET"
+        ) {
           next();
           return;
         }

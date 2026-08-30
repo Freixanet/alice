@@ -77,11 +77,14 @@ function toSql(run: Run): Sql {
   ): Promise<T[]> => {
     // Rebuild with $1, $2, … placeholders so values stay parameterized.
     let text = strings[0];
-    for (let i = 0; i < values.length; i += 1) text += `$${i + 1}${strings[i + 1]}`;
+    for (let i = 0; i < values.length; i += 1)
+      text += `$${i + 1}${strings[i + 1]}`;
     return run<T>(text, values);
   }) as unknown as Sql;
-  sql.query = <T = Record<string, unknown>>(text: string, params: unknown[] = []) =>
-    run<T>(text, params);
+  sql.query = <T = Record<string, unknown>>(
+    text: string,
+    params: unknown[] = [],
+  ) => run<T>(text, params);
   return sql;
 }
 
@@ -161,7 +164,10 @@ async function createPgliteSql(): Promise<Sql> {
       "select name from _migrations",
     );
     const done = doneRows.rows.map((r) => r.name);
-    for (const { name, path } of pendingMigrations(Object.keys(migrations), done)) {
+    for (const { name, path } of pendingMigrations(
+      Object.keys(migrations),
+      done,
+    )) {
       // Apply + record atomically (parity with scripts/migrate.mjs) so a failed
       // statement can't leave a file half-applied but untracked.
       await pg.transaction(async (tx) => {
@@ -214,9 +220,13 @@ export function getSql(): Promise<Sql> {
  * Lets Better Auth persist to the SAME embedded DB as app data in preview (via a
  * Kysely dialect). Throws when `DATABASE_URL` is set (that path uses Neon).
  */
-export async function getPglite(): Promise<import("@electric-sql/pglite").PGlite> {
+export async function getPglite(): Promise<
+  import("@electric-sql/pglite").PGlite
+> {
   if (dbSource !== "pglite") {
-    throw new Error("getPglite() is only available on the PGLite fallback (no DATABASE_URL)");
+    throw new Error(
+      "getPglite() is only available on the PGLite fallback (no DATABASE_URL)",
+    );
   }
   await getSql();
   const pg = await globalRef.__pgliteDiskInstance__;

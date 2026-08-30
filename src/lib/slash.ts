@@ -66,7 +66,11 @@ export function matchSlash(
   const hits: SlashCommand[] = [];
   for (const item of all) {
     if (seen.has(item.cmd)) continue;
-    if (q === "/" || item.cmd.startsWith(q) || item.cmd.slice(1).includes(q.slice(1))) {
+    if (
+      q === "/" ||
+      item.cmd.startsWith(q) ||
+      item.cmd.slice(1).includes(q.slice(1))
+    ) {
       seen.add(item.cmd);
       hits.push(item);
     }

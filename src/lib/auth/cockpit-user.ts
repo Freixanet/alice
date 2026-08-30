@@ -1,7 +1,10 @@
 let currentId: string | null = null;
 let owner = false;
 
-export function setCockpitIdentity(next: { id: string | null; owner: boolean }) {
+export function setCockpitIdentity(next: {
+  id: string | null;
+  owner: boolean;
+}) {
   currentId = next.id;
   owner = next.owner;
 }

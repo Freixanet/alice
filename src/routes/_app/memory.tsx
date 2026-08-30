@@ -109,7 +109,10 @@ function MemoryPage() {
         ) : !profile ? (
           <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
             {t("memory.empty")}{" "}
-            <Link to="/connect" className="text-foreground underline-offset-2 hover:underline">
+            <Link
+              to="/connect"
+              className="text-foreground underline-offset-2 hover:underline"
+            >
               {t("memory.connectIt")}
             </Link>
             .
@@ -124,7 +127,9 @@ function MemoryPage() {
             <TabsContent value="soul">
               {soulText && soulMatch ? (
                 <article className="rounded-xl bg-card px-4 py-4 shadow-border">
-                  <p className="whitespace-pre-wrap text-base leading-7 md:text-[0.9375rem]">{soulText}</p>
+                  <p className="whitespace-pre-wrap text-base leading-7 md:text-[0.9375rem]">
+                    {soulText}
+                  </p>
                 </article>
               ) : (
                 <EmptyStore
@@ -142,7 +147,10 @@ function MemoryPage() {
               {userEntries.length ? (
                 <ul className="mt-3 flex flex-col gap-2">
                   {userEntries.map((entry, i) => (
-                    <li key={`${entry.slice(0, 48)}-${i}`} className="rounded-xl bg-card px-4 py-4 text-base leading-7 shadow-border md:text-[0.9375rem]">
+                    <li
+                      key={`${entry.slice(0, 48)}-${i}`}
+                      className="rounded-xl bg-card px-4 py-4 text-base leading-7 shadow-border md:text-[0.9375rem]"
+                    >
                       {entry}
                     </li>
                   ))}
@@ -163,7 +171,10 @@ function MemoryPage() {
               {noteEntries.length ? (
                 <ul className="mt-3 flex flex-col gap-2">
                   {noteEntries.map((entry, i) => (
-                    <li key={`${entry.slice(0, 48)}-${i}`} className="rounded-xl bg-card px-4 py-4 text-base leading-7 shadow-border md:text-[0.9375rem]">
+                    <li
+                      key={`${entry.slice(0, 48)}-${i}`}
+                      className="rounded-xl bg-card px-4 py-4 text-base leading-7 shadow-border md:text-[0.9375rem]"
+                    >
                       {entry}
                     </li>
                   ))}
@@ -202,7 +213,8 @@ function StoreHeader({
         {count} {count === 1 ? t("memory.entry") : t("memory.entries")}
       </span>
       <span className="tabular-nums">
-        {chars.toLocaleString(dateLocale(locale))} / {limit.toLocaleString(dateLocale(locale))} · {pct}%
+        {chars.toLocaleString(dateLocale(locale))} /{" "}
+        {limit.toLocaleString(dateLocale(locale))} · {pct}%
       </span>
     </div>
   );

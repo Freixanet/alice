@@ -49,9 +49,7 @@ export function LearnSkillButton() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("learn.title")}</DialogTitle>
-          <DialogDescription>
-            {t("learn.hint")}
-          </DialogDescription>
+          <DialogDescription>{t("learn.hint")}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5 text-sm">

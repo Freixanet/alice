@@ -8,7 +8,7 @@ import type {
   HermesSkillRow,
   HermesToolsetRow,
   HermesWebhookRow,
-} from "./hermes-live";
+} from "./hermes-live-types";
 
 const SKILL_GROUPS: Record<string, string> = {
   "software-development": "Development",
@@ -40,7 +40,16 @@ export function asRec(value: unknown): Record<string, unknown> {
 export function asList(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   const rec = asRec(value);
-  for (const key of ["skills", "jobs", "servers", "platforms", "sessions", "subscriptions", "pending", "projects"]) {
+  for (const key of [
+    "skills",
+    "jobs",
+    "servers",
+    "platforms",
+    "sessions",
+    "subscriptions",
+    "pending",
+    "projects",
+  ]) {
     if (Array.isArray(rec[key])) return rec[key] as unknown[];
   }
   return [];
@@ -66,7 +75,9 @@ const PROPER_NAMES: Record<string, string> = {
 
 export function prettyName(id: string): string {
   if (PROPER_NAMES[id]) return PROPER_NAMES[id];
-  return id.replace(/[_-]+/g, " ").replace(/\b([a-z])/g, (c) => c.toUpperCase());
+  return id
+    .replace(/[_-]+/g, " ")
+    .replace(/\b([a-z])/g, (c) => c.toUpperCase());
 }
 
 export function groupLabel(group: string): string {
@@ -80,7 +91,11 @@ export function cronFromUnknown(item: unknown): HermesCronRow {
   return {
     id: str(rec.id) || str(rec.name),
     name: str(rec.name) || str(rec.id),
-    schedule: str(rec.schedule_display) || str(schedule.display) || str(schedule.expr) || "",
+    schedule:
+      str(rec.schedule_display) ||
+      str(schedule.display) ||
+      str(schedule.expr) ||
+      "",
     enabled: rec.enabled !== false && str(rec.state) !== "paused",
     state: str(rec.state) || (rec.enabled === false ? "paused" : "scheduled"),
     lastStatus: str(rec.last_status) || undefined,
@@ -115,14 +130,17 @@ export function toolsetsFromApi(raw: unknown): HermesToolsetRow[] {
     .map((item) => {
       const rec = asRec(item);
       const name = str(rec.name);
-      const tools = Array.isArray(rec.tools) ? rec.tools.map(str).filter(Boolean) : [];
+      const tools = Array.isArray(rec.tools)
+        ? rec.tools.map(str).filter(Boolean)
+        : [];
       return {
         id: name,
         name,
         label: str(rec.label) || prettyName(name),
         description: str(rec.description),
         enabled: bool(rec.enabled, false),
-        configured: typeof rec.configured === "boolean" ? rec.configured : undefined,
+        configured:
+          typeof rec.configured === "boolean" ? rec.configured : undefined,
         tools,
         platform: str(rec.platform) || undefined,
       };
@@ -149,7 +167,9 @@ export function mcpFromApi(raw: unknown): HermesMcpRow[] {
 }
 
 export function cronFromApi(raw: unknown): HermesCronRow[] {
-  return asList(raw).map(cronFromUnknown).filter((j) => j.id);
+  return asList(raw)
+    .map(cronFromUnknown)
+    .filter((j) => j.id);
 }
 
 export function channelsFromApi(raw: unknown): HermesChannelRow[] {
@@ -163,8 +183,10 @@ export function channelsFromApi(raw: unknown): HermesChannelRow[] {
         id,
         name: str(row.name) || prettyName(id),
         enabled: bool(row.enabled, false),
-        configured: typeof row.configured === "boolean" ? row.configured : undefined,
-        state: str(row.state) || (bool(row.enabled, false) ? "activo" : "apagado"),
+        configured:
+          typeof row.configured === "boolean" ? row.configured : undefined,
+        state:
+          str(row.state) || (bool(row.enabled, false) ? "activo" : "apagado"),
         description: str(row.description) || undefined,
         error: str(row.error_message) || undefined,
       };
@@ -191,7 +213,10 @@ export function sessionsFromApi(raw: unknown): HermesSessionRow[] {
       const rec = asRec(item);
       const id = str(rec.id) || str(rec.session_id);
       const title = str(rec.title) || str(rec.preview) || id.slice(0, 12);
-      const updated = stamp(rec.last_active) || stamp(rec.updated_at) || stamp(rec.started_at);
+      const updated =
+        stamp(rec.last_active) ||
+        stamp(rec.updated_at) ||
+        stamp(rec.started_at);
       const messages =
         typeof rec.message_count === "number"
           ? rec.message_count
@@ -232,11 +257,18 @@ export function webhooksFromApi(raw: unknown): HermesWebhookRow[] {
     .map((item) => {
       const rec = asRec(item);
       const name = str(rec.name) || str(rec.id);
-      const events = Array.isArray(rec.events) ? rec.events.map(str).filter(Boolean) : [];
+      const events = Array.isArray(rec.events)
+        ? rec.events.map(str).filter(Boolean)
+        : [];
       return {
         name,
         enabled: rec.enabled !== false,
-        event: events.join(", ") || str(rec.event) || str(rec.path) || str(rec.description) || undefined,
+        event:
+          events.join(", ") ||
+          str(rec.event) ||
+          str(rec.path) ||
+          str(rec.description) ||
+          undefined,
       };
     })
     .filter((w) => w.name);
@@ -258,5 +290,7 @@ export function projectFromUnknown(item: unknown): HermesProjectRow {
 }
 
 export function projectsFromApi(raw: unknown): HermesProjectRow[] {
-  return asList(raw).map(projectFromUnknown).filter((p) => p.id);
+  return asList(raw)
+    .map(projectFromUnknown)
+    .filter((p) => p.id);
 }

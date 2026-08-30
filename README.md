@@ -19,7 +19,7 @@ npm install
 npm run dev
 ```
 
-Abre la app, ve a **Conectar** e introduce la dirección y la clave de *tu* Hermes.
+Abre la app, ve a **Conectar** e introduce la dirección y la clave de _tu_ Hermes.
 
 ## Qué no hagas
 

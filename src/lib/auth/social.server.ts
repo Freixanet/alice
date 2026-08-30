@@ -18,28 +18,35 @@ const env = (key: string): string | undefined => {
   return value ? value : undefined;
 };
 
-export const googleNativeEnabled = Boolean(env("GOOGLE_CLIENT_ID") && env("GOOGLE_CLIENT_SECRET"));
+export const googleNativeEnabled = Boolean(
+  env("GOOGLE_CLIENT_ID") && env("GOOGLE_CLIENT_SECRET"),
+);
 
 export const appleNativeEnabled = Boolean(
   env("APPLE_CLIENT_ID") &&
-    (env("APPLE_CLIENT_SECRET") ||
-      (env("APPLE_TEAM_ID") && env("APPLE_KEY_ID") && env("APPLE_PRIVATE_KEY"))),
+  (env("APPLE_CLIENT_SECRET") ||
+    (env("APPLE_TEAM_ID") && env("APPLE_KEY_ID") && env("APPLE_PRIVATE_KEY"))),
 );
 
 export const nativeSocialEnabled = googleNativeEnabled || appleNativeEnabled;
 
-const appleSecretRef = globalThis as typeof globalThis & { __aliceAppleClientSecret__?: string };
+const appleSecretRef = globalThis as typeof globalThis & {
+  __aliceAppleClientSecret__?: string;
+};
 
 async function appleClientSecret(): Promise<string> {
   const ready = env("APPLE_CLIENT_SECRET");
   if (ready) return ready;
-  if (appleSecretRef.__aliceAppleClientSecret__) return appleSecretRef.__aliceAppleClientSecret__;
+  if (appleSecretRef.__aliceAppleClientSecret__)
+    return appleSecretRef.__aliceAppleClientSecret__;
   const clientId = env("APPLE_CLIENT_ID");
   const teamId = env("APPLE_TEAM_ID");
   const keyId = env("APPLE_KEY_ID");
   const pem = env("APPLE_PRIVATE_KEY")?.replace(/\\n/g, "\n");
   if (!clientId || !teamId || !keyId || !pem) {
-    throw new Error("Apple Sign In is missing APPLE_CLIENT_ID / TEAM_ID / KEY_ID / PRIVATE_KEY.");
+    throw new Error(
+      "Apple Sign In is missing APPLE_CLIENT_ID / TEAM_ID / KEY_ID / PRIVATE_KEY.",
+    );
   }
   const key = await importPKCS8(pem, "ES256");
   const jwt = await new SignJWT({})

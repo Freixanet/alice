@@ -17,7 +17,9 @@ function fail(message) {
 function main() {
   const bin = spawnSync("which", ["tailscale"], { encoding: "utf8" });
   if (bin.status !== 0) {
-    fail("Instala Tailscale en este Mac (https://tailscale.com/download) y vuelve a intentarlo.");
+    fail(
+      "Instala Tailscale en este Mac (https://tailscale.com/download) y vuelve a intentarlo.",
+    );
   }
 
   let status = tailscale(["status", "--json"]);
@@ -27,7 +29,11 @@ function main() {
     const up = tailscale(["up"], { timeout: 60_000 });
     if (up.status !== 0) {
       fail(
-        (up.stderr || up.stdout || "No se ha podido conectar Tailscale.").trim() +
+        (
+          up.stderr ||
+          up.stdout ||
+          "No se ha podido conectar Tailscale."
+        ).trim() +
           "\nAbre la app Tailscale en este Mac e inicia sesión con marcfreixanet@gmail.com.",
       );
     }
@@ -43,14 +49,18 @@ function main() {
   if (!data.Self?.Online) {
     spawnSync("open", ["-a", "Tailscale"]);
     const up = tailscale(["up"], { timeout: 60_000 });
-    if (up.status !== 0 || !JSON.parse(tailscale(["status", "--json"]).stdout || "{}").Self?.Online) {
+    if (
+      up.status !== 0 ||
+      !JSON.parse(tailscale(["status", "--json"]).stdout || "{}").Self?.Online
+    ) {
       fail("Tailscale sigue parado. Ábrelo en la barra de menú y conéctalo.");
     }
     data = JSON.parse(tailscale(["status", "--json"]).stdout || "{}");
   }
 
   const host = String(data.Self?.DNSName || "").replace(/\.$/, "");
-  if (!host) fail("No hay nombre MagicDNS. Activa MagicDNS en la consola de Tailscale.");
+  if (!host)
+    fail("No hay nombre MagicDNS. Activa MagicDNS en la consola de Tailscale.");
 
   // Safari on iPhone often resolves *.ts.net via public DNS / iCloud Private
   // Relay instead of the tailnet. Serve-only then fails TLS. Funnel is HTTPS
@@ -58,7 +68,9 @@ function main() {
   tailscale(["serve", "--bg", "8080"]);
   const funnel = tailscale(["funnel", "--bg", "--yes", "8080"]);
   if (funnel.status !== 0) {
-    fail((funnel.stderr || funnel.stdout || "tailscale funnel ha fallado.").trim());
+    fail(
+      (funnel.stderr || funnel.stdout || "tailscale funnel ha fallado.").trim(),
+    );
   }
 
   const origin = `https://${host}`;
@@ -67,7 +79,9 @@ function main() {
   console.log(`  ${origin}`);
   console.log("");
   console.log("Safari → esa URL → Compartir → Añadir a pantalla de inicio.");
-  console.log("Si HTTPS falla: en el iPhone, Tailscale conectado y Relé privado de iCloud apagado.");
+  console.log(
+    "Si HTTPS falla: en el iPhone, Tailscale conectado y Relé privado de iCloud apagado.",
+  );
   console.log("");
   console.log("Google: en Google Cloud → Clientes → este cliente, añade:");
   console.log(`  ${origin}/api/auth/callback/google`);

@@ -39,7 +39,6 @@ import { ensureDbReady, getPglite } from "../db";
 import { emailAndPasswordEnabled } from "./email-password";
 import { oauthCompleteRedirect } from "./oauth-complete.server";
 import { nativeSocialProviders } from "./social.server";
-import "./owner.server";
 import { pgliteDialect } from "./pglite-dialect";
 import {
   GROK_ISSUER_DEFAULT,
@@ -80,7 +79,8 @@ const authDisabled = env("VITE_AUTH_ENABLED") === "false";
 // for any `*.grok-sandbox.com` callback (see `./preview`).
 const grokIssuer = env("GROK_AUTH_ISSUER") ?? GROK_ISSUER_DEFAULT;
 const grokClientId = env("GROK_AUTH_CLIENT_ID") ?? PREVIEW_CLIENT_ID;
-const grokClientSecret = env("GROK_AUTH_CLIENT_SECRET") ?? PREVIEW_CLIENT_SECRET;
+const grokClientSecret =
+  env("GROK_AUTH_CLIENT_SECRET") ?? PREVIEW_CLIENT_SECRET;
 
 /** True when federated sign-in is active (real auth is enforced). */
 export const authConfigured =
@@ -146,7 +146,10 @@ const trustedOrigins: string[] = [
         ...previewAllowedHosts,
         "*.ts.net",
         // Full-origin wildcards (matched against Origin)
-        ...previewAllowedHosts.flatMap((host) => [`https://${host}`, `http://${host}`]),
+        ...previewAllowedHosts.flatMap((host) => [
+          `https://${host}`,
+          `http://${host}`,
+        ]),
         "https://*.ts.net",
         "http://*.ts.net",
         ...LOCAL_DEV_ORIGINS,
@@ -279,13 +282,19 @@ export const auth = betterAuth({
     cookies: {
       session_token: { name: SESSION_TOKEN_COOKIE },
       session_data: {
-        name: localHttpAuth ? "alice.session_data" : "__Host-grok-auth.session_data",
+        name: localHttpAuth
+          ? "alice.session_data"
+          : "__Host-grok-auth.session_data",
       },
       account_data: {
-        name: localHttpAuth ? "alice.account_data" : "__Host-grok-auth.account_data",
+        name: localHttpAuth
+          ? "alice.account_data"
+          : "__Host-grok-auth.account_data",
       },
       dont_remember: {
-        name: localHttpAuth ? "alice.dont_remember" : "__Host-grok-auth.dont_remember",
+        name: localHttpAuth
+          ? "alice.dont_remember"
+          : "__Host-grok-auth.dont_remember",
       },
     },
   },

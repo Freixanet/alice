@@ -66,7 +66,8 @@ export function installPreviewHostBridge(
   if (typeof window === "undefined") return () => {};
 
   const ancestorOrigin =
-    typeof location.ancestorOrigins !== 'undefined' && location.ancestorOrigins.length > 0
+    typeof location.ancestorOrigins !== "undefined" &&
+    location.ancestorOrigins.length > 0
       ? location.ancestorOrigins[0]
       : null;
   const parentOrigin = resolveParentEmbedderOrigin(
@@ -142,7 +143,9 @@ export function installPreviewHostBridge(
       if (url.origin !== window.location.origin) return;
       const next = `${url.pathname}${url.search}${url.hash}`;
       window.history.pushState(window.history.state, "", next);
-      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      window.dispatchEvent(
+        new PopStateEvent("popstate", { state: window.history.state }),
+      );
     } catch {
       // ignore malformed paths
     }
@@ -172,7 +175,8 @@ export function installPreviewHostBridge(
     if (event.origin !== parentOrigin) return;
 
     const envelope = EnvelopeSchema.safeParse(event.data);
-    if (!envelope.success || envelope.data.version !== PREVIEW_BRIDGE_VERSION) return;
+    if (!envelope.success || envelope.data.version !== PREVIEW_BRIDGE_VERSION)
+      return;
 
     // Host re-handshake: it may have (re)mounted after our install-time
     // announce, or asked before we hydrated. Announce again.
@@ -220,13 +224,12 @@ export function installPreviewHostBridge(
     reportLocation();
   };
   window.history.replaceState = (data, unused, url) => {
-    const next =
-      isAtHistoryRoot()
-        ? {
-            ...(data && typeof data === "object" ? data : {}),
-            [ROOT_STATE_KEY]: true,
-          }
-        : data;
+    const next = isAtHistoryRoot()
+      ? {
+          ...(data && typeof data === "object" ? data : {}),
+          [ROOT_STATE_KEY]: true,
+        }
+      : data;
     originalReplaceState(next, unused, url);
     reportLocation();
   };

@@ -24,10 +24,9 @@ import { Switch } from "@/components/ui/switch";
 import {
   getMacSessionKey,
   groupHermesModels,
-  listHermesModels,
   prettyProvider,
-  setHermesModel,
 } from "@/lib/gateway";
+import { listHermesModels, setHermesModel } from "@/lib/hermes-client";
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
 import { authEnabled, signOut } from "@/lib/auth/client";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
@@ -46,11 +45,36 @@ const SECTION_META: {
   keywordsKey: MsgKey;
   icon: LucideIcon;
 }[] = [
-  { id: "general", labelKey: "settings.general", keywordsKey: "settings.keywords.general", icon: SlidersHorizontal },
-  { id: "model", labelKey: "settings.model", keywordsKey: "settings.keywords.model", icon: Sparkles },
-  { id: "profile", labelKey: "settings.profile", keywordsKey: "settings.keywords.profile", icon: CircleUser },
-  { id: "account", labelKey: "settings.account", keywordsKey: "settings.keywords.account", icon: LogOut },
-  { id: "shortcuts", labelKey: "settings.shortcuts", keywordsKey: "settings.keywords.shortcuts", icon: Keyboard },
+  {
+    id: "general",
+    labelKey: "settings.general",
+    keywordsKey: "settings.keywords.general",
+    icon: SlidersHorizontal,
+  },
+  {
+    id: "model",
+    labelKey: "settings.model",
+    keywordsKey: "settings.keywords.model",
+    icon: Sparkles,
+  },
+  {
+    id: "profile",
+    labelKey: "settings.profile",
+    keywordsKey: "settings.keywords.profile",
+    icon: CircleUser,
+  },
+  {
+    id: "account",
+    labelKey: "settings.account",
+    keywordsKey: "settings.keywords.account",
+    icon: LogOut,
+  },
+  {
+    id: "shortcuts",
+    labelKey: "settings.shortcuts",
+    keywordsKey: "settings.keywords.shortcuts",
+    icon: Keyboard,
+  },
 ];
 
 export function SettingsDialog({
@@ -92,7 +116,9 @@ export function SettingsDialog({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return sections;
-    return sections.filter((s) => `${s.label} ${s.keywords}`.toLowerCase().includes(q));
+    return sections.filter((s) =>
+      `${s.label} ${s.keywords}`.toLowerCase().includes(q),
+    );
   }, [query, sections]);
 
   const current = filtered.find((s) => s.id === sectionId) ?? filtered[0];
@@ -104,7 +130,9 @@ export function SettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={!mobile}>
       <DialogContent className="!inset-0 !h-dvh !w-full !max-w-none !translate-x-0 !translate-y-0 !rounded-none flex flex-col gap-0 overflow-hidden p-0 md:!top-1/2 md:!left-1/2 md:!h-[min(38rem,85vh)] md:!w-[calc(100%-2rem)] md:!max-w-3xl md:!-translate-x-1/2 md:!-translate-y-1/2 md:!rounded-xl md:flex-row [&>button]:hidden">
-        <DialogDescription className="sr-only">{t("settings.title")}</DialogDescription>
+        <DialogDescription className="sr-only">
+          {t("settings.title")}
+        </DialogDescription>
         <nav className="flex w-full shrink-0 flex-col border-b border-border p-3 md:w-52 md:border-r md:border-b-0">
           <div className="mb-3 flex min-w-0 items-center gap-2 md:block">
             <DialogClose asChild>
@@ -129,7 +157,9 @@ export function SettingsDialog({
           </div>
           <ul className="flex shrink-0 gap-1 overflow-x-auto pb-1 md:min-h-0 md:flex-1 md:flex-col md:gap-0.5 md:overflow-y-auto md:pb-0">
             {filtered.length === 0 ? (
-              <li className="px-2.5 py-2 text-sm text-muted-foreground">{t("settings.noMatch")}</li>
+              <li className="px-2.5 py-2 text-sm text-muted-foreground">
+                {t("settings.noMatch")}
+              </li>
             ) : (
               filtered.map((s) => {
                 const on = s.id === current?.id;
@@ -165,14 +195,20 @@ export function SettingsDialog({
                 {current.id === "model" ? (
                   <ModeloSection onNavigate={() => onOpenChange(false)} />
                 ) : null}
-                {current.id === "profile" ? <PerfilSection onNavigate={() => onOpenChange(false)} /> : null}
+                {current.id === "profile" ? (
+                  <PerfilSection onNavigate={() => onOpenChange(false)} />
+                ) : null}
                 {current.id === "account" ? <CuentaSection /> : null}
                 {current.id === "shortcuts" ? <AtajosSection /> : null}
               </>
             ) : (
               <>
-                <DialogTitle className="sr-only">{t("settings.title")}</DialogTitle>
-                <p className="text-sm text-muted-foreground">{t("settings.noMatch")}</p>
+                <DialogTitle className="sr-only">
+                  {t("settings.title")}
+                </DialogTitle>
+                <p className="text-sm text-muted-foreground">
+                  {t("settings.noMatch")}
+                </p>
               </>
             )}
           </div>
@@ -199,15 +235,25 @@ function GeneralSection() {
 
   return (
     <div className="divide-y divide-border">
-      <SettingRow label={t("settings.lightTheme")} hint={t("settings.lightThemeHint")}>
+      <SettingRow
+        label={t("settings.lightTheme")}
+        hint={t("settings.lightThemeHint")}
+      >
         <Switch
           checked={theme === "light"}
           onCheckedChange={(v) => setTheme(v ? "light" : "dark")}
           aria-label={t("settings.lightTheme")}
         />
       </SettingRow>
-      <SettingRow label={t("settings.fontSize")} hint={t("settings.fontSizeHint")}>
-        <div className="flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("settings.fontSize")}>
+      <SettingRow
+        label={t("settings.fontSize")}
+        hint={t("settings.fontSizeHint")}
+      >
+        <div
+          className="flex rounded-lg bg-muted p-0.5"
+          role="radiogroup"
+          aria-label={t("settings.fontSize")}
+        >
           {FONT_SIZES.map((opt) => (
             <button
               key={opt.id}
@@ -228,7 +274,11 @@ function GeneralSection() {
         </div>
       </SettingRow>
       <SettingRow label={t("settings.color")} hint={t("settings.colorHint")}>
-        <div className="flex flex-wrap justify-start gap-2 md:justify-end" role="radiogroup" aria-label={t("settings.color")}>
+        <div
+          className="flex flex-wrap justify-start gap-2 md:justify-end"
+          role="radiogroup"
+          aria-label={t("settings.color")}
+        >
           {ACCENTS.map((opt) => (
             <button
               key={opt.id}
@@ -249,14 +299,32 @@ function GeneralSection() {
           ))}
         </div>
       </SettingRow>
-      <SettingRow label={t("settings.compact")} hint={t("settings.compactHint")}>
-        <Switch checked={compact} onCheckedChange={setCompact} aria-label={t("settings.compact")} />
+      <SettingRow
+        label={t("settings.compact")}
+        hint={t("settings.compactHint")}
+      >
+        <Switch
+          checked={compact}
+          onCheckedChange={setCompact}
+          aria-label={t("settings.compact")}
+        />
       </SettingRow>
       <SettingRow label={t("settings.focus")} hint={t("settings.focusHint")}>
-        <Switch checked={focusMode} onCheckedChange={setFocusMode} aria-label={t("settings.focus")} />
+        <Switch
+          checked={focusMode}
+          onCheckedChange={setFocusMode}
+          aria-label={t("settings.focus")}
+        />
       </SettingRow>
-      <SettingRow label={t("settings.language")} hint={t("settings.languageHint")}>
-        <div className="flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("settings.language")}>
+      <SettingRow
+        label={t("settings.language")}
+        hint={t("settings.languageHint")}
+      >
+        <div
+          className="flex rounded-lg bg-muted p-0.5"
+          role="radiogroup"
+          aria-label={t("settings.language")}
+        >
           {(["en", "es"] as Locale[]).map((id) => (
             <button
               key={id}
@@ -298,10 +366,12 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
   useEffect(() => {
     if (!live) return;
     const ctrl = new AbortController();
-    void listHermesModels({ refresh: true, signal: ctrl.signal }).then((result) => {
-      if (ctrl.signal.aborted || !result.ok) return;
-      setGatewayModels(result.models);
-    });
+    void listHermesModels({ refresh: true, signal: ctrl.signal }).then(
+      (result) => {
+        if (ctrl.signal.aborted || !result.ok) return;
+        setGatewayModels(result.models);
+      },
+    );
     return () => ctrl.abort();
   }, [live, setGatewayModels]);
 
@@ -313,9 +383,9 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
       url: gatewayUrl,
       key:
         gatewayPlace === "mac"
-          ? getMacSessionKey() ?? undefined
+          ? (getMacSessionKey() ?? undefined)
           : gatewayPlace === "device"
-            ? getDeviceSessionKey() ?? undefined
+            ? (getDeviceSessionKey() ?? undefined)
             : undefined,
       place: gatewayPlace,
       model: id,
@@ -365,7 +435,9 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
           </p>
           <ul className="divide-y divide-border">
             {group.models.map((m) => {
-              const on = model === m.id && (!modelProvider || modelProvider === m.provider);
+              const on =
+                model === m.id &&
+                (!modelProvider || modelProvider === m.provider);
               return (
                 <li key={`${m.provider}:${m.id}`}>
                   <button
@@ -380,15 +452,21 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
                       )}
                       aria-hidden
                     >
-                      {on ? <span className="size-1.5 rounded-full bg-primary" /> : null}
+                      {on ? (
+                        <span className="size-1.5 rounded-full bg-primary" />
+                      ) : null}
                     </span>
                     <span className="flex-1">
-                      <span className="block text-sm font-medium">{m.label}</span>
+                      <span className="block text-sm font-medium">
+                        {m.label}
+                      </span>
                       <span className="text-sm text-muted-foreground">
                         {prettyProvider(m.provider)}
                       </span>
                     </span>
-                    {on ? <Badge variant="outline">{t("settings.current")}</Badge> : null}
+                    {on ? (
+                      <Badge variant="outline">{t("settings.current")}</Badge>
+                    ) : null}
                   </button>
                 </li>
               );
@@ -426,14 +504,16 @@ function CuentaSection() {
   const user = useCurrentUser();
   const [signingOut, setSigningOut] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
-  const label = user?.displayName || user?.primaryEmail || t("settings.thisSession");
+  const label =
+    user?.displayName || user?.primaryEmail || t("settings.thisSession");
 
   useEffect(() => {
     const ctrl = new AbortController();
     void fetch("/api/phone", { signal: ctrl.signal })
       .then((res) => res.json() as Promise<{ origin?: string | null }>)
       .then((data) => {
-        if (typeof data.origin === "string" && data.origin) setPhone(data.origin);
+        if (typeof data.origin === "string" && data.origin)
+          setPhone(data.origin);
       })
       .catch(() => {});
     return () => ctrl.abort();
@@ -444,7 +524,9 @@ function CuentaSection() {
       <div>
         <p className="font-medium">{label}</p>
         {user?.primaryEmail ? (
-          <p className="mt-1 text-sm text-muted-foreground">{user.primaryEmail}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {user.primaryEmail}
+          </p>
         ) : null}
       </div>
       {authEnabled && user && !user.isDevFallback ? (
@@ -459,7 +541,9 @@ function CuentaSection() {
           {signingOut ? t("settings.signingOut") : t("settings.signOut")}
         </Button>
       ) : (
-        <p className="text-sm text-muted-foreground">{t("settings.macAccount")}</p>
+        <p className="text-sm text-muted-foreground">
+          {t("settings.macAccount")}
+        </p>
       )}
       {phone ? (
         <div className="border-t border-border pt-4">
@@ -508,7 +592,9 @@ function SettingRow({
     <div className="flex flex-col items-start gap-3 py-4 md:flex-row md:items-center md:justify-between md:gap-4">
       <div className="min-w-0">
         <p className="text-sm font-medium">{label}</p>
-        {hint ? <p className="mt-0.5 text-sm text-muted-foreground">{hint}</p> : null}
+        {hint ? (
+          <p className="mt-0.5 text-sm text-muted-foreground">{hint}</p>
+        ) : null}
       </div>
       <div className="w-full md:w-auto md:shrink-0">{children}</div>
     </div>

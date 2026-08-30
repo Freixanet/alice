@@ -15,7 +15,8 @@ export function parseAppEnv(text) {
   } catch {
     return {};
   }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+    return {};
   const env = {};
   for (const [key, value] of Object.entries(parsed)) {
     if (!key.startsWith(VITE_PREFIX)) continue;
@@ -71,7 +72,10 @@ function main(argv) {
     process.on(signal, () => child.kill(signal));
   }
   child.on("error", (err) => {
-    console.error(`[with-app-env] failed to run ${command}:`, err?.message || err);
+    console.error(
+      `[with-app-env] failed to run ${command}:`,
+      err?.message || err,
+    );
     process.exit(127);
   });
   child.on("exit", (code, signal) => {

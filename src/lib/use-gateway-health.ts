@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { authHeaders } from "./auth/client";
-import { getMacSessionKey, listHermesModels, probeGateway } from "./gateway";
+import { getMacSessionKey } from "./gateway";
+import { listHermesModels, probeGateway } from "./hermes-client";
 import { getDeviceSessionKey } from "./hermes-direct";
 import { useHermes } from "./store";
 
@@ -21,7 +22,8 @@ export function useGatewayHealth() {
     let timer: number | undefined;
 
     function schedule(ms: number) {
-      if (!ctrl.signal.aborted) timer = window.setTimeout(() => void check(), ms);
+      if (!ctrl.signal.aborted)
+        timer = window.setTimeout(() => void check(), ms);
     }
 
     async function check() {
@@ -50,9 +52,9 @@ export function useGatewayHealth() {
         url,
         key:
           place === "mac"
-            ? getMacSessionKey() ?? undefined
+            ? (getMacSessionKey() ?? undefined)
             : place === "device"
-              ? getDeviceSessionKey() ?? undefined
+              ? (getDeviceSessionKey() ?? undefined)
               : undefined,
         place,
         save: false,
@@ -70,12 +72,18 @@ export function useGatewayHealth() {
           mode: result.mode,
           place,
         });
-        const listed = await listHermesModels({ refresh: true, signal: ctrl.signal });
+        const listed = await listHermesModels({
+          refresh: true,
+          signal: ctrl.signal,
+        });
         if (!ctrl.signal.aborted && listed.ok) setGatewayModels(listed.models);
         schedule(60_000);
         return;
       }
-      if (!(alreadyLive && (result.code === "unreachable" || result.code === "cors"))) {
+      if (!(
+        alreadyLive &&
+        (result.code === "unreachable" || result.code === "cors")
+      )) {
         setDown(result.error);
       }
       schedule(15_000);
@@ -86,5 +94,14 @@ export function useGatewayHealth() {
       ctrl.abort();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [hydrated, on, url, place, setChecking, setLive, setDown, setGatewayModels]);
+  }, [
+    hydrated,
+    on,
+    url,
+    place,
+    setChecking,
+    setLive,
+    setDown,
+    setGatewayModels,
+  ]);
 }

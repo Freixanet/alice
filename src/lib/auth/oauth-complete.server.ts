@@ -25,7 +25,9 @@ export function oauthCompleteRedirect() {
               return;
             }
             console.info("[auth] handing session to /auth/complete");
-            throw ctx.redirect(`/auth/complete?token=${encodeURIComponent(token)}`);
+            throw ctx.redirect(
+              `/auth/complete?token=${encodeURIComponent(token)}`,
+            );
           }),
         },
       ],

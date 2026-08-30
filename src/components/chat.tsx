@@ -26,10 +26,9 @@ import type { ChatEvent, HermesChatContent } from "@/lib/gateway";
 import {
   getMacSessionKey,
   groupHermesModels,
-  listHermesModels,
   prettyModelLabel,
-  setHermesModel,
 } from "@/lib/gateway";
+import { listHermesModels, setHermesModel } from "@/lib/hermes-client";
 import { getDeviceSessionKey, streamHermesDirect } from "@/lib/hermes-direct";
 import { authHeaders } from "@/lib/auth/client";
 import { matchSlash } from "@/lib/slash";

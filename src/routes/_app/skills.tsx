@@ -15,21 +15,27 @@ function SkillsPage() {
   const locale = useLocale();
   const { data, error, loading, setData } = useHermesLive();
   const rows = data?.skills ?? [];
-  const groups = [...new Map(rows.map((s) => [s.group, s.groupLabel])).entries()].map(
-    ([id, label]) => ({ id, label: skillGroupLabel(locale, id, label) }),
-  );
+  const groups = [
+    ...new Map(rows.map((s) => [s.group, s.groupLabel])).entries(),
+  ].map(([id, label]) => ({ id, label: skillGroupLabel(locale, id, label) }));
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       {loading ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">{t("skills.loading")}</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">
+          {t("skills.loading")}
+        </p>
       ) : error ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">{localizeError(locale, error)}</p>
+        <p className="px-6 py-8 text-sm text-muted-foreground">
+          {localizeError(locale, error)}
+        </p>
       ) : (
         <CatalogPage
           kicker={t("skills.kicker")}
           title={t("skills.title")}
-          description={data?.writable ? t("skills.descOn") : t("skills.descOff")}
+          description={
+            data?.writable ? t("skills.descOn") : t("skills.descOff")
+          }
           action={<LearnSkillButton />}
           groups={groups}
           empty={t("skills.empty")}
@@ -51,13 +57,21 @@ function SkillsPage() {
                   const enabled = !row.enabled;
                   setData({
                     ...data,
-                    skills: data.skills.map((s) => (s.id === id ? { ...s, enabled } : s)),
+                    skills: data.skills.map((s) =>
+                      s.id === id ? { ...s, enabled } : s,
+                    ),
                   });
-                  void mutateHermes({ action: "toggle-skill", name: row.name, enabled }).then((r) => {
+                  void mutateHermes({
+                    action: "toggle-skill",
+                    name: row.name,
+                    enabled,
+                  }).then((r) => {
                     if (r.ok) return;
                     setData({
                       ...data,
-                      skills: data.skills.map((s) => (s.id === id ? { ...s, enabled: row.enabled } : s)),
+                      skills: data.skills.map((s) =>
+                        s.id === id ? { ...s, enabled: row.enabled } : s,
+                      ),
                     });
                   });
                 }

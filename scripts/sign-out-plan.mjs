@@ -41,7 +41,9 @@ export const DEPLOYED_SIGN_OUT_TIMEOUT_MS = 10_000;
  * @returns {number}
  */
 export function signOutTimeoutMs(livePreview) {
-  return livePreview ? PREVIEW_SIGN_OUT_TIMEOUT_MS : DEPLOYED_SIGN_OUT_TIMEOUT_MS;
+  return livePreview
+    ? PREVIEW_SIGN_OUT_TIMEOUT_MS
+    : DEPLOYED_SIGN_OUT_TIMEOUT_MS;
 }
 
 /**
@@ -103,14 +105,20 @@ export async function runSignOut({
     // No bearer means a partitioned iframe with nothing to invalidate; with one,
     // still invalidate it server-side, just don't block on the answer.
     if (hasBearer) {
-      await settleWithin(requestSignOut, timeoutMs ?? signOutTimeoutMs(livePreview));
+      await settleWithin(
+        requestSignOut,
+        timeoutMs ?? signOutTimeoutMs(livePreview),
+      );
     }
     clearToken();
     redirect();
     return;
   }
 
-  const outcome = await settleWithin(requestSignOut, timeoutMs ?? signOutTimeoutMs(livePreview));
+  const outcome = await settleWithin(
+    requestSignOut,
+    timeoutMs ?? signOutTimeoutMs(livePreview),
+  );
   if (outcome !== "ok") {
     throw new Error(
       outcome === "timeout"
@@ -154,7 +162,10 @@ export async function runPreSignInSignOut({
 }) {
   // In the preview a missing bearer means there is nothing to clear.
   if (hasBearer || !livePreview) {
-    await settleWithin(requestSignOut, timeoutMs ?? signOutTimeoutMs(livePreview));
+    await settleWithin(
+      requestSignOut,
+      timeoutMs ?? signOutTimeoutMs(livePreview),
+    );
   }
   clearToken();
 }

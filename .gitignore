@@ -18,5 +18,7 @@ dist
 screenshots
 artifacts
 attachments
+test-results
+playwright-report
 *.log
 .prettierrc

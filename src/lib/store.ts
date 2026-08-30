@@ -19,11 +19,21 @@ import type {
   Message,
   Webhook,
 } from "./types";
-import type { GatewayMeta, GatewayPlace, GatewayStatus, HermesModelOption } from "./gateway";
-import { forgetHermesSecret, unionHermesModels } from "./gateway";
+import type {
+  GatewayMeta,
+  GatewayPlace,
+  GatewayStatus,
+  HermesModelOption,
+} from "./gateway-contracts";
+import { unionHermesModels } from "./gateway-contracts";
+import { forgetHermesSecret } from "./hermes-secret-client";
 import type { Locale } from "./i18n";
 import { isLocale } from "./i18n";
-import { cockpitIsOwner, cockpitUserId, COCKPIT_STORE } from "./auth/cockpit-user";
+import {
+  cockpitIsOwner,
+  cockpitUserId,
+  COCKPIT_STORE,
+} from "./auth/cockpit-user";
 import { uid } from "./utils";
 
 const welcomeId = "welcome";
@@ -119,8 +129,15 @@ interface HermesState {
   renameChat: (id: string, title: string) => void;
   pinChat: (id: string) => void;
   appendMessage: (conversationId: string, message: Message) => void;
-  patchMessage: (conversationId: string, messageId: string, patch: Partial<Message>) => void;
-  truncateConversationAfter: (conversationId: string, messageId: string) => void;
+  patchMessage: (
+    conversationId: string,
+    messageId: string,
+    patch: Partial<Message>,
+  ) => void;
+  truncateConversationAfter: (
+    conversationId: string,
+    messageId: string,
+  ) => void;
   addMemory: (item: Omit<MemoryItem, "id" | "updatedAt">) => void;
   removeMemory: (id: string) => void;
   toggleJob: (id: string) => void;
@@ -136,7 +153,10 @@ interface HermesState {
   restoreGateway: (connection: { url: string; place: GatewayPlace }) => void;
   setGatewayChecking: () => void;
   setGatewayLive: (meta: GatewayMeta) => void;
-  setGatewayModels: (models: HermesModelOption[], current?: { model?: string; provider?: string }) => void;
+  setGatewayModels: (
+    models: HermesModelOption[],
+    current?: { model?: string; provider?: string },
+  ) => void;
   setGatewayDown: (error: string) => void;
   disconnectGateway: () => void;
   forgetGateway: () => void;
@@ -367,14 +387,17 @@ export const useHermes = create<HermesState>()(
         set({ approvals: get().approvals.filter((x) => x.id !== id) });
       },
       learnSkill: ({ name, from }) => {
-        const id = name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/(^-|-$)/g, "") || uid();
+        const id =
+          name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/(^-|-$)/g, "") || uid();
         set({
           approvals: get().approvals.filter((x) => x.id !== "learn-" + id),
         });
-        const pinned = get().pinned.includes(id) ? get().pinned : [...get().pinned, id];
+        const pinned = get().pinned.includes(id)
+          ? get().pinned
+          : [...get().pinned, id];
         set({ pinned });
         void from;
       },
@@ -392,19 +415,31 @@ export const useHermes = create<HermesState>()(
           gatewayPlace: place,
           gatewayOn: true,
           gatewayStatus:
-            state.gatewayStatus === "live" && state.gatewayUrl === url ? "live" : "idle",
+            state.gatewayStatus === "live" && state.gatewayUrl === url
+              ? "live"
+              : "idle",
           gatewayError: null,
         })),
-      setGatewayChecking: () => set({ gatewayStatus: "checking", gatewayError: null }),
+      setGatewayChecking: () =>
+        set({ gatewayStatus: "checking", gatewayError: null }),
       setGatewayLive: (meta) => {
-        const models = unionHermesModels(get().gatewayMeta?.models, meta.models ?? []);
+        const models = unionHermesModels(
+          get().gatewayMeta?.models,
+          meta.models ?? [],
+        );
         const currentId = get().model;
         const currentProvider = get().modelProvider;
         const stillSelected = models.some(
-          (m) => m.id === currentId && (!currentProvider || m.provider === currentProvider),
+          (m) =>
+            m.id === currentId &&
+            (!currentProvider || m.provider === currentProvider),
         );
         const chosen = stillSelected
-          ? models.find((m) => m.id === currentId && (!currentProvider || m.provider === currentProvider))
+          ? models.find(
+              (m) =>
+                m.id === currentId &&
+                (!currentProvider || m.provider === currentProvider),
+            )
           : models.find((m) => m.id === meta.model);
         set({
           gatewayOn: true,
@@ -490,7 +525,11 @@ export const useHermes = create<HermesState>()(
         if (persisted && typeof persisted === "object") {
           const next = { ...(persisted as Record<string, unknown>) };
           delete next.gatewayKey;
-          if (next.gatewayOn && next.gatewayMeta && typeof next.gatewayMeta === "object") {
+          if (
+            next.gatewayOn &&
+            next.gatewayMeta &&
+            typeof next.gatewayMeta === "object"
+          ) {
             next.gatewayStatus = "live";
           }
           if (!isLocale(next.locale)) {
@@ -504,7 +543,11 @@ export const useHermes = create<HermesState>()(
             next.model = "hermes-agent";
             next.modelProvider = "";
           }
-          if (next.fontSize !== "sm" && next.fontSize !== "md" && next.fontSize !== "lg") {
+          if (
+            next.fontSize !== "sm" &&
+            next.fontSize !== "md" &&
+            next.fontSize !== "lg"
+          ) {
             next.fontSize = "md";
           }
           delete next.designMode;

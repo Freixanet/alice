@@ -13,7 +13,9 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
       </span>
       <h1 className="text-lg font-medium">{t("error.pageTitle")}</h1>
       <p className="max-w-md text-sm break-words text-muted-foreground">
-        {error.message ? localizeError(locale, error.message) : t("error.pageHint")}
+        {error.message
+          ? localizeError(locale, error.message)
+          : t("error.pageHint")}
       </p>
     </main>
   );

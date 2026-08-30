@@ -10,11 +10,11 @@ import {
   getMacSessionKey,
   inferGatewayPlace,
   normalizeGatewayUrl,
-  probeGateway,
   saveHermesCustomEndpoint,
   setMacSessionKey,
   type ProbeCode,
 } from "@/lib/gateway";
+import { probeGateway } from "@/lib/hermes-client";
 import { authHeaders } from "@/lib/auth/client";
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
 import {

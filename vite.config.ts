@@ -62,11 +62,15 @@ function authPopupPlugin(): Plugin {
           }
 
           const host = String(
-            req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost:8080",
+            req.headers["x-forwarded-host"] ??
+              req.headers.host ??
+              "localhost:8080",
           );
           const proto = String(
             req.headers["x-forwarded-proto"] ??
-              ((req.socket as { encrypted?: boolean } | undefined)?.encrypted ? "https" : "http"),
+              ((req.socket as { encrypted?: boolean } | undefined)?.encrypted
+                ? "https"
+                : "http"),
           );
           const requestHeaders = new Headers();
           for (const [key, value] of Object.entries(req.headers)) {
@@ -84,7 +88,9 @@ function authPopupPlugin(): Plugin {
             headers: requestHeaders,
           });
 
-          const mod = (await server.ssrLoadModule("/src/lib/auth/popup.server.ts")) as {
+          const mod = (await server.ssrLoadModule(
+            "/src/lib/auth/popup.server.ts",
+          )) as {
             handleAuthPopupRequest: (req: Request) => Promise<Response>;
           };
           const response = await mod.handleAuthPopupRequest(request);

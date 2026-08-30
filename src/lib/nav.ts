@@ -20,13 +20,43 @@ export type NavItem = {
 };
 
 export const NAV: NavItem[] = [
-  { to: "/skills", labelKey: "nav.skills", hintKey: "nav.skillsHint", icon: Sparkles },
-  { to: "/tools", labelKey: "nav.tools", hintKey: "nav.toolsHint", icon: Wrench },
-  { to: "/addons", labelKey: "nav.addons", hintKey: "nav.addonsHint", icon: Puzzle },
-  { to: "/projects", labelKey: "nav.projects", hintKey: "nav.projectsHint", icon: FolderKanban },
-  { to: "/memory", labelKey: "nav.memory", hintKey: "nav.memoryHint", icon: Blocks },
+  {
+    to: "/skills",
+    labelKey: "nav.skills",
+    hintKey: "nav.skillsHint",
+    icon: Sparkles,
+  },
+  {
+    to: "/tools",
+    labelKey: "nav.tools",
+    hintKey: "nav.toolsHint",
+    icon: Wrench,
+  },
+  {
+    to: "/addons",
+    labelKey: "nav.addons",
+    hintKey: "nav.addonsHint",
+    icon: Puzzle,
+  },
+  {
+    to: "/projects",
+    labelKey: "nav.projects",
+    hintKey: "nav.projectsHint",
+    icon: FolderKanban,
+  },
+  {
+    to: "/memory",
+    labelKey: "nav.memory",
+    hintKey: "nav.memoryHint",
+    icon: Blocks,
+  },
   { to: "/cron", labelKey: "nav.cron", hintKey: "nav.cronHint", icon: Clock },
-  { to: "/connect", labelKey: "nav.connect", hintKey: "nav.connectHint", icon: Cable },
+  {
+    to: "/connect",
+    labelKey: "nav.connect",
+    hintKey: "nav.connectHint",
+    icon: Cable,
+  },
 ];
 
 export const SETTINGS_NAV: NavItem = {

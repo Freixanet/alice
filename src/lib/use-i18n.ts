@@ -5,7 +5,8 @@ import { useHermes } from "./store";
 
 export function useT() {
   const locale = useHermes((s) => s.locale);
-  return (key: MsgKey, vars?: Record<string, string | number>) => t(locale, key, vars);
+  return (key: MsgKey, vars?: Record<string, string | number>) =>
+    t(locale, key, vars);
 }
 
 export function useLocale(): Locale {

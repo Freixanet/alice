@@ -21,7 +21,10 @@ export function checkedUrl(url) {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     fail(`only http/https URLs are allowed, got ${parsed.protocol} in ${url}`);
   }
-  if (!LOOPBACK_HOSTNAMES.has(parsed.hostname) && process.env.BROWSER_ALLOW_EXTERNAL_HOST !== "1") {
+  if (
+    !LOOPBACK_HOSTNAMES.has(parsed.hostname) &&
+    process.env.BROWSER_ALLOW_EXTERNAL_HOST !== "1"
+  ) {
     fail(
       `${parsed.hostname} is not a loopback host; these scripts screenshot the ` +
         `local dev server. Set BROWSER_ALLOW_EXTERNAL_HOST=1 to override.`,
@@ -34,7 +37,9 @@ export function checkedUrl(url) {
 export function checkedOutputPath(target, allowedDirs, label = "screenshot") {
   // Resolve first so `..` cannot slip past the prefix check.
   const abs = resolve(target);
-  const allowed = allowedDirs.some((dir) => abs.startsWith(dir.endsWith(sep) ? dir : dir + sep));
+  const allowed = allowedDirs.some((dir) =>
+    abs.startsWith(dir.endsWith(sep) ? dir : dir + sep),
+  );
   if (!allowed) {
     fail(`${label} path must be under ${allowedDirs.join(" or ")}, got ${abs}`);
   }
