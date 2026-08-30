@@ -119,10 +119,12 @@ describe("Hermes capability negotiation", () => {
         features: {
           chat_completions_streaming: true,
           run_submission: true,
+          run_status: true,
           run_events_sse: true,
           run_stop: true,
           run_steer: true,
           run_approval_response: true,
+          approval_events: true,
           tool_progress_events: true,
           session_resources: true,
           model_options: true,
@@ -150,6 +152,17 @@ describe("Hermes capability negotiation", () => {
         skills: true,
       },
     });
+  });
+
+  it("does not enable run controls from a partial capability advertisement", () => {
+    expect(
+      parseHermesCapabilityManifest({
+        features: {
+          run_events_sse: true,
+          approval_events: true,
+        },
+      }).capabilities,
+    ).toEqual({ "chat.streaming": true });
   });
 
   it("is total for arbitrary capability documents", () => {

@@ -29,6 +29,21 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
     conversationId: optionalBounded(128),
   }),
   z.strictObject({
+    action: z.literal("run-status"),
+    runId: bounded(160),
+    conversationId: optionalBounded(128),
+  }),
+  z.strictObject({
+    action: z.literal("run-stop"),
+    runId: bounded(160),
+  }),
+  z.strictObject({
+    action: z.literal("run-approval"),
+    runId: bounded(160),
+    choice: z.enum(["once", "session", "always", "deny"]),
+    resolveAll: z.boolean().optional(),
+  }),
+  z.strictObject({
     action: z.literal("custom-endpoint"),
     endpointName: optionalBounded(64),
     endpointUrl: bounded(512),
@@ -95,6 +110,7 @@ export const chatRequestSchema = z.strictObject({
   model: optionalBounded(256),
   provider: optionalBounded(128),
   conversationId: optionalBounded(128),
+  preferRuns: z.boolean().optional(),
 });
 
 export type HermesRequest = z.infer<typeof hermesRequestSchema>;

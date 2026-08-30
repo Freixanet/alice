@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { Mark } from "@/components/logo";
+import { ChatRunApproval } from "@/components/chat-run-approval";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +29,11 @@ import {
   groupHermesModels,
   prettyModelLabel,
 } from "@/lib/gateway";
-import { listHermesModels, setHermesModel } from "@/lib/hermes-client";
+import {
+  controlHermesRunClient,
+  listHermesModels,
+  setHermesModel,
+} from "@/lib/hermes-client";
 import { getDeviceSessionKey, streamHermesDirect } from "@/lib/hermes-direct";
 import { authHeaders } from "@/lib/auth/client";
 import { matchSlash } from "@/lib/slash";
@@ -36,6 +41,15 @@ import { displayMessageContent, slashHint, t as tr } from "@/lib/i18n";
 import { useLocale, useT } from "@/lib/use-i18n";
 import { useHermes } from "@/lib/store";
 import type { Attachment, Message } from "@/lib/types";
+import type { HermesApprovalChoice } from "@/lib/gateway-contracts";
+import {
+  reduceChatStreamEvent,
+  type ChatStreamAccumulator,
+} from "@/lib/chat-stream";
+import {
+  useHermesRunRecovery,
+  type ActiveHermesRun,
+} from "@/lib/use-hermes-run-recovery";
 import { cn, uid } from "@/lib/utils";
 
 export function ChatView() {
@@ -66,6 +80,7 @@ export function ChatView() {
   const [modelQuery, setModelQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const activeRunRef = useRef<ActiveHermesRun | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
@@ -77,6 +92,16 @@ export function ChatView() {
   const conv = conversations.find((c) => c.id === activeId) ?? conversations[0];
   const slash = matchSlash(draft);
   const live = gatewayOn && gatewayStatus === "live";
+  const supportsRuns =
+    gatewayMeta?.manifest?.capabilities["chat.runs"] === true &&
+    gatewayMeta.manifest.capabilities["chat.cancel"] === true &&
+    gatewayMeta.manifest.capabilities["chat.approvals"] === true;
+  useHermesRunRecovery({
+    activeId,
+    enabled: live && supportsRuns,
+    sending,
+    activeRunRef,
+  });
   const empty = !conv || conv.messages.length === 0;
   const firstIsUser = Boolean(
     conv?.messages[0] && conv.messages[0].role === "user",
@@ -264,38 +289,29 @@ export function ChatView() {
       });
     };
     try {
-      const apply = (
-        ev: ChatEvent,
-        acc: { content: string; tools: NonNullable<Message["tools"]> },
-      ) => {
-        if (ev.type === "delta") {
-          const chunk = acc.content ? ev.text : ev.text.replace(/^\s+/, "");
-          if (!chunk) return "continue" as const;
-          acc.content += chunk;
-          patchMessage(conversationId, assistantId, {
-            content: acc.content,
-            pending: true,
-          });
-          return "continue" as const;
+      const apply = (ev: ChatEvent, acc: ChatStreamAccumulator) => {
+        const result = reduceChatStreamEvent(acc, ev);
+        patchMessage(conversationId, assistantId, result.patch);
+        if (result.activeRun) {
+          activeRunRef.current = {
+            conversationId,
+            assistantId,
+            runId: result.activeRun.runId,
+          };
+          if (result.activeRun.terminal) activeRunRef.current = null;
         }
-        if (ev.type === "tool") {
-          mergeToolEvent(acc.tools, ev);
-          patchMessage(conversationId, assistantId, {
-            tools: [...acc.tools],
-            pending: true,
-          });
-          return "continue" as const;
-        }
-        patchMessage(conversationId, assistantId, {
-          pending: false,
-          error: ev.message,
-          incomplete: undefined,
-          content: acc.content || ev.message,
-        });
-        return "stop" as const;
+        return result.stop ? ("stop" as const) : ("continue" as const);
       };
 
-      const acc = { content: "", tools: [] as NonNullable<Message["tools"]> };
+      const acc: ChatStreamAccumulator = { content: "", tools: [] };
+      const finish = () => {
+        const cancelled = acc.runStatus === "cancelled";
+        patchMessage(conversationId, assistantId, {
+          content: acc.content || (cancelled ? "" : tr("en", "chat.noReply")),
+          pending: false,
+          incomplete: cancelled || !acc.content,
+        });
+      };
 
       if (gatewayPlace === "device") {
         const key = getDeviceSessionKey();
@@ -309,16 +325,13 @@ export function ChatView() {
           conversationId,
           model,
           provider,
+          preferRuns: supportsRuns,
           messages: payload,
           signal: ctrl.signal,
         })) {
           if (apply(ev, acc) === "stop") return;
         }
-        patchMessage(conversationId, assistantId, {
-          content: acc.content || tr("en", "chat.noReply"),
-          pending: false,
-          incomplete: !acc.content,
-        });
+        finish();
       } else {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -328,6 +341,7 @@ export function ChatView() {
             conversationId,
             model,
             provider,
+            preferRuns: supportsRuns,
             messages: payload,
           }),
         });
@@ -347,8 +361,6 @@ export function ChatView() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = "";
-        let content = "";
-        const tools: NonNullable<Message["tools"]> = [];
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -359,39 +371,13 @@ export function ChatView() {
             if (!line.trim()) continue;
             try {
               const ev = JSON.parse(line) as ChatEvent;
-              if (ev.type === "delta") {
-                const chunk = content ? ev.text : ev.text.replace(/^\s+/, "");
-                if (!chunk) continue;
-                content += chunk;
-                patchMessage(conversationId, assistantId, {
-                  content,
-                  pending: true,
-                });
-              } else if (ev.type === "tool") {
-                mergeToolEvent(tools, ev);
-                patchMessage(conversationId, assistantId, {
-                  tools: [...tools],
-                  pending: true,
-                });
-              } else if (ev.type === "error") {
-                patchMessage(conversationId, assistantId, {
-                  pending: false,
-                  error: ev.message,
-                  incomplete: undefined,
-                  content: content || ev.message,
-                });
-                return;
-              }
+              if (apply(ev, acc) === "stop") return;
             } catch {
               // skip malformed
             }
           }
         }
-        patchMessage(conversationId, assistantId, {
-          content: content || tr("en", "chat.noReply"),
-          pending: false,
-          incomplete: !content,
-        });
+        finish();
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") {
@@ -406,6 +392,43 @@ export function ChatView() {
       setSending(false);
       abortRef.current = null;
     }
+  }
+
+  function stopRun() {
+    const run = activeRunRef.current;
+    if (run) {
+      patchMessage(run.conversationId, run.assistantId, {
+        runStatus: "stopping",
+      });
+      void controlHermesRunClient({ action: "stop", runId: run.runId });
+    }
+    abortRef.current?.abort();
+  }
+
+  async function resolveRunApproval(
+    conversationId: string,
+    message: Message,
+    choice: HermesApprovalChoice,
+  ) {
+    if (!message.runId || !message.approval?.choices.includes(choice)) return;
+    patchMessage(conversationId, message.id, {
+      approval: { ...message.approval, resolving: true, error: undefined },
+    });
+    const ok = await controlHermesRunClient({
+      action: "approval",
+      runId: message.runId,
+      choice,
+    });
+    patchMessage(conversationId, message.id, {
+      runStatus: ok ? "running" : "waiting_for_approval",
+      approval: ok
+        ? undefined
+        : {
+            ...message.approval,
+            resolving: false,
+            error: tr("en", "error.approval"),
+          },
+    });
   }
 
   function pickModel(id: string, nextProvider?: string) {
@@ -523,13 +546,23 @@ export function ChatView() {
                       ) : (
                         text
                       )}
-                      {m.pending && !text ? <ReplyPending /> : null}
+                      {m.pending && !text && !m.approval ? (
+                        <ReplyPending />
+                      ) : null}
                     </div>
                   ) : null}
                   {m.attachments?.length ? (
                     <MessageAttachments attachments={m.attachments} />
                   ) : null}
                   {m.tools?.length ? <ToolActivity tools={m.tools} /> : null}
+                  {m.role === "assistant" && m.approval ? (
+                    <ChatRunApproval
+                      approval={m.approval}
+                      onChoose={(choice) =>
+                        void resolveRunApproval(conv.id, m, choice)
+                      }
+                    />
+                  ) : null}
                   {m.role === "assistant" && !m.pending && text ? (
                     <div className="-ml-1 flex items-center" role="group">
                       <button
@@ -816,9 +849,7 @@ export function ChatView() {
                 type="button"
                 aria-label={sending ? t("chat.stop") : t("chat.send")}
                 disabled={!sending && !draft.trim() && files.length === 0}
-                onClick={() =>
-                  sending ? abortRef.current?.abort() : void send()
-                }
+                onClick={() => (sending ? stopRun() : void send())}
                 className="ml-auto grid size-9 place-items-center rounded-full bg-muted text-foreground disabled:opacity-40"
               >
                 <svg
@@ -925,42 +956,6 @@ function ToolActivity({ tools }: { tools: NonNullable<Message["tools"]> }) {
       ))}
     </ul>
   );
-}
-
-function mergeToolEvent(
-  tools: NonNullable<Message["tools"]>,
-  event: Extract<ChatEvent, { type: "tool" }>,
-) {
-  if (event.status === "start" && event.callId) {
-    const existing = tools.find((tool) => tool.callId === event.callId);
-    if (existing) {
-      if (event.detail) existing.detail = event.detail;
-      return;
-    }
-  }
-  if (event.status === "done") {
-    const running = [...tools]
-      .reverse()
-      .find(
-        (tool) =>
-          tool.status === "start" &&
-          (event.callId
-            ? tool.callId === event.callId
-            : tool.name === event.name),
-      );
-    if (running) {
-      running.status = "done";
-      if (event.detail) running.detail = event.detail;
-      return;
-    }
-  }
-  tools.push({
-    id: uid(),
-    callId: event.callId,
-    name: event.name,
-    status: event.status,
-    detail: event.detail,
-  });
 }
 
 function readFile(file: File): Promise<string> {

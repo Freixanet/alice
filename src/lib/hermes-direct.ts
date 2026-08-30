@@ -21,6 +21,14 @@ import type { HermesLive, HermesLiveResult } from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
 import { setDeviceSessionKey } from "./hermes-secret-client";
 import {
+  controlHermesRun,
+  getHermesRunSnapshot,
+  startHermesRun,
+  streamStartedHermesRun,
+} from "./hermes-run-transport";
+import type { HermesApprovalChoice } from "./gateway-contracts";
+import type { HermesRunSnapshot } from "./hermes-runs";
+import {
   asRec,
   channelsFromApi,
   cronDeliveryTargetsFromApi,
@@ -307,6 +315,7 @@ export async function* streamHermesDirect(opts: {
   conversationId?: string;
   model?: string;
   provider?: string;
+  preferRuns?: boolean;
   signal: AbortSignal;
 }): AsyncGenerator<ChatEvent> {
   const base = normalizeGatewayUrl(opts.url);
@@ -314,6 +323,40 @@ export async function* streamHermesDirect(opts: {
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(180_000)]);
   const requestedModel = opts.model?.trim() || "hermes-agent";
   const requestedProvider = opts.provider?.trim() || "";
+
+  if (opts.preferRuns) {
+    try {
+      const started = await startHermesRun({
+        fetch,
+        base,
+        token,
+        signal,
+        messages: opts.messages,
+        conversationId: opts.conversationId,
+        model: requestedModel,
+        provider: requestedProvider,
+      });
+      if (started.ok) {
+        yield* streamStartedHermesRun({
+          fetch,
+          base,
+          token,
+          signal,
+          run: started.run,
+          conversationId: opts.conversationId,
+        });
+        return;
+      }
+      if (!started.unsupported) {
+        yield { type: "error", message: started.message };
+        return;
+      }
+    } catch (error) {
+      if ((error as Error).name === "AbortError") return;
+      yield { type: "error", message: CORS_ERROR };
+      return;
+    }
+  }
 
   const post = (model: string, provider: string) =>
     fetch(`${base}/v1/chat/completions`, {
@@ -373,6 +416,49 @@ export async function* streamHermesDirect(opts: {
       message: "Hermes sent no text. Try again or switch models.",
     };
   }
+}
+
+export async function getHermesRunDirect(opts: {
+  url: string;
+  key: string;
+  runId: string;
+  conversationId?: string;
+  signal: AbortSignal;
+}): Promise<HermesRunSnapshot | null> {
+  return getHermesRunSnapshot({
+    fetch,
+    base: normalizeGatewayUrl(opts.url),
+    token: assertGatewayKey(opts.key),
+    runId: opts.runId,
+    conversationId: opts.conversationId,
+    signal: opts.signal,
+  });
+}
+
+export async function controlHermesRunDirect(opts: {
+  url: string;
+  key: string;
+  runId: string;
+  action: "stop" | "approval";
+  choice?: HermesApprovalChoice;
+  resolveAll?: boolean;
+  signal: AbortSignal;
+}): Promise<boolean> {
+  const common = {
+    fetch,
+    base: normalizeGatewayUrl(opts.url),
+    token: assertGatewayKey(opts.key),
+    runId: opts.runId,
+    signal: opts.signal,
+  };
+  return opts.action === "approval" && opts.choice
+    ? controlHermesRun({
+        ...common,
+        action: "approval",
+        choice: opts.choice,
+        resolveAll: opts.resolveAll,
+      })
+    : controlHermesRun({ ...common, action: "stop" });
 }
 
 export async function listHermesModelsDirect(opts: {

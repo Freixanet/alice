@@ -70,7 +70,33 @@ export type ChatEvent =
       detail?: string;
       callId?: string;
     }
+  | {
+      type: "run";
+      runId: string;
+      status: HermesRunStatus;
+      output?: string;
+    }
+  | {
+      type: "approval";
+      runId: string;
+      title: string;
+      detail?: string;
+      command?: string;
+      choices: HermesApprovalChoice[];
+    }
   | { type: "error"; message: string };
+
+export type HermesRunStatus =
+  | "started"
+  | "queued"
+  | "running"
+  | "waiting_for_approval"
+  | "stopping"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type HermesApprovalChoice = "once" | "session" | "always" | "deny";
 
 export type HermesChatContent =
   | string
@@ -124,7 +150,7 @@ const CAPABILITY_ALIASES: Record<string, HermesCapability[]> = {
   stream: ["chat.streaming"],
   chat_completions_streaming: ["chat.streaming"],
   responses_streaming: ["chat.streaming"],
-  run_events_sse: ["chat.runs", "chat.streaming"],
+  run_events_sse: ["chat.streaming"],
   session_chat_streaming: ["sessions", "chat.streaming"],
   multimodal: ["chat.multimodal"],
   vision: ["chat.multimodal"],
@@ -132,16 +158,16 @@ const CAPABILITY_ALIASES: Record<string, HermesCapability[]> = {
   tool_calls: ["chat.tools"],
   tool_progress_events: ["chat.tools"],
   approvals: ["chat.approvals"],
-  approval_events: ["chat.approvals"],
-  run_approval: ["chat.approvals"],
-  run_approval_response: ["chat.approvals"],
+  approval_events: [],
+  run_approval: [],
+  run_approval_response: [],
   cancellation: ["chat.cancel"],
   cancel: ["chat.cancel"],
   run_stop: ["chat.cancel"],
   runs: ["chat.runs"],
-  run_submission: ["chat.runs"],
-  run_status: ["chat.runs"],
-  responses_api: ["chat.runs"],
+  run_submission: [],
+  run_status: [],
+  responses_api: [],
   run_steer: ["chat.steer"],
   models: ["models"],
   model_options: ["models"],
@@ -193,6 +219,25 @@ export function parseHermesCapabilityManifest(
     for (const known of CAPABILITY_ALIASES[normalized] ?? []) {
       capabilities[known] = true;
     }
+  }
+  const normalized = new Set(
+    advertised.map((raw) => raw.toLowerCase().replace(/[\s.-]+/g, "_")),
+  );
+  if (
+    normalized.has("runs") ||
+    (normalized.has("run_submission") &&
+      normalized.has("run_status") &&
+      normalized.has("run_events_sse"))
+  ) {
+    capabilities["chat.runs"] = true;
+  }
+  if (
+    normalized.has("approvals") ||
+    (normalized.has("approval_events") &&
+      (normalized.has("run_approval") ||
+        normalized.has("run_approval_response")))
+  ) {
+    capabilities["chat.approvals"] = true;
   }
   return {
     version,

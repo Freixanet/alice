@@ -33,6 +33,7 @@ import {
   readSse,
   unionHermesModels,
   type GatewayPlace,
+  type ChatEvent,
   type HermesMemoryProfile,
   type HermesMemoryResult,
   type HermesMemoryStore,
@@ -43,7 +44,15 @@ import {
 import {
   parseHermesCapabilityManifest,
   type HermesCapabilityManifest,
+  type HermesApprovalChoice,
 } from "./gateway-contracts";
+import {
+  controlHermesRun,
+  getHermesRunSnapshot,
+  startHermesRun,
+  streamStartedHermesRun,
+} from "./hermes-run-transport";
+import type { HermesRunSnapshot } from "./hermes-runs";
 
 const execFileAsync = promisify(execFile);
 
@@ -1581,6 +1590,7 @@ export async function streamHermesProxy(opts: {
   conversationId?: string;
   model?: string;
   provider?: string;
+  preferRuns?: boolean;
   endpoints?: StoredEndpoint[];
   signal: AbortSignal;
   place?: GatewayPlace;
@@ -1593,6 +1603,41 @@ export async function streamHermesProxy(opts: {
     ? "hermes-agent"
     : opts.model?.trim() || "hermes-agent";
   const requestedProvider = custom?.d ? "" : opts.provider?.trim() || "";
+
+  if (opts.preferRuns && !custom) {
+    const started = await startHermesRun({
+      fetch,
+      base,
+      token,
+      signal,
+      messages: opts.messages,
+      conversationId: opts.conversationId,
+      model: requestedModel,
+      provider: requestedProvider,
+    });
+    if (started.ok) {
+      return ndjsonResponse(async (send) => {
+        for await (const event of streamStartedHermesRun({
+          fetch,
+          base,
+          token,
+          signal,
+          run: started.run,
+          conversationId: opts.conversationId,
+        })) {
+          send(event);
+        }
+      });
+    }
+    if (!started.unsupported) {
+      return ndjsonResponse(
+        async (send) => {
+          send({ type: "error", message: started.message } satisfies ChatEvent);
+        },
+        started.status >= 400 ? started.status : 502,
+      );
+    }
+  }
 
   const post = (model: string, provider: string) =>
     fetch(`${base}/v1/chat/completions`, {
@@ -1655,6 +1700,51 @@ export async function streamHermesProxy(opts: {
       });
     }
   });
+}
+
+export async function getHermesRunServer(opts: {
+  url: string;
+  key: string;
+  place?: GatewayPlace;
+  runId: string;
+  conversationId?: string;
+  signal: AbortSignal;
+}): Promise<HermesRunSnapshot | null> {
+  return getHermesRunSnapshot({
+    fetch,
+    base: await resolveHermesBase(opts.url, opts.place),
+    token: assertGatewayKey(opts.key),
+    runId: opts.runId,
+    conversationId: opts.conversationId,
+    signal: opts.signal,
+  });
+}
+
+export async function controlHermesRunServer(opts: {
+  url: string;
+  key: string;
+  place?: GatewayPlace;
+  runId: string;
+  action: "stop" | "approval";
+  choice?: HermesApprovalChoice;
+  resolveAll?: boolean;
+  signal: AbortSignal;
+}): Promise<boolean> {
+  const common = {
+    fetch,
+    base: await resolveHermesBase(opts.url, opts.place),
+    token: assertGatewayKey(opts.key),
+    runId: opts.runId,
+    signal: opts.signal,
+  };
+  return opts.action === "approval" && opts.choice
+    ? controlHermesRun({
+        ...common,
+        action: "approval",
+        choice: opts.choice,
+        resolveAll: opts.resolveAll,
+      })
+    : controlHermesRun({ ...common, action: "stop" });
 }
 
 export function ndjsonResponse(

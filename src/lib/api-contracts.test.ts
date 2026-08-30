@@ -31,6 +31,30 @@ describe("Hermes API contracts", () => {
     ).toBe(true);
   });
 
+  it("accepts scoped run recovery and approval actions", () => {
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "run-status",
+        runId: "run-1",
+        conversationId: "chat-1",
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "run-approval",
+        runId: "run-1",
+        choice: "once",
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "run-approval",
+        runId: "run-1",
+        choice: "execute_anyway",
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects unknown actions and extra secret-bearing fields", () => {
     expect(
       hermesRequestSchema.safeParse({ action: "delete-everything" }).success,
@@ -60,6 +84,7 @@ describe("chat API contracts", () => {
             ],
           },
         ],
+        preferRuns: true,
       }).success,
     ).toBe(true);
   });

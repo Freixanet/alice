@@ -1,0 +1,130 @@
+import type { ChatEvent } from "./gateway-contracts";
+import type { HermesRunStatus } from "./gateway-contracts";
+import type { Message } from "./types";
+import { uid } from "./utils";
+
+export type ChatStreamAccumulator = {
+  content: string;
+  tools: NonNullable<Message["tools"]>;
+  runStatus?: HermesRunStatus;
+};
+
+export type ChatStreamReduction = {
+  patch: Partial<Message>;
+  stop: boolean;
+  activeRun?: { runId: string; terminal: boolean };
+};
+
+export function reduceChatStreamEvent(
+  accumulator: ChatStreamAccumulator,
+  event: ChatEvent,
+  createId: () => string = uid,
+): ChatStreamReduction {
+  if (event.type === "delta") {
+    const chunk = accumulator.content
+      ? event.text
+      : event.text.replace(/^\s+/, "");
+    if (!chunk) return { patch: {}, stop: false };
+    accumulator.content += chunk;
+    return {
+      patch: { content: accumulator.content, pending: true },
+      stop: false,
+    };
+  }
+
+  if (event.type === "tool") {
+    mergeToolEvent(accumulator.tools, event, createId);
+    return {
+      patch: { tools: [...accumulator.tools], pending: true },
+      stop: false,
+    };
+  }
+
+  if (event.type === "run") {
+    accumulator.runStatus = event.status;
+    if (event.output !== undefined) accumulator.content = event.output;
+    const terminal =
+      event.status === "completed" ||
+      event.status === "failed" ||
+      event.status === "cancelled";
+    return {
+      patch: {
+        runId: event.runId,
+        runStatus: event.status,
+        ...(event.output !== undefined ? { content: event.output } : {}),
+        pending: !terminal,
+        ...(event.status === "cancelled" ? { incomplete: true } : {}),
+        ...(event.status === "running" || terminal
+          ? { approval: undefined }
+          : {}),
+      },
+      stop: false,
+      activeRun: { runId: event.runId, terminal },
+    };
+  }
+
+  if (event.type === "approval") {
+    return {
+      patch: {
+        runId: event.runId,
+        runStatus: "waiting_for_approval",
+        pending: true,
+        approval: {
+          title: event.title,
+          detail: event.detail,
+          command: event.command,
+          choices: event.choices,
+        },
+      },
+      stop: false,
+      activeRun: { runId: event.runId, terminal: false },
+    };
+  }
+
+  return {
+    patch: {
+      pending: false,
+      error: event.message,
+      incomplete: undefined,
+      content: accumulator.content || event.message,
+    },
+    stop: true,
+  };
+}
+
+function mergeToolEvent(
+  tools: NonNullable<Message["tools"]>,
+  event: Extract<ChatEvent, { type: "tool" }>,
+  createId: () => string,
+) {
+  if (event.status === "start" && event.callId) {
+    const existing = tools.find((tool) => tool.callId === event.callId);
+    if (existing) {
+      if (event.detail) existing.detail = event.detail;
+      return;
+    }
+  }
+  if (event.status === "done") {
+    const running = [...tools]
+      .reverse()
+      .find(
+        (tool) =>
+          tool.status === "start" &&
+          (event.callId
+            ? tool.callId === event.callId
+            : tool.name === event.name),
+      );
+    if (running) {
+      running.status = "done";
+      if (event.detail) running.detail = event.detail;
+      return;
+    }
+  }
+  tools.push({
+    id: createId(),
+    callId: event.callId,
+    name: event.name,
+    status: event.status,
+    detail: event.detail,
+  });
+}

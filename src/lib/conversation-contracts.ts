@@ -16,6 +16,26 @@ const toolSchema = z.strictObject({
   detail: z.string().max(8_000).optional(),
 });
 
+const runStatusSchema = z.enum([
+  "started",
+  "queued",
+  "running",
+  "waiting_for_approval",
+  "stopping",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+const approvalSchema = z.strictObject({
+  title: z.string().min(1).max(256),
+  detail: z.string().max(8_000).optional(),
+  command: z.string().max(8_000).optional(),
+  choices: z.array(z.enum(["once", "session", "always", "deny"])).max(4),
+  resolving: z.boolean().optional(),
+  error: z.string().max(8_000).optional(),
+});
+
 export const conversationSchema = z.strictObject({
   id: z.string().min(1).max(160),
   title: z.string().max(512),
@@ -32,6 +52,9 @@ export const conversationSchema = z.strictObject({
         pending: z.boolean().optional(),
         error: z.string().max(8_000).optional(),
         incomplete: z.boolean().optional(),
+        runId: z.string().min(1).max(160).optional(),
+        runStatus: runStatusSchema.optional(),
+        approval: approvalSchema.optional(),
         attachments: z.array(attachmentSchema).max(8).optional(),
         tools: z.array(toolSchema).max(256).optional(),
       }),

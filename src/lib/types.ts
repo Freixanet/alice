@@ -125,6 +125,16 @@ export interface Message {
   pending?: boolean;
   error?: string;
   incomplete?: boolean;
+  runId?: string;
+  runStatus?: import("./gateway-contracts").HermesRunStatus;
+  approval?: {
+    title: string;
+    detail?: string;
+    command?: string;
+    choices: import("./gateway-contracts").HermesApprovalChoice[];
+    resolving?: boolean;
+    error?: string;
+  };
   attachments?: Attachment[];
   tools?: Array<{
     id: string;

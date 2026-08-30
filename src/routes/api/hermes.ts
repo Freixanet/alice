@@ -11,6 +11,8 @@ import {
   setHermesModelServer,
   upsertStoredEndpoint,
   fetchHermesMemory,
+  getHermesRunServer,
+  controlHermesRunServer,
 } from "@/lib/gateway.server";
 import type { GatewayPlace } from "@/lib/gateway";
 import {
@@ -163,6 +165,63 @@ export const Route = createFileRoute("/api/hermes")({
           } catch {
             return jsonWithCookie(
               { ok: false, error: "Couldn’t read Hermes memory." },
+              502,
+            );
+          }
+        }
+
+        if (
+          body.action === "run-status" ||
+          body.action === "run-stop" ||
+          body.action === "run-approval"
+        ) {
+          if (!saved?.u || !saved.k) {
+            return jsonWithCookie(
+              { ok: false, error: "Connect your Hermes first." },
+              400,
+            );
+          }
+          const signal = AbortSignal.any([
+            request.signal,
+            AbortSignal.timeout(12_000),
+          ]);
+          try {
+            if (body.action === "run-status") {
+              const run = await getHermesRunServer({
+                url: saved.u,
+                key: saved.k,
+                place: saved.p,
+                runId: body.runId,
+                conversationId: body.conversationId,
+                signal,
+              });
+              return jsonWithCookie(
+                run
+                  ? { ok: true, run }
+                  : { ok: false, error: "Run not found." },
+                run ? 200 : 404,
+              );
+            }
+            const ok = await controlHermesRunServer({
+              url: saved.u,
+              key: saved.k,
+              place: saved.p,
+              runId: body.runId,
+              action: body.action === "run-stop" ? "stop" : "approval",
+              ...(body.action === "run-approval"
+                ? { choice: body.choice, resolveAll: body.resolveAll }
+                : {}),
+              signal,
+            });
+            return jsonWithCookie(
+              ok
+                ? { ok: true }
+                : { ok: false, error: "Hermes rejected the request." },
+              ok ? 200 : 409,
+            );
+          } catch {
+            return jsonWithCookie(
+              { ok: false, error: "Couldn’t reach this Hermes run." },
               502,
             );
           }

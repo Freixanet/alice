@@ -85,6 +85,7 @@ export const Route = createFileRoute("/api/chat")({
               conversationId: body.conversationId,
               model: body.model,
               provider: body.provider,
+              preferRuns: body.preferRuns,
               endpoints: gate.ep,
               signal: request.signal,
               place: gate.p,

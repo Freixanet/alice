@@ -13,8 +13,12 @@ import {
   probeHermesDirect,
   saveDeviceConnection,
   setHermesModelDirect,
+  getHermesRunDirect,
+  controlHermesRunDirect,
 } from "./hermes-direct";
 import { useHermes } from "./store";
+import type { HermesApprovalChoice } from "./gateway-contracts";
+import { parseHermesRunSnapshot, type HermesRunSnapshot } from "./hermes-runs";
 
 type HermesActionResult = ProbeResult & { models?: HermesModelOption[] };
 
@@ -172,5 +176,92 @@ export async function setHermesModel(opts: {
     return { ok: Boolean(data.ok) };
   } catch {
     return { ok: false };
+  }
+}
+
+export async function getHermesRun(opts: {
+  runId: string;
+  conversationId?: string;
+  signal: AbortSignal;
+}): Promise<HermesRunSnapshot | null> {
+  const { gatewayPlace: place, gatewayUrl: url } = useHermes.getState();
+  if (place === "device") {
+    const key = getDeviceSessionKey();
+    if (!url || !key) return null;
+    return getHermesRunDirect({
+      url,
+      key,
+      runId: opts.runId,
+      conversationId: opts.conversationId,
+      signal: opts.signal,
+    });
+  }
+  try {
+    const response = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        action: "run-status",
+        runId: opts.runId,
+        conversationId: opts.conversationId,
+      }),
+      signal: opts.signal,
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { run?: Record<string, unknown> };
+    const run = body.run;
+    return run
+      ? parseHermesRunSnapshot({
+          run_id: run.runId,
+          status: run.status,
+          output: run.output,
+          error: run.error,
+        })
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function controlHermesRunClient(opts: {
+  runId: string;
+  action: "stop" | "approval";
+  choice?: HermesApprovalChoice;
+  resolveAll?: boolean;
+}): Promise<boolean> {
+  const { gatewayPlace: place, gatewayUrl: url } = useHermes.getState();
+  if (place === "device") {
+    const key = getDeviceSessionKey();
+    if (!url || !key) return false;
+    return controlHermesRunDirect({
+      url,
+      key,
+      runId: opts.runId,
+      action: opts.action,
+      choice: opts.choice,
+      resolveAll: opts.resolveAll,
+      signal: AbortSignal.timeout(12_000),
+    });
+  }
+  try {
+    const response = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(
+        opts.action === "stop"
+          ? { action: "run-stop", runId: opts.runId }
+          : {
+              action: "run-approval",
+              runId: opts.runId,
+              choice: opts.choice,
+              resolveAll: opts.resolveAll,
+            },
+      ),
+      cache: "no-store",
+    });
+    return response.ok;
+  } catch {
+    return false;
   }
 }
