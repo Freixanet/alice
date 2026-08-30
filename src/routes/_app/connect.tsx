@@ -16,6 +16,7 @@ import {
 } from "@/lib/gateway";
 import { probeGateway } from "@/lib/hermes-client";
 import { listHermesLive, mutateHermes } from "@/lib/hermes-live";
+import type { HermesMutation } from "@/lib/hermes-operations";
 import { authHeaders } from "@/lib/auth/client";
 import { advertisesHermesCapability } from "@/lib/gateway-contracts";
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
@@ -505,6 +506,10 @@ function HermesLiveSections({
   const [sessionBusy, setSessionBusy] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
+  const [newSessionTitle, setNewSessionTitle] = useState("");
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionTitle, setEditingSessionTitle] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -528,6 +533,18 @@ function HermesLiveSections({
   const sessions = data.sessions;
   const webhooks = data.webhooks;
   const canForkSessions = advertisesHermesCapability(manifest, "session_fork");
+  const canCreateSessions = advertisesHermesCapability(
+    manifest,
+    "session_create",
+  );
+  const canUpdateSessions = advertisesHermesCapability(
+    manifest,
+    "session_update",
+  );
+  const canDeleteSessions = advertisesHermesCapability(
+    manifest,
+    "session_delete",
+  );
   const canLockSessionModel = advertisesHermesCapability(
     manifest,
     "session_model_lock",
@@ -535,15 +552,8 @@ function HermesLiveSections({
 
   async function runSessionAction(
     key: string,
-    mutation:
-      | { action: "session-fork"; sessionId: string }
-      | {
-          action: "session-model-lock";
-          sessionId: string;
-          model: string;
-          provider?: string;
-        },
-  ) {
+    mutation: HermesMutation,
+  ): Promise<boolean> {
     setSessionBusy(key);
     setSessionError(null);
     setSessionNotice(null);
@@ -555,12 +565,13 @@ function HermesLiveSections({
           : t("connect.sessionError"),
       );
       setSessionBusy(null);
-      return;
+      return false;
     }
     const refreshed = await listHermesLive();
     if (refreshed.ok) setData(refreshed);
     setSessionNotice(t("connect.sessionSaved"));
     setSessionBusy(null);
+    return true;
   }
 
   return (
@@ -642,6 +653,42 @@ function HermesLiveSections({
         <p className="text-sm text-muted-foreground">
           {t("connect.sessionsHint")}
         </p>
+        {canCreateSessions ? (
+          <form
+            className="flex flex-col gap-2 sm:flex-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const title = newSessionTitle.trim();
+              if (!title) return;
+              void runSessionAction("create", {
+                action: "session-create",
+                sessionId: `alice_${crypto.randomUUID()}`,
+                title,
+                ...(model ? { model } : {}),
+                ...(provider ? { provider } : {}),
+              }).then((ok) => {
+                if (ok) setNewSessionTitle("");
+              });
+            }}
+          >
+            <Input
+              value={newSessionTitle}
+              onChange={(event) => setNewSessionTitle(event.target.value)}
+              placeholder={t("connect.sessionTitle")}
+              aria-label={t("connect.sessionTitle")}
+              maxLength={512}
+              disabled={sessionBusy !== null}
+              className="min-h-11 md:min-h-10"
+            />
+            <Button
+              type="submit"
+              className="min-h-11 shrink-0 md:min-h-10"
+              disabled={sessionBusy !== null || !newSessionTitle.trim()}
+            >
+              {t("connect.createSession")}
+            </Button>
+          </form>
+        ) : null}
         {sessionError ? (
           <p className="text-sm text-destructive" role="alert">
             {sessionError}
@@ -663,7 +710,58 @@ function HermesLiveSections({
                 key={session.id}
                 className="rounded-xl bg-card px-4 py-4 shadow-border"
               >
-                <h3 className="font-medium">{session.title || session.id}</h3>
+                {editingSessionId === session.id ? (
+                  <form
+                    className="flex flex-col gap-2 sm:flex-row"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const title = editingSessionTitle.trim();
+                      if (!title) return;
+                      void runSessionAction(`rename:${session.id}`, {
+                        action: "session-update",
+                        sessionId: session.id,
+                        title,
+                      }).then((ok) => {
+                        if (ok) setEditingSessionId(null);
+                      });
+                    }}
+                  >
+                    <Input
+                      value={editingSessionTitle}
+                      onChange={(event) =>
+                        setEditingSessionTitle(event.target.value)
+                      }
+                      aria-label={t("connect.sessionTitle")}
+                      maxLength={512}
+                      autoFocus
+                      disabled={sessionBusy !== null}
+                      className="min-h-11 md:min-h-10"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        type="submit"
+                        size="sm"
+                        className="min-h-11 md:min-h-8"
+                        disabled={
+                          sessionBusy !== null || !editingSessionTitle.trim()
+                        }
+                      >
+                        {t("connect.saveSession")}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-11 md:min-h-8"
+                        disabled={sessionBusy !== null}
+                        onClick={() => setEditingSessionId(null)}
+                      >
+                        {t("connect.cancelSession")}
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <h3 className="font-medium">{session.title || session.id}</h3>
+                )}
                 <p className="mt-1 text-2xs text-muted-foreground">
                   {session.source ? prettyPlatform(session.source) : "Hermes"}
                   {typeof session.messages === "number"
@@ -673,7 +771,10 @@ function HermesLiveSections({
                     ? ` · ${formatStamp(locale, session.updatedAt)}`
                     : ""}
                 </p>
-                {canForkSessions || canLockSessionModel ? (
+                {canForkSessions ||
+                canLockSessionModel ||
+                canUpdateSessions ||
+                canDeleteSessions ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {canForkSessions ? (
                       <Button
@@ -685,6 +786,7 @@ function HermesLiveSections({
                           void runSessionAction(`fork:${session.id}`, {
                             action: "session-fork",
                             sessionId: session.id,
+                            forkId: `alice_${crypto.randomUUID()}`,
                           })
                         }
                       >
@@ -707,6 +809,70 @@ function HermesLiveSections({
                         }
                       >
                         {t("connect.lockModel")}
+                      </Button>
+                    ) : null}
+                    {canUpdateSessions && editingSessionId !== session.id ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="min-h-11 md:min-h-8"
+                          disabled={sessionBusy !== null}
+                          onClick={() => {
+                            setEditingSessionId(session.id);
+                            setEditingSessionTitle(session.title);
+                            setConfirmDeleteId(null);
+                          }}
+                        >
+                          {t("connect.renameSession")}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="min-h-11 md:min-h-8"
+                          disabled={sessionBusy !== null}
+                          onClick={() =>
+                            void runSessionAction(`pin:${session.id}`, {
+                              action: "session-update",
+                              sessionId: session.id,
+                              pinned: !session.pinned,
+                            })
+                          }
+                        >
+                          {session.pinned
+                            ? t("connect.unpinSession")
+                            : t("connect.pinSession")}
+                        </Button>
+                      </>
+                    ) : null}
+                    {canDeleteSessions ? (
+                      <Button
+                        variant={
+                          confirmDeleteId === session.id
+                            ? "destructive"
+                            : "ghost"
+                        }
+                        size="sm"
+                        className="min-h-11 md:min-h-8"
+                        disabled={sessionBusy !== null}
+                        onClick={() => {
+                          if (confirmDeleteId !== session.id) {
+                            setConfirmDeleteId(session.id);
+                            setEditingSessionId(null);
+                            return;
+                          }
+                          void runSessionAction(`delete:${session.id}`, {
+                            action: "session-delete",
+                            sessionId: session.id,
+                            confirm: true,
+                          }).then((ok) => {
+                            if (ok) setConfirmDeleteId(null);
+                          });
+                        }}
+                      >
+                        {confirmDeleteId === session.id
+                          ? t("connect.confirmDeleteSession")
+                          : t("connect.deleteSession")}
                       </Button>
                     ) : null}
                   </div>

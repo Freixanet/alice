@@ -100,14 +100,35 @@ describe("official Hermes management operations", () => {
   it("maps negotiated session controls to their scoped official routes", () => {
     expect(
       hermesOperationFor({
+        action: "session-create",
+        sessionId: "alice-session",
+        title: "Research",
+        model: "gpt-5.6-luna",
+        provider: "openai",
+      }),
+    ).toEqual({
+      path: "/api/sessions",
+      method: "POST",
+      body: {
+        id: "alice-session",
+        title: "Research",
+        source: "alice",
+        model: "gpt-5.6-luna",
+        provider: "openai",
+        require_model_lock: true,
+      },
+    });
+    expect(
+      hermesOperationFor({
         action: "session-fork",
         sessionId: "mobile/chat",
+        forkId: "alice-fork",
         title: "Alternative",
       }),
     ).toEqual({
       path: "/api/sessions/mobile%2Fchat/fork",
       method: "POST",
-      body: { title: "Alternative" },
+      body: { id: "alice-fork", title: "Alternative" },
     });
     expect(
       hermesOperationFor({
@@ -130,6 +151,13 @@ describe("official Hermes management operations", () => {
         action: "session-model-lock",
         sessionId: "one",
         model: "",
+      }).success,
+    ).toBe(false);
+    expect(
+      hermesMutationSchema.safeParse({
+        action: "session-create",
+        sessionId: "alice-session",
+        title: "   ",
       }).success,
     ).toBe(false);
   });

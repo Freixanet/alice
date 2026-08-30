@@ -117,10 +117,19 @@ describe("Hermes cron contract parsing", () => {
             preview: "Hello",
             updated_at: 1_700_000_000,
             messages: 2,
+            pinned: true,
+            unread: 1,
           },
         ],
       })[0],
-    ).toMatchObject({ id: "session-1", title: "Hello", messages: 2 });
+    ).toMatchObject({
+      id: "session-1",
+      title: "Hello",
+      messages: 2,
+      pinned: true,
+      archived: false,
+      unread: true,
+    });
     expect(
       pairingList([
         { platform: "telegram", request_id: "request", user_name: "Alice" },

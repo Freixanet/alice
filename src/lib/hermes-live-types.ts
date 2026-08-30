@@ -73,6 +73,9 @@ export type HermesSessionRow = {
   source?: string;
   updatedAt?: string;
   messages?: number;
+  pinned: boolean;
+  archived: boolean;
+  unread: boolean;
 };
 
 export type HermesPairingRow = {

@@ -280,6 +280,9 @@ export function sessionsFromApi(raw: unknown): HermesSessionRow[] {
         source: str(rec.source) || undefined,
         updatedAt: updated || undefined,
         messages,
+        pinned: rec.pinned === true || rec.pinned === 1,
+        archived: rec.archived === true || rec.archived === 1,
+        unread: rec.unread === true || rec.unread === 1,
       };
     })
     .filter((s) => s.id);
