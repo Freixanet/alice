@@ -53,6 +53,7 @@ const en = {
   "chat.placeholder": "Talk to Alice...",
   "chat.send": "Send",
   "chat.stop": "Stop",
+  "chat.steer": "Guide this response",
   "chat.retry": "Retry",
   "chat.copy": "Copy",
   "chat.copied": "Copied",
@@ -232,6 +233,10 @@ const en = {
   "connect.noSessions":
     "No recent sessions, or the dashboard didn’t send them.",
   "connect.messages": "{count} messages",
+  "connect.forkSession": "Fork",
+  "connect.lockModel": "Lock current model",
+  "connect.sessionSaved": "Session updated in Hermes.",
+  "connect.sessionError": "Hermes couldn’t update this session.",
   "connect.webhooks": "Webhooks",
   "connect.active": "On",
   "connect.off": "Off",
@@ -454,6 +459,7 @@ const en = {
   "error.connect": "Couldn’t connect.",
   "error.recoverRun": "Alice couldn’t recover this Hermes run.",
   "error.approval": "Hermes couldn’t apply that choice. Try again.",
+  "error.steer": "Hermes couldn’t apply that guidance. Try again.",
   "error.badKey": "The key is not correct.",
   "error.badUrl": "Check the address.",
   "error.cors": "Hermes is online, but it hasn’t allowed Alice yet (CORS).",
@@ -599,6 +605,7 @@ const es: Record<MsgKey, string> = {
   "chat.placeholder": "Habla con Alice...",
   "chat.send": "Enviar",
   "chat.stop": "Parar",
+  "chat.steer": "Orientar esta respuesta",
   "chat.retry": "Reintentar",
   "chat.copy": "Copiar",
   "chat.copied": "Copiado",
@@ -778,6 +785,10 @@ const es: Record<MsgKey, string> = {
   "connect.noSessions":
     "No hay sesiones recientes, o el dashboard no las ha enviado.",
   "connect.messages": "{count} mensajes",
+  "connect.forkSession": "Bifurcar",
+  "connect.lockModel": "Fijar modelo actual",
+  "connect.sessionSaved": "Sesión actualizada en Hermes.",
+  "connect.sessionError": "Hermes no ha podido actualizar esta sesión.",
   "connect.webhooks": "Webhooks",
   "connect.active": "Activo",
   "connect.off": "Apagado",
@@ -1001,6 +1012,8 @@ const es: Record<MsgKey, string> = {
   "error.recoverRun": "Alice no ha podido recuperar esta ejecución de Hermes.",
   "error.approval":
     "Hermes no ha podido aplicar esa opción. Inténtalo de nuevo.",
+  "error.steer":
+    "Hermes no ha podido aplicar esa orientación. Inténtalo de nuevo.",
   "error.badKey": "La clave no es correcta.",
   "error.badUrl": "Revisa la dirección.",
   "error.cors":

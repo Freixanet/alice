@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
   assertGatewayKey,
+  advertisesHermesCapability,
   isPrivateHostname,
   normalizeGatewayUrl,
   normalizeLlmBaseUrl,
@@ -163,6 +164,21 @@ describe("Hermes capability negotiation", () => {
         },
       }).capabilities,
     ).toEqual({ "chat.streaming": true });
+  });
+
+  it("requires an exact normalized advertisement for optional controls", () => {
+    const manifest = parseHermesCapabilityManifest({
+      endpoints: {
+        "session.fork": {
+          method: "POST",
+          path: "/api/sessions/{session_id}/fork",
+        },
+      },
+    });
+    expect(advertisesHermesCapability(manifest, "session_fork")).toBe(true);
+    expect(advertisesHermesCapability(manifest, "session_model_lock")).toBe(
+      false,
+    );
   });
 
   it("is total for arbitrary capability documents", () => {

@@ -1725,9 +1725,10 @@ export async function controlHermesRunServer(opts: {
   key: string;
   place?: GatewayPlace;
   runId: string;
-  action: "stop" | "approval";
+  action: "stop" | "approval" | "steer";
   choice?: HermesApprovalChoice;
   resolveAll?: boolean;
+  input?: string;
   signal: AbortSignal;
 }): Promise<boolean> {
   const common = {
@@ -1737,14 +1738,24 @@ export async function controlHermesRunServer(opts: {
     runId: opts.runId,
     signal: opts.signal,
   };
-  return opts.action === "approval" && opts.choice
-    ? controlHermesRun({
-        ...common,
-        action: "approval",
-        choice: opts.choice,
-        resolveAll: opts.resolveAll,
-      })
-    : controlHermesRun({ ...common, action: "stop" });
+  if (opts.action === "approval" && opts.choice) {
+    return controlHermesRun({
+      ...common,
+      action: "approval",
+      choice: opts.choice,
+      resolveAll: opts.resolveAll,
+    });
+  }
+  if (opts.action === "steer" && opts.input?.trim()) {
+    return controlHermesRun({
+      ...common,
+      action: "steer",
+      input: opts.input.trim().slice(0, 8_000),
+    });
+  }
+  return opts.action === "stop"
+    ? controlHermesRun({ ...common, action: "stop" })
+    : false;
 }
 
 export function ndjsonResponse(

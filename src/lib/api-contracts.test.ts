@@ -53,6 +53,20 @@ describe("Hermes API contracts", () => {
         choice: "execute_anyway",
       }).success,
     ).toBe(false);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "run-steer",
+        runId: "run-1",
+        input: "Focus on the failing test",
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "run-steer",
+        runId: "run-1",
+        input: "",
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects unknown actions and extra secret-bearing fields", () => {

@@ -42,6 +42,18 @@ export type HermesCapabilityManifest = {
   advertised: string[];
 };
 
+export function advertisesHermesCapability(
+  manifest: HermesCapabilityManifest | undefined,
+  capability: string,
+): boolean {
+  const expected = normalizeCapabilityName(capability);
+  return Boolean(
+    manifest?.advertised.some(
+      (advertised) => normalizeCapabilityName(advertised) === expected,
+    ),
+  );
+}
+
 export type HermesModelOption = {
   id: string;
   label: string;
@@ -215,14 +227,12 @@ export function parseHermesCapabilityManifest(
   const advertised = collectAdvertised(record).slice(0, 256);
   const capabilities: Partial<Record<HermesCapability, boolean>> = {};
   for (const raw of advertised) {
-    const normalized = raw.toLowerCase().replace(/[\s.-]+/g, "_");
+    const normalized = normalizeCapabilityName(raw);
     for (const known of CAPABILITY_ALIASES[normalized] ?? []) {
       capabilities[known] = true;
     }
   }
-  const normalized = new Set(
-    advertised.map((raw) => raw.toLowerCase().replace(/[\s.-]+/g, "_")),
-  );
+  const normalized = new Set(advertised.map(normalizeCapabilityName));
   if (
     normalized.has("runs") ||
     (normalized.has("run_submission") &&
@@ -245,6 +255,10 @@ export function parseHermesCapabilityManifest(
     capabilities,
     advertised,
   };
+}
+
+function normalizeCapabilityName(value: string): string {
+  return value.toLowerCase().replace(/[\s.-]+/g, "_");
 }
 
 function compatibilityForVersion(version: string | null): HermesCompatibility {

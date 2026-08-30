@@ -226,9 +226,10 @@ export async function getHermesRun(opts: {
 
 export async function controlHermesRunClient(opts: {
   runId: string;
-  action: "stop" | "approval";
+  action: "stop" | "approval" | "steer";
   choice?: HermesApprovalChoice;
   resolveAll?: boolean;
+  input?: string;
 }): Promise<boolean> {
   const { gatewayPlace: place, gatewayUrl: url } = useHermes.getState();
   if (place === "device") {
@@ -241,6 +242,7 @@ export async function controlHermesRunClient(opts: {
       action: opts.action,
       choice: opts.choice,
       resolveAll: opts.resolveAll,
+      input: opts.input,
       signal: AbortSignal.timeout(12_000),
     });
   }
@@ -251,12 +253,14 @@ export async function controlHermesRunClient(opts: {
       body: JSON.stringify(
         opts.action === "stop"
           ? { action: "run-stop", runId: opts.runId }
-          : {
-              action: "run-approval",
-              runId: opts.runId,
-              choice: opts.choice,
-              resolveAll: opts.resolveAll,
-            },
+          : opts.action === "steer"
+            ? { action: "run-steer", runId: opts.runId, input: opts.input }
+            : {
+                action: "run-approval",
+                runId: opts.runId,
+                choice: opts.choice,
+                resolveAll: opts.resolveAll,
+              },
       ),
       cache: "no-store",
     });

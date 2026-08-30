@@ -176,9 +176,10 @@ export async function controlHermesRun(
           choice: HermesApprovalChoice;
           resolveAll?: boolean;
         }
+      | { action: "steer"; runId: string; input: string }
     ),
 ): Promise<boolean> {
-  const suffix = opts.action === "stop" ? "stop" : "approval";
+  const suffix = opts.action;
   const response = await opts.fetch(
     `${opts.base}/v1/runs/${encodeURIComponent(opts.runId)}/${suffix}`,
     {
@@ -186,13 +187,13 @@ export async function controlHermesRun(
       headers: runHeaders(opts.token, undefined, {
         "Content-Type": "application/json",
       }),
-      body:
+      body: JSON.stringify(
         opts.action === "approval"
-          ? JSON.stringify({
-              choice: opts.choice,
-              resolve_all: opts.resolveAll,
-            })
-          : "{}",
+          ? { choice: opts.choice, resolve_all: opts.resolveAll }
+          : opts.action === "steer"
+            ? { input: opts.input }
+            : {},
+      ),
       signal: opts.signal,
       cache: "no-store",
       redirect: "manual",

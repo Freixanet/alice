@@ -130,6 +130,17 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("curator-pause"), paused: z.boolean() }),
   z.strictObject({ action: z.literal("curator-run") }),
   z.strictObject({
+    action: z.literal("session-fork"),
+    sessionId: id,
+    title: optionalText(512),
+  }),
+  z.strictObject({
+    action: z.literal("session-model-lock"),
+    sessionId: id,
+    model: text(256),
+    provider: optionalText(128),
+  }),
+  z.strictObject({
     action: z.literal("session-delete"),
     sessionId: id,
     confirm: z.literal(true),
@@ -276,6 +287,22 @@ export function hermesOperationFor(
       };
     case "curator-run":
       return { path: "/api/curator/run", method: "POST" };
+    case "session-fork":
+      return {
+        path: `/api/sessions/${encodeURIComponent(input.sessionId)}/fork`,
+        method: "POST",
+        body: { title: input.title },
+      };
+    case "session-model-lock":
+      return {
+        path: `/api/sessions/${encodeURIComponent(input.sessionId)}/model`,
+        method: "POST",
+        body: {
+          model: input.model,
+          provider: input.provider,
+          require_model_lock: true,
+        },
+      };
     case "session-delete":
       return {
         path: `/api/sessions/${encodeURIComponent(input.sessionId)}`,

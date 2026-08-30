@@ -22,6 +22,7 @@ export type {
   ProbeResult,
 } from "./gateway-contracts";
 export {
+  advertisesHermesCapability,
   HERMES_CURRENT_STABLE,
   HERMES_PREVIOUS_STABLE,
   parseHermesCapabilityManifest,

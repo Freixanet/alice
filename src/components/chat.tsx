@@ -79,6 +79,9 @@ export function ChatView() {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelQuery, setModelQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [steering, setSteering] = useState(false);
+  const [steerError, setSteerError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const activeRunRef = useRef<ActiveHermesRun | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -96,6 +99,8 @@ export function ChatView() {
     gatewayMeta?.manifest?.capabilities["chat.runs"] === true &&
     gatewayMeta.manifest.capabilities["chat.cancel"] === true &&
     gatewayMeta.manifest.capabilities["chat.approvals"] === true;
+  const supportsSteer =
+    supportsRuns && gatewayMeta?.manifest?.capabilities["chat.steer"] === true;
   useHermesRunRecovery({
     activeId,
     enabled: live && supportsRuns,
@@ -261,6 +266,10 @@ export function ChatView() {
     history: Message[],
   ) {
     setSending(true);
+    setAttachOpen(false);
+    setModelsOpen(false);
+    setActiveRunId(null);
+    setSteerError(null);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let latestAttachmentMessage = -1;
@@ -298,6 +307,9 @@ export function ChatView() {
             assistantId,
             runId: result.activeRun.runId,
           };
+          setActiveRunId(
+            result.activeRun.terminal ? null : result.activeRun.runId,
+          );
           if (result.activeRun.terminal) activeRunRef.current = null;
         }
         return result.stop ? ("stop" as const) : ("continue" as const);
@@ -390,11 +402,14 @@ export function ChatView() {
       }
     } finally {
       setSending(false);
+      setActiveRunId(null);
+      setSteering(false);
       abortRef.current = null;
     }
   }
 
   function stopRun() {
+    setSteerError(null);
     const run = activeRunRef.current;
     if (run) {
       patchMessage(run.conversationId, run.assistantId, {
@@ -403,6 +418,21 @@ export function ChatView() {
       void controlHermesRunClient({ action: "stop", runId: run.runId });
     }
     abortRef.current?.abort();
+  }
+
+  async function steerRun() {
+    const input = draft.trim();
+    if (!supportsSteer || !activeRunId || !input || steering) return;
+    setSteering(true);
+    setSteerError(null);
+    const ok = await controlHermesRunClient({
+      action: "steer",
+      runId: activeRunId,
+      input,
+    });
+    if (ok) setDraft("");
+    else setSteerError(t("error.steer"));
+    setSteering(false);
   }
 
   async function resolveRunApproval(
@@ -667,13 +697,22 @@ export function ChatView() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  void send();
+                  if (sending) {
+                    if (supportsSteer) void steerRun();
+                  } else {
+                    void send();
+                  }
                 }
               }}
               placeholder={t("chat.placeholder")}
               rows={2}
               className="min-h-[2.5rem] w-full bg-transparent py-1 pl-2 pr-0 text-base placeholder:text-muted-foreground/70 md:text-base"
             />
+            {steerError ? (
+              <p className="px-2 pb-1 text-sm text-destructive" role="alert">
+                {steerError}
+              </p>
+            ) : null}
             <div className="mt-1 flex items-center gap-1.5">
               <input
                 ref={cameraRef}
@@ -711,6 +750,7 @@ export function ChatView() {
               <DropdownMenu
                 open={attachOpen}
                 onOpenChange={(open) => {
+                  if (sending) return;
                   setAttachOpen(open);
                   if (open) setModelsOpen(false);
                 }}
@@ -719,7 +759,8 @@ export function ChatView() {
                   <button
                     type="button"
                     aria-label={t("chat.add")}
-                    className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                    disabled={sending}
+                    className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
                   >
                     <Plus className="size-4" />
                   </button>
@@ -754,6 +795,7 @@ export function ChatView() {
               <DropdownMenu
                 open={modelsOpen}
                 onOpenChange={(open) => {
+                  if (sending) return;
                   setModelsOpen(open);
                   if (open) {
                     setAttachOpen(false);
@@ -764,7 +806,8 @@ export function ChatView() {
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="flex h-8 items-center gap-1 rounded-full px-2 text-sm text-foreground hover:bg-accent"
+                    disabled={sending}
+                    className="flex h-8 items-center gap-1 rounded-full px-2 text-sm text-foreground hover:bg-accent disabled:opacity-40"
                   >
                     {currentLabel}
                     <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -845,28 +888,50 @@ export function ChatView() {
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <button
-                type="button"
-                aria-label={sending ? t("chat.stop") : t("chat.send")}
-                disabled={!sending && !draft.trim() && files.length === 0}
-                onClick={() => (sending ? stopRun() : void send())}
-                className="ml-auto grid size-9 place-items-center rounded-full bg-muted text-foreground disabled:opacity-40"
-              >
-                <svg
-                  viewBox="0 0 16 16"
-                  className="size-3.5"
-                  fill="none"
-                  aria-hidden
+              {sending ? (
+                <button
+                  type="button"
+                  aria-label={t("chat.stop")}
+                  onClick={stopRun}
+                  className="ml-auto grid size-11 place-items-center rounded-full bg-muted text-foreground md:size-9"
                 >
-                  <path
-                    d="M8 12.5V3.5M8 3.5 3.5 8M8 3.5 12.5 8"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                  <span
+                    className="size-2.5 rounded-[2px] bg-current"
+                    aria-hidden
                   />
-                </svg>
-              </button>
+                </button>
+              ) : null}
+              {!sending || supportsSteer ? (
+                <button
+                  type="button"
+                  aria-label={sending ? t("chat.steer") : t("chat.send")}
+                  disabled={
+                    sending
+                      ? !activeRunId || !draft.trim() || steering
+                      : !draft.trim() && files.length === 0
+                  }
+                  onClick={() => (sending ? void steerRun() : void send())}
+                  className={cn(
+                    "grid size-11 place-items-center rounded-full bg-muted text-foreground disabled:opacity-40 md:size-9",
+                    !sending && "ml-auto",
+                  )}
+                >
+                  <svg
+                    viewBox="0 0 16 16"
+                    className="size-3.5"
+                    fill="none"
+                    aria-hidden
+                  >
+                    <path
+                      d="M8 12.5V3.5M8 3.5 3.5 8M8 3.5 12.5 8"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

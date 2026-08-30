@@ -173,7 +173,8 @@ export const Route = createFileRoute("/api/hermes")({
         if (
           body.action === "run-status" ||
           body.action === "run-stop" ||
-          body.action === "run-approval"
+          body.action === "run-approval" ||
+          body.action === "run-steer"
         ) {
           if (!saved?.u || !saved.k) {
             return jsonWithCookie(
@@ -202,15 +203,22 @@ export const Route = createFileRoute("/api/hermes")({
                 run ? 200 : 404,
               );
             }
+            const control =
+              body.action === "run-stop"
+                ? ({ action: "stop" } as const)
+                : body.action === "run-steer"
+                  ? ({ action: "steer", input: body.input } as const)
+                  : ({
+                      action: "approval",
+                      choice: body.choice,
+                      resolveAll: body.resolveAll,
+                    } as const);
             const ok = await controlHermesRunServer({
               url: saved.u,
               key: saved.k,
               place: saved.p,
               runId: body.runId,
-              action: body.action === "run-stop" ? "stop" : "approval",
-              ...(body.action === "run-approval"
-                ? { choice: body.choice, resolveAll: body.resolveAll }
-                : {}),
+              ...control,
               signal,
             });
             return jsonWithCookie(

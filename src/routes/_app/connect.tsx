@@ -15,7 +15,9 @@ import {
   type ProbeCode,
 } from "@/lib/gateway";
 import { probeGateway } from "@/lib/hermes-client";
+import { listHermesLive, mutateHermes } from "@/lib/hermes-live";
 import { authHeaders } from "@/lib/auth/client";
+import { advertisesHermesCapability } from "@/lib/gateway-contracts";
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
 import {
   dateLocale,
@@ -397,6 +399,7 @@ function ConnectPage() {
           loading={liveState.loading}
           error={liveState.error}
           data={liveState.data}
+          setData={liveState.setData}
         />
 
         {live && place !== "device" ? (
@@ -487,13 +490,21 @@ function HermesLiveSections({
   loading,
   error,
   data,
+  setData,
 }: {
   loading: boolean;
   error: string | null;
   data: ReturnType<typeof useHermesLive>["data"];
+  setData: ReturnType<typeof useHermesLive>["setData"];
 }) {
   const t = useT();
   const locale = useLocale();
+  const model = useHermes((state) => state.model);
+  const provider = useHermes((state) => state.modelProvider);
+  const manifest = useHermes((state) => state.gatewayMeta?.manifest);
+  const [sessionBusy, setSessionBusy] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -516,6 +527,41 @@ function HermesLiveSections({
   const approved = data.pairingApproved;
   const sessions = data.sessions;
   const webhooks = data.webhooks;
+  const canForkSessions = advertisesHermesCapability(manifest, "session_fork");
+  const canLockSessionModel = advertisesHermesCapability(
+    manifest,
+    "session_model_lock",
+  );
+
+  async function runSessionAction(
+    key: string,
+    mutation:
+      | { action: "session-fork"; sessionId: string }
+      | {
+          action: "session-model-lock";
+          sessionId: string;
+          model: string;
+          provider?: string;
+        },
+  ) {
+    setSessionBusy(key);
+    setSessionError(null);
+    setSessionNotice(null);
+    const result = await mutateHermes(mutation);
+    if (!result.ok) {
+      setSessionError(
+        result.error
+          ? localizeError(locale, result.error)
+          : t("connect.sessionError"),
+      );
+      setSessionBusy(null);
+      return;
+    }
+    const refreshed = await listHermesLive();
+    if (refreshed.ok) setData(refreshed);
+    setSessionNotice(t("connect.sessionSaved"));
+    setSessionBusy(null);
+  }
 
   return (
     <>
@@ -596,6 +642,16 @@ function HermesLiveSections({
         <p className="text-sm text-muted-foreground">
           {t("connect.sessionsHint")}
         </p>
+        {sessionError ? (
+          <p className="text-sm text-destructive" role="alert">
+            {sessionError}
+          </p>
+        ) : null}
+        {sessionNotice ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            {sessionNotice}
+          </p>
+        ) : null}
         {sessions.length === 0 ? (
           <div className="rounded-xl bg-card px-4 py-8 text-center text-sm text-muted-foreground shadow-border">
             {t("connect.noSessions")}
@@ -617,6 +673,44 @@ function HermesLiveSections({
                     ? ` · ${formatStamp(locale, session.updatedAt)}`
                     : ""}
                 </p>
+                {canForkSessions || canLockSessionModel ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {canForkSessions ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-h-11 md:min-h-8"
+                        disabled={sessionBusy !== null}
+                        onClick={() =>
+                          void runSessionAction(`fork:${session.id}`, {
+                            action: "session-fork",
+                            sessionId: session.id,
+                          })
+                        }
+                      >
+                        {t("connect.forkSession")}
+                      </Button>
+                    ) : null}
+                    {canLockSessionModel && model ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-11 md:min-h-8"
+                        disabled={sessionBusy !== null}
+                        onClick={() =>
+                          void runSessionAction(`model:${session.id}`, {
+                            action: "session-model-lock",
+                            sessionId: session.id,
+                            model,
+                            ...(provider ? { provider } : {}),
+                          })
+                        }
+                      >
+                        {t("connect.lockModel")}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

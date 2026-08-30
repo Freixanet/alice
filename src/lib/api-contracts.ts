@@ -44,6 +44,11 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
     resolveAll: z.boolean().optional(),
   }),
   z.strictObject({
+    action: z.literal("run-steer"),
+    runId: bounded(160),
+    input: bounded(8_000),
+  }),
+  z.strictObject({
     action: z.literal("custom-endpoint"),
     endpointName: optionalBounded(64),
     endpointUrl: bounded(512),

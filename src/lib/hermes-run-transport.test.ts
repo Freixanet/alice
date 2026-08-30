@@ -120,4 +120,28 @@ describe("Hermes run transport", () => {
       }),
     );
   });
+
+  it("sends bounded steering input to the scoped run endpoint", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    await expect(
+      controlHermesRun({
+        fetch: fetcher,
+        base,
+        token,
+        signal: new AbortController().signal,
+        action: "steer",
+        runId: "run-3",
+        input: "Check the tests first",
+      }),
+    ).resolves.toBe(true);
+    expect(fetcher).toHaveBeenCalledWith(
+      `${base}/v1/runs/run-3/steer`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ input: "Check the tests first" }),
+      }),
+    );
+  });
 });

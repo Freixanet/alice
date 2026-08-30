@@ -97,6 +97,43 @@ describe("official Hermes management operations", () => {
     }
   });
 
+  it("maps negotiated session controls to their scoped official routes", () => {
+    expect(
+      hermesOperationFor({
+        action: "session-fork",
+        sessionId: "mobile/chat",
+        title: "Alternative",
+      }),
+    ).toEqual({
+      path: "/api/sessions/mobile%2Fchat/fork",
+      method: "POST",
+      body: { title: "Alternative" },
+    });
+    expect(
+      hermesOperationFor({
+        action: "session-model-lock",
+        sessionId: "one",
+        model: "gpt-5.6-luna",
+        provider: "openai",
+      }),
+    ).toEqual({
+      path: "/api/sessions/one/model",
+      method: "POST",
+      body: {
+        model: "gpt-5.6-luna",
+        provider: "openai",
+        require_model_lock: true,
+      },
+    });
+    expect(
+      hermesMutationSchema.safeParse({
+        action: "session-model-lock",
+        sessionId: "one",
+        model: "",
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects script-only jobs without an executable script", () => {
     expect(
       hermesMutationSchema.safeParse({
