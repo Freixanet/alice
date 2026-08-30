@@ -43,5 +43,22 @@ export const syncRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("quota") }),
 ]);
 
+export const syncPullResponseSchema = z.strictObject({
+  ok: z.literal(true),
+  records: z.array(
+    encryptedSyncRecordSchema.extend({
+      revision: z.number().int().nonnegative().safe(),
+    }),
+  ),
+  cursor: z.string().regex(/^\d+$/),
+  hasMore: z.boolean(),
+});
+
+export const syncPushResponseSchema = z.strictObject({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  accepted: z.number().int().nonnegative(),
+});
+
 export type EncryptedSyncRecord = z.infer<typeof encryptedSyncRecordSchema>;
 export type SyncRequest = z.infer<typeof syncRequestSchema>;

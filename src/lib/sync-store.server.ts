@@ -33,6 +33,11 @@ export async function pushEncryptedSyncRecords(
 ) {
   return sql.transaction(async (tx) => {
     await tx.query("select pg_advisory_xact_lock(hashtext($1))", [userId]);
+    await tx.query(
+      `delete from alice_sync_request
+       where user_id = $1 and created_at < now() - interval '30 days'`,
+      [userId],
+    );
     const inserted = await tx.query<{ request_id: string }>(
       `insert into alice_sync_request (user_id, request_id)
        values ($1, $2) on conflict do nothing returning request_id`,

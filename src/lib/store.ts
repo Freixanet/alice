@@ -80,6 +80,7 @@ interface HermesState {
   sidebarCollapsed: boolean;
   focusMode: boolean;
   compact: boolean;
+  cloudSyncEnabled: boolean;
   model: string;
   modelProvider: string;
   profile: string;
@@ -89,6 +90,7 @@ interface HermesState {
   channelStatus: Record<string, ChannelStatus>;
   pinned: string[];
   conversations: Conversation[];
+  conversationTombstones: Record<string, number>;
   activeId: string;
   memories: MemoryItem[];
   jobs: Job[];
@@ -111,6 +113,7 @@ interface HermesState {
   setFocusMode: (v: boolean) => void;
   toggleFocus: () => void;
   setCompact: (v: boolean) => void;
+  setCloudSyncEnabled: (v: boolean) => void;
   setModel: (id: string, provider?: string) => void;
   setProfile: (name: string) => void;
   isSkillOn: (id: string) => boolean;
@@ -174,6 +177,7 @@ export const useHermes = create<HermesState>()(
       sidebarCollapsed: false,
       focusMode: false,
       compact: false,
+      cloudSyncEnabled: false,
       model: "hermes-agent",
       modelProvider: "",
       profile: "default",
@@ -183,6 +187,7 @@ export const useHermes = create<HermesState>()(
       channelStatus: {},
       pinned: ["hermes-core", "grok", "web_search", "memory"],
       conversations: [seedBlankChat(), seedConversation()],
+      conversationTombstones: {},
       activeId: freshId,
       memories: seedMemories,
       jobs: seedJobs,
@@ -214,6 +219,7 @@ export const useHermes = create<HermesState>()(
       setFocusMode: (v) => set({ focusMode: v }),
       toggleFocus: () => set({ focusMode: !get().focusMode }),
       setCompact: (v) => set({ compact: v }),
+      setCloudSyncEnabled: (v) => set({ cloudSyncEnabled: v }),
       setModel: (id, provider) =>
         set({
           model: id,
@@ -283,9 +289,15 @@ export const useHermes = create<HermesState>()(
       selectChat: (id) => set({ activeId: id }),
       deleteChat: (id) => {
         const next = get().conversations.filter((c) => c.id !== id);
-        const list = next.length ? next : [seedConversation()];
+        const list = next.length
+          ? next
+          : [{ ...seedBlankChat(), id: uid(), title: "New chat" }];
         set({
           conversations: list,
+          conversationTombstones: {
+            ...get().conversationTombstones,
+            [id]: Date.now(),
+          },
           activeId: get().activeId === id ? list[0]!.id : get().activeId,
         });
       },
@@ -498,7 +510,7 @@ export const useHermes = create<HermesState>()(
           isLegacyOwner: cockpitIsOwner,
         }),
       ),
-      version: 7,
+      version: 8,
       migrate: (persisted) => {
         if (persisted && typeof persisted === "object") {
           const next = { ...(persisted as Record<string, unknown>) };
@@ -529,6 +541,16 @@ export const useHermes = create<HermesState>()(
             next.fontSize = "md";
           }
           delete next.designMode;
+          if (typeof next.cloudSyncEnabled !== "boolean") {
+            next.cloudSyncEnabled = false;
+          }
+          if (
+            !next.conversationTombstones ||
+            typeof next.conversationTombstones !== "object" ||
+            Array.isArray(next.conversationTombstones)
+          ) {
+            next.conversationTombstones = {};
+          }
           if (
             next.accent !== "stone" &&
             next.accent !== "sage" &&
@@ -558,6 +580,7 @@ export const useHermes = create<HermesState>()(
         sidebarCollapsed: s.sidebarCollapsed,
         focusMode: s.focusMode,
         compact: s.compact,
+        cloudSyncEnabled: s.cloudSyncEnabled,
         model: s.model,
         modelProvider: s.modelProvider,
         profile: s.profile,
@@ -567,6 +590,7 @@ export const useHermes = create<HermesState>()(
         channelStatus: s.channelStatus,
         pinned: s.pinned,
         conversations: s.conversations,
+        conversationTombstones: s.conversationTombstones,
         activeId: s.activeId,
         memories: s.memories,
         jobs: s.jobs,

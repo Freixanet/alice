@@ -58,9 +58,11 @@ import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { displayChatTitle } from "@/lib/i18n";
 import { useLocale, useT } from "@/lib/use-i18n";
+import { useCloudSync } from "@/lib/use-cloud-sync";
 
 export function AppShell() {
   useGatewayHealth();
+  useCloudSync();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const theme = useHermes((s) => s.theme);

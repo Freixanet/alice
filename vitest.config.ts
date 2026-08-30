@@ -18,10 +18,10 @@ export default defineConfig({
       thresholds: {
         // Ratchet the measured baseline. These only move upward as the
         // domain-by-domain reconstruction adds tests.
-        statements: 20,
-        branches: 65,
-        functions: 60,
-        lines: 20,
+        statements: 24,
+        branches: 66,
+        functions: 63,
+        lines: 24,
       },
     },
   },

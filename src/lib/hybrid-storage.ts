@@ -4,6 +4,7 @@ const DATABASE = "alice-private-v1";
 const STORE = "account-state";
 const DURABLE_FIELDS = new Set([
   "conversations",
+  "conversationTombstones",
   "activeId",
   "memories",
   "jobs",

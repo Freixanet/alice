@@ -108,6 +108,20 @@ const en = {
   "settings.compactHint": "Less air. More list, less page.",
   "settings.focus": "Focus mode",
   "settings.focusHint": "Hides the sidebar. Just the thread. Also with ⌘.",
+  "settings.cloudSync": "Encrypted cloud sync",
+  "settings.cloudSyncHint":
+    "Optional. Alice encrypts everything on this device before upload.",
+  "settings.recoveryTitle": "Save your recovery key",
+  "settings.recoveryHint":
+    "Alice cannot recover it for you. Copy it somewhere safe, then type it below to confirm.",
+  "settings.recoveryPlaceholder": "Paste the recovery key to confirm",
+  "settings.recoveryConfirm": "Confirm and enable",
+  "settings.recoveryCopy": "Copy key",
+  "settings.recoveryUseExisting": "Use an existing recovery key",
+  "settings.recoveryImport": "Restore and enable",
+  "settings.recoveryError": "The recovery key does not match.",
+  "settings.syncSetupError":
+    "Encrypted sync could not be prepared on this device.",
   "settings.language": "Language",
   "settings.languageHint": "English or Spanish.",
   "settings.lang.en": "EN",
@@ -576,6 +590,20 @@ const es: Record<MsgKey, string> = {
   "settings.compactHint": "Menos aire. Más lista, menos página.",
   "settings.focus": "Modo foco",
   "settings.focusHint": "Oculta la barra. Solo el hilo. También con ⌘.",
+  "settings.cloudSync": "Sincronización cloud cifrada",
+  "settings.cloudSyncHint":
+    "Opcional. Alice cifra todo en este dispositivo antes de subirlo.",
+  "settings.recoveryTitle": "Guarda tu clave de recuperación",
+  "settings.recoveryHint":
+    "Alice no puede recuperarla por ti. Cópiala en un lugar seguro y escríbela debajo para confirmar.",
+  "settings.recoveryPlaceholder": "Pega la clave para confirmarla",
+  "settings.recoveryConfirm": "Confirmar y activar",
+  "settings.recoveryCopy": "Copiar clave",
+  "settings.recoveryUseExisting": "Usar una clave de recuperación existente",
+  "settings.recoveryImport": "Restaurar y activar",
+  "settings.recoveryError": "La clave de recuperación no coincide.",
+  "settings.syncSetupError":
+    "No se ha podido preparar la sincronización cifrada en este dispositivo.",
   "settings.language": "Idioma",
   "settings.languageHint": "Inglés o español.",
   "settings.lang.en": "EN",

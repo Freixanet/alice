@@ -36,6 +36,15 @@ import { cn } from "@/lib/utils";
 import { useT } from "@/lib/use-i18n";
 import type { MsgKey } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
+import {
+  decodeRecoveryPhrase,
+  encodeRecoveryPhrase,
+  generateMasterSecret,
+} from "@/lib/sync-crypto";
+import {
+  loadMasterSecretForDevice,
+  saveMasterSecretForDevice,
+} from "@/lib/sync-device-key";
 
 type SectionId = "general" | "model" | "profile" | "account" | "shortcuts";
 
@@ -232,6 +241,81 @@ function GeneralSection() {
   const setCompact = useHermes((s) => s.setCompact);
   const focusMode = useHermes((s) => s.focusMode);
   const setFocusMode = useHermes((s) => s.setFocusMode);
+  const cloudSyncEnabled = useHermes((s) => s.cloudSyncEnabled);
+  const setCloudSyncEnabled = useHermes((s) => s.setCloudSyncEnabled);
+  const user = useCurrentUser();
+  const [recoveryPhrase, setRecoveryPhrase] = useState<string | null>(null);
+  const [pendingMaster, setPendingMaster] = useState<Uint8Array | null>(null);
+  const [recoveryConfirmation, setRecoveryConfirmation] = useState("");
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [importingRecovery, setImportingRecovery] = useState(false);
+
+  async function changeCloudSync(enabled: boolean) {
+    if (!enabled) {
+      setCloudSyncEnabled(false);
+      setRecoveryPhrase(null);
+      setPendingMaster(null);
+      setRecoveryConfirmation("");
+      setImportingRecovery(false);
+      return;
+    }
+    if (!user || syncBusy) return;
+    setSyncBusy(true);
+    setSyncError(null);
+    try {
+      const existing = await loadMasterSecretForDevice(user.id);
+      if (existing) {
+        setCloudSyncEnabled(true);
+      } else {
+        const master = generateMasterSecret();
+        setPendingMaster(master);
+        setRecoveryPhrase(encodeRecoveryPhrase(master));
+      }
+    } catch {
+      setSyncError(t("settings.syncSetupError"));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function confirmRecovery() {
+    if (!user || !pendingMaster || !recoveryPhrase || syncBusy) return;
+    if (recoveryConfirmation.trim() !== recoveryPhrase) {
+      setSyncError(t("settings.recoveryError"));
+      return;
+    }
+    setSyncBusy(true);
+    setSyncError(null);
+    try {
+      await saveMasterSecretForDevice(user.id, pendingMaster);
+      setCloudSyncEnabled(true);
+      setRecoveryPhrase(null);
+      setPendingMaster(null);
+      setRecoveryConfirmation("");
+    } catch {
+      setSyncError(t("settings.syncSetupError"));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function importRecovery() {
+    if (!user || syncBusy) return;
+    setSyncBusy(true);
+    setSyncError(null);
+    try {
+      const master = decodeRecoveryPhrase(recoveryConfirmation);
+      await saveMasterSecretForDevice(user.id, master);
+      setCloudSyncEnabled(true);
+      setImportingRecovery(false);
+      setRecoveryConfirmation("");
+    } catch {
+      setSyncError(t("settings.recoveryError"));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
 
   return (
     <div className="divide-y divide-border">
@@ -316,6 +400,91 @@ function GeneralSection() {
           aria-label={t("settings.focus")}
         />
       </SettingRow>
+      <SettingRow
+        label={t("settings.cloudSync")}
+        hint={t("settings.cloudSyncHint")}
+      >
+        <Switch
+          checked={cloudSyncEnabled}
+          disabled={!user || syncBusy}
+          onCheckedChange={(enabled) => void changeCloudSync(enabled)}
+          aria-label={t("settings.cloudSync")}
+        />
+      </SettingRow>
+      {recoveryPhrase ? (
+        <div className="py-4">
+          <p className="text-sm font-medium">{t("settings.recoveryTitle")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("settings.recoveryHint")}
+          </p>
+          <div className="mt-3 rounded-md border border-border bg-muted p-3 font-mono text-xs break-all select-all">
+            {recoveryPhrase}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            className="mt-2"
+            onClick={() => void navigator.clipboard.writeText(recoveryPhrase)}
+          >
+            {t("settings.recoveryCopy")}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="mt-2"
+            onClick={() => {
+              setRecoveryPhrase(null);
+              setPendingMaster(null);
+              setRecoveryConfirmation("");
+              setImportingRecovery(true);
+            }}
+          >
+            {t("settings.recoveryUseExisting")}
+          </Button>
+          <Input
+            className="mt-3"
+            value={recoveryConfirmation}
+            onChange={(event) => setRecoveryConfirmation(event.target.value)}
+            placeholder={t("settings.recoveryPlaceholder")}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <Button
+            type="button"
+            className="mt-3"
+            disabled={syncBusy || !recoveryConfirmation.trim()}
+            onClick={() => void confirmRecovery()}
+          >
+            {t("settings.recoveryConfirm")}
+          </Button>
+        </div>
+      ) : null}
+      {importingRecovery ? (
+        <div className="py-4">
+          <p className="text-sm font-medium">
+            {t("settings.recoveryUseExisting")}
+          </p>
+          <Input
+            className="mt-3"
+            value={recoveryConfirmation}
+            onChange={(event) => setRecoveryConfirmation(event.target.value)}
+            placeholder={t("settings.recoveryPlaceholder")}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <Button
+            type="button"
+            className="mt-3"
+            disabled={syncBusy || !recoveryConfirmation.trim()}
+            onClick={() => void importRecovery()}
+          >
+            {t("settings.recoveryImport")}
+          </Button>
+        </div>
+      ) : null}
+      {syncError ? (
+        <p className="py-3 text-sm text-destructive">{syncError}</p>
+      ) : null}
       <SettingRow
         label={t("settings.language")}
         hint={t("settings.languageHint")}

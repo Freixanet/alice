@@ -13,6 +13,7 @@ export default tseslint.config(
       ".output/**",
       ".vercel/**",
       ".nitro/**",
+      "coverage/**",
       "node_modules/**",
       "src/routeTree.gen.ts",
     ],
@@ -39,7 +40,7 @@ export default tseslint.config(
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-explicit-any": "error",
     },
   },
   // Disable rules that conflict with Prettier formatting.
