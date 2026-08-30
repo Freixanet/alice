@@ -22,8 +22,15 @@ import {
 import type { GateSecret } from "@/lib/gateway.server";
 import { hermesRequestSchema } from "@/lib/api-contracts";
 import { hermesMutationSchema } from "@/lib/hermes-operations";
-import { parseJsonRequest, requestErrorResponse } from "@/lib/http.server";
-import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit.server";
+import {
+  assertSameOriginRequest,
+  parseJsonRequest,
+  requestErrorResponse,
+} from "@/lib/http.server";
+import {
+  consumeSharedRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit.server";
 
 const FAIL = "Couldn’t connect.";
 
@@ -46,6 +53,29 @@ export const Route = createFileRoute("/api/hermes")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        try {
+          assertSameOriginRequest(request);
+        } catch (error) {
+          return (
+            requestErrorResponse(error) ??
+            jsonWithCookie({ ok: false, code: "invalid", error: FAIL }, 400)
+          );
+        }
+        const { saved, owner, local, userId } = await resolveAliceGate(request);
+        if (!userId) {
+          return jsonWithCookie(
+            { ok: false, error: "Sign in to continue." },
+            401,
+          );
+        }
+        const rate = await consumeSharedRateLimit(
+          "hermes",
+          userId,
+          240,
+          60_000,
+        );
+        if (!rate.ok) return rateLimitResponse(rate);
+
         let body;
         try {
           body = await parseJsonRequest(request, hermesRequestSchema, 32_768);
@@ -56,15 +86,6 @@ export const Route = createFileRoute("/api/hermes")({
           );
         }
 
-        const { saved, owner, local, userId } = await resolveAliceGate(request);
-        if (!userId) {
-          return jsonWithCookie(
-            { ok: false, error: "Sign in to continue." },
-            401,
-          );
-        }
-        const rate = consumeRateLimit("hermes", userId, 240, 60_000);
-        if (!rate.ok) return rateLimitResponse(rate);
         const macOk = owner && local;
 
         if (body.action === "status") {

@@ -10,8 +10,15 @@ import {
   streamHermesProxy,
 } from "@/lib/gateway.server";
 import { chatRequestSchema } from "@/lib/api-contracts";
-import { parseJsonRequest, requestErrorResponse } from "@/lib/http.server";
-import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit.server";
+import {
+  assertSameOriginRequest,
+  parseJsonRequest,
+  requestErrorResponse,
+} from "@/lib/http.server";
+import {
+  consumeSharedRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit.server";
 
 const FAIL = "Couldn’t connect.";
 
@@ -19,6 +26,21 @@ export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        try {
+          assertSameOriginRequest(request);
+        } catch (error) {
+          return (
+            requestErrorResponse(error) ??
+            Response.json({ error: "bad_request" }, { status: 400 })
+          );
+        }
+        const { saved: gate, userId } = await resolveAliceGate(request);
+        if (!userId) {
+          return Response.json({ error: "unauthorized" }, { status: 401 });
+        }
+        const rate = await consumeSharedRateLimit("chat", userId, 60, 60_000);
+        if (!rate.ok) return rateLimitResponse(rate);
+
         let body;
         try {
           body = await parseJsonRequest(
@@ -54,12 +76,6 @@ export const Route = createFileRoute("/api/chat")({
           return Response.json({ error: "empty" }, { status: 400 });
         }
 
-        const { saved: gate, userId } = await resolveAliceGate(request);
-        if (!userId) {
-          return Response.json({ error: "unauthorized" }, { status: 401 });
-        }
-        const rate = consumeRateLimit("chat", userId, 60, 60_000);
-        if (!rate.ok) return rateLimitResponse(rate);
         if (gate?.u && gate.k) {
           try {
             return await streamHermesProxy({

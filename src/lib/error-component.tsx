@@ -20,3 +20,15 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
     </main>
   );
 }
+
+export function AppNotFoundComponent() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center text-foreground">
+      <p className="font-serif text-3xl">Alice</p>
+      <h1 className="text-lg font-medium">Page not found</h1>
+      <a className="text-sm text-muted-foreground underline" href="/">
+        Return to chat
+      </a>
+    </main>
+  );
+}

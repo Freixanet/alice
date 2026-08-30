@@ -9,8 +9,12 @@ import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import {
+  assertPublicHttpUrl,
+  localPrivateNetworkEnabled,
+  pinnedFetch as fetch,
+  UnsafeOutboundUrlError,
+} from "./outbound-http.server";
 import {
   assertGatewayKey,
   enrichWithModelOptions,
@@ -45,77 +49,21 @@ const execFileAsync = promisify(execFile);
 
 const FAIL = "Couldn’t connect.";
 
-const V4_BLOCK = [
-  "0.0.0.0/8",
-  "10.0.0.0/8",
-  "100.64.0.0/10",
-  "127.0.0.0/8",
-  "169.254.0.0/16",
-  "172.16.0.0/12",
-  "192.168.0.0/16",
-  "198.18.0.0/15",
-  "224.0.0.0/4",
-  "240.0.0.0/4",
-];
-
-function ipv4ToInt(ip: string): number | null {
-  const p = ip.split(".");
-  if (p.length !== 4) return null;
-  const n = p.map(Number);
-  if (n.some((x) => !Number.isInteger(x) || x < 0 || x > 255)) return null;
-  const [a = 0, b = 0, c = 0, d = 0] = n;
-  return ((a << 24) | (b << 16) | (c << 8) | d) >>> 0;
-}
-
-function inCidr(ip: string, cidr: string): boolean {
-  const [base, bitsStr] = cidr.split("/");
-  if (!base || !bitsStr) return false;
-  const bits = Number(bitsStr);
-  const a = ipv4ToInt(ip);
-  const b = ipv4ToInt(base);
-  if (a === null || b === null || Number.isNaN(bits)) return false;
-  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-  return (a & mask) === (b & mask);
-}
-
-function isBlockedV6(ip: string): boolean {
-  const n = ip.toLowerCase();
-  if (n === "::" || n === "::1") return true;
-  if (n.startsWith("fc") || n.startsWith("fd")) return true;
-  if (n.startsWith("fe80")) return true;
-  if (n.startsWith("ff")) return true;
-  if (n.startsWith("::ffff:")) return isBlockedIp(n.slice(7));
-  return false;
-}
-
-function isBlockedIp(ip: string): boolean {
-  const ver = isIP(ip);
-  if (ver === 4) return V4_BLOCK.some((c) => inCidr(ip, c));
-  if (ver === 6) return isBlockedV6(ip);
-  return true;
-}
-
 export async function assertPublicHermesUrl(raw: string): Promise<string> {
   const base = normalizeGatewayUrl(raw);
   const u = new URL(base);
   if (isPrivateHostname(u.hostname)) {
     throw new GatewayError("private", FAIL);
   }
-  const host = u.hostname.replace(/^\[|\]$/g, "");
-  if (isIP(host)) {
-    if (isBlockedIp(host)) throw new GatewayError("private", FAIL);
-    return base;
-  }
   try {
-    const recs = await lookup(host, { all: true });
-    if (recs.length === 0) {
-      throw new GatewayError("unreachable", FAIL);
-    }
-    for (const rec of recs) {
-      if (isBlockedIp(rec.address)) throw new GatewayError("private", FAIL);
-    }
+    await assertPublicHttpUrl(base);
   } catch (e) {
-    if (e instanceof GatewayError) throw e;
+    if (e instanceof UnsafeOutboundUrlError) {
+      throw new GatewayError(
+        e.reason === "private" ? "private" : "unreachable",
+        FAIL,
+      );
+    }
     throw new GatewayError("unreachable", FAIL);
   }
   return base;
@@ -125,7 +73,9 @@ export async function resolveHermesBase(
   raw: string,
   place?: GatewayPlace,
 ): Promise<string> {
-  if (place === "mac") return normalizeGatewayUrl(raw);
+  if (place === "mac" && localPrivateNetworkEnabled()) {
+    return normalizeGatewayUrl(raw);
+  }
   return assertPublicHermesUrl(raw);
 }
 

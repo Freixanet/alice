@@ -5,6 +5,7 @@ const baseURL = "http://127.0.0.1:8091";
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
+  workers: 4,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [["html", { open: "never" }], ["github"]] : "list",
@@ -12,6 +13,7 @@ export default defineConfig({
     baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    navigationTimeout: 20_000,
   },
   webServer: {
     command:

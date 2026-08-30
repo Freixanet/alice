@@ -6,7 +6,33 @@ import {
   loadSavedDeviceConnection,
   setDeviceSessionKey,
 } from "../hermes-direct";
-import { useHermes } from "../store";
+import { resetHermesAccountState, useHermes } from "../store";
+
+let identityGeneration = 0;
+let hydrationQueue = Promise.resolve();
+
+function prepareIdentity(id: string | null, owner: boolean) {
+  identityGeneration += 1;
+  setCockpitIdentity({ id: null, owner: false });
+  resetHermesAccountState();
+  setCockpitIdentity({ id, owner });
+  return identityGeneration;
+}
+
+function hydratePreparedIdentity(generation: number) {
+  hydrationQueue = hydrationQueue
+    .catch(() => undefined)
+    .then(async () => {
+      if (generation !== identityGeneration) return;
+      await useHermes.persist.rehydrate();
+    })
+    .catch(() => {
+      if (generation === identityGeneration) {
+        useHermes.getState().setHydrated();
+      }
+    });
+  return hydrationQueue;
+}
 
 /**
  * App-wide client provider mounted once near the root (in `src/routes/__root.tsx`):
@@ -23,13 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isDevFallback = Boolean(user?.isDevFallback);
 
   useEffect(() => {
+    const generation = prepareIdentity(userId, isDevFallback);
     if (!userId || isDevFallback) {
       if (!isDevFallback) setDeviceSessionKey(null);
-      setCockpitIdentity({
-        id: isDevFallback ? userId : null,
-        owner: isDevFallback,
-      });
-      if (isDevFallback) void useHermes.persist.rehydrate();
+      if (isDevFallback) void hydratePreparedIdentity(generation);
+      else useHermes.getState().setHydrated();
       return;
     }
     setDeviceSessionKey(null);
@@ -60,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         }
         if (ctrl.signal.aborted) return;
-        await useHermes.persist.rehydrate();
+        await hydratePreparedIdentity(generation);
         if (ctrl.signal.aborted) return;
         const state = useHermes.getState();
         if (
@@ -79,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         if (ctrl.signal.aborted) return;
-        void useHermes.persist.rehydrate();
+        void hydratePreparedIdentity(generation);
       });
     return () => ctrl.abort();
   }, [userId, isDevFallback]);

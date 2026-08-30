@@ -45,6 +45,7 @@ export function createHybridStorage(options: {
         local.getItem(preferenceKey(name, user)),
       );
       const durable = await readDurable(indexedDb, id);
+      if (options.userId() !== user) return null;
       if (preferences || durable) {
         return serializeMerged(preferences, durable);
       }
@@ -56,6 +57,7 @@ export function createHybridStorage(options: {
       if (!legacy) return null;
 
       await persistSplit(indexedDb, local, name, user, legacy);
+      if (options.userId() !== user) return null;
       local.removeItem(id);
       if (ownerLegacy && ownerLegacy === legacyRaw) local.removeItem(name);
       return JSON.stringify(legacy);

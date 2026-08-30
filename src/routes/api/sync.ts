@@ -1,8 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { requireUserId, UnauthorizedError } from "@/lib/auth/verify.server";
 import { getSql } from "@/lib/db";
-import { parseJsonRequest, requestErrorResponse } from "@/lib/http.server";
-import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit.server";
+import {
+  assertSameOriginRequest,
+  parseJsonRequest,
+  requestErrorResponse,
+} from "@/lib/http.server";
+import {
+  consumeSharedRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit.server";
 import { syncRequestSchema } from "@/lib/sync-contracts";
 import {
   CLOUD_SYNC_QUOTA_BYTES,
@@ -25,6 +32,14 @@ export const Route = createFileRoute("/api/sync")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        try {
+          assertSameOriginRequest(request);
+        } catch (error) {
+          return (
+            requestErrorResponse(error) ??
+            json({ ok: false, error: { code: "invalid_request" } }, 400)
+          );
+        }
         let userId: string;
         try {
           userId = await requireUserId();
@@ -33,7 +48,7 @@ export const Route = createFileRoute("/api/sync")({
             return json({ ok: false, error: { code: "unauthorized" } }, 401);
           throw error;
         }
-        const rate = consumeRateLimit("sync", userId, 120, 60_000);
+        const rate = await consumeSharedRateLimit("sync", userId, 120, 60_000);
         if (!rate.ok) return rateLimitResponse(rate);
 
         let body;

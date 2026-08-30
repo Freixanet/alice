@@ -14,7 +14,7 @@ const routes = [
 
 for (const route of routes) {
   test(`${route} preserves the Alice visual invariants`, async ({ page }) => {
-    await page.goto(route);
+    await page.goto(route, { waitUntil: "domcontentloaded" });
     await expect(page).toHaveTitle("Alice");
     await expect(page.locator("body")).not.toContainText("Un momento…", {
       timeout: 15_000,
@@ -45,7 +45,7 @@ for (const route of routes) {
 }
 
 test("the empty chat is accessible", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(
     page.getByRole("heading", { name: "What are we working on?" }),
   ).toBeVisible();
@@ -59,7 +59,7 @@ test("the empty chat is accessible", async ({ page }) => {
 
 test("mobile interactive targets are at least 44px", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.locator("html")).toHaveAttribute("data-alice-app", "");
   const violations = await page
     .locator(

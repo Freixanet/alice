@@ -252,10 +252,10 @@ export const auth = betterAuth({
       allowDifferentEmails: false,
     },
     storeStateStrategy: "database",
-    // Cursor's browser (and some local http clients) drop the signed OAuth
-    // `state` cookie on the round-trip to Google. The state already lives in
-    // the verification table; skipping the cookie check is what lets Allow land.
-    skipStateCookieCheck: true,
+    // Cursor's local browser can drop the signed OAuth state cookie. Only the
+    // local/preview path may rely on the database-backed state instead;
+    // production always requires the state cookie as well.
+    skipStateCookieCheck: localHttpAuth && !process.env.VERCEL,
   },
 
   // Cache the session in the short-lived signed `session_data` cookie so reads
@@ -274,8 +274,8 @@ export const auth = betterAuth({
   advanced: {
     // Tailscale Serve terminates TLS and forwards http://127.0.0.1:8080 with
     // X-Forwarded-Proto: https — Google OAuth redirect_uri must be that https origin.
-    trustedProxyHeaders: true,
-    useSecureCookies: false,
+    trustedProxyHeaders: !explicitBaseURL,
+    useSecureCookies: !localHttpAuth,
     defaultCookieAttributes: localHttpAuth
       ? { secure: false, sameSite: "lax", path: "/" }
       : { secure: true, sameSite: "lax", path: "/" },

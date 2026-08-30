@@ -166,50 +166,57 @@ interface HermesState {
   forgetGateway: () => void;
 }
 
+function initialHermesData() {
+  const approvals: Approval[] = [
+    {
+      id: "a1",
+      kind: "skill",
+      title: "Installing docker-management changes nothing",
+      detail:
+        "The skill is already in the catalog. Hermes wants to mark it as daily-use and pin it.",
+      targetId: "docker-management",
+    },
+  ];
+  return {
+    hydrated: false,
+    theme: "light" as Theme,
+    fontSize: "md" as FontSize,
+    accent: "stone" as Accent,
+    locale: "en" as Locale,
+    sidebarCollapsed: false,
+    focusMode: false,
+    compact: false,
+    cloudSyncEnabled: false,
+    model: "hermes-agent",
+    modelProvider: "",
+    profile: "default",
+    skillEnabled: {} as Record<string, boolean>,
+    toolEnabled: {} as Record<string, boolean>,
+    addonEnabled: {} as Record<string, boolean>,
+    channelStatus: {} as Record<string, ChannelStatus>,
+    pinned: ["hermes-core", "grok", "web_search", "memory"],
+    conversations: [seedBlankChat(), seedConversation()],
+    conversationTombstones: {} as Record<string, number>,
+    activeId: freshId,
+    memories: seedMemories,
+    jobs: seedJobs,
+    hooks: seedWebhooks,
+    activeBackend: "local",
+    approvals,
+    composerDraft: "",
+    gatewayUrl: "",
+    gatewayPlace: "cloud" as GatewayPlace,
+    gatewayOn: false,
+    gatewayStatus: "idle" as GatewayStatus,
+    gatewayMeta: null,
+    gatewayError: null,
+  };
+}
+
 export const useHermes = create<HermesState>()(
   persist(
     (set, get) => ({
-      hydrated: false,
-      theme: "light",
-      fontSize: "md",
-      accent: "stone",
-      locale: "en",
-      sidebarCollapsed: false,
-      focusMode: false,
-      compact: false,
-      cloudSyncEnabled: false,
-      model: "hermes-agent",
-      modelProvider: "",
-      profile: "default",
-      skillEnabled: {},
-      toolEnabled: {},
-      addonEnabled: {},
-      channelStatus: {},
-      pinned: ["hermes-core", "grok", "web_search", "memory"],
-      conversations: [seedBlankChat(), seedConversation()],
-      conversationTombstones: {},
-      activeId: freshId,
-      memories: seedMemories,
-      jobs: seedJobs,
-      hooks: seedWebhooks,
-      activeBackend: "local",
-      approvals: [
-        {
-          id: "a1",
-          kind: "skill",
-          title: "Installing docker-management changes nothing",
-          detail:
-            "The skill is already in the catalog. Hermes wants to mark it as daily-use and pin it.",
-          targetId: "docker-management",
-        },
-      ],
-      composerDraft: "",
-      gatewayUrl: "",
-      gatewayPlace: "cloud",
-      gatewayOn: false,
-      gatewayStatus: "idle",
-      gatewayMeta: null,
-      gatewayError: null,
+      ...initialHermesData(),
       setHydrated: () => set({ hydrated: true }),
       setTheme: (theme) => set({ theme }),
       setFontSize: (fontSize) => set({ fontSize }),
@@ -510,6 +517,7 @@ export const useHermes = create<HermesState>()(
           isLegacyOwner: cockpitIsOwner,
         }),
       ),
+      skipHydration: true,
       version: 8,
       migrate: (persisted) => {
         if (persisted && typeof persisted === "object") {
@@ -609,3 +617,8 @@ export const useHermes = create<HermesState>()(
     },
   ),
 );
+
+/** Clear account-bound state while storage has no active identity. */
+export function resetHermesAccountState() {
+  useHermes.setState(initialHermesData());
+}

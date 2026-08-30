@@ -22,7 +22,7 @@ export async function parseJsonRequest<T extends z.ZodType>(
   schema: T,
   maxBytes: number,
 ): Promise<z.infer<T>> {
-  assertSameOrigin(request);
+  assertSameOriginRequest(request);
   const contentType = request.headers.get("content-type")?.split(";", 1)[0];
   if (contentType !== "application/json") {
     throw new RequestContractError("invalid_content_type", 415);
@@ -31,10 +31,7 @@ export async function parseJsonRequest<T extends z.ZodType>(
   if (Number.isFinite(declared) && declared > maxBytes) {
     throw new RequestContractError("request_too_large", 413);
   }
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > maxBytes) {
-    throw new RequestContractError("request_too_large", 413);
-  }
+  const text = await readTextWithinLimit(request, maxBytes);
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -59,9 +56,9 @@ export function requestErrorResponse(error: unknown): Response | null {
   );
 }
 
-function assertSameOrigin(request: Request): void {
+export function assertSameOriginRequest(request: Request): void {
   const fetchSite = request.headers.get("sec-fetch-site");
-  if (fetchSite === "cross-site") {
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
     throw new RequestContractError("cross_site_request", 403);
   }
   const origin = request.headers.get("origin");
@@ -74,5 +71,35 @@ function assertSameOrigin(request: Request): void {
   }
   if (origin !== expected) {
     throw new RequestContractError("cross_site_request", 403);
+  }
+}
+
+async function readTextWithinLimit(
+  request: Request,
+  maxBytes: number,
+): Promise<string> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let bytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel("request_too_large");
+        throw new RequestContractError("request_too_large", 413);
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } catch (error) {
+    if (error instanceof RequestContractError) throw error;
+    throw new RequestContractError("invalid_json", 400);
+  } finally {
+    reader.releaseLock();
   }
 }

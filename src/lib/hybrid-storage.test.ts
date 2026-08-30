@@ -83,4 +83,20 @@ describe("hybrid account storage", () => {
     expect(await storage.getItem("alice")).toContain("Alice B");
     expect(await storage.getItem("alice")).not.toContain("Alice A");
   });
+
+  it("discards a read if the active account changes in flight", async () => {
+    const local = new MemoryStorage();
+    const indexedDb = new IDBFactory();
+    let user = "user-a";
+    const storage = createHybridStorage({
+      userId: () => user,
+      isLegacyOwner: () => false,
+      local,
+      indexedDb,
+    });
+    await storage.setItem("alice", envelope("Alice A"));
+    const pending = storage.getItem("alice");
+    user = "user-b";
+    await expect(pending).resolves.toBeNull();
+  });
 });
