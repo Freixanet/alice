@@ -6,6 +6,7 @@ import type {
   HermesPairingRow,
   HermesProjectRow,
   HermesSessionRow,
+  HermesSessionMessage,
   HermesSkillRow,
   HermesToolsetRow,
   HermesWebhookRow,
@@ -53,6 +54,7 @@ export function asList(value: unknown): unknown[] {
     "channels",
     "pending",
     "projects",
+    "data",
   ]) {
     if (Array.isArray(rec[key])) return rec[key] as unknown[];
   }
@@ -286,6 +288,40 @@ export function sessionsFromApi(raw: unknown): HermesSessionRow[] {
       };
     })
     .filter((s) => s.id);
+}
+
+export function sessionMessagesFromApi(raw: unknown): HermesSessionMessage[] {
+  return asList(raw)
+    .slice(-50)
+    .map((item, index) => {
+      const row = asRec(item);
+      const rawRole = str(row.role).toLowerCase();
+      const role: HermesSessionMessage["role"] =
+        rawRole === "user" ||
+        rawRole === "assistant" ||
+        rawRole === "system" ||
+        rawRole === "tool"
+          ? rawRole
+          : "unknown";
+      return {
+        id: str(row.id) || `message-${index}`,
+        role,
+        content: safeMessageContent(row.content),
+        timestamp: stamp(row.timestamp) || undefined,
+        toolName: str(row.tool_name) || undefined,
+      };
+    })
+    .filter((message) => message.content || message.toolName);
+}
+
+function safeMessageContent(value: unknown): string {
+  if (typeof value === "string") return value.slice(0, 4_000);
+  if (value === null || value === undefined) return "";
+  try {
+    return JSON.stringify(value).slice(0, 4_000);
+  } catch {
+    return "";
+  }
 }
 
 export function pairingList(value: unknown): HermesPairingRow[] {

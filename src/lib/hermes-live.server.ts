@@ -15,6 +15,7 @@ import type {
   HermesPairingRow,
   HermesProjectRow,
   HermesSessionRow,
+  HermesSessionMessagesResult,
   HermesSkillRow,
   HermesToolsetRow,
   HermesWebhookRow,
@@ -32,6 +33,7 @@ import {
   prettyName,
   projectsFromApi,
   sessionsFromApi,
+  sessionMessagesFromApi,
   skillsFromApi,
   str,
   toolsetsFromApi,
@@ -413,6 +415,25 @@ export async function fetchHermesLive(opts?: {
     pairingApproved,
     webhooks,
     projects,
+  };
+}
+
+export async function fetchHermesSessionMessages(
+  opts: Gate,
+  sessionId: string,
+): Promise<HermesSessionMessagesResult> {
+  const raw = await hermesDashboardGet(
+    opts,
+    `/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=50&order=latest`,
+  );
+  if (!raw) {
+    return { ok: false, error: "Couldn’t read this Hermes session." };
+  }
+  const record = asRec(raw);
+  return {
+    ok: true,
+    sessionId: str(record.session_id) || sessionId,
+    messages: sessionMessagesFromApi(raw),
   };
 }
 

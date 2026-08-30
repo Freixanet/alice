@@ -69,6 +69,21 @@ describe("Hermes API contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts only bounded session-message reads", () => {
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "session-messages",
+        sessionId: "session-1",
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "session-messages",
+        sessionId: "",
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects unknown actions and extra secret-bearing fields", () => {
     expect(
       hermesRequestSchema.safeParse({ action: "delete-everything" }).success,

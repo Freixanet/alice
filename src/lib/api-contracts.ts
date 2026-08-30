@@ -19,6 +19,10 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
   action("memory"),
   action("live"),
   z.strictObject({
+    action: z.literal("session-messages"),
+    sessionId: bounded(160),
+  }),
+  z.strictObject({
     action: z.literal("models"),
     refresh: z.boolean().optional(),
   }),

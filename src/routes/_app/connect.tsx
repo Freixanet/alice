@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/catalog-page";
+import { HermesSessionInspector } from "@/components/hermes-session-inspector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -553,6 +554,10 @@ function HermesLiveSections({
     manifest,
     "session_model_lock",
   );
+  const canReadSessionMessages = advertisesHermesCapability(
+    manifest,
+    "session_messages",
+  );
   const canManagePairing = advertisesHermesCapability(manifest, "pairing");
 
   async function runPairingAction(
@@ -865,7 +870,8 @@ function HermesLiveSections({
                 {canForkSessions ||
                 canLockSessionModel ||
                 canUpdateSessions ||
-                canDeleteSessions ? (
+                canDeleteSessions ||
+                canReadSessionMessages ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {canForkSessions ? (
                       <Button
@@ -965,6 +971,9 @@ function HermesLiveSections({
                           ? t("connect.confirmDeleteSession")
                           : t("connect.deleteSession")}
                       </Button>
+                    ) : null}
+                    {canReadSessionMessages ? (
+                      <HermesSessionInspector sessionId={session.id} />
                     ) : null}
                   </div>
                 ) : null}

@@ -17,7 +17,11 @@ import {
   type HermesCapabilityManifest,
 } from "./gateway-contracts";
 import { hermesOperationFor, type HermesMutation } from "./hermes-operations";
-import type { HermesLive, HermesLiveResult } from "./hermes-live-types";
+import type {
+  HermesLive,
+  HermesLiveResult,
+  HermesSessionMessagesResult,
+} from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
 import { setDeviceSessionKey } from "./hermes-secret-client";
 import {
@@ -37,7 +41,9 @@ import {
   pairingList,
   projectsFromApi,
   sessionsFromApi,
+  sessionMessagesFromApi,
   skillsFromApi,
+  str,
   toolsetsFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
@@ -681,6 +687,30 @@ export async function listHermesLiveDirect(opts: {
     } satisfies HermesLive;
   } catch {
     return { ok: false, error: "Couldn’t read Hermes status." };
+  }
+}
+
+export async function readHermesSessionMessagesDirect(opts: {
+  url: string;
+  key: string;
+  sessionId: string;
+  signal?: AbortSignal;
+}): Promise<HermesSessionMessagesResult> {
+  try {
+    const raw = await dashboardGet(
+      opts.url,
+      opts.key,
+      `/api/sessions/${encodeURIComponent(opts.sessionId)}/messages?limit=50&order=latest`,
+      opts.signal,
+    );
+    if (!raw) return { ok: false, error: "Couldn’t read this Hermes session." };
+    return {
+      ok: true,
+      sessionId: str(asRec(raw).session_id) || opts.sessionId,
+      messages: sessionMessagesFromApi(raw),
+    };
+  } catch {
+    return { ok: false, error: "Couldn’t read this Hermes session." };
   }
 }
 

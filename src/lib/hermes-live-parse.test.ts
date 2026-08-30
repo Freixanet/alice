@@ -14,6 +14,7 @@ import {
   projectFromUnknown,
   projectsFromApi,
   sessionsFromApi,
+  sessionMessagesFromApi,
   skillsFromApi,
   str,
   toolsetsFromApi,
@@ -167,4 +168,48 @@ describe("Hermes cron contract parsing", () => {
       { numRuns: 10_000 },
     );
   }, 15_000);
+
+  it("bounds and normalizes official session messages as inert text", () => {
+    const messages = sessionMessagesFromApi({
+      data: [
+        {
+          id: "one",
+          role: "assistant",
+          content: "Hello",
+          timestamp: 1_700_000_000,
+        },
+        {
+          id: "two",
+          role: "tool",
+          tool_name: "web_search",
+          content: { result: "safe" },
+        },
+      ],
+    });
+    expect(messages).toEqual([
+      {
+        id: "one",
+        role: "assistant",
+        content: "Hello",
+        timestamp: "2023-11-14T22:13:20.000Z",
+        toolName: undefined,
+      },
+      {
+        id: "two",
+        role: "tool",
+        content: '{"result":"safe"}',
+        timestamp: undefined,
+        toolName: "web_search",
+      },
+    ]);
+    const bounded = sessionMessagesFromApi({
+      data: Array.from({ length: 80 }, (_, index) => ({
+        role: "assistant",
+        content: "x".repeat(5_000),
+        id: String(index),
+      })),
+    });
+    expect(bounded).toHaveLength(50);
+    expect(bounded.every((row) => row.content.length <= 4_000)).toBe(true);
+  });
 });

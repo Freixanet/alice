@@ -1,5 +1,8 @@
 import { authHeaders } from "./auth/client";
-import type { HermesLiveResult } from "./hermes-live-types";
+import type {
+  HermesLiveResult,
+  HermesSessionMessagesResult,
+} from "./hermes-live-types";
 import type { HermesMutation } from "./hermes-operations";
 
 export type * from "./hermes-live-types";
@@ -64,5 +67,50 @@ export async function mutateHermes(
     return { ok: Boolean(data.ok), error: data.error };
   } catch {
     return { ok: false, error: "Hermes couldn’t save the change." };
+  }
+}
+
+export async function readHermesSessionMessages(opts: {
+  sessionId: string;
+  signal?: AbortSignal;
+}): Promise<HermesSessionMessagesResult> {
+  try {
+    const { useHermes } = await import("./store");
+    const state = useHermes.getState();
+    if (state.gatewayPlace === "device") {
+      const { getDeviceSessionKey, readHermesSessionMessagesDirect } =
+        await import("./hermes-direct");
+      const key = getDeviceSessionKey();
+      if (!state.gatewayUrl || !key) {
+        return { ok: false, error: "Connect your Hermes on this computer." };
+      }
+      return readHermesSessionMessagesDirect({
+        url: state.gatewayUrl,
+        key,
+        sessionId: opts.sessionId,
+        signal: opts.signal,
+      });
+    }
+    const res = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        action: "session-messages",
+        sessionId: opts.sessionId,
+      }),
+      signal: opts.signal,
+    });
+    const data = (await res.json()) as HermesSessionMessagesResult;
+    return data && data.ok
+      ? data
+      : {
+          ok: false,
+          error:
+            data && "error" in data
+              ? data.error
+              : "Couldn’t read this Hermes session.",
+        };
+  } catch {
+    return { ok: false, error: "Couldn’t read this Hermes session." };
   }
 }

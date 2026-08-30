@@ -78,6 +78,22 @@ export type HermesSessionRow = {
   unread: boolean;
 };
 
+export type HermesSessionMessage = {
+  id: string;
+  role: "user" | "assistant" | "system" | "tool" | "unknown";
+  content: string;
+  timestamp?: string;
+  toolName?: string;
+};
+
+export type HermesSessionMessagesResult =
+  | {
+      ok: true;
+      sessionId: string;
+      messages: HermesSessionMessage[];
+    }
+  | { ok: false; error: string };
+
 export type HermesPairingRow = {
   platform: string;
   code?: string;
