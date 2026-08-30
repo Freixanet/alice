@@ -23,6 +23,7 @@ import {
   asList,
   asRec,
   channelsFromApi,
+  cronDeliveryTargetsFromApi,
   cronFromApi,
   cronFromUnknown,
   groupLabel,
@@ -345,6 +346,7 @@ export async function fetchHermesLive(opts?: {
   let toolsets = disk.toolsets;
   let mcp = disk.mcp;
   let cron = disk.cron;
+  let cronDeliveryTargets: HermesLive["cronDeliveryTargets"] = [];
   let channels = disk.channels;
   let projects = disk.projects;
   let sessions: HermesSessionRow[] = [];
@@ -358,6 +360,7 @@ export async function fetchHermesLive(opts?: {
       apiTools,
       apiMcp,
       apiCron,
+      apiCronDeliveryTargets,
       apiChannels,
       apiSessions,
       apiPairing,
@@ -368,6 +371,7 @@ export async function fetchHermesLive(opts?: {
       hermesDashboardGet(gate, "/api/tools/toolsets"),
       hermesDashboardGet(gate, "/api/mcp/servers"),
       hermesDashboardGet(gate, "/api/cron/jobs"),
+      hermesDashboardGet(gate, "/api/cron/delivery-targets"),
       hermesDashboardGet(gate, "/api/messaging/platforms"),
       hermesDashboardGet(gate, "/api/sessions?limit=20&order=recent"),
       hermesDashboardGet(gate, "/api/pairing"),
@@ -382,6 +386,7 @@ export async function fetchHermesLive(opts?: {
     if (nextMcp.length) mcp = nextMcp;
     const nextCron = cronFromApi(apiCron);
     if (nextCron.length) cron = nextCron;
+    cronDeliveryTargets = cronDeliveryTargetsFromApi(apiCronDeliveryTargets);
     const nextChannels = channelsFromApi(apiChannels);
     if (nextChannels.length) channels = nextChannels;
     const nextProjects = projectsFromApi(apiProjects);
@@ -401,6 +406,7 @@ export async function fetchHermesLive(opts?: {
     toolsets,
     mcp,
     cron,
+    cronDeliveryTargets,
     channels,
     sessions,
     pairing,

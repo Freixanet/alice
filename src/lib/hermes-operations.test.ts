@@ -67,4 +67,26 @@ describe("official Hermes management operations", () => {
       ).toBe(true);
     }
   });
+
+  it("rejects script-only jobs without an executable script", () => {
+    expect(
+      hermesMutationSchema.safeParse({
+        action: "cron-create",
+        name: "watchdog",
+        prompt: "",
+        schedule: "every 5m",
+        noAgent: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      hermesMutationSchema.safeParse({
+        action: "cron-create",
+        name: "watchdog",
+        prompt: "",
+        schedule: "every 5m",
+        script: "memory-watchdog.sh",
+        noAgent: true,
+      }).success,
+    ).toBe(true);
+  });
 });

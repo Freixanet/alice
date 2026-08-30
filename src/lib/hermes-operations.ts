@@ -5,6 +5,26 @@ const id = z.string().trim().min(1).max(160);
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 const text = (max: number) => z.string().trim().min(1).max(max);
 
+const cronCreateSchema = z
+  .strictObject({
+    action: z.literal("cron-create"),
+    name,
+    prompt: z.string().max(8_000),
+    schedule: text(256),
+    deliver: optionalText(128),
+    skills: z.array(name).max(32).optional(),
+    model: optionalText(256),
+    provider: optionalText(128),
+    script: optionalText(16_000),
+    workdir: optionalText(1_024),
+    enabledToolsets: z.array(name).max(32).optional(),
+    noAgent: z.boolean().optional(),
+  })
+  .refine((value) => !value.noAgent || Boolean(value.script), {
+    message: "Script-only jobs require a script.",
+    path: ["script"],
+  });
+
 export const hermesMutationSchema = z.discriminatedUnion("action", [
   z.strictObject({
     action: z.literal("toggle-skill"),
@@ -21,20 +41,7 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
     name,
     enabled: z.boolean(),
   }),
-  z.strictObject({
-    action: z.literal("cron-create"),
-    name,
-    prompt: z.string().max(8_000),
-    schedule: text(256),
-    deliver: optionalText(128),
-    skills: z.array(name).max(32).optional(),
-    model: optionalText(256),
-    provider: optionalText(128),
-    script: optionalText(16_000),
-    workdir: optionalText(1_024),
-    enabledToolsets: z.array(name).max(32).optional(),
-    noAgent: z.boolean().optional(),
-  }),
+  cronCreateSchema,
   z.strictObject({
     action: z.literal("cron-update"),
     jobId: id,

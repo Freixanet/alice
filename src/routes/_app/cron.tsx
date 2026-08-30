@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Play, Plus, Trash2 } from "lucide-react";
+import { Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "@/components/catalog-page";
+import { CronJobDialog, type CronJobDraft } from "@/components/cron-job-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { listHermesLive, mutateHermes } from "@/lib/hermes-live";
 import type { HermesCronRow } from "@/lib/hermes-live-types";
 import { dateLocale, localizeError, type Locale } from "@/lib/i18n";
@@ -28,28 +28,24 @@ function CronPage() {
   const navigate = useNavigate();
   const { data, error, loading, setData } = useHermesLive();
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [frequency, setFrequency] = useState<Frequency>("daily");
-  const [time, setTime] = useState("09:00");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [editJob, setEditJob] = useState<HermesCronRow | null>(null);
   const [deleteJob, setDeleteJob] = useState<HermesCronRow | null>(null);
   const [actionPending, setActionPending] = useState<string | null>(null);
   const jobs = data?.cron ?? [];
 
-  async function createJob() {
-    const jobName = name.trim();
-    const instructions = prompt.trim();
-    if (!jobName || !instructions || creating) return;
+  async function saveJob(draft: CronJobDraft) {
+    if (creating) return;
     setCreating(true);
     setCreateError(null);
-    const result = await mutateHermes({
-      action: "cron-create",
-      name: jobName,
-      prompt: instructions,
-      schedule: scheduleFor(frequency, time),
-    });
+    const result = editJob
+      ? await mutateHermes({
+          action: "cron-update",
+          jobId: editJob.id,
+          updates: draft,
+        })
+      : await mutateHermes({ action: "cron-create", ...draft });
     if (!result.ok) {
       setCreateError(result.error || t("cron.createError"));
       setCreating(false);
@@ -59,10 +55,7 @@ function CronPage() {
     if (fresh.ok) setData(fresh);
     setCreating(false);
     setOpen(false);
-    setName("");
-    setPrompt("");
-    setFrequency("daily");
-    setTime("09:00");
+    setEditJob(null);
   }
 
   return (
@@ -75,11 +68,14 @@ function CronPage() {
           action={
             <Button
               disabled={loading}
-              onClick={() =>
-                data?.writable
-                  ? setOpen(true)
-                  : void navigate({ to: "/connect" })
-              }
+              onClick={() => {
+                if (!data?.writable) {
+                  void navigate({ to: "/connect" });
+                  return;
+                }
+                setEditJob(null);
+                setOpen(true);
+              }}
             >
               <Plus />
               {t("cron.new")}
@@ -113,6 +109,11 @@ function CronPage() {
                       {job.origin ? (
                         <Badge variant="mute">{job.origin}</Badge>
                       ) : null}
+                      <Badge variant="mute">
+                        {job.noAgent
+                          ? t("cron.modeScript")
+                          : t("cron.modeAgent")}
+                      </Badge>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {job.schedule}
@@ -146,6 +147,19 @@ function CronPage() {
                         }}
                       >
                         <Play />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("cron.edit")}
+                        disabled={actionPending === job.id}
+                        onClick={() => {
+                          setCreateError(null);
+                          setEditJob(job);
+                          setOpen(true);
+                        }}
+                      >
+                        <Pencil />
                       </Button>
                       <Button
                         variant="ghost"
@@ -196,94 +210,21 @@ function CronPage() {
           </ul>
         )}
       </div>
-      <Dialog
+      <CronJobDialog
         open={open}
+        job={editJob}
+        skills={data?.skills ?? []}
+        toolsets={data?.toolsets ?? []}
+        deliveryTargets={data?.cronDeliveryTargets ?? []}
+        pending={creating}
+        error={createError ? localizeError(locale, createError) : null}
         onOpenChange={(next) => {
-          if (!creating) setOpen(next);
+          setOpen(next);
+          if (!next) setEditJob(null);
           if (next) setCreateError(null);
         }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("cron.createTitle")}</DialogTitle>
-            <DialogDescription>{t("cron.createDescription")}</DialogDescription>
-          </DialogHeader>
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createJob();
-            }}
-          >
-            <label className="flex flex-col gap-1.5 text-sm">
-              {t("cron.name")}
-              <Input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t("cron.namePlaceholder")}
-                autoFocus
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              {t("cron.instructions")}
-              <textarea
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                placeholder={t("cron.instructionsPlaceholder")}
-                className="min-h-28 resize-none rounded-md bg-muted px-3 py-2 text-base text-foreground shadow-border placeholder:text-muted-foreground/80 focus-visible:outline-none md:text-sm"
-              />
-            </label>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <label className="flex flex-col gap-1.5 text-sm">
-                {t("cron.frequency")}
-                <select
-                  value={frequency}
-                  onChange={(event) =>
-                    setFrequency(event.target.value as Frequency)
-                  }
-                  className="h-10 w-full rounded-md bg-muted px-3 text-base text-foreground shadow-border focus-visible:outline-none md:text-sm"
-                >
-                  <option value="daily">{t("cron.daily")}</option>
-                  <option value="weekdays">{t("cron.weekdays")}</option>
-                  <option value="weekly">{t("cron.weekly")}</option>
-                  <option value="hourly">{t("cron.hourly")}</option>
-                </select>
-              </label>
-              {frequency !== "hourly" ? (
-                <label className="flex flex-col gap-1.5 text-sm">
-                  {t("cron.time")}
-                  <Input
-                    type="time"
-                    value={time}
-                    onChange={(event) => setTime(event.target.value)}
-                  />
-                </label>
-              ) : null}
-            </div>
-            {createError ? (
-              <p className="text-sm text-destructive">
-                {localizeError(locale, createError)}
-              </p>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setOpen(false)}
-                disabled={creating}
-              >
-                {t("cron.cancel")}
-              </Button>
-              <Button
-                type="submit"
-                disabled={creating || !name.trim() || !prompt.trim()}
-              >
-                {creating ? t("cron.creating") : t("cron.create")}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+        onSave={saveJob}
+      />
       <Dialog
         open={Boolean(deleteJob)}
         onOpenChange={(next) => {
@@ -338,18 +279,6 @@ function CronPage() {
       </Dialog>
     </div>
   );
-}
-
-type Frequency = "daily" | "weekdays" | "weekly" | "hourly";
-
-function scheduleFor(frequency: Frequency, value: string) {
-  if (frequency === "hourly") return "0 * * * *";
-  const [hours = "9", minutes = "0"] = value.split(":");
-  const minute = Number.parseInt(minutes, 10) || 0;
-  const hour = Number.parseInt(hours, 10) || 0;
-  if (frequency === "weekdays") return `${minute} ${hour} * * 1-5`;
-  if (frequency === "weekly") return `${minute} ${hour} * * 1`;
-  return `${minute} ${hour} * * *`;
 }
 
 function formatStamp(locale: Locale, value: string) {

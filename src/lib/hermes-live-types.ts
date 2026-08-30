@@ -31,13 +31,29 @@ export type HermesMcpRow = {
 export type HermesCronRow = {
   id: string;
   name: string;
+  prompt: string;
   schedule: string;
+  deliver: string;
+  skills: string[];
+  model?: string;
+  provider?: string;
+  script?: string;
+  workdir?: string;
+  enabledToolsets: string[];
+  noAgent: boolean;
   enabled: boolean;
   state: string;
   lastStatus?: string;
   lastRunAt?: string;
   nextRunAt?: string;
   origin?: string;
+};
+
+export type HermesCronDeliveryTarget = {
+  id: string;
+  name: string;
+  homeTargetSet: boolean;
+  homeEnvVar?: string;
 };
 
 export type HermesChannelRow = {
@@ -88,6 +104,7 @@ export type HermesLive = {
   toolsets: HermesToolsetRow[];
   mcp: HermesMcpRow[];
   cron: HermesCronRow[];
+  cronDeliveryTargets: HermesCronDeliveryTarget[];
   channels: HermesChannelRow[];
   sessions: HermesSessionRow[];
   pairing: HermesPairingRow[];

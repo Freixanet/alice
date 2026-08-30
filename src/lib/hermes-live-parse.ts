@@ -1,5 +1,6 @@
 import type {
   HermesChannelRow,
+  HermesCronDeliveryTarget,
   HermesCronRow,
   HermesMcpRow,
   HermesPairingRow,
@@ -42,11 +43,14 @@ export function asList(value: unknown): unknown[] {
   const rec = asRec(value);
   for (const key of [
     "skills",
+    "toolsets",
     "jobs",
     "servers",
     "platforms",
     "sessions",
     "subscriptions",
+    "webhooks",
+    "channels",
     "pending",
     "projects",
   ]) {
@@ -91,11 +95,20 @@ export function cronFromUnknown(item: unknown): HermesCronRow {
   return {
     id: str(rec.id) || str(rec.name),
     name: str(rec.name) || str(rec.id),
+    prompt: str(rec.prompt),
     schedule:
       str(rec.schedule_display) ||
       str(schedule.display) ||
       str(schedule.expr) ||
       "",
+    deliver: str(rec.deliver) || str(origin.platform) || "local",
+    skills: stringList(rec.skills),
+    model: str(rec.model) || undefined,
+    provider: str(rec.provider) || undefined,
+    script: str(rec.script) || undefined,
+    workdir: str(rec.workdir) || undefined,
+    enabledToolsets: stringList(rec.enabled_toolsets),
+    noAgent: rec.no_agent === true,
     enabled: rec.enabled !== false && str(rec.state) !== "paused",
     state: str(rec.state) || (rec.enabled === false ? "paused" : "scheduled"),
     lastStatus: str(rec.last_status) || undefined,
@@ -103,6 +116,39 @@ export function cronFromUnknown(item: unknown): HermesCronRow {
     nextRunAt: str(rec.next_run_at) || undefined,
     origin: str(origin.platform) || str(rec.deliver) || undefined,
   };
+}
+
+export function cronDeliveryTargetsFromApi(
+  raw: unknown,
+): HermesCronDeliveryTarget[] {
+  const rec = asRec(raw);
+  const rows = Array.isArray(rec.targets) ? rec.targets : [];
+  const targets: HermesCronDeliveryTarget[] = rows
+    .map((item) => {
+      const row = asRec(item);
+      const id = str(row.id);
+      return {
+        id,
+        name: str(row.name) || prettyName(id),
+        homeTargetSet: row.home_target_set !== false,
+        ...(str(row.home_env_var) ? { homeEnvVar: str(row.home_env_var) } : {}),
+      };
+    })
+    .filter((target) => target.id);
+  if (!targets.some((target) => target.id === "local")) {
+    targets.unshift({
+      id: "local",
+      name: "Local (save only)",
+      homeTargetSet: true,
+    });
+  }
+  return targets;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map(str).filter(Boolean).slice(0, 64)
+    : [];
 }
 
 export function skillsFromApi(raw: unknown): HermesSkillRow[] {
