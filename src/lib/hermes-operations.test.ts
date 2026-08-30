@@ -97,6 +97,36 @@ describe("official Hermes management operations", () => {
     }
   });
 
+  it("keeps pairing request, code and user identifiers unambiguous", () => {
+    expect(
+      hermesOperationFor({
+        action: "pairing-approve",
+        platform: "telegram",
+        requestId: "request-1",
+      }),
+    ).toEqual({
+      path: "/api/pairing/approve",
+      method: "POST",
+      body: {
+        platform: "telegram",
+        request_id: "request-1",
+        code: undefined,
+      },
+    });
+    expect(
+      hermesOperationFor({
+        action: "pairing-revoke",
+        platform: "telegram",
+        userId: "user-1",
+        confirm: true,
+      }),
+    ).toEqual({
+      path: "/api/pairing/revoke",
+      method: "POST",
+      body: { platform: "telegram", user_id: "user-1" },
+    });
+  });
+
   it("maps negotiated session controls to their scoped official routes", () => {
     expect(
       hermesOperationFor({

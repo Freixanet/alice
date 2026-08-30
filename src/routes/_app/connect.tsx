@@ -510,6 +510,10 @@ function HermesLiveSections({
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionTitle, setEditingSessionTitle] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [pairingBusy, setPairingBusy] = useState<string | null>(null);
+  const [pairingError, setPairingError] = useState<string | null>(null);
+  const [pairingNotice, setPairingNotice] = useState<string | null>(null);
+  const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -549,6 +553,31 @@ function HermesLiveSections({
     manifest,
     "session_model_lock",
   );
+  const canManagePairing = advertisesHermesCapability(manifest, "pairing");
+
+  async function runPairingAction(
+    key: string,
+    mutation: HermesMutation,
+  ): Promise<boolean> {
+    setPairingBusy(key);
+    setPairingError(null);
+    setPairingNotice(null);
+    const result = await mutateHermes(mutation);
+    if (!result.ok) {
+      setPairingError(
+        result.error
+          ? localizeError(locale, result.error)
+          : t("connect.pairingError"),
+      );
+      setPairingBusy(null);
+      return false;
+    }
+    const refreshed = await listHermesLive();
+    if (refreshed.ok) setData(refreshed);
+    setPairingNotice(t("connect.pairingSaved"));
+    setPairingBusy(null);
+    return true;
+  }
 
   async function runSessionAction(
     key: string,
@@ -614,10 +643,20 @@ function HermesLiveSections({
       {pending.length > 0 || approved.length > 0 ? (
         <section className="space-y-3">
           <h2 className="text-sm font-medium">{t("connect.pairing")}</h2>
+          {pairingError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {pairingError}
+            </p>
+          ) : null}
+          {pairingNotice ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              {pairingNotice}
+            </p>
+          ) : null}
           <ul className="flex flex-col gap-2">
             {pending.map((row) => (
               <li
-                key={`p-${row.platform}-${row.user ?? row.code ?? ""}`}
+                key={`p-${row.platform}-${row.requestId ?? row.code ?? row.user ?? ""}`}
                 className="rounded-xl bg-card px-4 py-4 shadow-border"
               >
                 <div className="flex flex-wrap items-center gap-2">
@@ -628,11 +667,32 @@ function HermesLiveSections({
                   {prettyPlatform(row.platform)}
                   {row.code ? ` · ${row.code}` : ""}
                 </p>
+                {canManagePairing && (row.requestId || row.code) ? (
+                  <Button
+                    size="sm"
+                    className="mt-3 min-h-11 md:min-h-8"
+                    disabled={pairingBusy !== null}
+                    onClick={() =>
+                      void runPairingAction(
+                        `approve:${row.platform}:${row.requestId ?? row.code}`,
+                        {
+                          action: "pairing-approve",
+                          platform: row.platform,
+                          ...(row.requestId
+                            ? { requestId: row.requestId }
+                            : { code: row.code }),
+                        },
+                      )
+                    }
+                  >
+                    {t("connect.approvePairing")}
+                  </Button>
+                ) : null}
               </li>
             ))}
             {approved.map((row) => (
               <li
-                key={`a-${row.platform}-${row.user ?? row.code ?? ""}`}
+                key={`a-${row.platform}-${row.userId ?? row.user ?? row.code ?? ""}`}
                 className="rounded-xl bg-card px-4 py-4 shadow-border"
               >
                 <div className="flex flex-wrap items-center gap-2">
@@ -642,6 +702,37 @@ function HermesLiveSections({
                 <p className="mt-1 text-sm text-muted-foreground">
                   {prettyPlatform(row.platform)}
                 </p>
+                {canManagePairing && row.userId ? (
+                  <Button
+                    variant={
+                      confirmRevokeId === row.userId ? "destructive" : "ghost"
+                    }
+                    size="sm"
+                    className="mt-3 min-h-11 md:min-h-8"
+                    disabled={pairingBusy !== null}
+                    onClick={() => {
+                      if (confirmRevokeId !== row.userId) {
+                        setConfirmRevokeId(row.userId ?? null);
+                        return;
+                      }
+                      void runPairingAction(
+                        `revoke:${row.platform}:${row.userId}`,
+                        {
+                          action: "pairing-revoke",
+                          platform: row.platform,
+                          userId: row.userId as string,
+                          confirm: true,
+                        },
+                      ).then((ok) => {
+                        if (ok) setConfirmRevokeId(null);
+                      });
+                    }}
+                  >
+                    {confirmRevokeId === row.userId
+                      ? t("connect.confirmRevokePairing")
+                      : t("connect.revokePairing")}
+                  </Button>
+                ) : null}
               </li>
             ))}
           </ul>

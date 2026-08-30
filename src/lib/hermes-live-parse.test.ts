@@ -134,7 +134,13 @@ describe("Hermes cron contract parsing", () => {
       pairingList([
         { platform: "telegram", request_id: "request", user_name: "Alice" },
       ])[0],
-    ).toEqual({ platform: "telegram", code: "request", user: "Alice" });
+    ).toEqual({
+      platform: "telegram",
+      code: undefined,
+      requestId: "request",
+      userId: undefined,
+      user: "Alice",
+    });
     expect(
       webhooksFromApi({
         subscriptions: [{ name: "deploy", events: ["push"] }],

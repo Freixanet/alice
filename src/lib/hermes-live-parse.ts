@@ -294,7 +294,9 @@ export function pairingList(value: unknown): HermesPairingRow[] {
       const row = asRec(item);
       return {
         platform: str(row.platform) || str(row.id),
-        code: str(row.code) || str(row.request_id) || undefined,
+        code: str(row.code) || undefined,
+        requestId: str(row.request_id) || undefined,
+        userId: str(row.user_id) || undefined,
         user:
           str(row.user_name) ||
           str(row.user) ||

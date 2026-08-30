@@ -81,6 +81,8 @@ export type HermesSessionRow = {
 export type HermesPairingRow = {
   platform: string;
   code?: string;
+  requestId?: string;
+  userId?: string;
   user?: string;
 };
 

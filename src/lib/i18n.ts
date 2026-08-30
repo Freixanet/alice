@@ -227,6 +227,11 @@ const en = {
   "connect.pairing": "Pairing",
   "connect.pending": "Pending",
   "connect.approved": "Approved",
+  "connect.approvePairing": "Approve",
+  "connect.revokePairing": "Revoke",
+  "connect.confirmRevokePairing": "Confirm revoke",
+  "connect.pairingSaved": "Pairing updated in Hermes.",
+  "connect.pairingError": "Hermes couldn’t update this pairing.",
   "connect.sessions": "Hermes sessions",
   "connect.sessionsHint":
     "Conversations your agent stores. Not the chats in this cockpit.",
@@ -789,6 +794,11 @@ const es: Record<MsgKey, string> = {
   "connect.pairing": "Emparejamiento",
   "connect.pending": "Pendiente",
   "connect.approved": "Aprobado",
+  "connect.approvePairing": "Aprobar",
+  "connect.revokePairing": "Revocar",
+  "connect.confirmRevokePairing": "Confirmar revocación",
+  "connect.pairingSaved": "Emparejamiento actualizado en Hermes.",
+  "connect.pairingError": "Hermes no ha podido actualizar este emparejamiento.",
   "connect.sessions": "Sesiones de Hermes",
   "connect.sessionsHint":
     "Las conversaciones que guarda tu agente. No son los chats de este cockpit.",

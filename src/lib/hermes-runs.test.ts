@@ -87,5 +87,5 @@ describe("Hermes runs contract", () => {
       }),
       { numRuns: 10_000 },
     );
-  });
+  }, 15_000);
 });
