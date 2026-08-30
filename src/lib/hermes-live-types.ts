@@ -26,6 +26,7 @@ export type HermesMcpRow = {
   transport: string;
   detail: string;
   enabled: boolean;
+  auth?: "none" | "oauth" | "header";
 };
 
 export type HermesCronRow = {

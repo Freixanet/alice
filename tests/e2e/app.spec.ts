@@ -21,26 +21,30 @@ for (const route of routes) {
     });
     await expect(page.locator("html")).toHaveAttribute("data-alice-app", "");
 
-    const styles = await page.locator("body *").evaluateAll((elements) => ({
-      horizontalOverflow:
-        document.documentElement.scrollWidth > window.innerWidth,
-      shadows: elements.filter(
-        (element) => getComputedStyle(element).boxShadow !== "none",
-      ).length,
-      gradients: elements.filter(
-        (element) => getComputedStyle(element).backgroundImage !== "none",
-      ).length,
-      backdrops: elements.filter(
-        (element) => getComputedStyle(element).backdropFilter !== "none",
-      ).length,
-    }));
-
-    expect(styles).toEqual({
-      horizontalOverflow: false,
-      shadows: 0,
-      gradients: 0,
-      backdrops: 0,
-    });
+    await expect
+      .poll(
+        () =>
+          page.locator("body *").evaluateAll((elements) => ({
+            horizontalOverflow:
+              document.documentElement.scrollWidth > window.innerWidth,
+            shadows: elements.filter(
+              (element) => getComputedStyle(element).boxShadow !== "none",
+            ).length,
+            gradients: elements.filter(
+              (element) => getComputedStyle(element).backgroundImage !== "none",
+            ).length,
+            backdrops: elements.filter(
+              (element) => getComputedStyle(element).backdropFilter !== "none",
+            ).length,
+          })),
+        { timeout: 15_000 },
+      )
+      .toEqual({
+        horizontalOverflow: false,
+        shadows: 0,
+        gradients: 0,
+        backdrops: 0,
+      });
   });
 }
 

@@ -111,4 +111,53 @@ describe("Hermes capability negotiation", () => {
       capabilities: { skills: true, code_execution: true },
     });
   });
+
+  it("understands the official runs and session capability document", () => {
+    expect(
+      parseHermesCapabilityManifest({
+        version: "0.20.6",
+        features: {
+          chat_completions_streaming: true,
+          run_submission: true,
+          run_events_sse: true,
+          run_stop: true,
+          run_steer: true,
+          run_approval_response: true,
+          tool_progress_events: true,
+          session_resources: true,
+          model_options: true,
+          skills_api: true,
+        },
+        endpoints: {
+          session_fork: {
+            method: "POST",
+            path: "/api/sessions/{session_id}/fork",
+          },
+          ignored: { method: "POST" },
+        },
+      }),
+    ).toMatchObject({
+      compatibility: "current",
+      capabilities: {
+        "chat.streaming": true,
+        "chat.runs": true,
+        "chat.cancel": true,
+        "chat.steer": true,
+        "chat.approvals": true,
+        "chat.tools": true,
+        sessions: true,
+        models: true,
+        skills: true,
+      },
+    });
+  });
+
+  it("is total for arbitrary capability documents", () => {
+    fc.assert(
+      fc.property(fc.jsonValue(), (value) => {
+        expect(() => parseHermesCapabilityManifest(value)).not.toThrow();
+      }),
+      { numRuns: 10_000 },
+    );
+  });
 });

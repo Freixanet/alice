@@ -15,6 +15,8 @@ export type HermesCapability =
   | "chat.tools"
   | "chat.approvals"
   | "chat.cancel"
+  | "chat.runs"
+  | "chat.steer"
   | "models"
   | "skills"
   | "toolsets"
@@ -117,37 +119,62 @@ export function unionHermesModels(
   return out;
 }
 
-const CAPABILITY_ALIASES: Record<string, HermesCapability> = {
-  streaming: "chat.streaming",
-  stream: "chat.streaming",
-  multimodal: "chat.multimodal",
-  vision: "chat.multimodal",
-  tools: "chat.tools",
-  tool_calls: "chat.tools",
-  approvals: "chat.approvals",
-  cancellation: "chat.cancel",
-  cancel: "chat.cancel",
-  models: "models",
-  skills: "skills",
-  toolsets: "toolsets",
-  mcp: "mcp",
-  plugins: "plugins",
-  cron: "cron",
-  cronjob: "cron",
-  projects: "projects",
-  kanban: "projects",
-  memory: "memory",
-  sessions: "sessions",
-  profiles: "profiles",
-  channels: "channels",
-  pairing: "pairing",
-  webhooks: "webhooks",
-  curator: "curator",
-  diagnostics: "diagnostics",
-  delegation: "delegation",
-  delegate_task: "delegation",
-  code_execution: "code_execution",
-  execute_code: "code_execution",
+const CAPABILITY_ALIASES: Record<string, HermesCapability[]> = {
+  streaming: ["chat.streaming"],
+  stream: ["chat.streaming"],
+  chat_completions_streaming: ["chat.streaming"],
+  responses_streaming: ["chat.streaming"],
+  run_events_sse: ["chat.runs", "chat.streaming"],
+  session_chat_streaming: ["sessions", "chat.streaming"],
+  multimodal: ["chat.multimodal"],
+  vision: ["chat.multimodal"],
+  tools: ["chat.tools"],
+  tool_calls: ["chat.tools"],
+  tool_progress_events: ["chat.tools"],
+  approvals: ["chat.approvals"],
+  approval_events: ["chat.approvals"],
+  run_approval: ["chat.approvals"],
+  run_approval_response: ["chat.approvals"],
+  cancellation: ["chat.cancel"],
+  cancel: ["chat.cancel"],
+  run_stop: ["chat.cancel"],
+  runs: ["chat.runs"],
+  run_submission: ["chat.runs"],
+  run_status: ["chat.runs"],
+  responses_api: ["chat.runs"],
+  run_steer: ["chat.steer"],
+  models: ["models"],
+  model_options: ["models"],
+  skills: ["skills"],
+  skills_api: ["skills"],
+  toolsets: ["toolsets"],
+  mcp: ["mcp"],
+  plugins: ["plugins"],
+  cron: ["cron"],
+  cronjob: ["cron"],
+  projects: ["projects"],
+  kanban: ["projects"],
+  memory: ["memory"],
+  sessions: ["sessions"],
+  session_resources: ["sessions"],
+  session_create: ["sessions"],
+  session_update: ["sessions"],
+  session_delete: ["sessions"],
+  session_messages: ["sessions"],
+  session_fork: ["sessions"],
+  session_chat: ["sessions"],
+  session_chat_stream: ["sessions", "chat.streaming"],
+  session_model_lock: ["sessions", "models"],
+  profiles: ["profiles"],
+  channels: ["channels"],
+  pairing: ["pairing"],
+  webhooks: ["webhooks"],
+  curator: ["curator"],
+  diagnostics: ["diagnostics"],
+  delegation: ["delegation"],
+  delegate_task: ["delegation"],
+  code_execution: ["code_execution"],
+  execute_code: ["code_execution"],
 };
 
 export function parseHermesCapabilityManifest(
@@ -163,8 +190,9 @@ export function parseHermesCapabilityManifest(
   const capabilities: Partial<Record<HermesCapability, boolean>> = {};
   for (const raw of advertised) {
     const normalized = raw.toLowerCase().replace(/[\s.-]+/g, "_");
-    const known = CAPABILITY_ALIASES[normalized];
-    if (known) capabilities[known] = true;
+    for (const known of CAPABILITY_ALIASES[normalized] ?? []) {
+      capabilities[known] = true;
+    }
   }
   return {
     version,
@@ -195,6 +223,19 @@ function collectAdvertised(record: Record<string, unknown> | null): string[] {
         for (const [name, enabled] of Object.entries(nested)) {
           if (enabled === true) values.push(name);
         }
+      }
+    }
+  }
+  const endpoints = asRecord(record.endpoints);
+  if (endpoints) {
+    for (const [name, rawEndpoint] of Object.entries(endpoints)) {
+      const endpoint = asRecord(rawEndpoint);
+      if (
+        endpoint &&
+        typeof endpoint.method === "string" &&
+        typeof endpoint.path === "string"
+      ) {
+        values.push(name);
       }
     }
   }

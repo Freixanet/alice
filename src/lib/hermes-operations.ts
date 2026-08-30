@@ -4,6 +4,7 @@ const name = z.string().trim().min(1).max(128);
 const id = z.string().trim().min(1).max(160);
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 const text = (max: number) => z.string().trim().min(1).max(max);
+const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
 
 const cronCreateSchema = z
   .strictObject({
@@ -85,16 +86,25 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
     name,
     content: text(128_000),
   }),
-  z.strictObject({
-    action: z.literal("mcp-create"),
-    name,
-    url: optionalText(1_024),
-    command: optionalText(1_024),
-    args: z.array(z.string().max(1_024)).max(64).optional(),
-    env: z.record(z.string().max(128), z.string().max(8_192)).optional(),
-    auth: z.enum(["none", "oauth", "header"]).optional(),
-    bearerToken: optionalText(4_096),
-  }),
+  z
+    .strictObject({
+      action: z.literal("mcp-create"),
+      name,
+      url: optionalText(1_024),
+      command: optionalText(1_024),
+      args: z.array(z.string().max(1_024)).max(64).optional(),
+      env: z.record(envName, z.string().max(8_192)).optional(),
+      auth: z.enum(["none", "oauth", "header"]).optional(),
+      bearerToken: optionalText(4_096),
+    })
+    .refine((value) => Boolean(value.url) !== Boolean(value.command), {
+      message: "Choose exactly one MCP transport.",
+      path: ["url"],
+    })
+    .refine((value) => !value.url || /^https?:\/\//i.test(value.url), {
+      message: "MCP URLs must use HTTP or HTTPS.",
+      path: ["url"],
+    }),
   z.strictObject({
     action: z.literal("mcp-delete"),
     name,

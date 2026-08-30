@@ -201,12 +201,17 @@ export function mcpFromApi(raw: unknown): HermesMcpRow[] {
       const name = str(rec.name);
       const url = str(rec.url);
       const command = str(rec.command);
+      const auth: HermesMcpRow["auth"] =
+        rec.auth === "oauth" || rec.auth === "header" || rec.auth === "none"
+          ? rec.auth
+          : undefined;
       return {
         id: name,
         name,
         transport: str(rec.transport) || (url ? "http" : "stdio"),
         detail: url || command || name,
         enabled: rec.enabled !== false,
+        auth,
       };
     })
     .filter((m) => m.id);

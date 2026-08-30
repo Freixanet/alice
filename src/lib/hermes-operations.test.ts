@@ -54,6 +54,35 @@ describe("official Hermes management operations", () => {
     ).toBeNull();
   });
 
+  it("accepts one valid MCP transport and rejects unsafe environment names", () => {
+    expect(
+      hermesMutationSchema.safeParse({
+        action: "mcp-create",
+        name: "docs",
+        url: "https://mcp.example.test",
+        auth: "oauth",
+      }).success,
+    ).toBe(true);
+    for (const value of [
+      { action: "mcp-create", name: "docs" },
+      {
+        action: "mcp-create",
+        name: "docs",
+        url: "https://mcp.example.test",
+        command: "npx",
+      },
+      { action: "mcp-create", name: "docs", url: "file:///tmp/server" },
+      {
+        action: "mcp-create",
+        name: "docs",
+        command: "npx",
+        env: { "BAD-NAME": "secret" },
+      },
+    ]) {
+      expect(hermesMutationSchema.safeParse(value).success).toBe(false);
+    }
+  });
+
   it("requires contextual confirmation for destructive operations", () => {
     for (const value of [
       { action: "cron-delete", jobId: "one" },

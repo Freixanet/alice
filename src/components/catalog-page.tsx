@@ -66,6 +66,7 @@ export function CatalogPage({
   onToggle,
   chatPrompt,
   empty,
+  rowActions,
 }: {
   kicker: string;
   title: string;
@@ -76,6 +77,7 @@ export function CatalogPage({
   onToggle?: (id: string) => void;
   chatPrompt: (row: CatalogRow) => string;
   empty?: string;
+  rowActions?: (row: CatalogRow) => ReactNode;
 }) {
   const t = useT();
   const [q, setQ] = useState("");
@@ -144,7 +146,7 @@ export function CatalogPage({
               key={row.id}
               className="alice-record rounded-xl bg-card px-4 py-4 shadow-border"
             >
-              <div className="flex items-start gap-3">
+              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-medium">{row.title}</h2>
@@ -165,7 +167,8 @@ export function CatalogPage({
                     {row.meta ? ` · ${row.meta}` : ""}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="ml-auto flex shrink-0 items-center gap-1">
+                  {rowActions?.(row)}
                   <Button
                     variant="ghost"
                     size="icon-sm"
