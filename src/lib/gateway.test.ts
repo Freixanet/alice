@@ -5,6 +5,7 @@ import {
   isPrivateHostname,
   normalizeGatewayUrl,
   normalizeLlmBaseUrl,
+  parseHermesCapabilityManifest,
   parseHermesModelOptions,
 } from "./gateway";
 
@@ -75,5 +76,39 @@ describe("Hermes model parsing", () => {
       }),
       { numRuns: 10_000 },
     );
+  });
+});
+
+describe("Hermes capability negotiation", () => {
+  it("recognizes the current and previous stable versions", () => {
+    expect(
+      parseHermesCapabilityManifest({
+        version: "0.20.6",
+        capabilities: ["streaming", "cronjob", "delegate_task"],
+      }),
+    ).toMatchObject({
+      compatibility: "current",
+      capabilities: {
+        "chat.streaming": true,
+        cron: true,
+        delegation: true,
+      },
+    });
+    expect(
+      parseHermesCapabilityManifest({ hermes_version: "v0.20.5" })
+        .compatibility,
+    ).toBe("previous");
+  });
+
+  it("degrades unknown versions by independently advertised capability", () => {
+    expect(
+      parseHermesCapabilityManifest({
+        version: "99.0.0",
+        features: { skills: true, cron: false, execute_code: true },
+      }),
+    ).toMatchObject({
+      compatibility: "unknown",
+      capabilities: { skills: true, code_execution: true },
+    });
   });
 });

@@ -101,19 +101,23 @@ export function AppShell() {
 
   useLayoutEffect(() => {
     const root = document.documentElement;
+    root.dataset.aliceApp = "";
+    return () => {
+      delete root.dataset.aliceApp;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const root = document.documentElement;
     root.dataset.theme = theme;
     root.dataset.font = fontSize;
     root.dataset.accent = accent;
-    root.dataset.aliceApp = "";
     const themeColor = getComputedStyle(root)
       .getPropertyValue("--background")
       .trim();
     document
       .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
       ?.setAttribute("content", themeColor);
-    return () => {
-      delete root.dataset.aliceApp;
-    };
   }, [theme, fontSize, accent]);
 
   useEffect(() => {

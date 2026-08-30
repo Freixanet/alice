@@ -36,6 +36,10 @@ import {
   type HermesChatContent,
   type ProbeResult,
 } from "./gateway";
+import {
+  parseHermesCapabilityManifest,
+  type HermesCapabilityManifest,
+} from "./gateway-contracts";
 
 const execFileAsync = promisify(execFile);
 
@@ -59,11 +63,13 @@ function ipv4ToInt(ip: string): number | null {
   if (p.length !== 4) return null;
   const n = p.map(Number);
   if (n.some((x) => !Number.isInteger(x) || x < 0 || x > 255)) return null;
-  return ((n[0] << 24) | (n[1] << 16) | (n[2] << 8) | n[3]) >>> 0;
+  const [a = 0, b = 0, c = 0, d = 0] = n;
+  return ((a << 24) | (b << 16) | (c << 8) | d) >>> 0;
 }
 
 function inCidr(ip: string, cidr: string): boolean {
   const [base, bitsStr] = cidr.split("/");
+  if (!base || !bitsStr) return false;
   const bits = Number(bitsStr);
   const a = ipv4ToInt(ip);
   const b = ipv4ToInt(base);
@@ -157,34 +163,77 @@ const COOKIE = "hg";
 
 let ephemeralCookieKey: Buffer | null = null;
 
-function cookieKey(): Buffer {
-  const s =
+type GateKey = { id: string; key: Buffer };
+
+function gateKeys(): GateKey[] {
+  const configured = (process.env.HERMES_COOKIE_KEYS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .flatMap((entry) => {
+      const separator = entry.indexOf(":");
+      if (separator <= 0) return [];
+      const id = entry.slice(0, separator).trim();
+      const secret = entry.slice(separator + 1).trim();
+      return id && secret
+        ? [{ id, key: createHash("sha256").update(secret).digest() }]
+        : [];
+    });
+  if (configured.length) return configured;
+
+  const secret =
     process.env.HERMES_COOKIE_SECRET?.trim() ||
     process.env.BETTER_AUTH_SECRET?.trim();
-  if (s) return createHash("sha256").update(s).digest();
+  if (secret) {
+    return [
+      { id: "primary", key: createHash("sha256").update(secret).digest() },
+    ];
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Persistent Hermes credential encryption key is missing");
+  }
   if (!ephemeralCookieKey) ephemeralCookieKey = randomBytes(32);
-  return ephemeralCookieKey;
+  return [{ id: "development", key: ephemeralCookieKey }];
 }
 
 export function sealGate(data: GateSecret): string {
+  const active = gateKeys()[0];
+  if (!active) throw new Error("Hermes credential keyring is empty");
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", cookieKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", active.key, iv);
   const enc = Buffer.concat([
     cipher.update(JSON.stringify(data), "utf8"),
     cipher.final(),
   ]);
   const tag = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, enc]).toString("base64url");
+  const payload = Buffer.concat([iv, tag, enc]).toString("base64url");
+  return `v1.${active.id}.${payload}`;
 }
 
 export function openGate(token: string): GateSecret | null {
+  const keys = gateKeys();
+  const parts = token.split(".");
+  const versioned = parts.length === 3 && parts[0] === "v1";
+  const payload = versioned ? parts[2] : token;
+  const candidates = versioned
+    ? keys.filter((item) => item.id === parts[1])
+    : keys;
+  if (!payload || candidates.length === 0) return null;
+  for (const candidate of candidates) {
+    const data = decryptGate(payload, candidate.key);
+    if (data) return data;
+  }
+  return null;
+}
+
+function decryptGate(token: string, key: Buffer): GateSecret | null {
   try {
     const buf = Buffer.from(token, "base64url");
     if (buf.length < 29) return null;
     const iv = buf.subarray(0, 12);
     const tag = buf.subarray(12, 28);
     const enc = buf.subarray(28);
-    const decipher = createDecipheriv("aes-256-gcm", cookieKey(), iv);
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(tag);
     const json = Buffer.concat([
       decipher.update(enc),
@@ -347,23 +396,10 @@ export function readGateCookie(
   return null;
 }
 
-async function ensureGateTable(
-  sql: Awaited<ReturnType<typeof import("@/lib/db").getSql>>,
-) {
-  await sql.query(
-    `create table if not exists hermes_gate (
-      user_id text not null primary key,
-      token text not null,
-      updated_at timestamptz not null default now()
-    )`,
-  );
-}
-
 async function loadStoredGate(userId: string): Promise<GateSecret | null> {
   try {
     const { getSql } = await import("@/lib/db");
     const sql = await getSql();
-    await ensureGateTable(sql);
     const rows = await sql.query<{ token: string }>(
       `select token from hermes_gate where user_id = $1 limit 1`,
       [userId],
@@ -383,7 +419,6 @@ export async function persistUserGate(
   try {
     const { getSql } = await import("@/lib/db");
     const sql = await getSql();
-    await ensureGateTable(sql);
     if (!token) {
       await sql.query(`delete from hermes_gate where user_id = $1`, [userId]);
       return;
@@ -480,6 +515,7 @@ export async function probeHermes(
     let models: HermesModelOption[] = [];
     let platform: string | undefined;
     let skills: string[] | undefined;
+    let manifest: HermesCapabilityManifest | undefined;
     try {
       const body = await modelsRes.json();
       const parsed = parseHermesModelOptions(body);
@@ -511,10 +547,8 @@ export async function probeHermes(
         redirect: "manual",
       });
       if (cap.ok) {
-        const body = (await cap.json()) as {
-          platform?: unknown;
-          model?: unknown;
-        };
+        const body = (await cap.json()) as Record<string, unknown>;
+        manifest = parseHermesCapabilityManifest(body);
         if (typeof body.platform === "string") platform = body.platform;
         if (typeof body.model === "string" && body.model) model = body.model;
       }
@@ -544,6 +578,7 @@ export async function probeHermes(
       models,
       platform,
       skills,
+      manifest,
       mode: "proxy",
     };
   } catch (e) {

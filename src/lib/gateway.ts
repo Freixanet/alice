@@ -14,11 +14,19 @@ export type {
   GatewayPlace,
   GatewayStatus,
   HermesChatContent,
+  HermesCapability,
+  HermesCapabilityManifest,
+  HermesCompatibility,
   HermesModelOption,
   ProbeCode,
   ProbeResult,
 } from "./gateway-contracts";
-export { unionHermesModels } from "./gateway-contracts";
+export {
+  HERMES_CURRENT_STABLE,
+  HERMES_PREVIOUS_STABLE,
+  parseHermesCapabilityManifest,
+  unionHermesModels,
+} from "./gateway-contracts";
 export { getMacSessionKey, setMacSessionKey } from "./hermes-secret-client";
 
 export const HERMES_USER_CHAR_LIMIT = 1375;
@@ -237,7 +245,7 @@ export function groupHermesModels(models: HermesModelOption[]): Array<{
         models: [],
       });
     }
-    groups[i].models.push(m);
+    groups[i]?.models.push(m);
   }
   return groups;
 }

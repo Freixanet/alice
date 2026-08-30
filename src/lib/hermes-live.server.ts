@@ -70,7 +70,7 @@ function parseFrontmatter(text: string): { name: string; description: string } {
   const folded =
     /(?:^|\n)description:\s*[|>][^\n]*\n((?:[ \t]+[^\n]*\n?)*)/.exec(block);
   if (folded) {
-    const description = folded[1]
+    const description = (folded[1] ?? "")
       .split("\n")
       .map((line) => line.replace(/^[ \t]+/, "").trim())
       .filter(Boolean)

@@ -12,6 +12,10 @@ import {
   type HermesModelOption,
   type ProbeResult,
 } from "./gateway";
+import {
+  parseHermesCapabilityManifest,
+  type HermesCapabilityManifest,
+} from "./gateway-contracts";
 import type { HermesLive, HermesLiveResult } from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
 import { setDeviceSessionKey } from "./hermes-secret-client";
@@ -247,6 +251,7 @@ export async function probeHermesDirect(opts: {
 
     let platform: string | undefined;
     let skills: string[] | undefined;
+    let manifest: HermesCapabilityManifest | undefined;
     try {
       const cap = await fetch(`${base}/v1/capabilities`, {
         headers: hdrs,
@@ -255,10 +260,8 @@ export async function probeHermesDirect(opts: {
         redirect: "manual",
       });
       if (cap.ok) {
-        const body = (await cap.json()) as {
-          platform?: unknown;
-          model?: unknown;
-        };
+        const body = (await cap.json()) as Record<string, unknown>;
+        manifest = parseHermesCapabilityManifest(body);
         if (typeof body.platform === "string") platform = body.platform;
         if (typeof body.model === "string" && body.model) model = body.model;
       }
@@ -285,6 +288,7 @@ export async function probeHermesDirect(opts: {
       models,
       platform,
       skills,
+      manifest,
       mode: "direct",
     };
   } catch (e) {

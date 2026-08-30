@@ -20,28 +20,9 @@ import {
   normalizeGatewayUrl,
 } from "@/lib/gateway";
 import type { GateSecret } from "@/lib/gateway.server";
-
-type Incoming = {
-  action?: string;
-  url?: string;
-  key?: string;
-  place?: GatewayPlace;
-  model?: string;
-  provider?: string;
-  conversationId?: string;
-  refresh?: boolean;
-  endpointName?: string;
-  endpointUrl?: string;
-  endpointKey?: string;
-  endpointModel?: string;
-  name?: string;
-  enabled?: boolean;
-  jobId?: string;
-  prompt?: string;
-  schedule?: string;
-  path?: string;
-  description?: string;
-};
+import { hermesRequestSchema } from "@/lib/api-contracts";
+import { parseJsonRequest, requestErrorResponse } from "@/lib/http.server";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit.server";
 
 const FAIL = "Couldn’t connect.";
 
@@ -64,13 +45,13 @@ export const Route = createFileRoute("/api/hermes")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        let body: Incoming;
+        let body;
         try {
-          body = (await request.json()) as Incoming;
-        } catch {
-          return jsonWithCookie(
-            { ok: false, code: "invalid", error: FAIL },
-            400,
+          body = await parseJsonRequest(request, hermesRequestSchema, 32_768);
+        } catch (error) {
+          return (
+            requestErrorResponse(error) ??
+            jsonWithCookie({ ok: false, code: "invalid", error: FAIL }, 400)
           );
         }
 
@@ -81,6 +62,8 @@ export const Route = createFileRoute("/api/hermes")({
             401,
           );
         }
+        const rate = consumeRateLimit("hermes", userId, 240, 60_000);
+        if (!rate.ok) return rateLimitResponse(rate);
         const macOk = owner && local;
 
         if (body.action === "status") {
@@ -218,23 +201,14 @@ export const Route = createFileRoute("/api/hermes")({
               },
               body.action,
               {
-                name: typeof body.name === "string" ? body.name : undefined,
-                enabled: body.enabled,
-                jobId: typeof body.jobId === "string" ? body.jobId : undefined,
-                prompt:
-                  typeof body.prompt === "string"
-                    ? body.prompt.trim()
-                    : undefined,
-                schedule:
-                  typeof body.schedule === "string"
-                    ? body.schedule.trim()
-                    : undefined,
-                path:
-                  typeof body.path === "string" ? body.path.trim() : undefined,
+                name: "name" in body ? body.name : undefined,
+                enabled: "enabled" in body ? body.enabled : undefined,
+                jobId: "jobId" in body ? body.jobId : undefined,
+                prompt: "prompt" in body ? body.prompt : undefined,
+                schedule: "schedule" in body ? body.schedule : undefined,
+                path: "path" in body ? body.path : undefined,
                 description:
-                  typeof body.description === "string"
-                    ? body.description.trim()
-                    : undefined,
+                  "description" in body ? body.description : undefined,
               },
             );
             return jsonWithCookie(
@@ -287,20 +261,15 @@ export const Route = createFileRoute("/api/hermes")({
           if (!saved?.u || !saved?.k) {
             return jsonWithCookie({ ok: false }, 400);
           }
-          const model = typeof body.model === "string" ? body.model.trim() : "";
-          if (!model) return jsonWithCookie({ ok: false }, 400);
-          const provider =
-            typeof body.provider === "string" ? body.provider : undefined;
+          const model = body.model;
+          const provider = body.provider;
           try {
             const result = await setHermesModelServer({
               url: saved.u,
               key: saved.k,
               model,
               provider,
-              conversationId:
-                typeof body.conversationId === "string"
-                  ? body.conversationId
-                  : undefined,
+              conversationId: body.conversationId,
               signal: AbortSignal.any([
                 request.signal,
                 AbortSignal.timeout(12_000),
@@ -320,28 +289,16 @@ export const Route = createFileRoute("/api/hermes")({
               400,
             );
           }
-          const endpointUrl =
-            typeof body.endpointUrl === "string" ? body.endpointUrl.trim() : "";
-          if (!endpointUrl) {
-            return jsonWithCookie(
-              { ok: false, error: "Address is missing." },
-              400,
-            );
-          }
+          const endpointUrl = body.endpointUrl;
           try {
             const result = await saveHermesCustomEndpointServer({
               url: saved.u,
               key: saved.k,
               place: saved.p,
-              name:
-                typeof body.endpointName === "string" ? body.endpointName : "",
+              name: body.endpointName ?? "",
               baseUrl: endpointUrl,
-              apiKey:
-                typeof body.endpointKey === "string" ? body.endpointKey : "",
-              model:
-                typeof body.endpointModel === "string"
-                  ? body.endpointModel
-                  : undefined,
+              apiKey: body.endpointKey ?? "",
+              model: body.endpointModel,
               signal: AbortSignal.any([
                 request.signal,
                 AbortSignal.timeout(20_000),
@@ -395,10 +352,8 @@ export const Route = createFileRoute("/api/hermes")({
           );
         }
 
-        const url =
-          typeof body.url === "string" && body.url.trim() ? body.url : saved?.u;
-        const key =
-          typeof body.key === "string" && body.key.trim() ? body.key : saved?.k;
+        const url = body.url || saved?.u;
+        const key = body.key || saved?.k;
         if (!url || !key) {
           return jsonWithCookie(
             { ok: false, code: "invalid", error: FAIL },

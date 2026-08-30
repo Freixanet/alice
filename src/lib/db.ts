@@ -76,9 +76,9 @@ function toSql(run: Run): Sql {
     ...values: unknown[]
   ): Promise<T[]> => {
     // Rebuild with $1, $2, … placeholders so values stay parameterized.
-    let text = strings[0];
+    let text = strings[0] ?? "";
     for (let i = 0; i < values.length; i += 1)
-      text += `$${i + 1}${strings[i + 1]}`;
+      text += `$${i + 1}${strings[i + 1] ?? ""}`;
     return run<T>(text, values);
   }) as unknown as Sql;
   sql.query = <T = Record<string, unknown>>(
@@ -171,7 +171,11 @@ async function createPgliteSql(): Promise<Sql> {
       // Apply + record atomically (parity with scripts/migrate.mjs) so a failed
       // statement can't leave a file half-applied but untracked.
       await pg.transaction(async (tx) => {
-        await tx.exec(migrations[path]);
+        const migration = migrations[path];
+        if (migration === undefined) {
+          throw new Error(`Missing migration payload: ${path}`);
+        }
+        await tx.exec(migration);
         await tx.query("insert into _migrations (name) values ($1)", [name]);
       });
     }

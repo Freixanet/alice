@@ -35,6 +35,7 @@ import {
   COCKPIT_STORE,
 } from "./auth/cockpit-user";
 import { uid } from "./utils";
+import { createHybridStorage } from "./hybrid-storage";
 
 const welcomeId = "welcome";
 const freshId = "fresh";
@@ -285,7 +286,7 @@ export const useHermes = create<HermesState>()(
         const list = next.length ? next : [seedConversation()];
         set({
           conversations: list,
-          activeId: get().activeId === id ? list[0].id : get().activeId,
+          activeId: get().activeId === id ? list[0]!.id : get().activeId,
         });
       },
       renameChat: (id, title) => {
@@ -491,36 +492,13 @@ export const useHermes = create<HermesState>()(
     }),
     {
       name: COCKPIT_STORE,
-      storage: createJSONStorage(() => ({
-        getItem(name) {
-          if (typeof localStorage === "undefined") return null;
-          const user = cockpitUserId();
-          if (!user) return null;
-          const key = `${name}:${user}`;
-          const mine = localStorage.getItem(key);
-          if (mine) return mine;
-          if (!cockpitIsOwner()) return null;
-          const legacy = localStorage.getItem(name);
-          if (legacy) {
-            localStorage.setItem(key, legacy);
-            return legacy;
-          }
-          return null;
-        },
-        setItem(name, value) {
-          if (typeof localStorage === "undefined") return;
-          const user = cockpitUserId();
-          if (!user) return;
-          localStorage.setItem(`${name}:${user}`, value);
-        },
-        removeItem(name) {
-          if (typeof localStorage === "undefined") return;
-          const user = cockpitUserId();
-          if (!user) return;
-          localStorage.removeItem(`${name}:${user}`);
-        },
-      })),
-      version: 6,
+      storage: createJSONStorage(() =>
+        createHybridStorage({
+          userId: cockpitUserId,
+          isLegacyOwner: cockpitIsOwner,
+        }),
+      ),
+      version: 7,
       migrate: (persisted) => {
         if (persisted && typeof persisted === "object") {
           const next = { ...(persisted as Record<string, unknown>) };

@@ -240,7 +240,7 @@ export function ChatView() {
     abortRef.current = ctrl;
     let latestAttachmentMessage = -1;
     for (let index = history.length - 1; index >= 0; index -= 1) {
-      if (history[index].attachments?.length) {
+      if (history[index]?.attachments?.length) {
         latestAttachmentMessage = index;
         break;
       }
@@ -862,11 +862,13 @@ function AssistantContent({ text }: { text: string }) {
   let start = 0;
   let match: RegExpExecArray | null;
   while ((match = imagePattern.exec(text))) {
+    const imageUrl = match[2];
+    if (!imageUrl) continue;
     if (match.index > start) parts.push(text.slice(start, match.index));
     parts.push(
       <img
-        key={`${match.index}-${match[2].slice(0, 32)}`}
-        src={match[2]}
+        key={`${match.index}-${imageUrl.slice(0, 32)}`}
+        src={imageUrl}
         alt={match[1] || "Image from Hermes"}
         className="my-3 max-h-[32rem] w-auto max-w-full rounded-md object-contain"
       />,

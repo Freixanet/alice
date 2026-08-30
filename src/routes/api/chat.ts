@@ -9,34 +9,33 @@ import {
   resolveAliceGate,
   streamHermesProxy,
 } from "@/lib/gateway.server";
+import { chatRequestSchema } from "@/lib/api-contracts";
+import { parseJsonRequest, requestErrorResponse } from "@/lib/http.server";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit.server";
 
 const FAIL = "Couldn’t connect.";
-
-type Incoming = {
-  messages?: Array<{ role: string; content: unknown }>;
-  context?: string;
-  model?: string;
-  provider?: string;
-  conversationId?: string;
-};
 
 export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        let body: Incoming;
+        let body;
         try {
-          body = (await request.json()) as Incoming;
-        } catch {
-          return Response.json({ error: "bad_request" }, { status: 400 });
+          body = await parseJsonRequest(
+            request,
+            chatRequestSchema,
+            10 * 1024 * 1024 + 65_536,
+          );
+        } catch (error) {
+          return (
+            requestErrorResponse(error) ??
+            Response.json({ error: "bad_request" }, { status: 400 })
+          );
         }
 
-        const messages = Array.isArray(body.messages) ? body.messages : [];
-        const clean = messages
-          .filter((m) => m.role === "user" || m.role === "assistant")
-          .slice(-16)
+        const clean = body.messages
           .map((m) => ({
-            role: m.role as "user" | "assistant",
+            role: m.role,
             content: cleanChatContent(m.content),
           }))
           .filter(
@@ -59,19 +58,17 @@ export const Route = createFileRoute("/api/chat")({
         if (!userId) {
           return Response.json({ error: "unauthorized" }, { status: 401 });
         }
+        const rate = consumeRateLimit("chat", userId, 60, 60_000);
+        if (!rate.ok) return rateLimitResponse(rate);
         if (gate?.u && gate.k) {
           try {
             return await streamHermesProxy({
               url: gate.u,
               key: gate.k,
               messages: clean,
-              conversationId:
-                typeof body.conversationId === "string"
-                  ? body.conversationId
-                  : undefined,
-              model: typeof body.model === "string" ? body.model : undefined,
-              provider:
-                typeof body.provider === "string" ? body.provider : undefined,
+              conversationId: body.conversationId,
+              model: body.model,
+              provider: body.provider,
               endpoints: gate.ep,
               signal: request.signal,
               place: gate.p,

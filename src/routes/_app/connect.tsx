@@ -186,6 +186,7 @@ function ConnectPage() {
           models: result.models,
           platform: result.platform,
           skills: result.skills,
+          manifest: result.manifest,
           probedAt: Date.now(),
           mode: result.mode,
           place: nextPlace,

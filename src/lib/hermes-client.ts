@@ -163,9 +163,6 @@ export async function setHermesModel(opts: {
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         action: "set-model",
-        url: opts.url,
-        key: opts.key,
-        place: opts.place,
         model: opts.model,
         provider: opts.provider,
         conversationId: opts.conversationId,
