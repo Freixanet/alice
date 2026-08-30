@@ -20,5 +20,6 @@ artifacts
 attachments
 test-results
 playwright-report
+coverage
 *.log
 .prettierrc

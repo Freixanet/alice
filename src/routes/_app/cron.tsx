@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "@/components/catalog-page";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { listHermesLive, mutateHermes } from "@/lib/hermes-live";
+import type { HermesCronRow } from "@/lib/hermes-live-types";
 import { dateLocale, localizeError, type Locale } from "@/lib/i18n";
 import { useHermesLive } from "@/lib/use-hermes-live";
 import { useLocale, useT } from "@/lib/use-i18n";
@@ -33,6 +34,8 @@ function CronPage() {
   const [time, setTime] = useState("09:00");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [deleteJob, setDeleteJob] = useState<HermesCronRow | null>(null);
+  const [actionPending, setActionPending] = useState<string | null>(null);
   const jobs = data?.cron ?? [];
 
   async function createJob() {
@@ -124,38 +127,68 @@ function CronPage() {
                     </p>
                   </div>
                   {data?.writable ? (
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        const enabled = !job.enabled;
-                        setData({
-                          ...data,
-                          cron: data.cron.map((j) =>
-                            j.id === job.id
-                              ? {
-                                  ...j,
-                                  enabled,
-                                  state: enabled ? "scheduled" : "paused",
-                                }
-                              : j,
-                          ),
-                        });
-                        void mutateHermes({
-                          action: enabled ? "cron-resume" : "cron-pause",
-                          jobId: job.id,
-                        }).then((r) => {
-                          if (r.ok) return;
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("cron.run")}
+                        disabled={actionPending === job.id}
+                        onClick={() => {
+                          setActionPending(job.id);
+                          void mutateHermes({
+                            action: "cron-run",
+                            jobId: job.id,
+                          }).then((result) => {
+                            setActionPending(null);
+                            if (!result.ok)
+                              setCreateError(t("cron.actionError"));
+                          });
+                        }}
+                      >
+                        <Play />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={actionPending === job.id}
+                        onClick={() => {
+                          const enabled = !job.enabled;
                           setData({
                             ...data,
                             cron: data.cron.map((j) =>
-                              j.id === job.id ? job : j,
+                              j.id === job.id
+                                ? {
+                                    ...j,
+                                    enabled,
+                                    state: enabled ? "scheduled" : "paused",
+                                  }
+                                : j,
                             ),
                           });
-                        });
-                      }}
-                    >
-                      {job.enabled ? t("cron.pause") : t("cron.resume")}
-                    </Button>
+                          void mutateHermes({
+                            action: enabled ? "cron-resume" : "cron-pause",
+                            jobId: job.id,
+                          }).then((r) => {
+                            if (r.ok) return;
+                            setData({
+                              ...data,
+                              cron: data.cron.map((j) =>
+                                j.id === job.id ? job : j,
+                              ),
+                            });
+                          });
+                        }}
+                      >
+                        {job.enabled ? t("cron.pause") : t("cron.resume")}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("cron.delete")}
+                        onClick={() => setDeleteJob(job)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
                   ) : null}
                 </div>
               </li>
@@ -249,6 +282,58 @@ function CronPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(deleteJob)}
+        onOpenChange={(next) => {
+          if (!next && !actionPending) setDeleteJob(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("cron.deleteTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("cron.deleteHint", { name: deleteJob?.name ?? "" })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              disabled={Boolean(actionPending)}
+              onClick={() => setDeleteJob(null)}
+            >
+              {t("cron.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!deleteJob || Boolean(actionPending)}
+              onClick={() => {
+                if (!deleteJob) return;
+                const selected = deleteJob;
+                setActionPending(selected.id);
+                void mutateHermes({
+                  action: "cron-delete",
+                  jobId: selected.id,
+                  confirm: true,
+                }).then((result) => {
+                  setActionPending(null);
+                  if (!result.ok) {
+                    setCreateError(t("cron.actionError"));
+                    return;
+                  }
+                  if (data)
+                    setData({
+                      ...data,
+                      cron: data.cron.filter((job) => job.id !== selected.id),
+                    });
+                  setDeleteJob(null);
+                });
+              }}
+            >
+              {t("cron.delete")}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

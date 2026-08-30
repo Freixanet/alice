@@ -159,7 +159,7 @@ html[data-theme="light"][data-accent="amber"] {
 
 /* The Alice app follows GTA6.md. AppShell scopes this visual system to the
    authenticated product and removes the marker when login is shown. */
-html[data-alice-app] {
+html[data-alice-app]:has(.alice-app) {
   --radius-sm: 0.5rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.5rem;
@@ -172,15 +172,15 @@ html[data-alice-app] {
   --input: rgb(236 236 234 / 0.2);
 }
 
-html[data-alice-app],
-html[data-alice-app] body {
+html[data-alice-app]:has(.alice-app),
+html[data-alice-app]:has(.alice-app) body {
   width: 100%;
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
 }
 
-html[data-theme="light"][data-alice-app] {
+html[data-theme="light"][data-alice-app]:has(.alice-app) {
   --card: #fffcf7;
   --composer: #fffcf7;
   --popover: #faf8f3;
@@ -190,26 +190,26 @@ html[data-theme="light"][data-alice-app] {
   --input: rgb(26 26 24 / 0.22);
 }
 
-html[data-alice-app] body * {
+html[data-alice-app]:has(.alice-app) body * {
   box-shadow: none !important;
   background-image: none !important;
   backdrop-filter: none !important;
 }
 
-html[data-alice-app] .alice-app .shadow-border,
-html[data-alice-app] [role="dialog"].shadow-border,
-html[data-alice-app] [role="menu"].shadow-border {
+html[data-alice-app]:has(.alice-app) .alice-app .shadow-border,
+html[data-alice-app]:has(.alice-app) [role="dialog"].shadow-border,
+html[data-alice-app]:has(.alice-app) [role="menu"].shadow-border {
   border: 1px solid var(--border);
 }
 
-html[data-alice-app]
+html[data-alice-app]:has(.alice-app)
   body
   :where(.rounded-sm, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl),
-html[data-alice-app] :where([role="dialog"], [role="menu"]) {
+html[data-alice-app]:has(.alice-app) :where([role="dialog"], [role="menu"]) {
   border-radius: var(--radius-md) !important;
 }
 
-html[data-alice-app]
+html[data-alice-app]:has(.alice-app)
   body
   .rounded-full:not(button[aria-label]):not([role="radio"]):not(
     [role="switch"]
@@ -217,86 +217,95 @@ html[data-alice-app]
   border-radius: var(--radius-md) !important;
 }
 
-html[data-alice-app] .alice-switch-thumb {
+html[data-alice-app]:has(.alice-app) .alice-switch-thumb {
   border-radius: 9999px !important;
 }
 
-html[data-alice-app] .alice-page-header {
+html[data-alice-app]:has(.alice-app) .alice-page-header {
   border-bottom: 1px solid var(--border);
   padding-bottom: 1.25rem;
 }
 
-html[data-alice-app] .alice-record-list,
-html[data-alice-app] .alice-main ul.flex.flex-col.gap-2 {
+html[data-alice-app]:has(.alice-app) .alice-record-list,
+html[data-alice-app]:has(.alice-app) .alice-main ul.flex.flex-col.gap-2 {
   gap: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
 
-html[data-alice-app] .alice-record,
-html[data-alice-app] .alice-main ul.flex.flex-col.gap-2 > li.shadow-border {
+html[data-alice-app]:has(.alice-app) .alice-record,
+html[data-alice-app]:has(.alice-app)
+  .alice-main
+  ul.flex.flex-col.gap-2
+  > li.shadow-border {
   border: 0;
   border-top: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
 }
 
-html[data-alice-app] .alice-record:first-child,
-html[data-alice-app]
+html[data-alice-app]:has(.alice-app) .alice-record:first-child,
+html[data-alice-app]:has(.alice-app)
   .alice-main
   ul.flex.flex-col.gap-2
   > li.shadow-border:first-child {
   border-top: 0;
 }
 
-html[data-alice-app] .alice-empty-state {
+html[data-alice-app]:has(.alice-app) .alice-empty-state {
   width: min(100%, 42rem);
   align-items: center;
   text-align: center;
 }
 
-html[data-alice-app] .alice-empty-state h1 {
+html[data-alice-app]:has(.alice-app) .alice-empty-state h1 {
   max-width: none;
 }
 
-html[data-alice-app] .alice-message-list {
+html[data-alice-app]:has(.alice-app) .alice-message-list {
   gap: 1.75rem;
 }
 
-html[data-alice-app] .alice-chat-scroller {
+html[data-alice-app]:has(.alice-app) .alice-chat-scroller {
   scrollbar-gutter: stable both-edges;
 }
 
-html[data-alice-app] .alice-user-message {
+html[data-alice-app]:has(.alice-app) .alice-user-message {
   border-radius: var(--radius-md);
   background: color-mix(in oklab, var(--card) 72%, transparent);
 }
 
-html[data-alice-app] .alice-composer {
+html[data-alice-app]:has(.alice-app) .alice-composer {
   border: 1px solid var(--input);
   border-radius: var(--radius-md);
   background: var(--composer);
 }
 
-html[data-alice-app] :where([role="dialog"], [role="menu"]) {
+html[data-alice-app]:has(.alice-app) :where([role="dialog"], [role="menu"]) {
   border: 1px solid var(--border);
 }
 
 @media (max-width: 767px) {
-  html[data-alice-app] :where(input, textarea, select) {
+  html[data-alice-app]:has(.alice-app)
+    :where(button, [role="button"], [role="menuitem"], a[href], input, select) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  html[data-alice-app]:has(.alice-app) :where(input, textarea, select) {
     font-size: 16px !important;
   }
 
-  html[data-alice-app] .alice-page-header {
+  html[data-alice-app]:has(.alice-app) .alice-page-header {
     margin-top: 3rem;
   }
 
-  html[data-alice-app] .alice-empty-state {
+  html[data-alice-app]:has(.alice-app) .alice-empty-state {
     padding-inline: 1.5rem;
   }
 
-  html[data-alice-app] [role="dialog"] {
+  html[data-alice-app]:has(.alice-app) [role="dialog"] {
     border: 0;
     border-radius: 0 !important;
   }

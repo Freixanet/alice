@@ -49,7 +49,12 @@ export const Route = createRootRoute({
     ],
   }),
   component: () => (
-    <html lang="en" data-theme="light" suppressHydrationWarning>
+    <html
+      lang="en"
+      data-alice-app=""
+      data-theme="light"
+      suppressHydrationWarning
+    >
       <head>
         <HeadContent />
       </head>

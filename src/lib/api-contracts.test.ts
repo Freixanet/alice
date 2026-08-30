@@ -12,6 +12,25 @@ describe("Hermes API contracts", () => {
     ).toEqual({ action: "toggle-skill", name: "browser", enabled: true });
   });
 
+  it("accepts the complete create-job and create-project contracts", () => {
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "cron-create",
+        name: "Daily brief",
+        prompt: "Summarize the day",
+        schedule: "0 9 * * *",
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "project-create",
+        name: "Alice",
+        path: "/workspace/alice",
+        description: "Assistant",
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects unknown actions and extra secret-bearing fields", () => {
     expect(
       hermesRequestSchema.safeParse({ action: "delete-everything" }).success,

@@ -8,15 +8,19 @@ const Switch = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SwitchPrimitives.Root
     className={cn(
-      "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 shadow-border transition-[background-color,box-shadow] duration-150 data-[state=checked]:bg-primary data-[state=unchecked]:bg-muted focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40",
+      "group peer relative inline-flex size-11 shrink-0 cursor-pointer items-center rounded-full bg-transparent p-0.5 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40",
       className,
     )}
     {...props}
     ref={ref}
   >
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-x-0 h-6 rounded-full bg-muted shadow-border transition-[background-color,box-shadow] duration-150 group-data-[state=checked]:bg-primary"
+    />
     <SwitchPrimitives.Thumb
       className={cn(
-        "alice-switch-thumb pointer-events-none block size-5 rounded-full bg-foreground shadow-sm transition-transform duration-150 ease-out-smooth data-[state=checked]:translate-x-5 data-[state=checked]:bg-primary-foreground",
+        "alice-switch-thumb pointer-events-none relative z-10 block size-5 rounded-full bg-foreground transition-transform duration-150 ease-out-smooth data-[state=checked]:translate-x-5 data-[state=checked]:bg-primary-foreground",
       )}
     />
   </SwitchPrimitives.Root>

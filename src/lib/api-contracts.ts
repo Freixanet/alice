@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hermesMutationSchema } from "./hermes-operations";
 
 const bounded = (max: number) => z.string().trim().min(1).max(max);
 const optionalBounded = (max: number) => z.string().trim().max(max).optional();
@@ -6,7 +7,7 @@ const optionalBounded = (max: number) => z.string().trim().max(max).optional();
 const action = <T extends string>(name: T) =>
   z.strictObject({ action: z.literal(name) });
 
-export const hermesRequestSchema = z.discriminatedUnion("action", [
+const hermesControlRequestSchema = z.discriminatedUnion("action", [
   action("status"),
   action("device-secret"),
   z.strictObject({
@@ -17,39 +18,6 @@ export const hermesRequestSchema = z.discriminatedUnion("action", [
   action("forget"),
   action("memory"),
   action("live"),
-  z.strictObject({
-    action: z.literal("toggle-skill"),
-    name: bounded(128),
-    enabled: z.boolean(),
-  }),
-  z.strictObject({
-    action: z.literal("toggle-toolset"),
-    name: bounded(128),
-    enabled: z.boolean(),
-  }),
-  z.strictObject({
-    action: z.literal("toggle-mcp"),
-    name: bounded(128),
-    enabled: z.boolean(),
-  }),
-  z.strictObject({
-    action: z.literal("cron-pause"),
-    jobId: bounded(128),
-  }),
-  z.strictObject({
-    action: z.literal("cron-resume"),
-    jobId: bounded(128),
-  }),
-  z.strictObject({
-    action: z.literal("cron-create"),
-    prompt: bounded(8_000),
-    schedule: bounded(256),
-  }),
-  z.strictObject({
-    action: z.literal("project-create"),
-    path: bounded(1_024),
-    description: optionalBounded(2_000),
-  }),
   z.strictObject({
     action: z.literal("models"),
     refresh: z.boolean().optional(),
@@ -79,6 +47,11 @@ export const hermesRequestSchema = z.discriminatedUnion("action", [
     key: z.string().max(256).optional(),
     place: z.enum(["cloud", "mac"]).optional(),
   }),
+]);
+
+export const hermesRequestSchema = z.union([
+  hermesControlRequestSchema,
+  hermesMutationSchema,
 ]);
 
 const textPartSchema = z.strictObject({

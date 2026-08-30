@@ -1,5 +1,6 @@
 import { authHeaders } from "./auth/client";
 import type { HermesLiveResult } from "./hermes-live-types";
+import type { HermesMutation } from "./hermes-operations";
 
 export type * from "./hermes-live-types";
 
@@ -39,23 +40,9 @@ export async function listHermesLive(opts?: {
   }
 }
 
-export async function mutateHermes(opts: {
-  action:
-    | "toggle-skill"
-    | "toggle-toolset"
-    | "toggle-mcp"
-    | "cron-pause"
-    | "cron-resume"
-    | "cron-create"
-    | "project-create";
-  name?: string;
-  enabled?: boolean;
-  jobId?: string;
-  prompt?: string;
-  schedule?: string;
-  path?: string;
-  description?: string;
-}): Promise<{ ok: boolean; error?: string }> {
+export async function mutateHermes(
+  opts: HermesMutation,
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const { useHermes } = await import("./store");
     const place = useHermes.getState().gatewayPlace;

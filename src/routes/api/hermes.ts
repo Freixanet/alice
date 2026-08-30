@@ -21,6 +21,7 @@ import {
 } from "@/lib/gateway";
 import type { GateSecret } from "@/lib/gateway.server";
 import { hermesRequestSchema } from "@/lib/api-contracts";
+import { hermesMutationSchema } from "@/lib/hermes-operations";
 import { parseJsonRequest, requestErrorResponse } from "@/lib/http.server";
 import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit.server";
 
@@ -170,15 +171,8 @@ export const Route = createFileRoute("/api/hermes")({
           }
         }
 
-        if (
-          body.action === "toggle-skill" ||
-          body.action === "toggle-toolset" ||
-          body.action === "toggle-mcp" ||
-          body.action === "cron-pause" ||
-          body.action === "cron-resume" ||
-          body.action === "cron-create" ||
-          body.action === "project-create"
-        ) {
+        const mutation = hermesMutationSchema.safeParse(body);
+        if (mutation.success) {
           if (!saved?.u || !saved?.k) {
             return jsonWithCookie(
               { ok: false, error: "Connect your Hermes first." },
@@ -199,17 +193,7 @@ export const Route = createFileRoute("/api/hermes")({
                   AbortSignal.timeout(12_000),
                 ]),
               },
-              body.action,
-              {
-                name: "name" in body ? body.name : undefined,
-                enabled: "enabled" in body ? body.enabled : undefined,
-                jobId: "jobId" in body ? body.jobId : undefined,
-                prompt: "prompt" in body ? body.prompt : undefined,
-                schedule: "schedule" in body ? body.schedule : undefined,
-                path: "path" in body ? body.path : undefined,
-                description:
-                  "description" in body ? body.description : undefined,
-              },
+              mutation.data,
             );
             return jsonWithCookie(
               ok

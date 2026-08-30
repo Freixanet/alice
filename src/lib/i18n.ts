@@ -312,6 +312,12 @@ const en = {
   "cron.next": "next {when}",
   "cron.pause": "Pause",
   "cron.resume": "Resume",
+  "cron.run": "Run now",
+  "cron.delete": "Delete",
+  "cron.deleteTitle": "Delete this job?",
+  "cron.deleteHint":
+    "“{name}” will be removed from Hermes. This cannot be undone.",
+  "cron.actionError": "Hermes couldn’t complete the action.",
   "cron.new": "New job",
   "cron.createTitle": "Create a scheduled job",
   "cron.createDescription":
@@ -773,6 +779,12 @@ const es: Record<MsgKey, string> = {
   "cron.next": "siguiente {when}",
   "cron.pause": "Pausar",
   "cron.resume": "Reanudar",
+  "cron.run": "Ejecutar ahora",
+  "cron.delete": "Eliminar",
+  "cron.deleteTitle": "¿Eliminar esta tarea?",
+  "cron.deleteHint":
+    "“{name}” se eliminará de Hermes. Esta acción no se puede deshacer.",
+  "cron.actionError": "Hermes no ha podido completar la acción.",
   "cron.new": "Nueva tarea",
   "cron.createTitle": "Crear una tarea programada",
   "cron.createDescription":

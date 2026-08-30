@@ -35,6 +35,7 @@ export interface Sql {
     text: string,
     params?: unknown[],
   ): Promise<T[]>;
+  transaction<T>(work: (sql: Sql) => Promise<T>): Promise<T>;
 }
 
 /**
@@ -68,9 +69,10 @@ const OID_INTERVAL = 1186;
 const identity = (v: string) => v;
 
 type Run = <T>(text: string, params: unknown[]) => Promise<T[]>;
+type Transaction = <T>(work: (sql: Sql) => Promise<T>) => Promise<T>;
 
 /** Wrap a query runner in the tagged-template + `.query()` `Sql` surface. */
-function toSql(run: Run): Sql {
+function toSql(run: Run, transaction: Transaction): Sql {
   const sql = (async <T = Record<string, unknown>>(
     strings: TemplateStringsArray,
     ...values: unknown[]
@@ -85,6 +87,7 @@ function toSql(run: Run): Sql {
     text: string,
     params: unknown[] = [],
   ) => run<T>(text, params);
+  sql.transaction = transaction;
   return sql;
 }
 
@@ -100,10 +103,32 @@ function createNeonSql(): Promise<Sql> {
       connectionString: databaseUrl,
       max: process.env.VERCEL ? 1 : 10,
     });
-    return toSql(async <T>(text: string, params: unknown[]) => {
-      const res = await pool.query(text, params);
-      return res.rows as T[];
-    });
+    const run: Run = async <T>(text: string, params: unknown[]) => {
+      const result = await pool.query(text, params);
+      return result.rows as T[];
+    };
+    const transaction: Transaction = async (work) => {
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        const tx = toSql(
+          async <T>(text: string, params: unknown[]) => {
+            const result = await client.query(text, params);
+            return result.rows as T[];
+          },
+          async (nestedWork) => nestedWork(tx),
+        );
+        const result = await work(tx);
+        await client.query("commit");
+        return result;
+      } catch (error) {
+        await client.query("rollback").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+    return toSql(run, transaction);
   })().catch((err) => {
     globalRef.__pgSqlPromise__ = undefined;
     throw err;
@@ -186,10 +211,22 @@ async function createPgliteSql(): Promise<Sql> {
   globalRef.__pgliteMigrateChain__ = pass;
   await pass;
 
-  return toSql(async <T>(text: string, params: unknown[]) => {
+  const run: Run = async <T>(text: string, params: unknown[]) => {
     const result = await pg.query<T>(text, params);
     return result.rows;
-  });
+  };
+  const transaction: Transaction = (work) =>
+    pg.transaction(async (client) => {
+      const tx = toSql(
+        async <T>(text: string, params: unknown[]) => {
+          const result = await client.query<T>(text, params);
+          return result.rows;
+        },
+        async (nestedWork) => nestedWork(tx),
+      );
+      return work(tx);
+    });
+  return toSql(run, transaction);
 }
 
 let sqlPromise: Promise<Sql> | null = null;

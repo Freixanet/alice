@@ -36,6 +36,7 @@ import {
   toolsetsFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
+import { hermesOperationFor, type HermesMutation } from "./hermes-operations";
 
 const SKIP_DIRS = new Set([
   "node_modules",
@@ -417,74 +418,23 @@ export async function mutateHermesLive(
     signal?: AbortSignal;
     local?: boolean;
   },
-  action: string,
-  body: {
-    name?: string;
-    enabled?: boolean;
-    jobId?: string;
-    prompt?: string;
-    schedule?: string;
-    path?: string;
-    description?: string;
-  },
+  mutation: HermesMutation,
 ): Promise<boolean> {
-  if (action === "toggle-skill" && body.name) {
-    return hermesDashboardSend(opts, "/api/skills/toggle", "PUT", {
-      name: body.name,
-      enabled: Boolean(body.enabled),
-    });
-  }
-  if (action === "toggle-toolset" && body.name) {
+  const operation = hermesOperationFor(mutation);
+  if (operation) {
     return hermesDashboardSend(
       opts,
-      `/api/tools/toolsets/${encodeURIComponent(body.name)}`,
-      "PUT",
-      { enabled: Boolean(body.enabled) },
+      operation.path,
+      operation.method,
+      operation.body,
     );
   }
-  if (action === "toggle-mcp" && body.name) {
-    return hermesDashboardSend(
-      opts,
-      `/api/mcp/servers/${encodeURIComponent(body.name)}/enabled`,
-      "PUT",
-      { enabled: Boolean(body.enabled) },
-    );
-  }
-  if (action === "cron-pause" && body.jobId) {
-    return hermesDashboardSend(
-      opts,
-      `/api/cron/jobs/${encodeURIComponent(body.jobId)}/pause`,
-      "POST",
-    );
-  }
-  if (action === "cron-resume" && body.jobId) {
-    return hermesDashboardSend(
-      opts,
-      `/api/cron/jobs/${encodeURIComponent(body.jobId)}/resume`,
-      "POST",
-    );
-  }
-  if (action === "cron-create" && body.name && body.prompt && body.schedule) {
-    return hermesDashboardSend(opts, "/api/cron/jobs", "POST", {
-      name: body.name,
-      prompt: body.prompt,
-      schedule: body.schedule,
-      deliver: "local",
-    });
-  }
-  if (action === "project-create" && body.name) {
-    const created = await hermesDashboardSend(opts, "/api/projects", "POST", {
-      name: body.name,
-      description: body.description || undefined,
-      primary_path: body.path || undefined,
-      folders: body.path ? [body.path] : [],
-    });
-    if (created) return true;
+  if (mutation.action === "project-create") {
     if (opts.local) {
       return createProjectLocally({
-        name: body.name,
-        path: body.path,
-        description: body.description,
+        name: mutation.name,
+        path: mutation.path,
+        description: mutation.description,
       });
     }
   }

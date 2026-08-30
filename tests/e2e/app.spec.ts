@@ -56,3 +56,39 @@ test("the empty chat is accessible", async ({ page }) => {
     ),
   ).toEqual([]);
 });
+
+test("mobile interactive targets are at least 44px", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-alice-app", "");
+  const violations = await page
+    .locator(
+      'button, [role="button"], [role="menuitem"], a[href], input, select',
+    )
+    .evaluateAll((elements) =>
+      elements.flatMap((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        if (
+          rect.width === 0 ||
+          rect.height === 0 ||
+          style.visibility === "hidden" ||
+          style.display === "none"
+        ) {
+          return [];
+        }
+        return rect.width >= 44 && rect.height >= 44
+          ? []
+          : [
+              {
+                tag: element.tagName,
+                label:
+                  element.getAttribute("aria-label") ?? element.textContent,
+                width: rect.width,
+                height: rect.height,
+              },
+            ];
+      }),
+    );
+  expect(violations).toEqual([]);
+});

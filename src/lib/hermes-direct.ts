@@ -16,6 +16,7 @@ import {
   parseHermesCapabilityManifest,
   type HermesCapabilityManifest,
 } from "./gateway-contracts";
+import { hermesOperationFor, type HermesMutation } from "./hermes-operations";
 import type { HermesLive, HermesLiveResult } from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
 import { setDeviceSessionKey } from "./hermes-secret-client";
@@ -577,88 +578,23 @@ export async function listHermesLiveDirect(opts: {
   }
 }
 
-export async function mutateHermesDirect(opts: {
-  url: string;
-  key: string;
-  action:
-    | "toggle-skill"
-    | "toggle-toolset"
-    | "toggle-mcp"
-    | "cron-pause"
-    | "cron-resume"
-    | "cron-create"
-    | "project-create";
-  name?: string;
-  enabled?: boolean;
-  jobId?: string;
-  prompt?: string;
-  schedule?: string;
-  path?: string;
-  description?: string;
-}): Promise<{ ok: boolean; error?: string }> {
+export async function mutateHermesDirect(
+  opts: {
+    url: string;
+    key: string;
+  } & HermesMutation,
+): Promise<{ ok: boolean; error?: string }> {
   try {
-    let ok = false;
-    if (opts.action === "toggle-skill" && opts.name) {
-      ok = await dashboardSend(
-        opts.url,
-        opts.key,
-        "/api/skills/toggle",
-        "PUT",
-        {
-          name: opts.name,
-          enabled: Boolean(opts.enabled),
-        },
-      );
-    } else if (opts.action === "toggle-toolset" && opts.name) {
-      ok = await dashboardSend(
-        opts.url,
-        opts.key,
-        `/api/tools/toolsets/${encodeURIComponent(opts.name)}`,
-        "PUT",
-        { enabled: Boolean(opts.enabled) },
-      );
-    } else if (opts.action === "toggle-mcp" && opts.name) {
-      ok = await dashboardSend(
-        opts.url,
-        opts.key,
-        `/api/mcp/servers/${encodeURIComponent(opts.name)}/enabled`,
-        "PUT",
-        { enabled: Boolean(opts.enabled) },
-      );
-    } else if (opts.action === "cron-pause" && opts.jobId) {
-      ok = await dashboardSend(
-        opts.url,
-        opts.key,
-        `/api/cron/jobs/${encodeURIComponent(opts.jobId)}/pause`,
-        "POST",
-      );
-    } else if (opts.action === "cron-resume" && opts.jobId) {
-      ok = await dashboardSend(
-        opts.url,
-        opts.key,
-        `/api/cron/jobs/${encodeURIComponent(opts.jobId)}/resume`,
-        "POST",
-      );
-    } else if (
-      opts.action === "cron-create" &&
-      opts.name &&
-      opts.prompt &&
-      opts.schedule
-    ) {
-      ok = await dashboardSend(opts.url, opts.key, "/api/cron/jobs", "POST", {
-        name: opts.name,
-        prompt: opts.prompt,
-        schedule: opts.schedule,
-        deliver: "local",
-      });
-    } else if (opts.action === "project-create" && opts.name) {
-      ok = await dashboardSend(opts.url, opts.key, "/api/projects", "POST", {
-        name: opts.name,
-        description: opts.description || undefined,
-        primary_path: opts.path || undefined,
-        folders: opts.path ? [opts.path] : [],
-      });
-    }
+    const operation = hermesOperationFor(opts);
+    const ok = operation
+      ? await dashboardSend(
+          opts.url,
+          opts.key,
+          operation.path,
+          operation.method,
+          operation.body,
+        )
+      : false;
     return ok
       ? { ok: true }
       : { ok: false, error: "Hermes couldn’t save the change." };

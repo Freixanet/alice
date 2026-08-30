@@ -101,14 +101,6 @@ export function AppShell() {
 
   useLayoutEffect(() => {
     const root = document.documentElement;
-    root.dataset.aliceApp = "";
-    return () => {
-      delete root.dataset.aliceApp;
-    };
-  }, []);
-
-  useLayoutEffect(() => {
-    const root = document.documentElement;
     root.dataset.theme = theme;
     root.dataset.font = fontSize;
     root.dataset.accent = accent;
