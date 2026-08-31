@@ -94,6 +94,27 @@ export type HermesSessionMessagesResult =
     }
   | { ok: false; error: string };
 
+export type HermesDiagnosticPlatform = {
+  id: string;
+  name: string;
+  status: string;
+};
+
+export type HermesDiagnostics = {
+  status: string;
+  version?: string;
+  gatewayState?: string;
+  activeAgents: number;
+  busy: boolean;
+  drainable: boolean;
+  updatedAt?: string;
+  exitReason?: string;
+  platforms: HermesDiagnosticPlatform[];
+};
+
+export type HermesDiagnosticsResult =
+  { ok: true; diagnostics: HermesDiagnostics } | { ok: false; error: string };
+
 export type HermesPairingRow = {
   platform: string;
   code?: string;

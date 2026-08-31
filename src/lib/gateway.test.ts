@@ -132,6 +132,10 @@ describe("Hermes capability negotiation", () => {
           skills_api: true,
         },
         endpoints: {
+          health_detailed: {
+            method: "GET",
+            path: "/health/detailed",
+          },
           session_fork: {
             method: "POST",
             path: "/api/sessions/{session_id}/fork",
@@ -151,6 +155,7 @@ describe("Hermes capability negotiation", () => {
         sessions: true,
         models: true,
         skills: true,
+        diagnostics: true,
       },
     });
   });

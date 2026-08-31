@@ -84,6 +84,18 @@ describe("Hermes API contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts the closed diagnostics action without extra fields", () => {
+    expect(
+      hermesRequestSchema.safeParse({ action: "diagnostics" }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "diagnostics",
+        includeSecrets: true,
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects unknown actions and extra secret-bearing fields", () => {
     expect(
       hermesRequestSchema.safeParse({ action: "delete-everything" }).success,

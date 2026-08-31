@@ -209,6 +209,7 @@ const CAPABILITY_ALIASES: Record<string, HermesCapability[]> = {
   webhooks: ["webhooks"],
   curator: ["curator"],
   diagnostics: ["diagnostics"],
+  health_detailed: ["diagnostics"],
   delegation: ["delegation"],
   delegate_task: ["delegation"],
   code_execution: ["code_execution"],

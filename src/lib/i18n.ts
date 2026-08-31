@@ -3,6 +3,9 @@ import { WELCOME } from "./catalog";
 export type Locale = "en" | "es";
 
 const en = {
+  "common.yes": "Yes",
+  "common.no": "No",
+
   "nav.skills": "Skills",
   "nav.skillsHint": "Skills",
   "nav.tools": "Tools",
@@ -262,6 +265,20 @@ const en = {
   "connect.sessionRoleSystem": "System",
   "connect.sessionRoleTool": "Tool",
   "connect.sessionRoleUnknown": "Message",
+  "connect.diagnostics": "Hermes diagnostics",
+  "connect.showDiagnostics": "Show diagnostics",
+  "connect.hideDiagnostics": "Hide diagnostics",
+  "connect.loadingDiagnostics": "Reading diagnostics…",
+  "connect.diagnosticVersion": "Version {version}",
+  "connect.gatewayState": "Gateway state",
+  "connect.activeAgents": "Active agents",
+  "connect.gatewayBusy": "Busy",
+  "connect.gatewayDrainable": "Safe to stop",
+  "connect.diagnosticUpdated": "Last update",
+  "connect.exitReason": "Last exit: {reason}",
+  "connect.diagnosticPlatforms": "Messaging platforms",
+  "connect.noDiagnosticPlatforms": "No messaging platforms reported.",
+  "connect.refreshDiagnostics": "Refresh diagnostics",
   "connect.webhooks": "Webhooks",
   "connect.active": "On",
   "connect.off": "Off",
@@ -580,6 +597,9 @@ const en = {
 export type MsgKey = keyof typeof en;
 
 const es: Record<MsgKey, string> = {
+  "common.yes": "Sí",
+  "common.no": "No",
+
   "nav.skills": "Habilidades",
   "nav.skillsHint": "Skills",
   "nav.tools": "Herramientas",
@@ -839,6 +859,20 @@ const es: Record<MsgKey, string> = {
   "connect.sessionRoleSystem": "Sistema",
   "connect.sessionRoleTool": "Herramienta",
   "connect.sessionRoleUnknown": "Mensaje",
+  "connect.diagnostics": "Diagnóstico de Hermes",
+  "connect.showDiagnostics": "Ver diagnóstico",
+  "connect.hideDiagnostics": "Ocultar diagnóstico",
+  "connect.loadingDiagnostics": "Leyendo diagnóstico…",
+  "connect.diagnosticVersion": "Versión {version}",
+  "connect.gatewayState": "Estado del gateway",
+  "connect.activeAgents": "Agentes activos",
+  "connect.gatewayBusy": "Ocupado",
+  "connect.gatewayDrainable": "Se puede detener",
+  "connect.diagnosticUpdated": "Última actualización",
+  "connect.exitReason": "Última salida: {reason}",
+  "connect.diagnosticPlatforms": "Plataformas de mensajería",
+  "connect.noDiagnosticPlatforms": "No se han indicado plataformas.",
+  "connect.refreshDiagnostics": "Actualizar diagnóstico",
   "connect.webhooks": "Webhooks",
   "connect.active": "Activo",
   "connect.off": "Apagado",

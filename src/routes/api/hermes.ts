@@ -266,6 +266,34 @@ export const Route = createFileRoute("/api/hermes")({
           }
         }
 
+        if (body.action === "diagnostics") {
+          if (!saved?.u || !saved.k) {
+            return jsonWithCookie(
+              { ok: false, error: "Connect your Hermes first." },
+              400,
+            );
+          }
+          try {
+            const { fetchHermesDiagnostics } =
+              await import("@/lib/hermes-live.server");
+            const result = await fetchHermesDiagnostics({
+              url: saved.u,
+              key: saved.k,
+              place: saved.p,
+              signal: AbortSignal.any([
+                request.signal,
+                AbortSignal.timeout(12_000),
+              ]),
+            });
+            return jsonWithCookie(result, result.ok ? 200 : 502);
+          } catch {
+            return jsonWithCookie(
+              { ok: false, error: "Couldn’t read Hermes diagnostics." },
+              502,
+            );
+          }
+        }
+
         if (body.action === "live") {
           try {
             const { fetchHermesLive } =

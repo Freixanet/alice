@@ -18,6 +18,7 @@ import {
 } from "./gateway-contracts";
 import { hermesOperationFor, type HermesMutation } from "./hermes-operations";
 import type {
+  HermesDiagnosticsResult,
   HermesLive,
   HermesLiveResult,
   HermesSessionMessagesResult,
@@ -37,6 +38,7 @@ import {
   channelsFromApi,
   cronDeliveryTargetsFromApi,
   cronFromApi,
+  diagnosticsFromApi,
   mcpFromApi,
   pairingList,
   projectsFromApi,
@@ -711,6 +713,26 @@ export async function readHermesSessionMessagesDirect(opts: {
     };
   } catch {
     return { ok: false, error: "Couldn’t read this Hermes session." };
+  }
+}
+
+export async function readHermesDiagnosticsDirect(opts: {
+  url: string;
+  key: string;
+  signal?: AbortSignal;
+}): Promise<HermesDiagnosticsResult> {
+  try {
+    const raw = await dashboardGet(
+      opts.url,
+      opts.key,
+      "/health/detailed",
+      opts.signal,
+    );
+    return raw
+      ? { ok: true, diagnostics: diagnosticsFromApi(raw) }
+      : { ok: false, error: "Couldn’t read Hermes diagnostics." };
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes diagnostics." };
   }
 }
 

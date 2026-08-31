@@ -2,6 +2,7 @@ import type {
   HermesChannelRow,
   HermesCronDeliveryTarget,
   HermesCronRow,
+  HermesDiagnostics,
   HermesMcpRow,
   HermesPairingRow,
   HermesProjectRow,
@@ -312,6 +313,51 @@ export function sessionMessagesFromApi(raw: unknown): HermesSessionMessage[] {
       };
     })
     .filter((message) => message.content || message.toolName);
+}
+
+export function diagnosticsFromApi(raw: unknown): HermesDiagnostics {
+  const row = asRec(raw);
+  const readiness = asRec(row.readiness);
+  const platformRows = Object.entries(asRec(row.platforms))
+    .slice(0, 32)
+    .map(([id, value]) => {
+      const platform = asRec(value);
+      const primitiveStatus =
+        typeof value === "string"
+          ? value
+          : typeof value === "boolean"
+            ? value
+              ? "connected"
+              : "disconnected"
+            : "";
+      return {
+        id: id.slice(0, 128),
+        name: prettyName(id).slice(0, 128),
+        status: (
+          str(platform.status) ||
+          str(platform.state) ||
+          primitiveStatus ||
+          "unknown"
+        ).slice(0, 128),
+      };
+    });
+  const rawAgents = Number(row.active_agents);
+  return {
+    status: (str(row.status) || str(readiness.status) || "unknown").slice(
+      0,
+      64,
+    ),
+    version: str(row.version).slice(0, 64) || undefined,
+    gatewayState: str(row.gateway_state).slice(0, 128) || undefined,
+    activeAgents: Number.isFinite(rawAgents)
+      ? Math.max(0, Math.min(10_000, Math.trunc(rawAgents)))
+      : 0,
+    busy: row.gateway_busy === true,
+    drainable: row.gateway_drainable === true,
+    updatedAt: stamp(row.updated_at) || undefined,
+    exitReason: str(row.exit_reason).slice(0, 256) || undefined,
+    platforms: platformRows,
+  };
 }
 
 function safeMessageContent(value: unknown): string {

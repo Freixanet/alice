@@ -1,5 +1,6 @@
 import { authHeaders } from "./auth/client";
 import type {
+  HermesDiagnosticsResult,
   HermesLiveResult,
   HermesSessionMessagesResult,
 } from "./hermes-live-types";
@@ -67,6 +68,47 @@ export async function mutateHermes(
     return { ok: Boolean(data.ok), error: data.error };
   } catch {
     return { ok: false, error: "Hermes couldn’t save the change." };
+  }
+}
+
+export async function readHermesDiagnostics(opts?: {
+  signal?: AbortSignal;
+}): Promise<HermesDiagnosticsResult> {
+  try {
+    const { useHermes } = await import("./store");
+    const state = useHermes.getState();
+    if (state.gatewayPlace === "device") {
+      const { getDeviceSessionKey, readHermesDiagnosticsDirect } =
+        await import("./hermes-direct");
+      const key = getDeviceSessionKey();
+      if (!state.gatewayUrl || !key) {
+        return { ok: false, error: "Connect your Hermes on this computer." };
+      }
+      return readHermesDiagnosticsDirect({
+        url: state.gatewayUrl,
+        key,
+        signal: opts?.signal,
+      });
+    }
+    const res = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ action: "diagnostics" }),
+      signal: opts?.signal,
+      cache: "no-store",
+    });
+    const data = (await res.json()) as HermesDiagnosticsResult;
+    return data && data.ok
+      ? data
+      : {
+          ok: false,
+          error:
+            data && "error" in data
+              ? data.error
+              : "Couldn’t read Hermes diagnostics.",
+        };
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes diagnostics." };
   }
 }
 

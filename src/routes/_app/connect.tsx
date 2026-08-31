@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/catalog-page";
+import { HermesDiagnosticsPanel } from "@/components/hermes-diagnostics";
 import { HermesSessionInspector } from "@/components/hermes-session-inspector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -559,6 +560,10 @@ function HermesLiveSections({
     "session_messages",
   );
   const canManagePairing = advertisesHermesCapability(manifest, "pairing");
+  const canReadDiagnostics = advertisesHermesCapability(
+    manifest,
+    "health_detailed",
+  );
 
   async function runPairingAction(
     key: string,
@@ -610,6 +615,8 @@ function HermesLiveSections({
 
   return (
     <>
+      {canReadDiagnostics ? <HermesDiagnosticsPanel /> : null}
+
       <section className="space-y-3">
         <h2 className="text-sm font-medium">{t("connect.channels")}</h2>
         {channels.length === 0 ? (

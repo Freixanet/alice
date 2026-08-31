@@ -18,6 +18,7 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
   action("forget"),
   action("memory"),
   action("live"),
+  action("diagnostics"),
   z.strictObject({
     action: z.literal("session-messages"),
     sessionId: bounded(160),

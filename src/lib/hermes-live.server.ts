@@ -10,6 +10,7 @@ import type { GatewayPlace } from "./gateway";
 import type {
   HermesChannelRow,
   HermesCronRow,
+  HermesDiagnosticsResult,
   HermesLive,
   HermesMcpRow,
   HermesPairingRow,
@@ -27,6 +28,7 @@ import {
   cronDeliveryTargetsFromApi,
   cronFromApi,
   cronFromUnknown,
+  diagnosticsFromApi,
   groupLabel,
   mcpFromApi,
   pairingList,
@@ -435,6 +437,15 @@ export async function fetchHermesSessionMessages(
     sessionId: str(record.session_id) || sessionId,
     messages: sessionMessagesFromApi(raw),
   };
+}
+
+export async function fetchHermesDiagnostics(
+  opts: Gate,
+): Promise<HermesDiagnosticsResult> {
+  const raw = await hermesDashboardGet(opts, "/health/detailed");
+  return raw
+    ? { ok: true, diagnostics: diagnosticsFromApi(raw) }
+    : { ok: false, error: "Couldn’t read Hermes diagnostics." };
 }
 
 export async function mutateHermesLive(

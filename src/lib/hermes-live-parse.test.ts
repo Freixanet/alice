@@ -7,6 +7,7 @@ import {
   cronDeliveryTargetsFromApi,
   cronFromApi,
   cronFromUnknown,
+  diagnosticsFromApi,
   groupLabel,
   mcpFromApi,
   pairingList,
@@ -211,5 +212,49 @@ describe("Hermes cron contract parsing", () => {
     });
     expect(bounded).toHaveLength(50);
     expect(bounded.every((row) => row.content.length <= 4_000)).toBe(true);
+  });
+
+  it("projects detailed health into a bounded, secret-free diagnostic view", () => {
+    const diagnostics = diagnosticsFromApi({
+      status: "ready",
+      version: "0.20.6",
+      gateway_state: "running",
+      active_agents: 2,
+      gateway_busy: true,
+      gateway_drainable: false,
+      updated_at: 1_700_000_000,
+      exit_reason: "",
+      platforms: {
+        telegram: { status: "connected", token: "must-not-leak" },
+        slack: false,
+      },
+      api_key: "must-not-leak",
+      pid: 1234,
+    });
+    expect(diagnostics).toEqual({
+      status: "ready",
+      version: "0.20.6",
+      gatewayState: "running",
+      activeAgents: 2,
+      busy: true,
+      drainable: false,
+      updatedAt: "2023-11-14T22:13:20.000Z",
+      exitReason: undefined,
+      platforms: [
+        { id: "telegram", name: "Telegram", status: "connected" },
+        { id: "slack", name: "Slack", status: "disconnected" },
+      ],
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain("must-not-leak");
+    expect(
+      diagnosticsFromApi({
+        platforms: Object.fromEntries(
+          Array.from({ length: 50 }, (_, index) => [
+            `p-${index}`,
+            "x".repeat(500),
+          ]),
+        ),
+      }).platforms,
+    ).toHaveLength(32);
   });
 });
