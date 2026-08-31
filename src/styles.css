@@ -218,7 +218,7 @@ html[data-alice-app]:has(.alice-app)
 }
 
 html[data-alice-app]:has(.alice-app) .alice-switch-thumb {
-  border-radius: 9999px !important;
+  border-radius: var(--radius-md) !important;
 }
 
 html[data-alice-app]:has(.alice-app) .alice-page-header {
