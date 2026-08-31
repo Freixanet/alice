@@ -3,7 +3,15 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { HermesCronRow } from "@/lib/hermes-live-types";
 import { CronJobDialog } from "./cron-job-dialog";
 
@@ -42,6 +50,18 @@ vi.mock("@/lib/use-i18n", () => ({
       "cron.toolsets": "Toolsets",
       "cron.preScript": "Pre-run script (optional)",
       "cron.workdir": "Working folder (optional)",
+      "cron.continuity": "Continuity",
+      "cron.continuityHint": "Remember the previous result",
+      "cron.monitorMode": "Monitor mode",
+      "cron.monitorOff": "Off",
+      "cron.monitorScript": "Watch a script",
+      "cron.monitorUrl": "Watch a URL",
+      "cron.monitorScriptPath": "Monitor script",
+      "cron.monitorUrlAddress": "Monitor URL",
+      "cron.monitorHint": "Skip unchanged output",
+      "cron.reasoningEffort": "Reasoning effort",
+      "cron.reasoningDefault": "Use the profile default",
+      "cron.notepadHint": "A durable notepad is automatic",
       "cron.cancel": "Cancel",
       "cron.save": "Save changes",
       "cron.saving": "Saving…",
@@ -49,6 +69,19 @@ vi.mock("@/lib/use-i18n", () => ({
       "cron.creating": "Creating…",
     })[key] ?? key,
 }));
+
+beforeAll(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
+
+afterAll(() => vi.unstubAllGlobals());
 
 afterEach(cleanup);
 
@@ -65,6 +98,9 @@ const job: HermesCronRow = {
   workdir: "/workspace",
   enabledToolsets: ["web"],
   noAgent: false,
+  continuity: true,
+  monitorUrl: "https://example.com/releases",
+  reasoningEffort: "high",
   enabled: true,
   state: "scheduled",
 };
@@ -105,6 +141,7 @@ describe("CronJobDialog", () => {
             homeTargetSet: true,
           },
         ]}
+        pantheon
         pending={false}
         error={null}
         onOpenChange={vi.fn()}
@@ -134,6 +171,10 @@ describe("CronJobDialog", () => {
       workdir: "/workspace",
       enabledToolsets: ["web"],
       noAgent: false,
+      continuity: true,
+      monitorScript: undefined,
+      monitorUrl: "https://example.com/releases",
+      reasoningEffort: "high",
     });
   });
 
@@ -146,6 +187,7 @@ describe("CronJobDialog", () => {
         skills={[]}
         toolsets={[]}
         deliveryTargets={[]}
+        pantheon
         pending={false}
         error={null}
         onOpenChange={vi.fn()}

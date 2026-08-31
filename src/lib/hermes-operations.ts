@@ -73,6 +73,21 @@ const channelUpdateSchema = z
     { message: "A variable cannot be set and cleared together." },
   );
 
+const reasoningEffort = z
+  .enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"])
+  .optional();
+const monitorUrl = optionalText(2_048).refine(
+  (value) => !value || /^https?:\/\//i.test(value),
+  "Monitor URL must use HTTP or HTTPS.",
+);
+
+const pantheonCronFields = {
+  continuity: z.boolean().optional(),
+  monitorScript: optionalText(1_024),
+  monitorUrl,
+  reasoningEffort,
+} as const;
+
 const cronCreateSchema = z
   .strictObject({
     action: z.literal("cron-create"),
@@ -87,11 +102,23 @@ const cronCreateSchema = z
     workdir: optionalText(1_024),
     enabledToolsets: z.array(name).max(32).optional(),
     noAgent: z.boolean().optional(),
+    ...pantheonCronFields,
   })
   .refine((value) => !value.noAgent || Boolean(value.script), {
     message: "Script-only jobs require a script.",
     path: ["script"],
-  });
+  })
+  .refine((value) => !(value.monitorScript && value.monitorUrl), {
+    message: "Choose one monitor source.",
+    path: ["monitorUrl"],
+  })
+  .refine(
+    (value) => !value.noAgent || !(value.monitorScript || value.monitorUrl),
+    {
+      message: "Monitor mode requires the agent.",
+      path: ["noAgent"],
+    },
+  );
 
 export const hermesMutationSchema = z.discriminatedUnion("action", [
   z.strictObject({
@@ -163,6 +190,7 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
       workdir: optionalText(1_024),
       enabledToolsets: z.array(name).max(32).optional(),
       noAgent: z.boolean().optional(),
+      ...pantheonCronFields,
     }),
   }),
   z.strictObject({ action: z.literal("cron-pause"), jobId: id }),
@@ -458,7 +486,7 @@ export function hermesOperationFor(
       return {
         path: "/api/cron/jobs",
         method: "POST",
-        body: cronPayload(input),
+        body: cronCreatePayload(input),
       };
     case "cron-update":
       return {
@@ -706,6 +734,25 @@ export function hermesScopedOperationFor(
   };
 }
 
+export function hermesCronCreateFollowUpFor(
+  input: Extract<HermesMutation, { action: "cron-create" }>,
+  jobId: string,
+  profile?: string,
+): HermesOperation | null {
+  const updates = cronPantheonUpdates(input);
+  if (!Object.keys(updates).length) return null;
+  const base: HermesOperation = {
+    path: `/api/cron/jobs/${encodeURIComponent(jobId)}`,
+    method: "PUT",
+    body: { updates },
+  };
+  if (!profile) return base;
+  return {
+    ...base,
+    path: `${base.path}?profile=${encodeURIComponent(profile)}`,
+  };
+}
+
 /**
  * Official `hermes project` argv for the project lifecycle Hermes exposes only
  * through its CLI. Keeping this pure makes the local adapter testable without
@@ -753,6 +800,42 @@ export function hermesProjectCliArgsFor(
 }
 
 function cronPayload(value: Record<string, unknown>) {
-  const { enabledToolsets, noAgent, ...rest } = value;
-  return { ...rest, enabled_toolsets: enabledToolsets, no_agent: noAgent };
+  const {
+    enabledToolsets,
+    noAgent,
+    continuity,
+    monitorScript,
+    monitorUrl,
+    reasoningEffort,
+    ...rest
+  } = value;
+  return {
+    ...rest,
+    enabled_toolsets: enabledToolsets,
+    no_agent: noAgent,
+    context_from:
+      continuity === undefined ? undefined : continuity ? ["self"] : [],
+    monitor_script: monitorScript,
+    monitor_url: monitorUrl,
+    reasoning_effort: reasoningEffort,
+  };
+}
+
+function cronCreatePayload(value: Record<string, unknown>) {
+  const payload = cronPayload(value);
+  const { monitor_script, monitor_url, reasoning_effort, ...create } = payload;
+  void monitor_script;
+  void monitor_url;
+  void reasoning_effort;
+  return create;
+}
+
+function cronPantheonUpdates(value: Record<string, unknown>) {
+  const updates: Record<string, unknown> = {};
+  if (value.monitorScript !== undefined)
+    updates.monitor_script = value.monitorScript;
+  if (value.monitorUrl !== undefined) updates.monitor_url = value.monitorUrl;
+  if (value.reasoningEffort !== undefined)
+    updates.reasoning_effort = value.reasoningEffort;
+  return updates;
 }

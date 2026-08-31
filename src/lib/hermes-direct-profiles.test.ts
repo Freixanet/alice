@@ -125,6 +125,61 @@ describe("Hermes direct profile transport", () => {
     expect(seen[1]).toMatch(/\/api\/profiles\/active$/);
   });
 
+  it("creates Pantheon cron jobs atomically across the official two-step API", async () => {
+    const calls: Array<{ url: string; method?: string; body?: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          method: init?.method,
+          body: typeof init?.body === "string" ? init.body : undefined,
+        });
+        return Promise.resolve(
+          String(input).includes("/api/cron/jobs?") && init?.method === "POST"
+            ? json({ id: "pantheon-job" })
+            : json({ ok: true }),
+        );
+      }),
+    );
+
+    await expect(
+      mutateHermesDirect({
+        url: "http://127.0.0.1:8642",
+        key: "12345678",
+        profile: "research",
+        action: "cron-create",
+        name: "Watch releases",
+        prompt: "Report meaningful changes",
+        schedule: "every 15m",
+        continuity: true,
+        monitorUrl: "https://example.com/releases",
+        reasoningEffort: "high",
+      }),
+    ).resolves.toEqual({ ok: true, jobId: "pantheon-job" });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      url: expect.stringContaining("/api/cron/jobs?profile=research"),
+      method: "POST",
+    });
+    expect(JSON.parse(calls[0]?.body ?? "{}")).toMatchObject({
+      context_from: ["self"],
+    });
+    expect(calls[1]).toMatchObject({
+      url: expect.stringContaining(
+        "/api/cron/jobs/pantheon-job?profile=research",
+      ),
+      method: "PUT",
+    });
+    expect(JSON.parse(calls[1]?.body ?? "{}")).toEqual({
+      updates: {
+        monitor_url: "https://example.com/releases",
+        reasoning_effort: "high",
+      },
+    });
+  });
+
   it("reads skill content and waits on background actions without exposing paths", async () => {
     const seen: string[] = [];
     vi.stubGlobal(

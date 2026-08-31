@@ -59,6 +59,7 @@ import {
   webhooksFromApi,
 } from "./hermes-live-parse";
 import {
+  hermesCronCreateFollowUpFor,
   hermesProjectCliArgsFor,
   hermesScopedOperationFor,
   type HermesMutation,
@@ -699,6 +700,39 @@ export async function mutateHermesLive(
 ): Promise<HermesMutationResult> {
   const operation = hermesScopedOperationFor(mutation, profile);
   if (operation) {
+    if (mutation.action === "cron-create") {
+      const raw = await hermesDashboardSendJson(
+        opts,
+        operation.path,
+        operation.method,
+        operation.body,
+      );
+      const jobId = str(asRec(raw).id);
+      if (!jobId) {
+        return { ok: false, error: "Hermes didn’t return the new job." };
+      }
+      const followUp = hermesCronCreateFollowUpFor(mutation, jobId, profile);
+      if (
+        followUp &&
+        !(await hermesDashboardSend(
+          opts,
+          followUp.path,
+          followUp.method,
+          followUp.body,
+        ))
+      ) {
+        await hermesDashboardSend(
+          opts,
+          profiledPath(`/api/cron/jobs/${encodeURIComponent(jobId)}`, profile),
+          "DELETE",
+        );
+        return {
+          ok: false,
+          error: "Hermes couldn’t apply the Pantheon job options.",
+        };
+      }
+      return { ok: true, jobId };
+    }
     if (
       mutation.action === "skill-install" ||
       mutation.action === "skill-uninstall" ||

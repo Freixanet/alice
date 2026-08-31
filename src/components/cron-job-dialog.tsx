@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   cronScheduleFields,
   cronScheduleFor,
@@ -21,6 +22,18 @@ import type {
 } from "@/lib/hermes-live-types";
 import { useT } from "@/lib/use-i18n";
 
+const reasoningEfforts = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+] as const;
+type ReasoningEffort = (typeof reasoningEfforts)[number];
+
 export type CronJobDraft = {
   name: string;
   prompt: string;
@@ -33,6 +46,10 @@ export type CronJobDraft = {
   workdir?: string;
   enabledToolsets: string[];
   noAgent: boolean;
+  continuity: boolean;
+  monitorScript?: string;
+  monitorUrl?: string;
+  reasoningEffort?: ReasoningEffort;
 };
 
 export function CronJobDialog({
@@ -41,6 +58,7 @@ export function CronJobDialog({
   skills,
   toolsets,
   deliveryTargets,
+  pantheon,
   pending,
   error,
   onOpenChange,
@@ -51,6 +69,7 @@ export function CronJobDialog({
   skills: HermesSkillRow[];
   toolsets: HermesToolsetRow[];
   deliveryTargets: HermesCronDeliveryTarget[];
+  pantheon: boolean;
   pending: boolean;
   error: string | null;
   onOpenChange: (open: boolean) => void;
@@ -70,6 +89,16 @@ export function CronJobDialog({
   const [workdir, setWorkdir] = useState("");
   const [script, setScript] = useState("");
   const [noAgent, setNoAgent] = useState(false);
+  const [continuity, setContinuity] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | "">(
+    reasoningEfforts.includes(job?.reasoningEffort as ReasoningEffort)
+      ? (job?.reasoningEffort as ReasoningEffort)
+      : "",
+  );
+  const [monitorKind, setMonitorKind] = useState<"none" | "script" | "url">(
+    "none",
+  );
+  const [monitorValue, setMonitorValue] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -87,11 +116,31 @@ export function CronJobDialog({
     setWorkdir(job?.workdir ?? "");
     setScript(job?.script ?? "");
     setNoAgent(job?.noAgent ?? false);
+    setContinuity(job?.continuity ?? false);
+    setReasoningEffort(
+      reasoningEfforts.includes(job?.reasoningEffort as ReasoningEffort)
+        ? (job?.reasoningEffort as ReasoningEffort)
+        : "",
+    );
+    setMonitorKind(
+      job?.monitorScript ? "script" : job?.monitorUrl ? "url" : "none",
+    );
+    setMonitorValue(job?.monitorScript ?? job?.monitorUrl ?? "");
   }, [job, open]);
 
   const schedule = cronScheduleFor(frequency, time, customSchedule);
+  const monitorValid =
+    !pantheon ||
+    noAgent ||
+    monitorKind === "none" ||
+    (monitorKind === "script"
+      ? Boolean(monitorValue.trim())
+      : /^https?:\/\//i.test(monitorValue.trim()));
   const valid = Boolean(
-    name.trim() && schedule && (noAgent ? script.trim() : prompt.trim()),
+    name.trim() &&
+    schedule &&
+    (noAgent ? script.trim() : prompt.trim()) &&
+    monitorValid,
   );
 
   return (
@@ -122,6 +171,17 @@ export function CronJobDialog({
               workdir: workdir.trim() || undefined,
               enabledToolsets: noAgent ? [] : selectedToolsets,
               noAgent,
+              continuity: pantheon && !noAgent ? continuity : false,
+              monitorScript:
+                pantheon && !noAgent && monitorKind === "script"
+                  ? monitorValue.trim() || undefined
+                  : undefined,
+              monitorUrl:
+                pantheon && !noAgent && monitorKind === "url"
+                  ? monitorValue.trim() || undefined
+                  : undefined,
+              reasoningEffort:
+                pantheon && !noAgent ? reasoningEffort || undefined : undefined,
             });
           }}
         >
@@ -265,6 +325,85 @@ export function CronJobDialog({
             <div className="flex flex-col gap-4 pb-2 pt-3">
               {!noAgent ? (
                 <>
+                  {pantheon ? (
+                    <div className="flex flex-col gap-4">
+                      <label className="flex min-h-11 items-center justify-between gap-4 text-sm">
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span>{t("cron.continuity")}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {t("cron.continuityHint")}
+                          </span>
+                        </span>
+                        <Switch
+                          checked={continuity}
+                          onCheckedChange={setContinuity}
+                          aria-label={t("cron.continuity")}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-sm">
+                        {t("cron.reasoningEffort")}
+                        <select
+                          value={reasoningEffort}
+                          onChange={(event) =>
+                            setReasoningEffort(
+                              event.target.value as ReasoningEffort | "",
+                            )
+                          }
+                          className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground shadow-border focus-visible:outline-none md:text-sm"
+                        >
+                          <option value="">{t("cron.reasoningDefault")}</option>
+                          {reasoningEfforts.map((effort) => (
+                            <option key={effort} value={effort}>
+                              {effort}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-sm">
+                        {t("cron.monitorMode")}
+                        <select
+                          value={monitorKind}
+                          onChange={(event) => {
+                            setMonitorKind(
+                              event.target.value as "none" | "script" | "url",
+                            );
+                            setMonitorValue("");
+                          }}
+                          className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground shadow-border focus-visible:outline-none md:text-sm"
+                        >
+                          <option value="none">{t("cron.monitorOff")}</option>
+                          <option value="script">
+                            {t("cron.monitorScript")}
+                          </option>
+                          <option value="url">{t("cron.monitorUrl")}</option>
+                        </select>
+                      </label>
+                      {monitorKind !== "none" ? (
+                        <label className="flex flex-col gap-1.5 text-sm">
+                          {monitorKind === "script"
+                            ? t("cron.monitorScriptPath")
+                            : t("cron.monitorUrlAddress")}
+                          <Input
+                            value={monitorValue}
+                            onChange={(event) =>
+                              setMonitorValue(event.target.value)
+                            }
+                            placeholder={
+                              monitorKind === "script"
+                                ? "check-updates.sh"
+                                : "https://example.com/feed"
+                            }
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            {t("cron.monitorHint")}
+                          </span>
+                        </label>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        {t("cron.notepadHint")}
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <label className="flex flex-col gap-1.5 text-sm">
                       {t("cron.model")}

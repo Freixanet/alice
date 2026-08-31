@@ -157,6 +157,10 @@ export type HermesCronRow = {
   workdir?: string;
   enabledToolsets: string[];
   noAgent: boolean;
+  continuity: boolean;
+  monitorScript?: string;
+  monitorUrl?: string;
+  reasoningEffort?: string;
   enabled: boolean;
   state: string;
   lastStatus?: string;
@@ -340,6 +344,7 @@ export type HermesMutationResult =
       url?: string;
       channelTest?: HermesChannelTestResult;
       actionName?: string;
+      jobId?: string;
     }
   | { ok: false; error: string };
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hermesCronCreateFollowUpFor,
   hermesMutationSchema,
   hermesOperationFor,
   hermesProjectCliArgsFor,
@@ -53,7 +54,7 @@ describe("official Hermes management operations", () => {
     });
   });
 
-  it("maps the complete cron lifecycle to Hermes 0.20.6 routes", () => {
+  it("maps the complete cron lifecycle and Pantheon options", () => {
     expect(
       hermesOperationFor({ action: "cron-run", jobId: "daily/brief" }),
     ).toEqual({
@@ -75,6 +76,42 @@ describe("official Hermes management operations", () => {
       hermesMutationSchema.safeParse({
         action: "cron-delete",
         jobId: "one",
+      }).success,
+    ).toBe(false);
+    const create = {
+      action: "cron-create" as const,
+      name: "Monitor releases",
+      prompt: "Report meaningful changes",
+      schedule: "every 15m",
+      continuity: true,
+      monitorUrl: "https://example.com/releases",
+      reasoningEffort: "high" as const,
+    };
+    expect(hermesOperationFor(create)).toMatchObject({
+      path: "/api/cron/jobs",
+      method: "POST",
+      body: {
+        context_from: ["self"],
+      },
+    });
+    expect(hermesOperationFor(create)?.body).not.toHaveProperty("monitor_url");
+    expect(hermesOperationFor(create)?.body).not.toHaveProperty(
+      "reasoning_effort",
+    );
+    expect(hermesCronCreateFollowUpFor(create, "job/one", "research")).toEqual({
+      path: "/api/cron/jobs/job%2Fone?profile=research",
+      method: "PUT",
+      body: {
+        updates: {
+          monitor_url: "https://example.com/releases",
+          reasoning_effort: "high",
+        },
+      },
+    });
+    expect(
+      hermesMutationSchema.safeParse({
+        ...create,
+        monitorScript: "watch.sh",
       }).success,
     ).toBe(false);
   });

@@ -19,6 +19,7 @@ import {
   type HermesCapabilityManifest,
 } from "./gateway-contracts";
 import {
+  hermesCronCreateFollowUpFor,
   hermesScopedOperationFor,
   type HermesMutation,
 } from "./hermes-operations";
@@ -1140,6 +1141,45 @@ export async function mutateHermesDirect(
 ): Promise<HermesMutationResult> {
   try {
     const operation = hermesScopedOperationFor(opts, opts.profile);
+    if (operation && opts.action === "cron-create") {
+      const raw = await dashboardSendJson(
+        opts.url,
+        opts.key,
+        operation.path,
+        operation.method,
+        operation.body,
+      );
+      const jobId = str(asRec(raw).id);
+      if (!jobId) {
+        return { ok: false, error: "Hermes didn’t return the new job." };
+      }
+      const followUp = hermesCronCreateFollowUpFor(opts, jobId, opts.profile);
+      if (
+        followUp &&
+        !(await dashboardSend(
+          opts.url,
+          opts.key,
+          followUp.path,
+          followUp.method,
+          followUp.body,
+        ))
+      ) {
+        await dashboardSend(
+          opts.url,
+          opts.key,
+          profiledPath(
+            `/api/cron/jobs/${encodeURIComponent(jobId)}`,
+            opts.profile,
+          ),
+          "DELETE",
+        );
+        return {
+          ok: false,
+          error: "Hermes couldn’t apply the Pantheon job options.",
+        };
+      }
+      return { ok: true, jobId };
+    }
     if (
       operation &&
       (opts.action === "skill-install" ||

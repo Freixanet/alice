@@ -15,6 +15,8 @@ import {
 import { listHermesLive, mutateHermes } from "@/lib/hermes-live";
 import type { HermesCronRow } from "@/lib/hermes-live-types";
 import { dateLocale, localizeError, type Locale } from "@/lib/i18n";
+import { HERMES_CURRENT_STABLE } from "@/lib/gateway-contracts";
+import { useHermes } from "@/lib/store";
 import { useHermesLive } from "@/lib/use-hermes-live";
 import { useLocale, useT } from "@/lib/use-i18n";
 
@@ -27,6 +29,10 @@ function CronPage() {
   const locale = useLocale();
   const navigate = useNavigate();
   const { data, error, loading, setData } = useHermesLive();
+  const hermesVersion = useHermes(
+    (state) => state.gatewayMeta?.manifest?.version,
+  );
+  const pantheon = hermesVersion === HERMES_CURRENT_STABLE;
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -114,6 +120,12 @@ function CronPage() {
                           ? t("cron.modeScript")
                           : t("cron.modeAgent")}
                       </Badge>
+                      {job.continuity ? (
+                        <Badge variant="mute">{t("cron.continuity")}</Badge>
+                      ) : null}
+                      {job.monitorScript || job.monitorUrl ? (
+                        <Badge variant="mute">{t("cron.monitor")}</Badge>
+                      ) : null}
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {job.schedule}
@@ -216,6 +228,7 @@ function CronPage() {
         skills={data?.skills ?? []}
         toolsets={data?.toolsets ?? []}
         deliveryTargets={data?.cronDeliveryTargets ?? []}
+        pantheon={pantheon}
         pending={creating}
         error={createError ? localizeError(locale, createError) : null}
         onOpenChange={(next) => {

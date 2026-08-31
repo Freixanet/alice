@@ -134,6 +134,7 @@ export function cronFromUnknown(item: unknown): HermesCronRow {
   const rec = asRec(item);
   const schedule = asRec(rec.schedule);
   const origin = asRec(rec.origin);
+  const contextFrom = stringList(rec.context_from);
   return {
     id: str(rec.id) || str(rec.name),
     name: str(rec.name) || str(rec.id),
@@ -151,6 +152,12 @@ export function cronFromUnknown(item: unknown): HermesCronRow {
     workdir: str(rec.workdir) || undefined,
     enabledToolsets: stringList(rec.enabled_toolsets),
     noAgent: rec.no_agent === true,
+    continuity: contextFrom.some(
+      (source) => source.trim().toLowerCase() === "self",
+    ),
+    monitorScript: str(rec.monitor_script) || undefined,
+    monitorUrl: str(rec.monitor_url) || undefined,
+    reasoningEffort: str(rec.reasoning_effort) || undefined,
     enabled: rec.enabled !== false && str(rec.state) !== "paused",
     state: str(rec.state) || (rec.enabled === false ? "paused" : "scheduled"),
     lastStatus: str(rec.last_status) || undefined,

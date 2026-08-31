@@ -31,7 +31,7 @@ import {
 } from "./hermes-live-parse";
 
 describe("Hermes cron contract parsing", () => {
-  it("retains every editable field from Hermes 0.20.6", () => {
+  it("retains every editable field including Pantheon job state", () => {
     expect(
       cronFromUnknown({
         id: "job-1",
@@ -46,6 +46,9 @@ describe("Hermes cron contract parsing", () => {
         workdir: "/workspace",
         enabled_toolsets: ["web"],
         no_agent: false,
+        context_from: ["self"],
+        monitor_url: "https://example.com/releases",
+        reasoning_effort: "high",
       }),
     ).toMatchObject({
       id: "job-1",
@@ -58,6 +61,9 @@ describe("Hermes cron contract parsing", () => {
       workdir: "/workspace",
       enabledToolsets: ["web"],
       noAgent: false,
+      continuity: true,
+      monitorUrl: "https://example.com/releases",
+      reasoningEffort: "high",
     });
   });
 
