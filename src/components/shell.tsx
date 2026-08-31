@@ -74,8 +74,6 @@ export function AppShell() {
   const activeId = useHermes((s) => s.activeId);
   const selectChat = useHermes((s) => s.selectChat);
   const newChat = useHermes((s) => s.newChat);
-  const gatewayOn = useHermes((s) => s.gatewayOn);
-  const gatewayStatus = useHermes((s) => s.gatewayStatus);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -154,8 +152,6 @@ export function AppShell() {
     setMobileSidebarOffset(offset);
     mobileSidebarOffsetRef.current = offset;
   }, [mobileSidebarOpen, mobileSidebarWidth]);
-
-  const live = gatewayOn && gatewayStatus === "live";
 
   function startChat() {
     newChat();
@@ -241,7 +237,6 @@ export function AppShell() {
           {collapsed ? (
             <CollapsedRail
               pathname={pathname}
-              live={live}
               onExpand={() => setCollapsed(false)}
               onSearch={() => setSearchOpen(true)}
               onNewChat={startChat}
@@ -250,7 +245,6 @@ export function AppShell() {
           ) : (
             <ExpandedSidebar
               pathname={pathname}
-              live={live}
               conversations={conversations}
               activeId={activeId}
               onCollapse={() => setCollapsed(true)}
@@ -284,7 +278,6 @@ export function AppShell() {
           <ExpandedSidebar
             mobile
             pathname={pathname}
-            live={live}
             conversations={conversations}
             activeId={activeId}
             onCollapse={() => setMobileSidebarOpen(false)}
@@ -376,14 +369,12 @@ export function AppShell() {
 
 function CollapsedRail({
   pathname,
-  live,
   onExpand,
   onSearch,
   onNewChat,
   onOpenSettings,
 }: {
   pathname: string;
-  live: boolean;
   onExpand: () => void;
   onSearch: () => void;
   onNewChat: () => void;
@@ -431,15 +422,9 @@ function CollapsedRail({
           type="button"
           aria-label={t("shell.settings")}
           onClick={onOpenSettings}
-          className="relative grid size-7 place-items-center rounded-full bg-foreground p-0 text-xs font-medium text-background"
+          className="grid size-7 place-items-center rounded-full bg-foreground p-0 text-xs font-medium text-background"
         >
           {mark}
-          {live ? (
-            <span
-              className="absolute -right-px -bottom-px size-2 rounded-full bg-live ring-2 ring-background"
-              title={t("shell.agentLive")}
-            />
-          ) : null}
         </button>
       </div>
     </div>
@@ -448,7 +433,6 @@ function CollapsedRail({
 
 function ExpandedSidebar({
   pathname,
-  live,
   conversations,
   activeId,
   onCollapse,
@@ -460,7 +444,6 @@ function ExpandedSidebar({
   onSelectChat,
 }: {
   pathname: string;
-  live: boolean;
   conversations: Conversation[];
   activeId: string;
   onCollapse: () => void;
@@ -608,15 +591,9 @@ function ExpandedSidebar({
             type="button"
             aria-label={t("shell.settings")}
             onClick={onOpenSettings}
-            className="relative grid size-10 shrink-0 place-items-center rounded-full bg-foreground text-sm font-medium text-background"
+            className="grid size-10 shrink-0 place-items-center rounded-full bg-foreground text-sm font-medium text-background"
           >
             {mark}
-            {live ? (
-              <span
-                className="absolute right-0 bottom-0 size-2.5 rounded-full bg-live ring-2 ring-background"
-                title={t("shell.agentLive")}
-              />
-            ) : null}
           </button>
           <button
             type="button"

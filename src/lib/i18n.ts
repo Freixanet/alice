@@ -50,7 +50,6 @@ const en = {
   "shell.deleteChatHint": "“{title}” will be deleted. This cannot be undone.",
   "shell.cancel": "Cancel",
   "shell.save": "Save",
-  "shell.agentLive": "Your agent",
   "shell.you": "You",
   "shell.shareText": "Chat in Alice: {title}",
 
@@ -774,7 +773,6 @@ const es: Record<MsgKey, string> = {
   "shell.deleteChatHint": "Se borrará «{title}». No se puede deshacer.",
   "shell.cancel": "Cancelar",
   "shell.save": "Guardar",
-  "shell.agentLive": "Tu agente",
   "shell.you": "Tú",
   "shell.shareText": "Chat en Alice: {title}",
 
