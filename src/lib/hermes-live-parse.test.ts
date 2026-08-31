@@ -221,9 +221,25 @@ describe("Hermes cron contract parsing", () => {
       projectFromUnknown({
         id: "project-1",
         name: "Alice",
-        folders: [{ path: "/workspace", is_primary: true }],
+        board_slug: "alice-board",
+        active: true,
+        archived: true,
+        folders: [
+          { path: "/workspace", label: "App", is_primary: true },
+          { path: "/workspace/api", label: "API", is_primary: false },
+        ],
       }),
-    ).toMatchObject({ id: "project-1", path: "/workspace" });
+    ).toMatchObject({
+      id: "project-1",
+      path: "/workspace",
+      boardSlug: "alice-board",
+      active: true,
+      archived: true,
+      folders: [
+        { path: "/workspace", label: "App", primary: true },
+        { path: "/workspace/api", label: "API", primary: false },
+      ],
+    });
     expect(projectsFromApi({ projects: [{ id: "project-1" }] })).toHaveLength(
       1,
     );

@@ -150,7 +150,16 @@ export type HermesProjectRow = {
   slug: string;
   description: string;
   path?: string;
+  folders: HermesProjectFolder[];
+  boardSlug?: string;
+  active: boolean;
   archived: boolean;
+};
+
+export type HermesProjectFolder = {
+  path: string;
+  label?: string;
+  primary: boolean;
 };
 
 export type HermesWebhookRow = {

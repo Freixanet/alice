@@ -12,6 +12,14 @@ const platformId = z
   .min(1)
   .max(128)
   .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
+const projectBoardSlug = z
+  .string()
+  .trim()
+  .max(64)
+  .refine(
+    (value) => !value || /^[a-z0-9][a-z0-9_-]{0,63}$/.test(value),
+    "Invalid board slug.",
+  );
 const webhookName = z
   .string()
   .trim()
@@ -273,6 +281,47 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
     path: text(1_024),
     description: optionalText(2_000),
   }),
+  z.strictObject({
+    action: z.literal("project-rename"),
+    projectId: id,
+    name,
+  }),
+  z.strictObject({
+    action: z.literal("project-add-folder"),
+    projectId: id,
+    path: text(1_024),
+    label: optionalText(128),
+    primary: z.boolean().optional(),
+  }),
+  z.strictObject({
+    action: z.literal("project-remove-folder"),
+    projectId: id,
+    path: text(1_024),
+    confirm: z.literal(true),
+  }),
+  z.strictObject({
+    action: z.literal("project-set-primary"),
+    projectId: id,
+    path: text(1_024),
+  }),
+  z.strictObject({
+    action: z.literal("project-activate"),
+    projectId: id,
+  }),
+  z.strictObject({
+    action: z.literal("project-archive"),
+    projectId: id,
+    confirm: z.literal(true),
+  }),
+  z.strictObject({
+    action: z.literal("project-restore"),
+    projectId: id,
+  }),
+  z.strictObject({
+    action: z.literal("project-bind-board"),
+    projectId: id,
+    board: projectBoardSlug,
+  }),
 ]);
 
 export type HermesMutation = z.infer<typeof hermesMutationSchema>;
@@ -525,6 +574,14 @@ export function hermesOperationFor(
         },
       };
     case "project-create":
+    case "project-rename":
+    case "project-add-folder":
+    case "project-remove-folder":
+    case "project-set-primary":
+    case "project-activate":
+    case "project-archive":
+    case "project-restore":
+    case "project-bind-board":
       return null;
   }
 }
@@ -542,6 +599,52 @@ export function hermesScopedOperationFor(
     ...operation,
     path: `${operation.path}${separator}profile=${encodeURIComponent(profile)}`,
   };
+}
+
+/**
+ * Official `hermes project` argv for the project lifecycle Hermes exposes only
+ * through its CLI. Keeping this pure makes the local adapter testable without
+ * starting a subprocess and prevents Alice from inventing dashboard routes.
+ */
+export function hermesProjectCliArgsFor(
+  input: HermesMutation,
+): string[] | null {
+  switch (input.action) {
+    case "project-create": {
+      const args = [
+        "project",
+        "create",
+        input.name,
+        input.path,
+        "--primary",
+        input.path,
+      ];
+      if (input.description) args.push("--description", input.description);
+      return args;
+    }
+    case "project-rename":
+      return ["project", "rename", input.projectId, input.name];
+    case "project-add-folder": {
+      const args = ["project", "add-folder", input.projectId, input.path];
+      if (input.label) args.push("--label", input.label);
+      if (input.primary) args.push("--primary");
+      return args;
+    }
+    case "project-remove-folder":
+      return ["project", "remove-folder", input.projectId, input.path];
+    case "project-set-primary":
+      return ["project", "set-primary", input.projectId, input.path];
+    case "project-activate":
+      return ["project", "use", input.projectId];
+    case "project-archive":
+      return ["project", "archive", input.projectId];
+    case "project-restore":
+      return ["project", "restore", input.projectId];
+    case "project-bind-board":
+      return ["project", "bind-board", input.projectId, input.board];
+    default:
+      return null;
+  }
 }
 
 function cronPayload(value: Record<string, unknown>) {

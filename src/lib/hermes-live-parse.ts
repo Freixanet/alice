@@ -538,14 +538,38 @@ function boundedNumber(
 export function projectFromUnknown(item: unknown): HermesProjectRow {
   const rec = asRec(item);
   const id = str(rec.id) || str(rec.slug);
-  const folders = Array.isArray(rec.folders) ? rec.folders : [];
-  const primary = folders.find((f) => asRec(f).is_primary) ?? folders[0];
+  const folders = (Array.isArray(rec.folders) ? rec.folders : [])
+    .map((item) => {
+      const folder = asRec(item);
+      const path = str(folder.path);
+      if (!path) return null;
+      const label = str(folder.label);
+      return {
+        path,
+        ...(label ? { label } : {}),
+        primary:
+          folder.is_primary === true ||
+          folder.is_primary === 1 ||
+          folder.primary === true ||
+          folder.primary === 1,
+      };
+    })
+    .filter((folder) => folder !== null);
+  const primary = folders.find((folder) => folder.primary) ?? folders[0];
+  const boardSlug = str(rec.board_slug) || str(rec.boardSlug) || str(rec.board);
   return {
     id,
     name: str(rec.name) || prettyName(id),
     slug: str(rec.slug) || id,
     description: str(rec.description),
-    path: str(rec.primary_path) || str(asRec(primary).path) || undefined,
+    path: str(rec.primary_path) || str(rec.path) || primary?.path || undefined,
+    folders,
+    ...(boardSlug ? { boardSlug } : {}),
+    active:
+      rec.active === true ||
+      rec.active === 1 ||
+      rec.is_active === true ||
+      rec.is_active === 1,
     archived: rec.archived === true || rec.archived === 1,
   };
 }

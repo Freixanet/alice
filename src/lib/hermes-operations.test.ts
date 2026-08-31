@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   hermesMutationSchema,
   hermesOperationFor,
+  hermesProjectCliArgsFor,
   hermesScopedOperationFor,
 } from "./hermes-operations";
 
@@ -104,6 +105,79 @@ describe("official Hermes management operations", () => {
     ).toBeNull();
   });
 
+  it("maps the complete project lifecycle to official CLI arguments", () => {
+    expect(
+      hermesProjectCliArgsFor({
+        action: "project-create",
+        name: "Alice",
+        path: "/workspace/alice",
+        description: "Web client",
+      }),
+    ).toEqual([
+      "project",
+      "create",
+      "Alice",
+      "/workspace/alice",
+      "--primary",
+      "/workspace/alice",
+      "--description",
+      "Web client",
+    ]);
+    expect(
+      hermesProjectCliArgsFor({
+        action: "project-add-folder",
+        projectId: "alice",
+        path: "/workspace/api",
+        label: "API",
+        primary: true,
+      }),
+    ).toEqual([
+      "project",
+      "add-folder",
+      "alice",
+      "/workspace/api",
+      "--label",
+      "API",
+      "--primary",
+    ]);
+    expect(
+      hermesProjectCliArgsFor({
+        action: "project-remove-folder",
+        projectId: "alice",
+        path: "/workspace/api",
+        confirm: true,
+      }),
+    ).toEqual(["project", "remove-folder", "alice", "/workspace/api"]);
+    expect(
+      hermesProjectCliArgsFor({
+        action: "project-bind-board",
+        projectId: "alice",
+        board: "",
+      }),
+    ).toEqual(["project", "bind-board", "alice", ""]);
+    for (const mutation of [
+      { action: "project-rename", projectId: "alice", name: "Alice web" },
+      {
+        action: "project-set-primary",
+        projectId: "alice",
+        path: "/workspace/alice",
+      },
+      { action: "project-activate", projectId: "alice" },
+      {
+        action: "project-archive",
+        projectId: "alice",
+        confirm: true,
+      },
+      { action: "project-restore", projectId: "alice" },
+    ] as const) {
+      expect(hermesOperationFor(mutation)).toBeNull();
+      expect(hermesProjectCliArgsFor(mutation)?.slice(0, 2)).toEqual([
+        "project",
+        expect.any(String),
+      ]);
+    }
+  });
+
   it("accepts one valid MCP transport and rejects unsafe environment names", () => {
     expect(
       hermesMutationSchema.safeParse({
@@ -140,6 +214,8 @@ describe("official Hermes management operations", () => {
       { action: "mcp-delete", name: "one" },
       { action: "session-delete", sessionId: "one" },
       { action: "webhook-delete", name: "one" },
+      { action: "project-remove-folder", projectId: "one", path: "/tmp" },
+      { action: "project-archive", projectId: "one" },
     ]) {
       expect(hermesMutationSchema.safeParse(value).success).toBe(false);
       expect(

@@ -49,6 +49,7 @@ import {
   webhooksFromApi,
 } from "./hermes-live-parse";
 import {
+  hermesProjectCliArgsFor,
   hermesScopedOperationFor,
   type HermesMutation,
 } from "./hermes-operations";
@@ -292,18 +293,28 @@ if not os.path.exists(path):
 con=sqlite3.connect(path)
 con.row_factory=sqlite3.Row
 try:
-    rows=con.execute("select id,slug,name,description,primary_path,archived from projects order by created_at asc").fetchall()
+    project_cols={r["name"] for r in con.execute("pragma table_info(projects)").fetchall()}
+    board_select="board_slug" if "board_slug" in project_cols else "null as board_slug"
+    rows=con.execute(f"select id,slug,name,description,{board_select},primary_path,archived from projects order by created_at asc").fetchall()
 except sqlite3.OperationalError:
     print("[]"); raise SystemExit
+try:
+    active_row=con.execute("select value from project_meta where key='active_id'").fetchone()
+    active_id=active_row["value"] if active_row else None
+except sqlite3.OperationalError:
+    active_id=None
 out=[]
 for r in rows:
     folders=[]
     try:
-        folders=con.execute("select path,is_primary from project_folders where project_id=?", (r["id"],)).fetchall()
+        folder_cols={row["name"] for row in con.execute("pragma table_info(project_folders)").fetchall()}
+        label_select="label" if "label" in folder_cols else "null as label"
+        order_by=" order by added_at asc" if "added_at" in folder_cols else ""
+        folders=con.execute(f"select path,{label_select},is_primary from project_folders where project_id=?{order_by}", (r["id"],)).fetchall()
     except sqlite3.OperationalError:
         pass
     primary=r["primary_path"] or next((f["path"] for f in folders if f["is_primary"]), None) or (folders[0]["path"] if folders else None)
-    out.append({"id":r["id"],"slug":r["slug"],"name":r["name"],"description":r["description"] or "","primary_path":primary,"archived":bool(r["archived"])})
+    out.append({"id":r["id"],"slug":r["slug"],"name":r["name"],"description":r["description"] or "","board_slug":r["board_slug"],"primary_path":primary,"folders":[{"path":f["path"],"label":f["label"],"is_primary":bool(f["is_primary"])} for f in folders],"active":r["id"]==active_id,"archived":bool(r["archived"])})
 print(json.dumps(out))`;
   try {
     const { execFile } = await import("node:child_process");
@@ -582,26 +593,20 @@ export async function mutateHermesLive(
       ? { ok: true }
       : { ok: false, error: "Hermes couldn’t save the change." };
   }
-  if (mutation.action === "project-create") {
-    if (opts.local) {
-      const ok = await createProjectLocally({
-        name: mutation.name,
-        path: mutation.path,
-        description: mutation.description,
-      });
-      return ok
-        ? { ok: true }
-        : { ok: false, error: "Hermes couldn’t save the change." };
-    }
+  const projectArgs = hermesProjectCliArgsFor(mutation);
+  if (projectArgs && opts.local) {
+    const ok = await mutateProjectLocally(projectArgs, profile);
+    return ok
+      ? { ok: true }
+      : { ok: false, error: "Hermes couldn’t save the change." };
   }
   return { ok: false, error: "Hermes couldn’t save the change." };
 }
 
-async function createProjectLocally(body: {
-  name: string;
-  path?: string;
-  description?: string;
-}): Promise<boolean> {
+async function mutateProjectLocally(
+  projectArgs: string[],
+  profile?: string,
+): Promise<boolean> {
   const { execFile } = await import("node:child_process");
   const { access } = await import("node:fs/promises");
   const { join } = await import("node:path");
@@ -615,9 +620,7 @@ async function createProjectLocally(body: {
   );
   try {
     await access(executable);
-    const args = ["project", "create", body.name];
-    if (body.path) args.push(body.path, "--primary", body.path);
-    if (body.description) args.push("--description", body.description);
+    const args = profile ? ["-p", profile, ...projectArgs] : projectArgs;
     await promisify(execFile)(executable, args, { timeout: 12_000 });
     return true;
   } catch {
