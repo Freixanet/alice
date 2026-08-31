@@ -95,17 +95,8 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useT();
-  const [mobile, setMobile] = useState(false);
   const [sectionId, setSectionId] = useState<SectionId>("general");
   const [query, setQuery] = useState("");
-
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 767px)");
-    const update = () => setMobile(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -138,7 +129,7 @@ export function SettingsDialog({
   }, [current, sectionId]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} modal={!mobile}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 md:h-[min(38rem,85vh)] md:w-[calc(100%-2rem)] md:max-w-3xl md:flex-row [&>button]:hidden">
         <DialogDescription className="sr-only">
           {t("settings.title")}
@@ -176,7 +167,9 @@ export function SettingsDialog({
                 return (
                   <li key={s.id} className="shrink-0 md:shrink">
                     <button
+                      id={`settings-section-${s.id}`}
                       type="button"
+                      aria-current={on ? "page" : undefined}
                       onClick={() => setSectionId(s.id)}
                       className={cn(
                         "flex w-full items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-left text-sm",
@@ -194,7 +187,13 @@ export function SettingsDialog({
             )}
           </ul>
         </nav>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
+          role="region"
+          aria-labelledby={
+            current ? `settings-section-${current.id}` : undefined
+          }
+        >
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6">
             {current ? (
               <>
@@ -350,7 +349,7 @@ function GeneralSection() {
                 "h-8 rounded-md px-2.5 text-xs font-medium",
                 fontSize === opt.id
                   ? "bg-card text-foreground border border-border"
-                  : "text-muted-foreground hover:text-foreground",
+                  : "text-foreground/70 hover:text-foreground",
               )}
             >
               {t(opt.labelKey)}

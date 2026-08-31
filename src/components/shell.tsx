@@ -72,6 +72,7 @@ export function AppShell() {
   const setCollapsed = useHermes((s) => s.setSidebarCollapsed);
   const conversations = useHermes((s) => s.conversations);
   const activeId = useHermes((s) => s.activeId);
+  const hydrated = useHermes((s) => s.hydrated);
   const selectChat = useHermes((s) => s.selectChat);
   const newChat = useHermes((s) => s.newChat);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -80,6 +81,9 @@ export function AppShell() {
   const [mobileSidebarWidth, setMobileSidebarWidth] = useState(320);
   const [mobileSidebarOffset, setMobileSidebarOffset] = useState(0);
   const [mobileSidebarDragging, setMobileSidebarDragging] = useState(false);
+  const mobileSidebarRef = useRef<HTMLElement>(null);
+  const mobileSidebarToggleRef = useRef<HTMLButtonElement>(null);
+  const focusMobileSidebarOnOpen = useRef(false);
   const mobileSidebarOffsetRef = useRef(0);
   const mobileSwipeStart = useRef<{
     x: number;
@@ -153,6 +157,34 @@ export function AppShell() {
     mobileSidebarOffsetRef.current = offset;
   }, [mobileSidebarOpen, mobileSidebarWidth]);
 
+  useEffect(() => {
+    if (!mobileSidebarOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setMobileSidebarOpen(false);
+      requestAnimationFrame(() => mobileSidebarToggleRef.current?.focus());
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileSidebarOpen]);
+
+  useEffect(() => {
+    if (
+      !focusMobileSidebarOnOpen.current ||
+      !mobileSidebarOpen ||
+      mobileSidebarOffset === 0
+    ) {
+      return;
+    }
+    focusMobileSidebarOnOpen.current = false;
+    mobileSidebarRef.current
+      ?.querySelector<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )
+      ?.focus();
+  }, [mobileSidebarOffset, mobileSidebarOpen]);
+
   function startChat() {
     newChat();
     void navigate({ to: "/" });
@@ -219,6 +251,7 @@ export function AppShell() {
   return (
     <TooltipProvider delayDuration={200}>
       <div
+        data-ready={hydrated ? "" : undefined}
         className="alice-app flex h-dvh touch-pan-y overflow-hidden bg-background"
         onPointerDownCapture={startMobileSidebarSwipe}
         onPointerMoveCapture={moveMobileSidebarSwipe}
@@ -228,7 +261,16 @@ export function AppShell() {
           mobileSwipeStart.current = null;
         }}
       >
+        <a
+          href="#alice-main-content"
+          aria-hidden={mobileSidebarOffset > 0 ? true : undefined}
+          tabIndex={mobileSidebarOffset > 0 ? -1 : undefined}
+          className="sr-only z-50 rounded-md border border-border bg-popover px-3 py-2 text-sm text-foreground focus:not-sr-only focus:fixed focus:top-4 focus:left-4"
+        >
+          {t("shell.skipToContent")}
+        </a>
         <aside
+          aria-label={t("shell.navigation")}
           className={cn(
             "hidden h-full shrink-0 flex-col border-r border-border md:flex",
             collapsed ? "w-14" : "w-64",
@@ -259,7 +301,9 @@ export function AppShell() {
           )}
         </aside>
         <aside
-          aria-label={t("shell.openSidebar")}
+          ref={mobileSidebarRef}
+          id="alice-mobile-sidebar"
+          aria-label={t("shell.navigation")}
           aria-hidden={mobileSidebarOffset === 0}
           inert={mobileSidebarOffset === 0}
           className={cn(
@@ -302,11 +346,21 @@ export function AppShell() {
           />
         </aside>
         <button
+          ref={mobileSidebarToggleRef}
           type="button"
+          aria-controls="alice-mobile-sidebar"
+          aria-expanded={mobileSidebarOpen}
           aria-label={
             mobileSidebarOpen ? t("shell.closeSidebar") : t("shell.openSidebar")
           }
-          onClick={() => setMobileSidebarOpen((open) => !open)}
+          onClick={() => {
+            if (mobileSidebarOpen) {
+              setMobileSidebarOpen(false);
+              return;
+            }
+            focusMobileSidebarOnOpen.current = true;
+            setMobileSidebarOpen(true);
+          }}
           className={cn(
             "fixed top-[max(1rem,env(safe-area-inset-top))] left-[max(1rem,env(safe-area-inset-left))] z-40 grid size-10 place-items-center rounded-full bg-card text-foreground border border-border transition-colors hover:bg-accent md:hidden",
             mobileSidebarDragging
@@ -323,11 +377,8 @@ export function AppShell() {
             <path d="M4 8h16M4 16h10" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
-        <button
-          type="button"
-          aria-label={t("shell.closeSidebar")}
-          aria-hidden={mobileSidebarOffset === 0}
-          tabIndex={mobileSidebarOffset === 0 ? -1 : 0}
+        <div
+          aria-hidden="true"
           onClick={() => setMobileSidebarOpen(false)}
           className="fixed inset-0 z-20 bg-background/35 transition-opacity duration-300 md:hidden"
           style={{
@@ -337,7 +388,11 @@ export function AppShell() {
             pointerEvents: mobileSidebarOffset > 0 ? "auto" : "none",
           }}
         />
-        <div
+        <main
+          id="alice-main-content"
+          tabIndex={-1}
+          aria-hidden={mobileSidebarOffset > 0 ? true : undefined}
+          inert={mobileSidebarOffset > 0}
           className={cn(
             "alice-main relative z-10 flex min-w-0 flex-1 flex-col",
             mobileSidebarDragging
@@ -347,7 +402,7 @@ export function AppShell() {
           style={{ transform: `translateX(${mobileSidebarOffset}px)` }}
         >
           <Outlet />
-        </div>
+        </main>
         <CommandPalette
           open={searchOpen}
           onOpenChange={setSearchOpen}
@@ -399,7 +454,10 @@ function CollapsedRail({
           </span>
         </IconBtn>
       </div>
-      <nav className="mt-5 flex w-full flex-col items-center gap-1">
+      <nav
+        aria-label={t("shell.navigation")}
+        className="mt-5 flex w-full flex-col items-center gap-1"
+      >
         <IconBtn label={t("shell.newChat")} onClick={onNewChat}>
           <RailGlyph icon={SquarePen} heavy />
         </IconBtn>
@@ -548,11 +606,15 @@ function ExpandedSidebar({
           ) : null}
         </div>
       </div>
-      <nav className="mt-3 flex flex-col gap-0.5 px-2">
+      <nav
+        aria-label={t("shell.navigation")}
+        className="mt-3 flex flex-col gap-0.5 px-2"
+      >
         {NAV.map((item) => (
           <Link
             key={item.to}
             to={item.to}
+            aria-current={pathname === item.to ? "page" : undefined}
             onClick={onNavigate}
             className={cn(
               "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm",
@@ -705,6 +767,7 @@ function ChatRow({
     <li className="group relative">
       <button
         type="button"
+        aria-current={active ? "page" : undefined}
         onClick={onSelect}
         className={cn(
           "w-full truncate rounded-lg py-2 pr-8 pl-2.5 text-left text-sm group-hover:bg-accent",
@@ -851,6 +914,7 @@ function IconLink({
         <Link
           to={to}
           aria-label={label}
+          aria-current={active ? "page" : undefined}
           className={cn(
             "grid size-8 place-items-center rounded-md p-0",
             active

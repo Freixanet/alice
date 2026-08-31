@@ -208,6 +208,7 @@ function FilterChip({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={cn(
         "h-8 rounded-full px-3 text-xs font-medium",

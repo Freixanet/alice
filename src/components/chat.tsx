@@ -622,6 +622,10 @@ export function ChatView() {
           className="alice-chat-scroller min-h-0 flex-1 overflow-y-auto"
         >
           <div
+            role="log"
+            aria-label={t("chat.conversation")}
+            aria-live="polite"
+            aria-relevant="additions text"
             className={cn(
               "alice-message-list mx-auto flex w-full max-w-[45rem] flex-col gap-6 px-4 pb-28 sm:px-6",
               firstIsUser ? "pt-[10vh]" : "pt-8",
@@ -683,7 +687,11 @@ export function ChatView() {
                     />
                   ) : null}
                   {m.role === "assistant" && !m.pending && text ? (
-                    <div className="-ml-1 flex items-center" role="group">
+                    <div
+                      className="-ml-1 flex items-center"
+                      role="group"
+                      aria-label={t("chat.responseActions")}
+                    >
                       <button
                         type="button"
                         onClick={() => void copyResponse(m.id, text)}
@@ -781,6 +789,7 @@ export function ChatView() {
           ) : null}
           <div className="alice-composer rounded-2xl bg-card px-4 pb-3 pt-3 border border-border">
             <Textarea
+              aria-label={t("chat.placeholder")}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -895,6 +904,7 @@ export function ChatView() {
                   <button
                     type="button"
                     disabled={sending}
+                    aria-label={t("chat.model", { model: currentLabel })}
                     className="flex h-8 min-w-0 max-w-48 items-center gap-1 rounded-md px-2 text-sm text-foreground hover:bg-accent disabled:opacity-40"
                   >
                     <span className="min-w-0 truncate">{currentLabel}</span>

@@ -1,6 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+async function waitForAlice(page: import("@playwright/test").Page) {
+  await expect(page.locator(".alice-app")).toHaveAttribute("data-ready", "");
+}
+
 const routes = [
   "/",
   "/skills",
@@ -50,6 +54,7 @@ for (const route of routes) {
 
 test("the empty chat is accessible", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForAlice(page);
   await expect(
     page.getByRole("heading", { name: "What are we working on?" }),
   ).toBeVisible();
@@ -64,6 +69,7 @@ test("the empty chat is accessible", async ({ page }) => {
 test("mobile interactive targets are at least 44px", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForAlice(page);
   await expect(page.locator("html")).toHaveAttribute("data-alice-app", "");
   const violations = await page
     .locator(
@@ -95,4 +101,96 @@ test("mobile interactive targets are at least 44px", async ({ page }) => {
       }),
     );
   expect(violations).toEqual([]);
+});
+
+test("keyboard users can skip directly to the main content", async ({
+  page,
+  browserName,
+}) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForAlice(page);
+
+  await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+  const skipLink = page.getByRole("link", { name: "Skip to content" });
+  await expect(skipLink).toBeFocused();
+  await expect(skipLink).toBeVisible();
+
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("main")).toBeFocused();
+});
+
+test("the mobile sidebar isolates the background and restores focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForAlice(page);
+
+  const sidebar = page.locator("#alice-mobile-sidebar");
+  const main = page.locator("#alice-main-content");
+  const toggle = page.getByRole("button", { name: "Open sidebar" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(sidebar).toHaveAttribute("inert", "");
+  await expect(sidebar).toHaveAttribute("aria-hidden", "true");
+
+  await toggle.click();
+  await expect(
+    page.getByRole("button", { name: "Close sidebar" }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await expect(sidebar).not.toHaveAttribute("inert", "");
+  await expect(sidebar).toHaveAttribute("aria-hidden", "false");
+  await expect(main).toHaveAttribute("inert", "");
+  await expect(main).toHaveAttribute("aria-hidden", "true");
+  await expect
+    .poll(() =>
+      sidebar.evaluate((element) => element.contains(document.activeElement)),
+    )
+    .toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(sidebar).toHaveAttribute("inert", "");
+  await expect(main).not.toHaveAttribute("inert", "");
+  await expect(main).not.toHaveAttribute("aria-hidden", "true");
+});
+
+test("mobile settings is modal, focus-trapped and accessible", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForAlice(page);
+
+  await page.getByRole("button", { name: "Open sidebar" }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("aria-modal", "true");
+  await expect
+    .poll(() =>
+      dialog.evaluate((element) => element.contains(document.activeElement)),
+    )
+    .toBe(true);
+
+  for (let index = 0; index < 12; index += 1) {
+    await page.keyboard.press("Tab");
+    expect(
+      await dialog.evaluate((element) =>
+        element.contains(document.activeElement),
+      ),
+    ).toBe(true);
+  }
+
+  const results = await new AxeBuilder({ page })
+    .include("[role=dialog]")
+    .analyze();
+  expect(
+    results.violations.filter((item) =>
+      ["critical", "serious"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
 });
