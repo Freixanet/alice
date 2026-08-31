@@ -51,6 +51,27 @@ describe("Hermes API contracts", () => {
     ).toBe(true);
     expect(
       hermesRequestSchema.safeParse({
+        action: "skill-content",
+        name: "research",
+        profile: "research",
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "action-status",
+        name: "skills-install",
+        profile: "research",
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "skills-search",
+        query: "research",
+        profile: "research",
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
         action: "live",
         profile: "../default",
       }).success,

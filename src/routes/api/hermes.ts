@@ -269,6 +269,47 @@ export const Route = createFileRoute("/api/hermes")({
           }
         }
 
+        if (
+          body.action === "skill-content" ||
+          body.action === "action-status" ||
+          body.action === "skills-search"
+        ) {
+          if (!saved?.u || !saved.k) {
+            return jsonWithCookie(
+              { ok: false, error: "Connect your Hermes first." },
+              400,
+            );
+          }
+          const gate = {
+            url: saved.u,
+            key: saved.k,
+            place: saved.p,
+            signal: AbortSignal.any([
+              request.signal,
+              AbortSignal.timeout(20_000),
+            ]),
+          };
+          try {
+            const {
+              fetchHermesActionStatus,
+              fetchHermesSkillContent,
+              searchHermesSkillsHub,
+            } = await import("@/lib/hermes-live.server");
+            const result =
+              body.action === "skill-content"
+                ? await fetchHermesSkillContent(gate, body.name, body.profile)
+                : body.action === "action-status"
+                  ? await fetchHermesActionStatus(gate, body.name, body.profile)
+                  : await searchHermesSkillsHub(gate, body.query, body.profile);
+            return jsonWithCookie(result, result.ok ? 200 : 502);
+          } catch {
+            return jsonWithCookie(
+              { ok: false, error: "Couldn’t read Hermes skill status." },
+              502,
+            );
+          }
+        }
+
         if (body.action === "diagnostics") {
           if (!saved?.u || !saved.k) {
             return jsonWithCookie(

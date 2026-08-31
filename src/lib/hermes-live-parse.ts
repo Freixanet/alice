@@ -12,6 +12,7 @@ import type {
   HermesSessionRow,
   HermesSessionMessage,
   HermesSkillRow,
+  HermesSkillHubRow,
   HermesToolsetRow,
   HermesWebhooksState,
 } from "./hermes-live-types";
@@ -206,6 +207,24 @@ export function skillsFromApi(raw: unknown): HermesSkillRow[] {
       };
     })
     .filter((s) => s.id);
+}
+
+export function skillHubResultsFromApi(raw: unknown): HermesSkillHubRow[] {
+  const source = asRec(raw).results;
+  return asList(source)
+    .map((item) => {
+      const record = asRec(item);
+      const identifier = str(record.identifier);
+      return {
+        identifier,
+        name: str(record.name) || identifier,
+        description: str(record.description),
+        source: str(record.source) || undefined,
+        trust: str(record.trust_level) || undefined,
+      };
+    })
+    .filter((item) => item.identifier)
+    .slice(0, 50);
 }
 
 export function toolsetsFromApi(raw: unknown): HermesToolsetRow[] {

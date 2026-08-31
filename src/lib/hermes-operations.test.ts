@@ -91,6 +91,17 @@ describe("official Hermes management operations", () => {
       body: { identifier: "github:org/skill" },
     });
     expect(
+      hermesOperationFor({
+        action: "skill-delete",
+        name: "my skill",
+        confirm: true,
+      }),
+    ).toEqual({
+      path: "/api/learning/node",
+      method: "DELETE",
+      body: { id: "my skill" },
+    });
+    expect(
       hermesOperationFor({ action: "mcp-test", name: "my server" }),
     ).toEqual({
       path: "/api/mcp/servers/my%20server/test",
@@ -211,6 +222,7 @@ describe("official Hermes management operations", () => {
     for (const value of [
       { action: "cron-delete", jobId: "one" },
       { action: "skill-uninstall", name: "one" },
+      { action: "skill-delete", name: "one" },
       { action: "mcp-delete", name: "one" },
       { action: "session-delete", sessionId: "one" },
       { action: "webhook-delete", name: "one" },

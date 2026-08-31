@@ -19,6 +19,7 @@ import {
   profilesFromApi,
   sessionsFromApi,
   sessionMessagesFromApi,
+  skillHubResultsFromApi,
   skillsFromApi,
   str,
   toolsetsFromApi,
@@ -90,6 +91,28 @@ describe("Hermes cron contract parsing", () => {
         ],
       }),
     ).toHaveLength(1);
+    expect(
+      skillHubResultsFromApi({
+        results: [
+          {
+            identifier: "official/research/arxiv",
+            name: "arxiv",
+            description: "Search papers",
+            source: "official",
+            trust_level: "builtin",
+            download_url: "must-not-reach-alice",
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        identifier: "official/research/arxiv",
+        name: "arxiv",
+        description: "Search papers",
+        source: "official",
+        trust: "builtin",
+      },
+    ]);
     expect(
       toolsetsFromApi({
         toolsets: [

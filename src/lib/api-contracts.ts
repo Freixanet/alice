@@ -30,6 +30,21 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
     name: hermesProfileNameSchema,
   }),
   z.strictObject({
+    action: z.literal("skill-content"),
+    name: bounded(128),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("skills-search"),
+    query: bounded(256),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("action-status"),
+    name: bounded(256),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
     action: z.literal("mutate"),
     profile: hermesProfileNameSchema.optional(),
     mutation: hermesMutationSchema,

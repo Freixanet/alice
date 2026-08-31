@@ -23,6 +23,7 @@ import {
   type HermesMutation,
 } from "./hermes-operations";
 import type {
+  HermesActionStatusResult,
   HermesDiagnosticsResult,
   HermesLive,
   HermesLiveResult,
@@ -30,6 +31,8 @@ import type {
   HermesProfileSoulResult,
   HermesProfilesResult,
   HermesSessionMessagesResult,
+  HermesSkillContentResult,
+  HermesSkillHubSearchResult,
 } from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
 import { setDeviceSessionKey } from "./hermes-secret-client";
@@ -56,6 +59,7 @@ import {
   profilesFromApi,
   sessionsFromApi,
   sessionMessagesFromApi,
+  skillHubResultsFromApi,
   skillsFromApi,
   str,
   toolsetsFromApi,
@@ -905,6 +909,96 @@ export async function readHermesProfileSoulDirect(opts: {
   }
 }
 
+export async function readHermesSkillContentDirect(opts: {
+  url: string;
+  key: string;
+  name: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesSkillContentResult> {
+  try {
+    const raw = await dashboardGet(
+      opts.url,
+      opts.key,
+      profiledPath(
+        `/api/skills/content?name=${encodeURIComponent(opts.name)}`,
+        opts.profile,
+      ),
+      opts.signal,
+    );
+    const record = asRec(raw);
+    const content = typeof record.content === "string" ? record.content : null;
+    if (content === null) {
+      return { ok: false, error: "Couldn’t read this Hermes skill." };
+    }
+    return { ok: true, name: str(record.name) || opts.name, content };
+  } catch {
+    return { ok: false, error: "Couldn’t read this Hermes skill." };
+  }
+}
+
+export async function searchHermesSkillsHubDirect(opts: {
+  url: string;
+  key: string;
+  query: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesSkillHubSearchResult> {
+  try {
+    const raw = await dashboardGet(
+      opts.url,
+      opts.key,
+      profiledPath(
+        `/api/skills/hub/search?q=${encodeURIComponent(opts.query)}&source=all&limit=20`,
+        opts.profile,
+      ),
+      opts.signal,
+    );
+    if (!raw) return { ok: false, error: "Couldn’t search the Skills Hub." };
+    return { ok: true, results: skillHubResultsFromApi(raw) };
+  } catch {
+    return { ok: false, error: "Couldn’t search the Skills Hub." };
+  }
+}
+
+export async function readHermesActionStatusDirect(opts: {
+  url: string;
+  key: string;
+  name: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesActionStatusResult> {
+  try {
+    const raw = await dashboardGet(
+      opts.url,
+      opts.key,
+      profiledPath(
+        `/api/actions/${encodeURIComponent(opts.name)}/status?lines=200`,
+        opts.profile,
+      ),
+      opts.signal,
+    );
+    const record = asRec(raw);
+    if (typeof record.running !== "boolean") {
+      return { ok: false, error: "Couldn’t read the Hermes action." };
+    }
+    return {
+      ok: true,
+      action: {
+        name: str(record.name) || opts.name,
+        running: record.running,
+        exitCode:
+          typeof record.exit_code === "number" ? record.exit_code : null,
+        lines: Array.isArray(record.lines)
+          ? record.lines.map(str).filter(Boolean).slice(-200)
+          : [],
+      },
+    };
+  } catch {
+    return { ok: false, error: "Couldn’t read the Hermes action." };
+  }
+}
+
 export async function readHermesSessionMessagesDirect(opts: {
   url: string;
   key: string;
@@ -962,6 +1056,24 @@ export async function mutateHermesDirect(
 ): Promise<HermesMutationResult> {
   try {
     const operation = hermesScopedOperationFor(opts, opts.profile);
+    if (
+      operation &&
+      (opts.action === "skill-install" ||
+        opts.action === "skill-uninstall" ||
+        opts.action === "skills-update")
+    ) {
+      const raw = await dashboardSendJson(
+        opts.url,
+        opts.key,
+        operation.path,
+        operation.method,
+        operation.body,
+      );
+      const actionName = str(asRec(raw).name);
+      return actionName
+        ? { ok: true, actionName }
+        : { ok: false, error: "Hermes didn’t start the skill action." };
+    }
     if (operation && opts.action === "webhook-create") {
       const raw = await dashboardSendJson(
         opts.url,

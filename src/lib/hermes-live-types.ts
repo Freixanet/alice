@@ -9,6 +9,19 @@ export type HermesSkillRow = {
   provenance?: string;
 };
 
+export type HermesSkillContentResult =
+  { ok: true; name: string; content: string } | { ok: false; error: string };
+
+export type HermesActionStatus = {
+  name: string;
+  running: boolean;
+  exitCode: number | null;
+  lines: string[];
+};
+
+export type HermesActionStatusResult =
+  { ok: true; action: HermesActionStatus } | { ok: false; error: string };
+
 export type HermesToolsetRow = {
   id: string;
   name: string;
@@ -115,6 +128,17 @@ export type HermesSessionMessagesResult =
     }
   | { ok: false; error: string };
 
+export type HermesSkillHubRow = {
+  identifier: string;
+  name: string;
+  description: string;
+  source?: string;
+  trust?: string;
+};
+
+export type HermesSkillHubSearchResult =
+  { ok: true; results: HermesSkillHubRow[] } | { ok: false; error: string };
+
 export type HermesDiagnosticPlatform = {
   id: string;
   name: string;
@@ -213,6 +237,7 @@ export type HermesMutationResult =
       secret?: string;
       url?: string;
       channelTest?: HermesChannelTestResult;
+      actionName?: string;
     }
   | { ok: false; error: string };
 

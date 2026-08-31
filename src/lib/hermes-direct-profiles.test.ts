@@ -5,8 +5,11 @@ import {
   controlHermesRunDirect,
   getHermesRunDirect,
   listHermesModelsDirect,
+  readHermesActionStatusDirect,
   readHermesProfilesDirect,
   readHermesProfileSoulDirect,
+  readHermesSkillContentDirect,
+  searchHermesSkillsHubDirect,
   streamHermesDirect,
   streamHermesSessionDirect,
   setHermesModelDirect,
@@ -117,6 +120,111 @@ describe("Hermes direct profile transport", () => {
     ).toEqual({ ok: true });
     expect(seen[0]).toContain("/api/skills/toggle?profile=research");
     expect(seen[1]).toMatch(/\/api\/profiles\/active$/);
+  });
+
+  it("reads skill content and waits on background actions without exposing paths", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL) => {
+        const url = String(input);
+        seen.push(url);
+        if (url.includes("/api/skills/content")) {
+          return Promise.resolve(
+            json({
+              name: "research",
+              content: "---\nname: research\n---\nUse sources.",
+              path: "/private/hermes/skills/research/SKILL.md",
+            }),
+          );
+        }
+        if (url.includes("/api/actions/skills-install/status")) {
+          return Promise.resolve(
+            json({
+              name: "skills-install",
+              running: false,
+              exit_code: 0,
+              lines: ["Installed"],
+              cwd: "/private/hermes",
+            }),
+          );
+        }
+        if (url.includes("/api/skills/hub/search")) {
+          return Promise.resolve(
+            json({
+              results: [
+                {
+                  identifier: "official/research/arxiv",
+                  name: "arxiv",
+                  description: "Search papers",
+                },
+              ],
+            }),
+          );
+        }
+        return Promise.resolve(
+          json({ ok: true, name: "skills-install", pid: 321 }),
+        );
+      }),
+    );
+
+    expect(
+      await readHermesSkillContentDirect({
+        url: "http://127.0.0.1:8642",
+        key: "12345678",
+        name: "research",
+        profile: "work",
+      }),
+    ).toEqual({
+      ok: true,
+      name: "research",
+      content: "---\nname: research\n---\nUse sources.",
+    });
+    expect(
+      await readHermesActionStatusDirect({
+        url: "http://127.0.0.1:8642",
+        key: "12345678",
+        name: "skills-install",
+        profile: "work",
+      }),
+    ).toEqual({
+      ok: true,
+      action: {
+        name: "skills-install",
+        running: false,
+        exitCode: 0,
+        lines: ["Installed"],
+      },
+    });
+    expect(
+      await mutateHermesDirect({
+        url: "http://127.0.0.1:8642",
+        key: "12345678",
+        profile: "work",
+        action: "skill-install",
+        identifier: "official/research/arxiv",
+      }),
+    ).toEqual({ ok: true, actionName: "skills-install" });
+    expect(
+      await searchHermesSkillsHubDirect({
+        url: "http://127.0.0.1:8642",
+        key: "12345678",
+        query: "papers",
+        profile: "work",
+      }),
+    ).toEqual({
+      ok: true,
+      results: [
+        {
+          identifier: "official/research/arxiv",
+          name: "arxiv",
+          description: "Search papers",
+          source: undefined,
+          trust: undefined,
+        },
+      ],
+    });
+    expect(seen.every((url) => url.includes("profile=work"))).toBe(true);
   });
 
   it("scopes model discovery and default assignment to the selected profile", async () => {

@@ -1,11 +1,14 @@
 import { authHeaders } from "./auth/client";
 import type {
+  HermesActionStatusResult,
   HermesDiagnosticsResult,
   HermesLiveResult,
   HermesMutationResult,
   HermesProfileSoulResult,
   HermesProfilesResult,
   HermesSessionMessagesResult,
+  HermesSkillContentResult,
+  HermesSkillHubSearchResult,
 } from "./hermes-live-types";
 import { hermesMutationSchema, type HermesMutation } from "./hermes-operations";
 import { advertisesHermesCapability } from "./gateway-contracts";
@@ -140,6 +143,17 @@ export async function mutateHermes(
         },
       };
     }
+    if (
+      opts.action === "skill-install" ||
+      opts.action === "skill-uninstall" ||
+      opts.action === "skills-update"
+    ) {
+      const actionName =
+        typeof data.actionName === "string" ? data.actionName.trim() : "";
+      return actionName
+        ? { ok: true, actionName }
+        : { ok: false, error: "Hermes didn’t start the skill action." };
+    }
     return { ok: true };
   } catch {
     return { ok: false, error: "Hermes couldn’t save the change." };
@@ -228,6 +242,206 @@ export async function readHermesProfileSoul(opts: {
   } catch {
     return { ok: false, error: "Couldn’t read this profile’s SOUL." };
   }
+}
+
+export async function readHermesSkillContent(opts: {
+  name: string;
+  signal?: AbortSignal;
+}): Promise<HermesSkillContentResult> {
+  try {
+    const { useHermes } = await import("./store");
+    const state = useHermes.getState();
+    const profile = advertisesHermesCapability(
+      state.gatewayMeta?.manifest,
+      "profiles",
+    )
+      ? state.profile
+      : undefined;
+    if (state.gatewayPlace === "device") {
+      const { getDeviceSessionKey, readHermesSkillContentDirect } =
+        await import("./hermes-direct");
+      const key = getDeviceSessionKey();
+      if (!state.gatewayUrl || !key) {
+        return { ok: false, error: "Connect your Hermes on this computer." };
+      }
+      return readHermesSkillContentDirect({
+        url: state.gatewayUrl,
+        key,
+        name: opts.name,
+        profile,
+        signal: opts.signal,
+      });
+    }
+    const res = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        action: "skill-content",
+        name: opts.name,
+        profile,
+      }),
+      signal: opts.signal,
+      cache: "no-store",
+    });
+    const data = (await res.json()) as HermesSkillContentResult;
+    return data && data.ok
+      ? data
+      : {
+          ok: false,
+          error:
+            data && "error" in data
+              ? data.error
+              : "Couldn’t read this Hermes skill.",
+        };
+  } catch {
+    return { ok: false, error: "Couldn’t read this Hermes skill." };
+  }
+}
+
+export async function searchHermesSkillsHub(opts: {
+  query: string;
+  signal?: AbortSignal;
+}): Promise<HermesSkillHubSearchResult> {
+  try {
+    const { useHermes } = await import("./store");
+    const state = useHermes.getState();
+    const profile = advertisesHermesCapability(
+      state.gatewayMeta?.manifest,
+      "profiles",
+    )
+      ? state.profile
+      : undefined;
+    if (state.gatewayPlace === "device") {
+      const { getDeviceSessionKey, searchHermesSkillsHubDirect } =
+        await import("./hermes-direct");
+      const key = getDeviceSessionKey();
+      if (!state.gatewayUrl || !key) {
+        return { ok: false, error: "Connect your Hermes on this computer." };
+      }
+      return searchHermesSkillsHubDirect({
+        url: state.gatewayUrl,
+        key,
+        query: opts.query,
+        profile,
+        signal: opts.signal,
+      });
+    }
+    const res = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        action: "skills-search",
+        query: opts.query,
+        profile,
+      }),
+      signal: opts.signal,
+      cache: "no-store",
+    });
+    const data = (await res.json()) as HermesSkillHubSearchResult;
+    return data && data.ok
+      ? data
+      : {
+          ok: false,
+          error:
+            data && "error" in data
+              ? data.error
+              : "Couldn’t search the Skills Hub.",
+        };
+  } catch {
+    return { ok: false, error: "Couldn’t search the Skills Hub." };
+  }
+}
+
+export async function readHermesActionStatus(opts: {
+  name: string;
+  signal?: AbortSignal;
+}): Promise<HermesActionStatusResult> {
+  try {
+    const { useHermes } = await import("./store");
+    const state = useHermes.getState();
+    const profile = advertisesHermesCapability(
+      state.gatewayMeta?.manifest,
+      "profiles",
+    )
+      ? state.profile
+      : undefined;
+    if (state.gatewayPlace === "device") {
+      const { getDeviceSessionKey, readHermesActionStatusDirect } =
+        await import("./hermes-direct");
+      const key = getDeviceSessionKey();
+      if (!state.gatewayUrl || !key) {
+        return { ok: false, error: "Connect your Hermes on this computer." };
+      }
+      return readHermesActionStatusDirect({
+        url: state.gatewayUrl,
+        key,
+        name: opts.name,
+        profile,
+        signal: opts.signal,
+      });
+    }
+    const res = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        action: "action-status",
+        name: opts.name,
+        profile,
+      }),
+      signal: opts.signal,
+      cache: "no-store",
+    });
+    const data = (await res.json()) as HermesActionStatusResult;
+    return data && data.ok
+      ? data
+      : {
+          ok: false,
+          error:
+            data && "error" in data
+              ? data.error
+              : "Couldn’t read the Hermes action.",
+        };
+  } catch {
+    return { ok: false, error: "Couldn’t read the Hermes action." };
+  }
+}
+
+export async function waitForHermesAction(opts: {
+  name: string;
+  signal?: AbortSignal;
+  pollMs?: number;
+  timeoutMs?: number;
+}): Promise<{ ok: true; lines: string[] } | { ok: false; error: string }> {
+  const started = Date.now();
+  const pollMs = Math.max(250, opts.pollMs ?? 1_200);
+  const timeoutMs = Math.max(pollMs, opts.timeoutMs ?? 120_000);
+  let lines: string[] = [];
+  while (Date.now() - started < timeoutMs) {
+    if (opts.signal?.aborted) {
+      return { ok: false, error: "The Hermes skill action was cancelled." };
+    }
+    const result = await readHermesActionStatus({
+      name: opts.name,
+      signal: opts.signal,
+    });
+    if (!result.ok) return result;
+    lines = result.action.lines;
+    if (!result.action.running) {
+      return result.action.exitCode === 0
+        ? { ok: true, lines }
+        : {
+            ok: false,
+            error:
+              lines.slice(-3).join("\n").trim() ||
+              "Hermes couldn’t finish the skill action.",
+          };
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, pollMs));
+  }
+  return {
+    ok: false,
+    error: "Hermes is still working on this skill. Try refreshing shortly.",
+  };
 }
 
 export async function readHermesDiagnostics(opts?: {

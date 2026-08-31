@@ -153,6 +153,11 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
     name,
     content: text(128_000),
   }),
+  z.strictObject({
+    action: z.literal("skill-delete"),
+    name,
+    confirm: z.literal(true),
+  }),
   z
     .strictObject({
       action: z.literal("mcp-create"),
@@ -404,6 +409,12 @@ export function hermesOperationFor(
         path: "/api/skills/content",
         method: "PUT",
         body: { name: input.name, content: input.content },
+      };
+    case "skill-delete":
+      return {
+        path: "/api/learning/node",
+        method: "DELETE",
+        body: { id: input.name },
       };
     case "mcp-create":
       return {

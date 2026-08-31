@@ -9,6 +9,7 @@ import {
 } from "./gateway.server";
 import type { GatewayPlace } from "./gateway";
 import type {
+  HermesActionStatusResult,
   HermesChannelRow,
   HermesCronRow,
   HermesDiagnosticsResult,
@@ -21,6 +22,8 @@ import type {
   HermesProfilesResult,
   HermesSessionRow,
   HermesSessionMessagesResult,
+  HermesSkillContentResult,
+  HermesSkillHubSearchResult,
   HermesSkillRow,
   HermesToolsetRow,
 } from "./hermes-live";
@@ -42,6 +45,7 @@ import {
   profilesFromApi,
   sessionsFromApi,
   sessionMessagesFromApi,
+  skillHubResultsFromApi,
   skillsFromApi,
   str,
   toolsetsFromApi,
@@ -514,6 +518,71 @@ export async function fetchHermesProfileSoul(
   };
 }
 
+export async function fetchHermesSkillContent(
+  opts: Gate,
+  name: string,
+  profile?: string,
+): Promise<HermesSkillContentResult> {
+  const raw = await hermesDashboardGet(
+    opts,
+    profiledPath(
+      `/api/skills/content?name=${encodeURIComponent(name)}`,
+      profile,
+    ),
+  );
+  const record = asRec(raw);
+  const content = typeof record.content === "string" ? record.content : null;
+  return content === null
+    ? { ok: false, error: "Couldn’t read this Hermes skill." }
+    : { ok: true, name: str(record.name) || name, content };
+}
+
+export async function searchHermesSkillsHub(
+  opts: Gate,
+  query: string,
+  profile?: string,
+): Promise<HermesSkillHubSearchResult> {
+  const raw = await hermesDashboardGet(
+    opts,
+    profiledPath(
+      `/api/skills/hub/search?q=${encodeURIComponent(query)}&source=all&limit=20`,
+      profile,
+    ),
+  );
+  return raw
+    ? { ok: true, results: skillHubResultsFromApi(raw) }
+    : { ok: false, error: "Couldn’t search the Skills Hub." };
+}
+
+export async function fetchHermesActionStatus(
+  opts: Gate,
+  name: string,
+  profile?: string,
+): Promise<HermesActionStatusResult> {
+  const raw = await hermesDashboardGet(
+    opts,
+    profiledPath(
+      `/api/actions/${encodeURIComponent(name)}/status?lines=200`,
+      profile,
+    ),
+  );
+  const record = asRec(raw);
+  if (typeof record.running !== "boolean") {
+    return { ok: false, error: "Couldn’t read the Hermes action." };
+  }
+  return {
+    ok: true,
+    action: {
+      name: str(record.name) || name,
+      running: record.running,
+      exitCode: typeof record.exit_code === "number" ? record.exit_code : null,
+      lines: Array.isArray(record.lines)
+        ? record.lines.map(str).filter(Boolean).slice(-200)
+        : [],
+    },
+  };
+}
+
 export async function fetchHermesSessionMessages(
   opts: Gate,
   sessionId: string,
@@ -559,6 +628,22 @@ export async function mutateHermesLive(
 ): Promise<HermesMutationResult> {
   const operation = hermesScopedOperationFor(mutation, profile);
   if (operation) {
+    if (
+      mutation.action === "skill-install" ||
+      mutation.action === "skill-uninstall" ||
+      mutation.action === "skills-update"
+    ) {
+      const raw = await hermesDashboardSendJson(
+        opts,
+        operation.path,
+        operation.method,
+        operation.body,
+      );
+      const actionName = str(asRec(raw).name);
+      return actionName
+        ? { ok: true, actionName }
+        : { ok: false, error: "Hermes didn’t start the skill action." };
+    }
     if (mutation.action === "webhook-create") {
       const raw = await hermesDashboardSendJson(
         opts,
