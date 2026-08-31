@@ -113,6 +113,9 @@ export function ChatView() {
     gatewayMeta.manifest.capabilities["chat.approvals"] === true;
   const supportsSteer =
     supportsRuns && gatewayMeta?.manifest?.capabilities["chat.steer"] === true;
+  const supportsRunIdempotency =
+    supportsRuns &&
+    gatewayMeta?.manifest?.capabilities["chat.run_idempotency"] === true;
   useHermesRunRecovery({
     activeId,
     enabled: live && supportsRuns,
@@ -413,6 +416,7 @@ export function ChatView() {
               model,
               provider,
               preferRuns: supportsRuns,
+              runIdempotency: supportsRunIdempotency,
               messages: payload,
               signal: ctrl.signal,
               profile: chatProfile,
@@ -436,6 +440,7 @@ export function ChatView() {
             model,
             provider,
             preferRuns: supportsRuns,
+            runIdempotency: supportsRunIdempotency,
             profile: chatProfile,
             messages: payload,
           }),

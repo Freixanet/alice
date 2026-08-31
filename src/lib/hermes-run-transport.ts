@@ -35,6 +35,7 @@ export async function startHermesRun(
     conversationId?: string;
     model?: string;
     provider?: string;
+    idempotency?: boolean;
   },
 ): Promise<StartHermesRunResult> {
   const body = buildHermesRunRequest(opts);
@@ -46,17 +47,22 @@ export async function startHermesRun(
       message: "Empty chat.",
     };
   }
-  const post = (payload: Record<string, unknown>) =>
-    opts.fetch(`${opts.base}/v1/runs`, {
+  const post = async (payload: Record<string, unknown>) => {
+    const idempotencyKey = opts.idempotency
+      ? await runIdempotencyKey(payload, opts.conversationId)
+      : null;
+    return opts.fetch(`${opts.base}/v1/runs`, {
       method: "POST",
       headers: runHeaders(opts.token, opts.conversationId, {
         "Content-Type": "application/json",
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       }),
       body: JSON.stringify(payload),
       signal: opts.signal,
       cache: "no-store",
       redirect: "manual",
     });
+  };
   let response = await post(body);
   if (
     !response.ok &&
@@ -276,3 +282,18 @@ function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 const windowlessSetTimeout = globalThis.setTimeout.bind(globalThis);
+
+async function runIdempotencyKey(
+  payload: Record<string, unknown>,
+  conversationId?: string,
+): Promise<string | null> {
+  if (!globalThis.crypto?.subtle) return null;
+  const input = new TextEncoder().encode(
+    JSON.stringify({ conversationId: conversationId ?? "", payload }),
+  );
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", input);
+  const hex = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  return `alice-${hex}`;
+}

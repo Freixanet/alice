@@ -170,6 +170,7 @@ export const chatRequestSchema = z.strictObject({
   conversationId: optionalBounded(128),
   hermesSessionId: bounded(160).optional(),
   preferRuns: z.boolean().optional(),
+  runIdempotency: z.boolean().optional(),
   profile: hermesProfileNameSchema.optional(),
 });
 

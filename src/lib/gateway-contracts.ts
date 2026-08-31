@@ -4,8 +4,8 @@ export type GatewayPlace = "cloud" | "mac" | "device";
 
 export type GatewayStatus = "idle" | "checking" | "live" | "down";
 
-export const HERMES_CURRENT_STABLE = "0.20.6";
-export const HERMES_PREVIOUS_STABLE = "0.20.5";
+export const HERMES_CURRENT_STABLE = "0.21.0";
+export const HERMES_PREVIOUS_STABLE = "0.20.6";
 
 export type HermesCompatibility = "current" | "previous" | "unknown";
 
@@ -36,6 +36,7 @@ export type HermesCapability =
   | "chat.approvals"
   | "chat.cancel"
   | "chat.runs"
+  | "chat.run_idempotency"
   | "chat.steer"
   | "models"
   | "skills"
@@ -197,6 +198,7 @@ const CAPABILITY_ALIASES: Record<string, HermesCapability[]> = {
   cancel: ["chat.cancel"],
   run_stop: ["chat.cancel"],
   runs: ["chat.runs"],
+  runs_idempotency: ["chat.runs", "chat.run_idempotency"],
   run_submission: [],
   run_status: [],
   responses_api: [],
@@ -291,7 +293,14 @@ function collectAdvertised(record: Record<string, unknown> | null): string[] {
       const nested = asRecord(raw);
       if (nested) {
         for (const [name, enabled] of Object.entries(nested)) {
-          if (enabled === true) values.push(name);
+          if (
+            enabled === true ||
+            (enabled !== null &&
+              typeof enabled === "object" &&
+              !Array.isArray(enabled))
+          ) {
+            values.push(name);
+          }
         }
       }
     }

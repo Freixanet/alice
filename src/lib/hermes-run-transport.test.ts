@@ -36,8 +36,12 @@ describe("Hermes run transport", () => {
       signal,
       messages: [{ role: "user", content: "Hi" }],
       conversationId: "chat-1",
+      idempotency: true,
     });
     expect(started.ok).toBe(true);
+    expect(
+      new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("Idempotency-Key"),
+    ).toMatch(/^alice-[a-f0-9]{64}$/);
     if (!started.ok) return;
 
     const events = [];

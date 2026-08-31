@@ -48,7 +48,7 @@ describe("Hermes profile-aware proxy client", () => {
         mode: "proxy",
         probedAt: Date.now(),
         manifest: {
-          version: "0.20.6",
+          version: "0.21.0",
           compatibility: "current",
           capabilities: { profiles: true },
           advertised: ["profiles"],

@@ -109,14 +109,14 @@ describe("Hermes model parsing", () => {
 
 describe("Hermes capability negotiation", () => {
   it("normalizes supported versions without accepting lookalikes", () => {
-    expect(parseHermesVersion("v0.20.6-beta.1")).toEqual({
-      raw: "v0.20.6-beta.1",
-      normalized: "0.20.6",
+    expect(parseHermesVersion("v0.21.0-beta.1")).toEqual({
+      raw: "v0.21.0-beta.1",
+      normalized: "0.21.0",
       compatibility: "current",
     });
-    expect(parseHermesVersion("0.20.5+build.7")).toEqual({
-      raw: "0.20.5+build.7",
-      normalized: "0.20.5",
+    expect(parseHermesVersion("0.20.6+build.7")).toEqual({
+      raw: "0.20.6+build.7",
+      normalized: "0.20.6",
       compatibility: "previous",
     });
     expect(parseHermesVersion("10.20.6")).toEqual({
@@ -124,8 +124,8 @@ describe("Hermes capability negotiation", () => {
       normalized: "10.20.6",
       compatibility: "unknown",
     });
-    expect(parseHermesVersion("0.20.6lookalike")).toEqual({
-      raw: "0.20.6lookalike",
+    expect(parseHermesVersion("0.21.0lookalike")).toEqual({
+      raw: "0.21.0lookalike",
       normalized: null,
       compatibility: "unknown",
     });
@@ -139,7 +139,7 @@ describe("Hermes capability negotiation", () => {
   it("recognizes the current and previous stable versions", () => {
     expect(
       parseHermesCapabilityManifest({
-        version: "0.20.6",
+        version: "0.21.0",
         capabilities: ["streaming", "cronjob", "delegate_task"],
       }),
     ).toMatchObject({
@@ -151,7 +151,7 @@ describe("Hermes capability negotiation", () => {
       },
     });
     expect(
-      parseHermesCapabilityManifest({ hermes_version: "v0.20.5" })
+      parseHermesCapabilityManifest({ hermes_version: "v0.20.6" })
         .compatibility,
     ).toBe("previous");
   });
@@ -171,10 +171,11 @@ describe("Hermes capability negotiation", () => {
   it("understands the official runs and session capability document", () => {
     expect(
       parseHermesCapabilityManifest({
-        version: "0.20.6",
+        version: "0.21.0",
         features: {
           chat_completions_streaming: true,
           run_submission: true,
+          runs_idempotency: { header: "Idempotency-Key", durable: true },
           run_status: true,
           run_events_sse: true,
           run_stop: true,
@@ -203,6 +204,7 @@ describe("Hermes capability negotiation", () => {
       capabilities: {
         "chat.streaming": true,
         "chat.runs": true,
+        "chat.run_idempotency": true,
         "chat.cancel": true,
         "chat.steer": true,
         "chat.approvals": true,

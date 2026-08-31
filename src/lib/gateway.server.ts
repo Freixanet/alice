@@ -1759,6 +1759,7 @@ export async function streamHermesProxy(opts: {
   model?: string;
   provider?: string;
   preferRuns?: boolean;
+  runIdempotency?: boolean;
   endpoints?: StoredEndpoint[];
   signal: AbortSignal;
   place?: GatewayPlace;
@@ -1791,6 +1792,7 @@ export async function streamHermesProxy(opts: {
       conversationId: opts.conversationId,
       model: requestedModel,
       provider: requestedProvider,
+      idempotency: opts.runIdempotency,
     });
     if (started.ok) {
       return ndjsonResponse(async (send) => {

@@ -346,6 +346,7 @@ export async function* streamHermesDirect(opts: {
   model?: string;
   provider?: string;
   preferRuns?: boolean;
+  runIdempotency?: boolean;
   signal: AbortSignal;
   profile?: string;
 }): AsyncGenerator<ChatEvent> {
@@ -369,6 +370,7 @@ export async function* streamHermesDirect(opts: {
         conversationId: opts.conversationId,
         model: requestedModel,
         provider: requestedProvider,
+        idempotency: opts.runIdempotency,
       });
       if (started.ok) {
         yield* streamStartedHermesRun({

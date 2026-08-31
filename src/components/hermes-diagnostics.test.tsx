@@ -30,7 +30,7 @@ describe("HermesDiagnosticsPanel", () => {
       ok: true,
       diagnostics: {
         status: "ready",
-        version: "0.20.6",
+        version: "0.21.0",
         gatewayState: "running",
         activeAgents: 1,
         busy: false,
