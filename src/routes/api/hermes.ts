@@ -354,6 +354,37 @@ export const Route = createFileRoute("/api/hermes")({
           }
         }
 
+        if (body.action === "system-tools") {
+          if (!saved?.u || !saved.k) {
+            return jsonWithCookie(
+              { ok: false, error: "Connect your Hermes first." },
+              400,
+            );
+          }
+          try {
+            const { fetchHermesSystemTools } =
+              await import("@/lib/hermes-live.server");
+            const result = await fetchHermesSystemTools(
+              {
+                url: saved.u,
+                key: saved.k,
+                place: saved.p,
+                signal: AbortSignal.any([
+                  request.signal,
+                  AbortSignal.timeout(12_000),
+                ]),
+              },
+              body.profile,
+            );
+            return jsonWithCookie(result, result.ok ? 200 : 502);
+          } catch {
+            return jsonWithCookie(
+              { ok: false, error: "Couldn’t read Hermes system tools." },
+              502,
+            );
+          }
+        }
+
         if (body.action === "live") {
           try {
             const { fetchHermesLive } =

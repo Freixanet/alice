@@ -9,6 +9,7 @@ import type {
   HermesSessionMessagesResult,
   HermesSkillContentResult,
   HermesSkillHubSearchResult,
+  HermesSystemToolsResult,
   HermesToolsetDetailsResult,
 } from "./hermes-live-types";
 import { hermesMutationSchema, type HermesMutation } from "./hermes-operations";
@@ -212,6 +213,54 @@ export async function readHermesToolsetDetails(opts: {
         };
   } catch {
     return { ok: false, error: "Couldn’t read this Hermes toolset." };
+  }
+}
+
+export async function readHermesSystemTools(opts?: {
+  signal?: AbortSignal;
+}): Promise<HermesSystemToolsResult> {
+  try {
+    const { useHermes } = await import("./store");
+    const state = useHermes.getState();
+    const profile = advertisesHermesCapability(
+      state.gatewayMeta?.manifest,
+      "profiles",
+    )
+      ? state.profile
+      : undefined;
+    if (state.gatewayPlace === "device") {
+      const { getDeviceSessionKey, readHermesSystemToolsDirect } =
+        await import("./hermes-direct");
+      const key = getDeviceSessionKey();
+      if (!state.gatewayUrl || !key) {
+        return { ok: false, error: "Connect your Hermes on this computer." };
+      }
+      return readHermesSystemToolsDirect({
+        url: state.gatewayUrl,
+        key,
+        profile,
+        signal: opts?.signal,
+      });
+    }
+    const response = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ action: "system-tools", profile }),
+      signal: opts?.signal,
+      cache: "no-store",
+    });
+    const data = (await response.json()) as HermesSystemToolsResult;
+    return data && data.ok
+      ? data
+      : {
+          ok: false,
+          error:
+            data && "error" in data
+              ? data.error
+              : "Couldn’t read Hermes system tools.",
+        };
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes system tools." };
   }
 }
 

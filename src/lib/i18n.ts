@@ -478,6 +478,21 @@ const en = {
   "tools.finishSetup": "Finish setup",
   "tools.models": "Models",
   "tools.useModel": "Use model",
+  "tools.systemLoading": "Reading execution environments…",
+  "tools.terminal": "Terminal environment",
+  "tools.terminalDescription":
+    "Choose where terminal, file and code execution runs.",
+  "tools.computerUse": "Computer Use",
+  "tools.computerUseDescription":
+    "Hermes can inspect and control desktop apps when its driver and system permissions are ready.",
+  "tools.ready": "Ready",
+  "tools.needsSetup": "Needs setup",
+  "tools.unavailable": "Unavailable",
+  "tools.notSupported": "Not available in this Hermes version.",
+  "tools.permissionReady": "Permissions ready",
+  "tools.permissionNeeded": "Permissions needed",
+  "tools.grantPermissions": "Grant permissions",
+  "tools.requestingPermissions": "Opening permissions…",
 
   "addons.kicker": "MCP",
   "addons.title": "Add-ons",
@@ -1271,6 +1286,21 @@ const es: Record<MsgKey, string> = {
   "tools.finishSetup": "Terminar configuración",
   "tools.models": "Modelos",
   "tools.useModel": "Usar modelo",
+  "tools.systemLoading": "Leyendo entornos de ejecución…",
+  "tools.terminal": "Entorno de terminal",
+  "tools.terminalDescription":
+    "Elige dónde se ejecutan el terminal, los archivos y el código.",
+  "tools.computerUse": "Computer Use",
+  "tools.computerUseDescription":
+    "Hermes puede inspeccionar y controlar apps cuando su driver y los permisos del sistema están listos.",
+  "tools.ready": "Listo",
+  "tools.needsSetup": "Requiere configuración",
+  "tools.unavailable": "No disponible",
+  "tools.notSupported": "No está disponible en esta versión de Hermes.",
+  "tools.permissionReady": "Permisos listos",
+  "tools.permissionNeeded": "Faltan permisos",
+  "tools.grantPermissions": "Conceder permisos",
+  "tools.requestingPermissions": "Abriendo permisos…",
 
   "addons.kicker": "MCP",
   "addons.title": "Complementos",

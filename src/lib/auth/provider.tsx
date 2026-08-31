@@ -1,7 +1,11 @@
 import { useEffect, type ReactNode } from "react";
-import { authHeaders } from "./client";
 import { setCockpitIdentity } from "./cockpit-user";
 import { useCurrentUser } from "./use-current-user";
+import {
+  gatewayRestoreDelay,
+  readHermesGateStatus,
+  savedGatewayFromStatus,
+} from "../hermes-connection";
 import {
   loadSavedDeviceConnection,
   setDeviceSessionKey,
@@ -52,62 +56,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const generation = prepareIdentity(userId, isDevFallback);
-    if (!userId || isDevFallback) {
-      if (!isDevFallback) setDeviceSessionKey(null);
-      if (isDevFallback) void hydratePreparedIdentity(generation);
-      else useHermes.getState().setHydrated();
+    if (!userId) {
+      setDeviceSessionKey(null);
+      useHermes.getState().setHydrated();
       return;
     }
-    setDeviceSessionKey(null);
-    setCockpitIdentity({ id: userId, owner: false });
+    setCockpitIdentity({ id: userId, owner: isDevFallback });
     const ctrl = new AbortController();
-    void fetch("/api/hermes", {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ action: "status" }),
-      signal: ctrl.signal,
-    })
-      .then(
-        (res) =>
-          res.json() as Promise<{
-            owner?: boolean;
-            hasKey?: boolean;
-            url?: string;
-            place?: "cloud" | "mac" | "device";
-          }>,
-      )
-      .then(async (data) => {
+    let retryTimer: number | undefined;
+    let hydrated = false;
+
+    async function hydrateOnce() {
+      if (hydrated) return;
+      hydrated = true;
+      await hydratePreparedIdentity(generation);
+    }
+
+    async function restore(attempt: number) {
+      try {
+        const data = await readHermesGateStatus(ctrl.signal);
         if (ctrl.signal.aborted) return;
-        setCockpitIdentity({ id: userId, owner: Boolean(data.owner) });
-        if (data.hasKey && data.url && data.place === "device") {
+        setCockpitIdentity({ id: userId, owner: data.owner });
+        const saved = savedGatewayFromStatus(data);
+        if (saved?.place === "device") {
           await loadSavedDeviceConnection({
-            url: data.url,
+            url: saved.url,
             signal: ctrl.signal,
           });
         }
         if (ctrl.signal.aborted) return;
-        await hydratePreparedIdentity(generation);
-        if (ctrl.signal.aborted) return;
+        await hydrateOnce();
+        if (ctrl.signal.aborted || !saved) return;
         const state = useHermes.getState();
         if (
-          data.hasKey &&
-          data.url &&
-          (data.place === "cloud" ||
-            data.place === "mac" ||
-            data.place === "device") &&
-          (!state.gatewayOn ||
-            !state.gatewayUrl ||
-            state.gatewayUrl !== data.url ||
-            state.gatewayPlace !== data.place)
+          !state.gatewayOn ||
+          !state.gatewayUrl ||
+          state.gatewayUrl !== saved.url ||
+          state.gatewayPlace !== saved.place
         ) {
-          state.restoreGateway({ url: data.url, place: data.place });
+          state.restoreGateway(saved);
         }
-      })
-      .catch(() => {
+      } catch {
         if (ctrl.signal.aborted) return;
-        void hydratePreparedIdentity(generation);
-      });
-    return () => ctrl.abort();
+        await hydrateOnce();
+        if (ctrl.signal.aborted) return;
+        retryTimer = window.setTimeout(
+          () => void restore(attempt + 1),
+          gatewayRestoreDelay(attempt),
+        );
+      }
+    }
+
+    void restore(0);
+    return () => {
+      ctrl.abort();
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
   }, [userId, isDevFallback]);
 
   return <>{children}</>;

@@ -23,6 +23,7 @@ import {
   skillHubResultsFromApi,
   skillsFromApi,
   str,
+  systemToolsFromApi,
   toolsetsFromApi,
   toolsetDetailsFromApi,
   webhookCreationFromApi,
@@ -520,5 +521,68 @@ describe("Hermes cron contract parsing", () => {
         ),
       }).platforms,
     ).toHaveLength(32);
+  });
+});
+
+describe("Hermes system tools contract parsing", () => {
+  it("normalizes terminal backends and Computer Use without retaining secrets", () => {
+    const tools = systemToolsFromApi(
+      {
+        active: "docker",
+        backends: [
+          {
+            name: "local",
+            label: "Local",
+            description: "This computer",
+            status: "ready",
+          },
+          {
+            name: "docker",
+            label: "Docker",
+            active: true,
+            status: "needs_setup",
+            detail: "Start Docker Desktop",
+          },
+        ],
+      },
+      {
+        platform: "darwin",
+        platform_supported: true,
+        installed: true,
+        version: "0.12.6",
+        ready: false,
+        can_grant: true,
+        accessibility: { status: "granted", granted: true },
+        screen_recording: { status: "denied", granted: false },
+        checks: [{ name: "driver", status: "ready", ok: true }],
+        token: "must-not-leak",
+      },
+    );
+    expect(tools.terminal.active).toBe("docker");
+    expect(tools.terminal.backends[1]).toMatchObject({
+      name: "docker",
+      active: true,
+      status: "needs_setup",
+    });
+    expect(tools.computerUse).toMatchObject({
+      supported: true,
+      platform: "darwin",
+      installed: true,
+      ready: false,
+      canGrant: true,
+      accessibility: { status: "granted", granted: true },
+      screenRecording: { status: "denied", granted: false },
+    });
+    expect(JSON.stringify(tools)).not.toContain("must-not-leak");
+  });
+
+  it("degrades unsupported endpoints independently", () => {
+    const tools = systemToolsFromApi(null, { platform: "linux", ready: true });
+    expect(tools.terminal).toEqual({
+      supported: false,
+      active: undefined,
+      backends: [],
+    });
+    expect(tools.computerUse.supported).toBe(true);
   });
 });

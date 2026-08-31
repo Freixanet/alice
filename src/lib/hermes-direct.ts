@@ -33,6 +33,7 @@ import type {
   HermesSessionMessagesResult,
   HermesSkillContentResult,
   HermesSkillHubSearchResult,
+  HermesSystemToolsResult,
   HermesToolsetDetailsResult,
 } from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
@@ -64,6 +65,7 @@ import {
   skillHubResultsFromApi,
   skillsFromApi,
   str,
+  systemToolsFromApi,
   toolsetsFromApi,
   toolsetDetailsFromApi,
   webhookCreationFromApi,
@@ -956,6 +958,36 @@ export async function readHermesToolsetDetailsDirect(opts: {
     };
   } catch {
     return { ok: false, error: "Couldn’t read this Hermes toolset." };
+  }
+}
+
+export async function readHermesSystemToolsDirect(opts: {
+  url: string;
+  key: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesSystemToolsResult> {
+  try {
+    const [terminal, computerUse] = await Promise.all([
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/tools/terminal/backends", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/tools/computer-use/status", opts.profile),
+        opts.signal,
+      ),
+    ]);
+    return {
+      ok: true,
+      tools: systemToolsFromApi(terminal, computerUse),
+    };
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes system tools." };
   }
 }
 

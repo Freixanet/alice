@@ -17,6 +17,7 @@ import type {
   HermesToolsetDetails,
   HermesToolProvider,
   HermesPluginRow,
+  HermesSystemTools,
   HermesWebhooksState,
 } from "./hermes-live-types";
 
@@ -251,6 +252,102 @@ export function toolsetsFromApi(raw: unknown): HermesToolsetRow[] {
       };
     })
     .filter((t) => t.id);
+}
+
+function computerUsePermission(raw: unknown) {
+  if (typeof raw === "boolean") {
+    return { status: raw ? "granted" : "not_granted", granted: raw };
+  }
+  const record = asRec(raw);
+  if (!Object.keys(record).length && !str(raw)) return undefined;
+  const status = str(record.status) || str(raw) || "unknown";
+  return {
+    status,
+    granted:
+      record.granted === true ||
+      record.authorized === true ||
+      record.ok === true ||
+      /^(granted|authorized|ready|ok)$/i.test(status),
+    detail:
+      str(record.detail) ||
+      str(record.message) ||
+      str(record.error) ||
+      undefined,
+  };
+}
+
+export function systemToolsFromApi(
+  terminalRaw: unknown,
+  computerUseRaw: unknown,
+): HermesSystemTools {
+  const terminal = asRec(terminalRaw);
+  const computerUse = asRec(computerUseRaw);
+  const terminalSupported = Object.keys(terminal).length > 0;
+  const computerUseSupported = Object.keys(computerUse).length > 0;
+  return {
+    terminal: {
+      supported: terminalSupported,
+      active: str(terminal.active) || undefined,
+      backends: asList(terminal.backends)
+        .map((value) => {
+          const row = asRec(value);
+          const name = str(row.name);
+          const rawStatus = str(row.status);
+          const status: "ready" | "needs_setup" | "unavailable" =
+            rawStatus === "ready" ||
+            rawStatus === "needs_setup" ||
+            rawStatus === "unavailable"
+              ? rawStatus
+              : "unavailable";
+          return {
+            name,
+            label: str(row.label) || prettyName(name),
+            description: str(row.description),
+            active: row.active === true || name === str(terminal.active),
+            status,
+            detail: str(row.detail) || undefined,
+          };
+        })
+        .filter((backend) => backend.name),
+    },
+    computerUse: {
+      supported: computerUseSupported,
+      platform: str(computerUse.platform) || undefined,
+      platformSupported: computerUse.platform_supported === true,
+      installed: computerUse.installed === true,
+      version: str(computerUse.version) || undefined,
+      ready: computerUse.ready === true,
+      canGrant: computerUse.can_grant === true,
+      source: str(computerUse.source) || undefined,
+      error: str(computerUse.error) || undefined,
+      checks: asList(computerUse.checks)
+        .map((value) => {
+          const row = asRec(value);
+          const name = str(row.name) || str(row.id) || str(row.check);
+          const status =
+            str(row.status) || (row.ok === true ? "ready" : "failed");
+          return {
+            name,
+            status,
+            ok:
+              row.ok === true ||
+              /^(ready|ok|passed|granted|available)$/i.test(status),
+            detail:
+              str(row.detail) ||
+              str(row.message) ||
+              str(row.error) ||
+              undefined,
+          };
+        })
+        .filter((check) => check.name),
+      accessibility: computerUsePermission(computerUse.accessibility),
+      screenRecording: computerUsePermission(computerUse.screen_recording),
+      screenRecordingCapturable:
+        typeof computerUse.screen_recording_capturable === "boolean"
+          ? computerUse.screen_recording_capturable
+          : undefined,
+    },
+  };
 }
 
 export function toolsetDetailsFromApi(

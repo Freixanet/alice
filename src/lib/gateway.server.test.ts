@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   managementBases,
   matchStoredEndpoint,
   modelsFromEndpoints,
   openGate,
+  readOrCreateDevelopmentGateKey,
   sealGate,
   upsertStoredEndpoint,
 } from "./gateway.server";
@@ -55,6 +59,23 @@ describe("Hermes credential encryption", () => {
     expect(() =>
       sealGate({ k: "key", u: "https://hermes.example", p: "cloud" }),
     ).toThrow("Persistent Hermes credential encryption key is missing");
+  });
+
+  it("persists the development key across server-module lifetimes", () => {
+    const directory = mkdtempSync(join(tmpdir(), "alice-gate-key-"));
+    try {
+      const path = join(directory, "hermes.key");
+      const first = readOrCreateDevelopmentGateKey(path);
+      expect(readFileSync(path, "utf8").trim()).toHaveLength(43);
+
+      const otherPath = join(directory, "other.key");
+      writeFileSync(otherPath, "x".repeat(48), { mode: 0o600 });
+      readOrCreateDevelopmentGateKey(otherPath);
+
+      expect(readOrCreateDevelopmentGateKey(path)).toEqual(first);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });
 

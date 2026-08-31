@@ -26,6 +26,7 @@ import type {
   HermesSkillContentResult,
   HermesSkillHubSearchResult,
   HermesSkillRow,
+  HermesSystemToolsResult,
   HermesToolsetRow,
   HermesToolsetDetailsResult,
 } from "./hermes-live";
@@ -51,6 +52,7 @@ import {
   skillHubResultsFromApi,
   skillsFromApi,
   str,
+  systemToolsFromApi,
   toolsetsFromApi,
   toolsetDetailsFromApi,
   webhookCreationFromApi,
@@ -560,6 +562,30 @@ export async function fetchHermesToolsetDetails(
     return { ok: true, details: toolsetDetailsFromApi(name, config, models) };
   } catch {
     return { ok: false, error: "Couldn’t read this Hermes toolset." };
+  }
+}
+
+export async function fetchHermesSystemTools(
+  opts: Gate,
+  profile?: string,
+): Promise<HermesSystemToolsResult> {
+  try {
+    const [terminal, computerUse] = await Promise.all([
+      hermesDashboardGet(
+        opts,
+        profiledPath("/api/tools/terminal/backends", profile),
+      ),
+      hermesDashboardGet(
+        opts,
+        profiledPath("/api/tools/computer-use/status", profile),
+      ),
+    ]);
+    return {
+      ok: true,
+      tools: systemToolsFromApi(terminal, computerUse),
+    };
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes system tools." };
   }
 }
 

@@ -173,6 +173,26 @@ describe("official Hermes management operations", () => {
     ).toBe(false);
   });
 
+  it("maps terminal selection and Computer Use permission grants", () => {
+    expect(
+      hermesOperationFor({ action: "terminal-backend", backend: "docker" }),
+    ).toEqual({
+      path: "/api/tools/terminal/backend",
+      method: "PUT",
+      body: { backend: "docker" },
+    });
+    expect(hermesOperationFor({ action: "computer-use-grant" })).toEqual({
+      path: "/api/tools/computer-use/permissions/grant",
+      method: "POST",
+    });
+    expect(
+      hermesMutationSchema.safeParse({
+        action: "terminal-backend",
+        backend: "../../config",
+      }).success,
+    ).toBe(false);
+  });
+
   it("maps the complete project lifecycle to official CLI arguments", () => {
     expect(
       hermesProjectCliArgsFor({

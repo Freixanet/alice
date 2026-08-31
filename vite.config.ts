@@ -143,6 +143,13 @@ export default defineConfig(({ command, isPreview }) => ({
     host: "0.0.0.0",
     port: 8080,
     strictPort: true,
+    watch: {
+      ignored: [
+        "**/coverage/**",
+        "**/test-results/**",
+        "**/playwright-report/**",
+      ],
+    },
     // MagicDNS / Tailscale Serve send Host: *.ts.net. Vite 6+ blocks unknown
     // hosts unless listed (DNS rebinding guard).
     allowedHosts: [".ts.net", "localhost", "127.0.0.1"],

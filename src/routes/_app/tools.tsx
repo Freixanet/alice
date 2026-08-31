@@ -3,6 +3,7 @@ import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { CatalogPage } from "@/components/catalog-page";
 import { ToolsetDialog } from "@/components/toolset-dialog";
+import { HermesSystemToolsPanel } from "@/components/hermes-system-tools";
 import { Button } from "@/components/ui/button";
 import {
   listHermesLive,
@@ -45,6 +46,9 @@ function ToolsPage() {
           kicker={t("tools.kicker")}
           title={t("tools.title")}
           description={data?.writable ? t("tools.descOn") : t("tools.descOff")}
+          overview={
+            <HermesSystemToolsPanel writable={Boolean(data?.writable)} />
+          }
           groups={groups}
           empty={t("tools.empty")}
           rows={rows.map((tool) => ({

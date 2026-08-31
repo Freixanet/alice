@@ -40,6 +40,10 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
     profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
+    action: z.literal("system-tools"),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
     action: z.literal("skills-search"),
     query: bounded(256),
     profile: hermesProfileNameSchema.optional(),

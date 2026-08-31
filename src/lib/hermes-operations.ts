@@ -122,6 +122,11 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
     key: text(8_192),
   }),
   z.strictObject({
+    action: z.literal("terminal-backend"),
+    backend: platformId,
+  }),
+  z.strictObject({ action: z.literal("computer-use-grant") }),
+  z.strictObject({
     action: z.literal("plugin-install"),
     identifier: text(512),
     enable: z.boolean().optional(),
@@ -406,6 +411,17 @@ export function hermesOperationFor(
         path: `/api/tools/toolsets/${encodedName}/post-setup`,
         method: "POST",
         body: { key: input.key },
+      };
+    case "terminal-backend":
+      return {
+        path: "/api/tools/terminal/backend",
+        method: "PUT",
+        body: { backend: input.backend },
+      };
+    case "computer-use-grant":
+      return {
+        path: "/api/tools/computer-use/permissions/grant",
+        method: "POST",
       };
     case "plugin-install":
       return {

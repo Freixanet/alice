@@ -5,9 +5,10 @@ import {
   randomBytes,
 } from "node:crypto";
 import { execFile } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import {
   assertPublicHttpUrl,
@@ -125,9 +126,44 @@ export type GateSecret = {
 
 const COOKIE = "hg";
 
-let ephemeralCookieKey: Buffer | null = null;
+const globalGateRef = globalThis as typeof globalThis & {
+  __aliceDevelopmentGateKey__?: { path: string; key: Buffer };
+};
 
 type GateKey = { id: string; key: Buffer };
+
+export function readOrCreateDevelopmentGateKey(path: string): Buffer {
+  const cached = globalGateRef.__aliceDevelopmentGateKey__;
+  if (cached?.path === path) return cached.key;
+
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  let secret: string;
+  try {
+    secret = readFileSync(path, "utf8").trim();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const generated = randomBytes(32).toString("base64url");
+    try {
+      writeFileSync(path, generated, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      secret = generated;
+    } catch (writeError) {
+      if ((writeError as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw writeError;
+      }
+      secret = readFileSync(path, "utf8").trim();
+    }
+  }
+  if (secret.length < 32) {
+    throw new Error("Development Hermes credential key is invalid");
+  }
+  const key = createHash("sha256").update(secret).digest();
+  globalGateRef.__aliceDevelopmentGateKey__ = { path, key };
+  return key;
+}
 
 function gateKeys(): GateKey[] {
   const configured = (process.env.HERMES_COOKIE_KEYS ?? "")
@@ -156,8 +192,10 @@ function gateKeys(): GateKey[] {
   if (process.env.NODE_ENV === "production") {
     throw new Error("Persistent Hermes credential encryption key is missing");
   }
-  if (!ephemeralCookieKey) ephemeralCookieKey = randomBytes(32);
-  return [{ id: "development", key: ephemeralCookieKey }];
+  const keyPath =
+    process.env.ALICE_DEV_CREDENTIAL_KEY_FILE?.trim() ||
+    join(homedir(), ".alice", "hermes-credential.key");
+  return [{ id: "development", key: readOrCreateDevelopmentGateKey(keyPath) }];
 }
 
 export function sealGate(data: GateSecret): string {

@@ -25,39 +25,16 @@ import {
   readHermesSessionMessages,
 } from "@/lib/hermes-live";
 import type { HermesMutation } from "@/lib/hermes-operations";
-import { authHeaders } from "@/lib/auth/client";
+import {
+  readHermesGateStatus,
+  type HermesGateStatus,
+} from "@/lib/hermes-connection";
 import { advertisesHermesCapability } from "@/lib/gateway-contracts";
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
 import { dateLocale, localizeError, type Locale } from "@/lib/i18n";
 import { useHermesLive } from "@/lib/use-hermes-live";
 import { useLocale, useT } from "@/lib/use-i18n";
 import { useHermes } from "@/lib/store";
-
-type GateStatus = {
-  owner: boolean;
-  local: boolean;
-  hasKey: boolean;
-  url?: string;
-  place?: "cloud" | "mac" | "device";
-};
-
-async function readGateStatus(signal?: AbortSignal): Promise<GateStatus> {
-  const res = await fetch("/api/hermes", {
-    method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ action: "status" }),
-    signal,
-  });
-  if (!res.ok) throw new Error("gate-status");
-  const data = (await res.json()) as Partial<GateStatus>;
-  return {
-    owner: Boolean(data.owner),
-    local: Boolean(data.local),
-    hasKey: Boolean(data.hasKey),
-    url: data.url,
-    place: data.place,
-  };
-}
 
 export const Route = createFileRoute("/_app/connect")({
   component: ConnectPage,
@@ -92,7 +69,7 @@ function ConnectPage() {
   const [endpointError, setEndpointError] = useState<string | null>(null);
   const [endpointOk, setEndpointOk] = useState(false);
   const liveState = useHermesLive();
-  const [gate, setGate] = useState<GateStatus | null>(null);
+  const [gate, setGate] = useState<HermesGateStatus | null>(null);
   const [connectionIssue, setConnectionIssue] = useState<ProbeCode | null>(
     null,
   );
@@ -104,7 +81,7 @@ function ConnectPage() {
   useEffect(() => {
     setAppOrigin(window.location.origin);
     const ctrl = new AbortController();
-    void readGateStatus(ctrl.signal)
+    void readHermesGateStatus(ctrl.signal)
       .then((data) => {
         if (ctrl.signal.aborted) return;
         setGate(data);
@@ -137,7 +114,7 @@ function ConnectPage() {
     try {
       let currentGate = gate;
       try {
-        currentGate = await readGateStatus();
+        currentGate = await readHermesGateStatus();
         setGate(currentGate);
       } catch {
         // The last known state is still useful when the status request is unavailable.

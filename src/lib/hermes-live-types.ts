@@ -73,6 +73,54 @@ export type HermesToolsetDetails = {
 export type HermesToolsetDetailsResult =
   { ok: true; details: HermesToolsetDetails } | { ok: false; error: string };
 
+export type HermesTerminalBackend = {
+  name: string;
+  label: string;
+  description: string;
+  active: boolean;
+  status: "ready" | "needs_setup" | "unavailable";
+  detail?: string;
+};
+
+export type HermesComputerUseCheck = {
+  name: string;
+  status: string;
+  ok: boolean;
+  detail?: string;
+};
+
+export type HermesComputerUsePermission = {
+  status: string;
+  granted: boolean;
+  detail?: string;
+};
+
+export type HermesSystemTools = {
+  terminal: {
+    supported: boolean;
+    active?: string;
+    backends: HermesTerminalBackend[];
+  };
+  computerUse: {
+    supported: boolean;
+    platform?: string;
+    platformSupported: boolean;
+    installed: boolean;
+    version?: string;
+    ready: boolean;
+    canGrant: boolean;
+    source?: string;
+    error?: string;
+    checks: HermesComputerUseCheck[];
+    accessibility?: HermesComputerUsePermission;
+    screenRecording?: HermesComputerUsePermission;
+    screenRecordingCapturable?: boolean;
+  };
+};
+
+export type HermesSystemToolsResult =
+  { ok: true; tools: HermesSystemTools } | { ok: false; error: string };
+
 export type HermesPluginRow = {
   id: string;
   name: string;

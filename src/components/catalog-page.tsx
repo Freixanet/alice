@@ -61,6 +61,7 @@ export function CatalogPage({
   title,
   description,
   action,
+  overview,
   groups,
   rows,
   onToggle,
@@ -72,6 +73,7 @@ export function CatalogPage({
   title: string;
   description: string;
   action?: ReactNode;
+  overview?: ReactNode;
   groups: { id: string; label: string }[];
   rows: CatalogRow[];
   onToggle?: (id: string) => void;
@@ -111,6 +113,7 @@ export function CatalogPage({
         description={description}
         action={action}
       />
+      {overview}
       <div className="flex flex-col gap-3">
         <Input
           value={q}
