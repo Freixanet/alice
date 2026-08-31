@@ -1011,11 +1011,15 @@ function asObj(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function managementBases(base: string, place?: GatewayPlace): string[] {
+export function managementBases(base: string, place?: GatewayPlace): string[] {
   const out = [base];
   if (place !== "mac") return out;
   try {
     const u = new URL(base);
+    // A default HTTPS endpoint (Tailscale Serve/Funnel, reverse proxy, cloud)
+    // already owns its management surface. Port 9119 is only a useful local
+    // fallback for the plain-HTTP gateway and otherwise incurs a TCP timeout.
+    if (u.protocol === "https:" && !u.port) return out;
     if (u.port === "9119") return out;
     const dash = `${u.protocol}//${u.hostname}:9119`;
     if (!out.includes(dash)) out.push(dash);

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  managementBases,
   matchStoredEndpoint,
   modelsFromEndpoints,
   openGate,
@@ -25,7 +26,11 @@ describe("Hermes credential encryption", () => {
       p: "cloud",
       uid: "user-1",
     });
-    expect(openGate(`${token.slice(0, -1)}x`)).toBeNull();
+    const [version, keyId, payload = ""] = token.split(".");
+    const tampered = `${version}.${keyId}.${
+      payload[0] === "A" ? "B" : "A"
+    }${payload.slice(1)}`;
+    expect(openGate(tampered)).toBeNull();
   });
 
   it("can decrypt with a retained rotation key", () => {
@@ -101,5 +106,20 @@ describe("stored custom endpoint isolation", () => {
         "research",
       ),
     ).toEqual(researchEndpoint);
+  });
+});
+
+describe("Hermes management routing", () => {
+  it("never probes the local dashboard port behind default HTTPS", () => {
+    expect(
+      managementBases("https://hermes.tailnet-name.ts.net", "mac"),
+    ).toEqual(["https://hermes.tailnet-name.ts.net"]);
+  });
+
+  it("retains the dashboard fallback for a local HTTP gateway", () => {
+    expect(managementBases("http://127.0.0.1:8644", "mac")).toEqual([
+      "http://127.0.0.1:8644",
+      "http://127.0.0.1:9119",
+    ]);
   });
 });
