@@ -14,6 +14,9 @@ import type {
   HermesSkillRow,
   HermesSkillHubRow,
   HermesToolsetRow,
+  HermesToolsetDetails,
+  HermesToolProvider,
+  HermesPluginRow,
   HermesWebhooksState,
 } from "./hermes-live-types";
 
@@ -248,6 +251,105 @@ export function toolsetsFromApi(raw: unknown): HermesToolsetRow[] {
       };
     })
     .filter((t) => t.id);
+}
+
+export function toolsetDetailsFromApi(
+  name: string,
+  configRaw: unknown,
+  modelsRaw: unknown,
+): HermesToolsetDetails {
+  const config = asRec(configRaw);
+  const models = asRec(modelsRaw);
+  return {
+    name: str(config.name) || name,
+    providers: asList(config.providers)
+      .map((value) => {
+        const row = asRec(value);
+        const providerName = str(row.name);
+        const rawCapabilities = Array.isArray(row.capabilities)
+          ? row.capabilities.map(str)
+          : [];
+        const status: HermesToolProvider["status"] =
+          row.status === "ready" ||
+          row.status === "needs_setup" ||
+          row.status === "needs_auth" ||
+          row.status === "needs_keys"
+            ? row.status
+            : undefined;
+        return {
+          name: providerName,
+          badge: str(row.badge),
+          tag: str(row.tag),
+          envVars: asList(row.env_vars)
+            .map((envValue) => {
+              const env = asRec(envValue);
+              const key = str(env.key);
+              return {
+                key,
+                prompt: str(env.prompt),
+                url: str(env.url) || undefined,
+                isSet: env.is_set === true,
+              };
+            })
+            .filter((env) => env.key),
+          postSetup: str(row.post_setup) || undefined,
+          active: row.is_active === true,
+          status,
+          capabilities: rawCapabilities.filter(
+            (capability): capability is "search" | "extract" =>
+              capability === "search" || capability === "extract",
+          ),
+        };
+      })
+      .filter((provider) => provider.name),
+    activeProvider: str(config.active_provider) || undefined,
+    activeSearchProvider: str(config.active_search_backend) || undefined,
+    activeExtractProvider: str(config.active_extract_backend) || undefined,
+    models: asList(models.models)
+      .map((value) => {
+        const row = asRec(value);
+        const id = str(row.id);
+        return {
+          id,
+          display: str(row.display) || id,
+          speed: str(row.speed),
+          strengths: str(row.strengths),
+          price: str(row.price),
+        };
+      })
+      .filter((model) => model.id),
+    currentModel: str(models.current) || undefined,
+    defaultModel: str(models.default) || undefined,
+  };
+}
+
+export function pluginsFromApi(raw: unknown): HermesPluginRow[] {
+  return asList(asRec(raw).plugins)
+    .map((value) => {
+      const row = asRec(value);
+      const name = str(row.name);
+      const rawStatus = str(row.runtime_status);
+      const status: HermesPluginRow["status"] =
+        rawStatus === "enabled" ||
+        rawStatus === "disabled" ||
+        rawStatus === "inactive"
+          ? rawStatus
+          : "inactive";
+      return {
+        id: `plugin:${name}`,
+        name,
+        version: str(row.version) || undefined,
+        description: str(row.description),
+        source: str(row.source) || "Hermes",
+        enabled: status === "enabled",
+        status,
+        canRemove: row.can_remove === true,
+        canUpdate: row.can_update_git === true,
+        authRequired: row.auth_required === true,
+        authCommand: str(row.auth_command) || undefined,
+      };
+    })
+    .filter((plugin) => plugin.name);
 }
 
 export function mcpFromApi(raw: unknown): HermesMcpRow[] {

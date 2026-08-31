@@ -271,6 +271,7 @@ export const Route = createFileRoute("/api/hermes")({
 
         if (
           body.action === "skill-content" ||
+          body.action === "toolset-details" ||
           body.action === "action-status" ||
           body.action === "skills-search"
         ) {
@@ -293,14 +294,29 @@ export const Route = createFileRoute("/api/hermes")({
             const {
               fetchHermesActionStatus,
               fetchHermesSkillContent,
+              fetchHermesToolsetDetails,
               searchHermesSkillsHub,
             } = await import("@/lib/hermes-live.server");
             const result =
               body.action === "skill-content"
                 ? await fetchHermesSkillContent(gate, body.name, body.profile)
-                : body.action === "action-status"
-                  ? await fetchHermesActionStatus(gate, body.name, body.profile)
-                  : await searchHermesSkillsHub(gate, body.query, body.profile);
+                : body.action === "toolset-details"
+                  ? await fetchHermesToolsetDetails(
+                      gate,
+                      body.name,
+                      body.profile,
+                    )
+                  : body.action === "action-status"
+                    ? await fetchHermesActionStatus(
+                        gate,
+                        body.name,
+                        body.profile,
+                      )
+                    : await searchHermesSkillsHub(
+                        gate,
+                        body.query,
+                        body.profile,
+                      );
             return jsonWithCookie(result, result.ok ? 200 : 502);
           } catch {
             return jsonWithCookie(

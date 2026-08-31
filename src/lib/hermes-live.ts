@@ -9,6 +9,7 @@ import type {
   HermesSessionMessagesResult,
   HermesSkillContentResult,
   HermesSkillHubSearchResult,
+  HermesToolsetDetailsResult,
 } from "./hermes-live-types";
 import { hermesMutationSchema, type HermesMutation } from "./hermes-operations";
 import { advertisesHermesCapability } from "./gateway-contracts";
@@ -157,6 +158,60 @@ export async function mutateHermes(
     return { ok: true };
   } catch {
     return { ok: false, error: "Hermes couldn’t save the change." };
+  }
+}
+
+export async function readHermesToolsetDetails(opts: {
+  name: string;
+  signal?: AbortSignal;
+}): Promise<HermesToolsetDetailsResult> {
+  try {
+    const { useHermes } = await import("./store");
+    const state = useHermes.getState();
+    const profile = advertisesHermesCapability(
+      state.gatewayMeta?.manifest,
+      "profiles",
+    )
+      ? state.profile
+      : undefined;
+    if (state.gatewayPlace === "device") {
+      const { getDeviceSessionKey, readHermesToolsetDetailsDirect } =
+        await import("./hermes-direct");
+      const key = getDeviceSessionKey();
+      if (!state.gatewayUrl || !key) {
+        return { ok: false, error: "Connect your Hermes on this computer." };
+      }
+      return readHermesToolsetDetailsDirect({
+        url: state.gatewayUrl,
+        key,
+        name: opts.name,
+        profile,
+        signal: opts.signal,
+      });
+    }
+    const response = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        action: "toolset-details",
+        name: opts.name,
+        profile,
+      }),
+      signal: opts.signal,
+      cache: "no-store",
+    });
+    const data = (await response.json()) as HermesToolsetDetailsResult;
+    return data && data.ok
+      ? data
+      : {
+          ok: false,
+          error:
+            data && "error" in data
+              ? data.error
+              : "Couldn’t read this Hermes toolset.",
+        };
+  } catch {
+    return { ok: false, error: "Couldn’t read this Hermes toolset." };
   }
 }
 

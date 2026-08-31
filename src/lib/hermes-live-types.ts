@@ -33,6 +33,60 @@ export type HermesToolsetRow = {
   platform?: string;
 };
 
+export type HermesToolEnvVar = {
+  key: string;
+  prompt: string;
+  url?: string;
+  isSet: boolean;
+};
+
+export type HermesToolProvider = {
+  name: string;
+  badge: string;
+  tag: string;
+  envVars: HermesToolEnvVar[];
+  postSetup?: string;
+  active: boolean;
+  status?: "ready" | "needs_setup" | "needs_auth" | "needs_keys";
+  capabilities: Array<"search" | "extract">;
+};
+
+export type HermesToolsetModel = {
+  id: string;
+  display: string;
+  speed: string;
+  strengths: string;
+  price: string;
+};
+
+export type HermesToolsetDetails = {
+  name: string;
+  providers: HermesToolProvider[];
+  activeProvider?: string;
+  activeSearchProvider?: string;
+  activeExtractProvider?: string;
+  models: HermesToolsetModel[];
+  currentModel?: string;
+  defaultModel?: string;
+};
+
+export type HermesToolsetDetailsResult =
+  { ok: true; details: HermesToolsetDetails } | { ok: false; error: string };
+
+export type HermesPluginRow = {
+  id: string;
+  name: string;
+  version?: string;
+  description: string;
+  source: string;
+  enabled: boolean;
+  status: "enabled" | "disabled" | "inactive";
+  canRemove: boolean;
+  canUpdate: boolean;
+  authRequired: boolean;
+  authCommand?: string;
+};
+
 export type HermesMcpRow = {
   id: string;
   name: string;
@@ -258,6 +312,8 @@ export type HermesLive = {
   local: boolean;
   skills: HermesSkillRow[];
   toolsets: HermesToolsetRow[];
+  plugins: HermesPluginRow[];
+  pluginsSupported: boolean;
   mcp: HermesMcpRow[];
   cron: HermesCronRow[];
   cronDeliveryTargets: HermesCronDeliveryTarget[];

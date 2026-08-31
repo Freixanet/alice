@@ -12,6 +12,7 @@ import {
   diagnosticsFromApi,
   groupLabel,
   mcpFromApi,
+  pluginsFromApi,
   pairingList,
   prettyName,
   projectFromUnknown,
@@ -23,6 +24,7 @@ import {
   skillsFromApi,
   str,
   toolsetsFromApi,
+  toolsetDetailsFromApi,
   webhookCreationFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
@@ -125,6 +127,78 @@ describe("Hermes cron contract parsing", () => {
         ],
       })[0],
     ).toMatchObject({ id: "web", tools: ["web_search"], enabled: true });
+    expect(
+      toolsetDetailsFromApi(
+        "web",
+        {
+          name: "web",
+          active_search_backend: "brave",
+          providers: [
+            {
+              name: "brave",
+              badge: "Brave",
+              is_active: true,
+              status: "ready",
+              capabilities: ["search", "unknown"],
+              env_vars: [
+                {
+                  key: "BRAVE_API_KEY",
+                  prompt: "API key",
+                  is_set: true,
+                  value: "must-not-leak",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          current: "search-v1",
+          models: [{ id: "search-v1", display: "Search v1" }],
+        },
+      ),
+    ).toMatchObject({
+      activeSearchProvider: "brave",
+      currentModel: "search-v1",
+      providers: [
+        {
+          name: "brave",
+          status: "ready",
+          capabilities: ["search"],
+          envVars: [{ key: "BRAVE_API_KEY", isSet: true }],
+        },
+      ],
+    });
+    expect(
+      pluginsFromApi({
+        plugins: [
+          {
+            name: "kanban",
+            version: "1.2.0",
+            description: "Boards",
+            source: "git",
+            runtime_status: "enabled",
+            can_remove: true,
+            can_update_git: true,
+            auth_required: false,
+            path: "/private/must-not-leak",
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        id: "plugin:kanban",
+        name: "kanban",
+        version: "1.2.0",
+        description: "Boards",
+        source: "git",
+        enabled: true,
+        status: "enabled",
+        canRemove: true,
+        canUpdate: true,
+        authRequired: false,
+        authCommand: undefined,
+      },
+    ]);
     expect(
       mcpFromApi({
         servers: [{ name: "docs", url: "https://example.com", enabled: true }],

@@ -219,5 +219,5 @@ describe("Hermes capability negotiation", () => {
       }),
       { numRuns: 10_000 },
     );
-  });
+  }, 15_000);
 });

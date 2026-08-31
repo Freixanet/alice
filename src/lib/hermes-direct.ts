@@ -33,6 +33,7 @@ import type {
   HermesSessionMessagesResult,
   HermesSkillContentResult,
   HermesSkillHubSearchResult,
+  HermesToolsetDetailsResult,
 } from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
 import { setDeviceSessionKey } from "./hermes-secret-client";
@@ -56,6 +57,7 @@ import {
   mcpFromApi,
   pairingList,
   projectsFromApi,
+  pluginsFromApi,
   profilesFromApi,
   sessionsFromApi,
   sessionMessagesFromApi,
@@ -63,6 +65,7 @@ import {
   skillsFromApi,
   str,
   toolsetsFromApi,
+  toolsetDetailsFromApi,
   webhookCreationFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
@@ -756,6 +759,7 @@ export async function listHermesLiveDirect(opts: {
       apiSkills,
       apiTools,
       apiMcp,
+      apiPlugins,
       apiCron,
       apiCronDeliveryTargets,
       apiChannels,
@@ -781,6 +785,12 @@ export async function listHermesLiveDirect(opts: {
         opts.url,
         opts.key,
         profiledPath("/api/mcp/servers", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/dashboard/plugins/hub", opts.profile),
         opts.signal,
       ),
       dashboardGet(
@@ -839,6 +849,8 @@ export async function listHermesLiveDirect(opts: {
       local: false,
       skills: skillsFromApi(apiSkills),
       toolsets: toolsetsFromApi(apiTools),
+      plugins: pluginsFromApi(apiPlugins),
+      pluginsSupported: apiPlugins !== null,
       mcp: mcpFromApi(apiMcp),
       cron: cronFromApi(apiCron),
       cronDeliveryTargets: cronDeliveryTargetsFromApi(apiCronDeliveryTargets),
@@ -906,6 +918,44 @@ export async function readHermesProfileSoulDirect(opts: {
     };
   } catch {
     return { ok: false, error: "Couldn’t read this profile’s SOUL." };
+  }
+}
+
+export async function readHermesToolsetDetailsDirect(opts: {
+  url: string;
+  key: string;
+  name: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesToolsetDetailsResult> {
+  try {
+    const encoded = encodeURIComponent(opts.name);
+    const [config, models] = await Promise.all([
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath(`/api/tools/toolsets/${encoded}/config`, opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath(`/api/tools/toolsets/${encoded}/models`, opts.profile),
+        opts.signal,
+      ),
+    ]);
+    if (!config) {
+      return {
+        ok: false,
+        error: "This Hermes can’t configure this toolset here.",
+      };
+    }
+    return {
+      ok: true,
+      details: toolsetDetailsFromApi(opts.name, config, models),
+    };
+  } catch {
+    return { ok: false, error: "Couldn’t read this Hermes toolset." };
   }
 }
 

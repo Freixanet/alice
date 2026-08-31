@@ -16,6 +16,8 @@ const live = {
   local: true,
   skills: [],
   toolsets: [],
+  plugins: [],
+  pluginsSupported: true,
   mcp: [],
   cron: [],
   cronDeliveryTargets: [],

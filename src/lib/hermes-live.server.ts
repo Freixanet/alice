@@ -18,6 +18,7 @@ import type {
   HermesMcpRow,
   HermesPairingRow,
   HermesProjectRow,
+  HermesPluginRow,
   HermesProfileSoulResult,
   HermesProfilesResult,
   HermesSessionRow,
@@ -26,6 +27,7 @@ import type {
   HermesSkillHubSearchResult,
   HermesSkillRow,
   HermesToolsetRow,
+  HermesToolsetDetailsResult,
 } from "./hermes-live";
 import {
   asList,
@@ -42,6 +44,7 @@ import {
   pairingList,
   prettyName,
   projectsFromApi,
+  pluginsFromApi,
   profilesFromApi,
   sessionsFromApi,
   sessionMessagesFromApi,
@@ -49,6 +52,7 @@ import {
   skillsFromApi,
   str,
   toolsetsFromApi,
+  toolsetDetailsFromApi,
   webhookCreationFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
@@ -360,6 +364,7 @@ export async function fetchHermesLive(opts?: {
   const empty = {
     skills: [] as HermesSkillRow[],
     toolsets: [] as HermesToolsetRow[],
+    plugins: [] as HermesPluginRow[],
     mcp: [] as HermesMcpRow[],
     cron: [] as HermesCronRow[],
     channels: [] as HermesChannelRow[],
@@ -386,6 +391,8 @@ export async function fetchHermesLive(opts?: {
 
   let skills = disk.skills;
   let toolsets = disk.toolsets;
+  let plugins = empty.plugins;
+  let pluginsSupported = false;
   let mcp = disk.mcp;
   let cron = disk.cron;
   let cronDeliveryTargets: HermesLive["cronDeliveryTargets"] = [];
@@ -405,6 +412,7 @@ export async function fetchHermesLive(opts?: {
       apiSkills,
       apiTools,
       apiMcp,
+      apiPlugins,
       apiCron,
       apiCronDeliveryTargets,
       apiChannels,
@@ -420,6 +428,10 @@ export async function fetchHermesLive(opts?: {
         profiledPath("/api/tools/toolsets", opts?.profile),
       ),
       hermesDashboardGet(gate, profiledPath("/api/mcp/servers", opts?.profile)),
+      hermesDashboardGet(
+        gate,
+        profiledPath("/api/dashboard/plugins/hub", opts?.profile),
+      ),
       hermesDashboardGet(gate, profiledPath("/api/cron/jobs", opts?.profile)),
       hermesDashboardGet(
         gate,
@@ -444,6 +456,8 @@ export async function fetchHermesLive(opts?: {
     if (nextTools.length) toolsets = nextTools;
     const nextMcp = mcpFromApi(apiMcp);
     if (nextMcp.length) mcp = nextMcp;
+    plugins = pluginsFromApi(apiPlugins);
+    pluginsSupported = apiPlugins !== null;
     const nextCron = cronFromApi(apiCron);
     if (nextCron.length) cron = nextCron;
     cronDeliveryTargets = cronDeliveryTargetsFromApi(apiCronDeliveryTargets);
@@ -465,6 +479,8 @@ export async function fetchHermesLive(opts?: {
     local,
     skills,
     toolsets,
+    plugins,
+    pluginsSupported,
     mcp,
     cron,
     cronDeliveryTargets,
@@ -516,6 +532,35 @@ export async function fetchHermesProfileSoul(
     content: typeof record.content === "string" ? record.content : "",
     exists: record.exists === true,
   };
+}
+
+export async function fetchHermesToolsetDetails(
+  opts: Gate,
+  name: string,
+  profile?: string,
+): Promise<HermesToolsetDetailsResult> {
+  const encoded = encodeURIComponent(name);
+  try {
+    const [config, models] = await Promise.all([
+      hermesDashboardGet(
+        opts,
+        profiledPath(`/api/tools/toolsets/${encoded}/config`, profile),
+      ),
+      hermesDashboardGet(
+        opts,
+        profiledPath(`/api/tools/toolsets/${encoded}/models`, profile),
+      ),
+    ]);
+    if (!config) {
+      return {
+        ok: false,
+        error: "This Hermes can’t configure this toolset here.",
+      };
+    }
+    return { ok: true, details: toolsetDetailsFromApi(name, config, models) };
+  } catch {
+    return { ok: false, error: "Couldn’t read this Hermes toolset." };
+  }
 }
 
 export async function fetchHermesSkillContent(

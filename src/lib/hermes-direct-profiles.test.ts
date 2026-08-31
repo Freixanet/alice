@@ -84,7 +84,10 @@ describe("Hermes direct profile transport", () => {
       profile: "research",
     });
     expect(result.ok).toBe(true);
-    expect(seen).toHaveLength(11);
+    expect(seen).toHaveLength(12);
+    expect(seen.some((url) => url.includes("/api/dashboard/plugins/hub"))).toBe(
+      true,
+    );
     expect(seen.every((url) => /[?&]profile=research(?:&|$)/.test(url))).toBe(
       true,
     );

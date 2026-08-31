@@ -116,6 +116,63 @@ describe("official Hermes management operations", () => {
     ).toBeNull();
   });
 
+  it("maps negotiated toolset and plugin management exactly", () => {
+    expect(
+      hermesOperationFor({
+        action: "toolset-provider",
+        name: "web",
+        provider: "searxng",
+        capability: "search",
+      }),
+    ).toEqual({
+      path: "/api/tools/toolsets/web/provider",
+      method: "PUT",
+      body: { provider: "searxng", capability: "search" },
+    });
+    expect(
+      hermesOperationFor({
+        action: "toolset-model",
+        name: "image_generation",
+        model: "flux-pro",
+        provider: "fal",
+      }),
+    ).toEqual({
+      path: "/api/tools/toolsets/image_generation/model",
+      method: "PUT",
+      body: { model: "flux-pro", provider: "fal" },
+    });
+    expect(
+      hermesOperationFor({
+        action: "plugin-install",
+        identifier: "https://github.com/acme/hermes-plugin",
+      }),
+    ).toEqual({
+      path: "/api/dashboard/agent-plugins/install",
+      method: "POST",
+      body: {
+        identifier: "https://github.com/acme/hermes-plugin",
+        enable: true,
+        force: false,
+      },
+    });
+    expect(
+      hermesOperationFor({
+        action: "toggle-plugin",
+        name: "tools/browser",
+        enabled: false,
+      }),
+    ).toEqual({
+      path: "/api/dashboard/agent-plugins/tools%2Fbrowser/disable",
+      method: "POST",
+    });
+    expect(
+      hermesMutationSchema.safeParse({
+        action: "plugin-delete",
+        name: "browser",
+      }).success,
+    ).toBe(false);
+  });
+
   it("maps the complete project lifecycle to official CLI arguments", () => {
     expect(
       hermesProjectCliArgsFor({

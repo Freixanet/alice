@@ -105,6 +105,39 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
     enabled: z.boolean(),
   }),
   z.strictObject({
+    action: z.literal("toolset-provider"),
+    name,
+    provider: name,
+    capability: z.enum(["search", "extract"]).optional(),
+  }),
+  z.strictObject({
+    action: z.literal("toolset-model"),
+    name,
+    model: text(256),
+    provider: optionalText(128),
+  }),
+  z.strictObject({
+    action: z.literal("toolset-post-setup"),
+    name,
+    key: text(8_192),
+  }),
+  z.strictObject({
+    action: z.literal("plugin-install"),
+    identifier: text(512),
+    enable: z.boolean().optional(),
+  }),
+  z.strictObject({
+    action: z.literal("toggle-plugin"),
+    name,
+    enabled: z.boolean(),
+  }),
+  z.strictObject({ action: z.literal("plugin-update"), name }),
+  z.strictObject({
+    action: z.literal("plugin-delete"),
+    name,
+    confirm: z.literal(true),
+  }),
+  z.strictObject({
     action: z.literal("toggle-mcp"),
     name,
     enabled: z.boolean(),
@@ -353,6 +386,51 @@ export function hermesOperationFor(
         path: `/api/tools/toolsets/${encodedName}`,
         method: "PUT",
         body: { enabled: input.enabled },
+      };
+    case "toolset-provider":
+      return {
+        path: `/api/tools/toolsets/${encodedName}/provider`,
+        method: "PUT",
+        body: input.capability
+          ? { provider: input.provider, capability: input.capability }
+          : { provider: input.provider },
+      };
+    case "toolset-model":
+      return {
+        path: `/api/tools/toolsets/${encodedName}/model`,
+        method: "PUT",
+        body: { model: input.model, provider: input.provider },
+      };
+    case "toolset-post-setup":
+      return {
+        path: `/api/tools/toolsets/${encodedName}/post-setup`,
+        method: "POST",
+        body: { key: input.key },
+      };
+    case "plugin-install":
+      return {
+        path: "/api/dashboard/agent-plugins/install",
+        method: "POST",
+        body: {
+          identifier: input.identifier,
+          enable: input.enable ?? true,
+          force: false,
+        },
+      };
+    case "toggle-plugin":
+      return {
+        path: `/api/dashboard/agent-plugins/${encodedName}/${input.enabled ? "enable" : "disable"}`,
+        method: "POST",
+      };
+    case "plugin-update":
+      return {
+        path: `/api/dashboard/agent-plugins/${encodedName}/update`,
+        method: "POST",
+      };
+    case "plugin-delete":
+      return {
+        path: `/api/dashboard/agent-plugins/${encodedName}`,
+        method: "DELETE",
       };
     case "toggle-mcp":
       return {
