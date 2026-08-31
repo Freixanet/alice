@@ -27,6 +27,7 @@ import {
   channelsFromApi,
   cronDeliveryTargetsFromApi,
   cronFromApi,
+  curatorFromApi,
   cronFromUnknown,
   diagnosticsFromApi,
   groupLabel,
@@ -357,6 +358,7 @@ export async function fetchHermesLive(opts?: {
   let pairing: HermesPairingRow[] = [];
   let pairingApproved: HermesPairingRow[] = [];
   let webhooks: HermesWebhookRow[] = [];
+  let curator: HermesLive["curator"] = null;
 
   if (gate) {
     const [
@@ -370,6 +372,7 @@ export async function fetchHermesLive(opts?: {
       apiPairing,
       apiHooks,
       apiProjects,
+      apiCurator,
     ] = await Promise.all([
       hermesDashboardGet(gate, "/api/skills"),
       hermesDashboardGet(gate, "/api/tools/toolsets"),
@@ -381,6 +384,7 @@ export async function fetchHermesLive(opts?: {
       hermesDashboardGet(gate, "/api/pairing"),
       hermesDashboardGet(gate, "/api/webhooks"),
       hermesDashboardGet(gate, "/api/projects"),
+      hermesDashboardGet(gate, "/api/curator"),
     ]);
     const nextSkills = skillsFromApi(apiSkills);
     if (nextSkills.length) skills = nextSkills;
@@ -399,6 +403,7 @@ export async function fetchHermesLive(opts?: {
     pairing = pairingList(asRec(apiPairing).pending);
     pairingApproved = pairingList(asRec(apiPairing).approved);
     webhooks = webhooksFromApi(apiHooks);
+    curator = curatorFromApi(apiCurator);
   }
 
   return {
@@ -417,6 +422,7 @@ export async function fetchHermesLive(opts?: {
     pairingApproved,
     webhooks,
     projects,
+    curator,
   };
 }
 

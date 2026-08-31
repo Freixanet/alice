@@ -138,6 +138,16 @@ export type HermesWebhookRow = {
   event?: string;
 };
 
+export type HermesCuratorStatus = {
+  enabled: boolean;
+  paused: boolean;
+  intervalHours?: number;
+  lastRunAt?: string;
+  minIdleHours?: number;
+  staleAfterDays?: number;
+  archiveAfterDays?: number;
+};
+
 export type HermesLive = {
   ok: true;
   writable: boolean;
@@ -154,6 +164,7 @@ export type HermesLive = {
   pairingApproved: HermesPairingRow[];
   webhooks: HermesWebhookRow[];
   projects: HermesProjectRow[];
+  curator: HermesCuratorStatus | null;
 };
 
 export type HermesLiveResult = HermesLive | { ok: false; error: string };

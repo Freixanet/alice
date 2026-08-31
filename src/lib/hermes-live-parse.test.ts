@@ -7,6 +7,7 @@ import {
   cronDeliveryTargetsFromApi,
   cronFromApi,
   cronFromUnknown,
+  curatorFromApi,
   diagnosticsFromApi,
   groupLabel,
   mcpFromApi,
@@ -158,6 +159,26 @@ describe("Hermes cron contract parsing", () => {
     expect(projectsFromApi({ projects: [{ id: "project-1" }] })).toHaveLength(
       1,
     );
+    expect(
+      curatorFromApi({
+        enabled: true,
+        paused: false,
+        interval_hours: 6,
+        last_run_at: 1_700_000_000,
+        min_idle_hours: 2,
+        stale_after_days: 30,
+        archive_after_days: 90,
+      }),
+    ).toEqual({
+      enabled: true,
+      paused: false,
+      intervalHours: 6,
+      lastRunAt: "2023-11-14T22:13:20.000Z",
+      minIdleHours: 2,
+      staleAfterDays: 30,
+      archiveAfterDays: 90,
+    });
+    expect(curatorFromApi({ enabled: "yes", paused: false })).toBeNull();
   });
 
   it("is total for arbitrary Hermes responses", () => {
@@ -165,6 +186,7 @@ describe("Hermes cron contract parsing", () => {
       fc.property(fc.jsonValue(), (value) => {
         expect(() => cronFromUnknown(value)).not.toThrow();
         expect(() => cronDeliveryTargetsFromApi(value)).not.toThrow();
+        expect(() => curatorFromApi(value)).not.toThrow();
       }),
       { numRuns: 10_000 },
     );

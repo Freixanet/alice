@@ -39,6 +39,7 @@ import {
   channelsFromApi,
   cronDeliveryTargetsFromApi,
   cronFromApi,
+  curatorFromApi,
   diagnosticsFromApi,
   mcpFromApi,
   pairingList,
@@ -678,6 +679,7 @@ export async function listHermesLiveDirect(opts: {
       apiPairing,
       apiHooks,
       apiProjects,
+      apiCurator,
     ] = await Promise.all([
       dashboardGet(opts.url, opts.key, "/api/skills", opts.signal),
       dashboardGet(opts.url, opts.key, "/api/tools/toolsets", opts.signal),
@@ -699,6 +701,7 @@ export async function listHermesLiveDirect(opts: {
       dashboardGet(opts.url, opts.key, "/api/pairing", opts.signal),
       dashboardGet(opts.url, opts.key, "/api/webhooks", opts.signal),
       dashboardGet(opts.url, opts.key, "/api/projects", opts.signal),
+      dashboardGet(opts.url, opts.key, "/api/curator", opts.signal),
     ]);
     return {
       ok: true,
@@ -716,6 +719,7 @@ export async function listHermesLiveDirect(opts: {
       pairingApproved: pairingList(asRec(apiPairing).approved),
       webhooks: webhooksFromApi(apiHooks),
       projects: projectsFromApi(apiProjects),
+      curator: curatorFromApi(apiCurator),
     } satisfies HermesLive;
   } catch {
     return { ok: false, error: "Couldn’t read Hermes status." };

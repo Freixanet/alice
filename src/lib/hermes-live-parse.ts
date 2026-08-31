@@ -2,6 +2,7 @@ import type {
   HermesChannelRow,
   HermesCronDeliveryTarget,
   HermesCronRow,
+  HermesCuratorStatus,
   HermesDiagnostics,
   HermesMcpRow,
   HermesPairingRow,
@@ -410,6 +411,35 @@ export function webhooksFromApi(raw: unknown): HermesWebhookRow[] {
       };
     })
     .filter((w) => w.name);
+}
+
+export function curatorFromApi(raw: unknown): HermesCuratorStatus | null {
+  const row = asRec(raw);
+  if (typeof row.enabled !== "boolean" || typeof row.paused !== "boolean") {
+    return null;
+  }
+  return {
+    enabled: row.enabled,
+    paused: row.paused,
+    intervalHours: boundedNumber(row.interval_hours, 0, 24 * 365),
+    lastRunAt: stamp(row.last_run_at) || undefined,
+    minIdleHours: boundedNumber(row.min_idle_hours, 0, 24 * 365),
+    staleAfterDays: boundedNumber(row.stale_after_days, 0, 365_000),
+    archiveAfterDays: boundedNumber(row.archive_after_days, 0, 365_000),
+  };
+}
+
+function boundedNumber(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= minimum &&
+    value <= maximum
+    ? value
+    : undefined;
 }
 
 export function projectFromUnknown(item: unknown): HermesProjectRow {

@@ -522,6 +522,9 @@ function HermesLiveSections({
   const [pairingError, setPairingError] = useState<string | null>(null);
   const [pairingNotice, setPairingNotice] = useState<string | null>(null);
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
+  const [curatorBusy, setCuratorBusy] = useState(false);
+  const [curatorError, setCuratorError] = useState<string | null>(null);
+  const [curatorNotice, setCuratorNotice] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -544,6 +547,7 @@ function HermesLiveSections({
   const approved = data.pairingApproved;
   const sessions = data.sessions;
   const webhooks = data.webhooks;
+  const curator = data.curator;
   const canForkSessions = advertisesHermesCapability(manifest, "session_fork");
   const canCreateSessions = advertisesHermesCapability(
     manifest,
@@ -573,6 +577,27 @@ function HermesLiveSections({
     manifest,
     "health_detailed",
   );
+  const canManageCurator = advertisesHermesCapability(manifest, "curator");
+
+  async function runCuratorAction(mutation: HermesMutation) {
+    setCuratorBusy(true);
+    setCuratorError(null);
+    setCuratorNotice(null);
+    const result = await mutateHermes(mutation);
+    if (!result.ok) {
+      setCuratorError(
+        result.error
+          ? localizeError(locale, result.error)
+          : t("connect.curatorError"),
+      );
+      setCuratorBusy(false);
+      return;
+    }
+    const refreshed = await listHermesLive();
+    if (refreshed.ok) setData(refreshed);
+    setCuratorNotice(t("connect.curatorSaved"));
+    setCuratorBusy(false);
+  }
 
   async function runPairingAction(
     key: string,
@@ -644,6 +669,105 @@ function HermesLiveSections({
   return (
     <>
       {canReadDiagnostics ? <HermesDiagnosticsPanel /> : null}
+
+      {canManageCurator && curator ? (
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium">{t("connect.curator")}</h2>
+          <div className="rounded-xl bg-card px-4 py-4 shadow-border">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant={
+                  curator.enabled && !curator.paused ? "live" : "outline"
+                }
+              >
+                {curator.enabled
+                  ? curator.paused
+                    ? t("connect.curatorPaused")
+                    : t("connect.active")
+                  : t("connect.off")}
+              </Badge>
+              {curator.intervalHours !== undefined ? (
+                <span className="text-sm text-muted-foreground">
+                  {t("connect.curatorEvery", {
+                    count: curator.intervalHours,
+                  })}
+                </span>
+              ) : null}
+            </div>
+            {curator.lastRunAt ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t("connect.curatorLastRun", {
+                  date: formatStamp(locale, curator.lastRunAt),
+                })}
+              </p>
+            ) : null}
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-2xs text-muted-foreground">
+              {curator.minIdleHours !== undefined ? (
+                <span>
+                  {t("connect.curatorIdle", {
+                    count: curator.minIdleHours,
+                  })}
+                </span>
+              ) : null}
+              {curator.staleAfterDays !== undefined ? (
+                <span>
+                  {t("connect.curatorStale", {
+                    count: curator.staleAfterDays,
+                  })}
+                </span>
+              ) : null}
+              {curator.archiveAfterDays !== undefined ? (
+                <span>
+                  {t("connect.curatorArchive", {
+                    count: curator.archiveAfterDays,
+                  })}
+                </span>
+              ) : null}
+            </div>
+            {curatorError ? (
+              <p className="mt-3 text-sm text-destructive" role="alert">
+                {curatorError}
+              </p>
+            ) : null}
+            {curatorNotice ? (
+              <p className="mt-3 text-sm text-muted-foreground" role="status">
+                {curatorNotice}
+              </p>
+            ) : null}
+            {data.writable && curator.enabled ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 md:min-h-8"
+                  disabled={curatorBusy}
+                  onClick={() =>
+                    void runCuratorAction({ action: "curator-run" })
+                  }
+                >
+                  {t("connect.curatorRun")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="min-h-11 md:min-h-8"
+                  disabled={curatorBusy}
+                  onClick={() =>
+                    void runCuratorAction({
+                      action: "curator-pause",
+                      paused: !curator.paused,
+                    })
+                  }
+                >
+                  {curator.paused
+                    ? t("connect.curatorResume")
+                    : t("connect.curatorPause")}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium">{t("connect.channels")}</h2>

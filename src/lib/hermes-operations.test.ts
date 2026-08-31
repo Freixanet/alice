@@ -127,6 +127,20 @@ describe("official Hermes management operations", () => {
     });
   });
 
+  it("maps the negotiated curator controls to the official admin routes", () => {
+    expect(
+      hermesOperationFor({ action: "curator-pause", paused: true }),
+    ).toEqual({
+      path: "/api/curator/paused",
+      method: "PUT",
+      body: { paused: true },
+    });
+    expect(hermesOperationFor({ action: "curator-run" })).toEqual({
+      path: "/api/curator/run",
+      method: "POST",
+    });
+  });
+
   it("maps negotiated session controls to their scoped official routes", () => {
     expect(
       hermesOperationFor({
