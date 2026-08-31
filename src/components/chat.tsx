@@ -37,7 +37,10 @@ import { displayMessageContent, slashHint, t as tr } from "@/lib/i18n";
 import { useLocale, useT } from "@/lib/use-i18n";
 import { useHermes } from "@/lib/store";
 import type { Attachment, Message } from "@/lib/types";
-import type { HermesApprovalChoice } from "@/lib/gateway-contracts";
+import type {
+  HermesApprovalChoice,
+  HermesModelOption,
+} from "@/lib/gateway-contracts";
 import { advertisesHermesCapability } from "@/lib/gateway-contracts";
 import {
   reduceChatStreamEvent,
@@ -62,6 +65,7 @@ export function ChatView() {
   const newChat = useHermes((s) => s.newChat);
   const model = useHermes((s) => s.model);
   const provider = useHermes((s) => s.modelProvider);
+  const recentModelRefs = useHermes((s) => s.recentModels);
   const setModel = useHermes((s) => s.setModel);
   const gatewayOn = useHermes((s) => s.gatewayOn);
   const gatewayStatus = useHermes((s) => s.gatewayStatus);
@@ -120,7 +124,10 @@ export function ChatView() {
   const firstIsUser = Boolean(
     conv?.messages[0] && conv.messages[0].role === "user",
   );
-  const modelChoices = live ? (gatewayMeta?.models ?? []) : [];
+  const modelChoices = useMemo(
+    () => (live ? (gatewayMeta?.models ?? []) : []),
+    [gatewayMeta?.models, live],
+  );
   const currentChoice =
     modelChoices.find(
       (m) => m.id === model && (!provider || m.provider === provider),
@@ -143,6 +150,36 @@ export function ChatView() {
       }))
       .filter((group) => group.models.length > 0);
   }, [modelGroups, modelFilter]);
+  const recentModels = useMemo(() => {
+    const refs =
+      recentModelRefs.length > 0
+        ? recentModelRefs
+        : currentChoice
+          ? [{ id: currentChoice.id, provider: currentChoice.provider }]
+          : [];
+    const seen = new Set<string>();
+    return refs.flatMap((ref) => {
+      const choice =
+        modelChoices.find(
+          (item) =>
+            item.id === ref.id &&
+            (!ref.provider || item.provider === ref.provider),
+        ) ?? modelChoices.find((item) => item.id === ref.id);
+      if (!choice) return [];
+      const key = `${choice.provider}:${choice.id}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      if (
+        modelFilter &&
+        ![choice.id, choice.label, choice.provider, choice.providerName].some(
+          (value) => (value || "").toLowerCase().includes(modelFilter),
+        )
+      ) {
+        return [];
+      }
+      return [choice];
+    });
+  }, [currentChoice, modelChoices, modelFilter, recentModelRefs]);
 
   useEffect(() => {
     const el = scroller.current;
@@ -526,6 +563,20 @@ export function ChatView() {
     else pickModel(q);
   }
 
+  function renderModelOption(option: HermesModelOption) {
+    const on =
+      option.id === model && (!provider || option.provider === provider);
+    return (
+      <DropdownMenuItem
+        key={`${option.provider}:${option.id}`}
+        onSelect={() => pickModel(option.id, option.provider)}
+        className={cn("min-w-0 max-w-full overflow-hidden", on && "bg-accent")}
+      >
+        <span className="min-w-0 truncate">{option.label}</span>
+      </DropdownMenuItem>
+    );
+  }
+
   async function onFiles(list: FileList | null) {
     if (!list) return;
     const next: Attachment[] = [];
@@ -841,15 +892,15 @@ export function ChatView() {
                   <button
                     type="button"
                     disabled={sending}
-                    className="flex h-8 items-center gap-1 rounded-full px-2 text-sm text-foreground hover:bg-accent disabled:opacity-40"
+                    className="flex h-8 min-w-0 max-w-48 items-center gap-1 rounded-full px-2 text-sm text-foreground hover:bg-accent disabled:opacity-40"
                   >
-                    {currentLabel}
-                    <ChevronDown className="size-3.5 text-muted-foreground" />
+                    <span className="min-w-0 truncate">{currentLabel}</span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="start"
-                  className="flex max-h-80 min-w-64 flex-col overflow-hidden p-1"
+                  className="flex max-h-80 w-[min(18rem,calc(100vw-2rem))] min-w-0 max-w-[calc(100vw-2rem)] flex-col overflow-hidden p-1"
                 >
                   {!live ? (
                     <DropdownMenuItem
@@ -859,7 +910,7 @@ export function ChatView() {
                     </DropdownMenuItem>
                   ) : (
                     <>
-                      <div className="px-1 pb-1 pt-2">
+                      <div className="min-w-0 px-1 pb-1 pt-2">
                         <Input
                           ref={modelSearchRef}
                           value={modelQuery}
@@ -877,12 +928,13 @@ export function ChatView() {
                           autoComplete="off"
                         />
                       </div>
-                      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                         {modelsLoading && modelChoices.length === 0 ? (
                           <DropdownMenuItem disabled>
                             {t("chat.loadingModels")}
                           </DropdownMenuItem>
-                        ) : visibleGroups.length === 0 ? (
+                        ) : visibleGroups.length === 0 &&
+                          recentModels.length === 0 ? (
                           <DropdownMenuItem
                             onSelect={() => {
                               if (modelQuery.trim())
@@ -894,28 +946,27 @@ export function ChatView() {
                               : t("chat.noModels")}
                           </DropdownMenuItem>
                         ) : (
-                          visibleGroups.map((group, i) => (
-                            <div key={group.slug}>
-                              {i > 0 ? <DropdownMenuSeparator /> : null}
-                              <DropdownMenuLabel>
-                                {group.name}
-                              </DropdownMenuLabel>
-                              {group.models.map((m) => {
-                                const on =
-                                  m.id === model &&
-                                  (!provider || m.provider === provider);
-                                return (
-                                  <DropdownMenuItem
-                                    key={`${m.provider}:${m.id}`}
-                                    onSelect={() => pickModel(m.id, m.provider)}
-                                    className={on ? "bg-accent" : undefined}
-                                  >
-                                    {m.label}
-                                  </DropdownMenuItem>
-                                );
-                              })}
-                            </div>
-                          ))
+                          <>
+                            {recentModels.length > 0 ? (
+                              <div className="min-w-0">
+                                <DropdownMenuLabel>
+                                  {t("chat.recentModels")}
+                                </DropdownMenuLabel>
+                                {recentModels.map(renderModelOption)}
+                              </div>
+                            ) : null}
+                            {visibleGroups.map((group, i) => (
+                              <div key={group.slug} className="min-w-0">
+                                {i > 0 || recentModels.length > 0 ? (
+                                  <DropdownMenuSeparator />
+                                ) : null}
+                                <DropdownMenuLabel>
+                                  {group.name}
+                                </DropdownMenuLabel>
+                                {group.models.map(renderModelOption)}
+                              </div>
+                            ))}
+                          </>
                         )}
                       </div>
                     </>

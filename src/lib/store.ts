@@ -75,6 +75,48 @@ function seedBlankChat(): Conversation {
 export type Theme = "dark" | "light";
 export type FontSize = "sm" | "md" | "lg";
 export type Accent = "stone" | "sage" | "sky" | "violet" | "rose" | "amber";
+export type RecentModel = { id: string; provider: string };
+
+const RECENT_MODEL_LIMIT = 5;
+
+export function rememberRecentModel(
+  recent: RecentModel[],
+  model: RecentModel,
+): RecentModel[] {
+  const id = model.id.trim().slice(0, 512);
+  const provider = model.provider.trim().slice(0, 256);
+  if (!id) return recent;
+  return [
+    { id, provider },
+    ...recent.filter((item) => item.id !== id || item.provider !== provider),
+  ].slice(0, RECENT_MODEL_LIMIT);
+}
+
+function parseRecentModels(value: unknown): RecentModel[] {
+  if (!Array.isArray(value)) return [];
+  const parsed: RecentModel[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const candidate = item as Record<string, unknown>;
+    if (
+      typeof candidate.id !== "string" ||
+      typeof candidate.provider !== "string"
+    ) {
+      continue;
+    }
+    const id = candidate.id.trim().slice(0, 512);
+    const provider = candidate.provider.trim().slice(0, 256);
+    if (
+      !id ||
+      parsed.some((model) => model.id === id && model.provider === provider)
+    ) {
+      continue;
+    }
+    parsed.push({ id, provider });
+    if (parsed.length === RECENT_MODEL_LIMIT) break;
+  }
+  return parsed;
+}
 
 interface HermesState {
   hydrated: boolean;
@@ -88,6 +130,7 @@ interface HermesState {
   cloudSyncEnabled: boolean;
   model: string;
   modelProvider: string;
+  recentModels: RecentModel[];
   profile: string;
   skillEnabled: Record<string, boolean>;
   toolEnabled: Record<string, boolean>;
@@ -195,6 +238,7 @@ function initialHermesData() {
     cloudSyncEnabled: false,
     model: "hermes-agent",
     modelProvider: "",
+    recentModels: [] as RecentModel[],
     profile: "default",
     skillEnabled: {} as Record<string, boolean>,
     toolEnabled: {} as Record<string, boolean>,
@@ -234,9 +278,16 @@ export const useHermes = create<HermesState>()(
       setCompact: (v) => set({ compact: v }),
       setCloudSyncEnabled: (v) => set({ cloudSyncEnabled: v }),
       setModel: (id, provider) =>
-        set({
-          model: id,
-          ...(provider !== undefined ? { modelProvider: provider } : {}),
+        set((state) => {
+          const nextProvider = provider ?? state.modelProvider;
+          return {
+            model: id,
+            ...(provider !== undefined ? { modelProvider: provider } : {}),
+            recentModels: rememberRecentModel(state.recentModels, {
+              id,
+              provider: nextProvider,
+            }),
+          };
         }),
       setProfile: (name) => {
         const profile = name.trim();
@@ -549,7 +600,7 @@ export const useHermes = create<HermesState>()(
         }),
       ),
       skipHydration: true,
-      version: 10,
+      version: 11,
       migrate: (persisted) => {
         if (persisted && typeof persisted === "object") {
           const next = { ...(persisted as Record<string, unknown>) };
@@ -577,6 +628,17 @@ export const useHermes = create<HermesState>()(
           ) {
             next.model = "hermes-agent";
             next.modelProvider = "";
+          }
+          const recentModels = parseRecentModels(next.recentModels);
+          next.recentModels = recentModels;
+          if (recentModels.length === 0 && typeof next.model === "string") {
+            next.recentModels = rememberRecentModel([], {
+              id: next.model,
+              provider:
+                typeof next.modelProvider === "string"
+                  ? next.modelProvider
+                  : "",
+            });
           }
           if (
             next.fontSize !== "sm" &&
@@ -644,6 +706,7 @@ export const useHermes = create<HermesState>()(
         cloudSyncEnabled: s.cloudSyncEnabled,
         model: s.model,
         modelProvider: s.modelProvider,
+        recentModels: s.recentModels,
         profile: s.profile,
         skillEnabled: s.skillEnabled,
         toolEnabled: s.toolEnabled,
