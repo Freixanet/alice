@@ -21,6 +21,12 @@ npm run dev
 
 Abre la app, ve a **Conectar** e introduce la dirección y la clave de _tu_ Hermes.
 
+La preview de desarrollo usa PGlite en memoria para que un cierre abrupto del
+proceso no pueda bloquear el siguiente arranque. Las conversaciones y
+preferencias siguen persistiendo por usuario en el navegador. Si necesitas una
+base de servidor persistente durante el desarrollo, define explícitamente
+`ALICE_PGLITE_DIR` con una ruta dedicada.
+
 ## Qué no hagas
 
 - No subas `.env`

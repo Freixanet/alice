@@ -38,6 +38,26 @@ export function mergeAppEnv(appEnv, processEnv) {
   return { ...appEnv, ...processEnv };
 }
 
+export function applyCommandDefaults(command, args, env) {
+  const next = { ...env };
+  const viteDev = command === "vite" && args[0] === "dev";
+  const pgliteModeIsExplicit =
+    next.ALICE_PGLITE_MEMORY !== undefined ||
+    next.ALICE_PGLITE_DIR !== undefined;
+
+  // Codex preview processes may be terminated without receiving a shutdown
+  // signal. A disk-backed PGlite instance can then retain an unrecoverable
+  // Postgres control state. The dev preview does not need server-side
+  // persistence: conversations and preferences already live in per-user
+  // browser storage, while production uses DATABASE_URL. Keep `npm run dev`
+  // restart-safe by default, while preserving an explicit persistent PGlite
+  // configuration for developers who need one.
+  if (viteDev && !pgliteModeIsExplicit) {
+    next.ALICE_PGLITE_MEMORY = "1";
+  }
+  return next;
+}
+
 export function exitStatusFromChild(code, signal) {
   if (signal) {
     const signo = osConstants.signals[signal];
@@ -66,7 +86,11 @@ function main(argv) {
     console.error("usage: node scripts/with-app-env.mjs <command> [args…]");
     process.exit(2);
   }
-  const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
+  const env = applyCommandDefaults(
+    command,
+    args,
+    mergeAppEnv(readAppEnv(projectRoot()), process.env),
+  );
   const child = spawn(command, args, { stdio: "inherit", env });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => child.kill(signal));
