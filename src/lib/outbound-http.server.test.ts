@@ -67,6 +67,16 @@ describe("outbound network isolation", () => {
     expect(target.url.origin).toBe("https://hermes.example:9443");
   });
 
+  it("prefers validated IPv4 on dual-stack hosts", async () => {
+    const target = await resolvePinnedTarget("https://hermes.example", {
+      lookup: async () => [
+        { address: "2606:4700:4700::1111", family: 6 },
+        { address: "203.0.114.8", family: 4 },
+      ],
+    });
+    expect(target).toMatchObject({ address: "203.0.114.8", family: 4 });
+  });
+
   it.each([
     "file:///etc/passwd",
     "ftp://hermes.example",

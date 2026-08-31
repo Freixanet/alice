@@ -139,7 +139,12 @@ export async function resolvePinnedTarget(
   ) {
     throw new UnsafeOutboundUrlError("private");
   }
-  const selected = records.find((record) => record.family === 6) ?? records[0];
+  // Prefer IPv4 on dual-stack hosts. Node's pinned connector does not perform
+  // Happy Eyeballs for the address we supply, so choosing IPv6 unconditionally
+  // makes otherwise healthy hosts unreachable on IPv4-only networks.
+  const selected =
+    records.find((record) => record.family === 4) ??
+    records.find((record) => record.family === 6);
   if (!selected || (selected.family !== 4 && selected.family !== 6)) {
     throw new UnsafeOutboundUrlError("unreachable");
   }
