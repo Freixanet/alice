@@ -17,6 +17,8 @@ import type {
   HermesMcpRow,
   HermesPairingRow,
   HermesProjectRow,
+  HermesProfileSoulResult,
+  HermesProfilesResult,
   HermesSessionRow,
   HermesSessionMessagesResult,
   HermesSkillRow,
@@ -37,6 +39,7 @@ import {
   pairingList,
   prettyName,
   projectsFromApi,
+  profilesFromApi,
   sessionsFromApi,
   sessionMessagesFromApi,
   skillsFromApi,
@@ -45,7 +48,10 @@ import {
   webhookCreationFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
-import { hermesOperationFor, type HermesMutation } from "./hermes-operations";
+import {
+  hermesScopedOperationFor,
+  type HermesMutation,
+} from "./hermes-operations";
 
 const SKIP_DIRS = new Set([
   "node_modules",
@@ -62,6 +68,12 @@ type Gate = {
   place?: GatewayPlace;
   signal?: AbortSignal;
 };
+
+function profiledPath(path: string, profile?: string): string {
+  if (!profile) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}profile=${encodeURIComponent(profile)}`;
+}
 
 async function readUtf8(path: string): Promise<string> {
   try {
@@ -313,11 +325,14 @@ export async function fetchHermesLive(opts?: {
   signal?: AbortSignal;
   local?: boolean;
   owner?: boolean;
+  profile?: string;
 }): Promise<HermesLive> {
   const writable = Boolean(opts?.url && opts.key);
   const owner = Boolean(opts?.owner);
   const local = localHermesAvailable();
-  const readDisk = owner && local && opts?.local !== false;
+  // A profile-scoped request must never fall back to the dashboard process's
+  // own files: an empty remote collection is valid and must remain empty.
+  const readDisk = owner && local && opts?.local !== false && !opts?.profile;
   const gate: Gate | null = writable
     ? {
         url: opts!.url!,
@@ -384,17 +399,29 @@ export async function fetchHermesLive(opts?: {
       apiProjects,
       apiCurator,
     ] = await Promise.all([
-      hermesDashboardGet(gate, "/api/skills"),
-      hermesDashboardGet(gate, "/api/tools/toolsets"),
-      hermesDashboardGet(gate, "/api/mcp/servers"),
-      hermesDashboardGet(gate, "/api/cron/jobs"),
-      hermesDashboardGet(gate, "/api/cron/delivery-targets"),
-      hermesDashboardGet(gate, "/api/messaging/platforms"),
-      hermesDashboardGet(gate, "/api/sessions?limit=20&order=recent"),
-      hermesDashboardGet(gate, "/api/pairing"),
-      hermesDashboardGet(gate, "/api/webhooks"),
-      hermesDashboardGet(gate, "/api/projects"),
-      hermesDashboardGet(gate, "/api/curator"),
+      hermesDashboardGet(gate, profiledPath("/api/skills", opts?.profile)),
+      hermesDashboardGet(
+        gate,
+        profiledPath("/api/tools/toolsets", opts?.profile),
+      ),
+      hermesDashboardGet(gate, profiledPath("/api/mcp/servers", opts?.profile)),
+      hermesDashboardGet(gate, profiledPath("/api/cron/jobs", opts?.profile)),
+      hermesDashboardGet(
+        gate,
+        profiledPath("/api/cron/delivery-targets", opts?.profile),
+      ),
+      hermesDashboardGet(
+        gate,
+        profiledPath("/api/messaging/platforms", opts?.profile),
+      ),
+      hermesDashboardGet(
+        gate,
+        profiledPath("/api/sessions?limit=20&order=recent", opts?.profile),
+      ),
+      hermesDashboardGet(gate, profiledPath("/api/pairing", opts?.profile)),
+      hermesDashboardGet(gate, profiledPath("/api/webhooks", opts?.profile)),
+      hermesDashboardGet(gate, profiledPath("/api/projects", opts?.profile)),
+      hermesDashboardGet(gate, profiledPath("/api/curator", opts?.profile)),
     ]);
     const nextSkills = skillsFromApi(apiSkills);
     if (nextSkills.length) skills = nextSkills;
@@ -436,13 +463,57 @@ export async function fetchHermesLive(opts?: {
   };
 }
 
+export async function fetchHermesProfiles(
+  opts: Gate,
+): Promise<HermesProfilesResult> {
+  const [listed, activeRaw] = await Promise.all([
+    hermesDashboardGet(opts, "/api/profiles"),
+    hermesDashboardGet(opts, "/api/profiles/active"),
+  ]);
+  const profiles = profilesFromApi(listed);
+  if (!profiles.length) {
+    return { ok: false, error: "Hermes didn’t return any profiles." };
+  }
+  const activeRecord = asRec(activeRaw);
+  const fallback = profiles[0]?.name ?? "default";
+  return {
+    ok: true,
+    state: {
+      active: str(activeRecord.active) || fallback,
+      current: str(activeRecord.current) || fallback,
+      profiles,
+    },
+  };
+}
+
+export async function fetchHermesProfileSoul(
+  opts: Gate,
+  name: string,
+): Promise<HermesProfileSoulResult> {
+  const raw = await hermesDashboardGet(
+    opts,
+    `/api/profiles/${encodeURIComponent(name)}/soul`,
+  );
+  if (!raw) return { ok: false, error: "Couldn’t read this profile’s SOUL." };
+  const record = asRec(raw);
+  return {
+    ok: true,
+    content: typeof record.content === "string" ? record.content : "",
+    exists: record.exists === true,
+  };
+}
+
 export async function fetchHermesSessionMessages(
   opts: Gate,
   sessionId: string,
+  profile?: string,
 ): Promise<HermesSessionMessagesResult> {
   const raw = await hermesDashboardGet(
     opts,
-    `/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=50&order=latest`,
+    profiledPath(
+      `/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=50&order=latest`,
+      profile,
+    ),
   );
   if (!raw) {
     return { ok: false, error: "Couldn’t read this Hermes session." };
@@ -473,8 +544,9 @@ export async function mutateHermesLive(
     local?: boolean;
   },
   mutation: HermesMutation,
+  profile?: string,
 ): Promise<HermesMutationResult> {
-  const operation = hermesOperationFor(mutation);
+  const operation = hermesScopedOperationFor(mutation, profile);
   if (operation) {
     if (mutation.action === "webhook-create") {
       const raw = await hermesDashboardSendJson(

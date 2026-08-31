@@ -173,6 +173,31 @@ export type HermesWebhooksState = {
   subscriptions: HermesWebhookRow[];
 };
 
+export type HermesProfileRow = {
+  name: string;
+  displayName: string;
+  description: string;
+  descriptionAuto: boolean;
+  isDefault: boolean;
+  model?: string;
+  provider?: string;
+  skillCount: number;
+  hasEnv: boolean;
+  gatewayRunning: boolean;
+};
+
+export type HermesProfilesState = {
+  active: string;
+  current: string;
+  profiles: HermesProfileRow[];
+};
+
+export type HermesProfilesResult =
+  { ok: true; state: HermesProfilesState } | { ok: false; error: string };
+
+export type HermesProfileSoulResult =
+  { ok: true; content: string; exists: boolean } | { ok: false; error: string };
+
 export type HermesMutationResult =
   | {
       ok: true;

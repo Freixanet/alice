@@ -96,6 +96,7 @@ export const Route = createFileRoute("/api/chat")({
                 provider: body.provider,
                 signal: request.signal,
                 place: gate.p,
+                profile: body.profile,
               });
             }
             return await streamHermesProxy({
@@ -109,6 +110,7 @@ export const Route = createFileRoute("/api/chat")({
               endpoints: gate.ep,
               signal: request.signal,
               place: gate.p,
+              profile: body.profile,
             });
           } catch (e) {
             const status =

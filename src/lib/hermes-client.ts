@@ -17,7 +17,10 @@ import {
   controlHermesRunDirect,
 } from "./hermes-direct";
 import { useHermes } from "./store";
-import type { HermesApprovalChoice } from "./gateway-contracts";
+import {
+  advertisesHermesCapability,
+  type HermesApprovalChoice,
+} from "./gateway-contracts";
 import { parseHermesRunSnapshot, type HermesRunSnapshot } from "./hermes-runs";
 
 type HermesActionResult = ProbeResult & { models?: HermesModelOption[] };
@@ -184,7 +187,14 @@ export async function getHermesRun(opts: {
   conversationId?: string;
   signal: AbortSignal;
 }): Promise<HermesRunSnapshot | null> {
-  const { gatewayPlace: place, gatewayUrl: url } = useHermes.getState();
+  const state = useHermes.getState();
+  const { gatewayPlace: place, gatewayUrl: url } = state;
+  const profile = advertisesHermesCapability(
+    state.gatewayMeta?.manifest,
+    "profiles",
+  )
+    ? state.profile
+    : undefined;
   if (place === "device") {
     const key = getDeviceSessionKey();
     if (!url || !key) return null;
@@ -194,6 +204,7 @@ export async function getHermesRun(opts: {
       runId: opts.runId,
       conversationId: opts.conversationId,
       signal: opts.signal,
+      profile,
     });
   }
   try {
@@ -204,6 +215,7 @@ export async function getHermesRun(opts: {
         action: "run-status",
         runId: opts.runId,
         conversationId: opts.conversationId,
+        profile,
       }),
       signal: opts.signal,
       cache: "no-store",
@@ -231,7 +243,14 @@ export async function controlHermesRunClient(opts: {
   resolveAll?: boolean;
   input?: string;
 }): Promise<boolean> {
-  const { gatewayPlace: place, gatewayUrl: url } = useHermes.getState();
+  const state = useHermes.getState();
+  const { gatewayPlace: place, gatewayUrl: url } = state;
+  const profile = advertisesHermesCapability(
+    state.gatewayMeta?.manifest,
+    "profiles",
+  )
+    ? state.profile
+    : undefined;
   if (place === "device") {
     const key = getDeviceSessionKey();
     if (!url || !key) return false;
@@ -244,6 +263,7 @@ export async function controlHermesRunClient(opts: {
       resolveAll: opts.resolveAll,
       input: opts.input,
       signal: AbortSignal.timeout(12_000),
+      profile,
     });
   }
   try {
@@ -252,14 +272,20 @@ export async function controlHermesRunClient(opts: {
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(
         opts.action === "stop"
-          ? { action: "run-stop", runId: opts.runId }
+          ? { action: "run-stop", runId: opts.runId, profile }
           : opts.action === "steer"
-            ? { action: "run-steer", runId: opts.runId, input: opts.input }
+            ? {
+                action: "run-steer",
+                runId: opts.runId,
+                input: opts.input,
+                profile,
+              }
             : {
                 action: "run-approval",
                 runId: opts.runId,
                 choice: opts.choice,
                 resolveAll: opts.resolveAll,
+                profile,
               },
       ),
       cache: "no-store",

@@ -17,6 +17,12 @@ const webhookName = z
   .min(1)
   .max(128)
   .regex(/^[a-z0-9][a-z0-9_-]*$/);
+export const hermesProfileNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9][a-z0-9_-]*$/);
 const webhookCreateSchema = z
   .strictObject({
     action: z.literal("webhook-create"),
@@ -193,6 +199,38 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
   z.strictObject({
     action: z.literal("webhook-delete"),
     name: webhookName,
+    confirm: z.literal(true),
+  }),
+  z.strictObject({
+    action: z.literal("profile-create"),
+    name: hermesProfileNameSchema,
+    cloneFrom: hermesProfileNameSchema.optional(),
+    cloneAll: z.boolean().optional(),
+    noSkills: z.boolean().optional(),
+    description: optionalText(2_000),
+  }),
+  z.strictObject({
+    action: z.literal("profile-activate"),
+    name: hermesProfileNameSchema,
+  }),
+  z.strictObject({
+    action: z.literal("profile-rename"),
+    name: hermesProfileNameSchema,
+    newName: hermesProfileNameSchema,
+  }),
+  z.strictObject({
+    action: z.literal("profile-description"),
+    name: hermesProfileNameSchema,
+    description: z.string().trim().max(2_000),
+  }),
+  z.strictObject({
+    action: z.literal("profile-soul-update"),
+    name: hermesProfileNameSchema,
+    content: z.string().max(128_000),
+  }),
+  z.strictObject({
+    action: z.literal("profile-delete"),
+    name: hermesProfileNameSchema,
     confirm: z.literal(true),
   }),
   z.strictObject({
@@ -401,6 +439,44 @@ export function hermesOperationFor(
       };
     case "webhook-delete":
       return { path: `/api/webhooks/${encodedName}`, method: "DELETE" };
+    case "profile-create":
+      return {
+        path: "/api/profiles",
+        method: "POST",
+        body: {
+          name: input.name,
+          clone_from: input.cloneFrom,
+          clone_all: input.cloneAll,
+          no_skills: input.noSkills,
+          description: input.description,
+        },
+      };
+    case "profile-activate":
+      return {
+        path: "/api/profiles/active",
+        method: "POST",
+        body: { name: input.name },
+      };
+    case "profile-rename":
+      return {
+        path: `/api/profiles/${encodedName}`,
+        method: "PATCH",
+        body: { new_name: input.newName },
+      };
+    case "profile-description":
+      return {
+        path: `/api/profiles/${encodedName}/description`,
+        method: "PUT",
+        body: { description: input.description },
+      };
+    case "profile-soul-update":
+      return {
+        path: `/api/profiles/${encodedName}/soul`,
+        method: "PUT",
+        body: { content: input.content },
+      };
+    case "profile-delete":
+      return { path: `/api/profiles/${encodedName}`, method: "DELETE" };
     case "session-create":
       return {
         path: "/api/sessions",
@@ -450,6 +526,21 @@ export function hermesOperationFor(
     case "project-create":
       return null;
   }
+}
+
+export function hermesScopedOperationFor(
+  input: HermesMutation,
+  profile?: string,
+): HermesOperation | null {
+  const operation = hermesOperationFor(input);
+  if (!operation || !profile || input.action.startsWith("profile-")) {
+    return operation;
+  }
+  const separator = operation.path.includes("?") ? "&" : "?";
+  return {
+    ...operation,
+    path: `${operation.path}${separator}profile=${encodeURIComponent(profile)}`,
+  };
 }
 
 function cronPayload(value: Record<string, unknown>) {

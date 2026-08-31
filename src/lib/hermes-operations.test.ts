@@ -1,7 +1,57 @@
 import { describe, expect, it } from "vitest";
-import { hermesMutationSchema, hermesOperationFor } from "./hermes-operations";
+import {
+  hermesMutationSchema,
+  hermesOperationFor,
+  hermesScopedOperationFor,
+} from "./hermes-operations";
 
 describe("official Hermes management operations", () => {
+  it("scopes ordinary operations but never profile-management routes", () => {
+    expect(
+      hermesScopedOperationFor(
+        { action: "toggle-skill", name: "browser", enabled: true },
+        "research",
+      )?.path,
+    ).toBe("/api/skills/toggle?profile=research");
+    expect(
+      hermesScopedOperationFor(
+        { action: "profile-activate", name: "research" },
+        "default",
+      )?.path,
+    ).toBe("/api/profiles/active");
+  });
+
+  it("maps the supported profile lifecycle without exposing paths", () => {
+    expect(
+      hermesOperationFor({
+        action: "profile-create",
+        name: "research",
+        cloneFrom: "default",
+      }),
+    ).toEqual({
+      path: "/api/profiles",
+      method: "POST",
+      body: {
+        name: "research",
+        clone_from: "default",
+        clone_all: undefined,
+        no_skills: undefined,
+        description: undefined,
+      },
+    });
+    expect(
+      hermesOperationFor({
+        action: "profile-soul-update",
+        name: "research",
+        content: "Be rigorous.",
+      }),
+    ).toEqual({
+      path: "/api/profiles/research/soul",
+      method: "PUT",
+      body: { content: "Be rigorous." },
+    });
+  });
+
   it("maps the complete cron lifecycle to Hermes 0.20.6 routes", () => {
     expect(
       hermesOperationFor({ action: "cron-run", jobId: "daily/brief" }),

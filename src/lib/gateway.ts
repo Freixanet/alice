@@ -102,6 +102,12 @@ export function normalizeGatewayUrl(raw: string): string {
   return u.origin + (path && path !== "/" ? path : "");
 }
 
+export function scopeHermesGatewayBase(base: string, profile?: string): string {
+  return profile
+    ? `${base.replace(/\/+$/, "")}/p/${encodeURIComponent(profile)}`
+    : base;
+}
+
 export function normalizeLlmBaseUrl(raw: string): string {
   let s = raw.trim();
   if (!s) throw new GatewayError("invalid", FAIL);

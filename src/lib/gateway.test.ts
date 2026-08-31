@@ -8,6 +8,7 @@ import {
   normalizeLlmBaseUrl,
   parseHermesCapabilityManifest,
   parseHermesModelOptions,
+  scopeHermesGatewayBase,
 } from "./gateway";
 
 describe("gateway input invariants", () => {
@@ -31,6 +32,15 @@ describe("gateway input invariants", () => {
   it("accepts OpenAI base paths and removes duplicate suffixes", () => {
     expect(normalizeLlmBaseUrl("https://api.example.com/v1/")).toBe(
       "https://api.example.com/v1",
+    );
+  });
+
+  it("uses Hermes' fail-closed multiplex prefix for a selected profile", () => {
+    expect(scopeHermesGatewayBase("http://127.0.0.1:8642", "research")).toBe(
+      "http://127.0.0.1:8642/p/research",
+    );
+    expect(scopeHermesGatewayBase("http://127.0.0.1:8642", undefined)).toBe(
+      "http://127.0.0.1:8642",
     );
   });
 

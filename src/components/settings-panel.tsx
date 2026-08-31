@@ -32,6 +32,7 @@ import { authEnabled, signOut } from "@/lib/auth/client";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { useHermes, type Accent, type FontSize } from "@/lib/store";
 import { Button } from "@/components/ui/button";
+import { HermesProfilesSettings } from "@/components/hermes-profiles-settings";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/use-i18n";
 import type { MsgKey } from "@/lib/i18n";
@@ -648,24 +649,8 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function PerfilSection({ onNavigate }: { onNavigate?: () => void }) {
-  const t = useT();
-  const profile = useHermes((s) => s.profile);
-  return (
-    <div>
-      <p className="font-medium">{profile}</p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t("settings.profileHint")}{" "}
-        <Link
-          to="/memory"
-          className="text-foreground underline-offset-2 hover:underline"
-          onClick={onNavigate}
-        >
-          {t("nav.memory")}
-        </Link>
-        .
-      </p>
-    </div>
-  );
+  void onNavigate;
+  return <HermesProfilesSettings />;
 }
 
 function CuentaSection() {

@@ -3,9 +3,12 @@ import type {
   HermesDiagnosticsResult,
   HermesLiveResult,
   HermesMutationResult,
+  HermesProfileSoulResult,
+  HermesProfilesResult,
   HermesSessionMessagesResult,
 } from "./hermes-live-types";
 import { hermesMutationSchema, type HermesMutation } from "./hermes-operations";
+import { advertisesHermesCapability } from "./gateway-contracts";
 
 export type * from "./hermes-live-types";
 
@@ -14,20 +17,32 @@ export async function listHermesLive(opts?: {
 }): Promise<HermesLiveResult> {
   try {
     const { useHermes } = await import("./store");
-    const place = useHermes.getState().gatewayPlace;
+    const state = useHermes.getState();
+    const place = state.gatewayPlace;
+    const profile = advertisesHermesCapability(
+      state.gatewayMeta?.manifest,
+      "profiles",
+    )
+      ? state.profile
+      : undefined;
     if (place === "device") {
       const { getDeviceSessionKey, listHermesLiveDirect } =
         await import("./hermes-direct");
-      const url = useHermes.getState().gatewayUrl;
+      const url = state.gatewayUrl;
       const key = getDeviceSessionKey();
       if (!url || !key)
         return { ok: false, error: "Connect your Hermes on this computer." };
-      return listHermesLiveDirect({ url, key, signal: opts?.signal });
+      return listHermesLiveDirect({
+        url,
+        key,
+        signal: opts?.signal,
+        profile,
+      });
     }
     const res = await fetch("/api/hermes", {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ action: "live" }),
+      body: JSON.stringify({ action: "live", profile }),
       signal: opts?.signal,
     });
     const data = (await res.json()) as HermesLiveResult;
@@ -55,20 +70,27 @@ export async function mutateHermes(
     }
     opts = parsed.data;
     const { useHermes } = await import("./store");
-    const place = useHermes.getState().gatewayPlace;
+    const state = useHermes.getState();
+    const place = state.gatewayPlace;
+    const profile = advertisesHermesCapability(
+      state.gatewayMeta?.manifest,
+      "profiles",
+    )
+      ? state.profile
+      : undefined;
     if (place === "device") {
       const { getDeviceSessionKey, mutateHermesDirect } =
         await import("./hermes-direct");
-      const url = useHermes.getState().gatewayUrl;
+      const url = state.gatewayUrl;
       const key = getDeviceSessionKey();
       if (!url || !key)
         return { ok: false, error: "Connect your Hermes on this computer." };
-      return mutateHermesDirect({ url, key, ...opts });
+      return mutateHermesDirect({ url, key, profile, ...opts });
     }
     const res = await fetch("/api/hermes", {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify(opts),
+      body: JSON.stringify({ action: "mutate", profile, mutation: opts }),
     });
     const data = (await res.json()) as Record<string, unknown>;
     if (!data.ok) {
@@ -124,6 +146,90 @@ export async function mutateHermes(
   }
 }
 
+export async function readHermesProfiles(opts?: {
+  signal?: AbortSignal;
+}): Promise<HermesProfilesResult> {
+  try {
+    const { useHermes } = await import("./store");
+    const state = useHermes.getState();
+    if (state.gatewayPlace === "device") {
+      const { getDeviceSessionKey, readHermesProfilesDirect } =
+        await import("./hermes-direct");
+      const key = getDeviceSessionKey();
+      if (!state.gatewayUrl || !key) {
+        return { ok: false, error: "Connect your Hermes on this computer." };
+      }
+      return readHermesProfilesDirect({
+        url: state.gatewayUrl,
+        key,
+        signal: opts?.signal,
+      });
+    }
+    const res = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ action: "profiles" }),
+      signal: opts?.signal,
+      cache: "no-store",
+    });
+    const data = (await res.json()) as HermesProfilesResult;
+    return data && data.ok
+      ? data
+      : {
+          ok: false,
+          error:
+            data && "error" in data
+              ? data.error
+              : "Couldn’t read Hermes profiles.",
+        };
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes profiles." };
+  }
+}
+
+export async function readHermesProfileSoul(opts: {
+  name: string;
+  signal?: AbortSignal;
+}): Promise<HermesProfileSoulResult> {
+  try {
+    const { useHermes } = await import("./store");
+    const state = useHermes.getState();
+    if (state.gatewayPlace === "device") {
+      const { getDeviceSessionKey, readHermesProfileSoulDirect } =
+        await import("./hermes-direct");
+      const key = getDeviceSessionKey();
+      if (!state.gatewayUrl || !key) {
+        return { ok: false, error: "Connect your Hermes on this computer." };
+      }
+      return readHermesProfileSoulDirect({
+        url: state.gatewayUrl,
+        key,
+        name: opts.name,
+        signal: opts.signal,
+      });
+    }
+    const res = await fetch("/api/hermes", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ action: "profile-soul", name: opts.name }),
+      signal: opts.signal,
+      cache: "no-store",
+    });
+    const data = (await res.json()) as HermesProfileSoulResult;
+    return data && data.ok
+      ? data
+      : {
+          ok: false,
+          error:
+            data && "error" in data
+              ? data.error
+              : "Couldn’t read this profile’s SOUL.",
+        };
+  } catch {
+    return { ok: false, error: "Couldn’t read this profile’s SOUL." };
+  }
+}
+
 export async function readHermesDiagnostics(opts?: {
   signal?: AbortSignal;
 }): Promise<HermesDiagnosticsResult> {
@@ -172,6 +278,12 @@ export async function readHermesSessionMessages(opts: {
   try {
     const { useHermes } = await import("./store");
     const state = useHermes.getState();
+    const profile = advertisesHermesCapability(
+      state.gatewayMeta?.manifest,
+      "profiles",
+    )
+      ? state.profile
+      : undefined;
     if (state.gatewayPlace === "device") {
       const { getDeviceSessionKey, readHermesSessionMessagesDirect } =
         await import("./hermes-direct");
@@ -184,6 +296,7 @@ export async function readHermesSessionMessages(opts: {
         key,
         sessionId: opts.sessionId,
         signal: opts.signal,
+        profile,
       });
     }
     const res = await fetch("/api/hermes", {
@@ -192,6 +305,7 @@ export async function readHermesSessionMessages(opts: {
       body: JSON.stringify({
         action: "session-messages",
         sessionId: opts.sessionId,
+        profile,
       }),
       signal: opts.signal,
     });

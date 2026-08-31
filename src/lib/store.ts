@@ -43,6 +43,7 @@ import {
 
 const welcomeId = "welcome";
 const freshId = "fresh";
+const HERMES_PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 function seedConversation(): Conversation {
   return {
@@ -237,7 +238,10 @@ export const useHermes = create<HermesState>()(
           model: id,
           ...(provider !== undefined ? { modelProvider: provider } : {}),
         }),
-      setProfile: (name) => set({ profile: name }),
+      setProfile: (name) => {
+        const profile = name.trim();
+        if (HERMES_PROFILE_NAME.test(profile)) set({ profile });
+      },
       isSkillOn: (id) => {
         const o = get().skillEnabled[id];
         if (typeof o === "boolean") return o;
@@ -533,7 +537,7 @@ export const useHermes = create<HermesState>()(
         }),
       ),
       skipHydration: true,
-      version: 9,
+      version: 10,
       migrate: (persisted) => {
         if (persisted && typeof persisted === "object") {
           const next = { ...(persisted as Record<string, unknown>) };
@@ -547,6 +551,12 @@ export const useHermes = create<HermesState>()(
           }
           if (!isLocale(next.locale)) {
             next.locale = "en";
+          }
+          if (
+            typeof next.profile !== "string" ||
+            !HERMES_PROFILE_NAME.test(next.profile)
+          ) {
+            next.profile = "default";
           }
           if (
             next.model === "gpt-5.6-luna" ||

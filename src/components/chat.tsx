@@ -76,6 +76,7 @@ export function ChatView() {
   const gatewayMeta = useHermes((s) => s.gatewayMeta);
   const gatewayUrl = useHermes((s) => s.gatewayUrl);
   const gatewayPlace = useHermes((s) => s.gatewayPlace);
+  const profile = useHermes((s) => s.profile);
   const setGatewayModels = useHermes((s) => s.setGatewayModels);
   const [sending, setSending] = useState(false);
   const [files, setFiles] = useState<Attachment[]>([]);
@@ -105,6 +106,12 @@ export function ChatView() {
     gatewayMeta?.manifest,
     "session_chat_stream",
   );
+  const chatProfile = advertisesHermesCapability(
+    gatewayMeta?.manifest,
+    "profiles",
+  )
+    ? profile
+    : undefined;
   const supportsRuns =
     gatewayMeta?.manifest?.capabilities["chat.runs"] === true &&
     gatewayMeta.manifest.capabilities["chat.cancel"] === true &&
@@ -365,6 +372,7 @@ export function ChatView() {
                 model,
                 provider,
                 signal: ctrl.signal,
+                profile: chatProfile,
               })
             : null
           : streamHermesDirect({
@@ -376,6 +384,7 @@ export function ChatView() {
               preferRuns: supportsRuns,
               messages: payload,
               signal: ctrl.signal,
+              profile: chatProfile,
             });
         if (!stream) {
           fail(tr(locale, "error.noReply"));
@@ -396,6 +405,7 @@ export function ChatView() {
             model,
             provider,
             preferRuns: supportsRuns,
+            profile: chatProfile,
             messages: payload,
           }),
         });

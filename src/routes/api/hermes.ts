@@ -195,6 +195,7 @@ export const Route = createFileRoute("/api/hermes")({
                 runId: body.runId,
                 conversationId: body.conversationId,
                 signal,
+                profile: body.profile,
               });
               return jsonWithCookie(
                 run
@@ -220,6 +221,7 @@ export const Route = createFileRoute("/api/hermes")({
               runId: body.runId,
               ...control,
               signal,
+              profile: body.profile,
             });
             return jsonWithCookie(
               ok
@@ -256,6 +258,7 @@ export const Route = createFileRoute("/api/hermes")({
                 ]),
               },
               body.sessionId,
+              body.profile,
             );
             return jsonWithCookie(result, result.ok ? 200 : 502);
           } catch {
@@ -304,6 +307,7 @@ export const Route = createFileRoute("/api/hermes")({
               place: saved?.p,
               local: macOk,
               owner,
+              profile: body.profile,
               signal: AbortSignal.any([
                 request.signal,
                 AbortSignal.timeout(20_000),
@@ -313,6 +317,71 @@ export const Route = createFileRoute("/api/hermes")({
           } catch {
             return jsonWithCookie(
               { ok: false, error: "Couldn’t read Hermes status." },
+              502,
+            );
+          }
+        }
+
+        if (body.action === "profiles" || body.action === "profile-soul") {
+          if (!saved?.u || !saved?.k) {
+            return jsonWithCookie(
+              { ok: false, error: "Connect your Hermes first." },
+              400,
+            );
+          }
+          const gate = {
+            url: saved.u,
+            key: saved.k,
+            place: saved.p,
+            signal: AbortSignal.any([
+              request.signal,
+              AbortSignal.timeout(12_000),
+            ]),
+          };
+          try {
+            const { fetchHermesProfiles, fetchHermesProfileSoul } =
+              await import("@/lib/hermes-live.server");
+            const result =
+              body.action === "profiles"
+                ? await fetchHermesProfiles(gate)
+                : await fetchHermesProfileSoul(gate, body.name);
+            return jsonWithCookie(result, result.ok ? 200 : 502);
+          } catch {
+            return jsonWithCookie(
+              { ok: false, error: "Couldn’t read Hermes profiles." },
+              502,
+            );
+          }
+        }
+
+        if (body.action === "mutate") {
+          if (!saved?.u || !saved?.k) {
+            return jsonWithCookie(
+              { ok: false, error: "Connect your Hermes first." },
+              400,
+            );
+          }
+          try {
+            const { mutateHermesLive } =
+              await import("@/lib/hermes-live.server");
+            const result = await mutateHermesLive(
+              {
+                url: saved.u,
+                key: saved.k,
+                place: saved.p,
+                local: macOk,
+                signal: AbortSignal.any([
+                  request.signal,
+                  AbortSignal.timeout(12_000),
+                ]),
+              },
+              body.mutation,
+              body.profile,
+            );
+            return jsonWithCookie(result, result.ok ? 200 : 502);
+          } catch {
+            return jsonWithCookie(
+              { ok: false, error: "Hermes couldn’t save the change." },
               502,
             );
           }

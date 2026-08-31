@@ -31,6 +31,32 @@ describe("Hermes API contracts", () => {
     ).toBe(true);
   });
 
+  it("accepts explicitly scoped profile reads and mutations", () => {
+    expect(
+      hermesRequestSchema.safeParse({ action: "live", profile: "research" })
+        .success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "profile-soul",
+        name: "research",
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "mutate",
+        profile: "research",
+        mutation: { action: "toggle-skill", name: "browser", enabled: true },
+      }).success,
+    ).toBe(true);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "live",
+        profile: "../default",
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts scoped run recovery and approval actions", () => {
     expect(
       hermesRequestSchema.safeParse({

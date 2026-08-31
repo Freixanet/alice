@@ -16,6 +16,7 @@ import {
   prettyName,
   projectFromUnknown,
   projectsFromApi,
+  profilesFromApi,
   sessionsFromApi,
   sessionMessagesFromApi,
   skillsFromApi,
@@ -226,6 +227,42 @@ describe("Hermes cron contract parsing", () => {
     expect(projectsFromApi({ projects: [{ id: "project-1" }] })).toHaveLength(
       1,
     );
+    expect(
+      profilesFromApi({
+        profiles: [
+          {
+            name: "research",
+            display_name: "Research",
+            description: "Evidence and synthesis",
+            description_auto: false,
+            model: "gpt-5.6",
+            provider: "openai",
+            skill_count: 7,
+            has_env: true,
+            gateway_running: true,
+          },
+          { name: "default", is_default: true },
+        ],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        name: "default",
+        displayName: "Default",
+        isDefault: true,
+        skillCount: 0,
+      }),
+      expect.objectContaining({
+        name: "research",
+        displayName: "Research",
+        description: "Evidence and synthesis",
+        isDefault: false,
+        model: "gpt-5.6",
+        provider: "openai",
+        skillCount: 7,
+        hasEnv: true,
+        gatewayRunning: true,
+      }),
+    ]);
     expect(
       curatorFromApi({
         enabled: true,

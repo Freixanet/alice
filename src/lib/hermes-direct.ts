@@ -7,6 +7,7 @@ import {
   parseHermesModelOptions,
   parseSkillNames,
   readSse,
+  scopeHermesGatewayBase,
   type ChatEvent,
   type HermesChatContent,
   type HermesModelOption,
@@ -16,12 +17,17 @@ import {
   parseHermesCapabilityManifest,
   type HermesCapabilityManifest,
 } from "./gateway-contracts";
-import { hermesOperationFor, type HermesMutation } from "./hermes-operations";
+import {
+  hermesScopedOperationFor,
+  type HermesMutation,
+} from "./hermes-operations";
 import type {
   HermesDiagnosticsResult,
   HermesLive,
   HermesLiveResult,
   HermesMutationResult,
+  HermesProfileSoulResult,
+  HermesProfilesResult,
   HermesSessionMessagesResult,
 } from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
@@ -46,6 +52,7 @@ import {
   mcpFromApi,
   pairingList,
   projectsFromApi,
+  profilesFromApi,
   sessionsFromApi,
   sessionMessagesFromApi,
   skillsFromApi,
@@ -330,8 +337,12 @@ export async function* streamHermesDirect(opts: {
   provider?: string;
   preferRuns?: boolean;
   signal: AbortSignal;
+  profile?: string;
 }): AsyncGenerator<ChatEvent> {
-  const base = normalizeGatewayUrl(opts.url);
+  const base = scopeHermesGatewayBase(
+    normalizeGatewayUrl(opts.url),
+    opts.profile,
+  );
   const token = assertGatewayKey(opts.key);
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(180_000)]);
   const requestedModel = opts.model?.trim() || "hermes-agent";
@@ -440,12 +451,13 @@ export async function* streamHermesSessionDirect(opts: {
   model?: string;
   provider?: string;
   signal: AbortSignal;
+  profile?: string;
 }): AsyncGenerator<ChatEvent> {
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(180_000)]);
   try {
     yield* streamHermesSessionChat({
       fetch,
-      base: normalizeGatewayUrl(opts.url),
+      base: scopeHermesGatewayBase(normalizeGatewayUrl(opts.url), opts.profile),
       token: assertGatewayKey(opts.key),
       sessionId: opts.sessionId,
       message: opts.message,
@@ -466,10 +478,11 @@ export async function getHermesRunDirect(opts: {
   runId: string;
   conversationId?: string;
   signal: AbortSignal;
+  profile?: string;
 }): Promise<HermesRunSnapshot | null> {
   return getHermesRunSnapshot({
     fetch,
-    base: normalizeGatewayUrl(opts.url),
+    base: scopeHermesGatewayBase(normalizeGatewayUrl(opts.url), opts.profile),
     token: assertGatewayKey(opts.key),
     runId: opts.runId,
     conversationId: opts.conversationId,
@@ -484,12 +497,13 @@ export async function controlHermesRunDirect(opts: {
   action: "stop" | "approval" | "steer";
   choice?: HermesApprovalChoice;
   resolveAll?: boolean;
+  profile?: string;
   input?: string;
   signal: AbortSignal;
 }): Promise<boolean> {
   const common = {
     fetch,
-    base: normalizeGatewayUrl(opts.url),
+    base: scopeHermesGatewayBase(normalizeGatewayUrl(opts.url), opts.profile),
     token: assertGatewayKey(opts.key),
     runId: opts.runId,
     signal: opts.signal,
@@ -647,6 +661,12 @@ async function dashboardSend(
   return dashboardMutate(url, key, path, method, body, false);
 }
 
+function profiledPath(path: string, profile?: string): string {
+  if (!profile) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}profile=${encodeURIComponent(profile)}`;
+}
+
 async function dashboardSendJson(
   url: string,
   key: string,
@@ -714,6 +734,7 @@ export async function listHermesLiveDirect(opts: {
   url: string;
   key: string;
   signal?: AbortSignal;
+  profile?: string;
 }): Promise<HermesLiveResult> {
   try {
     const [
@@ -729,27 +750,72 @@ export async function listHermesLiveDirect(opts: {
       apiProjects,
       apiCurator,
     ] = await Promise.all([
-      dashboardGet(opts.url, opts.key, "/api/skills", opts.signal),
-      dashboardGet(opts.url, opts.key, "/api/tools/toolsets", opts.signal),
-      dashboardGet(opts.url, opts.key, "/api/mcp/servers", opts.signal),
-      dashboardGet(opts.url, opts.key, "/api/cron/jobs", opts.signal),
       dashboardGet(
         opts.url,
         opts.key,
-        "/api/cron/delivery-targets",
+        profiledPath("/api/skills", opts.profile),
         opts.signal,
       ),
-      dashboardGet(opts.url, opts.key, "/api/messaging/platforms", opts.signal),
       dashboardGet(
         opts.url,
         opts.key,
-        "/api/sessions?limit=20&order=recent",
+        profiledPath("/api/tools/toolsets", opts.profile),
         opts.signal,
       ),
-      dashboardGet(opts.url, opts.key, "/api/pairing", opts.signal),
-      dashboardGet(opts.url, opts.key, "/api/webhooks", opts.signal),
-      dashboardGet(opts.url, opts.key, "/api/projects", opts.signal),
-      dashboardGet(opts.url, opts.key, "/api/curator", opts.signal),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/mcp/servers", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/cron/jobs", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/cron/delivery-targets", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/messaging/platforms", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/sessions?limit=20&order=recent", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/pairing", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/webhooks", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/projects", opts.profile),
+        opts.signal,
+      ),
+      dashboardGet(
+        opts.url,
+        opts.key,
+        profiledPath("/api/curator", opts.profile),
+        opts.signal,
+      ),
     ]);
     return {
       ok: true,
@@ -774,17 +840,75 @@ export async function listHermesLiveDirect(opts: {
   }
 }
 
+export async function readHermesProfilesDirect(opts: {
+  url: string;
+  key: string;
+  signal?: AbortSignal;
+}): Promise<HermesProfilesResult> {
+  try {
+    const [listed, activeRaw] = await Promise.all([
+      dashboardGet(opts.url, opts.key, "/api/profiles", opts.signal),
+      dashboardGet(opts.url, opts.key, "/api/profiles/active", opts.signal),
+    ]);
+    const profiles = profilesFromApi(listed);
+    if (!profiles.length) {
+      return { ok: false, error: "Hermes didn’t return any profiles." };
+    }
+    const activeRecord = asRec(activeRaw);
+    const fallback = profiles[0]?.name ?? "default";
+    return {
+      ok: true,
+      state: {
+        active: str(activeRecord.active) || fallback,
+        current: str(activeRecord.current) || fallback,
+        profiles,
+      },
+    };
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes profiles." };
+  }
+}
+
+export async function readHermesProfileSoulDirect(opts: {
+  url: string;
+  key: string;
+  name: string;
+  signal?: AbortSignal;
+}): Promise<HermesProfileSoulResult> {
+  try {
+    const raw = await dashboardGet(
+      opts.url,
+      opts.key,
+      `/api/profiles/${encodeURIComponent(opts.name)}/soul`,
+      opts.signal,
+    );
+    if (!raw) return { ok: false, error: "Couldn’t read this profile’s SOUL." };
+    const record = asRec(raw);
+    return {
+      ok: true,
+      content: typeof record.content === "string" ? record.content : "",
+      exists: record.exists === true,
+    };
+  } catch {
+    return { ok: false, error: "Couldn’t read this profile’s SOUL." };
+  }
+}
+
 export async function readHermesSessionMessagesDirect(opts: {
   url: string;
   key: string;
   sessionId: string;
   signal?: AbortSignal;
+  profile?: string;
 }): Promise<HermesSessionMessagesResult> {
   try {
     const raw = await dashboardGet(
       opts.url,
       opts.key,
-      `/api/sessions/${encodeURIComponent(opts.sessionId)}/messages?limit=50&order=latest`,
+      profiledPath(
+        `/api/sessions/${encodeURIComponent(opts.sessionId)}/messages?limit=50&order=latest`,
+        opts.profile,
+      ),
       opts.signal,
     );
     if (!raw) return { ok: false, error: "Couldn’t read this Hermes session." };
@@ -822,10 +946,11 @@ export async function mutateHermesDirect(
   opts: {
     url: string;
     key: string;
+    profile?: string;
   } & HermesMutation,
 ): Promise<HermesMutationResult> {
   try {
-    const operation = hermesOperationFor(opts);
+    const operation = hermesScopedOperationFor(opts, opts.profile);
     if (operation && opts.action === "webhook-create") {
       const raw = await dashboardSendJson(
         opts.url,

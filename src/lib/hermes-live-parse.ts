@@ -8,6 +8,7 @@ import type {
   HermesMcpRow,
   HermesPairingRow,
   HermesProjectRow,
+  HermesProfileRow,
   HermesSessionRow,
   HermesSessionMessage,
   HermesSkillRow,
@@ -57,11 +58,42 @@ export function asList(value: unknown): unknown[] {
     "channels",
     "pending",
     "projects",
+    "profiles",
     "data",
   ]) {
     if (Array.isArray(rec[key])) return rec[key] as unknown[];
   }
   return [];
+}
+
+export function profilesFromApi(raw: unknown): HermesProfileRow[] {
+  return asList(raw)
+    .map((item) => {
+      const rec = asRec(item);
+      const name = str(rec.name);
+      const skillCount = Number(rec.skill_count);
+      return {
+        name,
+        displayName: str(rec.display_name) || prettyName(name),
+        description: str(rec.description),
+        descriptionAuto: rec.description_auto === true,
+        isDefault: rec.is_default === true || name === "default",
+        model: str(rec.model) || undefined,
+        provider: str(rec.provider) || undefined,
+        skillCount:
+          Number.isFinite(skillCount) && skillCount >= 0 ? skillCount : 0,
+        hasEnv: rec.has_env === true,
+        gatewayRunning: rec.gateway_running === true,
+      } satisfies HermesProfileRow;
+    })
+    .filter((profile) => profile.name)
+    .sort((a, b) =>
+      a.isDefault === b.isDefault
+        ? a.displayName.localeCompare(b.displayName)
+        : a.isDefault
+          ? -1
+          : 1,
+    );
 }
 
 export function str(value: unknown): string {

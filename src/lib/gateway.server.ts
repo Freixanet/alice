@@ -31,6 +31,7 @@ import {
   providerSlug,
   normalizeLlmBaseUrl,
   readSse,
+  scopeHermesGatewayBase,
   unionHermesModels,
   type GatewayPlace,
   type ChatEvent,
@@ -1656,8 +1657,12 @@ export async function streamHermesProxy(opts: {
   endpoints?: StoredEndpoint[];
   signal: AbortSignal;
   place?: GatewayPlace;
+  profile?: string;
 }): Promise<Response> {
-  const base = await resolveHermesBase(opts.url, opts.place);
+  const base = scopeHermesGatewayBase(
+    await resolveHermesBase(opts.url, opts.place),
+    opts.profile,
+  );
   const token = assertGatewayKey(opts.key);
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(180_000)]);
   const custom = matchStoredEndpoint(opts.endpoints, opts.model, opts.provider);
@@ -1774,8 +1779,12 @@ export async function streamHermesSessionProxy(opts: {
   provider?: string;
   signal: AbortSignal;
   place?: GatewayPlace;
+  profile?: string;
 }): Promise<Response> {
-  const base = await resolveHermesBase(opts.url, opts.place);
+  const base = scopeHermesGatewayBase(
+    await resolveHermesBase(opts.url, opts.place),
+    opts.profile,
+  );
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(180_000)]);
   return ndjsonResponse(async (send) => {
     for await (const event of streamHermesSessionChat({
@@ -1801,10 +1810,14 @@ export async function getHermesRunServer(opts: {
   runId: string;
   conversationId?: string;
   signal: AbortSignal;
+  profile?: string;
 }): Promise<HermesRunSnapshot | null> {
   return getHermesRunSnapshot({
     fetch,
-    base: await resolveHermesBase(opts.url, opts.place),
+    base: scopeHermesGatewayBase(
+      await resolveHermesBase(opts.url, opts.place),
+      opts.profile,
+    ),
     token: assertGatewayKey(opts.key),
     runId: opts.runId,
     conversationId: opts.conversationId,
@@ -1822,10 +1835,14 @@ export async function controlHermesRunServer(opts: {
   resolveAll?: boolean;
   input?: string;
   signal: AbortSignal;
+  profile?: string;
 }): Promise<boolean> {
   const common = {
     fetch,
-    base: await resolveHermesBase(opts.url, opts.place),
+    base: scopeHermesGatewayBase(
+      await resolveHermesBase(opts.url, opts.place),
+      opts.profile,
+    ),
     token: assertGatewayKey(opts.key),
     runId: opts.runId,
     signal: opts.signal,

@@ -4,6 +4,7 @@ import { useHermes } from "./store";
 
 export function useHermesLive() {
   const live = useHermes((s) => s.gatewayOn && s.gatewayStatus === "live");
+  const profile = useHermes((s) => s.profile);
   const [data, setData] = useState<HermesLive | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,7 +31,7 @@ export function useHermesLive() {
       setLoading(false);
     });
     return () => ctrl.abort();
-  }, [live]);
+  }, [live, profile]);
 
   return { data, error, loading, setData };
 }

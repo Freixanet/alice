@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { hermesMutationSchema } from "./hermes-operations";
+import {
+  hermesMutationSchema,
+  hermesProfileNameSchema,
+} from "./hermes-operations";
 
 const bounded = (max: number) => z.string().trim().min(1).max(max);
 const optionalBounded = (max: number) => z.string().trim().max(max).optional();
@@ -17,11 +20,25 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
   }),
   action("forget"),
   action("memory"),
-  action("live"),
+  z.strictObject({
+    action: z.literal("live"),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  action("profiles"),
+  z.strictObject({
+    action: z.literal("profile-soul"),
+    name: hermesProfileNameSchema,
+  }),
+  z.strictObject({
+    action: z.literal("mutate"),
+    profile: hermesProfileNameSchema.optional(),
+    mutation: hermesMutationSchema,
+  }),
   action("diagnostics"),
   z.strictObject({
     action: z.literal("session-messages"),
     sessionId: bounded(160),
+    profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
     action: z.literal("models"),
@@ -37,21 +54,25 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
     action: z.literal("run-status"),
     runId: bounded(160),
     conversationId: optionalBounded(128),
+    profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
     action: z.literal("run-stop"),
     runId: bounded(160),
+    profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
     action: z.literal("run-approval"),
     runId: bounded(160),
     choice: z.enum(["once", "session", "always", "deny"]),
     resolveAll: z.boolean().optional(),
+    profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
     action: z.literal("run-steer"),
     runId: bounded(160),
     input: bounded(8_000),
+    profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
     action: z.literal("custom-endpoint"),
@@ -122,6 +143,7 @@ export const chatRequestSchema = z.strictObject({
   conversationId: optionalBounded(128),
   hermesSessionId: bounded(160).optional(),
   preferRuns: z.boolean().optional(),
+  profile: hermesProfileNameSchema.optional(),
 });
 
 export type HermesRequest = z.infer<typeof hermesRequestSchema>;
