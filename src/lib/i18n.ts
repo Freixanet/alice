@@ -5,6 +5,9 @@ export type Locale = "en" | "es";
 const en = {
   "common.yes": "Yes",
   "common.no": "No",
+  "common.delete": "Delete",
+  "common.done": "Done",
+  "common.saving": "Saving…",
 
   "nav.skills": "Skills",
   "nav.skillsHint": "Skills",
@@ -296,6 +299,38 @@ const en = {
   "connect.noDiagnosticPlatforms": "No messaging platforms reported.",
   "connect.refreshDiagnostics": "Refresh diagnostics",
   "connect.webhooks": "Webhooks",
+  "connect.webhookEnable": "Enable webhooks",
+  "connect.webhookPlatformEnabled":
+    "Webhooks enabled. Hermes is restarting the gateway if needed.",
+  "connect.webhookCreate": "Create webhook",
+  "connect.webhookCreateTitle": "Create a webhook",
+  "connect.webhookCreateDescription":
+    "Choose which events Hermes receives and what it should do with them.",
+  "connect.webhookCreatedDescription":
+    "Configure the sending service with this URL and HMAC secret.",
+  "connect.webhookEmpty": "No webhook subscriptions yet.",
+  "connect.webhookAllEvents": "All events",
+  "connect.webhookDeliverTo": "Delivery: {value}",
+  "connect.webhookToggle": "Toggle {name}",
+  "connect.webhookSaved": "Webhook updated in Hermes.",
+  "connect.webhookDeleted": "Webhook deleted from Hermes.",
+  "connect.webhookConfirmDelete": "Delete permanently",
+  "connect.webhookName": "Name",
+  "connect.webhookNameError":
+    "Use lowercase letters, numbers, hyphens, or underscores.",
+  "connect.webhookDescription": "Description",
+  "connect.webhookEvents": "Events, separated by commas",
+  "connect.webhookDeliver": "Delivery destination",
+  "connect.webhookDeliverOnly": "Deliver directly without running the agent",
+  "connect.webhookDeliverError":
+    "Direct delivery needs a real destination, not log.",
+  "connect.webhookChatId": "Destination chat ID (optional)",
+  "connect.webhookPrompt": "Instructions for Alice (optional)",
+  "connect.webhookSkills": "Skills, separated by commas (optional)",
+  "connect.webhookUrl": "Webhook URL",
+  "connect.webhookSecret": "HMAC secret",
+  "connect.webhookSecretOnce":
+    "Copy this secret now. Hermes will not reveal it again.",
   "connect.active": "On",
   "connect.off": "Off",
   "connect.mobileCorsTitle": "Allow Alice on mobile",
@@ -615,6 +650,9 @@ export type MsgKey = keyof typeof en;
 const es: Record<MsgKey, string> = {
   "common.yes": "Sí",
   "common.no": "No",
+  "common.delete": "Eliminar",
+  "common.done": "Listo",
+  "common.saving": "Guardando…",
 
   "nav.skills": "Habilidades",
   "nav.skillsHint": "Skills",
@@ -906,6 +944,38 @@ const es: Record<MsgKey, string> = {
   "connect.noDiagnosticPlatforms": "No se han indicado plataformas.",
   "connect.refreshDiagnostics": "Actualizar diagnóstico",
   "connect.webhooks": "Webhooks",
+  "connect.webhookEnable": "Activar webhooks",
+  "connect.webhookPlatformEnabled":
+    "Webhooks activados. Hermes reiniciará el gateway si hace falta.",
+  "connect.webhookCreate": "Crear webhook",
+  "connect.webhookCreateTitle": "Crear un webhook",
+  "connect.webhookCreateDescription":
+    "Elige qué eventos recibe Hermes y qué debe hacer con ellos.",
+  "connect.webhookCreatedDescription":
+    "Configura el servicio de origen con esta URL y este secreto HMAC.",
+  "connect.webhookEmpty": "Todavía no hay suscripciones webhook.",
+  "connect.webhookAllEvents": "Todos los eventos",
+  "connect.webhookDeliverTo": "Entrega: {value}",
+  "connect.webhookToggle": "Activar o desactivar {name}",
+  "connect.webhookSaved": "Webhook actualizado en Hermes.",
+  "connect.webhookDeleted": "Webhook eliminado de Hermes.",
+  "connect.webhookConfirmDelete": "Eliminar definitivamente",
+  "connect.webhookName": "Nombre",
+  "connect.webhookNameError":
+    "Usa minúsculas, números, guiones o guiones bajos.",
+  "connect.webhookDescription": "Descripción",
+  "connect.webhookEvents": "Eventos, separados por comas",
+  "connect.webhookDeliver": "Destino de entrega",
+  "connect.webhookDeliverOnly": "Entregar directamente sin ejecutar el agente",
+  "connect.webhookDeliverError":
+    "La entrega directa necesita un destino real, no log.",
+  "connect.webhookChatId": "ID del chat de destino (opcional)",
+  "connect.webhookPrompt": "Instrucciones para Alice (opcional)",
+  "connect.webhookSkills": "Skills, separadas por comas (opcional)",
+  "connect.webhookUrl": "URL del webhook",
+  "connect.webhookSecret": "Secreto HMAC",
+  "connect.webhookSecretOnce":
+    "Copia este secreto ahora. Hermes no volverá a mostrarlo.",
   "connect.active": "Activo",
   "connect.off": "Apagado",
   "connect.mobileCorsTitle": "Permitir Alice en el móvil",

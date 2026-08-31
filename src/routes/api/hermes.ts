@@ -329,7 +329,7 @@ export const Route = createFileRoute("/api/hermes")({
           try {
             const { mutateHermesLive } =
               await import("@/lib/hermes-live.server");
-            const ok = await mutateHermesLive(
+            const result = await mutateHermesLive(
               {
                 url: saved.u,
                 key: saved.k,
@@ -342,12 +342,7 @@ export const Route = createFileRoute("/api/hermes")({
               },
               mutation.data,
             );
-            return jsonWithCookie(
-              ok
-                ? { ok: true }
-                : { ok: false, error: "Hermes couldn’t save the change." },
-              ok ? 200 : 502,
-            );
+            return jsonWithCookie(result, result.ok ? 200 : 502);
           } catch {
             return jsonWithCookie(
               { ok: false, error: "Hermes couldn’t save the change." },

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/catalog-page";
 import { HermesDiagnosticsPanel } from "@/components/hermes-diagnostics";
 import { HermesSessionInspector } from "@/components/hermes-session-inspector";
+import { HermesWebhooksPanel } from "@/components/hermes-webhooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -578,6 +579,12 @@ function HermesLiveSections({
     "health_detailed",
   );
   const canManageCurator = advertisesHermesCapability(manifest, "curator");
+  const canManageWebhooks = advertisesHermesCapability(manifest, "webhooks");
+
+  async function refreshLive() {
+    const refreshed = await listHermesLive();
+    if (refreshed.ok) setData(refreshed);
+  }
 
   async function runCuratorAction(mutation: HermesMutation) {
     setCuratorBusy(true);
@@ -1155,30 +1162,12 @@ function HermesLiveSections({
         )}
       </section>
 
-      {webhooks.length > 0 ? (
-        <section className="space-y-3">
-          <h2 className="text-sm font-medium">{t("connect.webhooks")}</h2>
-          <ul className="flex flex-col gap-2">
-            {webhooks.map((hook) => (
-              <li
-                key={hook.name}
-                className="rounded-xl bg-card px-4 py-4 shadow-border"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-medium">{hook.name}</h3>
-                  <Badge variant={hook.enabled ? "live" : "outline"}>
-                    {hook.enabled ? t("connect.active") : t("connect.off")}
-                  </Badge>
-                </div>
-                {hook.event ? (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {hook.event}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
+      {canManageWebhooks ? (
+        <HermesWebhooksPanel
+          state={webhooks}
+          writable={data.writable}
+          onChanged={refreshLive}
+        />
       ) : null}
     </>
   );

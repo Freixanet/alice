@@ -20,6 +20,7 @@ import {
   skillsFromApi,
   str,
   toolsetsFromApi,
+  webhookCreationFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
 
@@ -146,9 +147,30 @@ describe("Hermes cron contract parsing", () => {
     });
     expect(
       webhooksFromApi({
-        subscriptions: [{ name: "deploy", events: ["push"] }],
-      })[0],
-    ).toMatchObject({ name: "deploy", event: "push" });
+        enabled: true,
+        base_url: "http://localhost:8644",
+        subscriptions: [
+          {
+            name: "deploy",
+            events: ["push"],
+            deliver: "telegram",
+            secret_set: true,
+            url: "http://localhost:8644/webhooks/deploy",
+          },
+        ],
+      }),
+    ).toEqual({
+      enabled: true,
+      baseUrl: "http://localhost:8644",
+      subscriptions: [
+        expect.objectContaining({
+          name: "deploy",
+          events: ["push"],
+          deliver: "telegram",
+          secretSet: true,
+        }),
+      ],
+    });
     expect(
       projectFromUnknown({
         id: "project-1",
@@ -179,6 +201,31 @@ describe("Hermes cron contract parsing", () => {
       archiveAfterDays: 90,
     });
     expect(curatorFromApi({ enabled: "yes", paused: false })).toBeNull();
+  });
+
+  it("exposes a webhook secret only from a valid one-time create response", () => {
+    expect(
+      webhookCreationFromApi({
+        secret: "one-time-secret",
+        url: "https://hermes.example/webhooks/push",
+        bearer_token: "must-not-leak",
+      }),
+    ).toEqual({
+      secret: "one-time-secret",
+      url: "https://hermes.example/webhooks/push",
+    });
+    expect(
+      webhookCreationFromApi({
+        secret: "one-time-secret",
+        url: "javascript:alert(1)",
+      }),
+    ).toBeNull();
+    expect(
+      webhookCreationFromApi({
+        secret: "x".repeat(513),
+        url: "https://hermes.example/webhooks/push",
+      }),
+    ).toBeNull();
   });
 
   it("is total for arbitrary Hermes responses", () => {

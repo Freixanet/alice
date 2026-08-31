@@ -134,9 +134,26 @@ export type HermesProjectRow = {
 
 export type HermesWebhookRow = {
   name: string;
+  description: string;
+  events: string[];
+  deliver: string;
+  deliverOnly: boolean;
+  prompt: string;
+  skills: string[];
+  createdAt?: string;
+  url?: string;
+  secretSet: boolean;
   enabled: boolean;
-  event?: string;
 };
+
+export type HermesWebhooksState = {
+  enabled: boolean;
+  baseUrl?: string;
+  subscriptions: HermesWebhookRow[];
+};
+
+export type HermesMutationResult =
+  { ok: true; secret?: string; url?: string } | { ok: false; error: string };
 
 export type HermesCuratorStatus = {
   enabled: boolean;
@@ -162,7 +179,7 @@ export type HermesLive = {
   sessions: HermesSessionRow[];
   pairing: HermesPairingRow[];
   pairingApproved: HermesPairingRow[];
-  webhooks: HermesWebhookRow[];
+  webhooks: HermesWebhooksState;
   projects: HermesProjectRow[];
   curator: HermesCuratorStatus | null;
 };

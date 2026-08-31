@@ -2,9 +2,10 @@ import { authHeaders } from "./auth/client";
 import type {
   HermesDiagnosticsResult,
   HermesLiveResult,
+  HermesMutationResult,
   HermesSessionMessagesResult,
 } from "./hermes-live-types";
-import type { HermesMutation } from "./hermes-operations";
+import { hermesMutationSchema, type HermesMutation } from "./hermes-operations";
 
 export type * from "./hermes-live-types";
 
@@ -46,8 +47,13 @@ export async function listHermesLive(opts?: {
 
 export async function mutateHermes(
   opts: HermesMutation,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<HermesMutationResult> {
   try {
+    const parsed = hermesMutationSchema.safeParse(opts);
+    if (!parsed.success) {
+      return { ok: false, error: "Hermes rejected invalid input." };
+    }
+    opts = parsed.data;
     const { useHermes } = await import("./store");
     const place = useHermes.getState().gatewayPlace;
     if (place === "device") {
@@ -64,8 +70,28 @@ export async function mutateHermes(
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(opts),
     });
-    const data = (await res.json()) as { ok?: boolean; error?: string };
-    return { ok: Boolean(data.ok), error: data.error };
+    const data = (await res.json()) as Record<string, unknown>;
+    if (!data.ok) {
+      return {
+        ok: false,
+        error:
+          typeof data.error === "string"
+            ? data.error
+            : "Hermes couldn’t save the change.",
+      };
+    }
+    if (opts.action === "webhook-create") {
+      const secret = typeof data.secret === "string" ? data.secret : "";
+      const url = typeof data.url === "string" ? data.url : "";
+      if (!secret || !/^https?:\/\//i.test(url)) {
+        return {
+          ok: false,
+          error: "Hermes didn’t return the webhook secret.",
+        };
+      }
+      return { ok: true, secret, url };
+    }
+    return { ok: true };
   } catch {
     return { ok: false, error: "Hermes couldn’t save the change." };
   }

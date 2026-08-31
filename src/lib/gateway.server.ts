@@ -1036,6 +1036,59 @@ export async function hermesDashboardSend(
   method: string,
   body?: unknown,
 ): Promise<boolean> {
+  return hermesDashboardMutate(opts, path, method, body, false);
+}
+
+export async function hermesDashboardSendJson(
+  opts: {
+    url: string;
+    key: string;
+    place?: GatewayPlace;
+    signal?: AbortSignal;
+  },
+  path: string,
+  method: string,
+  body?: unknown,
+): Promise<unknown> {
+  return hermesDashboardMutate(opts, path, method, body, true);
+}
+
+async function hermesDashboardMutate(
+  opts: {
+    url: string;
+    key: string;
+    place?: GatewayPlace;
+    signal?: AbortSignal;
+  },
+  path: string,
+  method: string,
+  body: unknown,
+  parseJson: false,
+): Promise<boolean>;
+async function hermesDashboardMutate(
+  opts: {
+    url: string;
+    key: string;
+    place?: GatewayPlace;
+    signal?: AbortSignal;
+  },
+  path: string,
+  method: string,
+  body: unknown,
+  parseJson: true,
+): Promise<unknown>;
+async function hermesDashboardMutate(
+  opts: {
+    url: string;
+    key: string;
+    place?: GatewayPlace;
+    signal?: AbortSignal;
+  },
+  path: string,
+  method: string,
+  body: unknown,
+  parseJson: boolean,
+): Promise<boolean | unknown> {
   const base = await resolveHermesBase(opts.url, opts.place);
   const token = assertGatewayKey(opts.key);
   const ctrl = opts.signal ?? AbortSignal.timeout(12_000);
@@ -1050,12 +1103,20 @@ export async function hermesDashboardSend(
         redirect: "manual",
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-      if (res.ok) return true;
-    } catch (e) {
-      if ((e as Error).name === "AbortError") throw e;
+      if (!res.ok) continue;
+      if (!parseJson) return true;
+      const text = await res.text();
+      if (!text.trim()) return {};
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        return {};
+      }
+    } catch (error) {
+      if ((error as Error).name === "AbortError") throw error;
     }
   }
-  return false;
+  return parseJson ? null : false;
 }
 
 function idsFromUnknown(value: unknown): string[] {

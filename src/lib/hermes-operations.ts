@@ -5,6 +5,32 @@ const id = z.string().trim().min(1).max(160);
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 const text = (max: number) => z.string().trim().min(1).max(max);
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
+const webhookName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^[a-z0-9][a-z0-9_-]*$/);
+const webhookCreateSchema = z
+  .strictObject({
+    action: z.literal("webhook-create"),
+    name: webhookName,
+    description: optionalText(2_000),
+    events: z.array(text(128)).max(64).optional(),
+    prompt: optionalText(8_000),
+    skills: z.array(name).max(32).optional(),
+    deliver: optionalText(128),
+    deliverOnly: z.boolean().optional(),
+    deliverChatId: optionalText(256),
+  })
+  .refine(
+    (value) =>
+      !value.deliverOnly || Boolean(value.deliver && value.deliver !== "log"),
+    {
+      message: "Direct delivery requires a real destination.",
+      path: ["deliver"],
+    },
+  );
 
 const cronCreateSchema = z
   .strictObject({
@@ -129,6 +155,18 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
   }),
   z.strictObject({ action: z.literal("curator-pause"), paused: z.boolean() }),
   z.strictObject({ action: z.literal("curator-run") }),
+  z.strictObject({ action: z.literal("webhook-enable") }),
+  webhookCreateSchema,
+  z.strictObject({
+    action: z.literal("webhook-toggle"),
+    name: webhookName,
+    enabled: z.boolean(),
+  }),
+  z.strictObject({
+    action: z.literal("webhook-delete"),
+    name: webhookName,
+    confirm: z.literal(true),
+  }),
   z.strictObject({
     action: z.literal("session-create"),
     sessionId: id,
@@ -295,6 +333,31 @@ export function hermesOperationFor(
       };
     case "curator-run":
       return { path: "/api/curator/run", method: "POST" };
+    case "webhook-enable":
+      return { path: "/api/webhooks/enable", method: "POST" };
+    case "webhook-create":
+      return {
+        path: "/api/webhooks",
+        method: "POST",
+        body: {
+          name: input.name,
+          description: input.description,
+          events: input.events,
+          prompt: input.prompt,
+          skills: input.skills,
+          deliver: input.deliver,
+          deliver_only: input.deliverOnly,
+          deliver_chat_id: input.deliverChatId,
+        },
+      };
+    case "webhook-toggle":
+      return {
+        path: `/api/webhooks/${encodedName}/enabled`,
+        method: "PUT",
+        body: { enabled: input.enabled },
+      };
+    case "webhook-delete":
+      return { path: `/api/webhooks/${encodedName}`, method: "DELETE" };
     case "session-create":
       return {
         path: "/api/sessions",

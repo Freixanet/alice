@@ -11,7 +11,7 @@ import type {
   HermesSessionMessage,
   HermesSkillRow,
   HermesToolsetRow,
-  HermesWebhookRow,
+  HermesWebhooksState,
 } from "./hermes-live-types";
 
 const SKILL_GROUPS: Record<string, string> = {
@@ -391,26 +391,50 @@ export function pairingList(value: unknown): HermesPairingRow[] {
     .filter((p) => p.platform);
 }
 
-export function webhooksFromApi(raw: unknown): HermesWebhookRow[] {
-  return asList(raw)
+export function webhooksFromApi(raw: unknown): HermesWebhooksState {
+  const root = asRec(raw);
+  const subscriptions = asList(raw)
     .map((item) => {
       const rec = asRec(item);
       const name = str(rec.name) || str(rec.id);
       const events = Array.isArray(rec.events)
         ? rec.events.map(str).filter(Boolean)
         : [];
+      const skills = Array.isArray(rec.skills)
+        ? rec.skills.map(str).filter(Boolean)
+        : [];
       return {
         name,
+        description: str(rec.description),
+        events,
+        deliver: str(rec.deliver) || "log",
+        deliverOnly: rec.deliver_only === true,
+        prompt: str(rec.prompt),
+        skills,
+        createdAt: stamp(rec.created_at) || undefined,
+        url: /^https?:\/\//i.test(str(rec.url)) ? str(rec.url) : undefined,
+        secretSet: rec.secret_set === true,
         enabled: rec.enabled !== false,
-        event:
-          events.join(", ") ||
-          str(rec.event) ||
-          str(rec.path) ||
-          str(rec.description) ||
-          undefined,
       };
     })
     .filter((w) => w.name);
+  return {
+    enabled: root.enabled === true,
+    baseUrl: /^https?:\/\//i.test(str(root.base_url))
+      ? str(root.base_url)
+      : undefined,
+    subscriptions,
+  };
+}
+
+export function webhookCreationFromApi(
+  raw: unknown,
+): { secret: string; url: string } | null {
+  const row = asRec(raw);
+  const secret = str(row.secret);
+  const url = str(row.url);
+  if (!secret || secret.length > 512 || !/^https?:\/\//i.test(url)) return null;
+  return { secret, url: url.slice(0, 2_048) };
 }
 
 export function curatorFromApi(raw: unknown): HermesCuratorStatus | null {

@@ -5,6 +5,7 @@ import {
   getHermesHomeDir,
   hermesDashboardGet,
   hermesDashboardSend,
+  hermesDashboardSendJson,
 } from "./gateway.server";
 import type { GatewayPlace } from "./gateway";
 import type {
@@ -12,6 +13,7 @@ import type {
   HermesCronRow,
   HermesDiagnosticsResult,
   HermesLive,
+  HermesMutationResult,
   HermesMcpRow,
   HermesPairingRow,
   HermesProjectRow,
@@ -19,7 +21,6 @@ import type {
   HermesSessionMessagesResult,
   HermesSkillRow,
   HermesToolsetRow,
-  HermesWebhookRow,
 } from "./hermes-live";
 import {
   asList,
@@ -40,6 +41,7 @@ import {
   skillsFromApi,
   str,
   toolsetsFromApi,
+  webhookCreationFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
 import { hermesOperationFor, type HermesMutation } from "./hermes-operations";
@@ -357,7 +359,10 @@ export async function fetchHermesLive(opts?: {
   let sessions: HermesSessionRow[] = [];
   let pairing: HermesPairingRow[] = [];
   let pairingApproved: HermesPairingRow[] = [];
-  let webhooks: HermesWebhookRow[] = [];
+  let webhooks: HermesLive["webhooks"] = {
+    enabled: false,
+    subscriptions: [],
+  };
   let curator: HermesLive["curator"] = null;
 
   if (gate) {
@@ -463,26 +468,44 @@ export async function mutateHermesLive(
     local?: boolean;
   },
   mutation: HermesMutation,
-): Promise<boolean> {
+): Promise<HermesMutationResult> {
   const operation = hermesOperationFor(mutation);
   if (operation) {
-    return hermesDashboardSend(
+    if (mutation.action === "webhook-create") {
+      const raw = await hermesDashboardSendJson(
+        opts,
+        operation.path,
+        operation.method,
+        operation.body,
+      );
+      const created = webhookCreationFromApi(raw);
+      return created
+        ? { ok: true, ...created }
+        : { ok: false, error: "Hermes didn’t return the webhook secret." };
+    }
+    const ok = await hermesDashboardSend(
       opts,
       operation.path,
       operation.method,
       operation.body,
     );
+    return ok
+      ? { ok: true }
+      : { ok: false, error: "Hermes couldn’t save the change." };
   }
   if (mutation.action === "project-create") {
     if (opts.local) {
-      return createProjectLocally({
+      const ok = await createProjectLocally({
         name: mutation.name,
         path: mutation.path,
         description: mutation.description,
       });
+      return ok
+        ? { ok: true }
+        : { ok: false, error: "Hermes couldn’t save the change." };
     }
   }
-  return false;
+  return { ok: false, error: "Hermes couldn’t save the change." };
 }
 
 async function createProjectLocally(body: {

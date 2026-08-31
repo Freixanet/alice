@@ -21,6 +21,7 @@ import type {
   HermesDiagnosticsResult,
   HermesLive,
   HermesLiveResult,
+  HermesMutationResult,
   HermesSessionMessagesResult,
 } from "./hermes-live-types";
 import { authHeaders } from "./auth/client";
@@ -49,6 +50,7 @@ import {
   skillsFromApi,
   str,
   toolsetsFromApi,
+  webhookCreationFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
 
@@ -641,6 +643,43 @@ async function dashboardSend(
   method: string,
   body?: unknown,
 ): Promise<boolean> {
+  return dashboardMutate(url, key, path, method, body, false);
+}
+
+async function dashboardSendJson(
+  url: string,
+  key: string,
+  path: string,
+  method: string,
+  body?: unknown,
+): Promise<unknown> {
+  return dashboardMutate(url, key, path, method, body, true);
+}
+
+async function dashboardMutate(
+  url: string,
+  key: string,
+  path: string,
+  method: string,
+  body: unknown,
+  parseJson: false,
+): Promise<boolean>;
+async function dashboardMutate(
+  url: string,
+  key: string,
+  path: string,
+  method: string,
+  body: unknown,
+  parseJson: true,
+): Promise<unknown>;
+async function dashboardMutate(
+  url: string,
+  key: string,
+  path: string,
+  method: string,
+  body: unknown,
+  parseJson: boolean,
+): Promise<boolean | unknown> {
   const token = assertGatewayKey(key);
   const ctrl = AbortSignal.timeout(12_000);
   const hdrs = headers(token, { "Content-Type": "application/json" });
@@ -654,12 +693,20 @@ async function dashboardSend(
         redirect: "manual",
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-      if (res.ok) return true;
-    } catch (e) {
-      if ((e as Error).name === "AbortError") throw e;
+      if (!res.ok) continue;
+      if (!parseJson) return true;
+      const text = await res.text();
+      if (!text.trim()) return {};
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        return {};
+      }
+    } catch (error) {
+      if ((error as Error).name === "AbortError") throw error;
     }
   }
-  return false;
+  return parseJson ? null : false;
 }
 
 export async function listHermesLiveDirect(opts: {
@@ -775,9 +822,22 @@ export async function mutateHermesDirect(
     url: string;
     key: string;
   } & HermesMutation,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<HermesMutationResult> {
   try {
     const operation = hermesOperationFor(opts);
+    if (operation && opts.action === "webhook-create") {
+      const raw = await dashboardSendJson(
+        opts.url,
+        opts.key,
+        operation.path,
+        operation.method,
+        operation.body,
+      );
+      const created = webhookCreationFromApi(raw);
+      return created
+        ? { ok: true, ...created }
+        : { ok: false, error: "Hermes didn’t return the webhook secret." };
+    }
     const ok = operation
       ? await dashboardSend(
           opts.url,

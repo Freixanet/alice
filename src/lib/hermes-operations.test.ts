@@ -89,6 +89,7 @@ describe("official Hermes management operations", () => {
       { action: "skill-uninstall", name: "one" },
       { action: "mcp-delete", name: "one" },
       { action: "session-delete", sessionId: "one" },
+      { action: "webhook-delete", name: "one" },
     ]) {
       expect(hermesMutationSchema.safeParse(value).success).toBe(false);
       expect(
@@ -139,6 +140,78 @@ describe("official Hermes management operations", () => {
       path: "/api/curator/run",
       method: "POST",
     });
+  });
+
+  it("maps the complete webhook lifecycle to the official admin routes", () => {
+    expect(hermesOperationFor({ action: "webhook-enable" })).toEqual({
+      path: "/api/webhooks/enable",
+      method: "POST",
+    });
+    expect(
+      hermesOperationFor({
+        action: "webhook-create",
+        name: "github-push",
+        description: "Repository pushes",
+        events: ["push"],
+        deliver: "telegram",
+        deliverOnly: true,
+        deliverChatId: "chat-1",
+      }),
+    ).toEqual({
+      path: "/api/webhooks",
+      method: "POST",
+      body: {
+        name: "github-push",
+        description: "Repository pushes",
+        events: ["push"],
+        prompt: undefined,
+        skills: undefined,
+        deliver: "telegram",
+        deliver_only: true,
+        deliver_chat_id: "chat-1",
+      },
+    });
+    expect(
+      hermesOperationFor({
+        action: "webhook-toggle",
+        name: "github-push",
+        enabled: false,
+      }),
+    ).toEqual({
+      path: "/api/webhooks/github-push/enabled",
+      method: "PUT",
+      body: { enabled: false },
+    });
+    expect(
+      hermesOperationFor({
+        action: "webhook-delete",
+        name: "github-push",
+        confirm: true,
+      }),
+    ).toEqual({
+      path: "/api/webhooks/github-push",
+      method: "DELETE",
+    });
+  });
+
+  it("rejects invalid webhook names and unsafe direct-delivery drafts", () => {
+    for (const value of [
+      { action: "webhook-create", name: "Uppercase" },
+      { action: "webhook-create", name: "has spaces" },
+      {
+        action: "webhook-create",
+        name: "alerts",
+        deliver: "log",
+        deliverOnly: true,
+      },
+      {
+        action: "webhook-create",
+        name: "alerts",
+        events: Array.from({ length: 65 }, (_, index) => `event-${index}`),
+      },
+    ]) {
+      expect(hermesMutationSchema.safeParse(value).success).toBe(false);
+    }
   });
 
   it("maps negotiated session controls to their scoped official routes", () => {
