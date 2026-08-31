@@ -11,7 +11,7 @@ beforeAll(async () => {
   sql = await (await import("./db")).getSql();
   ({ pushEncryptedSyncRecords: push, pullEncryptedSyncRecords: pull } =
     await import("./sync-store.server"));
-});
+}, 30_000);
 
 function record(
   id: string,

@@ -120,6 +120,7 @@ export const chatRequestSchema = z.strictObject({
   model: optionalBounded(256),
   provider: optionalBounded(128),
   conversationId: optionalBounded(128),
+  hermesSessionId: bounded(160).optional(),
   preferRuns: z.boolean().optional(),
 });
 

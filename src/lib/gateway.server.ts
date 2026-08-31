@@ -53,6 +53,7 @@ import {
   streamStartedHermesRun,
 } from "./hermes-run-transport";
 import type { HermesRunSnapshot } from "./hermes-runs";
+import { streamHermesSessionChat } from "./hermes-session-chat-transport";
 
 const execFileAsync = promisify(execFile);
 
@@ -1698,6 +1699,36 @@ export async function streamHermesProxy(opts: {
         type: "error",
         message: "Hermes sent no text. Try again or switch models.",
       });
+    }
+  });
+}
+
+export async function streamHermesSessionProxy(opts: {
+  url: string;
+  key: string;
+  sessionId: string;
+  message: HermesChatContent;
+  conversationId?: string;
+  model?: string;
+  provider?: string;
+  signal: AbortSignal;
+  place?: GatewayPlace;
+}): Promise<Response> {
+  const base = await resolveHermesBase(opts.url, opts.place);
+  const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(180_000)]);
+  return ndjsonResponse(async (send) => {
+    for await (const event of streamHermesSessionChat({
+      fetch,
+      base,
+      token: assertGatewayKey(opts.key),
+      sessionId: opts.sessionId,
+      message: opts.message,
+      conversationId: opts.conversationId,
+      model: opts.model,
+      provider: opts.provider,
+      signal,
+    })) {
+      send(event);
     }
   });
 }

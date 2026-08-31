@@ -79,6 +79,8 @@ const en = {
   "chat.noModels": "No models in Hermes",
   "chat.useModel": "Use {model}",
   "chat.noReply": "No reply.",
+  "chat.sessionUnavailable":
+    "This Hermes can’t continue stored sessions. Update Hermes or start a new chat.",
   "chat.welcomeTitle": "Welcome",
   "chat.newTitle": "New chat",
 
@@ -245,6 +247,8 @@ const en = {
   "connect.lockModel": "Lock current model",
   "connect.sessionSaved": "Session updated in Hermes.",
   "connect.sessionError": "Hermes couldn’t update this session.",
+  "connect.continueSession": "Continue in Alice",
+  "connect.continuingSession": "Opening…",
   "connect.newSession": "New session",
   "connect.sessionTitle": "Session name",
   "connect.createSession": "Create",
@@ -673,6 +677,8 @@ const es: Record<MsgKey, string> = {
   "chat.noModels": "Ningún modelo en Hermes",
   "chat.useModel": "Usar {model}",
   "chat.noReply": "Sin respuesta.",
+  "chat.sessionUnavailable":
+    "Este Hermes no puede continuar sesiones guardadas. Actualiza Hermes o inicia un chat nuevo.",
   "chat.welcomeTitle": "Bienvenida",
   "chat.newTitle": "Nuevo chat",
 
@@ -839,6 +845,8 @@ const es: Record<MsgKey, string> = {
   "connect.lockModel": "Fijar modelo actual",
   "connect.sessionSaved": "Sesión actualizada en Hermes.",
   "connect.sessionError": "Hermes no ha podido actualizar esta sesión.",
+  "connect.continueSession": "Continuar en Alice",
+  "connect.continuingSession": "Abriendo…",
   "connect.newSession": "Nueva sesión",
   "connect.sessionTitle": "Nombre de la sesión",
   "connect.createSession": "Crear",

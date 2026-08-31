@@ -33,6 +33,7 @@ import {
 } from "./hermes-run-transport";
 import type { HermesApprovalChoice } from "./gateway-contracts";
 import type { HermesRunSnapshot } from "./hermes-runs";
+import { streamHermesSessionChat } from "./hermes-session-chat-transport";
 import {
   asRec,
   channelsFromApi,
@@ -423,6 +424,35 @@ export async function* streamHermesDirect(opts: {
       type: "error",
       message: "Hermes sent no text. Try again or switch models.",
     };
+  }
+}
+
+export async function* streamHermesSessionDirect(opts: {
+  url: string;
+  key: string;
+  sessionId: string;
+  message: HermesChatContent;
+  conversationId?: string;
+  model?: string;
+  provider?: string;
+  signal: AbortSignal;
+}): AsyncGenerator<ChatEvent> {
+  const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(180_000)]);
+  try {
+    yield* streamHermesSessionChat({
+      fetch,
+      base: normalizeGatewayUrl(opts.url),
+      token: assertGatewayKey(opts.key),
+      sessionId: opts.sessionId,
+      message: opts.message,
+      conversationId: opts.conversationId,
+      model: opts.model,
+      provider: opts.provider,
+      signal,
+    });
+  } catch (error) {
+    if ((error as Error).name === "AbortError") return;
+    yield { type: "error", message: CORS_ERROR };
   }
 }
 

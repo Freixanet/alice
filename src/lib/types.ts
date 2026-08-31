@@ -152,6 +152,7 @@ export interface Conversation {
   updatedAt: number;
   messages: Message[];
   pinned?: boolean;
+  hermesSessionId?: string;
 }
 
 export interface Approval {

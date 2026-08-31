@@ -36,6 +36,10 @@ import {
 } from "./auth/cockpit-user";
 import { uid } from "./utils";
 import { createHybridStorage } from "./hybrid-storage";
+import {
+  importHermesSessionConversation,
+  type HermesSessionImport,
+} from "./hermes-session-conversation";
 
 const welcomeId = "welcome";
 const freshId = "fresh";
@@ -128,6 +132,7 @@ interface HermesState {
   isPinned: (id: string) => boolean;
   setDraft: (v: string) => void;
   newChat: () => string;
+  importHermesSession: (payload: HermesSessionImport) => string;
   selectChat: (id: string) => void;
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
@@ -292,6 +297,16 @@ export const useHermes = create<HermesState>()(
           composerDraft: "",
         });
         return id;
+      },
+      importHermesSession: (payload) => {
+        const imported = importHermesSessionConversation(
+          get().conversations,
+          payload,
+          uid,
+          Date.now(),
+        );
+        set({ ...imported, composerDraft: "" });
+        return imported.activeId;
       },
       selectChat: (id) => set({ activeId: id }),
       deleteChat: (id) => {
@@ -518,7 +533,7 @@ export const useHermes = create<HermesState>()(
         }),
       ),
       skipHydration: true,
-      version: 8,
+      version: 9,
       migrate: (persisted) => {
         if (persisted && typeof persisted === "object") {
           const next = { ...(persisted as Record<string, unknown>) };
@@ -558,6 +573,22 @@ export const useHermes = create<HermesState>()(
             Array.isArray(next.conversationTombstones)
           ) {
             next.conversationTombstones = {};
+          }
+          if (Array.isArray(next.conversations)) {
+            next.conversations = next.conversations.map((value) => {
+              if (!value || typeof value !== "object" || Array.isArray(value)) {
+                return value;
+              }
+              const conversation = { ...(value as Record<string, unknown>) };
+              if (
+                typeof conversation.hermesSessionId !== "string" ||
+                !conversation.hermesSessionId.trim() ||
+                conversation.hermesSessionId.length > 160
+              ) {
+                delete conversation.hermesSessionId;
+              }
+              return conversation;
+            });
           }
           if (
             next.accent !== "stone" &&

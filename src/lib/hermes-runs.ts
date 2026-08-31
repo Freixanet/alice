@@ -104,6 +104,10 @@ export function eventsFromHermesRunValue(value: unknown): ChatEvent[] {
   const runId = bounded(record.run_id, 160);
   if (!event || !runId) return [];
 
+  if (event === "run.started") {
+    return [{ type: "run", runId, status: "running" }];
+  }
+
   if (event === "message.delta" || event === "assistant.delta") {
     const text = limitedText(record.delta, 1_000_000);
     return text ? [{ type: "delta", text }] : [];

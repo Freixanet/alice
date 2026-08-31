@@ -126,6 +126,7 @@ describe("chat API contracts", () => {
           },
         ],
         preferRuns: true,
+        hermesSessionId: "session-1",
       }).success,
     ).toBe(true);
   });
@@ -150,6 +151,24 @@ describe("chat API contracts", () => {
           },
         ],
       }).success,
+    ).toBe(false);
+  });
+
+  it("rejects empty, oversized, and unknown session chat fields", () => {
+    const request = {
+      messages: [{ role: "user", content: "hello" }],
+    };
+    expect(
+      chatRequestSchema.safeParse({ ...request, hermesSessionId: "" }).success,
+    ).toBe(false);
+    expect(
+      chatRequestSchema.safeParse({
+        ...request,
+        hermesSessionId: "s".repeat(161),
+      }).success,
+    ).toBe(false);
+    expect(
+      chatRequestSchema.safeParse({ ...request, session: "session-1" }).success,
     ).toBe(false);
   });
 });

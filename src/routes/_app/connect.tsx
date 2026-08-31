@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/catalog-page";
 import { HermesDiagnosticsPanel } from "@/components/hermes-diagnostics";
@@ -17,7 +17,11 @@ import {
   type ProbeCode,
 } from "@/lib/gateway";
 import { probeGateway } from "@/lib/hermes-client";
-import { listHermesLive, mutateHermes } from "@/lib/hermes-live";
+import {
+  listHermesLive,
+  mutateHermes,
+  readHermesSessionMessages,
+} from "@/lib/hermes-live";
 import type { HermesMutation } from "@/lib/hermes-operations";
 import { authHeaders } from "@/lib/auth/client";
 import { advertisesHermesCapability } from "@/lib/gateway-contracts";
@@ -502,9 +506,11 @@ function HermesLiveSections({
 }) {
   const t = useT();
   const locale = useLocale();
+  const navigate = useNavigate();
   const model = useHermes((state) => state.model);
   const provider = useHermes((state) => state.modelProvider);
   const manifest = useHermes((state) => state.gatewayMeta?.manifest);
+  const importHermesSession = useHermes((state) => state.importHermesSession);
   const [sessionBusy, setSessionBusy] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
@@ -559,6 +565,9 @@ function HermesLiveSections({
     manifest,
     "session_messages",
   );
+  const canContinueSessions =
+    canReadSessionMessages &&
+    advertisesHermesCapability(manifest, "session_chat_stream");
   const canManagePairing = advertisesHermesCapability(manifest, "pairing");
   const canReadDiagnostics = advertisesHermesCapability(
     manifest,
@@ -611,6 +620,25 @@ function HermesLiveSections({
     setSessionNotice(t("connect.sessionSaved"));
     setSessionBusy(null);
     return true;
+  }
+
+  async function continueSession(session: (typeof sessions)[number]) {
+    setSessionBusy(`continue:${session.id}`);
+    setSessionError(null);
+    setSessionNotice(null);
+    const result = await readHermesSessionMessages({ sessionId: session.id });
+    if (!result.ok) {
+      setSessionError(localizeError(locale, result.error));
+      setSessionBusy(null);
+      return;
+    }
+    importHermesSession({
+      sessionId: result.sessionId,
+      title: session.title || session.id,
+      messages: result.messages,
+    });
+    setSessionBusy(null);
+    await navigate({ to: "/" });
   }
 
   return (
@@ -874,12 +902,25 @@ function HermesLiveSections({
                     ? ` · ${formatStamp(locale, session.updatedAt)}`
                     : ""}
                 </p>
-                {canForkSessions ||
+                {canContinueSessions ||
+                canForkSessions ||
                 canLockSessionModel ||
                 canUpdateSessions ||
                 canDeleteSessions ||
                 canReadSessionMessages ? (
                   <div className="mt-3 flex flex-wrap gap-2">
+                    {canContinueSessions ? (
+                      <Button
+                        size="sm"
+                        className="min-h-11 md:min-h-8"
+                        disabled={sessionBusy !== null}
+                        onClick={() => void continueSession(session)}
+                      >
+                        {sessionBusy === `continue:${session.id}`
+                          ? t("connect.continuingSession")
+                          : t("connect.continueSession")}
+                      </Button>
+                    ) : null}
                     {canForkSessions ? (
                       <Button
                         variant="outline"

@@ -8,7 +8,7 @@ beforeAll(async () => {
   process.env.ALICE_PGLITE_MEMORY = "1";
   sql = await (await import("./db")).getSql();
   ({ consumeSharedRateLimit: consume } = await import("./rate-limit.server"));
-});
+}, 30_000);
 
 describe("shared rate-limit persistence", () => {
   it("atomically limits concurrent requests in the real database", async () => {

@@ -34,7 +34,11 @@ import {
   listHermesModels,
   setHermesModel,
 } from "@/lib/hermes-client";
-import { getDeviceSessionKey, streamHermesDirect } from "@/lib/hermes-direct";
+import {
+  getDeviceSessionKey,
+  streamHermesDirect,
+  streamHermesSessionDirect,
+} from "@/lib/hermes-direct";
 import { authHeaders } from "@/lib/auth/client";
 import { matchSlash } from "@/lib/slash";
 import { displayMessageContent, slashHint, t as tr } from "@/lib/i18n";
@@ -42,6 +46,7 @@ import { useLocale, useT } from "@/lib/use-i18n";
 import { useHermes } from "@/lib/store";
 import type { Attachment, Message } from "@/lib/types";
 import type { HermesApprovalChoice } from "@/lib/gateway-contracts";
+import { advertisesHermesCapability } from "@/lib/gateway-contracts";
 import {
   reduceChatStreamEvent,
   type ChatStreamAccumulator,
@@ -95,6 +100,11 @@ export function ChatView() {
   const conv = conversations.find((c) => c.id === activeId) ?? conversations[0];
   const slash = matchSlash(draft);
   const live = gatewayOn && gatewayStatus === "live";
+  const sessionBound = Boolean(conv?.hermesSessionId);
+  const supportsSessionChat = advertisesHermesCapability(
+    gatewayMeta?.manifest,
+    "session_chat_stream",
+  );
   const supportsRuns =
     gatewayMeta?.manifest?.capabilities["chat.runs"] === true &&
     gatewayMeta.manifest.capabilities["chat.cancel"] === true &&
@@ -188,6 +198,7 @@ export function ChatView() {
     }
     if (text === "/retry") {
       setDraft("");
+      if (sessionBound) return;
       const last = [...conv.messages]
         .reverse()
         .find((m) => m.role === "assistant" && !m.pending);
@@ -216,7 +227,7 @@ export function ChatView() {
   }
 
   async function retry(assistantId: string) {
-    if (sending || !conv) return;
+    if (sending || !conv || conv.hermesSessionId) return;
     const latest =
       useHermes.getState().conversations.find((c) => c.id === conv.id) ?? conv;
     const idx = latest.messages.findIndex((m) => m.id === assistantId);
@@ -289,6 +300,11 @@ export function ChatView() {
           ? Boolean(message.content.trim())
           : message.content.length > 0,
       );
+    const hermesSessionId = useHermes
+      .getState()
+      .conversations.find(
+        (conversation) => conversation.id === conversationId,
+      )?.hermesSessionId;
     const fail = (message: string) => {
       patchMessage(conversationId, assistantId, {
         pending: false,
@@ -298,6 +314,10 @@ export function ChatView() {
       });
     };
     try {
+      if (hermesSessionId && !supportsSessionChat) {
+        fail(tr(locale, "chat.sessionUnavailable"));
+        return;
+      }
       const apply = (ev: ChatEvent, acc: ChatStreamAccumulator) => {
         const result = reduceChatStreamEvent(acc, ev);
         patchMessage(conversationId, assistantId, result.patch);
@@ -331,16 +351,37 @@ export function ChatView() {
           fail(tr("en", "error.connectDevice"));
           return;
         }
-        for await (const ev of streamHermesDirect({
-          url: gatewayUrl,
-          key,
-          conversationId,
-          model,
-          provider,
-          preferRuns: supportsRuns,
-          messages: payload,
-          signal: ctrl.signal,
-        })) {
+        const latestUser = [...payload]
+          .reverse()
+          .find((message) => message.role === "user");
+        const stream = hermesSessionId
+          ? latestUser
+            ? streamHermesSessionDirect({
+                url: gatewayUrl,
+                key,
+                sessionId: hermesSessionId,
+                message: latestUser.content,
+                conversationId,
+                model,
+                provider,
+                signal: ctrl.signal,
+              })
+            : null
+          : streamHermesDirect({
+              url: gatewayUrl,
+              key,
+              conversationId,
+              model,
+              provider,
+              preferRuns: supportsRuns,
+              messages: payload,
+              signal: ctrl.signal,
+            });
+        if (!stream) {
+          fail(tr(locale, "error.noReply"));
+          return;
+        }
+        for await (const ev of stream) {
           if (apply(ev, acc) === "stop") return;
         }
         finish();
@@ -351,6 +392,7 @@ export function ChatView() {
           signal: ctrl.signal,
           body: JSON.stringify({
             conversationId,
+            ...(hermesSessionId ? { hermesSessionId } : {}),
             model,
             provider,
             preferRuns: supportsRuns,
@@ -547,6 +589,7 @@ export function ChatView() {
               const canTryAgain =
                 m.role === "assistant" &&
                 !m.pending &&
+                !conv.hermesSessionId &&
                 conv.messages.slice(0, i).some((msg) => msg.role === "user");
               return (
                 <article

@@ -8,6 +8,7 @@ import {
   ndjsonResponse,
   resolveAliceGate,
   streamHermesProxy,
+  streamHermesSessionProxy,
 } from "@/lib/gateway.server";
 import { chatRequestSchema } from "@/lib/api-contracts";
 import {
@@ -78,6 +79,25 @@ export const Route = createFileRoute("/api/chat")({
 
         if (gate?.u && gate.k) {
           try {
+            if (body.hermesSessionId) {
+              const latestUser = [...clean]
+                .reverse()
+                .find((message) => message.role === "user");
+              if (!latestUser) {
+                return Response.json({ error: "empty" }, { status: 400 });
+              }
+              return await streamHermesSessionProxy({
+                url: gate.u,
+                key: gate.k,
+                sessionId: body.hermesSessionId,
+                message: latestUser.content,
+                conversationId: body.conversationId,
+                model: body.model,
+                provider: body.provider,
+                signal: request.signal,
+                place: gate.p,
+              });
+            }
             return await streamHermesProxy({
               url: gate.u,
               key: gate.k,
