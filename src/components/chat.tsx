@@ -90,7 +90,6 @@ export function ChatView() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<HTMLInputElement>(null);
-  const modelSearchRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const t = useT();
   const locale = useLocale();
@@ -884,7 +883,6 @@ export function ChatView() {
                   setModelsOpen(open);
                   if (open) {
                     setAttachOpen(false);
-                    window.setTimeout(() => modelSearchRef.current?.focus(), 0);
                   }
                 }}
               >
@@ -912,7 +910,6 @@ export function ChatView() {
                     <>
                       <div className="min-w-0 px-1 pb-1 pt-2">
                         <Input
-                          ref={modelSearchRef}
                           value={modelQuery}
                           onChange={(e) => setModelQuery(e.target.value)}
                           onKeyDown={(e) => {
