@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/catalog-page";
 import { HermesDiagnosticsPanel } from "@/components/hermes-diagnostics";
+import { HermesChannelsPanel } from "@/components/hermes-channels";
 import { HermesSessionInspector } from "@/components/hermes-session-inspector";
 import { HermesWebhooksPanel } from "@/components/hermes-webhooks";
 import { Badge } from "@/components/ui/badge";
@@ -27,12 +28,7 @@ import type { HermesMutation } from "@/lib/hermes-operations";
 import { authHeaders } from "@/lib/auth/client";
 import { advertisesHermesCapability } from "@/lib/gateway-contracts";
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
-import {
-  dateLocale,
-  localizeError,
-  type Locale,
-  type MsgKey,
-} from "@/lib/i18n";
+import { dateLocale, localizeError, type Locale } from "@/lib/i18n";
 import { useHermesLive } from "@/lib/use-hermes-live";
 import { useLocale, useT } from "@/lib/use-i18n";
 import { useHermes } from "@/lib/store";
@@ -574,6 +570,7 @@ function HermesLiveSections({
     canReadSessionMessages &&
     advertisesHermesCapability(manifest, "session_chat_stream");
   const canManagePairing = advertisesHermesCapability(manifest, "pairing");
+  const canManageChannels = advertisesHermesCapability(manifest, "channels");
   const canReadDiagnostics = advertisesHermesCapability(
     manifest,
     "health_detailed",
@@ -776,40 +773,11 @@ function HermesLiveSections({
         </section>
       ) : null}
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium">{t("connect.channels")}</h2>
-        {channels.length === 0 ? (
-          <div className="rounded-xl bg-card px-4 py-8 text-center text-sm text-muted-foreground shadow-border">
-            {t("connect.noChannels")}
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {channels.map((channel) => (
-              <li
-                key={channel.id}
-                className="rounded-xl bg-card px-4 py-4 shadow-border"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-medium">{channel.name}</h3>
-                  <Badge variant={channel.enabled ? "live" : "outline"}>
-                    {channelLabel(t, channel.state)}
-                  </Badge>
-                </div>
-                {channel.description ? (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {channel.description}
-                  </p>
-                ) : null}
-                {channel.error ? (
-                  <p className="mt-1 text-sm text-destructive">
-                    {localizeError(locale, channel.error)}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <HermesChannelsPanel
+        channels={channels}
+        writable={data.writable && canManageChannels}
+        onChanged={refreshLive}
+      />
 
       {pending.length > 0 || approved.length > 0 ? (
         <section className="space-y-3">
@@ -1171,25 +1139,6 @@ function HermesLiveSections({
       ) : null}
     </>
   );
-}
-
-function channelLabel(t: ReturnType<typeof useT>, state: string) {
-  const map: Record<string, MsgKey> = {
-    connected: "channel.connected",
-    disabled: "channel.disabled",
-    not_configured: "channel.not_configured",
-    pending_restart: "channel.pending_restart",
-    gateway_stopped: "channel.gateway_stopped",
-    startup_failed: "channel.startup_failed",
-    disconnected: "channel.disconnected",
-    fatal: "channel.fatal",
-    "en config": "channel.config",
-    "en tareas": "channel.jobs",
-    activo: "channel.on",
-    apagado: "channel.off",
-  };
-  const key = map[state];
-  return key ? t(key) : state;
 }
 
 function prettyPlatform(id: string) {

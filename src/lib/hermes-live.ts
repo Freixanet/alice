@@ -91,6 +91,33 @@ export async function mutateHermes(
       }
       return { ok: true, secret, url };
     }
+    if (opts.action === "channel-test") {
+      const test =
+        data.channelTest && typeof data.channelTest === "object"
+          ? (data.channelTest as Record<string, unknown>)
+          : null;
+      if (
+        !test ||
+        typeof test.ok !== "boolean" ||
+        typeof test.message !== "string"
+      ) {
+        return {
+          ok: false,
+          error: "Hermes didn’t return a channel test result.",
+        };
+      }
+      return {
+        ok: true,
+        channelTest: {
+          ok: test.ok,
+          message: test.message.slice(0, 2_000),
+          state:
+            typeof test.state === "string"
+              ? test.state.slice(0, 128)
+              : undefined,
+        },
+      };
+    }
     return { ok: true };
   } catch {
     return { ok: false, error: "Hermes couldn’t save the change." };

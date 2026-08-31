@@ -3,6 +3,7 @@ import fc from "fast-check";
 import {
   asList,
   asRec,
+  channelTestFromApi,
   channelsFromApi,
   cronDeliveryTargetsFromApi,
   cronFromApi,
@@ -110,9 +111,53 @@ describe("Hermes cron contract parsing", () => {
     ).toHaveLength(1);
     expect(
       channelsFromApi({
-        platforms: [{ id: "telegram", enabled: true, configured: true }],
+        platforms: [
+          {
+            id: "telegram",
+            enabled: true,
+            configured: true,
+            gateway_running: true,
+            env_vars: [
+              {
+                key: "TELEGRAM_BOT_TOKEN",
+                required: true,
+                is_set: true,
+                redacted_value: "••••1234",
+                value: "must-not-leak",
+                is_password: true,
+              },
+            ],
+          },
+        ],
       })[0],
-    ).toMatchObject({ id: "telegram", state: "activo" });
+    ).toMatchObject({
+      id: "telegram",
+      state: "activo",
+      gatewayRunning: true,
+      envVars: [
+        {
+          key: "TELEGRAM_BOT_TOKEN",
+          isSet: true,
+          redactedValue: "••••1234",
+          isPassword: true,
+        },
+      ],
+    });
+    expect(
+      JSON.stringify(
+        channelsFromApi({
+          platforms: [
+            {
+              id: "telegram",
+              env_vars: [{ key: "TELEGRAM_BOT_TOKEN", value: "must-not-leak" }],
+            },
+          ],
+        }),
+      ),
+    ).not.toContain("must-not-leak");
+    expect(
+      channelTestFromApi({ ok: false, state: "disconnected", message: "No" }),
+    ).toEqual({ ok: false, state: "disconnected", message: "No" });
     expect(
       sessionsFromApi({
         sessions: [

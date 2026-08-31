@@ -5,6 +5,12 @@ const id = z.string().trim().min(1).max(160);
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 const text = (max: number) => z.string().trim().min(1).max(max);
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
+const platformId = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
 const webhookName = z
   .string()
   .trim()
@@ -30,6 +36,26 @@ const webhookCreateSchema = z
       message: "Direct delivery requires a real destination.",
       path: ["deliver"],
     },
+  );
+const channelUpdateSchema = z
+  .strictObject({
+    action: z.literal("channel-update"),
+    platformId,
+    enabled: z.boolean().optional(),
+    env: z.record(envName, text(8_192)).optional(),
+    clearEnv: z.array(envName).max(64).optional(),
+  })
+  .refine(
+    (value) =>
+      value.enabled !== undefined ||
+      Boolean(Object.keys(value.env ?? {}).length) ||
+      Boolean(value.clearEnv?.length),
+    { message: "At least one channel change is required." },
+  )
+  .refine(
+    (value) =>
+      !value.clearEnv?.some((key) => Object.hasOwn(value.env ?? {}, key)),
+    { message: "A variable cannot be set and cleared together." },
   );
 
 const cronCreateSchema = z
@@ -155,6 +181,8 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
   }),
   z.strictObject({ action: z.literal("curator-pause"), paused: z.boolean() }),
   z.strictObject({ action: z.literal("curator-run") }),
+  channelUpdateSchema,
+  z.strictObject({ action: z.literal("channel-test"), platformId }),
   z.strictObject({ action: z.literal("webhook-enable") }),
   webhookCreateSchema,
   z.strictObject({
@@ -333,6 +361,21 @@ export function hermesOperationFor(
       };
     case "curator-run":
       return { path: "/api/curator/run", method: "POST" };
+    case "channel-update":
+      return {
+        path: `/api/messaging/platforms/${encodeURIComponent(input.platformId)}`,
+        method: "PUT",
+        body: {
+          enabled: input.enabled,
+          env: input.env,
+          clear_env: input.clearEnv,
+        },
+      };
+    case "channel-test":
+      return {
+        path: `/api/messaging/platforms/${encodeURIComponent(input.platformId)}/test`,
+        method: "POST",
+      };
     case "webhook-enable":
       return { path: "/api/webhooks/enable", method: "POST" };
     case "webhook-create":

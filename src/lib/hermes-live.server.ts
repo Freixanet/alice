@@ -25,6 +25,7 @@ import type {
 import {
   asList,
   asRec,
+  channelTestFromApi,
   channelsFromApi,
   cronDeliveryTargetsFromApi,
   cronFromApi,
@@ -250,6 +251,8 @@ async function channelsFromDisk(): Promise<HermesChannelRow[]> {
       enabled: true,
       configured: true,
       state: "en config",
+      gatewayRunning: false,
+      envVars: [],
     });
   }
   for (const job of await cronFromDisk()) {
@@ -261,6 +264,8 @@ async function channelsFromDisk(): Promise<HermesChannelRow[]> {
       enabled: true,
       configured: true,
       state: "en tareas",
+      gatewayRunning: false,
+      envVars: [],
     });
   }
   return [...seen.values()];
@@ -482,6 +487,18 @@ export async function mutateHermesLive(
       return created
         ? { ok: true, ...created }
         : { ok: false, error: "Hermes didn’t return the webhook secret." };
+    }
+    if (mutation.action === "channel-test") {
+      const raw = await hermesDashboardSendJson(
+        opts,
+        operation.path,
+        operation.method,
+        operation.body,
+      );
+      const channelTest = channelTestFromApi(raw);
+      return channelTest
+        ? { ok: true, channelTest }
+        : { ok: false, error: "Hermes didn’t return a channel test result." };
     }
     const ok = await hermesDashboardSend(
       opts,

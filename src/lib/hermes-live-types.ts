@@ -65,6 +65,27 @@ export type HermesChannelRow = {
   state: string;
   description?: string;
   error?: string;
+  docsUrl?: string;
+  gatewayRunning: boolean;
+  envVars: HermesChannelEnvVar[];
+};
+
+export type HermesChannelEnvVar = {
+  key: string;
+  required: boolean;
+  isSet: boolean;
+  redactedValue?: string;
+  description: string;
+  prompt: string;
+  url?: string;
+  isPassword: boolean;
+  advanced: boolean;
+};
+
+export type HermesChannelTestResult = {
+  ok: boolean;
+  state?: string;
+  message: string;
 };
 
 export type HermesSessionRow = {
@@ -153,7 +174,13 @@ export type HermesWebhooksState = {
 };
 
 export type HermesMutationResult =
-  { ok: true; secret?: string; url?: string } | { ok: false; error: string };
+  | {
+      ok: true;
+      secret?: string;
+      url?: string;
+      channelTest?: HermesChannelTestResult;
+    }
+  | { ok: false; error: string };
 
 export type HermesCuratorStatus = {
   enabled: boolean;

@@ -37,6 +37,7 @@ import type { HermesRunSnapshot } from "./hermes-runs";
 import { streamHermesSessionChat } from "./hermes-session-chat-transport";
 import {
   asRec,
+  channelTestFromApi,
   channelsFromApi,
   cronDeliveryTargetsFromApi,
   cronFromApi,
@@ -837,6 +838,19 @@ export async function mutateHermesDirect(
       return created
         ? { ok: true, ...created }
         : { ok: false, error: "Hermes didn’t return the webhook secret." };
+    }
+    if (operation && opts.action === "channel-test") {
+      const raw = await dashboardSendJson(
+        opts.url,
+        opts.key,
+        operation.path,
+        operation.method,
+        operation.body,
+      );
+      const channelTest = channelTestFromApi(raw);
+      return channelTest
+        ? { ok: true, channelTest }
+        : { ok: false, error: "Hermes didn’t return a channel test result." };
     }
     const ok = operation
       ? await dashboardSend(

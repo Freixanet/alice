@@ -10,14 +10,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import {
-  mutateHermes,
-  type HermesMutationResult,
-  type HermesWebhooksState,
-} from "@/lib/hermes-live";
-import type { HermesMutation } from "@/lib/hermes-operations";
-import { localizeError } from "@/lib/i18n";
-import { useLocale, useT } from "@/lib/use-i18n";
+import { type HermesWebhooksState } from "@/lib/hermes-live";
+import { useHermesMutation } from "@/lib/use-hermes-mutation";
+import { useT } from "@/lib/use-i18n";
 
 const DELIVER_OPTIONS = [
   "log",
@@ -60,13 +55,11 @@ export function HermesWebhooksPanel({
   onChanged: () => Promise<void>;
 }) {
   const t = useT();
-  const locale = useLocale();
   const [createOpen, setCreateOpen] = useState(false);
   const [enabledLocally, setEnabledLocally] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const { busy, error, notice, run, setError, setNotice } =
+    useHermesMutation(onChanged);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [created, setCreated] = useState<{
     url: string;
@@ -86,24 +79,6 @@ export function HermesWebhooksPanel({
   function update<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
     setError(null);
-  }
-
-  async function run(
-    key: string,
-    mutation: HermesMutation,
-  ): Promise<HermesMutationResult> {
-    setBusy(key);
-    setError(null);
-    setNotice(null);
-    const result = await mutateHermes(mutation);
-    if (!result.ok) {
-      setError(localizeError(locale, result.error));
-      setBusy(null);
-      return result;
-    }
-    await onChanged();
-    setBusy(null);
-    return result;
   }
 
   async function create() {

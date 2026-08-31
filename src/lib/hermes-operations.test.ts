@@ -142,6 +142,49 @@ describe("official Hermes management operations", () => {
     });
   });
 
+  it("maps safe channel configuration and tests to official routes", () => {
+    expect(
+      hermesOperationFor({
+        action: "channel-update",
+        platformId: "telegram",
+        enabled: true,
+        env: { TELEGRAM_BOT_TOKEN: "secret" },
+        clearEnv: ["TELEGRAM_PROXY"],
+      }),
+    ).toEqual({
+      path: "/api/messaging/platforms/telegram",
+      method: "PUT",
+      body: {
+        enabled: true,
+        env: { TELEGRAM_BOT_TOKEN: "secret" },
+        clear_env: ["TELEGRAM_PROXY"],
+      },
+    });
+    expect(
+      hermesOperationFor({ action: "channel-test", platformId: "discord" }),
+    ).toEqual({
+      path: "/api/messaging/platforms/discord/test",
+      method: "POST",
+    });
+    for (const value of [
+      { action: "channel-update", platformId: "telegram" },
+      {
+        action: "channel-update",
+        platformId: "telegram",
+        env: { "BAD-NAME": "secret" },
+      },
+      {
+        action: "channel-update",
+        platformId: "telegram",
+        env: { TOKEN: "secret" },
+        clearEnv: ["TOKEN"],
+      },
+      { action: "channel-test", platformId: "bad/platform" },
+    ]) {
+      expect(hermesMutationSchema.safeParse(value).success).toBe(false);
+    }
+  });
+
   it("maps the complete webhook lifecycle to the official admin routes", () => {
     expect(hermesOperationFor({ action: "webhook-enable" })).toEqual({
       path: "/api/webhooks/enable",

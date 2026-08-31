@@ -1,5 +1,6 @@
 import type {
   HermesChannelRow,
+  HermesChannelTestResult,
   HermesCronDeliveryTarget,
   HermesCronRow,
   HermesCuratorStatus,
@@ -234,6 +235,24 @@ export function channelsFromApi(raw: unknown): HermesChannelRow[] {
     .map((item) => {
       const row = asRec(item);
       const id = str(row.id) || str(row.name);
+      const envVars = (Array.isArray(row.env_vars) ? row.env_vars : [])
+        .map((value) => {
+          const env = asRec(value);
+          const key = str(env.key);
+          return {
+            key,
+            required: env.required === true,
+            isSet: env.is_set === true,
+            redactedValue: str(env.redacted_value) || undefined,
+            description: str(env.description),
+            prompt: str(env.prompt),
+            url: /^https?:\/\//i.test(str(env.url)) ? str(env.url) : undefined,
+            isPassword: env.is_password === true,
+            advanced: env.advanced === true,
+          };
+        })
+        .filter((env) => /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(env.key))
+        .slice(0, 64);
       return {
         id,
         name: str(row.name) || prettyName(id),
@@ -244,9 +263,27 @@ export function channelsFromApi(raw: unknown): HermesChannelRow[] {
           str(row.state) || (bool(row.enabled, false) ? "activo" : "apagado"),
         description: str(row.description) || undefined,
         error: str(row.error_message) || undefined,
+        docsUrl: /^https?:\/\//i.test(str(row.docs_url))
+          ? str(row.docs_url)
+          : undefined,
+        gatewayRunning: row.gateway_running === true,
+        envVars,
       };
     })
     .filter((c) => c.id);
+}
+
+export function channelTestFromApi(
+  raw: unknown,
+): HermesChannelTestResult | null {
+  const row = asRec(raw);
+  const message = str(row.message).slice(0, 2_000);
+  if (typeof row.ok !== "boolean" || !message) return null;
+  return {
+    ok: row.ok,
+    state: str(row.state).slice(0, 128) || undefined,
+    message,
+  };
 }
 
 function stamp(value: unknown): string {
