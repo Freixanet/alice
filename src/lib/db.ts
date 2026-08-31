@@ -282,23 +282,32 @@ export async function getPglite(): Promise<
  *   `migrations/*.sql`. Idempotent — concurrent callers share one promise.
  * - **Neon**: no-op (pool is created lazily on first query).
  *
- * Vite `configureServer` awaits this at dev startup; production imports of this
- * module kick it off immediately (see bottom of file).
+ * Vite `configureServer` awaits this at dev startup; production initializes it
+ * lazily on the first database-backed request.
  */
 export function ensureDbReady(): Promise<void> {
   if (dbSource !== "pglite") return Promise.resolve();
   return getSql().then(() => undefined);
 }
 
-// Server-only eager start: kick PGLite bootstrap as soon as this module loads in
-// Node. Client bundles never hit this path (`getSql` throws in the browser).
-const globalBoot = globalThis as typeof globalThis & {
-  __pgBootstrapPromise__?: Promise<void>;
-};
-if (typeof window === "undefined" && dbSource === "pglite") {
-  globalBoot.__pgBootstrapPromise__ ??= ensureDbReady().catch((err) => {
-    globalBoot.__pgBootstrapPromise__ = undefined;
-    console.error("[db] PGLite bootstrap failed:", err);
-    throw err;
-  });
+/**
+ * Gracefully release the embedded database when the local Vite server stops.
+ *
+ * PGLite owns a PostgreSQL data directory and must be closed before another
+ * process opens it. Keeping this lifecycle explicit prevents a later restart
+ * from inheriting a stale `postmaster.pid` after a normal shutdown.
+ */
+export async function closeDb(): Promise<void> {
+  if (dbSource !== "pglite") return;
+  const instance = globalRef.__pgliteDiskInstance__;
+  if (!instance) return;
+
+  // Clear the shared slots before awaiting close so repeated shutdown hooks are
+  // idempotent and HMR-created module instances cannot close the same DB twice.
+  globalRef.__pgliteDiskInstance__ = undefined;
+  globalRef.__pgliteMigrateChain__ = undefined;
+  sqlPromise = null;
+
+  const pg = await instance;
+  await pg.close();
 }

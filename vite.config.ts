@@ -21,6 +21,8 @@ function hasGlobbedMigrations(root: string): boolean {
 }
 
 function pgliteBootstrapPlugin(): Plugin {
+  let closeDb: (() => Promise<void>) | undefined;
+
   return {
     name: "app-builder:pglite-bootstrap",
     apply: "serve",
@@ -29,13 +31,27 @@ function pgliteBootstrapPlugin(): Plugin {
       try {
         const mod = (await server.ssrLoadModule("/src/lib/db.ts")) as {
           ensureDbReady?: () => Promise<void>;
+          closeDb?: () => Promise<void>;
         };
         if (typeof mod.ensureDbReady === "function") {
           await mod.ensureDbReady();
         }
+        if (typeof mod.closeDb === "function") {
+          closeDb = mod.closeDb;
+        }
       } catch (err) {
         console.error("[app-builder] DB bootstrap failed:", err);
         throw err;
+      }
+    },
+    async closeBundle() {
+      const close = closeDb;
+      closeDb = undefined;
+      if (!close) return;
+      try {
+        await close();
+      } catch (err) {
+        console.error("[app-builder] DB shutdown failed:", err);
       }
     },
   };
