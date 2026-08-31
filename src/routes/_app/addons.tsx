@@ -1,7 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Download, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Download, Library, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { CatalogPage } from "@/components/catalog-page";
+import { McpCatalogDialog } from "@/components/mcp-catalog-dialog";
+import { McpOAuthDialog } from "@/components/mcp-oauth-dialog";
 import { McpServerDialog } from "@/components/mcp-server-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,11 +14,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { listHermesLive, mutateHermes } from "@/lib/hermes-live";
+import { mutateHermes } from "@/lib/hermes-live";
 import { localizeError } from "@/lib/i18n";
 import type { HermesMutation } from "@/lib/hermes-operations";
 import { useHermesLive } from "@/lib/use-hermes-live";
 import { useLocale, useT } from "@/lib/use-i18n";
+import { useMcpCommandCenter } from "@/lib/use-mcp-command-center";
 
 export const Route = createFileRoute("/_app/addons")({
   component: AddonsPage,
@@ -27,7 +30,7 @@ function AddonsPage() {
   const locale = useLocale();
   const navigate = useNavigate();
   const { data, error, loading, setData } = useHermesLive();
-  const rows = data?.mcp ?? [];
+  const rows = useMemo(() => data?.mcp ?? [], [data?.mcp]);
   const plugins = data?.plugins ?? [];
   const pluginsSupported = data?.pluginsSupported === true;
   const [addOpen, setAddOpen] = useState(false);
@@ -35,18 +38,23 @@ function AddonsPage() {
   const [pluginIdentifier, setPluginIdentifier] = useState("");
   const [deleteName, setDeleteName] = useState<string | null>(null);
   const [deletePluginName, setDeletePluginName] = useState<string | null>(null);
-  const [busyName, setBusyName] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  async function refresh(): Promise<boolean> {
-    const fresh = await listHermesLive();
-    if (fresh.ok) {
-      setData(fresh);
-      return true;
-    }
-    setFeedback(localizeError(locale, fresh.error));
-    return false;
-  }
+  const commandCenter = useMcpCommandCenter({
+    writable: data?.writable === true,
+    rows,
+    setData,
+  });
+  const {
+    pantheon,
+    busyName,
+    setBusyName,
+    feedback,
+    setFeedback,
+    refresh,
+    testServer,
+    mcpMeta,
+    catalog,
+    oauth,
+  } = commandCenter;
 
   async function saveServer(
     mutation: Extract<HermesMutation, { action: "mcp-create" }>,
@@ -59,22 +67,6 @@ function AddonsPage() {
       );
     }
     return (await refresh()) ? null : t("addons.descOff");
-  }
-
-  async function testServer(name: string) {
-    if (busyName) return;
-    setBusyName(name);
-    setFeedback(null);
-    const result = await mutateHermes({ action: "mcp-test", name });
-    setBusyName(null);
-    setFeedback(
-      result.ok
-        ? t("addons.testOk")
-        : localizeError(
-            locale,
-            result.error || "Hermes couldn’t save the change.",
-          ),
-    );
   }
 
   async function deleteServer() {
@@ -170,6 +162,20 @@ function AddonsPage() {
           }
           action={
             <div className="flex flex-wrap gap-2">
+              {pantheon ? (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    data?.writable
+                      ? void catalog.openCatalog()
+                      : void navigate({ to: "/connect" })
+                  }
+                  disabled={loading}
+                >
+                  <Library />
+                  {t("addons.catalog")}
+                </Button>
+              ) : null}
               {pluginsSupported ? (
                 <Button
                   variant="outline"
@@ -225,8 +231,9 @@ function AddonsPage() {
               description: server.detail,
               group: "mcp",
               groupLabel: server.transport.toUpperCase(),
-              meta:
-                server.auth && server.auth !== "none"
+              meta: pantheon
+                ? mcpMeta(server.name, server.auth)
+                : server.auth && server.auth !== "none"
                   ? server.auth.toUpperCase()
                   : undefined,
               enabled: server.enabled,
@@ -325,6 +332,18 @@ function AddonsPage() {
                       </>
                     ) : (
                       <>
+                        {pantheon &&
+                        rows.find((item) => item.name === row.name)?.auth ===
+                          "oauth" ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={Boolean(busyName) || oauth.pending}
+                            onClick={() => void oauth.authorize(row.name)}
+                          >
+                            {t("addons.oauthAuthorize")}
+                          </Button>
+                        ) : null}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -365,6 +384,24 @@ function AddonsPage() {
         open={addOpen}
         onOpenChange={setAddOpen}
         onSave={saveServer}
+      />
+
+      <McpCatalogDialog
+        open={catalog.open}
+        entries={catalog.entries}
+        diagnostics={catalog.diagnostics}
+        loading={catalog.loading}
+        error={catalog.error}
+        busyName={busyName}
+        onOpenChange={catalog.setOpen}
+        onInstall={catalog.install}
+      />
+
+      <McpOAuthDialog
+        flow={oauth.flow}
+        pending={oauth.pending}
+        onCancel={() => void oauth.cancel()}
+        onClose={oauth.close}
       />
 
       <Dialog

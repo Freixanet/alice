@@ -144,6 +144,71 @@ export type HermesMcpRow = {
   auth?: "none" | "oauth" | "header";
 };
 
+export type HermesMcpTool = {
+  name: string;
+  description: string;
+  schemaChars?: number;
+};
+
+export type HermesMcpProbe = {
+  tools: HermesMcpTool[];
+  prompts: number;
+  resources: number;
+  schemaTokens?: number;
+};
+
+export type HermesMcpProbeResult =
+  { ok: true; probe: HermesMcpProbe } | { ok: false; error: string };
+
+export type HermesMcpCatalogEnv = {
+  name: string;
+  prompt: string;
+  required: boolean;
+};
+
+export type HermesMcpCatalogRow = {
+  name: string;
+  description: string;
+  source?: string;
+  transport: string;
+  authType: string;
+  requiredEnv: HermesMcpCatalogEnv[];
+  command?: string;
+  args: string[];
+  url?: string;
+  installUrl?: string;
+  installRef?: string;
+  bootstrap: string[];
+  defaultEnabled?: string[];
+  postInstall?: string;
+  needsInstall: boolean;
+  installed: boolean;
+  enabled: boolean;
+};
+
+export type HermesMcpCatalogResult =
+  | {
+      ok: true;
+      entries: HermesMcpCatalogRow[];
+      diagnostics: Array<{ name: string; kind: string; message: string }>;
+    }
+  | { ok: false; error: string };
+
+export type HermesMcpOAuthFlow = {
+  flowId: string;
+  serverName: string;
+  status: "starting" | "authorization_required" | "approved" | "error";
+  authorizationUrl?: string;
+  error?: string;
+  tools: HermesMcpTool[];
+};
+
+export type HermesMcpOAuthResult =
+  { ok: true; flow: HermesMcpOAuthFlow } | { ok: false; error: string };
+
+export type HermesMcpUsageResult =
+  { ok: true; calls: Record<string, number> } | { ok: false; error: string };
+
 export type HermesCronRow = {
   id: string;
   name: string;

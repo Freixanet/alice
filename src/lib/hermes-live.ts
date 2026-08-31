@@ -3,6 +3,10 @@ import type {
   HermesDiagnosticsResult,
   HermesLiveResult,
   HermesMutationResult,
+  HermesMcpCatalogResult,
+  HermesMcpOAuthResult,
+  HermesMcpProbeResult,
+  HermesMcpUsageResult,
   HermesProfileSoulResult,
   HermesProfilesResult,
   HermesSessionMessagesResult,
@@ -148,6 +152,127 @@ export async function readHermesSystemTools(opts?: {
     });
   } catch {
     return { ok: false, error: "Couldn’t read Hermes system tools." };
+  }
+}
+
+export async function readHermesMcpCatalog(opts?: {
+  signal?: AbortSignal;
+}): Promise<HermesMcpCatalogResult> {
+  try {
+    return await runHermesOperation({
+      ...(opts?.signal ? { signal: opts.signal } : {}),
+      scope: "profile",
+      proxy: { action: "mcp-catalog" },
+      direct: async (context) => {
+        const { readHermesMcpCatalogDirect } = await import("./hermes-direct");
+        return readHermesMcpCatalogDirect(context);
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesMcpCatalogResult>(
+          value,
+          "Couldn’t read the MCP catalog.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t read the MCP catalog." };
+  }
+}
+
+export async function testHermesMcpServer(opts: {
+  name: string;
+  signal?: AbortSignal;
+}): Promise<HermesMcpProbeResult> {
+  try {
+    return await runHermesOperation({
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      scope: "profile",
+      proxy: { action: "mcp-probe", name: opts.name },
+      direct: async (context) => {
+        const { testHermesMcpServerDirect } = await import("./hermes-direct");
+        return testHermesMcpServerDirect({ ...context, name: opts.name });
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesMcpProbeResult>(
+          value,
+          "Couldn’t test this MCP server.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t test this MCP server." };
+  }
+}
+
+export async function startHermesMcpOAuth(opts: {
+  name: string;
+  signal?: AbortSignal;
+}): Promise<HermesMcpOAuthResult> {
+  try {
+    return await runHermesOperation({
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      scope: "profile",
+      proxy: { action: "mcp-oauth-start", name: opts.name },
+      direct: async (context) => {
+        const { startHermesMcpOAuthDirect } = await import("./hermes-direct");
+        return startHermesMcpOAuthDirect({ ...context, name: opts.name });
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesMcpOAuthResult>(
+          value,
+          "Couldn’t start MCP authorization.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t start MCP authorization." };
+  }
+}
+
+export async function readHermesMcpOAuth(opts: {
+  flowId: string;
+  signal?: AbortSignal;
+}): Promise<HermesMcpOAuthResult> {
+  try {
+    return await runHermesOperation({
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      scope: "profile",
+      proxy: { action: "mcp-oauth-status", flowId: opts.flowId },
+      direct: async (context) => {
+        const { readHermesMcpOAuthDirect } = await import("./hermes-direct");
+        return readHermesMcpOAuthDirect({
+          ...context,
+          flowId: opts.flowId,
+        });
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesMcpOAuthResult>(
+          value,
+          "Couldn’t read MCP authorization.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t read MCP authorization." };
+  }
+}
+
+export async function readHermesMcpUsage(opts?: {
+  signal?: AbortSignal;
+}): Promise<HermesMcpUsageResult> {
+  try {
+    return await runHermesOperation({
+      ...(opts?.signal ? { signal: opts.signal } : {}),
+      scope: "profile",
+      proxy: { action: "mcp-usage" },
+      direct: async (context) => {
+        const { readHermesMcpUsageDirect } = await import("./hermes-direct");
+        return readHermesMcpUsageDirect(context);
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesMcpUsageResult>(
+          value,
+          "Couldn’t read MCP usage.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t read MCP usage." };
   }
 }
 
@@ -415,6 +540,11 @@ function decodeMutationResult(
     return actionName
       ? { ok: true, actionName }
       : { ok: false, error: "Hermes didn’t start the skill action." };
+  }
+  if (mutation.action === "mcp-catalog-install") {
+    const actionName =
+      typeof data.actionName === "string" ? data.actionName.trim() : "";
+    return actionName ? { ok: true, actionName } : { ok: true };
   }
   return { ok: true };
 }

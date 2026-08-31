@@ -6,6 +6,9 @@ import {
   getHermesRunDirect,
   listHermesModelsDirect,
   readHermesActionStatusDirect,
+  readHermesMcpCatalogDirect,
+  readHermesMcpOAuthDirect,
+  readHermesMcpUsageDirect,
   readHermesProfilesDirect,
   readHermesProfileSoulDirect,
   readHermesSkillContentDirect,
@@ -13,6 +16,8 @@ import {
   streamHermesDirect,
   streamHermesSessionDirect,
   setHermesModelDirect,
+  startHermesMcpOAuthDirect,
+  testHermesMcpServerDirect,
 } from "./hermes-direct";
 
 function json(body: unknown): Response {
@@ -123,6 +128,66 @@ describe("Hermes direct profile transport", () => {
     ).toEqual({ ok: true });
     expect(seen[0]).toContain("/api/skills/toggle?profile=research");
     expect(seen[1]).toMatch(/\/api\/profiles\/active$/);
+  });
+
+  it("scopes the Pantheon MCP catalog, health, OAuth and usage APIs", async () => {
+    const seen: Array<{ url: string; method?: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL, init?: RequestInit) => {
+        const url = String(input);
+        seen.push({ url, method: init?.method });
+        if (url.includes("/api/mcp/catalog")) {
+          return Promise.resolve(json({ entries: [] }));
+        }
+        if (url.includes("/test")) {
+          return Promise.resolve(json({ ok: true, tools: [] }));
+        }
+        if (url.includes("/auth")) {
+          return Promise.resolve(
+            json({
+              flow_id: "flow-1",
+              server_name: "github",
+              status: "authorization_required",
+            }),
+          );
+        }
+        if (url.includes("/api/mcp/oauth/flows/")) {
+          return Promise.resolve(
+            json({
+              flow_id: "flow-1",
+              server_name: "github",
+              status: "approved",
+            }),
+          );
+        }
+        return Promise.resolve(json({ tools: [] }));
+      }),
+    );
+
+    const base = {
+      url: "http://127.0.0.1:8642",
+      key: "12345678",
+      profile: "research",
+    };
+    expect(await readHermesMcpCatalogDirect(base)).toMatchObject({ ok: true });
+    expect(
+      await testHermesMcpServerDirect({ ...base, name: "github" }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await startHermesMcpOAuthDirect({ ...base, name: "github" }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await readHermesMcpOAuthDirect({ ...base, flowId: "flow-1" }),
+    ).toMatchObject({ ok: true, flow: { status: "approved" } });
+    expect(await readHermesMcpUsageDirect(base)).toEqual({
+      ok: true,
+      calls: {},
+    });
+    expect(
+      seen.every(({ url }) => /[?&]profile=research(?:&|$)/.test(url)),
+    ).toBe(true);
+    expect(seen.filter(({ method }) => method === "POST")).toHaveLength(2);
   });
 
   it("creates Pantheon cron jobs atomically across the official two-step API", async () => {

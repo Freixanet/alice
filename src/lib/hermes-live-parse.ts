@@ -6,6 +6,11 @@ import type {
   HermesCuratorStatus,
   HermesDiagnostics,
   HermesMcpRow,
+  HermesMcpCatalogResult,
+  HermesMcpOAuthResult,
+  HermesMcpProbeResult,
+  HermesMcpTool,
+  HermesMcpUsageResult,
   HermesPairingRow,
   HermesProjectRow,
   HermesProfileRow,
@@ -477,6 +482,160 @@ export function mcpFromApi(raw: unknown): HermesMcpRow[] {
       };
     })
     .filter((m) => m.id);
+}
+
+function mcpToolsFromApi(raw: unknown): HermesMcpTool[] {
+  const rows = Array.isArray(raw) ? raw : [];
+  return rows
+    .slice(0, 500)
+    .map((item) => {
+      const row = asRec(item);
+      const name = str(row.name).slice(0, 256);
+      const schemaChars = boundedNumber(row.schema_chars, 0, 10_000_000);
+      return {
+        name,
+        description: str(row.description).slice(0, 2_000),
+        ...(schemaChars === undefined ? {} : { schemaChars }),
+      };
+    })
+    .filter((tool) => tool.name);
+}
+
+export function mcpProbeFromApi(raw: unknown): HermesMcpProbeResult {
+  const record = asRec(raw);
+  if (record.ok !== true) {
+    return {
+      ok: false,
+      error: str(record.error).slice(0, 2_000) || "MCP server is unavailable.",
+    };
+  }
+  const tools = mcpToolsFromApi(record.tools);
+  const schemaTokens = tools.reduce(
+    (total, tool) => total + Math.ceil((tool.schemaChars ?? 0) / 4),
+    0,
+  );
+  return {
+    ok: true,
+    probe: {
+      tools,
+      prompts: boundedNumber(record.prompts, 0, 1_000_000) ?? 0,
+      resources: boundedNumber(record.resources, 0, 1_000_000) ?? 0,
+      ...(schemaTokens > 0 ? { schemaTokens } : {}),
+    },
+  };
+}
+
+export function mcpCatalogFromApi(raw: unknown): HermesMcpCatalogResult {
+  const record = asRec(raw);
+  const entries = (Array.isArray(record.entries) ? record.entries : [])
+    .slice(0, 300)
+    .map((item) => {
+      const row = asRec(item);
+      const name = str(row.name).slice(0, 128);
+      const requiredEnv = (
+        Array.isArray(row.required_env) ? row.required_env : []
+      )
+        .slice(0, 64)
+        .map((value) => {
+          const env = asRec(value);
+          return {
+            name: str(env.name).slice(0, 128),
+            prompt: str(env.prompt).slice(0, 500),
+            required: env.required !== false,
+          };
+        })
+        .filter((env) => env.name);
+      const safeUrl = (value: unknown) => {
+        const url = str(value).slice(0, 2_048);
+        return /^https?:\/\//i.test(url) ? url : undefined;
+      };
+      const defaultEnabled = Array.isArray(row.default_enabled)
+        ? row.default_enabled.map(str).filter(Boolean).slice(0, 500)
+        : undefined;
+      return {
+        name,
+        description: str(row.description).slice(0, 2_000),
+        source: safeUrl(row.source),
+        transport: str(row.transport).slice(0, 64) || "unknown",
+        authType: str(row.auth_type).slice(0, 64) || "none",
+        requiredEnv,
+        command: str(row.command).slice(0, 1_024) || undefined,
+        args: Array.isArray(row.args)
+          ? row.args.map(str).filter(Boolean).slice(0, 64)
+          : [],
+        url: safeUrl(row.url),
+        installUrl: safeUrl(row.install_url),
+        installRef: str(row.install_ref).slice(0, 256) || undefined,
+        bootstrap: Array.isArray(row.bootstrap)
+          ? row.bootstrap.map(str).filter(Boolean).slice(0, 64)
+          : [],
+        ...(defaultEnabled ? { defaultEnabled } : {}),
+        postInstall: str(row.post_install).slice(0, 4_000) || undefined,
+        needsInstall: row.needs_install === true,
+        installed: row.installed === true,
+        enabled: row.enabled === true,
+      };
+    })
+    .filter((entry) => entry.name);
+  const diagnostics = (
+    Array.isArray(record.diagnostics) ? record.diagnostics : []
+  )
+    .slice(0, 100)
+    .map((value) => {
+      const row = asRec(value);
+      return {
+        name: str(row.name).slice(0, 128),
+        kind: str(row.kind).slice(0, 64),
+        message: str(row.message).slice(0, 2_000),
+      };
+    });
+  return { ok: true, entries, diagnostics };
+}
+
+export function mcpOAuthFlowFromApi(raw: unknown): HermesMcpOAuthResult {
+  const record = asRec(raw);
+  const flowId = str(record.flow_id).slice(0, 256);
+  const serverName = str(record.server_name).slice(0, 128);
+  const status = str(record.status);
+  if (
+    !flowId ||
+    !serverName ||
+    !["starting", "authorization_required", "approved", "error"].includes(
+      status,
+    )
+  ) {
+    return {
+      ok: false,
+      error: str(record.error).slice(0, 2_000) || "Invalid MCP OAuth response.",
+    };
+  }
+  const authorizationUrl = str(record.authorization_url).slice(0, 2_048);
+  return {
+    ok: true,
+    flow: {
+      flowId,
+      serverName,
+      status: status as
+        "starting" | "authorization_required" | "approved" | "error",
+      ...(/^https?:\/\//i.test(authorizationUrl) ? { authorizationUrl } : {}),
+      ...(str(record.error)
+        ? { error: str(record.error).slice(0, 2_000) }
+        : {}),
+      tools: mcpToolsFromApi(record.tools),
+    },
+  };
+}
+
+export function mcpUsageFromApi(raw: unknown): HermesMcpUsageResult {
+  const rows = asList(asRec(raw).tools).slice(0, 5_000);
+  const calls: Record<string, number> = {};
+  for (const value of rows) {
+    const row = asRec(value);
+    const tool = str(row.tool).slice(0, 512);
+    const count = boundedNumber(row.count, 0, Number.MAX_SAFE_INTEGER);
+    if (tool && count !== undefined) calls[tool] = count;
+  }
+  return { ok: true, calls };
 }
 
 export function cronFromApi(raw: unknown): HermesCronRow[] {

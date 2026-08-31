@@ -44,6 +44,29 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
     profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
+    action: z.literal("mcp-catalog"),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("mcp-probe"),
+    name: bounded(128),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("mcp-oauth-start"),
+    name: bounded(128),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("mcp-oauth-status"),
+    flowId: bounded(256),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("mcp-usage"),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
     action: z.literal("skills-search"),
     query: bounded(256),
     profile: hermesProfileNameSchema.optional(),

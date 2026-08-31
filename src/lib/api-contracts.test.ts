@@ -154,6 +154,34 @@ describe("Hermes API contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts the Pantheon MCP command-center contracts", () => {
+    for (const request of [
+      { action: "mcp-catalog", profile: "research" },
+      { action: "mcp-probe", name: "github", profile: "research" },
+      { action: "mcp-oauth-start", name: "github", profile: "research" },
+      {
+        action: "mcp-oauth-status",
+        flowId: "flow-1",
+        profile: "research",
+      },
+      { action: "mcp-usage", profile: "research" },
+    ]) {
+      expect(hermesRequestSchema.safeParse(request).success).toBe(true);
+    }
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "mcp-probe",
+        name: "",
+      }).success,
+    ).toBe(false);
+    expect(
+      hermesRequestSchema.safeParse({
+        action: "mcp-oauth-status",
+        flowId: "",
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts the closed diagnostics action without extra fields", () => {
     expect(
       hermesRequestSchema.safeParse({ action: "diagnostics" }).success,

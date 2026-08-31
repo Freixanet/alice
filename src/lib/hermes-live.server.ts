@@ -15,6 +15,10 @@ import type {
   HermesDiagnosticsResult,
   HermesLive,
   HermesMutationResult,
+  HermesMcpCatalogResult,
+  HermesMcpOAuthResult,
+  HermesMcpProbeResult,
+  HermesMcpUsageResult,
   HermesMcpRow,
   HermesPairingRow,
   HermesProjectRow,
@@ -42,6 +46,10 @@ import {
   diagnosticsFromApi,
   groupLabel,
   mcpFromApi,
+  mcpCatalogFromApi,
+  mcpOAuthFlowFromApi,
+  mcpProbeFromApi,
+  mcpUsageFromApi,
   pairingList,
   prettyName,
   projectsFromApi,
@@ -590,6 +598,76 @@ export async function fetchHermesSystemTools(
   }
 }
 
+export async function fetchHermesMcpCatalog(
+  opts: Gate,
+  profile?: string,
+): Promise<HermesMcpCatalogResult> {
+  const raw = await hermesDashboardGet(
+    opts,
+    profiledPath("/api/mcp/catalog", profile),
+  );
+  return raw
+    ? mcpCatalogFromApi(raw)
+    : { ok: false, error: "Couldn’t read the MCP catalog." };
+}
+
+export async function testHermesMcpServer(
+  opts: Gate,
+  name: string,
+  profile?: string,
+): Promise<HermesMcpProbeResult> {
+  const raw = await hermesDashboardSendJson(
+    opts,
+    profiledPath(`/api/mcp/servers/${encodeURIComponent(name)}/test`, profile),
+    "POST",
+  );
+  return raw
+    ? mcpProbeFromApi(raw)
+    : { ok: false, error: "Couldn’t test this MCP server." };
+}
+
+export async function startHermesMcpOAuth(
+  opts: Gate,
+  name: string,
+  profile?: string,
+): Promise<HermesMcpOAuthResult> {
+  const raw = await hermesDashboardSendJson(
+    opts,
+    profiledPath(`/api/mcp/servers/${encodeURIComponent(name)}/auth`, profile),
+    "POST",
+  );
+  return raw
+    ? mcpOAuthFlowFromApi(raw)
+    : { ok: false, error: "Couldn’t start MCP authorization." };
+}
+
+export async function fetchHermesMcpOAuth(
+  opts: Gate,
+  flowId: string,
+  profile?: string,
+): Promise<HermesMcpOAuthResult> {
+  const raw = await hermesDashboardGet(
+    opts,
+    profiledPath(`/api/mcp/oauth/flows/${encodeURIComponent(flowId)}`, profile),
+  );
+  return raw
+    ? mcpOAuthFlowFromApi(raw)
+    : { ok: false, error: "Couldn’t read MCP authorization." };
+}
+
+export async function fetchHermesMcpUsage(
+  opts: Gate,
+  profile?: string,
+): Promise<HermesMcpUsageResult> {
+  const raw = await hermesDashboardGet(
+    opts,
+    profiledPath("/api/analytics/usage?days=30", profile),
+  );
+  return raw
+    ? mcpUsageFromApi(raw)
+    : { ok: false, error: "Couldn’t read MCP usage." };
+}
+
 export async function fetchHermesSkillContent(
   opts: Gate,
   name: string,
@@ -736,7 +814,8 @@ export async function mutateHermesLive(
     if (
       mutation.action === "skill-install" ||
       mutation.action === "skill-uninstall" ||
-      mutation.action === "skills-update"
+      mutation.action === "skills-update" ||
+      mutation.action === "mcp-catalog-install"
     ) {
       const raw = await hermesDashboardSendJson(
         opts,
@@ -744,7 +823,12 @@ export async function mutateHermesLive(
         operation.method,
         operation.body,
       );
-      const actionName = str(asRec(raw).name);
+      const record = asRec(raw);
+      if (mutation.action === "mcp-catalog-install") {
+        const actionName = str(record.action);
+        return actionName ? { ok: true, actionName } : { ok: true };
+      }
+      const actionName = str(record.name);
       return actionName
         ? { ok: true, actionName }
         : { ok: false, error: "Hermes didn’t start the skill action." };

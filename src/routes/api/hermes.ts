@@ -270,6 +270,63 @@ export const Route = createFileRoute("/api/hermes")({
         }
 
         if (
+          body.action === "mcp-catalog" ||
+          body.action === "mcp-probe" ||
+          body.action === "mcp-oauth-start" ||
+          body.action === "mcp-oauth-status" ||
+          body.action === "mcp-usage"
+        ) {
+          if (!saved?.u || !saved.k) {
+            return jsonWithCookie(
+              { ok: false, error: "Connect your Hermes first." },
+              400,
+            );
+          }
+          const timeoutMs =
+            body.action === "mcp-probe" || body.action === "mcp-oauth-start"
+              ? 65_000
+              : 15_000;
+          const gate = {
+            url: saved.u,
+            key: saved.k,
+            place: saved.p,
+            signal: AbortSignal.any([
+              request.signal,
+              AbortSignal.timeout(timeoutMs),
+            ]),
+          };
+          try {
+            const {
+              fetchHermesMcpCatalog,
+              fetchHermesMcpOAuth,
+              fetchHermesMcpUsage,
+              startHermesMcpOAuth,
+              testHermesMcpServer,
+            } = await import("@/lib/hermes-live.server");
+            const result =
+              body.action === "mcp-catalog"
+                ? await fetchHermesMcpCatalog(gate, body.profile)
+                : body.action === "mcp-probe"
+                  ? await testHermesMcpServer(gate, body.name, body.profile)
+                  : body.action === "mcp-oauth-start"
+                    ? await startHermesMcpOAuth(gate, body.name, body.profile)
+                    : body.action === "mcp-oauth-status"
+                      ? await fetchHermesMcpOAuth(
+                          gate,
+                          body.flowId,
+                          body.profile,
+                        )
+                      : await fetchHermesMcpUsage(gate, body.profile);
+            return jsonWithCookie(result, result.ok ? 200 : 502);
+          } catch {
+            return jsonWithCookie(
+              { ok: false, error: "Couldn’t read Hermes MCP status." },
+              502,
+            );
+          }
+        }
+
+        if (
           body.action === "skill-content" ||
           body.action === "toolset-details" ||
           body.action === "action-status" ||

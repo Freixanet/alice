@@ -250,6 +250,18 @@ export const hermesMutationSchema = z.discriminatedUnion("action", [
   }),
   z.strictObject({ action: z.literal("mcp-test"), name }),
   z.strictObject({
+    action: z.literal("mcp-catalog-install"),
+    name,
+    env: z
+      .record(envName, z.string().max(8_192))
+      .refine((value) => Object.keys(value).length <= 64)
+      .optional(),
+  }),
+  z.strictObject({
+    action: z.literal("mcp-oauth-cancel"),
+    flowId: text(256),
+  }),
+  z.strictObject({
     action: z.literal("pairing-approve"),
     platform: name,
     requestId: optionalText(256),
@@ -556,6 +568,17 @@ export function hermesOperationFor(
       return { path: `/api/mcp/servers/${encodedName}`, method: "DELETE" };
     case "mcp-test":
       return { path: `/api/mcp/servers/${encodedName}/test`, method: "POST" };
+    case "mcp-catalog-install":
+      return {
+        path: "/api/mcp/catalog/install",
+        method: "POST",
+        body: { name: input.name, env: input.env ?? {}, enable: true },
+      };
+    case "mcp-oauth-cancel":
+      return {
+        path: `/api/mcp/oauth/flows/${encodeURIComponent(input.flowId)}`,
+        method: "DELETE",
+      };
     case "pairing-approve":
       return {
         path: "/api/pairing/approve",

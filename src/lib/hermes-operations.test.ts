@@ -146,6 +146,37 @@ describe("official Hermes management operations", () => {
     });
     expect(
       hermesOperationFor({
+        action: "mcp-catalog-install",
+        name: "github",
+        env: { GITHUB_TOKEN: "secret" },
+      }),
+    ).toEqual({
+      path: "/api/mcp/catalog/install",
+      method: "POST",
+      body: {
+        name: "github",
+        env: { GITHUB_TOKEN: "secret" },
+        enable: true,
+      },
+    });
+    expect(
+      hermesOperationFor({
+        action: "mcp-oauth-cancel",
+        flowId: "flow/one",
+      }),
+    ).toEqual({
+      path: "/api/mcp/oauth/flows/flow%2Fone",
+      method: "DELETE",
+    });
+    expect(
+      hermesMutationSchema.safeParse({
+        action: "mcp-catalog-install",
+        name: "github",
+        env: { "BAD-NAME": "secret" },
+      }).success,
+    ).toBe(false);
+    expect(
+      hermesOperationFor({
         action: "project-create",
         name: "Alice",
         path: "/workspace/alice",

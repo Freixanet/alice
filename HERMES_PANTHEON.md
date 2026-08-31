@@ -28,7 +28,7 @@ and the corresponding Hermes source contracts.
 | Per-job reasoning effort                           | Scheduled-job editor                                                                    | Native in `0.21.0`                                                         |
 | Durable cron notepad                               | Managed automatically by Hermes                                                         | Transparent; surfaced as an explanatory invariant                          |
 | MCP server lifecycle                               | Add, enable, test and remove                                                            | Native                                                                     |
-| MCP catalog, OAuth, health and schema-cost data    | MCP command-center increment                                                            | Stable HTTP contracts; integration tracked before phase 8                  |
+| MCP catalog, OAuth, health and schema-cost data    | Progressive MCP command center with 30-day usage                                        | Native in `0.21.0`; direct and authenticated-proxy transports              |
 | Bot Mode roster, rooms and group mentions          | Hermes Desktop plugin state                                                             | Do not emulate with invented REST endpoints; chat/peer tools remain usable |
 | `hermes peer` durable agent DMs                    | Hermes tool/session protocol                                                            | Transparent until Hermes advertises a stable management contract           |
 | Caching, security and reliability changes          | Hermes runtime                                                                          | Transparent                                                                |
@@ -40,4 +40,8 @@ and the corresponding Hermes source contracts.
   update fails, Alice removes only the job it just created.
 - Unknown or older Hermes versions never receive unadvertised Pantheon fields.
 - Direct and proxy transports preserve the same request/response semantics.
-- Remaining MCP command-center work must ship before the visual phase begins.
+- MCP health probes run after first paint, use a five-minute profile-scoped
+  cache and never exceed two concurrent checks.
+- Catalog credentials are bounded, sent only for installation and cleared from
+  the UI on completion or close. OAuth authorization is explicit and polled by
+  opaque flow ID; Alice never opens a provider URL without a user action.

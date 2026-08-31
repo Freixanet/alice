@@ -29,6 +29,10 @@ import type {
   HermesLive,
   HermesLiveResult,
   HermesMutationResult,
+  HermesMcpCatalogResult,
+  HermesMcpOAuthResult,
+  HermesMcpProbeResult,
+  HermesMcpUsageResult,
   HermesProfileSoulResult,
   HermesProfilesResult,
   HermesSessionMessagesResult,
@@ -57,6 +61,10 @@ import {
   curatorFromApi,
   diagnosticsFromApi,
   mcpFromApi,
+  mcpCatalogFromApi,
+  mcpOAuthFlowFromApi,
+  mcpProbeFromApi,
+  mcpUsageFromApi,
   pairingList,
   projectsFromApi,
   pluginsFromApi,
@@ -645,14 +653,15 @@ async function dashboardGet(
   key: string,
   path: string,
   signal?: AbortSignal,
+  timeoutMs = 8_000,
 ): Promise<unknown> {
   const token = assertGatewayKey(key);
   const hdrs = headers(token);
   for (const apiBase of bases(url)) {
     try {
       const ctrl = signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(8_000)])
-        : AbortSignal.timeout(8_000);
+        ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs);
       const res = await fetch(`${apiBase}${path}`, {
         headers: hdrs,
         signal: ctrl,
@@ -696,8 +705,9 @@ async function dashboardSendJson(
   path: string,
   method: string,
   body?: unknown,
+  options?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<unknown> {
-  return dashboardMutate(url, key, path, method, body, true);
+  return dashboardMutate(url, key, path, method, body, true, options);
 }
 
 async function dashboardMutate(
@@ -707,6 +717,7 @@ async function dashboardMutate(
   method: string,
   body: unknown,
   parseJson: false,
+  options?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<boolean>;
 async function dashboardMutate(
   url: string,
@@ -715,6 +726,7 @@ async function dashboardMutate(
   method: string,
   body: unknown,
   parseJson: true,
+  options?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<unknown>;
 async function dashboardMutate(
   url: string,
@@ -723,9 +735,13 @@ async function dashboardMutate(
   method: string,
   body: unknown,
   parseJson: boolean,
+  options?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<boolean | unknown> {
   const token = assertGatewayKey(key);
-  const ctrl = AbortSignal.timeout(12_000);
+  const timeout = AbortSignal.timeout(options?.timeoutMs ?? 12_000);
+  const ctrl = options?.signal
+    ? AbortSignal.any([options.signal, timeout])
+    : timeout;
   const hdrs = headers(token, { "Content-Type": "application/json" });
   for (const apiBase of bases(url)) {
     try {
@@ -747,10 +763,114 @@ async function dashboardMutate(
         return {};
       }
     } catch (error) {
+      if (options?.signal?.aborted) throw error;
       if ((error as Error).name === "AbortError") throw error;
     }
   }
   return parseJson ? null : false;
+}
+
+export async function readHermesMcpCatalogDirect(opts: {
+  url: string;
+  key: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesMcpCatalogResult> {
+  const raw = await dashboardGet(
+    opts.url,
+    opts.key,
+    profiledPath("/api/mcp/catalog", opts.profile),
+    opts.signal,
+    12_000,
+  );
+  return raw
+    ? mcpCatalogFromApi(raw)
+    : { ok: false, error: "Couldn’t read the MCP catalog." };
+}
+
+export async function testHermesMcpServerDirect(opts: {
+  url: string;
+  key: string;
+  name: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesMcpProbeResult> {
+  const raw = await dashboardSendJson(
+    opts.url,
+    opts.key,
+    profiledPath(
+      `/api/mcp/servers/${encodeURIComponent(opts.name)}/test`,
+      opts.profile,
+    ),
+    "POST",
+    undefined,
+    { signal: opts.signal, timeoutMs: 60_000 },
+  );
+  return raw
+    ? mcpProbeFromApi(raw)
+    : { ok: false, error: "Couldn’t test this MCP server." };
+}
+
+export async function startHermesMcpOAuthDirect(opts: {
+  url: string;
+  key: string;
+  name: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesMcpOAuthResult> {
+  const raw = await dashboardSendJson(
+    opts.url,
+    opts.key,
+    profiledPath(
+      `/api/mcp/servers/${encodeURIComponent(opts.name)}/auth`,
+      opts.profile,
+    ),
+    "POST",
+    undefined,
+    { signal: opts.signal, timeoutMs: 45_000 },
+  );
+  return raw
+    ? mcpOAuthFlowFromApi(raw)
+    : { ok: false, error: "Couldn’t start MCP authorization." };
+}
+
+export async function readHermesMcpOAuthDirect(opts: {
+  url: string;
+  key: string;
+  flowId: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesMcpOAuthResult> {
+  const raw = await dashboardGet(
+    opts.url,
+    opts.key,
+    profiledPath(
+      `/api/mcp/oauth/flows/${encodeURIComponent(opts.flowId)}`,
+      opts.profile,
+    ),
+    opts.signal,
+  );
+  return raw
+    ? mcpOAuthFlowFromApi(raw)
+    : { ok: false, error: "Couldn’t read MCP authorization." };
+}
+
+export async function readHermesMcpUsageDirect(opts: {
+  url: string;
+  key: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesMcpUsageResult> {
+  const raw = await dashboardGet(
+    opts.url,
+    opts.key,
+    profiledPath("/api/analytics/usage?days=30", opts.profile),
+    opts.signal,
+    12_000,
+  );
+  return raw
+    ? mcpUsageFromApi(raw)
+    : { ok: false, error: "Couldn’t read MCP usage." };
 }
 
 export async function listHermesLiveDirect(opts: {
@@ -1184,7 +1304,8 @@ export async function mutateHermesDirect(
       operation &&
       (opts.action === "skill-install" ||
         opts.action === "skill-uninstall" ||
-        opts.action === "skills-update")
+        opts.action === "skills-update" ||
+        opts.action === "mcp-catalog-install")
     ) {
       const raw = await dashboardSendJson(
         opts.url,
@@ -1193,7 +1314,12 @@ export async function mutateHermesDirect(
         operation.method,
         operation.body,
       );
-      const actionName = str(asRec(raw).name);
+      const record = asRec(raw);
+      if (opts.action === "mcp-catalog-install") {
+        const actionName = str(record.action);
+        return actionName ? { ok: true, actionName } : { ok: true };
+      }
+      const actionName = str(record.name);
       return actionName
         ? { ok: true, actionName }
         : { ok: false, error: "Hermes didn’t start the skill action." };

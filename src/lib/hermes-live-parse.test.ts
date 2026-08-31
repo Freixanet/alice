@@ -11,7 +11,11 @@ import {
   curatorFromApi,
   diagnosticsFromApi,
   groupLabel,
+  mcpCatalogFromApi,
   mcpFromApi,
+  mcpOAuthFlowFromApi,
+  mcpProbeFromApi,
+  mcpUsageFromApi,
   pluginsFromApi,
   pairingList,
   prettyName,
@@ -29,6 +33,97 @@ import {
   webhookCreationFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
+
+describe("Pantheon MCP contracts", () => {
+  it("bounds catalog data and never forwards unsafe source URLs", () => {
+    expect(
+      mcpCatalogFromApi({
+        entries: [
+          {
+            name: "github",
+            description: "GitHub tools",
+            source: "file:///private/catalog.json",
+            transport: "stdio",
+            auth_type: "oauth",
+            required_env: [
+              { name: "GITHUB_TOKEN", prompt: "Token", required: true },
+            ],
+            command: "uvx",
+            args: ["mcp-github"],
+            installed: false,
+          },
+        ],
+      }),
+    ).toEqual({
+      ok: true,
+      diagnostics: [],
+      entries: [
+        expect.objectContaining({
+          name: "github",
+          source: undefined,
+          authType: "oauth",
+          requiredEnv: [
+            { name: "GITHUB_TOKEN", prompt: "Token", required: true },
+          ],
+        }),
+      ],
+    });
+  });
+
+  it("calculates per-request schema cost without trusting client totals", () => {
+    expect(
+      mcpProbeFromApi({
+        ok: true,
+        tools: [
+          { name: "search", schema_chars: 5 },
+          { name: "read", schema_chars: 8 },
+        ],
+        prompts: 2,
+        resources: 3,
+      }),
+    ).toEqual({
+      ok: true,
+      probe: {
+        tools: [
+          { name: "search", description: "", schemaChars: 5 },
+          { name: "read", description: "", schemaChars: 8 },
+        ],
+        prompts: 2,
+        resources: 3,
+        schemaTokens: 4,
+      },
+    });
+  });
+
+  it("accepts only valid OAuth flows and finite usage counters", () => {
+    expect(
+      mcpOAuthFlowFromApi({
+        flow_id: "flow-1",
+        server_name: "github",
+        status: "authorization_required",
+        authorization_url: "https://github.com/login/oauth/authorize",
+      }),
+    ).toMatchObject({
+      ok: true,
+      flow: { flowId: "flow-1", serverName: "github" },
+    });
+    expect(
+      mcpOAuthFlowFromApi({
+        flow_id: "flow-1",
+        server_name: "github",
+        status: "invented",
+      }).ok,
+    ).toBe(false);
+    expect(
+      mcpUsageFromApi({
+        tools: [
+          { tool: "mcp__github__search", count: 7 },
+          { tool: "mcp__github__read", count: Number.POSITIVE_INFINITY },
+        ],
+      }),
+    ).toEqual({ ok: true, calls: { mcp__github__search: 7 } });
+  });
+});
 
 describe("Hermes cron contract parsing", () => {
   it("retains every editable field including Pantheon job state", () => {
