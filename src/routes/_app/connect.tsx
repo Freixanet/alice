@@ -72,6 +72,7 @@ function ConnectPage() {
   const setUrl = useHermes((s) => s.setGatewayUrl);
   const status = useHermes((s) => s.gatewayStatus);
   const meta = useHermes((s) => s.gatewayMeta);
+  const profile = useHermes((s) => s.profile);
   const error = useHermes((s) => s.gatewayError);
   const on = useHermes((s) => s.gatewayOn);
   const setChecking = useHermes((s) => s.setGatewayChecking);
@@ -232,6 +233,9 @@ function ConnectPage() {
         baseUrl: endpointUrl,
         apiKey: endpointKey,
         model: endpointModel,
+        profile: advertisesHermesCapability(meta?.manifest, "profiles")
+          ? profile
+          : undefined,
       });
       if (!result.ok) {
         setEndpointError(result.error || t("error.saveEndpoint"));

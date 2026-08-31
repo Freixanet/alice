@@ -528,7 +528,10 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
   const gatewayUrl = useHermes((s) => s.gatewayUrl);
   const gatewayPlace = useHermes((s) => s.gatewayPlace);
   const modelProvider = useHermes((s) => s.modelProvider);
+  const profile = useHermes((s) => s.profile);
   const setGatewayModels = useHermes((s) => s.setGatewayModels);
+  const [modelBusy, setModelBusy] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
   const live = gatewayOn && gatewayStatus === "live";
   const hermesModels = live ? (gatewayMeta?.models ?? []) : [];
   const modelGroups = groupHermesModels(hermesModels);
@@ -539,17 +542,22 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
     void listHermesModels({ refresh: true, signal: ctrl.signal }).then(
       (result) => {
         if (ctrl.signal.aborted || !result.ok) return;
-        setGatewayModels(result.models);
+        setGatewayModels(result.models, {
+          model: result.currentModel,
+          provider: result.currentProvider,
+        });
       },
     );
     return () => ctrl.abort();
-  }, [live, setGatewayModels]);
+  }, [live, profile, setGatewayModels]);
 
-  function pick(id: string, provider?: string) {
-    setModel(id, provider);
+  async function pick(id: string, provider?: string) {
     if (!live || !gatewayUrl) return;
+    const key = `${provider ?? ""}:${id}`;
+    setModelBusy(key);
+    setModelError(null);
     const convId = useHermes.getState().activeId;
-    void setHermesModel({
+    const result = await setHermesModel({
       url: gatewayUrl,
       key:
         gatewayPlace === "mac"
@@ -562,6 +570,9 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
       provider,
       conversationId: convId,
     });
+    setModelBusy(null);
+    if (result.ok) setModel(id, provider);
+    else setModelError(t("error.saveFailed"));
   }
 
   if (!live) {
@@ -598,6 +609,11 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="space-y-5">
+      {modelError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {modelError}
+        </p>
+      ) : null}
       {modelGroups.map((group) => (
         <div key={group.slug}>
           <p className="mb-2 text-2xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
@@ -612,7 +628,9 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
                 <li key={`${m.provider}:${m.id}`}>
                   <button
                     type="button"
-                    onClick={() => pick(m.id, m.provider)}
+                    onClick={() => void pick(m.id, m.provider)}
+                    disabled={Boolean(modelBusy)}
+                    aria-busy={modelBusy === `${m.provider ?? ""}:${m.id}`}
                     className="flex w-full items-center gap-3 py-3 text-left"
                   >
                     <span

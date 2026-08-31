@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openGate, sealGate } from "./gateway.server";
+import {
+  matchStoredEndpoint,
+  modelsFromEndpoints,
+  openGate,
+  sealGate,
+  upsertStoredEndpoint,
+} from "./gateway.server";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -44,5 +50,56 @@ describe("Hermes credential encryption", () => {
     expect(() =>
       sealGate({ k: "key", u: "https://hermes.example", p: "cloud" }),
     ).toThrow("Persistent Hermes credential encryption key is missing");
+  });
+});
+
+describe("stored custom endpoint isolation", () => {
+  const defaultEndpoint = {
+    n: "Default local",
+    s: "local",
+    u: "https://default.example/v1",
+    k: "key-default",
+    m: "model-default",
+  };
+  const researchEndpoint = {
+    n: "Research local",
+    s: "local",
+    u: "https://research.example/v1",
+    k: "key-research",
+    m: "model-research",
+    p: "research",
+  };
+
+  it("keeps equal provider slugs separate across profiles", () => {
+    const endpoints = upsertStoredEndpoint(
+      upsertStoredEndpoint([], defaultEndpoint),
+      researchEndpoint,
+    );
+    expect(endpoints).toHaveLength(2);
+    expect(modelsFromEndpoints(endpoints, "default")).toMatchObject([
+      { id: "model-default", provider: "local" },
+    ]);
+    expect(modelsFromEndpoints(endpoints, "research")).toMatchObject([
+      { id: "model-research", provider: "local" },
+    ]);
+  });
+
+  it("never routes a stored endpoint from another profile", () => {
+    expect(
+      matchStoredEndpoint(
+        [defaultEndpoint, researchEndpoint],
+        "model-research",
+        "local",
+        "default",
+      ),
+    ).toEqual(defaultEndpoint);
+    expect(
+      matchStoredEndpoint(
+        [defaultEndpoint, researchEndpoint],
+        "model-research",
+        "local",
+        "research",
+      ),
+    ).toEqual(researchEndpoint);
   });
 });

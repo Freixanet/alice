@@ -9,6 +9,7 @@ import {
   parseHermesCapabilityManifest,
   parseHermesModelOptions,
   scopeHermesGatewayBase,
+  scopeHermesManagementPath,
 } from "./gateway";
 
 describe("gateway input invariants", () => {
@@ -42,6 +43,21 @@ describe("gateway input invariants", () => {
     expect(scopeHermesGatewayBase("http://127.0.0.1:8642", undefined)).toBe(
       "http://127.0.0.1:8642",
     );
+  });
+
+  it("adds a profile to management routes without replacing query fields", () => {
+    expect(
+      scopeHermesManagementPath(
+        "/api/model/options?include_unconfigured=1",
+        "research",
+      ),
+    ).toBe("/api/model/options?include_unconfigured=1&profile=research");
+    expect(
+      scopeHermesManagementPath(
+        "/api/model/options?profile=research",
+        "default",
+      ),
+    ).toBe("/api/model/options?profile=research");
   });
 
   it("never accepts control characters in a gateway key", () => {

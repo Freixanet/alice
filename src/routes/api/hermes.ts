@@ -431,8 +431,9 @@ export const Route = createFileRoute("/api/hermes")({
               AbortSignal.any([request.signal, AbortSignal.timeout(20_000)]),
               Boolean(body.refresh),
               saved.p,
+              body.profile,
             );
-            const extra = modelsFromEndpoints(saved.ep);
+            const extra = modelsFromEndpoints(saved.ep, body.profile);
             const models = [...listed.models];
             for (const item of extra) {
               if (
@@ -445,7 +446,7 @@ export const Route = createFileRoute("/api/hermes")({
             }
             return jsonWithCookie({ ok: true, ...listed, models }, 200);
           } catch {
-            const extra = modelsFromEndpoints(saved.ep);
+            const extra = modelsFromEndpoints(saved.ep, body.profile);
             if (extra.length)
               return jsonWithCookie({ ok: true, models: extra }, 200);
             return jsonWithCookie({ ok: false, models: [] }, 502);
@@ -470,6 +471,7 @@ export const Route = createFileRoute("/api/hermes")({
                 AbortSignal.timeout(12_000),
               ]),
               place: saved.p,
+              profile: body.profile,
             });
             return jsonWithCookie(result, result.ok ? 200 : 502);
           } catch {
@@ -494,6 +496,7 @@ export const Route = createFileRoute("/api/hermes")({
               baseUrl: endpointUrl,
               apiKey: body.endpointKey ?? "",
               model: body.endpointModel,
+              profile: body.profile,
               signal: AbortSignal.any([
                 request.signal,
                 AbortSignal.timeout(20_000),

@@ -25,6 +25,13 @@ import { parseHermesRunSnapshot, type HermesRunSnapshot } from "./hermes-runs";
 
 type HermesActionResult = ProbeResult & { models?: HermesModelOption[] };
 
+function negotiatedProfile(): string | undefined {
+  const state = useHermes.getState();
+  return advertisesHermesCapability(state.gatewayMeta?.manifest, "profiles")
+    ? state.profile
+    : undefined;
+}
+
 export async function probeGateway(opts: {
   url: string;
   key?: string;
@@ -109,6 +116,7 @@ export async function listHermesModels(opts?: {
 }> {
   try {
     const { gatewayPlace: place, gatewayUrl: url } = useHermes.getState();
+    const profile = negotiatedProfile();
     if (place === "device") {
       const key = getDeviceSessionKey();
       if (!url || !key) return { ok: false, models: [] };
@@ -117,6 +125,7 @@ export async function listHermesModels(opts?: {
         key,
         refresh: opts?.refresh,
         signal: opts?.signal,
+        profile,
       });
     }
     const res = await fetch("/api/hermes", {
@@ -125,6 +134,7 @@ export async function listHermesModels(opts?: {
       body: JSON.stringify({
         action: "models",
         refresh: Boolean(opts?.refresh),
+        profile,
       }),
       signal: opts?.signal,
     });
@@ -153,6 +163,7 @@ export async function setHermesModel(opts: {
   provider?: string;
   conversationId?: string;
 }): Promise<{ ok: boolean }> {
+  const profile = negotiatedProfile();
   if (opts.place === "device") {
     const key = opts.key || getDeviceSessionKey();
     if (!key) return { ok: false };
@@ -162,6 +173,7 @@ export async function setHermesModel(opts: {
       model: opts.model,
       provider: opts.provider,
       conversationId: opts.conversationId,
+      profile,
     });
   }
   try {
@@ -173,6 +185,7 @@ export async function setHermesModel(opts: {
         model: opts.model,
         provider: opts.provider,
         conversationId: opts.conversationId,
+        profile,
       }),
     });
     const data = (await res.json()) as { ok?: boolean };

@@ -4,10 +4,12 @@ import {
   mutateHermesDirect,
   controlHermesRunDirect,
   getHermesRunDirect,
+  listHermesModelsDirect,
   readHermesProfilesDirect,
   readHermesProfileSoulDirect,
   streamHermesDirect,
   streamHermesSessionDirect,
+  setHermesModelDirect,
 } from "./hermes-direct";
 
 function json(body: unknown): Response {
@@ -115,6 +117,65 @@ describe("Hermes direct profile transport", () => {
     ).toEqual({ ok: true });
     expect(seen[0]).toContain("/api/skills/toggle?profile=research");
     expect(seen[1]).toMatch(/\/api\/profiles\/active$/);
+  });
+
+  it("scopes model discovery and default assignment to the selected profile", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL) => {
+        const url = String(input);
+        seen.push(url);
+        if (url.includes("/v1/models")) {
+          return Promise.resolve(
+            json({
+              data: [{ id: "gpt-5.6", provider: "openai" }],
+              current_model: "gpt-5.6",
+              current_provider: "openai",
+            }),
+          );
+        }
+        if (url.includes("/api/model/options")) {
+          return Promise.resolve(
+            json({
+              providers: [
+                {
+                  id: "openai",
+                  models: [{ id: "gpt-5.6" }],
+                },
+              ],
+            }),
+          );
+        }
+        return Promise.resolve(json({ ok: true }));
+      }),
+    );
+
+    expect(
+      await listHermesModelsDirect({
+        url: "http://127.0.0.1:8642",
+        key: "12345678",
+        profile: "research",
+      }),
+    ).toMatchObject({ ok: true, currentModel: "gpt-5.6" });
+    expect(
+      await setHermesModelDirect({
+        url: "http://127.0.0.1:8642",
+        key: "12345678",
+        profile: "research",
+        model: "gpt-5.6",
+        provider: "openai",
+      }),
+    ).toEqual({ ok: true });
+    expect(seen[0]).toContain("/p/research/v1/models");
+    expect(
+      seen
+        .filter((url) => url.includes("/api/model/options"))
+        .every((url) => url.includes("profile=research")),
+    ).toBe(true);
+    expect(
+      seen.some((url) => url.includes("/api/model/set?profile=research")),
+    ).toBe(true);
   });
 
   it("scopes chat, persisted chat and run control with the multiplex prefix", async () => {

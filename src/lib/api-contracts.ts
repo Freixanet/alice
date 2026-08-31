@@ -43,12 +43,14 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({
     action: z.literal("models"),
     refresh: z.boolean().optional(),
+    profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
     action: z.literal("set-model"),
     model: bounded(256),
     provider: optionalBounded(128),
     conversationId: optionalBounded(128),
+    profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
     action: z.literal("run-status"),
@@ -80,6 +82,7 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
     endpointUrl: bounded(512),
     endpointKey: z.string().max(512).optional(),
     endpointModel: optionalBounded(256),
+    profile: hermesProfileNameSchema.optional(),
   }),
   z.strictObject({
     action: z.literal("probe"),

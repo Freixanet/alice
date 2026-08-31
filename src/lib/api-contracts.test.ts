@@ -57,6 +57,29 @@ describe("Hermes API contracts", () => {
     ).toBe(false);
   });
 
+  it("scopes model inventory, assignment and custom endpoints", () => {
+    for (const request of [
+      { action: "models", refresh: true, profile: "research" },
+      {
+        action: "set-model",
+        model: "gpt-5.6",
+        provider: "openai",
+        profile: "research",
+      },
+      {
+        action: "custom-endpoint",
+        endpointUrl: "https://models.example/v1",
+        profile: "research",
+      },
+    ]) {
+      expect(hermesRequestSchema.safeParse(request).success).toBe(true);
+      expect(
+        hermesRequestSchema.safeParse({ ...request, profile: "../default" })
+          .success,
+      ).toBe(false);
+    }
+  });
+
   it("accepts scoped run recovery and approval actions", () => {
     expect(
       hermesRequestSchema.safeParse({

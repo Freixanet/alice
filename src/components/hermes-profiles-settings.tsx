@@ -11,11 +11,10 @@ import {
   type HermesProfilesState,
 } from "@/lib/hermes-live";
 import { localizeError } from "@/lib/i18n";
+import { isHermesProfileName } from "@/lib/hermes-profile";
 import { useHermes } from "@/lib/store";
 import { useLocale, useT } from "@/lib/use-i18n";
 import { cn } from "@/lib/utils";
-
-const PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export function HermesProfilesSettings() {
   const t = useT();
@@ -211,7 +210,7 @@ export function HermesProfilesSettings() {
           className="space-y-3 rounded-md bg-muted p-3 shadow-border"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!PROFILE_NAME.test(newName.trim())) return;
+            if (!isHermesProfileName(newName.trim())) return;
             void run("create", {
               action: "profile-create",
               name: newName.trim(),
@@ -250,7 +249,7 @@ export function HermesProfilesSettings() {
           </label>
           <Button
             type="submit"
-            disabled={busy === "create" || !PROFILE_NAME.test(newName.trim())}
+            disabled={busy === "create" || !isHermesProfileName(newName.trim())}
           >
             {busy === "create"
               ? t("common.saving")
@@ -267,7 +266,7 @@ export function HermesProfilesSettings() {
               onSubmit={(event) => {
                 event.preventDefault();
                 const nextName = rename.trim();
-                if (!PROFILE_NAME.test(nextName) || nextName === current.name)
+                if (!isHermesProfileName(nextName) || nextName === current.name)
                   return;
                 void run(`rename:${current.name}`, {
                   action: "profile-rename",
@@ -293,7 +292,7 @@ export function HermesProfilesSettings() {
                     variant="outline"
                     disabled={
                       Boolean(busy) ||
-                      !PROFILE_NAME.test(rename.trim()) ||
+                      !isHermesProfileName(rename.trim()) ||
                       rename.trim() === current.name
                     }
                   >

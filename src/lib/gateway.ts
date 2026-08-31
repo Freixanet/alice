@@ -108,6 +108,14 @@ export function scopeHermesGatewayBase(base: string, profile?: string): string {
     : base;
 }
 
+export function scopeHermesManagementPath(
+  path: string,
+  profile?: string,
+): string {
+  if (!profile || /(?:^|[?&])profile=/.test(path)) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}profile=${encodeURIComponent(profile)}`;
+}
+
 export function normalizeLlmBaseUrl(raw: string): string {
   let s = raw.trim();
   if (!s) throw new GatewayError("invalid", FAIL);
@@ -410,7 +418,7 @@ export async function enrichWithModelOptions(
     currentModel?: string;
     currentProvider?: string;
   },
-  refresh = false,
+  options?: { refresh?: boolean; profile?: string },
 ): Promise<{
   models: HermesModelOption[];
   currentModel?: string;
@@ -421,7 +429,7 @@ export async function enrichWithModelOptions(
     "/api/model/options?refresh=1&include_unconfigured=1",
     "/api/model/options",
     "/api/models",
-    ...(refresh
+    ...(options?.refresh
       ? ["/api/model/options?refresh=1", "/api/models?refresh=1"]
       : []),
   ];
@@ -434,9 +442,10 @@ export async function enrichWithModelOptions(
     },
   ];
   for (const path of paths) {
+    const scopedPath = scopeHermesManagementPath(path, options?.profile);
     for (const headers of headerSets) {
       try {
-        const res = await fetch(`${base}${path}`, {
+        const res = await fetch(`${base}${scopedPath}`, {
           headers,
           signal,
           cache: "no-store",
@@ -599,6 +608,7 @@ export async function saveHermesCustomEndpoint(opts: {
   baseUrl: string;
   apiKey?: string;
   model?: string;
+  profile?: string;
 }): Promise<{
   ok: boolean;
   error?: string;
@@ -616,6 +626,7 @@ export async function saveHermesCustomEndpoint(opts: {
         endpointUrl: opts.baseUrl,
         endpointKey: opts.apiKey,
         endpointModel: opts.model,
+        profile: opts.profile,
       }),
     });
     const data = (await res.json()) as {

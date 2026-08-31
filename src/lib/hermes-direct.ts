@@ -8,6 +8,7 @@ import {
   parseSkillNames,
   readSse,
   scopeHermesGatewayBase,
+  scopeHermesManagementPath,
   type ChatEvent,
   type HermesChatContent,
   type HermesModelOption,
@@ -533,6 +534,7 @@ export async function listHermesModelsDirect(opts: {
   key: string;
   refresh?: boolean;
   signal?: AbortSignal;
+  profile?: string;
 }): Promise<{
   ok: boolean;
   models: HermesModelOption[];
@@ -543,7 +545,8 @@ export async function listHermesModelsDirect(opts: {
     const base = normalizeGatewayUrl(opts.url);
     const token = assertGatewayKey(opts.key);
     const ctrl = opts.signal ?? AbortSignal.timeout(20_000);
-    const res = await fetch(`${base}/v1/models`, {
+    const gatewayBase = scopeHermesGatewayBase(base, opts.profile);
+    const res = await fetch(`${gatewayBase}/v1/models`, {
       headers: headers(token),
       signal: ctrl,
       cache: "no-store",
@@ -560,7 +563,7 @@ export async function listHermesModelsDirect(opts: {
         currentModel: acc.currentModel,
         currentProvider: acc.currentProvider,
       },
-      Boolean(opts.refresh),
+      { refresh: Boolean(opts.refresh), profile: opts.profile },
     );
     return {
       ok: true,
@@ -579,28 +582,36 @@ export async function setHermesModelDirect(opts: {
   model: string;
   provider?: string;
   conversationId?: string;
+  profile?: string;
 }): Promise<{ ok: boolean }> {
   try {
     const base = normalizeGatewayUrl(opts.url);
     const token = assertGatewayKey(opts.key);
     const ctrl = AbortSignal.timeout(12_000);
     const provider = (opts.provider || "").trim();
-    const setRes = await fetch(`${base}/api/model/set`, {
-      method: "POST",
-      headers: headers(token, { "Content-Type": "application/json" }),
-      signal: ctrl,
-      cache: "no-store",
-      redirect: "manual",
-      body: JSON.stringify({ scope: "main", model: opts.model, provider }),
-    });
+    const setRes = await fetch(
+      `${base}${scopeHermesManagementPath("/api/model/set", opts.profile)}`,
+      {
+        method: "POST",
+        headers: headers(token, { "Content-Type": "application/json" }),
+        signal: ctrl,
+        cache: "no-store",
+        redirect: "manual",
+        body: JSON.stringify({ scope: "main", model: opts.model, provider }),
+      },
+    );
     if (setRes.ok) return { ok: true };
     const command = provider
       ? `/model ${opts.model} --provider ${provider} --global`
       : `/model ${opts.model} --global`;
-    const chatRes = await fetch(`${base}/v1/chat/completions`, {
+    const gatewayBase = scopeHermesGatewayBase(base, opts.profile);
+    const chatRes = await fetch(`${gatewayBase}/v1/chat/completions`, {
       method: "POST",
       headers: headers(token, {
         "Content-Type": "application/json",
+        ...(opts.conversationId
+          ? { "X-Hermes-Session-Key": opts.conversationId.slice(0, 256) }
+          : {}),
       }),
       signal: ctrl,
       cache: "no-store",

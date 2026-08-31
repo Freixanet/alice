@@ -24,16 +24,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input, Textarea } from "@/components/ui/input";
 import type { ChatEvent, HermesChatContent } from "@/lib/gateway";
-import {
-  getMacSessionKey,
-  groupHermesModels,
-  prettyModelLabel,
-} from "@/lib/gateway";
-import {
-  controlHermesRunClient,
-  listHermesModels,
-  setHermesModel,
-} from "@/lib/hermes-client";
+import { groupHermesModels, prettyModelLabel } from "@/lib/gateway";
+import { controlHermesRunClient, listHermesModels } from "@/lib/hermes-client";
 import {
   getDeviceSessionKey,
   streamHermesDirect,
@@ -168,11 +160,14 @@ export function ChatView() {
     void listHermesModels({ refresh: true, signal: ctrl.signal }).then(
       (result) => {
         if (ctrl.signal.aborted || !result.ok) return;
-        setGatewayModels(result.models);
+        setGatewayModels(result.models, {
+          model: result.currentModel,
+          provider: result.currentProvider,
+        });
       },
     );
     return () => ctrl.abort();
-  }, [live, setGatewayModels]);
+  }, [live, profile, setGatewayModels]);
 
   useEffect(() => {
     if (!modelsOpen || !live) return;
@@ -516,20 +511,6 @@ export function ChatView() {
   function pickModel(id: string, nextProvider?: string) {
     setModel(id, nextProvider);
     setModelsOpen(false);
-    if (!live || !gatewayUrl) return;
-    void setHermesModel({
-      url: gatewayUrl,
-      key:
-        gatewayPlace === "mac"
-          ? (getMacSessionKey() ?? undefined)
-          : gatewayPlace === "device"
-            ? (getDeviceSessionKey() ?? undefined)
-            : undefined,
-      place: gatewayPlace,
-      model: id,
-      provider: nextProvider,
-      conversationId: conv?.id,
-    });
   }
 
   function pickFromQuery() {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HERMES_PROFILE_NAME_PATTERN } from "./hermes-profile";
 
 const name = z.string().trim().min(1).max(128);
 const id = z.string().trim().min(1).max(160);
@@ -22,7 +23,7 @@ export const hermesProfileNameSchema = z
   .trim()
   .min(1)
   .max(64)
-  .regex(/^[a-z0-9][a-z0-9_-]*$/);
+  .regex(HERMES_PROFILE_NAME_PATTERN);
 const webhookCreateSchema = z
   .strictObject({
     action: z.literal("webhook-create"),

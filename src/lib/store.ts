@@ -19,6 +19,7 @@ import type {
   Message,
   Webhook,
 } from "./types";
+import { isHermesProfileName } from "./hermes-profile";
 import type {
   GatewayMeta,
   GatewayPlace,
@@ -43,7 +44,6 @@ import {
 
 const welcomeId = "welcome";
 const freshId = "fresh";
-const HERMES_PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 function seedConversation(): Conversation {
   return {
@@ -240,7 +240,7 @@ export const useHermes = create<HermesState>()(
         }),
       setProfile: (name) => {
         const profile = name.trim();
-        if (HERMES_PROFILE_NAME.test(profile)) set({ profile });
+        if (isHermesProfileName(profile)) set({ profile });
       },
       isSkillOn: (id) => {
         const o = get().skillEnabled[id];
@@ -462,10 +462,7 @@ export const useHermes = create<HermesState>()(
       setGatewayChecking: () =>
         set({ gatewayStatus: "checking", gatewayError: null }),
       setGatewayLive: (meta) => {
-        const models = unionHermesModels(
-          get().gatewayMeta?.models,
-          meta.models ?? [],
-        );
+        const models = unionHermesModels([], meta.models ?? []);
         const currentId = get().model;
         const currentProvider = get().modelProvider;
         const stillSelected = models.some(
@@ -495,14 +492,29 @@ export const useHermes = create<HermesState>()(
               }),
         });
       },
-      setGatewayModels: (models) => {
+      setGatewayModels: (models, current) => {
         const meta = get().gatewayMeta;
         if (!meta) return;
+        const nextModels = unionHermesModels([], models);
+        const chosen = current?.model
+          ? nextModels.find(
+              (item) =>
+                item.id === current.model &&
+                (!current.provider || item.provider === current.provider),
+            )
+          : undefined;
         set({
           gatewayMeta: {
             ...meta,
-            models: unionHermesModels(meta.models, models),
+            models: nextModels,
           },
+          ...(current?.model
+            ? {
+                model: current.model,
+                modelProvider:
+                  current.provider || chosen?.provider || meta.provider || "",
+              }
+            : {}),
         });
       },
       setGatewayDown: (error) =>
@@ -554,7 +566,7 @@ export const useHermes = create<HermesState>()(
           }
           if (
             typeof next.profile !== "string" ||
-            !HERMES_PROFILE_NAME.test(next.profile)
+            !isHermesProfileName(next.profile)
           ) {
             next.profile = "default";
           }

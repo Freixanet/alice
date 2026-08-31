@@ -74,6 +74,12 @@ describe("Hermes proxy client actions", () => {
         provider: "openai",
       }),
     ).toEqual({ ok: true });
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)),
+    ).toMatchObject({ action: "models", profile: "research" });
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body)),
+    ).toMatchObject({ action: "set-model", profile: "research" });
   });
 
   it("scopes run recovery and control to the negotiated profile", async () => {
