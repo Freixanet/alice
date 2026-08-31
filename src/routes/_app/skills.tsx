@@ -350,7 +350,7 @@ function SkillsPage() {
       {feedback ? (
         <p
           role="status"
-          className="fixed right-4 bottom-4 z-40 max-w-[min(28rem,calc(100%-2rem))] whitespace-pre-wrap rounded-md bg-popover px-3 py-2 text-sm shadow-border"
+          className="fixed right-4 bottom-4 z-40 max-w-[min(28rem,calc(100%-2rem))] whitespace-pre-wrap rounded-md bg-popover px-3 py-2 text-sm border border-border"
         >
           {feedback}
         </p>
@@ -391,7 +391,7 @@ function SkillsPage() {
               </Button>
             </div>
             {hubResults.length ? (
-              <ul className="alice-record-list max-h-64 overflow-y-auto rounded-md shadow-border">
+              <ul className="alice-record-list max-h-64 overflow-y-auto rounded-md border border-border">
                 {hubResults.map((result) => (
                   <li
                     key={result.identifier}
@@ -488,7 +488,7 @@ function SkillsPage() {
           <label className="grid gap-1.5 text-sm">
             {t("skills.content")}
             <Textarea
-              className="min-h-72 resize-y rounded-md bg-muted p-3 font-mono text-xs shadow-border"
+              className="min-h-72 resize-y rounded-md bg-muted p-3 font-mono text-xs border border-border"
               value={createContent}
               onChange={(event) => setCreateContent(event.target.value)}
             />
@@ -538,7 +538,7 @@ function SkillsPage() {
           ) : (
             <Textarea
               readOnly={inspectSkill?.provenance !== "agent"}
-              className="min-h-[50dvh] resize-y rounded-md bg-muted p-3 font-mono text-xs shadow-border"
+              className="min-h-[50dvh] resize-y rounded-md bg-muted p-3 font-mono text-xs border border-border"
               value={inspectContent}
               onChange={(event) => setInspectContent(event.target.value)}
             />

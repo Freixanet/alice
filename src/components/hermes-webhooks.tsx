@@ -324,7 +324,7 @@ export function HermesWebhooksPanel({
               </Field>
               <Field label={t("connect.webhookDeliver")}>
                 <select
-                  className="min-h-11 w-full rounded-md bg-muted px-3 text-base text-foreground shadow-border focus-visible:outline-none md:text-sm"
+                  className="min-h-11 w-full rounded-md bg-muted px-3 text-base text-foreground border border-border focus-visible:outline-none md:text-sm"
                   value={draft.deliver}
                   onChange={(event) => {
                     const deliver = event.target.value;
@@ -365,7 +365,7 @@ export function HermesWebhooksPanel({
               </label>
               <Field label={t("connect.webhookPrompt")}>
                 <Textarea
-                  className="min-h-24 rounded-md bg-muted p-3 shadow-border"
+                  className="min-h-24 rounded-md bg-muted p-3 border border-border"
                   value={draft.prompt}
                   maxLength={8_000}
                   onChange={(event) => update("prompt", event.target.value)}

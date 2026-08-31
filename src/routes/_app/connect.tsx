@@ -240,7 +240,7 @@ function ConnectPage() {
 
         {!live || editingConnection ? (
           <section className="space-y-3">
-            <div className="flex flex-col gap-4 rounded-xl bg-card p-4 shadow-border">
+            <div className="flex flex-col gap-4 rounded-xl bg-card p-4 border border-border">
               {!live ? (
                 <p className="text-sm text-muted-foreground">
                   {t("connect.setupHint")}
@@ -337,7 +337,7 @@ function ConnectPage() {
         {live && meta ? (
           <section className="space-y-3">
             <h2 className="text-sm font-medium">{t("connect.status")}</h2>
-            <div className="rounded-xl bg-card px-4 py-4 shadow-border">
+            <div className="rounded-xl bg-card px-4 py-4 border border-border">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="live">{t("connect.online")}</Badge>
                 <span className="text-sm">{meta.model}</span>
@@ -388,7 +388,7 @@ function ConnectPage() {
         />
 
         {live && place !== "device" ? (
-          <details className="rounded-xl bg-card shadow-border">
+          <details className="rounded-xl bg-card border border-border">
             <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
               {t("connect.advanced")}
             </summary>
@@ -658,7 +658,7 @@ function HermesLiveSections({
       {canManageCurator && curator ? (
         <section className="space-y-3">
           <h2 className="text-sm font-medium">{t("connect.curator")}</h2>
-          <div className="rounded-xl bg-card px-4 py-4 shadow-border">
+          <div className="rounded-xl bg-card px-4 py-4 border border-border">
             <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant={
@@ -777,7 +777,7 @@ function HermesLiveSections({
             {pending.map((row) => (
               <li
                 key={`p-${row.platform}-${row.requestId ?? row.code ?? row.user ?? ""}`}
-                className="rounded-xl bg-card px-4 py-4 shadow-border"
+                className="rounded-xl bg-card px-4 py-4 border border-border"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{row.user || row.platform}</h3>
@@ -813,7 +813,7 @@ function HermesLiveSections({
             {approved.map((row) => (
               <li
                 key={`a-${row.platform}-${row.userId ?? row.user ?? row.code ?? ""}`}
-                className="rounded-xl bg-card px-4 py-4 shadow-border"
+                className="rounded-xl bg-card px-4 py-4 border border-border"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{row.user || row.platform}</h3>
@@ -911,7 +911,7 @@ function HermesLiveSections({
           </p>
         ) : null}
         {sessions.length === 0 ? (
-          <div className="rounded-xl bg-card px-4 py-8 text-center text-sm text-muted-foreground shadow-border">
+          <div className="rounded-xl bg-card px-4 py-8 text-center text-sm text-muted-foreground border border-border">
             {t("connect.noSessions")}
           </div>
         ) : (
@@ -919,7 +919,7 @@ function HermesLiveSections({
             {sessions.map((session) => (
               <li
                 key={session.id}
-                className="rounded-xl bg-card px-4 py-4 shadow-border"
+                className="rounded-xl bg-card px-4 py-4 border border-border"
               >
                 {editingSessionId === session.id ? (
                   <form

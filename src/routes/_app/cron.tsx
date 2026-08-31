@@ -95,15 +95,15 @@ function CronPage() {
             {localizeError(locale, error)}
           </p>
         ) : jobs.length === 0 ? (
-          <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
+          <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground border border-border">
             {t("cron.empty")}
           </div>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="alice-record-list flex flex-col gap-2">
             {jobs.map((job) => (
               <li
                 key={job.id}
-                className="rounded-xl bg-card px-4 py-4 shadow-border"
+                className="alice-record rounded-xl bg-card px-4 py-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">

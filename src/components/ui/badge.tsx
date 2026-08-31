@@ -7,7 +7,7 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default: "bg-secondary text-secondary-foreground",
-        outline: "shadow-border text-muted-foreground",
+        outline: "border border-border text-muted-foreground",
         live: "bg-live/15 text-live",
         warn: "bg-warn/15 text-warn",
         mute: "text-muted-foreground",

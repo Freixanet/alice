@@ -107,7 +107,7 @@ export function McpServerDialog({
                   key={transport}
                   type="button"
                   className={cn(
-                    "min-h-11 rounded-md px-3 text-sm font-medium shadow-border",
+                    "min-h-11 rounded-md px-3 text-sm font-medium border border-border",
                     draft.transport === transport
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-foreground",
@@ -136,7 +136,7 @@ export function McpServerDialog({
               <label className="flex flex-col gap-1.5 text-sm">
                 {t("addons.auth")}
                 <select
-                  className="min-h-11 rounded-md bg-muted px-3 text-base text-foreground shadow-border focus-visible:outline-none md:text-sm"
+                  className="min-h-11 rounded-md bg-muted px-3 text-base text-foreground border border-border focus-visible:outline-none md:text-sm"
                   value={draft.auth}
                   onChange={(event) =>
                     set("auth", event.target.value as McpAuth)
@@ -177,7 +177,7 @@ export function McpServerDialog({
                   value={draft.args}
                   onChange={(event) => set("args", event.target.value)}
                   placeholder={t("addons.argsPlaceholder")}
-                  className="min-h-24 bg-muted font-mono text-base shadow-border md:text-sm"
+                  className="min-h-24 bg-muted font-mono text-base border border-border md:text-sm"
                 />
               </label>
             </>
@@ -190,7 +190,7 @@ export function McpServerDialog({
               value={draft.env}
               onChange={(event) => set("env", event.target.value)}
               placeholder="API_KEY=value"
-              className="min-h-24 bg-muted font-mono text-base shadow-border md:text-sm"
+              className="min-h-24 bg-muted font-mono text-base border border-border md:text-sm"
             />
             <span className="text-xs text-muted-foreground">
               {t("addons.envHint")}

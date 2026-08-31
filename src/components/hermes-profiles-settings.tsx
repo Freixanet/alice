@@ -128,7 +128,7 @@ export function HermesProfilesSettings() {
         {t("settings.profileProcessHint")}
       </p>
 
-      <div className="overflow-hidden rounded-md shadow-border">
+      <div className="overflow-hidden rounded-md border border-border">
         {profiles?.profiles.map((profile) => {
           const isSelected = profile.name === selected;
           return (
@@ -207,7 +207,7 @@ export function HermesProfilesSettings() {
 
       {creating ? (
         <form
-          className="space-y-3 rounded-md bg-muted p-3 shadow-border"
+          className="space-y-3 rounded-md bg-muted p-3 border border-border"
           onSubmit={(event) => {
             event.preventDefault();
             if (!isHermesProfileName(newName.trim())) return;
@@ -343,7 +343,7 @@ export function HermesProfilesSettings() {
               <span className="block text-xs text-muted-foreground">
                 {t("settings.profileSoulHint")}
               </span>
-              <div className="rounded-md bg-muted p-3 shadow-border">
+              <div className="rounded-md bg-muted p-3 border border-border">
                 <Textarea
                   value={soul}
                   onChange={(event) => setSoul(event.target.value)}

@@ -49,7 +49,7 @@ interface habits without erasing the product's identity.
 ## Responsive rules
 
 - At 320px there must be no horizontal page overflow or clipped controls.
-- Touch targets are at least 40px when they are primary mobile controls.
+- Touch targets are at least 44px for mobile controls.
 - Mobile Settings remains a full-screen surface with independently scrolling content.
 - The mobile sidebar gesture, settling behavior and external toggle remain unchanged.
 

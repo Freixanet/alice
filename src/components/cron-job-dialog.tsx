@@ -230,7 +230,7 @@ export function CronJobDialog({
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder={t("cron.instructionsPlaceholder")}
-                className="min-h-28 resize-y rounded-md bg-muted px-3 py-2 text-base text-foreground shadow-border placeholder:text-muted-foreground/80 focus-visible:outline-none md:text-sm"
+                className="min-h-28 resize-y rounded-md bg-muted px-3 py-2 text-base text-foreground border border-border placeholder:text-muted-foreground/80 focus-visible:outline-none md:text-sm"
               />
             </label>
           )}
@@ -243,7 +243,7 @@ export function CronJobDialog({
                 onChange={(event) =>
                   setFrequency(event.target.value as CronFrequency)
                 }
-                className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground shadow-border focus-visible:outline-none md:text-sm"
+                className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground border border-border focus-visible:outline-none md:text-sm"
               >
                 <option value="daily">{t("cron.daily")}</option>
                 <option value="weekdays">{t("cron.weekdays")}</option>
@@ -278,7 +278,7 @@ export function CronJobDialog({
             <select
               value={deliver}
               onChange={(event) => setDeliver(event.target.value)}
-              className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground shadow-border focus-visible:outline-none md:text-sm"
+              className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground border border-border focus-visible:outline-none md:text-sm"
             >
               {(deliveryTargets.length
                 ? deliveryTargets
@@ -318,7 +318,7 @@ export function CronJobDialog({
             />
           ) : null}
 
-          <details className="rounded-md bg-muted px-3 py-2 shadow-border">
+          <details className="rounded-md bg-muted px-3 py-2 border border-border">
             <summary className="min-h-10 cursor-pointer select-none py-2 text-sm font-medium">
               {t("cron.advanced")}
             </summary>
@@ -349,7 +349,7 @@ export function CronJobDialog({
                               event.target.value as ReasoningEffort | "",
                             )
                           }
-                          className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground shadow-border focus-visible:outline-none md:text-sm"
+                          className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground border border-border focus-visible:outline-none md:text-sm"
                         >
                           <option value="">{t("cron.reasoningDefault")}</option>
                           {reasoningEfforts.map((effort) => (
@@ -369,7 +369,7 @@ export function CronJobDialog({
                             );
                             setMonitorValue("");
                           }}
-                          className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground shadow-border focus-visible:outline-none md:text-sm"
+                          className="h-11 w-full rounded-md bg-muted px-3 text-base text-foreground border border-border focus-visible:outline-none md:text-sm"
                         >
                           <option value="none">{t("cron.monitorOff")}</option>
                           <option value="script">
@@ -492,7 +492,7 @@ function ModeButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`min-h-11 rounded-md px-3 text-sm shadow-border transition-colors ${
+      className={`min-h-11 rounded-md px-3 text-sm border border-border transition-colors ${
         active ? "bg-foreground text-background" : "bg-muted text-foreground"
       }`}
     >

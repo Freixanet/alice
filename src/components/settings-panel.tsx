@@ -139,7 +139,7 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={!mobile}>
-      <DialogContent className="!inset-0 !h-dvh !w-full !max-w-none !translate-x-0 !translate-y-0 !rounded-none flex flex-col gap-0 overflow-hidden p-0 md:!top-1/2 md:!left-1/2 md:!h-[min(38rem,85vh)] md:!w-[calc(100%-2rem)] md:!max-w-3xl md:!-translate-x-1/2 md:!-translate-y-1/2 md:!rounded-xl md:flex-row [&>button]:hidden">
+      <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 md:h-[min(38rem,85vh)] md:w-[calc(100%-2rem)] md:max-w-3xl md:flex-row [&>button]:hidden">
         <DialogDescription className="sr-only">
           {t("settings.title")}
         </DialogDescription>
@@ -349,7 +349,7 @@ function GeneralSection() {
               className={cn(
                 "h-8 rounded-md px-2.5 text-xs font-medium",
                 fontSize === opt.id
-                  ? "bg-card text-foreground shadow-border"
+                  ? "bg-card text-foreground border border-border"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -505,7 +505,7 @@ function GeneralSection() {
               className={cn(
                 "h-7 rounded-md px-2 text-xs font-medium tracking-wide",
                 locale === id
-                  ? "bg-card text-foreground shadow-border"
+                  ? "bg-card text-foreground border border-border"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -635,7 +635,7 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
                   >
                     <span
                       className={cn(
-                        "flex size-4 items-center justify-center rounded-full shadow-border",
+                        "flex size-4 items-center justify-center rounded-full border border-border",
                         on && "border-2 border-primary",
                       )}
                       aria-hidden

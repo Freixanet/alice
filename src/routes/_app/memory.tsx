@@ -103,11 +103,11 @@ function MemoryPage() {
         {loading ? (
           <p className="text-sm text-muted-foreground">{t("memory.loading")}</p>
         ) : error ? (
-          <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
+          <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground border border-border">
             {localizeError(locale, error)}
           </div>
         ) : !profile ? (
-          <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
+          <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground border border-border">
             {t("memory.empty")}{" "}
             <Link
               to="/connect"
@@ -126,7 +126,7 @@ function MemoryPage() {
             </TabsList>
             <TabsContent value="soul">
               {soulText && soulMatch ? (
-                <article className="rounded-xl bg-card px-4 py-4 shadow-border">
+                <article className="rounded-xl bg-card px-4 py-4 border border-border">
                   <p className="whitespace-pre-wrap text-base leading-7 md:text-[0.9375rem]">
                     {soulText}
                   </p>
@@ -145,11 +145,11 @@ function MemoryPage() {
                 count={profile.user.entries.length}
               />
               {userEntries.length ? (
-                <ul className="mt-3 flex flex-col gap-2">
+                <ul className="alice-record-list mt-3 flex flex-col gap-2">
                   {userEntries.map((entry, i) => (
                     <li
                       key={`${entry.slice(0, 48)}-${i}`}
-                      className="rounded-xl bg-card px-4 py-4 text-base leading-7 shadow-border md:text-[0.9375rem]"
+                      className="alice-record rounded-xl bg-card px-4 py-4 text-base leading-7 md:text-[0.9375rem]"
                     >
                       {entry}
                     </li>
@@ -169,11 +169,11 @@ function MemoryPage() {
                 count={profile.notes.entries.length}
               />
               {noteEntries.length ? (
-                <ul className="mt-3 flex flex-col gap-2">
+                <ul className="alice-record-list mt-3 flex flex-col gap-2">
                   {noteEntries.map((entry, i) => (
                     <li
                       key={`${entry.slice(0, 48)}-${i}`}
-                      className="rounded-xl bg-card px-4 py-4 text-base leading-7 shadow-border md:text-[0.9375rem]"
+                      className="alice-record rounded-xl bg-card px-4 py-4 text-base leading-7 md:text-[0.9375rem]"
                     >
                       {entry}
                     </li>
@@ -222,7 +222,7 @@ function StoreHeader({
 
 function EmptyStore({ text }: { text: string }) {
   return (
-    <div className="mt-3 rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
+    <div className="mt-3 rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground border border-border">
       {text}
     </div>
   );

@@ -374,7 +374,7 @@ function AddonsPage() {
       {feedback ? (
         <p
           role="status"
-          className="fixed right-4 bottom-4 z-40 rounded-md bg-popover px-3 py-2 text-sm shadow-border"
+          className="fixed right-4 bottom-4 z-40 rounded-md bg-popover px-3 py-2 text-sm border border-border"
         >
           {feedback}
         </p>

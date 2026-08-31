@@ -28,8 +28,9 @@
     "deps:check": "knip --include files,dependencies,unlisted",
     "cycles:check": "madge --circular --extensions ts,tsx src --exclude 'routeTree\\.gen\\.ts'",
     "duplicates:check": "jscpd src --min-lines 12 --min-tokens 80 --threshold 2 --reporters console",
+    "design:check": "node scripts/check-design-system.mjs",
     "security:check": "npm audit --audit-level=high",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run cycles:check && npm run duplicates:check && npm run build:ci"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run cycles:check && npm run duplicates:check && npm run design:check && npm run build:ci"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

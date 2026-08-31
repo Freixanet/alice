@@ -138,7 +138,7 @@ export function CatalogPage({
       </div>
       <ul className="alice-record-list flex flex-col gap-2">
         {filtered.length === 0 ? (
-          <li className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
+          <li className="alice-record rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground">
             {rows.length === 0
               ? empty || t("catalog.empty")
               : t("catalog.noFilter")}
@@ -147,7 +147,7 @@ export function CatalogPage({
           filtered.map((row) => (
             <li
               key={row.id}
-              className="alice-record rounded-xl bg-card px-4 py-4 shadow-border"
+              className="alice-record rounded-xl bg-card px-4 py-4 border border-border"
             >
               <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start">
                 <div className="min-w-0 flex-1">

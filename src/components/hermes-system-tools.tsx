@@ -81,7 +81,7 @@ export function HermesSystemToolsPanel({ writable }: { writable: boolean }) {
   const computerUse = tools.computerUse;
   return (
     <section className="alice-record-list grid gap-2 md:grid-cols-2">
-      <article className="alice-record rounded-xl bg-card p-4 shadow-border">
+      <article className="alice-record rounded-xl bg-card p-4 border border-border">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="font-medium">{t("tools.terminal")}</h2>
@@ -104,7 +104,7 @@ export function HermesSystemToolsPanel({ writable }: { writable: boolean }) {
                   !writable || busy !== null || backend.status === "unavailable"
                 }
                 onClick={() => void chooseBackend(backend.name)}
-                className="min-h-11 rounded-lg px-3 py-2 text-left shadow-border transition-colors hover:bg-accent disabled:opacity-45"
+                className="min-h-11 rounded-lg px-3 py-2 text-left border border-border transition-colors hover:bg-accent disabled:opacity-45"
               >
                 <span className="flex items-center justify-between gap-3 text-sm font-medium">
                   {backend.label}
@@ -139,7 +139,7 @@ export function HermesSystemToolsPanel({ writable }: { writable: boolean }) {
         )}
       </article>
 
-      <article className="alice-record rounded-xl bg-card p-4 shadow-border">
+      <article className="alice-record rounded-xl bg-card p-4 border border-border">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="font-medium">{t("tools.computerUse")}</h2>

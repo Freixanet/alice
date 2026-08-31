@@ -27,13 +27,13 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --text-2xs: 0.75rem;
   --text-2xs--line-height: 1rem;
+  /* GTA6.md defines one 8px radius for every standalone surface. Semantic
+     exceptions use `rounded-none` or `rounded-full` explicitly. */
   --radius-sm: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.5rem;
-  --radius-2xl: 2rem;
-  --shadow-border: var(--shadow-border);
-  --shadow-border-hover: var(--shadow-border-hover);
+  --radius-md: 0.5rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.5rem;
   --ease-out-smooth: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -59,8 +59,6 @@
   --ring: #d4d0c8;
   --live: #7d9a86;
   --warn: #c4a574;
-  --shadow-border: 0 0 0 1px rgb(255 255 255 / 0.08);
-  --shadow-border-hover: 0 0 0 1px rgb(255 255 255 / 0.14);
 }
 
 [data-theme="light"] {
@@ -84,12 +82,6 @@
   --ring: #1a1a18;
   --live: #4f7a5c;
   --warn: #9a7040;
-  --shadow-border:
-    0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06),
-    0 2px 4px 0 rgb(0 0 0 / 0.04);
-  --shadow-border-hover:
-    0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08),
-    0 2px 4px 0 rgb(0 0 0 / 0.06);
 }
 
 /* Accent tokens must be unlayered: `[data-theme]` above is unlayered, and
@@ -160,14 +152,7 @@ html[data-theme="light"][data-accent="amber"] {
 /* The Alice app follows GTA6.md. AppShell scopes this visual system to the
    authenticated product and removes the marker when login is shown. */
 html[data-alice-app]:has(.alice-app) {
-  --radius-sm: 0.5rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.5rem;
-  --radius-2xl: 0.5rem;
   --composer: #131314;
-  --shadow-border: none;
-  --shadow-border-hover: none;
   --border: rgb(236 236 234 / 0.16);
   --input: rgb(236 236 234 / 0.2);
 }
@@ -190,66 +175,28 @@ html[data-theme="light"][data-alice-app]:has(.alice-app) {
   --input: rgb(26 26 24 / 0.22);
 }
 
-html[data-alice-app]:has(.alice-app) body * {
-  box-shadow: none !important;
-  background-image: none !important;
-  backdrop-filter: none !important;
-}
-
-html[data-alice-app]:has(.alice-app) .alice-app .shadow-border,
-html[data-alice-app]:has(.alice-app) [role="dialog"].shadow-border,
-html[data-alice-app]:has(.alice-app) [role="menu"].shadow-border {
-  border: 1px solid var(--border);
-}
-
-html[data-alice-app]:has(.alice-app)
-  body
-  :where(.rounded-sm, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl),
-html[data-alice-app]:has(.alice-app) :where([role="dialog"], [role="menu"]) {
-  border-radius: var(--radius-md) !important;
-}
-
-html[data-alice-app]:has(.alice-app)
-  body
-  .rounded-full:not(button[aria-label]):not([role="radio"]):not(
-    [role="switch"]
-  ):not(.alice-switch-thumb) {
-  border-radius: var(--radius-md) !important;
-}
-
-html[data-alice-app]:has(.alice-app) .alice-switch-thumb {
-  border-radius: var(--radius-md) !important;
-}
-
 html[data-alice-app]:has(.alice-app) .alice-page-header {
   border-bottom: 1px solid var(--border);
   padding-bottom: 1.25rem;
 }
 
-html[data-alice-app]:has(.alice-app) .alice-record-list,
-html[data-alice-app]:has(.alice-app) .alice-main ul.flex.flex-col.gap-2 {
+html[data-alice-app]:has(.alice-app) .alice-record-list {
   gap: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
 
-html[data-alice-app]:has(.alice-app) .alice-record,
-html[data-alice-app]:has(.alice-app)
-  .alice-main
-  ul.flex.flex-col.gap-2
-  > li.shadow-border {
+html[data-alice-app]:has(.alice-app) .alice-record-list > .alice-record {
   border: 0;
   border-top: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
 }
 
-html[data-alice-app]:has(.alice-app) .alice-record:first-child,
 html[data-alice-app]:has(.alice-app)
-  .alice-main
-  ul.flex.flex-col.gap-2
-  > li.shadow-border:first-child {
+  .alice-record-list
+  > .alice-record:first-child {
   border-top: 0;
 }
 
@@ -282,10 +229,6 @@ html[data-alice-app]:has(.alice-app) .alice-composer {
   background: var(--composer);
 }
 
-html[data-alice-app]:has(.alice-app) :where([role="dialog"], [role="menu"]) {
-  border: 1px solid var(--border);
-}
-
 @media (max-width: 767px) {
   html[data-alice-app]:has(.alice-app)
     :where(button, [role="button"], [role="menuitem"], a[href], input, select) {
@@ -294,7 +237,7 @@ html[data-alice-app]:has(.alice-app) :where([role="dialog"], [role="menu"]) {
   }
 
   html[data-alice-app]:has(.alice-app) :where(input, textarea, select) {
-    font-size: 16px !important;
+    font-size: 16px;
   }
 
   html[data-alice-app]:has(.alice-app) .alice-page-header {
@@ -303,11 +246,6 @@ html[data-alice-app]:has(.alice-app) :where([role="dialog"], [role="menu"]) {
 
   html[data-alice-app]:has(.alice-app) .alice-empty-state {
     padding-inline: 1.5rem;
-  }
-
-  html[data-alice-app]:has(.alice-app) [role="dialog"] {
-    border: 0;
-    border-radius: 0 !important;
   }
 }
 
@@ -420,14 +358,14 @@ html[data-alice-app]:has(.alice-app) :where([role="dialog"], [role="menu"]) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
   }
 
   .alice-typing > span {
-    opacity: 0.55 !important;
-    transform: none !important;
+    opacity: 0.55;
+    transform: none;
   }
 }

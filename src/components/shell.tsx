@@ -308,7 +308,7 @@ export function AppShell() {
           }
           onClick={() => setMobileSidebarOpen((open) => !open)}
           className={cn(
-            "fixed top-[max(1rem,env(safe-area-inset-top))] left-[max(1rem,env(safe-area-inset-left))] z-40 grid size-10 place-items-center rounded-full bg-card text-foreground shadow-border transition-colors hover:bg-accent md:hidden",
+            "fixed top-[max(1rem,env(safe-area-inset-top))] left-[max(1rem,env(safe-area-inset-left))] z-40 grid size-10 place-items-center rounded-full bg-card text-foreground border border-border transition-colors hover:bg-accent md:hidden",
             mobileSidebarDragging
               ? "transition-none"
               : "transition-transform duration-300 ease-out",
@@ -532,7 +532,7 @@ function ExpandedSidebar({
               type="button"
               aria-label={t("shell.search")}
               onClick={onSearch}
-              className="grid size-10 place-items-center rounded-full bg-card text-foreground shadow-border hover:bg-accent"
+              className="grid size-10 place-items-center rounded-full bg-card text-foreground border border-border hover:bg-accent"
             >
               <RailGlyph icon={Search} heavy />
             </button>
@@ -599,7 +599,7 @@ function ExpandedSidebar({
             type="button"
             aria-label={t("shell.newChat")}
             onClick={onNewChat}
-            className="grid size-10 place-items-center rounded-full bg-card text-foreground shadow-border hover:bg-accent"
+            className="grid size-10 place-items-center rounded-full bg-card text-foreground border border-border hover:bg-accent"
           >
             <RailGlyph icon={SquarePen} heavy />
           </button>

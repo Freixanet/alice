@@ -189,15 +189,15 @@ function ProjectsPage() {
             {localizeError(locale, error)}
           </p>
         ) : visibleProjects.length === 0 ? (
-          <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-border">
+          <div className="rounded-xl bg-card px-4 py-12 text-center text-sm text-muted-foreground border border-border">
             {data?.writable ? t("projects.emptyOn") : t("projects.emptyOff")}
           </div>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="alice-record-list flex flex-col gap-2">
             {visibleProjects.map((project) => (
               <li
                 key={project.id}
-                className="rounded-xl bg-card px-4 py-4 shadow-border"
+                className="alice-record rounded-xl bg-card px-4 py-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -398,7 +398,7 @@ function ProjectsPage() {
               <section className="flex flex-col gap-3">
                 <h3 className="text-sm font-medium">{t("projects.folders")}</h3>
                 {manageProject.folders.length ? (
-                  <ul className="divide-y divide-border shadow-border">
+                  <ul className="divide-y divide-border border border-border">
                     {manageProject.folders.map((folder) => (
                       <li
                         key={folder.path}
@@ -462,7 +462,7 @@ function ProjectsPage() {
                     ))}
                   </ul>
                 ) : null}
-                <div className="flex flex-col gap-3 bg-muted/45 p-3 shadow-border">
+                <div className="flex flex-col gap-3 bg-muted/45 p-3 border border-border">
                   <label className="flex flex-col gap-1.5 text-sm">
                     {t("projects.folder")}
                     <Input
@@ -691,7 +691,7 @@ function CreateProjectDialog({
               value={description}
               onChange={(event) => onDescriptionChange(event.target.value)}
               placeholder={t("projects.aboutPlaceholder")}
-              className="min-h-24 resize-none rounded-md bg-muted px-3 py-2 text-base text-foreground shadow-border placeholder:text-muted-foreground/80 focus-visible:outline-none md:text-sm"
+              className="min-h-24 resize-none rounded-md bg-muted px-3 py-2 text-base text-foreground border border-border placeholder:text-muted-foreground/80 focus-visible:outline-none md:text-sm"
             />
           </label>
           {error ? (

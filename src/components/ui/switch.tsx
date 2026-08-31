@@ -16,7 +16,7 @@ const Switch = React.forwardRef<
   >
     <span
       aria-hidden="true"
-      className="pointer-events-none absolute inset-x-0 h-6 rounded-full bg-muted shadow-border transition-[background-color,box-shadow] duration-150 group-data-[state=checked]:bg-primary"
+      className="pointer-events-none absolute inset-x-0 h-6 rounded-full bg-muted border border-border transition-colors duration-150 group-data-[state=checked]:bg-primary"
     />
     <SwitchPrimitives.Thumb
       className={cn(

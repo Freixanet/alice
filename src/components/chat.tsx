@@ -737,7 +737,7 @@ export function ChatView() {
       >
         <div className="mx-auto w-full max-w-2xl">
           {slash.length > 0 ? (
-            <ul className="mb-2 overflow-hidden rounded-2xl bg-card py-1 shadow-border">
+            <ul className="mb-2 overflow-hidden rounded-2xl bg-card py-1 border border-border">
               {slash.map((item) => (
                 <li key={item.cmd}>
                   <button
@@ -759,7 +759,7 @@ export function ChatView() {
               {files.map((f) => (
                 <li
                   key={f.id}
-                  className="flex min-w-0 items-center gap-1 rounded-md bg-card py-1 pl-3 pr-1 text-2xs text-muted-foreground shadow-border"
+                  className="flex min-w-0 items-center gap-1 rounded-md bg-card py-1 pl-3 pr-1 text-2xs text-muted-foreground border border-border"
                 >
                   <span className="max-w-48 truncate">{f.name}</span>
                   <button
@@ -779,7 +779,7 @@ export function ChatView() {
               ))}
             </ul>
           ) : null}
-          <div className="alice-composer rounded-2xl bg-card px-4 pb-3 pt-3 shadow-border">
+          <div className="alice-composer rounded-2xl bg-card px-4 pb-3 pt-3 border border-border">
             <Textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -895,7 +895,7 @@ export function ChatView() {
                   <button
                     type="button"
                     disabled={sending}
-                    className="flex h-8 min-w-0 max-w-48 items-center gap-1 rounded-full px-2 text-sm text-foreground hover:bg-accent disabled:opacity-40"
+                    className="flex h-8 min-w-0 max-w-48 items-center gap-1 rounded-md px-2 text-sm text-foreground hover:bg-accent disabled:opacity-40"
                   >
                     <span className="min-w-0 truncate">{currentLabel}</span>
                     <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
