@@ -7,6 +7,7 @@ import {
   normalizeGatewayUrl,
   normalizeLlmBaseUrl,
   parseHermesCapabilityManifest,
+  parseHermesVersion,
   parseHermesModelOptions,
   scopeHermesGatewayBase,
   scopeHermesManagementPath,
@@ -107,6 +108,34 @@ describe("Hermes model parsing", () => {
 });
 
 describe("Hermes capability negotiation", () => {
+  it("normalizes supported versions without accepting lookalikes", () => {
+    expect(parseHermesVersion("v0.20.6-beta.1")).toEqual({
+      raw: "v0.20.6-beta.1",
+      normalized: "0.20.6",
+      compatibility: "current",
+    });
+    expect(parseHermesVersion("0.20.5+build.7")).toEqual({
+      raw: "0.20.5+build.7",
+      normalized: "0.20.5",
+      compatibility: "previous",
+    });
+    expect(parseHermesVersion("10.20.6")).toEqual({
+      raw: "10.20.6",
+      normalized: "10.20.6",
+      compatibility: "unknown",
+    });
+    expect(parseHermesVersion("0.20.6lookalike")).toEqual({
+      raw: "0.20.6lookalike",
+      normalized: null,
+      compatibility: "unknown",
+    });
+    expect(parseHermesVersion(null)).toEqual({
+      raw: null,
+      normalized: null,
+      compatibility: "unknown",
+    });
+  });
+
   it("recognizes the current and previous stable versions", () => {
     expect(
       parseHermesCapabilityManifest({

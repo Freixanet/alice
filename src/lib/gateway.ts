@@ -18,6 +18,7 @@ export type {
   HermesCapabilityManifest,
   HermesCompatibility,
   HermesModelOption,
+  HermesVersion,
   ProbeCode,
   ProbeResult,
 } from "./gateway-contracts";
@@ -26,6 +27,7 @@ export {
   HERMES_CURRENT_STABLE,
   HERMES_PREVIOUS_STABLE,
   parseHermesCapabilityManifest,
+  parseHermesVersion,
   unionHermesModels,
 } from "./gateway-contracts";
 export { getMacSessionKey, setMacSessionKey } from "./hermes-secret-client";

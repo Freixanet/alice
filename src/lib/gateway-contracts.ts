@@ -9,6 +9,26 @@ export const HERMES_PREVIOUS_STABLE = "0.20.5";
 
 export type HermesCompatibility = "current" | "previous" | "unknown";
 
+export type HermesVersion = Readonly<{
+  raw: string | null;
+  normalized: string | null;
+  compatibility: HermesCompatibility;
+}>;
+
+export function parseHermesVersion(value: unknown): HermesVersion {
+  const raw = firstString(value);
+  const normalized = raw
+    ? (/^v?(\d+\.\d+\.\d+)(?:$|[-+])/.exec(raw)?.[1] ?? null)
+    : null;
+  const compatibility: HermesCompatibility =
+    normalized === HERMES_CURRENT_STABLE
+      ? "current"
+      : normalized === HERMES_PREVIOUS_STABLE
+        ? "previous"
+        : "unknown";
+  return { raw, normalized, compatibility };
+}
+
 export type HermesCapability =
   | "chat.streaming"
   | "chat.multimodal"
@@ -220,10 +240,8 @@ export function parseHermesCapabilityManifest(
   value: unknown,
 ): HermesCapabilityManifest {
   const record = asRecord(value);
-  const version = firstString(
-    record?.version,
-    record?.hermes_version,
-    record?.agent_version,
+  const version = parseHermesVersion(
+    firstString(record?.version, record?.hermes_version, record?.agent_version),
   );
   const advertised = collectAdvertised(record).slice(0, 256);
   const capabilities: Partial<Record<HermesCapability, boolean>> = {};
@@ -251,8 +269,8 @@ export function parseHermesCapabilityManifest(
     capabilities["chat.approvals"] = true;
   }
   return {
-    version,
-    compatibility: compatibilityForVersion(version),
+    version: version.raw,
+    compatibility: version.compatibility,
     capabilities,
     advertised,
   };
@@ -260,14 +278,6 @@ export function parseHermesCapabilityManifest(
 
 function normalizeCapabilityName(value: string): string {
   return value.toLowerCase().replace(/[\s.-]+/g, "_");
-}
-
-function compatibilityForVersion(version: string | null): HermesCompatibility {
-  if (!version) return "unknown";
-  const normalized = /^v?(\d+\.\d+\.\d+)/.exec(version)?.[1];
-  if (normalized === HERMES_CURRENT_STABLE) return "current";
-  if (normalized === HERMES_PREVIOUS_STABLE) return "previous";
-  return "unknown";
 }
 
 function collectAdvertised(record: Record<string, unknown> | null): string[] {
