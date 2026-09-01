@@ -15,6 +15,7 @@ import {
   testHermesMcpServer,
   waitForHermesAction,
 } from "./hermes-live";
+import { useCurrentUser } from "./auth/use-current-user";
 import type {
   HermesLive,
   HermesMcpCatalogRow,
@@ -49,6 +50,7 @@ export function useMcpCommandCenter(input: {
   const { writable, rows, setData } = input;
   const t = useT();
   const locale = useLocale();
+  const userId = useCurrentUser()?.id ?? "anonymous";
   const hermesVersion = useHermes(
     (state) => state.gatewayMeta?.manifest?.version,
   );
@@ -75,10 +77,13 @@ export function useMcpCommandCenter(input: {
   );
   const [oauthFlow, setOauthFlow] = useState<HermesMcpOAuthFlow | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
+  const [lifetime] = useState(() => new AbortController());
   const oauthPollFailures = useRef(0);
   const rowsSignature = rows
     .map((row) => `${row.name}:${row.enabled ? "1" : "0"}`)
     .join("|");
+
+  useEffect(() => () => lifetime.abort(), [lifetime]);
 
   useEffect(() => {
     if (!pantheon || !writable || !rowsSignature) return;
@@ -86,7 +91,7 @@ export function useMcpCommandCenter(input: {
     const timer = window.setTimeout(() => {
       void (async () => {
         async function loadUsage() {
-          const usageKey = JSON.stringify([gatewayUrl, profile]);
+          const usageKey = JSON.stringify([userId, gatewayUrl, profile]);
           const cachedUsage = mcpUsageCache.get(usageKey);
           if (
             cachedUsage &&
@@ -112,6 +117,7 @@ export function useMcpCommandCenter(input: {
             const row = queue[cursor++];
             if (!row) return;
             const key = mcpProbeCacheKey({
+              userId,
               gatewayUrl,
               profile,
               serverName: row.name,
@@ -133,7 +139,14 @@ export function useMcpCommandCenter(input: {
               signal: controller.signal,
             });
             if (controller.signal.aborted) return;
-            cacheProbe(gatewayUrl, profile, row.name, result, setProbeStates);
+            cacheProbe(
+              userId,
+              gatewayUrl,
+              profile,
+              row.name,
+              result,
+              setProbeStates,
+            );
           }
         }
         await Promise.all([loadUsage(), worker(), worker()]);
@@ -143,7 +156,7 @@ export function useMcpCommandCenter(input: {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [gatewayUrl, pantheon, profile, rows, rowsSignature, writable]);
+  }, [gatewayUrl, pantheon, profile, rows, rowsSignature, userId, writable]);
 
   useEffect(() => {
     if (
@@ -186,6 +199,7 @@ export function useMcpCommandCenter(input: {
         }).then((probeResult) => {
           if (controller.signal.aborted) return;
           cacheProbe(
+            userId,
             gatewayUrl,
             profile,
             result.flow.serverName,
@@ -199,7 +213,7 @@ export function useMcpCommandCenter(input: {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [gatewayUrl, locale, oauthFlow, profile, setData]);
+  }, [gatewayUrl, locale, oauthFlow, profile, setData, userId]);
 
   async function refresh(): Promise<boolean> {
     const fresh = await listHermesLive();
@@ -220,7 +234,7 @@ export function useMcpCommandCenter(input: {
       [name]: { state: "checking" },
     }));
     const result = await testHermesMcpServer({ name });
-    cacheProbe(gatewayUrl, profile, name, result, setProbeStates);
+    cacheProbe(userId, gatewayUrl, profile, name, result, setProbeStates);
     setBusyName(null);
     setFeedback(
       result.ok
@@ -268,7 +282,10 @@ export function useMcpCommandCenter(input: {
       return false;
     }
     if (result.actionName) {
-      const completed = await waitForHermesAction({ name: result.actionName });
+      const completed = await waitForHermesAction({
+        name: result.actionName,
+        signal: lifetime.signal,
+      });
       if (!completed.ok) {
         setCatalogError(localizeError(locale, completed.error));
         setBusyName(null);
@@ -384,6 +401,7 @@ export function useMcpCommandCenter(input: {
 }
 
 function cacheProbe(
+  userId: string,
   gatewayUrl: string,
   profile: string,
   name: string,
@@ -394,7 +412,7 @@ function cacheProbe(
     ? { state: "ready", probe: result.probe }
     : { state: "error", error: result.error };
   mcpProbeCache.set(
-    mcpProbeCacheKey({ gatewayUrl, profile, serverName: name }),
+    mcpProbeCacheKey({ userId, gatewayUrl, profile, serverName: name }),
     { checkedAt: Date.now(), state },
   );
   setProbeStates((current) => ({ ...current, [name]: state }));

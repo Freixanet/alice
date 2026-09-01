@@ -6,6 +6,7 @@ import {
   readHermesSystemTools,
   type HermesSystemTools,
 } from "@/lib/hermes-live";
+import { abortableDelay } from "@/lib/abortable-delay";
 import { useT } from "@/lib/use-i18n";
 
 export function HermesSystemToolsPanel({ writable }: { writable: boolean }) {
@@ -14,6 +15,7 @@ export function HermesSystemToolsPanel({ writable }: { writable: boolean }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lifetime] = useState(() => new AbortController());
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     const result = await readHermesSystemTools({ signal });
@@ -28,10 +30,9 @@ export function HermesSystemToolsPanel({ writable }: { writable: boolean }) {
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void reload(controller.signal);
-    return () => controller.abort();
-  }, [reload]);
+    void reload(lifetime.signal);
+    return () => lifetime.abort();
+  }, [lifetime, reload]);
 
   async function chooseBackend(backend: string) {
     if (!tools || busy) return;
@@ -54,7 +55,7 @@ export function HermesSystemToolsPanel({ writable }: { writable: boolean }) {
       setTools(previous);
       setError(result.error);
     } else {
-      await reload();
+      await reload(lifetime.signal);
     }
     setBusy(null);
   }
@@ -65,7 +66,11 @@ export function HermesSystemToolsPanel({ writable }: { writable: boolean }) {
     setError(null);
     const result = await mutateHermes({ action: "computer-use-grant" });
     if (!result.ok) setError(result.error);
-    else window.setTimeout(() => void reload(), 1_500);
+    else {
+      void abortableDelay(1_500, lifetime.signal)
+        .then(() => reload(lifetime.signal))
+        .catch(() => undefined);
+    }
     setBusy(null);
   }
 

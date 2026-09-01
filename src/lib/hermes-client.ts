@@ -1,4 +1,5 @@
 import { authHeaders } from "./auth/client";
+import { cockpitUserId } from "./auth/cockpit-user";
 import {
   friendlyProbeError,
   type GatewayPlace,
@@ -22,6 +23,13 @@ import {
   type HermesApprovalChoice,
 } from "./gateway-contracts";
 import { parseHermesRunSnapshot, type HermesRunSnapshot } from "./hermes-runs";
+import {
+  clearHermesModelCache,
+  hermesModelCacheKey,
+  invalidateHermesModelCache,
+  readHermesModelsCached,
+  type HermesModelReadResult,
+} from "./hermes-model-cache";
 
 type HermesActionResult = ProbeResult & { models?: HermesModelOption[] };
 
@@ -30,6 +38,16 @@ function negotiatedProfile(): string | undefined {
   return advertisesHermesCapability(state.gatewayMeta?.manifest, "profiles")
     ? state.profile
     : undefined;
+}
+
+function currentModelCacheKey(): string {
+  const state = useHermes.getState();
+  return hermesModelCacheKey({
+    userId: cockpitUserId() ?? "anonymous",
+    url: state.gatewayUrl,
+    place: state.gatewayPlace,
+    profile: negotiatedProfile() ?? "",
+  });
 }
 
 export async function probeGateway(opts: {
@@ -74,6 +92,7 @@ export async function probeGateway(opts: {
           error: "Hermes connected, but Alice couldn’t remember it. Try again.",
         };
       }
+      clearHermesModelCache();
     }
     return result;
   }
@@ -90,7 +109,10 @@ export async function probeGateway(opts: {
       signal: opts.signal,
     });
     const data = (await res.json()) as HermesActionResult;
-    if (data.ok) return data;
+    if (data.ok) {
+      if (opts.save) clearHermesModelCache();
+      return data;
+    }
     const code = (data as { code?: ProbeCode }).code;
     return {
       ok: false,
@@ -108,51 +130,52 @@ export async function probeGateway(opts: {
 export async function listHermesModels(opts?: {
   refresh?: boolean;
   signal?: AbortSignal;
-}): Promise<{
-  ok: boolean;
-  models: HermesModelOption[];
-  currentModel?: string;
-  currentProvider?: string;
-}> {
+}): Promise<HermesModelReadResult> {
+  const key = currentModelCacheKey();
   try {
-    const { gatewayPlace: place, gatewayUrl: url } = useHermes.getState();
-    const profile = negotiatedProfile();
-    if (place === "device") {
-      const key = getDeviceSessionKey();
-      if (!url || !key) return { ok: false, models: [] };
-      return listHermesModelsDirect({
-        url,
-        key,
-        refresh: opts?.refresh,
-        signal: opts?.signal,
-        profile,
-      });
-    }
-    const res = await fetch("/api/hermes", {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        action: "models",
-        refresh: Boolean(opts?.refresh),
-        profile,
-      }),
-      signal: opts?.signal,
-    });
-    const data = (await res.json()) as {
-      ok?: boolean;
-      models?: HermesModelOption[];
-      currentModel?: string;
-      currentProvider?: string;
-    };
-    return {
-      ok: Boolean(data.ok),
-      models: Array.isArray(data.models) ? data.models : [],
-      currentModel: data.currentModel,
-      currentProvider: data.currentProvider,
-    };
+    return await readHermesModelsCached(
+      key,
+      (signal) => loadHermesModels(Boolean(opts?.refresh), signal),
+      {
+        force: Boolean(opts?.refresh),
+        ...(opts?.signal ? { signal: opts.signal } : {}),
+      },
+    );
   } catch {
     return { ok: false, models: [] };
   }
+}
+
+async function loadHermesModels(
+  refresh: boolean,
+  signal: AbortSignal,
+): Promise<HermesModelReadResult> {
+  const { gatewayPlace: place, gatewayUrl: url } = useHermes.getState();
+  const profile = negotiatedProfile();
+  if (place === "device") {
+    const key = getDeviceSessionKey();
+    if (!url || !key) return { ok: false, models: [] };
+    return listHermesModelsDirect({ url, key, refresh, signal, profile });
+  }
+  const res = await fetch("/api/hermes", {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ action: "models", refresh, profile }),
+    signal,
+    cache: "no-store",
+  });
+  const data = (await res.json()) as {
+    ok?: boolean;
+    models?: HermesModelOption[];
+    currentModel?: string;
+    currentProvider?: string;
+  };
+  return {
+    ok: Boolean(data.ok),
+    models: Array.isArray(data.models) ? data.models : [],
+    currentModel: data.currentModel,
+    currentProvider: data.currentProvider,
+  };
 }
 
 export async function setHermesModel(opts: {
@@ -164,10 +187,11 @@ export async function setHermesModel(opts: {
   conversationId?: string;
 }): Promise<{ ok: boolean }> {
   const profile = negotiatedProfile();
+  const cacheKey = currentModelCacheKey();
   if (opts.place === "device") {
     const key = opts.key || getDeviceSessionKey();
     if (!key) return { ok: false };
-    return setHermesModelDirect({
+    const result = await setHermesModelDirect({
       url: opts.url,
       key,
       model: opts.model,
@@ -175,6 +199,8 @@ export async function setHermesModel(opts: {
       conversationId: opts.conversationId,
       profile,
     });
+    if (result.ok) invalidateHermesModelCache(cacheKey);
+    return result;
   }
   try {
     const res = await fetch("/api/hermes", {
@@ -189,7 +215,9 @@ export async function setHermesModel(opts: {
       }),
     });
     const data = (await res.json()) as { ok?: boolean };
-    return { ok: Boolean(data.ok) };
+    const result = { ok: Boolean(data.ok) };
+    if (result.ok) invalidateHermesModelCache(cacheKey);
+    return result;
   } catch {
     return { ok: false };
   }

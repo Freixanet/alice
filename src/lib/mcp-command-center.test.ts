@@ -22,17 +22,34 @@ describe("MCP command center", () => {
     ).toBe(7);
   });
 
-  it("isolates probe caches by Hermes, profile and server", () => {
+  it("isolates probe caches by account, Hermes, profile and server", () => {
     expect(
       mcpProbeCacheKey({
+        userId: "one",
         gatewayUrl: "https://hermes.example",
         profile: "research",
         serverName: "github",
       }),
     ).not.toBe(
       mcpProbeCacheKey({
+        userId: "one",
         gatewayUrl: "https://hermes.example",
         profile: "default",
+        serverName: "github",
+      }),
+    );
+    expect(
+      mcpProbeCacheKey({
+        userId: "one",
+        gatewayUrl: "https://hermes.example",
+        profile: "research",
+        serverName: "github",
+      }),
+    ).not.toBe(
+      mcpProbeCacheKey({
+        userId: "two",
+        gatewayUrl: "https://hermes.example",
+        profile: "research",
         serverName: "github",
       }),
     );

@@ -24,9 +24,15 @@ export function mcpServerUsageCount(
 }
 
 export function mcpProbeCacheKey(input: {
+  userId: string;
   profile: string;
   gatewayUrl: string;
   serverName: string;
 }) {
-  return JSON.stringify([input.gatewayUrl, input.profile, input.serverName]);
+  return JSON.stringify([
+    input.userId,
+    input.gatewayUrl,
+    input.profile,
+    input.serverName,
+  ]);
 }

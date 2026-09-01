@@ -16,6 +16,7 @@ import type {
   HermesSystemToolsResult,
   HermesToolsetDetailsResult,
 } from "./hermes-live-types";
+import { abortableDelay } from "./abortable-delay";
 import { hermesMutationSchema, type HermesMutation } from "./hermes-operations";
 import {
   resolveHermesTransport,
@@ -567,7 +568,11 @@ export async function waitForHermesAction(opts: {
               "Hermes couldn’t finish the skill action.",
           };
     }
-    await new Promise((resolve) => window.setTimeout(resolve, pollMs));
+    try {
+      await abortableDelay(pollMs, opts.signal);
+    } catch {
+      return { ok: false, error: "The Hermes skill action was cancelled." };
+    }
   }
   return {
     ok: false,

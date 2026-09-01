@@ -11,6 +11,7 @@ import {
   setDeviceSessionKey,
 } from "../hermes-direct";
 import { clearHermesLiveCache } from "../hermes-live-cache";
+import { clearHermesModelCache } from "../hermes-model-cache";
 import { resetHermesAccountState, useHermes } from "../store";
 
 let identityGeneration = 0;
@@ -19,6 +20,7 @@ let hydrationQueue = Promise.resolve();
 function prepareIdentity(id: string | null, owner: boolean) {
   identityGeneration += 1;
   clearHermesLiveCache();
+  clearHermesModelCache();
   setCockpitIdentity({ id: null, owner: false });
   resetHermesAccountState();
   setCockpitIdentity({ id, owner });

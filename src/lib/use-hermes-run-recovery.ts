@@ -1,4 +1,5 @@
 import { useEffect, type RefObject } from "react";
+import { abortableDelay } from "./abortable-delay";
 import { getHermesRun } from "./hermes-client";
 import { t as tr } from "./i18n";
 import { useHermes } from "./store";
@@ -53,7 +54,7 @@ export function useHermesRunRecovery(opts: {
         if (!run) {
           misses += 1;
           if (misses < 5) {
-            await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+            await abortableDelay(1_000, ctrl.signal).catch(() => undefined);
             continue;
           }
           patchMessage(conversation.id, message.id, {
@@ -93,7 +94,7 @@ export function useHermesRunRecovery(opts: {
           opts.activeRunRef.current = null;
           return;
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+        await abortableDelay(1_000, ctrl.signal).catch(() => undefined);
       }
     })();
     return () => ctrl.abort();

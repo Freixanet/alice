@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useHermes } from "./store";
+import { clearHermesModelCache } from "./hermes-model-cache";
 import {
   controlHermesRunClient,
   getHermesRun,
@@ -16,6 +17,7 @@ function json(body: unknown): Response {
 }
 
 beforeEach(() => {
+  clearHermesModelCache();
   useHermes.setState({
     gatewayPlace: "cloud",
     gatewayUrl: "https://hermes.example",
@@ -34,9 +36,38 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  clearHermesModelCache();
+  vi.unstubAllGlobals();
+});
 
 describe("Hermes proxy client actions", () => {
+  it("deduplicates model reads without coupling caller cancellation", async () => {
+    let resolve!: (response: Response) => void;
+    const fetchMock = vi.fn(
+      (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Promise<Response>((done) => (resolve = done)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    const first = listHermesModels({
+      refresh: true,
+      signal: controller.signal,
+    });
+    const second = listHermesModels({ refresh: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    controller.abort();
+    expect(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.signal
+        ?.aborted,
+    ).toBe(false);
+    resolve(json({ ok: true, models: [] }));
+    await expect(first).resolves.toEqual({ ok: false, models: [] });
+    await expect(second).resolves.toMatchObject({ ok: true, models: [] });
+  });
+
   it("covers connection, model listing and model assignment contracts", async () => {
     const fetchMock = vi
       .fn()

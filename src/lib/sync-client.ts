@@ -24,10 +24,13 @@ export async function syncEncryptedConversations(options: {
   tombstones: ConversationTombstones;
   signal?: AbortSignal;
 }): Promise<RemoteConversation[]> {
+  options.signal?.throwIfAborted();
   const key = await deriveContentKey(options.master, options.userId);
+  options.signal?.throwIfAborted();
   const deviceId = deviceIdFor(options.userId);
   const records: EncryptedSyncRecord[] = [];
   for (const conversation of options.conversations) {
+    options.signal?.throwIfAborted();
     const payload = await encryptPayload(
       conversation,
       key,
@@ -47,6 +50,7 @@ export async function syncEncryptedConversations(options: {
     });
   }
   for (const [id, updatedAt] of Object.entries(options.tombstones)) {
+    options.signal?.throwIfAborted();
     const payload = await encryptPayload(
       { id, updatedAt },
       key,
@@ -63,6 +67,7 @@ export async function syncEncryptedConversations(options: {
   }
 
   for (const batch of batches(records)) {
+    options.signal?.throwIfAborted();
     const response = await postSync(
       {
         action: "push",
@@ -77,10 +82,12 @@ export async function syncEncryptedConversations(options: {
   const remote: RemoteConversation[] = [];
   let cursor = cursorFor(options.userId);
   for (let page = 0; page < 100; page += 1) {
+    options.signal?.throwIfAborted();
     const response = syncPullResponseSchema.parse(
       await postSync({ action: "pull", cursor, limit: 200 }, options.signal),
     );
     for (const record of response.records) {
+      options.signal?.throwIfAborted();
       if (!record.id.startsWith("conversation:")) continue;
       const id = record.id.slice("conversation:".length);
       if (record.tombstone) {

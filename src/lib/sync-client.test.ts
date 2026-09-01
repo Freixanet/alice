@@ -18,6 +18,23 @@ afterEach(() => {
 });
 
 describe("encrypted sync client", () => {
+  it("stops before encryption or network work when its owner is gone", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      syncEncryptedConversations({
+        userId: "account-a",
+        master: generateMasterSecret(),
+        conversations: [],
+        tombstones: {},
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("uploads ciphertext and validates/decrypts resumed pull pages", async () => {
     const conversation: Conversation = {
       id: "chat-one",

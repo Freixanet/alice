@@ -70,6 +70,9 @@ function SkillsPage() {
   const [removeSkill, setRemoveSkill] = useState<HermesSkillRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [lifetime] = useState(() => new AbortController());
+
+  useEffect(() => () => lifetime.abort(), [lifetime]);
 
   useEffect(() => {
     if (!inspectSkill) return;
@@ -113,7 +116,10 @@ function SkillsPage() {
       return false;
     }
     if (result.actionName) {
-      const completed = await waitForHermesAction({ name: result.actionName });
+      const completed = await waitForHermesAction({
+        name: result.actionName,
+        signal: lifetime.signal,
+      });
       if (!completed.ok) {
         setFeedback(localizeError(locale, completed.error));
         setBusy(null);

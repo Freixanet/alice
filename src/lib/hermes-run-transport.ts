@@ -1,4 +1,5 @@
 import { readSse, type ChatEvent } from "./gateway";
+import { abortableDelay } from "./abortable-delay";
 import {
   buildHermesRunRequest,
   eventsFromHermesRunChunk,
@@ -262,26 +263,6 @@ async function responseError(response: Response): Promise<string> {
   }
   return "Couldn’t connect.";
 }
-
-function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timeout);
-      reject(signal.reason);
-    };
-    const timeout = windowlessSetTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-const windowlessSetTimeout = globalThis.setTimeout.bind(globalThis);
 
 async function runIdempotencyKey(
   payload: Record<string, unknown>,

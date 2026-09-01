@@ -6,6 +6,7 @@ import {
   readHermesProfiles,
   readHermesProfileSoul,
   readHermesSessionMessages,
+  waitForHermesAction,
 } from "./hermes-live";
 
 const livePayload = {
@@ -39,6 +40,20 @@ afterEach(() => {
 });
 
 describe("Hermes profile-aware proxy client", () => {
+  it("does not poll an action after its owning view is cancelled", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      waitForHermesAction({ name: "install", signal: controller.signal }),
+    ).resolves.toEqual({
+      ok: false,
+      error: "The Hermes skill action was cancelled.",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("scopes live reads and mutations only after exact negotiation", async () => {
     useHermes.setState({
       gatewayPlace: "cloud",
