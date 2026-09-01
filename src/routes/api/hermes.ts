@@ -34,6 +34,7 @@ import {
   rateLimitResponse,
 } from "@/lib/rate-limit.server";
 import { observeApiRequest } from "@/lib/operational-telemetry.server";
+import { whenDefined } from "@/lib/exact-optional";
 
 const FAIL = "Couldn’t connect.";
 
@@ -153,9 +154,9 @@ export const Route = createFileRoute("/api/hermes")({
         if (body.action === "memory") {
           try {
             const result = await fetchHermesMemory({
-              url: saved?.u,
-              key: saved?.k,
-              place: saved?.p,
+              ...whenDefined("url", saved?.u),
+              ...whenDefined("key", saved?.k),
+              ...whenDefined("place", saved?.p),
               local: macOk,
               signal: AbortSignal.any([
                 request.signal,
@@ -194,9 +195,9 @@ export const Route = createFileRoute("/api/hermes")({
                 key: saved.k,
                 place: saved.p,
                 runId: body.runId,
-                conversationId: body.conversationId,
+                ...whenDefined("conversationId", body.conversationId),
                 signal,
-                profile: body.profile,
+                ...whenDefined("profile", body.profile),
               });
               return jsonWithCookie(
                 run
@@ -209,11 +210,14 @@ export const Route = createFileRoute("/api/hermes")({
               body.action === "run-stop"
                 ? ({ action: "stop" } as const)
                 : body.action === "run-steer"
-                  ? ({ action: "steer", input: body.input } as const)
+                  ? ({
+                      action: "steer",
+                      ...whenDefined("input", body.input),
+                    } as const)
                   : ({
                       action: "approval",
                       choice: body.choice,
-                      resolveAll: body.resolveAll,
+                      ...whenDefined("resolveAll", body.resolveAll),
                     } as const);
             const ok = await controlHermesRunServer({
               url: saved.u,
@@ -222,7 +226,7 @@ export const Route = createFileRoute("/api/hermes")({
               runId: body.runId,
               ...control,
               signal,
-              profile: body.profile,
+              ...whenDefined("profile", body.profile),
             });
             return jsonWithCookie(
               ok
@@ -448,12 +452,12 @@ export const Route = createFileRoute("/api/hermes")({
             const { fetchHermesLive } =
               await import("@/lib/hermes-live.server");
             const result = await fetchHermesLive({
-              url: saved?.u,
-              key: saved?.k,
-              place: saved?.p,
+              ...whenDefined("url", saved?.u),
+              ...whenDefined("key", saved?.k),
+              ...whenDefined("place", saved?.p),
               local: macOk,
               owner,
-              profile: body.profile,
+              ...whenDefined("profile", body.profile),
               signal: AbortSignal.any([
                 request.signal,
                 AbortSignal.timeout(20_000),
@@ -702,14 +706,14 @@ export const Route = createFileRoute("/api/hermes")({
               url: saved.u,
               key: saved.k,
               model,
-              provider,
-              conversationId: body.conversationId,
+              ...whenDefined("provider", provider),
+              ...whenDefined("conversationId", body.conversationId),
               signal: AbortSignal.any([
                 request.signal,
                 AbortSignal.timeout(12_000),
               ]),
               place: saved.p,
-              profile: body.profile,
+              ...whenDefined("profile", body.profile),
             });
             return jsonWithCookie(result, result.ok ? 200 : 502);
           } catch {
@@ -733,8 +737,8 @@ export const Route = createFileRoute("/api/hermes")({
               name: body.endpointName ?? "",
               baseUrl: endpointUrl,
               apiKey: body.endpointKey ?? "",
-              model: body.endpointModel,
-              profile: body.profile,
+              ...whenDefined("model", body.endpointModel),
+              ...whenDefined("profile", body.profile),
               signal: AbortSignal.any([
                 request.signal,
                 AbortSignal.timeout(20_000),
@@ -834,7 +838,7 @@ export const Route = createFileRoute("/api/hermes")({
             k: key,
             u: url,
             p: place,
-            ep: saved?.ep,
+            ...whenDefined("ep", saved?.ep),
             ...(userId ? { uid: userId } : {}),
           });
           await persistUserGate(userId, token);

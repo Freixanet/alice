@@ -21,6 +21,7 @@ import {
   rateLimitResponse,
 } from "@/lib/rate-limit.server";
 import { observeApiRequest } from "@/lib/operational-telemetry.server";
+import { whenDefined } from "@/lib/exact-optional";
 
 const FAIL = "Couldn’t connect.";
 
@@ -92,27 +93,27 @@ export const Route = createFileRoute("/api/chat")({
                 key: gate.k,
                 sessionId: body.hermesSessionId,
                 message: latestUser.content,
-                conversationId: body.conversationId,
-                model: body.model,
-                provider: body.provider,
+                ...whenDefined("conversationId", body.conversationId),
+                ...whenDefined("model", body.model),
+                ...whenDefined("provider", body.provider),
                 signal: request.signal,
                 place: gate.p,
-                profile: body.profile,
+                ...whenDefined("profile", body.profile),
               });
             }
             return await streamHermesProxy({
               url: gate.u,
               key: gate.k,
               messages: clean,
-              conversationId: body.conversationId,
-              model: body.model,
-              provider: body.provider,
-              preferRuns: body.preferRuns,
-              runIdempotency: body.runIdempotency,
-              endpoints: gate.ep,
+              ...whenDefined("conversationId", body.conversationId),
+              ...whenDefined("model", body.model),
+              ...whenDefined("provider", body.provider),
+              ...whenDefined("preferRuns", body.preferRuns),
+              ...whenDefined("runIdempotency", body.runIdempotency),
+              ...whenDefined("endpoints", gate.ep),
               signal: request.signal,
               place: gate.p,
-              profile: body.profile,
+              ...whenDefined("profile", body.profile),
             });
           } catch (e) {
             const status =

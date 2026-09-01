@@ -30,6 +30,7 @@ import {
   readHermesModelsCached,
   type HermesModelReadResult,
 } from "./hermes-model-cache";
+import { whenDefined } from "./exact-optional";
 
 type HermesActionResult = ProbeResult & { models?: HermesModelOption[] };
 
@@ -62,7 +63,7 @@ export async function probeGateway(opts: {
     if (!key) {
       const saved = await loadSavedDeviceConnection({
         url: opts.url,
-        signal: opts.signal,
+        ...whenDefined("signal", opts.signal),
       });
       key = saved?.key ?? "";
     }
@@ -76,14 +77,14 @@ export async function probeGateway(opts: {
     const result = await probeHermesDirect({
       url: opts.url,
       key,
-      save: opts.save,
-      signal: opts.signal,
+      ...whenDefined("save", opts.save),
+      ...whenDefined("signal", opts.signal),
     });
     if (result.ok && opts.save) {
       const saved = await saveDeviceConnection({
         url: opts.url,
         key,
-        signal: opts.signal,
+        ...whenDefined("signal", opts.signal),
       });
       if (!saved) {
         return {
@@ -106,7 +107,7 @@ export async function probeGateway(opts: {
         key: opts.key,
         place: opts.place,
       }),
-      signal: opts.signal,
+      ...whenDefined("signal", opts.signal),
     });
     const data = (await res.json()) as HermesActionResult;
     if (data.ok) {
@@ -155,7 +156,13 @@ async function loadHermesModels(
   if (place === "device") {
     const key = getDeviceSessionKey();
     if (!url || !key) return { ok: false, models: [] };
-    return listHermesModelsDirect({ url, key, refresh, signal, profile });
+    return listHermesModelsDirect({
+      url,
+      key,
+      refresh,
+      signal,
+      ...whenDefined("profile", profile),
+    });
   }
   const res = await fetch("/api/hermes", {
     method: "POST",
@@ -173,8 +180,8 @@ async function loadHermesModels(
   return {
     ok: Boolean(data.ok),
     models: Array.isArray(data.models) ? data.models : [],
-    currentModel: data.currentModel,
-    currentProvider: data.currentProvider,
+    ...whenDefined("currentModel", data.currentModel),
+    ...whenDefined("currentProvider", data.currentProvider),
   };
 }
 
@@ -195,9 +202,9 @@ export async function setHermesModel(opts: {
       url: opts.url,
       key,
       model: opts.model,
-      provider: opts.provider,
-      conversationId: opts.conversationId,
-      profile,
+      ...whenDefined("provider", opts.provider),
+      ...whenDefined("conversationId", opts.conversationId),
+      ...whenDefined("profile", profile),
     });
     if (result.ok) invalidateHermesModelCache(cacheKey);
     return result;
@@ -243,9 +250,9 @@ export async function getHermesRun(opts: {
       url,
       key,
       runId: opts.runId,
-      conversationId: opts.conversationId,
+      ...whenDefined("conversationId", opts.conversationId),
       signal: opts.signal,
-      profile,
+      ...whenDefined("profile", profile),
     });
   }
   try {
@@ -300,11 +307,11 @@ export async function controlHermesRunClient(opts: {
       key,
       runId: opts.runId,
       action: opts.action,
-      choice: opts.choice,
-      resolveAll: opts.resolveAll,
-      input: opts.input,
+      ...whenDefined("choice", opts.choice),
+      ...whenDefined("resolveAll", opts.resolveAll),
+      ...whenDefined("input", opts.input),
       signal: AbortSignal.timeout(12_000),
-      profile,
+      ...whenDefined("profile", profile),
     });
   }
   try {

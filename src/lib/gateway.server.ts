@@ -59,6 +59,7 @@ import {
 import type { HermesRunSnapshot } from "./hermes-runs";
 import { isHermesProfileName } from "./hermes-profile";
 import { streamHermesSessionChat } from "./hermes-session-chat-transport";
+import { whenDefined } from "./exact-optional";
 
 const execFileAsync = promisify(execFile);
 
@@ -547,7 +548,7 @@ export async function probeHermes(
       const extra = await enrichWithModelOptions(base, token, ctrl, {
         models,
         currentModel: model,
-        currentProvider: provider,
+        ...whenDefined("currentProvider", provider),
       });
       models = extra.models;
       if (extra.currentModel) model = extra.currentModel;
@@ -591,11 +592,11 @@ export async function probeHermes(
     return {
       ok: true,
       model,
-      provider,
       models,
-      platform,
-      skills,
-      manifest,
+      ...whenDefined("provider", provider),
+      ...whenDefined("platform", platform),
+      ...whenDefined("skills", skills),
+      ...whenDefined("manifest", manifest),
       mode: "proxy",
     };
   } catch (e) {
@@ -643,7 +644,7 @@ export async function listHermesModelsServer(
     try {
       acc = await enrichWithModelOptions(apiBase, token, ctrl, acc, {
         refresh,
-        profile,
+        ...whenDefined("profile", profile),
       });
     } catch (e) {
       if ((e as Error).name === "AbortError") throw e;
@@ -706,11 +707,13 @@ function modelsFromConfigDoc(
     const key = `${slug}:${model}`;
     if (seen.has(key)) return;
     seen.add(key);
+    const resolvedProviderName =
+      providerName || (slug ? prettyProvider(slug) : undefined);
     out.push({
       id: model,
       label: model,
       provider: slug,
-      providerName: providerName || (slug ? prettyProvider(slug) : undefined),
+      ...whenDefined("providerName", resolvedProviderName),
     });
   };
   const model = asObj(cfg.model);
@@ -1263,7 +1266,10 @@ async function hermesDashboardMutate(
         signal: ctrl,
         cache: "no-store",
         redirect: "manual",
-        body: body === undefined ? undefined : JSON.stringify(body),
+        ...whenDefined(
+          "body",
+          body === undefined ? undefined : JSON.stringify(body),
+        ),
       });
       if (!res.ok) continue;
       if (!parseJson) return true;
@@ -1702,7 +1708,7 @@ export async function saveHermesCustomEndpointServer(opts: {
           apiKey,
           model,
           models,
-          profile: opts.profile,
+          ...whenDefined("profile", opts.profile),
         }),
       );
     }
@@ -1721,7 +1727,7 @@ export async function saveHermesCustomEndpointServer(opts: {
           currentModel: model,
           currentProvider: saved.provider || slug || "custom",
         },
-        { refresh: true, profile: opts.profile },
+        { refresh: true, ...whenDefined("profile", opts.profile) },
       );
       const persist: StoredEndpoint = {
         n: name,
@@ -1869,10 +1875,10 @@ export async function streamHermesProxy(opts: {
       token,
       signal,
       messages: opts.messages,
-      conversationId: opts.conversationId,
+      ...whenDefined("conversationId", opts.conversationId),
       model: requestedModel,
       provider: requestedProvider,
-      idempotency: opts.runIdempotency,
+      ...whenDefined("idempotency", opts.runIdempotency),
     });
     if (started.ok) {
       return ndjsonResponse(async (send) => {
@@ -1882,7 +1888,7 @@ export async function streamHermesProxy(opts: {
           token,
           signal,
           run: started.run,
-          conversationId: opts.conversationId,
+          ...whenDefined("conversationId", opts.conversationId),
         })) {
           send(event);
         }
@@ -1985,9 +1991,9 @@ export async function streamHermesSessionProxy(opts: {
       token: assertGatewayKey(opts.key),
       sessionId: opts.sessionId,
       message: opts.message,
-      conversationId: opts.conversationId,
-      model: opts.model,
-      provider: opts.provider,
+      ...whenDefined("conversationId", opts.conversationId),
+      ...whenDefined("model", opts.model),
+      ...whenDefined("provider", opts.provider),
       signal,
     })) {
       send(event);
@@ -2012,7 +2018,7 @@ export async function getHermesRunServer(opts: {
     ),
     token: assertGatewayKey(opts.key),
     runId: opts.runId,
-    conversationId: opts.conversationId,
+    ...whenDefined("conversationId", opts.conversationId),
     signal: opts.signal,
   });
 }
@@ -2044,7 +2050,7 @@ export async function controlHermesRunServer(opts: {
       ...common,
       action: "approval",
       choice: opts.choice,
-      resolveAll: opts.resolveAll,
+      ...whenDefined("resolveAll", opts.resolveAll),
     });
   }
   if (opts.action === "steer" && opts.input?.trim()) {

@@ -91,6 +91,7 @@ import {
   webhookCreationFromApi,
   webhooksFromApi,
 } from "./hermes-live-parse";
+import { whenDefined } from "./exact-optional";
 
 const FAIL = "Couldn’t connect.";
 
@@ -110,7 +111,7 @@ export async function loadSavedDeviceConnection(opts?: {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ action: "device-secret" }),
-      signal: opts?.signal,
+      ...whenDefined("signal", opts?.signal),
       cache: "no-store",
     });
     if (!res.ok) return null;
@@ -150,7 +151,7 @@ export async function saveDeviceConnection(opts: {
         url: normalizeGatewayUrl(opts.url),
         key: assertGatewayKey(opts.key),
       }),
-      signal: opts.signal,
+      ...whenDefined("signal", opts.signal),
       cache: "no-store",
     });
     return res.ok;
@@ -300,7 +301,7 @@ export async function probeHermesDirect(opts: {
       const extra = await enrichWithModelOptions(base, token, ctrl, {
         models,
         currentModel: model,
-        currentProvider: provider,
+        ...whenDefined("currentProvider", provider),
       });
       models = extra.models;
       if (extra.currentModel) model = extra.currentModel;
@@ -344,11 +345,11 @@ export async function probeHermesDirect(opts: {
     return {
       ok: true,
       model,
-      provider,
       models,
-      platform,
-      skills,
-      manifest,
+      ...whenDefined("provider", provider),
+      ...whenDefined("platform", platform),
+      ...whenDefined("skills", skills),
+      ...whenDefined("manifest", manifest),
       mode: "direct",
     };
   } catch (e) {
@@ -387,10 +388,10 @@ export async function* streamHermesDirect(opts: {
         token,
         signal,
         messages: opts.messages,
-        conversationId: opts.conversationId,
+        ...whenDefined("conversationId", opts.conversationId),
         model: requestedModel,
         provider: requestedProvider,
-        idempotency: opts.runIdempotency,
+        ...whenDefined("idempotency", opts.runIdempotency),
       });
       if (started.ok) {
         yield* streamStartedHermesRun({
@@ -399,7 +400,7 @@ export async function* streamHermesDirect(opts: {
           token,
           signal,
           run: started.run,
-          conversationId: opts.conversationId,
+          ...whenDefined("conversationId", opts.conversationId),
         });
         return;
       }
@@ -493,9 +494,9 @@ export async function* streamHermesSessionDirect(opts: {
       token: assertGatewayKey(opts.key),
       sessionId: opts.sessionId,
       message: opts.message,
-      conversationId: opts.conversationId,
-      model: opts.model,
-      provider: opts.provider,
+      ...whenDefined("conversationId", opts.conversationId),
+      ...whenDefined("model", opts.model),
+      ...whenDefined("provider", opts.provider),
       signal,
     });
   } catch (error) {
@@ -517,7 +518,7 @@ export async function getHermesRunDirect(opts: {
     base: scopeHermesGatewayBase(normalizeGatewayUrl(opts.url), opts.profile),
     token: assertGatewayKey(opts.key),
     runId: opts.runId,
-    conversationId: opts.conversationId,
+    ...whenDefined("conversationId", opts.conversationId),
     signal: opts.signal,
   });
 }
@@ -545,7 +546,7 @@ export async function controlHermesRunDirect(opts: {
       ...common,
       action: "approval",
       choice: opts.choice,
-      resolveAll: opts.resolveAll,
+      ...whenDefined("resolveAll", opts.resolveAll),
     });
   }
   if (opts.action === "steer" && opts.input?.trim()) {
@@ -591,16 +592,19 @@ export async function listHermesModelsDirect(opts: {
       ctrl,
       {
         models: acc.models,
-        currentModel: acc.currentModel,
-        currentProvider: acc.currentProvider,
+        ...whenDefined("currentModel", acc.currentModel),
+        ...whenDefined("currentProvider", acc.currentProvider),
       },
-      { refresh: Boolean(opts.refresh), profile: opts.profile },
+      {
+        refresh: Boolean(opts.refresh),
+        ...whenDefined("profile", opts.profile),
+      },
     );
     return {
       ok: true,
       models: extra.models,
-      currentModel: extra.currentModel,
-      currentProvider: extra.currentProvider,
+      ...whenDefined("currentModel", extra.currentModel),
+      ...whenDefined("currentProvider", extra.currentProvider),
     };
   } catch {
     return { ok: false, models: [] };
@@ -762,7 +766,10 @@ async function dashboardMutate(
         signal: ctrl,
         cache: "no-store",
         redirect: "manual",
-        body: body === undefined ? undefined : JSON.stringify(body),
+        ...whenDefined(
+          "body",
+          body === undefined ? undefined : JSON.stringify(body),
+        ),
       });
       if (!res.ok) continue;
       if (!parseJson) return true;
@@ -815,7 +822,7 @@ export async function testHermesMcpServerDirect(opts: {
     ),
     "POST",
     undefined,
-    { signal: opts.signal, timeoutMs: 60_000 },
+    { ...whenDefined("signal", opts.signal), timeoutMs: 60_000 },
   );
   return raw
     ? mcpProbeFromApi(raw)
@@ -838,7 +845,7 @@ export async function startHermesMcpOAuthDirect(opts: {
     ),
     "POST",
     undefined,
-    { signal: opts.signal, timeoutMs: 45_000 },
+    { ...whenDefined("signal", opts.signal), timeoutMs: 45_000 },
   );
   return raw
     ? mcpOAuthFlowFromApi(raw)
@@ -1392,18 +1399,19 @@ export async function readHermesDiagnosticsDirect(opts: {
 }
 
 export async function mutateHermesDirect(
-  opts: {
+  connection: {
     url: string;
     key: string;
     profile?: string;
-  } & HermesMutation,
+  },
+  mutation: HermesMutation,
 ): Promise<HermesMutationResult> {
   try {
-    const operation = hermesScopedOperationFor(opts, opts.profile);
-    if (operation && opts.action === "cron-create") {
+    const operation = hermesScopedOperationFor(mutation, connection.profile);
+    if (operation && mutation.action === "cron-create") {
       const raw = await dashboardSendJson(
-        opts.url,
-        opts.key,
+        connection.url,
+        connection.key,
         operation.path,
         operation.method,
         operation.body,
@@ -1412,23 +1420,27 @@ export async function mutateHermesDirect(
       if (!jobId) {
         return { ok: false, error: "Hermes didn’t return the new job." };
       }
-      const followUp = hermesCronCreateFollowUpFor(opts, jobId, opts.profile);
+      const followUp = hermesCronCreateFollowUpFor(
+        mutation,
+        jobId,
+        connection.profile,
+      );
       if (
         followUp &&
         !(await dashboardSend(
-          opts.url,
-          opts.key,
+          connection.url,
+          connection.key,
           followUp.path,
           followUp.method,
           followUp.body,
         ))
       ) {
         await dashboardSend(
-          opts.url,
-          opts.key,
+          connection.url,
+          connection.key,
           profiledPath(
             `/api/cron/jobs/${encodeURIComponent(jobId)}`,
-            opts.profile,
+            connection.profile,
           ),
           "DELETE",
         );
@@ -1441,20 +1453,20 @@ export async function mutateHermesDirect(
     }
     if (
       operation &&
-      (opts.action === "skill-install" ||
-        opts.action === "skill-uninstall" ||
-        opts.action === "skills-update" ||
-        opts.action === "mcp-catalog-install")
+      (mutation.action === "skill-install" ||
+        mutation.action === "skill-uninstall" ||
+        mutation.action === "skills-update" ||
+        mutation.action === "mcp-catalog-install")
     ) {
       const raw = await dashboardSendJson(
-        opts.url,
-        opts.key,
+        connection.url,
+        connection.key,
         operation.path,
         operation.method,
         operation.body,
       );
       const record = asRec(raw);
-      if (opts.action === "mcp-catalog-install") {
+      if (mutation.action === "mcp-catalog-install") {
         const actionName = str(record.action);
         return actionName ? { ok: true, actionName } : { ok: true };
       }
@@ -1463,10 +1475,10 @@ export async function mutateHermesDirect(
         ? { ok: true, actionName }
         : { ok: false, error: "Hermes didn’t start the skill action." };
     }
-    if (operation && opts.action === "webhook-create") {
+    if (operation && mutation.action === "webhook-create") {
       const raw = await dashboardSendJson(
-        opts.url,
-        opts.key,
+        connection.url,
+        connection.key,
         operation.path,
         operation.method,
         operation.body,
@@ -1476,10 +1488,10 @@ export async function mutateHermesDirect(
         ? { ok: true, ...created }
         : { ok: false, error: "Hermes didn’t return the webhook secret." };
     }
-    if (operation && opts.action === "channel-test") {
+    if (operation && mutation.action === "channel-test") {
       const raw = await dashboardSendJson(
-        opts.url,
-        opts.key,
+        connection.url,
+        connection.key,
         operation.path,
         operation.method,
         operation.body,
@@ -1491,8 +1503,8 @@ export async function mutateHermesDirect(
     }
     const ok = operation
       ? await dashboardSend(
-          opts.url,
-          opts.key,
+          connection.url,
+          connection.key,
           operation.path,
           operation.method,
           operation.body,

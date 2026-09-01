@@ -108,26 +108,57 @@ describe("Hermes direct profile transport", () => {
       }),
     );
     expect(
-      await mutateHermesDirect({
-        url: "http://127.0.0.1:8642",
-        key: "12345678",
-        profile: "research",
-        action: "toggle-skill",
-        name: "browser",
-        enabled: true,
-      }),
+      await mutateHermesDirect(
+        {
+          url: "http://127.0.0.1:8642",
+          key: "12345678",
+          profile: "research",
+        },
+        { action: "toggle-skill", name: "browser", enabled: true },
+      ),
     ).toEqual({ ok: true });
     expect(
-      await mutateHermesDirect({
-        url: "http://127.0.0.1:8642",
-        key: "12345678",
-        profile: "research",
-        action: "profile-activate",
-        name: "research",
-      }),
+      await mutateHermesDirect(
+        {
+          url: "http://127.0.0.1:8642",
+          key: "12345678",
+          profile: "research",
+        },
+        { action: "profile-activate", name: "research" },
+      ),
     ).toEqual({ ok: true });
     expect(seen[0]).toContain("/api/skills/toggle?profile=research");
     expect(seen[1]).toMatch(/\/api\/profiles\/active$/);
+  });
+
+  it("keeps the Hermes gateway address separate from an MCP server URL", async () => {
+    let request: { url: string; body: string } | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL, init?: RequestInit) => {
+        request = {
+          url: String(input),
+          body: typeof init?.body === "string" ? init.body : "{}",
+        };
+        return Promise.resolve(json({ ok: true }));
+      }),
+    );
+
+    await expect(
+      mutateHermesDirect(
+        { url: "http://127.0.0.1:8642", key: "12345678" },
+        {
+          action: "mcp-create",
+          name: "remote-search",
+          url: "https://mcp.example.com/api",
+        },
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(request?.url).toBe("http://127.0.0.1:8642/api/mcp/servers");
+    expect(JSON.parse(request?.body ?? "{}")).toMatchObject({
+      name: "remote-search",
+      url: "https://mcp.example.com/api",
+    });
   });
 
   it("scopes the Pantheon MCP catalog, health, OAuth and usage APIs", async () => {
@@ -136,7 +167,10 @@ describe("Hermes direct profile transport", () => {
       "fetch",
       vi.fn((input: string | URL, init?: RequestInit) => {
         const url = String(input);
-        seen.push({ url, method: init?.method });
+        seen.push({
+          url,
+          ...(init?.method === undefined ? {} : { method: init.method }),
+        });
         if (url.includes("/api/mcp/catalog")) {
           return Promise.resolve(json({ entries: [] }));
         }
@@ -197,8 +231,8 @@ describe("Hermes direct profile transport", () => {
       vi.fn((input: string | URL, init?: RequestInit) => {
         calls.push({
           url: String(input),
-          method: init?.method,
-          body: typeof init?.body === "string" ? init.body : undefined,
+          ...(init?.method === undefined ? {} : { method: init.method }),
+          ...(typeof init?.body === "string" ? { body: init.body } : {}),
         });
         return Promise.resolve(
           String(input).includes("/api/cron/jobs?") && init?.method === "POST"
@@ -209,18 +243,22 @@ describe("Hermes direct profile transport", () => {
     );
 
     await expect(
-      mutateHermesDirect({
-        url: "http://127.0.0.1:8642",
-        key: "12345678",
-        profile: "research",
-        action: "cron-create",
-        name: "Watch releases",
-        prompt: "Report meaningful changes",
-        schedule: "every 15m",
-        continuity: true,
-        monitorUrl: "https://example.com/releases",
-        reasoningEffort: "high",
-      }),
+      mutateHermesDirect(
+        {
+          url: "http://127.0.0.1:8642",
+          key: "12345678",
+          profile: "research",
+        },
+        {
+          action: "cron-create",
+          name: "Watch releases",
+          prompt: "Report meaningful changes",
+          schedule: "every 15m",
+          continuity: true,
+          monitorUrl: "https://example.com/releases",
+          reasoningEffort: "high",
+        },
+      ),
     ).resolves.toEqual({ ok: true, jobId: "pantheon-job" });
 
     expect(calls).toHaveLength(2);
@@ -320,13 +358,17 @@ describe("Hermes direct profile transport", () => {
       },
     });
     expect(
-      await mutateHermesDirect({
-        url: "http://127.0.0.1:8642",
-        key: "12345678",
-        profile: "work",
-        action: "skill-install",
-        identifier: "official/research/arxiv",
-      }),
+      await mutateHermesDirect(
+        {
+          url: "http://127.0.0.1:8642",
+          key: "12345678",
+          profile: "work",
+        },
+        {
+          action: "skill-install",
+          identifier: "official/research/arxiv",
+        },
+      ),
     ).toEqual({ ok: true, actionName: "skills-install" });
     expect(
       await searchHermesSkillsHubDirect({

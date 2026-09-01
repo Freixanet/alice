@@ -83,6 +83,7 @@ import {
   hermesScopedOperationFor,
   type HermesMutation,
 } from "./hermes-operations";
+import { whenDefined } from "./exact-optional";
 
 const SKIP_DIRS = new Set([
   "node_modules",
@@ -378,8 +379,8 @@ export async function fetchHermesLive(opts?: {
     ? {
         url: opts!.url!,
         key: opts!.key!,
-        place: opts?.place,
-        signal: opts?.signal,
+        ...whenDefined("place", opts?.place),
+        ...whenDefined("signal", opts?.signal),
       }
     : null;
 

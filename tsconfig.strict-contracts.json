@@ -9,8 +9,14 @@
     "src/lib/gateway-contracts.ts",
     "src/lib/chat-stream.ts",
     "src/lib/db.ts",
+    "src/lib/exact-optional.ts",
+    "src/lib/gateway.server.ts",
+    "src/lib/hermes-client.ts",
     "src/lib/hermes-connection.ts",
+    "src/lib/hermes-direct.ts",
+    "src/lib/hermes-groups.ts",
     "src/lib/hermes-live-parse.ts",
+    "src/lib/hermes-live.server.ts",
     "src/lib/hermes-live-types.ts",
     "src/lib/hermes-model-cache.ts",
     "src/lib/hermes-operations.ts",
@@ -25,6 +31,7 @@
     "src/lib/sync-crypto.ts",
     "src/lib/sync-merge.ts",
     "src/lib/types.ts",
-    "src/lib/auth/owner.server.ts"
+    "src/lib/auth/owner.server.ts",
+    "src/lib/hermes-live.ts"
   ]
 }

@@ -1,3 +1,5 @@
+import { whenDefined } from "./exact-optional";
+
 export type HermesRoomMember = {
   id: string;
   profile: string;
@@ -95,7 +97,7 @@ export function roomFromRpc(raw: unknown): HermesRoom | null {
         };
       })
       .filter((member): member is HermesRoomMember => member !== null),
-    updatedAt: finite(row?.updated_at) || undefined,
+    ...whenDefined("updatedAt", finite(row?.updated_at) || undefined),
     latestSeq: finite(row?.latest_seq),
     disbanded: row?.disbanded_at !== null && row?.disbanded_at !== undefined,
   };

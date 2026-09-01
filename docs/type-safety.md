@@ -9,6 +9,7 @@ The strict scope currently covers:
 - HTTP request schemas and Hermes mutation schemas;
 - Hermes capability, model, live-data, profile and operation contracts;
 - Hermes run events, connection status and outbound HTTP boundaries;
+- direct, proxy and browser-client Hermes transports;
 - chat-stream state transitions and message-patch persistence;
 - sync contracts, encryption and deterministic merge logic;
 - encrypted sync transport and hybrid local/IndexedDB storage;
@@ -21,7 +22,9 @@ value is `undefined`. This preserves the distinction between “not supplied” 
 
 The initial global audit found 131 violations. The first ratchet removed 34
 from the parsing and model-contract dependency graph; the second removed 26
-from streaming, connection, persistence and synchronization. The remaining 71
-violations are outside the enforced scope. Domains are added to the strict
+from streaming, connection, persistence and synchronization; the third removed
+49 from the client, direct/proxy transport and HTTP adapter boundaries. The
+remaining 22 violations are in UI consumers outside the enforced scope. Domains
+are added to the strict
 configuration only after their existing violations are removed, keeping each
 increment reviewable while preventing regressions in the hardened boundaries.

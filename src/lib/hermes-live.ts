@@ -106,7 +106,7 @@ export async function mutateHermes(
       proxy: { action: "mutate", mutation },
       direct: async (context) => {
         const { mutateHermesDirect } = await import("./hermes-direct");
-        return mutateHermesDirect({ ...context, ...mutation });
+        return mutateHermesDirect(context, mutation);
       },
       decodeProxy: (value) => decodeMutationResult(value, mutation),
     });
