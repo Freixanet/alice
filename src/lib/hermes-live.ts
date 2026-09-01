@@ -1,6 +1,7 @@
 import type {
   HermesActionStatusResult,
   HermesDiagnosticsResult,
+  HermesInsightsResult,
   HermesLiveResult,
   HermesMutationResult,
   HermesMcpCatalogResult,
@@ -23,6 +24,12 @@ import {
 } from "./hermes-transport";
 
 export type * from "./hermes-live-types";
+export type * from "./hermes-groups";
+import type {
+  HermesRoomMutationResult,
+  HermesRoomLogResult,
+  HermesRoomsResult,
+} from "./hermes-groups";
 
 type HermesResult = { ok: boolean };
 type HermesFailure = { ok: false; error: string };
@@ -296,6 +303,139 @@ export async function readHermesProfiles(opts?: {
     });
   } catch {
     return { ok: false, error: "Couldn’t read Hermes profiles." };
+  }
+}
+
+export async function readHermesInsights(opts: {
+  days: number;
+  signal?: AbortSignal;
+}): Promise<HermesInsightsResult> {
+  try {
+    return await runHermesOperation({
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      scope: "profile",
+      proxy: { action: "insights", days: opts.days },
+      direct: async (context) => {
+        const { readHermesInsightsDirect } = await import("./hermes-direct");
+        return readHermesInsightsDirect({ ...context, days: opts.days });
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesInsightsResult>(
+          value,
+          "Couldn’t read Hermes insights.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes insights." };
+  }
+}
+
+export async function readHermesRooms(opts?: {
+  signal?: AbortSignal;
+}): Promise<HermesRoomsResult> {
+  try {
+    return await runHermesOperation({
+      ...(opts?.signal ? { signal: opts.signal } : {}),
+      scope: "profile",
+      proxy: { action: "rooms" },
+      direct: async (context) => {
+        const { readHermesRoomsDirect } = await import("./hermes-direct");
+        return readHermesRoomsDirect(context);
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesRoomsResult>(
+          value,
+          "Couldn’t read Hermes group chats.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes group chats." };
+  }
+}
+
+export async function createHermesRoom(opts: {
+  name: string;
+  members: string[];
+}): Promise<HermesRoomMutationResult> {
+  const roomId = crypto.randomUUID();
+  try {
+    return await runHermesOperation({
+      scope: "profile",
+      proxy: {
+        action: "room-create",
+        roomId,
+        name: opts.name,
+        members: opts.members,
+      },
+      direct: async (context) => {
+        const { createHermesRoomDirect } = await import("./hermes-direct");
+        return createHermesRoomDirect({ ...context, roomId, ...opts });
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesRoomMutationResult>(
+          value,
+          "Couldn’t create this Hermes group chat.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t create this Hermes group chat." };
+  }
+}
+
+export async function sendHermesRoomMessage(opts: {
+  roomId: string;
+  message: string;
+}): Promise<HermesRoomMutationResult> {
+  const eventId = crypto.randomUUID();
+  try {
+    return await runHermesOperation({
+      scope: "profile",
+      proxy: { action: "room-send", eventId, ...opts },
+      direct: async (context) => {
+        const { sendHermesRoomMessageDirect } = await import("./hermes-direct");
+        return sendHermesRoomMessageDirect({ ...context, eventId, ...opts });
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesRoomMutationResult>(
+          value,
+          "Couldn’t send this group message.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t send this group message." };
+  }
+}
+
+export async function readHermesRoomLog(opts: {
+  roomId: string;
+  sinceSeq?: number;
+  signal?: AbortSignal;
+}): Promise<HermesRoomLogResult> {
+  try {
+    return await runHermesOperation({
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      scope: "profile",
+      proxy: {
+        action: "room-log",
+        roomId: opts.roomId,
+        sinceSeq: opts.sinceSeq ?? 0,
+      },
+      direct: async (context) => {
+        const { readHermesRoomLogDirect } = await import("./hermes-direct");
+        return readHermesRoomLogDirect({
+          ...context,
+          roomId: opts.roomId,
+          sinceSeq: opts.sinceSeq ?? 0,
+        });
+      },
+      decodeProxy: (value) =>
+        decodeHermesResult<HermesRoomLogResult>(
+          value,
+          "Couldn’t read this group chat.",
+        ),
+    });
+  } catch {
+    return { ok: false, error: "Couldn’t read this group chat." };
   }
 }
 

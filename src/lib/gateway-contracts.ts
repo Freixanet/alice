@@ -48,6 +48,11 @@ export type HermesCapability =
   | "memory"
   | "sessions"
   | "profiles"
+  | "groups"
+  | "peer_rooms"
+  | "artifacts"
+  | "insights"
+  | "browser_control"
   | "channels"
   | "pairing"
   | "webhooks"
@@ -226,6 +231,24 @@ const CAPABILITY_ALIASES: Record<string, HermesCapability[]> = {
   session_chat_stream: ["sessions", "chat.streaming"],
   session_model_lock: ["sessions", "models"],
   profiles: ["profiles"],
+  groups: ["groups"],
+  group_chat: ["groups"],
+  hosted_rooms: ["groups"],
+  groups_capabilities: ["groups"],
+  bots: ["profiles", "groups"],
+  room_link: ["groups", "peer_rooms"],
+  peer_rooms: ["groups", "peer_rooms"],
+  groups_peer_invite: ["groups", "peer_rooms"],
+  artifact_upload: ["artifacts"],
+  artifact_download: ["artifacts"],
+  artifacts: ["artifacts"],
+  analytics: ["insights"],
+  analytics_usage: ["insights"],
+  analytics_models: ["insights"],
+  insights: ["insights"],
+  browser_control: ["browser_control"],
+  browser_control_register: ["browser_control"],
+  browser_control_ws: ["browser_control"],
   channels: ["channels"],
   pairing: ["pairing"],
   webhooks: ["webhooks"],

@@ -399,6 +399,33 @@ export type HermesProfilesState = {
 export type HermesProfilesResult =
   { ok: true; state: HermesProfilesState } | { ok: false; error: string };
 
+export type HermesInsightsRow = {
+  name: string;
+  count: number;
+  tokens?: number;
+  cost?: number;
+};
+
+export type HermesInsights = {
+  periodDays: number;
+  totals: {
+    sessions: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    reasoningTokens: number;
+    apiCalls: number;
+    estimatedCost: number;
+    actualCost: number;
+  };
+  models: HermesInsightsRow[];
+  tools: HermesInsightsRow[];
+  skills: HermesInsightsRow[];
+};
+
+export type HermesInsightsResult =
+  { ok: true; insights: HermesInsights } | { ok: false; error: string };
+
 export type HermesProfileSoulResult =
   { ok: true; content: string; exists: boolean } | { ok: false; error: string };
 

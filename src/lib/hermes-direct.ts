@@ -26,6 +26,7 @@ import {
 import type {
   HermesActionStatusResult,
   HermesDiagnosticsResult,
+  HermesInsightsResult,
   HermesLive,
   HermesLiveResult,
   HermesMutationResult,
@@ -41,6 +42,16 @@ import type {
   HermesSystemToolsResult,
   HermesToolsetDetailsResult,
 } from "./hermes-live-types";
+import { insightsFromApi } from "./hermes-insights";
+import {
+  hermesGatewayRpcDirect,
+  roomFromRpc,
+  roomLogFromRpc,
+  roomsFromRpc,
+  type HermesRoomMutationResult,
+  type HermesRoomLogResult,
+  type HermesRoomsResult,
+} from "./hermes-groups";
 import { authHeaders } from "./auth/client";
 import { setDeviceSessionKey } from "./hermes-secret-client";
 import {
@@ -1018,6 +1029,134 @@ export async function readHermesProfilesDirect(opts: {
     };
   } catch {
     return { ok: false, error: "Couldn’t read Hermes profiles." };
+  }
+}
+
+export async function readHermesInsightsDirect(opts: {
+  url: string;
+  key: string;
+  days: number;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesInsightsResult> {
+  try {
+    const params = new URLSearchParams({ days: String(opts.days) });
+    if (opts.profile) params.set("profile", opts.profile);
+    const raw = await dashboardGet(
+      opts.url,
+      opts.key,
+      `/api/analytics/usage?${params.toString()}`,
+      opts.signal,
+    );
+    const insights = insightsFromApi(raw);
+    return insights
+      ? { ok: true, insights }
+      : { ok: false, error: "Hermes insights are unavailable." };
+  } catch {
+    return { ok: false, error: "Couldn’t read Hermes insights." };
+  }
+}
+
+export async function readHermesRoomsDirect(opts: {
+  url: string;
+  key: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesRoomsResult> {
+  try {
+    const capabilities = await hermesGatewayRpcDirect({
+      ...opts,
+      method: "groups.capabilities",
+    });
+    if (!asRec(capabilities)) return { ok: true, supported: false, rooms: [] };
+    const raw = await hermesGatewayRpcDirect({
+      ...opts,
+      method: "groups.list",
+      params: { limit: 100, offset: 0 },
+    });
+    return { ok: true, supported: true, rooms: roomsFromRpc(raw) };
+  } catch {
+    return { ok: true, supported: false, rooms: [] };
+  }
+}
+
+export async function createHermesRoomDirect(opts: {
+  url: string;
+  key: string;
+  roomId: string;
+  name: string;
+  members: string[];
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesRoomMutationResult> {
+  try {
+    const raw = await hermesGatewayRpcDirect({
+      ...opts,
+      method: "groups.create",
+      params: {
+        room_id: opts.roomId,
+        name: opts.name,
+        members: opts.members.map((profile) => ({
+          member_id: profile,
+          profile,
+          handle: `agent-${profile}`,
+        })),
+      },
+    });
+    const room = roomFromRpc(asRec(raw)?.room);
+    return room
+      ? { ok: true, room }
+      : { ok: false, error: "Hermes didn’t create the group chat." };
+  } catch {
+    return { ok: false, error: "Couldn’t create this Hermes group chat." };
+  }
+}
+
+export async function sendHermesRoomMessageDirect(opts: {
+  url: string;
+  key: string;
+  roomId: string;
+  eventId: string;
+  message: string;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesRoomMutationResult> {
+  try {
+    const raw = await hermesGatewayRpcDirect({
+      ...opts,
+      method: "groups.send",
+      params: {
+        room_id: opts.roomId,
+        event_id: opts.eventId,
+        payload: { text: opts.message, thread_id: opts.eventId },
+      },
+    });
+    return { ok: true, accepted: asRec(raw)?.accepted === true };
+  } catch {
+    return { ok: false, error: "Couldn’t send this group message." };
+  }
+}
+
+export async function readHermesRoomLogDirect(opts: {
+  url: string;
+  key: string;
+  roomId: string;
+  sinceSeq: number;
+  profile?: string;
+  signal?: AbortSignal;
+}): Promise<HermesRoomLogResult> {
+  try {
+    const raw = await hermesGatewayRpcDirect({
+      ...opts,
+      method: "groups.log",
+      params: { room_id: opts.roomId, since_seq: opts.sinceSeq, limit: 100 },
+    });
+    const log = roomLogFromRpc(raw);
+    return log
+      ? { ok: true, ...log }
+      : { ok: false, error: "Hermes returned an invalid group log." };
+  } catch {
+    return { ok: false, error: "Couldn’t read this group chat." };
   }
 }
 

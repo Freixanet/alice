@@ -4,6 +4,7 @@ import { localHermesAvailable } from "./auth/owner.server";
 import {
   getHermesHomeDir,
   hermesDashboardGet,
+  hermesDashboardRpc,
   hermesDashboardSend,
   hermesDashboardSendJson,
 } from "./gateway.server";
@@ -13,6 +14,7 @@ import type {
   HermesChannelRow,
   HermesCronRow,
   HermesDiagnosticsResult,
+  HermesInsightsResult,
   HermesLive,
   HermesMutationResult,
   HermesMcpCatalogResult,
@@ -34,6 +36,15 @@ import type {
   HermesToolsetRow,
   HermesToolsetDetailsResult,
 } from "./hermes-live";
+import { insightsFromApi } from "./hermes-insights";
+import {
+  roomFromRpc,
+  roomLogFromRpc,
+  roomsFromRpc,
+  type HermesRoomMutationResult,
+  type HermesRoomLogResult,
+  type HermesRoomsResult,
+} from "./hermes-groups";
 import {
   asList,
   asRec,
@@ -526,6 +537,107 @@ export async function fetchHermesProfiles(
       profiles,
     },
   };
+}
+
+export async function fetchHermesInsights(
+  opts: Gate,
+  days: number,
+  profile?: string,
+): Promise<HermesInsightsResult> {
+  const params = new URLSearchParams({ days: String(days) });
+  if (profile) params.set("profile", profile);
+  const raw = await hermesDashboardGet(
+    opts,
+    `/api/analytics/usage?${params.toString()}`,
+  );
+  const insights = insightsFromApi(raw);
+  return insights
+    ? { ok: true, insights }
+    : { ok: false, error: "Hermes insights are unavailable." };
+}
+
+export async function fetchHermesRooms(
+  opts: Gate,
+  profile?: string,
+): Promise<HermesRoomsResult> {
+  try {
+    const capabilities = await hermesDashboardRpc(
+      { ...opts, ...(profile ? { profile } : {}) },
+      "groups.capabilities",
+    );
+    if (!asRec(capabilities)) return { ok: true, supported: false, rooms: [] };
+    const raw = await hermesDashboardRpc(
+      { ...opts, ...(profile ? { profile } : {}) },
+      "groups.list",
+      { limit: 100, offset: 0 },
+    );
+    return { ok: true, supported: true, rooms: roomsFromRpc(raw) };
+  } catch {
+    return { ok: true, supported: false, rooms: [] };
+  }
+}
+
+export async function mutateHermesRoom(
+  opts: Gate,
+  operation:
+    | { action: "create"; roomId: string; name: string; members: string[] }
+    | { action: "send"; roomId: string; eventId: string; message: string },
+  profile?: string,
+): Promise<HermesRoomMutationResult> {
+  try {
+    if (operation.action === "create") {
+      const raw = await hermesDashboardRpc(
+        { ...opts, ...(profile ? { profile } : {}) },
+        "groups.create",
+        {
+          room_id: operation.roomId,
+          name: operation.name,
+          members: operation.members.map((memberProfile) => ({
+            member_id: memberProfile,
+            profile: memberProfile,
+            handle: `agent-${memberProfile}`,
+          })),
+        },
+      );
+      const room = roomFromRpc(asRec(raw)?.room);
+      return room
+        ? { ok: true, room }
+        : { ok: false, error: "Hermes didn’t create the group chat." };
+    }
+    const raw = await hermesDashboardRpc(
+      { ...opts, ...(profile ? { profile } : {}) },
+      "groups.send",
+      {
+        room_id: operation.roomId,
+        event_id: operation.eventId,
+        payload: { text: operation.message, thread_id: operation.eventId },
+      },
+    );
+    return { ok: true, accepted: asRec(raw)?.accepted === true };
+  } catch {
+    return { ok: false, error: "Hermes group chat is unavailable." };
+  }
+}
+
+export async function fetchHermesRoomLog(
+  opts: Gate,
+  roomId: string,
+  sinceSeq: number,
+  profile?: string,
+): Promise<HermesRoomLogResult> {
+  try {
+    const raw = await hermesDashboardRpc(
+      { ...opts, ...(profile ? { profile } : {}) },
+      "groups.log",
+      { room_id: roomId, since_seq: sinceSeq, limit: 100 },
+    );
+    const log = roomLogFromRpc(raw);
+    return log
+      ? { ok: true, ...log }
+      : { ok: false, error: "Hermes returned an invalid group log." };
+  } catch {
+    return { ok: false, error: "Couldn’t read this group chat." };
+  }
 }
 
 export async function fetchHermesProfileSoul(

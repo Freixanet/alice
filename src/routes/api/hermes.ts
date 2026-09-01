@@ -499,6 +499,98 @@ export const Route = createFileRoute("/api/hermes")({
           }
         }
 
+        if (body.action === "insights") {
+          if (!saved?.u || !saved.k) {
+            return jsonWithCookie(
+              { ok: false, error: "Connect your Hermes first." },
+              400,
+            );
+          }
+          try {
+            const { fetchHermesInsights } =
+              await import("@/lib/hermes-live.server");
+            const result = await fetchHermesInsights(
+              {
+                url: saved.u,
+                key: saved.k,
+                place: saved.p,
+                signal: AbortSignal.any([
+                  request.signal,
+                  AbortSignal.timeout(12_000),
+                ]),
+              },
+              body.days,
+              body.profile,
+            );
+            return jsonWithCookie(result, result.ok ? 200 : 502);
+          } catch {
+            return jsonWithCookie(
+              { ok: false, error: "Couldn’t read Hermes insights." },
+              502,
+            );
+          }
+        }
+
+        if (
+          body.action === "rooms" ||
+          body.action === "room-create" ||
+          body.action === "room-send" ||
+          body.action === "room-log"
+        ) {
+          if (!saved?.u || !saved.k) {
+            return jsonWithCookie(
+              { ok: false, error: "Connect your Hermes first." },
+              400,
+            );
+          }
+          const gate = {
+            url: saved.u,
+            key: saved.k,
+            place: saved.p,
+            signal: AbortSignal.any([
+              request.signal,
+              AbortSignal.timeout(12_000),
+            ]),
+          };
+          try {
+            const { fetchHermesRooms, fetchHermesRoomLog, mutateHermesRoom } =
+              await import("@/lib/hermes-live.server");
+            const result =
+              body.action === "rooms"
+                ? await fetchHermesRooms(gate, body.profile)
+                : body.action === "room-log"
+                  ? await fetchHermesRoomLog(
+                      gate,
+                      body.roomId,
+                      body.sinceSeq,
+                      body.profile,
+                    )
+                  : await mutateHermesRoom(
+                      gate,
+                      body.action === "room-create"
+                        ? {
+                            action: "create",
+                            roomId: body.roomId,
+                            name: body.name,
+                            members: body.members,
+                          }
+                        : {
+                            action: "send",
+                            roomId: body.roomId,
+                            eventId: body.eventId,
+                            message: body.message,
+                          },
+                      body.profile,
+                    );
+            return jsonWithCookie(result, result.ok ? 200 : 502);
+          } catch {
+            return jsonWithCookie(
+              { ok: false, error: "Hermes group chat is unavailable." },
+              502,
+            );
+          }
+        }
+
         if (body.action === "mutate") {
           if (!saved?.u || !saved?.k) {
             return jsonWithCookie(

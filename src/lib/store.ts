@@ -175,7 +175,7 @@ interface HermesState {
   togglePin: (id: string) => void;
   isPinned: (id: string) => boolean;
   setDraft: (v: string) => void;
-  newChat: () => string;
+  newChat: (profile?: string) => string;
   importHermesSession: (payload: HermesSessionImport) => string;
   selectChat: (id: string) => void;
   deleteChat: (id: string) => void;
@@ -337,7 +337,7 @@ export const useHermes = create<HermesState>()(
       },
       isPinned: (id) => get().pinned.includes(id),
       setDraft: (v) => set({ composerDraft: v }),
-      newChat: () => {
+      newChat: (profile) => {
         const id = uid();
         const conv: Conversation = {
           id,
@@ -345,6 +345,9 @@ export const useHermes = create<HermesState>()(
           createdAt: Date.now(),
           updatedAt: Date.now(),
           messages: [],
+          ...(profile && isHermesProfileName(profile)
+            ? { hermesProfile: profile }
+            : {}),
         };
         set({
           conversations: [conv, ...get().conversations],
@@ -670,6 +673,12 @@ export const useHermes = create<HermesState>()(
                 conversation.hermesSessionId.length > 160
               ) {
                 delete conversation.hermesSessionId;
+              }
+              if (
+                typeof conversation.hermesProfile !== "string" ||
+                !isHermesProfileName(conversation.hermesProfile)
+              ) {
+                delete conversation.hermesProfile;
               }
               return conversation;
             });

@@ -9,6 +9,7 @@ describe("Hermes session conversation import", () => {
       {
         sessionId: "session-1",
         title: "Research",
+        profile: "research",
         messages: [
           { id: "1", role: "system", content: "secret" },
           {
@@ -29,6 +30,7 @@ describe("Hermes session conversation import", () => {
       id: "alice-1",
       title: "Research",
       hermesSessionId: "session-1",
+      hermesProfile: "research",
       messages: [
         { role: "user", content: "Question", createdAt: 1788084000000 },
         { role: "assistant", content: "Answer", createdAt: 45 },

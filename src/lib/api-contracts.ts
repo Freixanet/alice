@@ -83,6 +83,35 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
   }),
   action("diagnostics"),
   z.strictObject({
+    action: z.literal("insights"),
+    days: z.number().int().min(1).max(365),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("rooms"),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("room-create"),
+    roomId: bounded(128),
+    name: bounded(128),
+    members: z.array(hermesProfileNameSchema).min(2).max(6),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("room-send"),
+    roomId: bounded(128),
+    eventId: bounded(160),
+    message: bounded(8_000),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
+    action: z.literal("room-log"),
+    roomId: bounded(128),
+    sinceSeq: z.number().int().min(0),
+    profile: hermesProfileNameSchema.optional(),
+  }),
+  z.strictObject({
     action: z.literal("session-messages"),
     sessionId: bounded(160),
     profile: hermesProfileNameSchema.optional(),

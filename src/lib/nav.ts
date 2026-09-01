@@ -1,12 +1,15 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Blocks,
+  Activity,
   Cable,
   Clock,
   FolderKanban,
+  Paperclip,
   Puzzle,
   Settings,
   Sparkles,
+  UsersRound,
   Wrench,
 } from "lucide-react";
 import type { MsgKey } from "./i18n";
@@ -20,6 +23,12 @@ export type NavItem = {
 };
 
 export const NAV: NavItem[] = [
+  {
+    to: "/agents",
+    labelKey: "nav.agents",
+    hintKey: "nav.agentsHint",
+    icon: UsersRound,
+  },
   {
     to: "/skills",
     labelKey: "nav.skills",
@@ -45,12 +54,24 @@ export const NAV: NavItem[] = [
     icon: FolderKanban,
   },
   {
+    to: "/artifacts",
+    labelKey: "nav.artifacts",
+    hintKey: "nav.artifactsHint",
+    icon: Paperclip,
+  },
+  {
     to: "/memory",
     labelKey: "nav.memory",
     hintKey: "nav.memoryHint",
     icon: Blocks,
   },
   { to: "/cron", labelKey: "nav.cron", hintKey: "nav.cronHint", icon: Clock },
+  {
+    to: "/insights",
+    labelKey: "nav.insights",
+    hintKey: "nav.insightsHint",
+    icon: Activity,
+  },
   {
     to: "/connect",
     labelKey: "nav.connect",

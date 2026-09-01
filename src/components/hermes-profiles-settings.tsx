@@ -16,7 +16,11 @@ import { useHermes } from "@/lib/store";
 import { useLocale, useT } from "@/lib/use-i18n";
 import { cn } from "@/lib/utils";
 
-export function HermesProfilesSettings() {
+export function HermesProfilesSettings({
+  onChatProfile,
+}: {
+  onChatProfile?: (profile: string) => void;
+} = {}) {
   const t = useT();
   const locale = useLocale();
   const connected = useHermes(
@@ -176,6 +180,15 @@ export function HermesProfilesSettings() {
                   </Badge>
                 ) : null}
               </span>
+              {onChatProfile ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onChatProfile(profile.name)}
+                >
+                  {t("agents.chat")}
+                </Button>
+              ) : null}
             </div>
           );
         })}

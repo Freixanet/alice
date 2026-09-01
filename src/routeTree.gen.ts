@@ -13,8 +13,11 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAddonsRouteImport } from './routes/_app/addons'
+import { Route as AppAgentsRouteImport } from './routes/_app/agents'
+import { Route as AppArtifactsRouteImport } from './routes/_app/artifacts'
 import { Route as AppConnectRouteImport } from './routes/_app/connect'
 import { Route as AppCronRouteImport } from './routes/_app/cron'
+import { Route as AppInsightsRouteImport } from './routes/_app/insights'
 import { Route as AppMemoryRouteImport } from './routes/_app/memory'
 import { Route as AppProjectsRouteImport } from './routes/_app/projects'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
@@ -46,6 +49,16 @@ const AppAddonsRoute = AppAddonsRouteImport.update({
   path: '/addons',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAgentsRoute = AppAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppArtifactsRoute = AppArtifactsRouteImport.update({
+  id: '/artifacts',
+  path: '/artifacts',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppConnectRoute = AppConnectRouteImport.update({
   id: '/connect',
   path: '/connect',
@@ -54,6 +67,11 @@ const AppConnectRoute = AppConnectRouteImport.update({
 const AppCronRoute = AppCronRouteImport.update({
   id: '/cron',
   path: '/cron',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInsightsRoute = AppInsightsRouteImport.update({
+  id: '/insights',
+  path: '/insights',
   getParentRoute: () => AppRoute,
 } as any)
 const AppMemoryRoute = AppMemoryRouteImport.update({
@@ -116,8 +134,11 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/addons': typeof AppAddonsRoute
+  '/agents': typeof AppAgentsRoute
+  '/artifacts': typeof AppArtifactsRoute
   '/connect': typeof AppConnectRoute
   '/cron': typeof AppCronRoute
+  '/insights': typeof AppInsightsRoute
   '/memory': typeof AppMemoryRoute
   '/projects': typeof AppProjectsRoute
   '/settings': typeof AppSettingsRoute
@@ -133,8 +154,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/addons': typeof AppAddonsRoute
+  '/agents': typeof AppAgentsRoute
+  '/artifacts': typeof AppArtifactsRoute
   '/connect': typeof AppConnectRoute
   '/cron': typeof AppCronRoute
+  '/insights': typeof AppInsightsRoute
   '/memory': typeof AppMemoryRoute
   '/projects': typeof AppProjectsRoute
   '/settings': typeof AppSettingsRoute
@@ -153,8 +177,11 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/addons': typeof AppAddonsRoute
+  '/_app/agents': typeof AppAgentsRoute
+  '/_app/artifacts': typeof AppArtifactsRoute
   '/_app/connect': typeof AppConnectRoute
   '/_app/cron': typeof AppCronRoute
+  '/_app/insights': typeof AppInsightsRoute
   '/_app/memory': typeof AppMemoryRoute
   '/_app/projects': typeof AppProjectsRoute
   '/_app/settings': typeof AppSettingsRoute
@@ -174,8 +201,11 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/addons'
+    | '/agents'
+    | '/artifacts'
     | '/connect'
     | '/cron'
+    | '/insights'
     | '/memory'
     | '/projects'
     | '/settings'
@@ -191,8 +221,11 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/addons'
+    | '/agents'
+    | '/artifacts'
     | '/connect'
     | '/cron'
+    | '/insights'
     | '/memory'
     | '/projects'
     | '/settings'
@@ -210,8 +243,11 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/_app/addons'
+    | '/_app/agents'
+    | '/_app/artifacts'
     | '/_app/connect'
     | '/_app/cron'
+    | '/_app/insights'
     | '/_app/memory'
     | '/_app/projects'
     | '/_app/settings'
@@ -267,6 +303,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAddonsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/agents': {
+      id: '/_app/agents'
+      path: '/agents'
+      fullPath: '/agents'
+      preLoaderRoute: typeof AppAgentsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/artifacts': {
+      id: '/_app/artifacts'
+      path: '/artifacts'
+      fullPath: '/artifacts'
+      preLoaderRoute: typeof AppArtifactsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/connect': {
       id: '/_app/connect'
       path: '/connect'
@@ -279,6 +329,13 @@ declare module '@tanstack/react-router' {
       path: '/cron'
       fullPath: '/cron'
       preLoaderRoute: typeof AppCronRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/insights': {
+      id: '/_app/insights'
+      path: '/insights'
+      fullPath: '/insights'
+      preLoaderRoute: typeof AppInsightsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/memory': {
@@ -363,8 +420,11 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppAddonsRoute: typeof AppAddonsRoute
+  AppAgentsRoute: typeof AppAgentsRoute
+  AppArtifactsRoute: typeof AppArtifactsRoute
   AppConnectRoute: typeof AppConnectRoute
   AppCronRoute: typeof AppCronRoute
+  AppInsightsRoute: typeof AppInsightsRoute
   AppMemoryRoute: typeof AppMemoryRoute
   AppProjectsRoute: typeof AppProjectsRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -375,8 +435,11 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAddonsRoute: AppAddonsRoute,
+  AppAgentsRoute: AppAgentsRoute,
+  AppArtifactsRoute: AppArtifactsRoute,
   AppConnectRoute: AppConnectRoute,
   AppCronRoute: AppCronRoute,
+  AppInsightsRoute: AppInsightsRoute,
   AppMemoryRoute: AppMemoryRoute,
   AppProjectsRoute: AppProjectsRoute,
   AppSettingsRoute: AppSettingsRoute,

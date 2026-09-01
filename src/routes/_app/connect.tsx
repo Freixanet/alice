@@ -487,6 +487,7 @@ function HermesLiveSections({
   const navigate = useNavigate();
   const model = useHermes((state) => state.model);
   const provider = useHermes((state) => state.modelProvider);
+  const profile = useHermes((state) => state.profile);
   const manifest = useHermes((state) => state.gatewayMeta?.manifest);
   const importHermesSession = useHermes((state) => state.importHermesSession);
   const [sessionBusy, setSessionBusy] = useState<string | null>(null);
@@ -646,6 +647,7 @@ function HermesLiveSections({
       sessionId: result.sessionId,
       title: session.title || session.id,
       messages: result.messages,
+      profile,
     });
     setSessionBusy(null);
     await navigate({ to: "/" });

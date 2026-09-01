@@ -105,7 +105,7 @@ export function ChatView() {
     gatewayMeta?.manifest,
     "profiles",
   )
-    ? profile
+    ? (conv?.hermesProfile ?? profile)
     : undefined;
   const supportsRuns =
     gatewayMeta?.manifest?.capabilities["chat.runs"] === true &&
@@ -346,6 +346,11 @@ export function ChatView() {
       .conversations.find(
         (conversation) => conversation.id === conversationId,
       )?.hermesSessionId;
+    const hermesProfile = useHermes
+      .getState()
+      .conversations.find(
+        (conversation) => conversation.id === conversationId,
+      )?.hermesProfile;
     const fail = (message: string) => {
       patchMessage(conversationId, assistantId, {
         pending: false,
@@ -406,7 +411,7 @@ export function ChatView() {
                 model,
                 provider,
                 signal: ctrl.signal,
-                profile: chatProfile,
+                profile: hermesProfile ?? chatProfile,
               })
             : null
           : streamHermesDirect({
@@ -419,7 +424,7 @@ export function ChatView() {
               runIdempotency: supportsRunIdempotency,
               messages: payload,
               signal: ctrl.signal,
-              profile: chatProfile,
+              profile: hermesProfile ?? chatProfile,
             });
         if (!stream) {
           fail(tr(locale, "error.noReply"));
@@ -441,7 +446,7 @@ export function ChatView() {
             provider,
             preferRuns: supportsRuns,
             runIdempotency: supportsRunIdempotency,
-            profile: chatProfile,
+            profile: hermesProfile ?? chatProfile,
             messages: payload,
           }),
         });

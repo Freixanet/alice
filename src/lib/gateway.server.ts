@@ -10,6 +10,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { WebSocket } from "undici";
 import {
   assertPublicHttpUrl,
   localPrivateNetworkEnabled,
@@ -1105,6 +1106,85 @@ export async function hermesDashboardGet(
     }
   }
   return null;
+}
+
+export async function hermesDashboardRpc(
+  opts: {
+    url: string;
+    key: string;
+    place?: GatewayPlace;
+    signal?: AbortSignal;
+    profile?: string;
+  },
+  method: string,
+  params: Record<string, unknown> = {},
+): Promise<unknown> {
+  const base = await resolveHermesBase(opts.url, opts.place);
+  const candidates = managementBases(base, opts.place);
+  let lastError: Error | null = null;
+  for (const candidate of candidates) {
+    try {
+      const wsUrl = new URL(candidate);
+      wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+      wsUrl.pathname = `${wsUrl.pathname.replace(/\/$/, "")}/api/ws`;
+      wsUrl.search = "";
+      wsUrl.searchParams.set("token", assertGatewayKey(opts.key));
+      if (opts.profile) wsUrl.searchParams.set("profile", opts.profile);
+      return await new Promise((resolve, reject) => {
+        const id = randomBytes(16).toString("hex");
+        const socket = new WebSocket(wsUrl.toString());
+        let settled = false;
+        const timeout = setTimeout(
+          () => finish(new Error("Hermes RPC timed out.")),
+          8_000,
+        );
+        const abort = () => finish(new Error("Hermes RPC aborted."));
+        const finish = (error?: Error, value?: unknown) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          opts.signal?.removeEventListener("abort", abort);
+          socket.close();
+          if (error) reject(error);
+          else resolve(value);
+        };
+        opts.signal?.addEventListener("abort", abort, { once: true });
+        socket.addEventListener("open", () => {
+          socket.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+        });
+        socket.addEventListener("message", (event) => {
+          try {
+            const body = JSON.parse(String(event.data)) as Record<
+              string,
+              unknown
+            >;
+            if (body.id !== id) return;
+            const rpcError = body.error;
+            if (rpcError && typeof rpcError === "object") {
+              const message = (rpcError as Record<string, unknown>).message;
+              finish(
+                new Error(
+                  typeof message === "string"
+                    ? message
+                    : "Hermes rejected the request.",
+                ),
+              );
+              return;
+            }
+            finish(undefined, body.result);
+          } catch {
+            // Ignore unrelated event frames.
+          }
+        });
+        socket.addEventListener("error", () =>
+          finish(new Error("Couldn’t open the Hermes realtime gateway.")),
+        );
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw lastError ?? new Error("Hermes realtime gateway is unavailable.");
 }
 
 export async function hermesDashboardSend(

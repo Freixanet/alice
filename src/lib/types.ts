@@ -153,6 +153,8 @@ export interface Conversation {
   messages: Message[];
   pinned?: boolean;
   hermesSessionId?: string;
+  /** Profile that owns this Hermes session. Never inherit a later UI selection. */
+  hermesProfile?: string;
 }
 
 export interface Approval {

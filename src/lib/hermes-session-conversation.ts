@@ -1,10 +1,12 @@
 import type { HermesSessionMessage } from "./hermes-live-types";
+import { isHermesProfileName } from "./hermes-profile";
 import type { Conversation, Message } from "./types";
 
 export type HermesSessionImport = {
   sessionId: string;
   title: string;
   messages: HermesSessionMessage[];
+  profile?: string;
 };
 
 export function importHermesSessionConversation(
@@ -16,6 +18,10 @@ export function importHermesSessionConversation(
   const sessionId = payload.sessionId.trim().slice(0, 160);
   if (!sessionId) throw new Error("Invalid Hermes session identifier");
   const messages = localMessagesFromHermes(sessionId, payload.messages, now);
+  const profile =
+    payload.profile && isHermesProfileName(payload.profile)
+      ? payload.profile
+      : undefined;
   const existing = conversations.find(
     (conversation) => conversation.hermesSessionId === sessionId,
   );
@@ -26,7 +32,13 @@ export function importHermesSessionConversation(
       activeId: existing.id,
       conversations: conversations.map((conversation) =>
         conversation.id === existing.id
-          ? { ...conversation, title, messages, updatedAt: now }
+          ? {
+              ...conversation,
+              title,
+              messages,
+              updatedAt: now,
+              ...(profile ? { hermesProfile: profile } : {}),
+            }
           : conversation,
       ),
     };
@@ -39,6 +51,7 @@ export function importHermesSessionConversation(
     updatedAt: now,
     messages,
     hermesSessionId: sessionId,
+    ...(profile ? { hermesProfile: profile } : {}),
   };
   return {
     activeId: conversation.id,

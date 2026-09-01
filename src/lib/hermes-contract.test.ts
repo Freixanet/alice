@@ -25,6 +25,10 @@ const requiredEndpoints = {
   session_messages: ["GET", "/api/sessions/{session_id}/messages"],
   session_fork: ["POST", "/api/sessions/{session_id}/fork"],
   session_chat_stream: ["POST", "/api/sessions/{session_id}/chat/stream"],
+  browser_control_register: ["POST", "/v1/browser-control/register"],
+  browser_control_ws: ["GET", "/v1/browser-control/ws"],
+  artifact_upload: ["POST", "/v1/artifacts/upload"],
+  artifact_download: ["GET", "/v1/artifacts/download/{artifact_id}"],
 } as const;
 
 describe("pinned Hermes release contracts", () => {
@@ -56,6 +60,8 @@ describe("pinned Hermes release contracts", () => {
         skills: true,
         toolsets: true,
         sessions: true,
+        artifacts: true,
+        browser_control: true,
         diagnostics: true,
       });
       const endpoints = fixture.capabilities.endpoints as Record<

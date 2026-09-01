@@ -9,12 +9,15 @@ async function waitForAlice(page: import("@playwright/test").Page) {
 
 const routes = [
   "/",
+  "/agents",
   "/skills",
   "/tools",
   "/addons",
   "/projects",
+  "/artifacts",
   "/memory",
   "/cron",
+  "/insights",
   "/connect",
 ];
 

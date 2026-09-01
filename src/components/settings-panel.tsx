@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
-  CircleUser,
   Keyboard,
   LogOut,
   Search,
@@ -32,7 +31,6 @@ import { authEnabled, signOut } from "@/lib/auth/client";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { useHermes, type Accent, type FontSize } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { HermesProfilesSettings } from "@/components/hermes-profiles-settings";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/use-i18n";
 import type { MsgKey } from "@/lib/i18n";
@@ -47,7 +45,7 @@ import {
   saveMasterSecretForDevice,
 } from "@/lib/sync-device-key";
 
-type SectionId = "general" | "model" | "profile" | "account" | "shortcuts";
+type SectionId = "general" | "model" | "account" | "shortcuts";
 
 const SECTION_META: {
   id: SectionId;
@@ -66,12 +64,6 @@ const SECTION_META: {
     labelKey: "settings.model",
     keywordsKey: "settings.keywords.model",
     icon: Sparkles,
-  },
-  {
-    id: "profile",
-    labelKey: "settings.profile",
-    keywordsKey: "settings.keywords.profile",
-    icon: CircleUser,
   },
   {
     id: "account",
@@ -203,9 +195,6 @@ export function SettingsDialog({
                 {current.id === "general" ? <GeneralSection /> : null}
                 {current.id === "model" ? (
                   <ModeloSection onNavigate={() => onOpenChange(false)} />
-                ) : null}
-                {current.id === "profile" ? (
-                  <PerfilSection onNavigate={() => onOpenChange(false)} />
                 ) : null}
                 {current.id === "account" ? <CuentaSection /> : null}
                 {current.id === "shortcuts" ? <AtajosSection /> : null}
@@ -663,11 +652,6 @@ function ModeloSection({ onNavigate }: { onNavigate?: () => void }) {
       ))}
     </div>
   );
-}
-
-function PerfilSection({ onNavigate }: { onNavigate?: () => void }) {
-  void onNavigate;
-  return <HermesProfilesSettings />;
 }
 
 function CuentaSection() {
