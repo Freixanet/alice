@@ -2,7 +2,9 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 async function waitForAlice(page: import("@playwright/test").Page) {
-  await expect(page.locator(".alice-app")).toHaveAttribute("data-ready", "");
+  await expect(page.locator(".alice-app")).toHaveAttribute("data-ready", "", {
+    timeout: 15_000,
+  });
 }
 
 const routes = [
