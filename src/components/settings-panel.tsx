@@ -148,7 +148,7 @@ export function SettingsDialog({
               />
             </div>
           </div>
-          <ul className="flex shrink-0 gap-0.5 overflow-x-auto rounded-lg bg-muted p-0.5 md:min-h-0 md:flex-1 md:flex-col md:gap-0.5 md:overflow-x-visible md:overflow-y-auto md:rounded-none md:bg-transparent md:p-0">
+          <ul className="flex shrink-0 gap-0.5 rounded-lg bg-muted p-0.5 md:min-h-0 md:flex-1 md:flex-col md:gap-0.5 md:overflow-y-auto md:rounded-none md:bg-transparent md:p-0">
             {filtered.length === 0 ? (
               <li className="px-2.5 py-2 text-sm text-muted-foreground">
                 {t("settings.noMatch")}
@@ -157,14 +157,17 @@ export function SettingsDialog({
               filtered.map((s) => {
                 const on = s.id === current?.id;
                 return (
-                  <li key={s.id} className="min-w-0 shrink-0 md:shrink">
+                  <li
+                    key={s.id}
+                    className="min-w-0 flex-1 md:flex-none md:shrink"
+                  >
                     <button
                       id={`settings-section-${s.id}`}
                       type="button"
                       aria-current={on ? "page" : undefined}
                       onClick={() => setSectionId(s.id)}
                       className={cn(
-                        "flex min-h-9 w-full min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm md:min-h-0 md:justify-start md:gap-2.5 md:rounded-lg md:px-2.5",
+                        "flex min-h-9 w-full min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-md px-1.5 py-2 text-xs md:min-h-0 md:justify-start md:gap-2.5 md:rounded-lg md:px-2.5 md:text-sm",
                         on
                           ? "border border-border bg-card text-foreground md:border-0 md:bg-accent"
                           : "text-foreground/80 hover:text-foreground md:hover:bg-accent",
@@ -313,7 +316,7 @@ function GeneralSection() {
     <div className="divide-y divide-border">
       <SettingRow label={t("settings.theme")} hint={t("settings.themeHint")}>
         <div
-          className="flex w-full rounded-lg bg-muted p-0.5 md:w-auto"
+          className="flex w-full rounded-lg bg-muted p-0.5 md:w-48"
           role="radiogroup"
           aria-label={t("settings.theme")}
         >
@@ -325,7 +328,7 @@ function GeneralSection() {
               aria-checked={theme === opt.id}
               onClick={() => setTheme(opt.id)}
               className={cn(
-                "h-8 flex-1 rounded-md px-2.5 text-center text-xs font-medium md:flex-none",
+                "h-8 flex-1 rounded-md px-2.5 text-center text-xs font-medium",
                 theme === opt.id
                   ? "bg-card text-foreground border border-border"
                   : "text-foreground/70 hover:text-foreground",
@@ -341,7 +344,7 @@ function GeneralSection() {
         hint={t("settings.fontSizeHint")}
       >
         <div
-          className="flex w-full rounded-lg bg-muted p-0.5 md:w-auto"
+          className="flex w-full rounded-lg bg-muted p-0.5 md:w-48"
           role="radiogroup"
           aria-label={t("settings.fontSize")}
         >
@@ -353,7 +356,7 @@ function GeneralSection() {
               aria-checked={fontSize === opt.id}
               onClick={() => setFontSize(opt.id)}
               className={cn(
-                "h-8 flex-1 rounded-md px-2.5 text-center text-xs font-medium md:flex-none",
+                "h-8 flex-1 rounded-md px-2.5 text-center text-xs font-medium",
                 fontSize === opt.id
                   ? "bg-card text-foreground border border-border"
                   : "text-foreground/70 hover:text-foreground",
@@ -366,7 +369,7 @@ function GeneralSection() {
       </SettingRow>
       <SettingRow label={t("settings.color")} hint={t("settings.colorHint")}>
         <div
-          className="flex flex-wrap justify-start gap-2 md:justify-end"
+          className="flex flex-wrap justify-between gap-1 md:justify-end md:gap-2"
           role="radiogroup"
           aria-label={t("settings.color")}
         >
@@ -497,7 +500,7 @@ function GeneralSection() {
         hint={t("settings.languageHint")}
       >
         <div
-          className="flex w-full rounded-lg bg-muted p-0.5 md:w-auto"
+          className="flex w-full rounded-lg bg-muted p-0.5 md:w-48"
           role="radiogroup"
           aria-label={t("settings.language")}
         >
@@ -509,7 +512,7 @@ function GeneralSection() {
               aria-checked={locale === id}
               onClick={() => setLocale(id)}
               className={cn(
-                "h-7 flex-1 rounded-md px-2 text-center text-xs font-medium tracking-wide md:flex-none",
+                "h-7 flex-1 rounded-md px-2 text-center text-xs font-medium tracking-wide",
                 locale === id
                   ? "bg-card text-foreground border border-border"
                   : "text-muted-foreground hover:text-foreground",
