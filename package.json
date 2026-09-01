@@ -30,9 +30,10 @@
     "duplicates:check": "jscpd src --min-lines 12 --min-tokens 80 --threshold 2 --reporters console",
     "design:check": "node scripts/check-design-system.mjs",
     "bundles:check": "node scripts/check-bundle-budgets.mjs",
+    "bundle:smoke": "node scripts/smoke-server-bundle.mjs",
     "security:check": "npm audit --audit-level=high",
     "release:verify": "node scripts/verify-release.mjs",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run cycles:check && npm run duplicates:check && npm run design:check && npm run build:ci && npm run bundles:check"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run cycles:check && npm run duplicates:check && npm run design:check && npm run build:ci && npm run bundle:smoke && npm run bundles:check"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

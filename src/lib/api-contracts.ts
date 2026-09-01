@@ -1,11 +1,14 @@
 import { z } from "zod";
-import {
-  hermesMutationSchema,
-  hermesProfileNameSchema,
-} from "./hermes-operations";
+import { hermesMutationSchema } from "./hermes-operations";
 
 const bounded = (max: number) => z.string().trim().min(1).max(max);
 const optionalBounded = (max: number) => z.string().trim().max(max).optional();
+const hermesProfileNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 
 const action = <T extends string>(name: T) =>
   z.strictObject({ action: z.literal(name) });
@@ -79,7 +82,7 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({
     action: z.literal("mutate"),
     profile: hermesProfileNameSchema.optional(),
-    mutation: hermesMutationSchema,
+    mutation: z.lazy(() => hermesMutationSchema),
   }),
   action("diagnostics"),
   z.strictObject({
@@ -176,7 +179,10 @@ const hermesControlRequestSchema = z.discriminatedUnion("action", [
 
 export const hermesRequestSchema = z.union([
   hermesControlRequestSchema,
-  hermesMutationSchema,
+  // The route tree and the shared Hermes client form separate production
+  // chunks. Defer this cross-chunk reference until parsing so module
+  // initialization remains safe if the bundler evaluates the route first.
+  z.lazy(() => hermesMutationSchema),
 ]);
 
 const textPartSchema = z.strictObject({
