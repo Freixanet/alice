@@ -25,6 +25,7 @@ for (const route of routes) {
     await expect(page.locator("body")).not.toContainText("Un momento…", {
       timeout: 15_000,
     });
+    await waitForAlice(page);
     await expect(page.locator("html")).toHaveAttribute("data-alice-app", "");
 
     await expect

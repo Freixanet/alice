@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
+import { resolve } from "node:path";
 
 const baseURL = "http://127.0.0.1:8091";
+const hermesFixture = resolve("tests/fixtures/hermes-empty");
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -26,6 +28,7 @@ export default defineConfig({
     env: {
       ...process.env,
       ALICE_PGLITE_MEMORY: "1",
+      HERMES_HOME: hermesFixture,
       VITE_AUTH_ENABLED: "false",
     },
   },

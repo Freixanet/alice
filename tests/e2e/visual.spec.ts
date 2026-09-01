@@ -36,6 +36,14 @@ async function openStablePage(
   });
   await page.evaluate(async () => {
     await document.fonts.ready;
+    window.scrollTo(0, 0);
+    for (const element of document.querySelectorAll<HTMLElement>("*")) {
+      element.scrollTop = 0;
+      element.scrollLeft = 0;
+    }
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
   });
 }
 
