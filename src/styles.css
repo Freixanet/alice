@@ -630,3 +630,16 @@ html[data-alice-app]:has(.alice-app) .alice-composer {
 .alice-markdown .alice-code:has(.alice-code-lang) pre {
   padding-top: 2rem;
 }
+
+/* Display equations get their own breathing room, and a long one scrolls
+   inside the reply rather than widening the column. */
+.alice-markdown .katex-display {
+  margin: 1rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.25rem;
+}
+
+.alice-markdown .katex {
+  font-size: 1.05em;
+}

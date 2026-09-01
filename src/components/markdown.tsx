@@ -1,9 +1,17 @@
-import { isValidElement, memo, useState, type ReactNode } from "react";
+import {
+  isValidElement,
+  memo,
+  useEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Check, Copy } from "lucide-react";
 import { useT } from "@/lib/use-i18n";
+import { normalizeMathDelimiters } from "@/lib/math-delimiters";
 
 /**
  * Renders assistant text as Markdown.
@@ -106,18 +114,63 @@ const components: Components = {
   ),
 };
 
+// Derived from the renderer's own props rather than importing `unified`,
+// which is only a transitive dependency here.
+type MarkdownProps = ComponentProps<typeof ReactMarkdown>;
+type MathPlugins = {
+  remark: NonNullable<MarkdownProps["remarkPlugins"]>;
+  rehype: NonNullable<MarkdownProps["rehypePlugins"]>;
+};
+
+/**
+ * Loads the maths layer the first time a reply looks like it contains a
+ * formula, and keeps it for the rest of the session. A `$` inside a shell
+ * fence is a false positive that costs one fetch and changes nothing on
+ * screen, which is the right way to be wrong here.
+ */
+function useMathPlugins(source: string): MathPlugins | null {
+  const [plugins, setPlugins] = useState<MathPlugins | null>(loadedMath);
+  const wanted = !plugins && source.includes("$");
+
+  useEffect(() => {
+    if (!wanted) return;
+    let live = true;
+    void import("./markdown-math")
+      .then((module) => {
+        loadedMath = {
+          remark: module.remarkMathPlugins,
+          rehype: module.rehypeMathPlugins,
+        };
+        if (live) setPlugins(loadedMath);
+      })
+      .catch(() => {
+        // Formulas stay as text; the rest of the reply is unaffected.
+      });
+    return () => {
+      live = false;
+    };
+  }, [wanted]);
+
+  return plugins;
+}
+
+let loadedMath: MathPlugins | null = null;
+
 function MarkdownBody({ text }: { text: string }) {
+  const source = normalizeMathDelimiters(text);
+  const math = useMathPlugins(source);
   return (
     <div className="alice-markdown">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, ...(math?.remark ?? [])]}
         rehypePlugins={[
           [rehypeHighlight, { detect: true, ignoreMissing: true }],
+          ...(math?.rehype ?? []),
         ]}
         urlTransform={safeUrl}
         components={components}
       >
-        {text}
+        {source}
       </ReactMarkdown>
     </div>
   );

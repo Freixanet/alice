@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Markdown from "./markdown";
 
@@ -119,5 +119,60 @@ describe("assistant Markdown", () => {
     // Deltas arrive mid-token; an unclosed block must not throw.
     expect(() => html("```ts\nconst partial =")).not.toThrow();
     expect(html("| a | b |\n| --- |")).toContain("a");
+  });
+});
+
+describe("math", () => {
+  // KaTeX is fetched the first time a reply looks like it has a formula, so
+  // these wait for that layer instead of asserting on first paint.
+  it("renders inline and display formulas", async () => {
+    const { container } = render(
+      <Markdown text={"Given $E = mc^2$, then:\n\n$$\\int_0^1 x^2 dx$$"} />,
+    );
+    await waitFor(() =>
+      expect(
+        container.querySelectorAll(".katex").length,
+      ).toBeGreaterThanOrEqual(2),
+    );
+    expect(container.textContent).toContain("Given");
+  });
+
+  it("accepts the LaTeX delimiters models also emit", async () => {
+    const { container } = render(
+      <Markdown text={"area is \\(\\pi r^2\\) and \\[a^2 + b^2 = c^2\\]"} />,
+    );
+    await waitFor(() =>
+      expect(
+        container.querySelectorAll(".katex").length,
+      ).toBeGreaterThanOrEqual(2),
+    );
+  });
+
+  it("leaves shell code alone even though it is full of dollars", () => {
+    const { container } = render(
+      <Markdown text={'```bash\necho "$HOME" && test $? -eq 0\n```'} />,
+    );
+    expect(container.querySelector(".katex")).toBeNull();
+    expect(container.querySelector("pre code")?.textContent).toContain(
+      '"$HOME"',
+    );
+  });
+
+  it("shows a malformed formula as text rather than losing the reply", () => {
+    const { container } = render(
+      <Markdown text={"before $\\frac{1}{$ after"} />,
+    );
+    expect(container.textContent).toContain("before");
+    expect(container.textContent).toContain("after");
+  });
+
+  it("refuses a formula command that reaches outside the equation", async () => {
+    const { container } = render(
+      <Markdown text={"$\\href{javascript:alert(1)}{click}$"} />,
+    );
+    await waitFor(() =>
+      expect(container.querySelector(".katex")).not.toBeNull(),
+    );
+    expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
   });
 });

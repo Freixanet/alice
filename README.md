@@ -10,7 +10,7 @@ and never leaves the machine you put it on.
 [![Quality](https://github.com/Freixanet/alice/actions/workflows/quality.yml/badge.svg)](https://github.com/Freixanet/alice/actions/workflows/quality.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<img src="docs/media/markdown.png" alt="An assistant reply in Alice rendering a heading, a table, a task list, a quote and a highlighted TypeScript block" width="880">
+<img src="docs/media/markdown.png" alt="An assistant reply rendering a heading, LaTeX formulas, a table, a task list and highlighted code" width="880">
 
 </div>
 
@@ -90,17 +90,27 @@ allowance says so; a passing rate limit says when to retry.
 
 ## Rendering what a model writes
 
-Replies are Markdown — headings, tables, task lists, quotes, GFM, and fenced
-code with syntax highlighting and a copy button. That content is untrusted: it
-may be relaying a web page, a file, or a tool result. Raw HTML is never enabled,
-so markup in a reply is escaped rather than executed, and a URL has to survive a
-scheme check before it becomes a link or an image — `javascript:` and
-`data:text/html` do not, while the `data:image/...` payloads Hermes returns for
-generated pictures do.
+Replies render the way they do on every other model surface: headings,
+emphasis, GFM tables, task lists, quotes, footnotes, fenced code with syntax
+highlighting and a copy button, and LaTeX — both `$…$` and the `\(…\)` forms,
+since which one you get depends on the model.
 
-The renderer loads on demand. It weighs more than the entire initial bundle
-budget, so it sits in its own chunk and the reply reads as plain text for the
-moment it takes to arrive, rather than blocking first paint behind a parser.
+Maths and code share a page, so the delimiters have to be told apart. A shell
+fence is full of `$` and a regex can hold `\(`; those are copied through
+untouched while the prose around them is normalised, which is covered by its
+own tests.
+
+The content is untrusted — it may be relaying a web page, a file, or a tool
+result. Raw HTML is never enabled, so markup in a reply is escaped rather than
+executed; a URL has to survive a scheme check before it becomes a link or an
+image (`javascript:` and `data:text/html` do not, the `data:image/...` payloads
+Hermes returns for generated pictures do); and KaTeX runs untrusted, refusing
+the commands that reach outside an equation.
+
+Weight decides the shape. The parser and highlighter together are heavier than
+the whole initial budget, and KaTeX is heavier again, so they load as two
+separate on-demand layers — the second only once a reply actually looks like it
+contains a formula. Initial JavaScript moved by 0.04 KiB for all of it.
 
 ## Architecture
 
@@ -130,7 +140,7 @@ Hermes release.
 | ------------------------------------------- | -------------------------------------------------------------------------------- |
 | `format:check`, `lint`                      | Style, with zero warnings tolerated                                              |
 | `typecheck`, `typecheck:contracts`          | Types, and a stricter pass over external contracts                               |
-| `test`, `test:coverage`                     | ~300 unit and contract tests                                                     |
+| `test`, `test:coverage`                     | 300+ unit, contract and rendering tests                                          |
 | `cycles:check`                              | No circular imports                                                              |
 | `duplicates:check`                          | Copy-paste threshold                                                             |
 | `design:check`                              | No `!important`, shadows, gradients or backdrop filters                          |
