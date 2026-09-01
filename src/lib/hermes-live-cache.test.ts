@@ -4,6 +4,7 @@ import {
   clearHermesLiveCache,
   HERMES_LIVE_CACHE_TTL_MS,
   hermesLiveCacheKey,
+  invalidateHermesLiveCache,
   readHermesLiveCache,
   refreshHermesLiveCache,
   setHermesLiveCacheData,
@@ -138,5 +139,50 @@ describe("shared Hermes live cache", () => {
     resolve(live);
     await request;
     expect(readHermesLiveCache(key)).toBeUndefined();
+  });
+
+  it("aborts the transport when the account cache is cleared", async () => {
+    const key = "old-user";
+    let signal: AbortSignal | undefined;
+    const load = vi.fn(
+      (requestSignal: AbortSignal) =>
+        new Promise<HermesLive>((_resolve, reject) => {
+          signal = requestSignal;
+          requestSignal.addEventListener(
+            "abort",
+            () => reject(new Error("aborted")),
+            {
+              once: true,
+            },
+          );
+        }),
+    );
+    const request = refreshHermesLiveCache(key, load);
+    await Promise.resolve();
+    clearHermesLiveCache();
+    expect(signal?.aborted).toBe(true);
+    await request;
+    expect(load).toHaveBeenCalledOnce();
+    expect(readHermesLiveCache(key)).toBeUndefined();
+  });
+
+  it("invalidates one key without allowing its stale response back in", async () => {
+    const key = "one";
+    const otherKey = "two";
+    setHermesLiveCacheData(otherKey, live);
+    let resolve!: (value: HermesLive) => void;
+    const request = refreshHermesLiveCache(
+      key,
+      () =>
+        new Promise<HermesLive>((done) => {
+          resolve = done;
+        }),
+    );
+    await Promise.resolve();
+    invalidateHermesLiveCache(key);
+    resolve(live);
+    await request;
+    expect(readHermesLiveCache(key)).toBeUndefined();
+    expect(readHermesLiveCache(otherKey)?.data).toBe(live);
   });
 });

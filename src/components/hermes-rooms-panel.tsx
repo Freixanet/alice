@@ -34,40 +34,46 @@ export function HermesRoomsPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (!connected) {
-      setSupported(false);
-      setRooms([]);
-      setProfiles([]);
-      return;
-    }
-    const [roomResult, profileResult] = await Promise.all([
-      readHermesRooms(),
-      readHermesProfiles(),
-    ]);
-    if (profileResult.ok) {
-      setProfiles(profileResult.state.profiles);
-      setMembers((current) =>
-        current.length
+  const refresh = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!connected) {
+        setSupported(false);
+        setRooms([]);
+        setProfiles([]);
+        return;
+      }
+      const [roomResult, profileResult] = await Promise.all([
+        readHermesRooms({ signal }),
+        readHermesProfiles({ signal }),
+      ]);
+      if (signal?.aborted) return;
+      if (profileResult.ok) {
+        setProfiles(profileResult.state.profiles);
+        setMembers((current) =>
+          current.length
+            ? current
+            : profileResult.state.profiles.slice(0, 2).map((row) => row.name),
+        );
+      }
+      if (!roomResult.ok) {
+        setError(localizeError(locale, roomResult.error));
+        return;
+      }
+      setSupported(roomResult.supported);
+      setRooms(roomResult.rooms);
+      setSelected((current) =>
+        current && roomResult.rooms.some((room) => room.id === current)
           ? current
-          : profileResult.state.profiles.slice(0, 2).map((row) => row.name),
+          : (roomResult.rooms[0]?.id ?? null),
       );
-    }
-    if (!roomResult.ok) {
-      setError(localizeError(locale, roomResult.error));
-      return;
-    }
-    setSupported(roomResult.supported);
-    setRooms(roomResult.rooms);
-    setSelected((current) =>
-      current && roomResult.rooms.some((room) => room.id === current)
-        ? current
-        : (roomResult.rooms[0]?.id ?? null),
-    );
-  }, [connected, locale]);
+    },
+    [connected, locale],
+  );
 
   useEffect(() => {
-    void refresh();
+    const controller = new AbortController();
+    void refresh(controller.signal);
+    return () => controller.abort();
   }, [refresh]);
 
   useEffect(() => {
@@ -75,11 +81,14 @@ export function HermesRoomsPanel() {
       setEvents([]);
       return;
     }
-    let disposed = false;
+    const controller = new AbortController();
     let timer: number | undefined;
     const poll = async () => {
-      const result = await readHermesRoomLog({ roomId: selected });
-      if (disposed) return;
+      const result = await readHermesRoomLog({
+        roomId: selected,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       if (result.ok) {
         setEvents(result.events);
         setError(null);
@@ -88,8 +97,8 @@ export function HermesRoomsPanel() {
     };
     void poll();
     return () => {
-      disposed = true;
-      if (timer) window.clearTimeout(timer);
+      controller.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [locale, selected, supported]);
 

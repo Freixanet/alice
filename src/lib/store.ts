@@ -41,6 +41,7 @@ import {
   importHermesSessionConversation,
   type HermesSessionImport,
 } from "./hermes-session-conversation";
+import { clearHermesLiveCache } from "./hermes-live-cache";
 
 const welcomeId = "welcome";
 const freshId = "fresh";
@@ -291,7 +292,10 @@ export const useHermes = create<HermesState>()(
         }),
       setProfile: (name) => {
         const profile = name.trim();
-        if (isHermesProfileName(profile)) set({ profile });
+        if (isHermesProfileName(profile) && profile !== get().profile) {
+          set({ profile });
+          clearHermesLiveCache();
+        }
       },
       isSkillOn: (id) => {
         const o = get().skillEnabled[id];
@@ -500,9 +504,19 @@ export const useHermes = create<HermesState>()(
         tools.filter((t) => get().isToolOn(t.id)).map((t) => t.name),
       enabledAddonNames: () =>
         addons.filter((a) => get().isAddonOn(a.id)).map((a) => a.name),
-      setGatewayPlace: (place) => set({ gatewayPlace: place }),
-      setGatewayUrl: (url) => set({ gatewayUrl: url }),
-      restoreGateway: ({ url, place }) =>
+      setGatewayPlace: (place) => {
+        if (place === get().gatewayPlace) return;
+        set({ gatewayPlace: place });
+        clearHermesLiveCache();
+      },
+      setGatewayUrl: (url) => {
+        if (url === get().gatewayUrl) return;
+        set({ gatewayUrl: url });
+        clearHermesLiveCache();
+      },
+      restoreGateway: ({ url, place }) => {
+        const connectionChanged =
+          url !== get().gatewayUrl || place !== get().gatewayPlace;
         set((state) => ({
           gatewayUrl: url,
           gatewayPlace: place,
@@ -512,7 +526,9 @@ export const useHermes = create<HermesState>()(
               ? "live"
               : "idle",
           gatewayError: null,
-        })),
+        }));
+        if (connectionChanged) clearHermesLiveCache();
+      },
       setGatewayChecking: () =>
         set({ gatewayStatus: "checking", gatewayError: null }),
       setGatewayLive: (meta) => {
@@ -576,13 +592,15 @@ export const useHermes = create<HermesState>()(
           gatewayStatus: "down",
           gatewayError: error,
         }),
-      disconnectGateway: () =>
+      disconnectGateway: () => {
         set({
           gatewayOn: false,
           gatewayStatus: "idle",
           gatewayMeta: null,
           gatewayError: null,
-        }),
+        });
+        clearHermesLiveCache();
+      },
       forgetGateway: () => {
         void forgetHermesSecret();
         set({
@@ -592,6 +610,7 @@ export const useHermes = create<HermesState>()(
           gatewayMeta: null,
           gatewayError: null,
         });
+        clearHermesLiveCache();
       },
     }),
     {

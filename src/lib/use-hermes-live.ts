@@ -32,7 +32,7 @@ export function useHermesLive() {
     if (!key) return;
     // This request intentionally survives route unmounts. A page opened while
     // it is running reuses the same promise instead of restarting the work.
-    void refreshHermesLiveCache(key, () => listHermesLive());
+    void refreshHermesLiveCache(key, (signal) => listHermesLive({ signal }));
   }, [key]);
 
   const setData = useCallback(

@@ -19,7 +19,12 @@ export const useHermesLiveCache = create<HermesLiveCacheState>()(() => ({
   entries: {},
 }));
 
-const inFlight = new Map<string, Promise<void>>();
+type InFlightRequest = {
+  controller: AbortController;
+  promise: Promise<void>;
+};
+
+const inFlight = new Map<string, InFlightRequest>();
 let generation = 0;
 
 export function hermesLiveCacheKey(input: {
@@ -64,13 +69,26 @@ export function setHermesLiveCacheData(
 
 export function clearHermesLiveCache() {
   generation += 1;
+  for (const request of inFlight.values()) request.controller.abort();
   inFlight.clear();
   useHermesLiveCache.setState({ entries: {} });
 }
 
+export function invalidateHermesLiveCache(key: string) {
+  const request = inFlight.get(key);
+  request?.controller.abort();
+  inFlight.delete(key);
+  useHermesLiveCache.setState((state) => {
+    if (!(key in state.entries)) return state;
+    const entries = { ...state.entries };
+    delete entries[key];
+    return { entries };
+  });
+}
+
 export function refreshHermesLiveCache(
   key: string,
-  load: () => Promise<HermesLiveResult>,
+  load: (signal: AbortSignal) => Promise<HermesLiveResult>,
   options: { force?: boolean; now?: number } = {},
 ): Promise<void> {
   const now = options.now ?? Date.now();
@@ -83,10 +101,11 @@ export function refreshHermesLiveCache(
     return Promise.resolve();
   }
   const pending = inFlight.get(key);
-  if (pending) return pending;
+  if (pending) return pending.promise;
 
   const revision = current?.revision ?? 0;
   const requestGeneration = generation;
+  const controller = new AbortController();
   writeEntry(key, {
     data: current?.data ?? null,
     error: current?.data ? null : (current?.error ?? null),
@@ -96,9 +115,14 @@ export function refreshHermesLiveCache(
   });
 
   const request = Promise.resolve()
-    .then(load)
+    .then(() => load(controller.signal))
     .then((result) => {
-      if (requestGeneration !== generation) return;
+      if (
+        requestGeneration !== generation ||
+        inFlight.get(key)?.promise !== request
+      ) {
+        return;
+      }
       const latest = readHermesLiveCache(key);
       // An optimistic mutation made while this request was running is newer
       // than its snapshot and must never be overwritten by a stale response.
@@ -122,7 +146,13 @@ export function refreshHermesLiveCache(
       });
     })
     .catch(() => {
-      if (requestGeneration !== generation) return;
+      if (
+        controller.signal.aborted ||
+        requestGeneration !== generation ||
+        inFlight.get(key)?.promise !== request
+      ) {
+        return;
+      }
       const latest = readHermesLiveCache(key);
       if (latest && latest.revision !== revision) return;
       writeEntry(key, {
@@ -134,8 +164,8 @@ export function refreshHermesLiveCache(
       });
     })
     .finally(() => {
-      if (inFlight.get(key) === request) inFlight.delete(key);
+      if (inFlight.get(key)?.promise === request) inFlight.delete(key);
     });
-  inFlight.set(key, request);
+  inFlight.set(key, { controller, promise: request });
   return request;
 }

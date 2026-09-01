@@ -43,27 +43,33 @@ export function HermesProfilesSettings({
   const [soulLoading, setSoulLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    const result = await readHermesProfiles();
-    setLoading(false);
-    if (!result.ok) {
-      setError(localizeError(locale, result.error));
-      return;
-    }
-    setError(null);
-    setProfiles(result.state);
-    if (!result.state.profiles.some((profile) => profile.name === selected)) {
-      setProfile(result.state.active || result.state.current || "default");
-    }
-  }, [locale, selected, setProfile]);
+  const refresh = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      const result = await readHermesProfiles({ signal });
+      if (signal?.aborted) return;
+      setLoading(false);
+      if (!result.ok) {
+        setError(localizeError(locale, result.error));
+        return;
+      }
+      setError(null);
+      setProfiles(result.state);
+      if (!result.state.profiles.some((profile) => profile.name === selected)) {
+        setProfile(result.state.active || result.state.current || "default");
+      }
+    },
+    [locale, selected, setProfile],
+  );
 
   useEffect(() => {
     if (!connected || !supported) {
       setProfiles(null);
       return;
     }
-    void refresh();
+    const controller = new AbortController();
+    void refresh(controller.signal);
+    return () => controller.abort();
   }, [connected, refresh, supported]);
 
   const current = useMemo(

@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,24 +35,31 @@ export function ToolsetDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [setupKey, setSetupKey] = useState("");
+  const toolsetName = toolset?.name;
 
-  async function load() {
-    if (!toolset) return;
-    setError(null);
-    const result = await readHermesToolsetDetails({ name: toolset.name });
-    if (result.ok) setDetails(result.details);
-    else setError(localizeError(locale, result.error));
-  }
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!toolsetName) return;
+      setError(null);
+      const result = await readHermesToolsetDetails({
+        name: toolsetName,
+        signal,
+      });
+      if (signal?.aborted) return;
+      if (result.ok) setDetails(result.details);
+      else setError(localizeError(locale, result.error));
+    },
+    [locale, toolsetName],
+  );
 
   useEffect(() => {
-    if (!open || !toolset) return;
+    if (!open || !toolsetName) return;
+    const controller = new AbortController();
     setDetails(null);
     setSetupKey("");
-    void load();
-    // The selected name identifies the request. load intentionally remains
-    // local so every opening gets a fresh negotiated Hermes contract.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, toolset?.name]);
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load, open, toolsetName]);
 
   async function apply(
     key: string,
