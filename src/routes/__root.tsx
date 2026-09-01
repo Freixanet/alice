@@ -4,9 +4,7 @@ import {
   Outlet,
   Scripts,
 } from "@tanstack/react-router";
-import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
-import { LocaleDocumentLang } from "@/lib/use-i18n";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Alice";
@@ -60,10 +58,7 @@ export const Route = createRootRoute({
       </head>
       <body className="antialiased">
         <PreviewHostBridge />
-        <LocaleDocumentLang />
-        <AuthProvider>
-          <Outlet />
-        </AuthProvider>
+        <Outlet />
         <Scripts />
       </body>
     </html>

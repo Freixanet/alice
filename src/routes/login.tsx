@@ -13,7 +13,7 @@ import {
 } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import type { MsgKey } from "@/lib/i18n";
-import { useT } from "@/lib/use-i18n";
+import { useDocumentLocale, useT } from "@/lib/use-i18n";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -23,6 +23,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
+  useDocumentLocale();
   const t = useT();
   const { user, isPending } = useCurrentUserState();
   const navigate = useNavigate();

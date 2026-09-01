@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Link,
   Outlet,
@@ -18,7 +26,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Mark, Wordmark } from "@/components/logo";
-import { SettingsDialog } from "@/components/settings-panel";
 import {
   Command,
   CommandDialog,
@@ -57,10 +64,17 @@ import type { Conversation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { displayChatTitle } from "@/lib/i18n";
-import { useLocale, useT } from "@/lib/use-i18n";
+import { useDocumentLocale, useLocale, useT } from "@/lib/use-i18n";
 import { useCloudSync } from "@/lib/use-cloud-sync";
 
+const SettingsDialog = lazy(() =>
+  import("@/components/settings-panel").then(({ SettingsDialog }) => ({
+    default: SettingsDialog,
+  })),
+);
+
 export function AppShell() {
+  useDocumentLocale();
   useGatewayHealth();
   useCloudSync();
   const navigate = useNavigate();
@@ -413,10 +427,14 @@ export function AppShell() {
           }}
           onOpenSettings={() => setSettingsOpen(true)}
         />
-        <SettingsDialog
-          open={settingsVisible}
-          onOpenChange={handleSettingsOpenChange}
-        />
+        {settingsVisible ? (
+          <Suspense fallback={null}>
+            <SettingsDialog
+              open={settingsVisible}
+              onOpenChange={handleSettingsOpenChange}
+            />
+          </Suspense>
+        ) : null}
       </div>
     </TooltipProvider>
   );

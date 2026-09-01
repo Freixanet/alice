@@ -2,11 +2,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/shell";
 import { authEnabled } from "@/lib/auth/client";
 import { RedirectToSignIn } from "@/lib/auth/gates";
+import { AuthProvider } from "@/lib/auth/provider";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 
 export const Route = createFileRoute("/_app")({
-  component: AppGate,
+  component: AppBoundary,
 });
+
+function AppBoundary() {
+  return (
+    <AuthProvider>
+      <AppGate />
+    </AuthProvider>
+  );
+}
 
 function AppGate() {
   const { user, isPending } = useCurrentUserState();

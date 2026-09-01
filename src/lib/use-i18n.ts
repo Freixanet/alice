@@ -13,10 +13,9 @@ export function useLocale(): Locale {
   return useHermes((s) => s.locale);
 }
 
-export function LocaleDocumentLang() {
+export function useDocumentLocale() {
   const locale = useLocale();
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
-  return null;
 }
