@@ -86,6 +86,9 @@ export function ChatView() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [steering, setSteering] = useState(false);
   const [steerError, setSteerError] = useState<string | null>(null);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const slashListRef = useRef<HTMLUListElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const activeRunRef = useRef<ActiveHermesRun | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -96,6 +99,7 @@ export function ChatView() {
   const locale = useLocale();
   const conv = conversations.find((c) => c.id === activeId) ?? conversations[0];
   const slash = matchSlash(draft);
+  const slashOpen = slash.length > 0 && !slashDismissed;
   const live = gatewayOn && gatewayStatus === "live";
   const sessionBound = Boolean(conv?.hermesSessionId);
   const supportsSessionChat = advertisesHermesCapability(
@@ -131,6 +135,18 @@ export function ChatView() {
     sending,
     activeRunRef,
   });
+  useEffect(() => {
+    setSlashIndex(0);
+    setSlashDismissed(false);
+  }, [draft]);
+
+  useEffect(() => {
+    if (!slashOpen) return;
+    slashListRef.current
+      ?.querySelectorAll<HTMLElement>('[role="option"]')
+      [slashIndex]?.scrollIntoView({ block: "nearest" });
+  }, [slashOpen, slashIndex]);
+
   const empty = !conv || conv.messages.length === 0;
   const firstIsUser = Boolean(
     conv?.messages[0] && conv.messages[0].role === "user",
@@ -737,14 +753,28 @@ export function ChatView() {
           empty ? "mt-8 w-full max-w-2xl" : "w-full pb-5",
         )}
       >
-        <div className="mx-auto w-full max-w-2xl">
-          {slash.length > 0 ? (
-            <ul className="mb-2 overflow-hidden rounded-2xl bg-card py-1 border border-border">
-              {slash.map((item) => (
+        <div className="relative mx-auto w-full max-w-2xl">
+          {slashOpen ? (
+            // Floated instead of stacked: in flow this list pushed the
+            // composer down as you typed "/", moving the caret out from
+            // under the cursor. Overlaying whatever sits above is fine.
+            <ul
+              ref={slashListRef}
+              role="listbox"
+              aria-label={t("chat.commands")}
+              className="absolute bottom-full right-0 left-0 z-20 mb-2 max-h-[min(24rem,40vh)] overflow-y-auto rounded-2xl bg-card py-1 border border-border"
+            >
+              {slash.map((item, i) => (
                 <li key={item.cmd}>
                   <button
                     type="button"
-                    className="flex w-full items-baseline gap-3 px-3 py-2 text-left text-sm hover:bg-accent"
+                    role="option"
+                    aria-selected={i === slashIndex}
+                    onMouseEnter={() => setSlashIndex(i)}
+                    className={cn(
+                      "flex w-full items-baseline gap-3 px-3 py-2 text-left text-sm",
+                      i === slashIndex && "bg-accent",
+                    )}
                     onClick={() => setDraft(item.cmd + " ")}
                   >
                     <span className="font-mono text-xs">{item.cmd}</span>
@@ -787,6 +817,29 @@ export function ChatView() {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
+                // While the command list is open the arrows and Enter belong to
+                // it, not to the textarea or to sending.
+                if (slashOpen) {
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    const step = e.key === "ArrowDown" ? 1 : -1;
+                    setSlashIndex(
+                      (i) => (i + step + slash.length) % slash.length,
+                    );
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setSlashDismissed(true);
+                    return;
+                  }
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    const picked = slash[slashIndex];
+                    if (picked) setDraft(picked.cmd + " ");
+                    return;
+                  }
+                }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   if (sending) {
