@@ -126,6 +126,22 @@ final class AppStore {
         return components.url
     }
 
+    // MARK: - Catalogs
+
+    /// Reads one of the management collections. The screen owns the rows so a
+    /// list the user is not looking at is never kept in memory or refreshed.
+    func catalog(_ source: CatalogScreen.Source) async throws -> [CatalogRow] {
+        switch source {
+        case .skills: try await client.skills()
+        case .toolsets: try await client.toolsets()
+        case .addons: try await client.mcpServers()
+        }
+    }
+
+    func setSkill(_ name: String, enabled: Bool) async throws {
+        try await client.toggleSkill(name: name, enabled: enabled)
+    }
+
     func supports(_ capability: String) -> Bool {
         manifest?.supports(capability) ?? false
     }

@@ -36,7 +36,15 @@ source of truth and merge conflicts in a `.pbxproj` never happen.
 
 ## Status
 
-Chat, Connect and Settings are wired to a live Hermes. Library and Activity
-list the remaining surfaces and state which capability each one needs — an
-agent that does not advertise a feature says so rather than showing an empty
-screen, the same rule the web client follows.
+| Screen                      | State                                                 |
+| --------------------------- | ----------------------------------------------------- |
+| Chat                        | Streaming replies, tool calls, Markdown, model picker |
+| Connect                     | Address and key, Keychain storage, capability listing |
+| Settings                    | Theme, accent, model                                  |
+| Skills                      | List, search, filter, enable/disable against Hermes   |
+| Tools, Add-ons              | List, search, filter (read-only)                      |
+| Projects, Artifacts, Memory | Listed with the capability each needs                 |
+| Jobs, Insights              | Listed with the capability each needs                 |
+
+Skills, Tools and Add-ons share one screen: they differ in where the rows come
+from and whether a row can be switched, not in how they read.

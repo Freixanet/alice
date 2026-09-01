@@ -8,7 +8,9 @@ struct ActivityView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            Group {
+                if store.isConnected {
+                    List {
                 Section("Jobs") {
                     if store.supports("cron") {
                         Text("Scheduled jobs from your Hermes.")
@@ -25,12 +27,8 @@ struct ActivityView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-            }
-            .navigationTitle("Activity")
-            .scrollContentBackground(.hidden)
-            .background(Palette.background(scheme))
-            .overlay {
-                if !store.isConnected {
+                    }
+                } else {
                     ContentUnavailableView(
                         "Connect your Hermes",
                         systemImage: "link",
@@ -38,6 +36,10 @@ struct ActivityView: View {
                     )
                 }
             }
+            .navigationTitle("Activity")
+            .scrollContentBackground(.hidden)
+            .background(Palette.background(scheme))
+
         }
     }
 }

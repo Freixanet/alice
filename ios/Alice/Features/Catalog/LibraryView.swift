@@ -14,37 +14,57 @@ struct LibraryView: View {
         let capability: String
     }
 
-    private let surfaces: [Surface] = [
-        .init(id: "skills", title: "Skills", symbol: "sparkles", capability: "skills"),
-        .init(id: "toolsets", title: "Tools", symbol: "wrench.adjustable", capability: "toolsets"),
-        .init(id: "mcp", title: "Add-ons", symbol: "puzzlepiece.extension", capability: "mcp"),
+    private let pending: [Surface] = [
         .init(id: "projects", title: "Projects", symbol: "folder", capability: "projects"),
         .init(id: "artifacts", title: "Artifacts", symbol: "paperclip", capability: "artifacts"),
         .init(id: "memory", title: "Memory", symbol: "brain", capability: "memory"),
     ]
 
+    /// A built screen links through; the capability check happens inside it so
+    /// the reason for an empty list is stated where the user is looking.
+    @ViewBuilder
+    private func row(_ source: CatalogScreen.Source, symbol: String) -> some View {
+        NavigationLink {
+            CatalogScreen(source: source)
+        } label: {
+            HStack {
+                Label(source.title, systemImage: symbol)
+                Spacer()
+                if !store.supports(source.capability) {
+                    Text("Not advertised")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(surfaces) { surface in
-                    let available = store.supports(surface.capability)
-                    HStack {
-                        Label(surface.title, systemImage: surface.symbol)
-                        Spacer()
-                        if !available {
-                            Text("Not advertised")
+            Group {
+                if store.isConnected {
+                    List {
+                Section {
+                    row(.skills, symbol: "sparkles")
+                    row(.toolsets, symbol: "wrench.adjustable")
+                    row(.addons, symbol: "puzzlepiece.extension")
+                }
+
+                Section("Coming from the same surface") {
+                    ForEach(pending) { surface in
+                        let available = store.supports(surface.capability)
+                        HStack {
+                            Label(surface.title, systemImage: surface.symbol)
+                            Spacer()
+                            Text(available ? "Not built yet" : "Not advertised")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        .foregroundStyle(available ? .primary : .secondary)
                     }
-                    .foregroundStyle(available ? .primary : .secondary)
                 }
-            } 
-            .navigationTitle("Library")
-            .scrollContentBackground(.hidden)
-            .background(Palette.background(scheme))
-            .overlay {
-                if !store.isConnected {
+                    }
+                } else {
                     ContentUnavailableView(
                         "Connect your Hermes",
                         systemImage: "link",
@@ -52,6 +72,10 @@ struct LibraryView: View {
                     )
                 }
             }
+            .navigationTitle("Library")
+            .scrollContentBackground(.hidden)
+            .background(Palette.background(scheme))
+
         }
     }
 }
