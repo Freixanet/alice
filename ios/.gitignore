@@ -1,0 +1,6 @@
+# Generated from project.yml by xcodegen; regenerate rather than commit it.
+Alice.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+.build/

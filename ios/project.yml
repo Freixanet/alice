@@ -1,0 +1,46 @@
+name: Alice
+options:
+  bundleIdPrefix: com.freixanet
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  Alice:
+    type: application
+    platform: iOS
+    sources:
+      - path: Alice
+    info:
+      path: Alice/Info.plist
+      properties:
+        CFBundleDisplayName: Alice
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # The key is read back only for the user who put it there.
+        NSFaceIDUsageDescription: >-
+          Alice uses Face ID to unlock the connection key for your Hermes agent.
+        # A Hermes on the local network is reached over plain HTTP; a hosted one
+        # is HTTPS and unaffected by this exception.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: >-
+          Alice connects to the Hermes agent running on your network.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
