@@ -117,9 +117,23 @@ export function AppShell() {
     }
   }
 
+  // `system` has no stylesheet of its own — resolve it to a concrete theme and
+  // keep following the OS while the preference stays on `system`.
+  const [systemDark, setSystemDark] = useState(false);
+  useLayoutEffect(() => {
+    if (theme !== "system") return;
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    setSystemDark(query.matches);
+    const onChange = (event: MediaQueryListEvent) =>
+      setSystemDark(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, [theme]);
+
   useLayoutEffect(() => {
     const root = document.documentElement;
-    root.dataset.theme = theme;
+    root.dataset.theme =
+      theme === "system" ? (systemDark ? "dark" : "light") : theme;
     root.dataset.font = fontSize;
     root.dataset.accent = accent;
     const themeColor = getComputedStyle(root)
@@ -128,7 +142,7 @@ export function AppShell() {
     document
       .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
       ?.setAttribute("content", themeColor);
-  }, [theme, fontSize, accent]);
+  }, [theme, systemDark, fontSize, accent]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

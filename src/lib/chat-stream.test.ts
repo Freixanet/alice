@@ -54,4 +54,28 @@ describe("chat stream reducer", () => {
       pending: true,
     });
   });
+
+  it("carries a model-limit classification onto the message", () => {
+    const state: ChatStreamAccumulator = { content: "", tools: [] };
+    const result = reduceChatStreamEvent(state, {
+      type: "error",
+      message: "You exceeded your current quota.",
+      limit: { kind: "quota", retryAfterSeconds: 3600 },
+    });
+    expect(result.stop).toBe(true);
+    expect(result.patch).toMatchObject({
+      error: "You exceeded your current quota.",
+      errorLimit: { kind: "quota", retryAfterSeconds: 3600 },
+      pending: false,
+    });
+  });
+
+  it("leaves errorLimit unset when the failure was not a limit", () => {
+    const state: ChatStreamAccumulator = { content: "", tools: [] };
+    const result = reduceChatStreamEvent(state, {
+      type: "error",
+      message: "Couldn’t connect.",
+    });
+    expect(result.patch).not.toHaveProperty("errorLimit");
+  });
 });

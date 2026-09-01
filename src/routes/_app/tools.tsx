@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
-import { CatalogPage } from "@/components/catalog-page";
+import { CatalogPage, PageHeader } from "@/components/catalog-page";
 import { ToolsetDialog } from "@/components/toolset-dialog";
 import { HermesSystemToolsPanel } from "@/components/hermes-system-tools";
 import { Button } from "@/components/ui/button";
@@ -33,14 +33,22 @@ function ToolsPage() {
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      {loading ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">
-          {t("tools.loading")}
-        </p>
-      ) : error ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">
-          {localizeError(locale, error)}
-        </p>
+      {loading || error ? (
+        // Keep the page chrome mounted while loading or failing, so the header
+        // does not pop in after the fact and shift the content down.
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 pb-20 sm:px-6">
+          <PageHeader
+            kicker={t("tools.kicker")}
+            title={t("tools.title")}
+            description={t("tools.descOff")}
+          />
+          <p
+            className="rounded-xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground"
+            {...(error ? { role: "alert" as const } : {})}
+          >
+            {error ? localizeError(locale, error) : t("tools.loading")}
+          </p>
+        </div>
       ) : (
         <CatalogPage
           kicker={t("tools.kicker")}

@@ -15,7 +15,6 @@ import {
 import { listHermesLive, mutateHermes } from "@/lib/hermes-live";
 import type { HermesCronRow } from "@/lib/hermes-live-types";
 import { dateLocale, localizeError, type Locale } from "@/lib/i18n";
-import { HERMES_CURRENT_STABLE } from "@/lib/gateway-contracts";
 import { useHermes } from "@/lib/store";
 import { useHermesLive } from "@/lib/use-hermes-live";
 import { useLocale, useT } from "@/lib/use-i18n";
@@ -29,10 +28,14 @@ function CronPage() {
   const locale = useLocale();
   const navigate = useNavigate();
   const { data, error, loading, setData } = useHermesLive();
-  const hermesVersion = useHermes(
-    (state) => state.gatewayMeta?.manifest?.version,
+  // `manifest.version` is Hermes' raw string ("v0.21.0", "0.21.0-rc1", …), so
+  // comparing it to a bare "0.21.0" turned the Pantheon fields off for builds
+  // that are in fact current. `compatibility` is derived from the normalized
+  // version and is the field meant for this.
+  const compatibility = useHermes(
+    (state) => state.gatewayMeta?.manifest?.compatibility,
   );
-  const pantheon = hermesVersion === HERMES_CURRENT_STABLE;
+  const pantheon = compatibility === "current";
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);

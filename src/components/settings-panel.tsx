@@ -29,7 +29,7 @@ import { listHermesModels, setHermesModel } from "@/lib/hermes-client";
 import { getDeviceSessionKey } from "@/lib/hermes-direct";
 import { authEnabled, signOut } from "@/lib/auth/client";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
-import { useHermes, type Accent, type FontSize } from "@/lib/store";
+import { useHermes, type Accent, type FontSize, type Theme } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/use-i18n";
@@ -308,15 +308,30 @@ function GeneralSection() {
 
   return (
     <div className="divide-y divide-border">
-      <SettingRow
-        label={t("settings.lightTheme")}
-        hint={t("settings.lightThemeHint")}
-      >
-        <Switch
-          checked={theme === "light"}
-          onCheckedChange={(v) => setTheme(v ? "light" : "dark")}
-          aria-label={t("settings.lightTheme")}
-        />
+      <SettingRow label={t("settings.theme")} hint={t("settings.themeHint")}>
+        <div
+          className="flex rounded-lg bg-muted p-0.5"
+          role="radiogroup"
+          aria-label={t("settings.theme")}
+        >
+          {THEMES.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              role="radio"
+              aria-checked={theme === opt.id}
+              onClick={() => setTheme(opt.id)}
+              className={cn(
+                "h-8 rounded-md px-2.5 text-xs font-medium",
+                theme === opt.id
+                  ? "bg-card text-foreground border border-border"
+                  : "text-foreground/70 hover:text-foreground",
+              )}
+            >
+              {t(opt.labelKey)}
+            </button>
+          ))}
+        </div>
       </SettingRow>
       <SettingRow
         label={t("settings.fontSize")}
@@ -755,6 +770,12 @@ function SettingRow({
     </div>
   );
 }
+
+const THEMES = [
+  { id: "system", labelKey: "settings.themeSystem" },
+  { id: "light", labelKey: "settings.themeLight" },
+  { id: "dark", labelKey: "settings.themeDark" },
+] as const satisfies ReadonlyArray<{ id: Theme; labelKey: MsgKey }>;
 
 const FONT_SIZES: { id: FontSize; labelKey: MsgKey }[] = [
   { id: "sm", labelKey: "settings.font.sm" },

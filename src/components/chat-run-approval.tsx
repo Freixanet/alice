@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
-import { useT } from "@/lib/use-i18n";
+import { useLocale, useT } from "@/lib/use-i18n";
+import { localizeError } from "@/lib/i18n";
 import type { HermesApprovalChoice } from "@/lib/gateway-contracts";
 import type { Message } from "@/lib/types";
 
@@ -11,6 +12,7 @@ export function ChatRunApproval({
   onChoose: (choice: HermesApprovalChoice) => void;
 }) {
   const t = useT();
+  const locale = useLocale();
   const labels: Record<HermesApprovalChoice, string> = {
     once: t("chat.approveOnce"),
     session: t("chat.approveSession"),
@@ -33,7 +35,7 @@ export function ChatRunApproval({
       ) : null}
       {approval.error ? (
         <p className="mt-2 text-sm text-destructive" role="alert">
-          {approval.error}
+          {localizeError(locale, approval.error)}
         </p>
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">

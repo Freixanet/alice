@@ -75,7 +75,8 @@ function seedBlankChat(): Conversation {
   };
 }
 
-export type Theme = "dark" | "light";
+/** "system" follows the OS; the other two pin it regardless of the OS. */
+export type Theme = "dark" | "light" | "system";
 export type FontSize = "sm" | "md" | "lg";
 export type Accent = "stone" | "sage" | "sky" | "violet" | "rose" | "amber";
 export type RecentModel = { id: string; provider: string };
@@ -231,7 +232,7 @@ function initialHermesData() {
   ];
   return {
     hydrated: false,
-    theme: "light" as Theme,
+    theme: "system" as Theme,
     fontSize: "md" as FontSize,
     accent: "stone" as Accent,
     locale: "en" as Locale,

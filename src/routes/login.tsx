@@ -12,6 +12,7 @@ import {
   type SocialProviderId,
 } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { SessionBoundary } from "@/lib/auth/session-boundary";
 import type { MsgKey } from "@/lib/i18n";
 import { useDocumentLocale, useT } from "@/lib/use-i18n";
 
@@ -19,8 +20,16 @@ export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>) => ({
     error: typeof search.error === "string" ? search.error : undefined,
   }),
-  component: LoginPage,
+  component: LoginRoute,
 });
+
+function LoginRoute() {
+  return (
+    <SessionBoundary>
+      <LoginPage />
+    </SessionBoundary>
+  );
+}
 
 function LoginPage() {
   useDocumentLocale();

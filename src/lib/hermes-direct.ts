@@ -14,6 +14,7 @@ import {
   type HermesModelOption,
   type ProbeResult,
 } from "./gateway";
+import { classifyModelLimit } from "./model-limit";
 import {
   parseHermesCapabilityManifest,
   type HermesCapabilityManifest,
@@ -94,6 +95,26 @@ import {
 import { whenDefined } from "./exact-optional";
 
 const FAIL = "Couldn’t connect.";
+
+/**
+ * Best-effort read of a Hermes error body. Returns "" when there is nothing
+ * usable, so the caller falls back to its own wording rather than showing a
+ * fragment of HTML or an empty string.
+ */
+async function directFailureDetail(response: Response): Promise<string> {
+  try {
+    const body = (await response.clone().json()) as Record<string, unknown>;
+    const detail = body?.detail ?? body?.message ?? body?.error;
+    if (typeof detail === "string" && detail.trim()) return detail.trim();
+    if (detail && typeof detail === "object") {
+      const nested = (detail as Record<string, unknown>).message;
+      if (typeof nested === "string" && nested.trim()) return nested.trim();
+    }
+  } catch {
+    // Non-JSON or already-consumed body: nothing to add.
+  }
+  return "";
+}
 
 export const DEFAULT_DEVICE_HERMES = "http://127.0.0.1:8642";
 
@@ -455,7 +476,20 @@ export async function* streamHermesDirect(opts: {
     return;
   }
   if (!upstream.ok || !upstream.body) {
-    yield { type: "error", message: FAIL };
+    // This branch used to throw the provider's own words away and report a
+    // flat "couldn't connect", which made a spent quota indistinguishable
+    // from an unreachable Hermes.
+    const detail = await directFailureDetail(upstream);
+    const limit = classifyModelLimit({
+      status: upstream.status,
+      message: detail,
+      retryAfter: upstream.headers.get("retry-after"),
+    });
+    yield {
+      type: "error",
+      message: detail || FAIL,
+      ...(limit ? { limit } : {}),
+    };
     return;
   }
 

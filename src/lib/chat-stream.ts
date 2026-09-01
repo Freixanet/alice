@@ -85,6 +85,7 @@ export function reduceChatStreamEvent(
     patch: {
       pending: false,
       error: event.message,
+      ...(event.limit ? { errorLimit: event.limit } : {}),
       incomplete: undefined,
       content: accumulator.content || event.message,
     },

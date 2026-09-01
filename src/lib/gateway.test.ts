@@ -252,3 +252,41 @@ describe("Hermes capability negotiation", () => {
     );
   }, 15_000);
 });
+
+describe("version reporting", () => {
+  it("normalizes a v-prefixed or pre-release version so gates still match", () => {
+    // The Pantheon cron fields are gated on `compatibility`; a build reporting
+    // "v0.21.0" is current and must not be treated as unknown.
+    for (const raw of ["v0.21.0", "0.21.0", "0.21.0-rc1", "0.21.0+build7"]) {
+      const manifest = parseHermesCapabilityManifest({
+        version: raw,
+        capabilities: [],
+      });
+      expect(manifest.normalizedVersion).toBe("0.21.0");
+      expect(manifest.compatibility).toBe("current");
+      expect(manifest.version).toBe(raw);
+    }
+  });
+
+  it("finds a version nested under server/build/info", () => {
+    expect(
+      parseHermesCapabilityManifest({
+        server: { version: "0.21.0" },
+        capabilities: [],
+      }).compatibility,
+    ).toBe("current");
+    expect(
+      parseHermesCapabilityManifest({
+        build: { hermes_version: "0.20.6" },
+        capabilities: [],
+      }).compatibility,
+    ).toBe("previous");
+  });
+
+  it("stays unknown when Hermes reports no version at all", () => {
+    const manifest = parseHermesCapabilityManifest({ capabilities: [] });
+    expect(manifest.version).toBeNull();
+    expect(manifest.normalizedVersion).toBeNull();
+    expect(manifest.compatibility).toBe("unknown");
+  });
+});

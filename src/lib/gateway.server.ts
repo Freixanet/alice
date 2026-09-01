@@ -1,3 +1,4 @@
+import { classifyModelLimit } from "./model-limit";
 import {
   createCipheriv,
   createDecipheriv,
@@ -1941,9 +1942,21 @@ export async function streamHermesProxy(opts: {
   }
   if (!upstream.ok || !upstream.body) {
     const detail = hermesDetail(await hermesJson(upstream), FAIL);
+    // Hermes drops the provider's `error.type`, so the status, the
+    // `Retry-After` header and this text are all we get to tell an exhausted
+    // allowance from a passing rate limit.
+    const limit = classifyModelLimit({
+      status: upstream.status,
+      message: detail,
+      retryAfter: upstream.headers.get("retry-after"),
+    });
     return ndjsonResponse(
       async (send) => {
-        send({ type: "error", message: detail });
+        send({
+          type: "error",
+          message: detail,
+          ...(limit ? { limit } : {}),
+        } satisfies ChatEvent);
       },
       upstream.status >= 400 ? upstream.status : 502,
     );

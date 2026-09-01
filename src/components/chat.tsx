@@ -38,6 +38,7 @@ import { displayMessageContent, slashHint, t as tr } from "@/lib/i18n";
 import { useLocale, useT } from "@/lib/use-i18n";
 import { useHermes } from "@/lib/store";
 import type { Attachment, Message } from "@/lib/types";
+import type { ModelLimit } from "@/lib/model-limit";
 import type {
   HermesApprovalChoice,
   HermesModelOption,
@@ -116,6 +117,14 @@ export function ChatView() {
   const supportsRunIdempotency =
     supportsRuns &&
     gatewayMeta?.manifest?.capabilities["chat.run_idempotency"] === true;
+  // One button holds the composer's trailing slot: send when idle, stop while a
+  // run is in flight, and back to send (delivered as a steer) as soon as the
+  // user types — the last step only where Hermes advertises `chat.steer`.
+  const composerAction: "send" | "steer" | "stop" = !sending
+    ? "send"
+    : supportsSteer && draft.trim()
+      ? "steer"
+      : "stop";
   useHermesRunRecovery({
     activeId,
     enabled: live && supportsRuns,
@@ -637,6 +646,7 @@ export function ChatView() {
             {m.pending && !text && !m.approval ? <ReplyPending /> : null}
           </div>
         ) : null}
+        {m.errorLimit ? <ModelLimitNote limit={m.errorLimit} /> : null}
         {m.attachments?.length ? (
           <MessageAttachments attachments={m.attachments} />
         ) : null}
@@ -969,34 +979,35 @@ export function ChatView() {
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-              {sending ? (
-                <button
-                  type="button"
-                  aria-label={t("chat.stop")}
-                  onClick={stopRun}
-                  className="ml-auto grid size-11 place-items-center rounded-full bg-muted text-foreground md:size-9"
-                >
+              <button
+                type="button"
+                aria-label={
+                  composerAction === "stop"
+                    ? t("chat.stop")
+                    : composerAction === "steer"
+                      ? t("chat.steer")
+                      : t("chat.send")
+                }
+                disabled={
+                  composerAction === "send"
+                    ? !draft.trim() && files.length === 0
+                    : composerAction === "steer"
+                      ? !activeRunId || steering
+                      : false
+                }
+                onClick={() => {
+                  if (composerAction === "stop") stopRun();
+                  else if (composerAction === "steer") void steerRun();
+                  else void send();
+                }}
+                className="ml-auto grid size-11 place-items-center rounded-full bg-muted text-foreground disabled:opacity-40 md:size-9"
+              >
+                {composerAction === "stop" ? (
                   <span
                     className="size-2.5 rounded-[2px] bg-current"
                     aria-hidden
                   />
-                </button>
-              ) : null}
-              {!sending || supportsSteer ? (
-                <button
-                  type="button"
-                  aria-label={sending ? t("chat.steer") : t("chat.send")}
-                  disabled={
-                    sending
-                      ? !activeRunId || !draft.trim() || steering
-                      : !draft.trim() && files.length === 0
-                  }
-                  onClick={() => (sending ? void steerRun() : void send())}
-                  className={cn(
-                    "grid size-11 place-items-center rounded-full bg-muted text-foreground disabled:opacity-40 md:size-9",
-                    !sending && "ml-auto",
-                  )}
-                >
+                ) : (
                   <svg
                     viewBox="0 0 16 16"
                     className="size-3.5"
@@ -1011,13 +1022,36 @@ export function ChatView() {
                       strokeLinejoin="round"
                     />
                   </svg>
-                </button>
-              ) : null}
+                )}
+              </button>
             </div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Says which kind of limit was hit, and whether waiting is worth it. Only
+ * rendered when the transport actually classified the failure — we never guess
+ * a cause, and never show a countdown the provider did not send.
+ */
+function ModelLimitNote({ limit }: { limit: ModelLimit }) {
+  const t = useT();
+  if (limit.kind === "auth") return null;
+  const seconds = limit.retryAfterSeconds;
+  const wait =
+    seconds === undefined
+      ? null
+      : seconds >= 90
+        ? t("limit.minutes", { count: Math.round(seconds / 60) })
+        : t("limit.seconds", { count: Math.max(1, seconds) });
+  return (
+    <p className="max-w-[42rem] text-sm text-muted-foreground" role="status">
+      {limit.kind === "quota" ? t("limit.quota") : t("limit.rateLimit")}
+      {wait ? ` ${t("limit.retryIn", { time: wait })}` : ""}
+    </p>
   );
 }
 

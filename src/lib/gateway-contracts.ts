@@ -62,7 +62,10 @@ export type HermesCapability =
   | "code_execution";
 
 export type HermesCapabilityManifest = {
+  /** Exactly what Hermes reported, e.g. "v0.21.0" or "0.21.0-rc1". Display only. */
   version: string | null;
+  /** Bare `major.minor.patch`, or null. Compare against this, never `version`. */
+  normalizedVersion: string | null;
   compatibility: HermesCompatibility;
   capabilities: Partial<Record<HermesCapability, boolean>>;
   advertised: string[];
@@ -122,7 +125,15 @@ export type ChatEvent =
       command?: string;
       choices: HermesApprovalChoice[];
     }
-  | { type: "error"; message: string };
+  | {
+      type: "error";
+      message: string;
+      /**
+       * Set when the failure was a model limit. Lets the chat say whether
+       * waiting helps instead of showing one generic "couldn't reply".
+       */
+      limit?: import("./model-limit").ModelLimit;
+    };
 
 export type HermesRunStatus =
   | "started"
@@ -265,8 +276,21 @@ export function parseHermesCapabilityManifest(
   value: unknown,
 ): HermesCapabilityManifest {
   const record = asRecord(value);
+  const nested = [
+    asRecord(record?.server),
+    asRecord(record?.build),
+    asRecord(record?.info),
+    asRecord(record?.agent),
+  ];
   const version = parseHermesVersion(
-    firstString(record?.version, record?.hermes_version, record?.agent_version),
+    firstString(
+      record?.version,
+      record?.hermes_version,
+      record?.agent_version,
+      record?.app_version,
+      record?.server_version,
+      ...nested.flatMap((entry) => [entry?.version, entry?.hermes_version]),
+    ),
   );
   const advertised = collectAdvertised(record).slice(0, 256);
   const capabilities: Partial<Record<HermesCapability, boolean>> = {};
@@ -295,6 +319,7 @@ export function parseHermesCapabilityManifest(
   }
   return {
     version: version.raw,
+    normalizedVersion: version.normalized,
     compatibility: version.compatibility,
     capabilities,
     advertised,

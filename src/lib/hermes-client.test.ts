@@ -28,6 +28,7 @@ beforeEach(() => {
       probedAt: Date.now(),
       manifest: {
         version: "0.21.0",
+        normalizedVersion: "0.21.0",
         compatibility: "current",
         capabilities: { profiles: true },
         advertised: ["profiles"],

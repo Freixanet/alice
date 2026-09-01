@@ -3,7 +3,9 @@ import { AppShell } from "@/components/shell";
 import { authEnabled } from "@/lib/auth/client";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { AuthProvider } from "@/lib/auth/provider";
+import { SessionBoundary } from "@/lib/auth/session-boundary";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { useT } from "@/lib/use-i18n";
 
 export const Route = createFileRoute("/_app")({
   component: AppBoundary,
@@ -11,19 +13,22 @@ export const Route = createFileRoute("/_app")({
 
 function AppBoundary() {
   return (
-    <AuthProvider>
-      <AppGate />
-    </AuthProvider>
+    <SessionBoundary>
+      <AuthProvider>
+        <AppGate />
+      </AuthProvider>
+    </SessionBoundary>
   );
 }
 
 function AppGate() {
+  const t = useT();
   const { user, isPending } = useCurrentUserState();
   if (!authEnabled) return <AppShell />;
   if (isPending) {
     return (
       <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">
-        Un momento…
+        {t("app.loading")}
       </div>
     );
   }

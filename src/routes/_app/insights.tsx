@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/catalog-page";
 import { Button } from "@/components/ui/button";
@@ -76,9 +76,28 @@ function InsightsPage() {
           <p className="text-sm text-muted-foreground">
             {t("insights.loading")}
           </p>
-        ) : !connected || error || !insights ? (
+        ) : !connected ? (
+          // Three different causes used to share one message. Keep them apart:
+          // only the last one means "this Hermes has no analytics".
+          <div className="rounded-xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+            <p>{t("error.connectFirst")}</p>
+            <Link
+              to="/connect"
+              className="mt-2 inline-block text-foreground underline underline-offset-4"
+            >
+              {t("nav.connect")}
+            </Link>
+          </div>
+        ) : error ? (
+          <p
+            className="rounded-xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground"
+            role="alert"
+          >
+            {error}
+          </p>
+        ) : !insights ? (
           <p className="rounded-xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-            {error || t("insights.unavailable")}
+            {t("insights.unavailable")}
           </p>
         ) : (
           <>

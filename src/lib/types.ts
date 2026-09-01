@@ -124,6 +124,8 @@ export interface Message {
   createdAt: number;
   pending?: boolean;
   error?: string;
+  /** Why the model refused, when the failure was a quota or rate limit. */
+  errorLimit?: import("./model-limit").ModelLimit;
   incomplete?: boolean;
   runId?: string;
   runStatus?: import("./gateway-contracts").HermesRunStatus;
