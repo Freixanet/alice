@@ -24,15 +24,21 @@ open Alice.xcodeproj
 The project file is generated, so it is not committed — `project.yml` is the
 source of truth and merge conflicts in a `.pbxproj` never happen.
 
+## Shape
+
+Chat is the app. A tab bar would put four peers at the bottom of a screen that
+is really one thing, so history, settings and the connection live behind a
+drawer that slides in from the left — the shape every model client has settled
+on, and the one that leaves the conversation the whole display.
+
 ## What Liquid Glass is doing here
 
-| Surface     | API                                                                     |
-| ----------- | ----------------------------------------------------------------------- |
-| Tab bar     | `TabView` on the iOS 26 SDK, floating and minimising on scroll          |
-| Toolbar     | Automatic glass; related buttons share one capsule                      |
-| Composer    | `GlassEffectContainer` so the field and send button blend as one system |
-| Send button | `.buttonStyle(.glassProminent)` with `.glassEffectID` for the morph     |
-| Transcript  | `.scrollEdgeEffectStyle(.soft)` so text stays legible under the bars    |
+| Surface                 | API                                                                     |
+| ----------------------- | ----------------------------------------------------------------------- |
+| Composer                | `GlassEffectContainer` so the field and send button read as one surface |
+| Send button             | `.buttonStyle(.glassProminent)` with `.glassEffectID` for the morph     |
+| Toolbar, drawer buttons | Automatic glass on the iOS 26 SDK                                       |
+| Transcript              | `.scrollEdgeEffectStyle(.soft)` so text stays legible under the bars    |
 
 ## Status
 

@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// The composer floats on its own glass over the transcript.
+/// The composer every model client has converged on: the text on its own line,
+/// and the controls underneath — attach on the left, send on the right.
 ///
-/// `GlassEffectContainer` lets the field and the send button share one glass
-/// system, so when the button changes shape the two blend rather than fighting
-/// each other — the effect Apple built the container for.
+/// It sits on Liquid Glass so the transcript stays visible behind it, and the
+/// field and the button share one `GlassEffectContainer` so they read as a
+/// single surface rather than two stacked shapes.
 struct Composer: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -14,45 +15,61 @@ struct Composer: View {
     var body: some View {
         @Bindable var store = store
 
-        GlassEffectContainer(spacing: 12) {
-            HStack(alignment: .bottom, spacing: 10) {
+        GlassEffectContainer(spacing: 14) {
+            VStack(spacing: 10) {
                 TextField("Talk to Alice…", text: $store.draft, axis: .vertical)
-                    .lineLimit(1...6)
+                    .lineLimit(1...7)
                     .textFieldStyle(.plain)
+                    .font(.body)
                     .focused(focused)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 22))
-                    .glassEffectID("field", in: glass)
+                    .padding(.horizontal, 4)
 
-                actionButton
+                HStack(spacing: 10) {
+                    Button {
+                        // Attachments arrive with the multimodal work; the
+                        // control is here so the layout does not shift later.
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 17, weight: .medium))
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .disabled(true)
+
+                    Spacer()
+
+                    actionButton
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .glassEffect(.regular, in: .rect(cornerRadius: 26))
+            .glassEffectID("composer", in: glass)
         }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
     }
 
-    /// One button holds the trailing slot, exactly as on the web: send when
-    /// idle, stop while a reply is streaming, and back to send as soon as there
-    /// is something new to say.
+    /// One button holds the trailing slot: send when idle, stop while a reply is
+    /// streaming, and back to send as soon as there is something new to say.
     @ViewBuilder
     private var actionButton: some View {
         let sending = store.isSending
         let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let stopping = sending && !hasDraft
 
         Button {
-            if sending && !hasDraft {
-                store.stop()
-            } else {
-                store.send()
-            }
+            if stopping { store.stop() } else { store.send() }
         } label: {
-            Image(systemName: sending && !hasDraft ? "stop.fill" : "arrow.up")
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 44, height: 44)
+            Image(systemName: stopping ? "stop.fill" : "arrow.up")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 36, height: 36)
                 .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.glassProminent)
-        .glassEffectID("action", in: glass)
+        .glassEffectID("send", in: glass)
         .disabled(!sending && (!hasDraft || !store.isConnected))
-        .accessibilityLabel(sending && !hasDraft ? "Stop" : "Send")
+        .accessibilityLabel(stopping ? "Stop" : "Send")
     }
 }

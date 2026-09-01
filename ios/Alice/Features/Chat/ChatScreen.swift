@@ -1,43 +1,40 @@
 import SwiftUI
 
-struct ChatView: View {
+struct ChatScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    let onOpenDrawer: () -> Void
+
     @FocusState private var composerFocused: Bool
 
     var body: some View {
-        @Bindable var store = store
-
         NavigationStack {
             ZStack(alignment: .bottom) {
                 transcript
                 Composer(focused: $composerFocused)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
             }
             .background(Palette.background(scheme))
-            // Content runs under the floating bars; the soft edge keeps text
-            // legible where it passes beneath them.
             .scrollEdgeEffectStyle(.soft, for: .top)
-            .navigationTitle(store.activeConversation?.title ?? "Alice")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    NavigationLink { HistoryView() } label: {
-                        Label("Chats", systemImage: "list.bullet")
+                    Button(action: onOpenDrawer) {
+                        Image(systemName: "line.3.horizontal")
                     }
+                    .accessibilityLabel("Chats")
+                }
+                // The model belongs in the title: it is what the reply depends
+                // on, and it changes far more often than anything else here.
+                ToolbarItem(placement: .principal) {
+                    ModelMenu()
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         store.newChat()
                     } label: {
-                        Label("New chat", systemImage: "square.and.pencil")
+                        Image(systemName: "square.and.pencil")
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink { SettingsView() } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
+                    .accessibilityLabel("New chat")
                 }
             }
         }
@@ -48,16 +45,16 @@ struct ChatView: View {
         if let conversation = store.activeConversation, !conversation.messages.isEmpty {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
+                    LazyVStack(alignment: .leading, spacing: 22) {
                         ForEach(conversation.messages) { message in
                             MessageRow(message: message).id(message.id)
                         }
-                        // Room for the composer and the floating tab bar.
-                        Color.clear.frame(height: 140).id(bottomAnchor)
+                        Color.clear.frame(height: 120).id(bottomAnchor)
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                    .padding(.top, 8)
                 }
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of: conversation.messages.last?.content) {
                     withAnimation(.easeOut(duration: 0.15)) {
                         proxy.scrollTo(bottomAnchor, anchor: .bottom)
@@ -72,6 +69,41 @@ struct ChatView: View {
     private var bottomAnchor: String { "bottom" }
 }
 
+private struct ModelMenu: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        Menu {
+            if store.models.isEmpty {
+                Text("Connect your Hermes")
+            } else {
+                ForEach(store.models) { model in
+                    Button {
+                        store.selectedModel = model.id
+                    } label: {
+                        if model.id == store.selectedModel {
+                            Label(model.label, systemImage: "checkmark")
+                        } else {
+                            Text(model.label)
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(current).font(.headline)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var current: String {
+        store.models.first { $0.id == store.selectedModel }?.label ?? "Alice"
+    }
+}
+
 private struct EmptyChatView: View {
     var body: some View {
         VStack(spacing: 8) {
@@ -83,7 +115,7 @@ private struct EmptyChatView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 32)
-        .padding(.bottom, 120)
+        .padding(.bottom, 140)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

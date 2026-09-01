@@ -18,6 +18,8 @@ struct LibraryView: View {
         .init(id: "projects", title: "Projects", symbol: "folder", capability: "projects"),
         .init(id: "artifacts", title: "Artifacts", symbol: "paperclip", capability: "artifacts"),
         .init(id: "memory", title: "Memory", symbol: "brain", capability: "memory"),
+        .init(id: "cron", title: "Jobs", symbol: "clock", capability: "cron"),
+        .init(id: "insights", title: "Insights", symbol: "chart.line.uptrend.xyaxis", capability: "insights"),
     ]
 
     /// A built screen links through; the capability check happens inside it so
