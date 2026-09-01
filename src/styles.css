@@ -52,6 +52,12 @@
   --muted: #1a1a1c;
   --muted-foreground: #8a8a86;
   --accent: var(--accent-tint, #1f1f21);
+  /* Syntax tokens reuse the accent palette so code belongs to the page. */
+  --code-keyword: #a392be;
+  --code-string: #9aaf9c;
+  --code-number: #c4a574;
+  --code-title: #7fa3bf;
+  --code-attr: #c49293;
   --accent-foreground: #ececea;
   --destructive: #c47a72;
   --border: rgb(236 236 234 / 0.08);
@@ -75,6 +81,11 @@
   --muted: #eceae4;
   --muted-foreground: #6b6a64;
   --accent: var(--accent-tint, #e7e4dc);
+  --code-keyword: #65548a;
+  --code-string: #4f6d55;
+  --code-number: #8a6a38;
+  --code-title: #3d6580;
+  --code-attr: #8f5456;
   --accent-foreground: #1a1a18;
   --destructive: #b3544c;
   --border: rgb(26 26 24 / 0.08);
@@ -375,4 +386,247 @@ html[data-alice-app]:has(.alice-app) .alice-composer {
     opacity: 0.55;
     transform: none;
   }
+}
+
+/* Assistant Markdown.
+
+   The bubble sets `white-space: pre-wrap` so plain replies keep their line
+   breaks. Block elements must not inherit that or every paragraph gains the
+   source newlines on top of its own margins; `pre` opts back in below. */
+.alice-markdown {
+  white-space: normal;
+}
+
+.alice-markdown > :first-child {
+  margin-top: 0;
+}
+
+.alice-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.alice-markdown p,
+.alice-markdown ul,
+.alice-markdown ol,
+.alice-markdown blockquote,
+.alice-markdown table {
+  margin: 0.75rem 0;
+}
+
+.alice-markdown h1,
+.alice-markdown h2,
+.alice-markdown h3,
+.alice-markdown h4,
+.alice-markdown h5,
+.alice-markdown h6 {
+  margin: 1.25rem 0 0.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.alice-markdown h1 {
+  font-size: 1.35em;
+}
+.alice-markdown h2 {
+  font-size: 1.2em;
+}
+.alice-markdown h3 {
+  font-size: 1.08em;
+}
+.alice-markdown h4,
+.alice-markdown h5,
+.alice-markdown h6 {
+  font-size: 1em;
+}
+
+.alice-markdown strong {
+  font-weight: 600;
+}
+
+.alice-markdown em {
+  font-style: italic;
+}
+
+.alice-markdown del {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
+
+.alice-markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.alice-markdown ul,
+.alice-markdown ol {
+  padding-left: 1.4rem;
+}
+
+.alice-markdown ul {
+  list-style: disc;
+}
+
+.alice-markdown ol {
+  list-style: decimal;
+}
+
+.alice-markdown li {
+  margin: 0.25rem 0;
+}
+
+.alice-markdown li > ul,
+.alice-markdown li > ol {
+  margin: 0.25rem 0;
+}
+
+/* GFM task lists render a checkbox as the first child of the item. */
+.alice-markdown li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.4rem;
+}
+
+.alice-markdown li > input[type="checkbox"] {
+  margin-right: 0.5rem;
+  vertical-align: middle;
+  accent-color: var(--primary);
+}
+
+.alice-markdown blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.9rem;
+  color: var(--muted-foreground);
+}
+
+.alice-markdown hr {
+  margin: 1.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.alice-markdown img {
+  margin: 0.75rem 0;
+  max-height: 32rem;
+  width: auto;
+  max-width: 100%;
+  border-radius: var(--radius-md);
+  object-fit: contain;
+}
+
+/* Inline code, but not the code inside a fenced block. */
+.alice-markdown :not(pre) > code {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  padding: 0.1em 0.32em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.88em;
+}
+
+.alice-markdown .alice-code pre {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  padding: 0.9rem 1rem;
+  white-space: pre;
+}
+
+.alice-markdown .alice-code code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+
+.alice-table-scroll {
+  overflow-x: auto;
+}
+
+.alice-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.alice-markdown th,
+.alice-markdown td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+}
+
+.alice-markdown th {
+  font-weight: 600;
+  background: var(--muted);
+}
+
+/* Syntax highlighting.
+
+   Drawn from the app's own tokens instead of importing a highlight.js theme,
+   so code sits in the same palette as everything else and follows light and
+   dark without a second stylesheet. */
+.alice-markdown .hljs-comment,
+.alice-markdown .hljs-quote {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.alice-markdown .hljs-keyword,
+.alice-markdown .hljs-selector-tag,
+.alice-markdown .hljs-literal,
+.alice-markdown .hljs-doctag {
+  color: var(--code-keyword);
+}
+
+.alice-markdown .hljs-string,
+.alice-markdown .hljs-regexp,
+.alice-markdown .hljs-addition {
+  color: var(--code-string);
+}
+
+.alice-markdown .hljs-number,
+.alice-markdown .hljs-built_in,
+.alice-markdown .hljs-symbol {
+  color: var(--code-number);
+}
+
+.alice-markdown .hljs-title,
+.alice-markdown .hljs-title.function_,
+.alice-markdown .hljs-section {
+  color: var(--code-title);
+}
+
+.alice-markdown .hljs-attr,
+.alice-markdown .hljs-attribute,
+.alice-markdown .hljs-variable,
+.alice-markdown .hljs-template-variable {
+  color: var(--code-attr);
+}
+
+.alice-markdown .hljs-deletion {
+  color: var(--destructive);
+}
+
+.alice-markdown .hljs-emphasis {
+  font-style: italic;
+}
+
+.alice-markdown .hljs-strong {
+  font-weight: 600;
+}
+
+.alice-code-lang {
+  position: absolute;
+  top: 0.55rem;
+  left: 1rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72em;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  text-transform: lowercase;
+}
+
+/* Leave room for the label so the first line of code never sits under it. */
+.alice-markdown .alice-code:has(.alice-code-lang) pre {
+  padding-top: 2rem;
 }

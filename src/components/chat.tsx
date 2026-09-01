@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Camera,
@@ -33,6 +33,8 @@ import {
   streamHermesSessionDirect,
 } from "@/lib/hermes-direct";
 import { authHeaders } from "@/lib/auth/client";
+const MarkdownBody = lazy(() => import("@/components/markdown"));
+
 import { matchSlash } from "@/lib/slash";
 import { displayMessageContent, slashHint, t as tr } from "@/lib/i18n";
 import { useLocale, useT } from "@/lib/use-i18n";
@@ -1119,28 +1121,18 @@ function ReplyPending() {
   );
 }
 
+/**
+ * Assistant replies are Markdown, the same as every other model surface. The
+ * renderer is loaded on demand: it weighs more than the entire initial bundle
+ * budget, and until it arrives the raw text is perfectly readable, so the
+ * fallback is the text itself rather than a spinner.
+ */
 function AssistantContent({ text }: { text: string }) {
-  const imagePattern =
-    /!\[([^\]]*)\]\(((?:data:image\/(?:png|jpe?g|gif|webp|bmp);base64,[A-Za-z0-9+/=]+)|(?:https?:\/\/[^)\s]+))\)/gi;
-  const parts: ReactNode[] = [];
-  let start = 0;
-  let match: RegExpExecArray | null;
-  while ((match = imagePattern.exec(text))) {
-    const imageUrl = match[2];
-    if (!imageUrl) continue;
-    if (match.index > start) parts.push(text.slice(start, match.index));
-    parts.push(
-      <img
-        key={`${match.index}-${imageUrl.slice(0, 32)}`}
-        src={imageUrl}
-        alt={match[1] || "Image from Hermes"}
-        className="my-3 max-h-[32rem] w-auto max-w-full rounded-md object-contain"
-      />,
-    );
-    start = imagePattern.lastIndex;
-  }
-  if (start < text.length) parts.push(text.slice(start));
-  return <>{parts}</>;
+  return (
+    <Suspense fallback={<>{text}</>}>
+      <MarkdownBody text={text} />
+    </Suspense>
+  );
 }
 
 function MessageAttachments({ attachments }: { attachments: Attachment[] }) {

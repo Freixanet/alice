@@ -10,7 +10,7 @@ and never leaves the machine you put it on.
 [![Quality](https://github.com/Freixanet/alice/actions/workflows/quality.yml/badge.svg)](https://github.com/Freixanet/alice/actions/workflows/quality.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<img src="docs/media/chat.png" alt="A conversation in Alice, with the tools the agent used listed under the reply" width="880">
+<img src="docs/media/markdown.png" alt="An assistant reply in Alice rendering a heading, a table, a task list, a quote and a highlighted TypeScript block" width="880">
 
 </div>
 
@@ -32,7 +32,7 @@ The shot above is the light theme. The rest of the surface:
 
 <table>
 <tr>
-<td width="40%"><img src="docs/media/chat-dark.png" alt="Alice in dark theme"><br><sub><b>Dark.</b> Follows your system by default, or pin either one.</sub></td>
+<td width="40%"><img src="docs/media/markdown-dark.png" alt="The same reply in dark theme"><br><sub><b>Dark.</b> Follows your system by default, or pin either one. Syntax colours come from the app's own tokens, so code belongs to the page rather than to an imported theme.</sub></td>
 <td width="40%"><img src="docs/media/commands.png" alt="The slash command menu open over a conversation"><br><sub><b>Commands.</b> Typing <code>/</code> floats the list over the page rather than pushing the composer down. Arrows move, Enter takes, Escape dismisses.</sub></td>
 <td width="20%"><img src="docs/media/settings-mobile.png" alt="Settings at a 320px viewport"><br><sub><b>320px.</b> Laid out for the narrowest phone still sold, with 44px touch targets.</sub></td>
 </tr>
@@ -87,6 +87,20 @@ provider's `error.type` before the error arrives, so "you are out of quota" and
 Alice classifies from what survives — the HTTP status, `Retry-After`, and the
 provider text — and tells you whether waiting helps. A spent subscription
 allowance says so; a passing rate limit says when to retry.
+
+## Rendering what a model writes
+
+Replies are Markdown — headings, tables, task lists, quotes, GFM, and fenced
+code with syntax highlighting and a copy button. That content is untrusted: it
+may be relaying a web page, a file, or a tool result. Raw HTML is never enabled,
+so markup in a reply is escaped rather than executed, and a URL has to survive a
+scheme check before it becomes a link or an image — `javascript:` and
+`data:text/html` do not, while the `data:image/...` payloads Hermes returns for
+generated pictures do.
+
+The renderer loads on demand. It weighs more than the entire initial bundle
+budget, so it sits in its own chunk and the reply reads as plain text for the
+moment it takes to arrive, rather than blocking first paint behind a parser.
 
 ## Architecture
 
