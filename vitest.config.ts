@@ -10,6 +10,11 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.{ts,tsx}"],
+    // Six suites are property-based (fast-check). Their runtime varies with the
+    // cases generated, and v8 coverage instrumentation on a loaded machine has
+    // pushed one past the 5s default — a red CI run that says nothing about the
+    // code. Give them room; a genuine hang still fails, just later.
+    testTimeout: 30_000,
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary", "lcov"],

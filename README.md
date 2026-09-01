@@ -10,7 +10,7 @@ and never leaves the machine you put it on.
 [![Quality](https://github.com/Freixanet/alice/actions/workflows/quality.yml/badge.svg)](https://github.com/Freixanet/alice/actions/workflows/quality.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<img src="docs/media/chat.png" alt="Alice, empty chat on desktop" width="720">
+<img src="docs/media/chat.png" alt="A conversation in Alice, with the tools the agent used listed under the reply" width="880">
 
 </div>
 
@@ -25,6 +25,18 @@ asset, and every design decision protects it.
 
 It talks to **your** Hermes — on your Mac, on a server, or across a Tailscale
 network — and adapts to whatever that particular build can do.
+
+## A look at it
+
+The shot above is the light theme. The rest of the surface:
+
+<table>
+<tr>
+<td width="40%"><img src="docs/media/chat-dark.png" alt="Alice in dark theme"><br><sub><b>Dark.</b> Follows your system by default, or pin either one.</sub></td>
+<td width="40%"><img src="docs/media/commands.png" alt="The slash command menu open over a conversation"><br><sub><b>Commands.</b> Typing <code>/</code> floats the list over the page rather than pushing the composer down. Arrows move, Enter takes, Escape dismisses.</sub></td>
+<td width="20%"><img src="docs/media/settings-mobile.png" alt="Settings at a 320px viewport"><br><sub><b>320px.</b> Laid out for the narrowest phone still sold, with 44px touch targets.</sub></td>
+</tr>
+</table>
 
 ## Quickstart
 
@@ -126,10 +138,6 @@ The interface ships complete in English and Spanish. Parity is not a convention
 here: the Spanish catalogue is typed as `Record<MsgKey, string>`, so a missing
 translation is a compile error rather than a blank label in production. Light
 and dark follow your system preference by default.
-
-<div align="center">
-<img src="docs/media/settings-mobile.png" alt="Settings on a 320px viewport" width="280">
-</div>
 
 ## Deploying
 
