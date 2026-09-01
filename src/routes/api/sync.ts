@@ -10,6 +10,7 @@ import {
   consumeSharedRateLimit,
   rateLimitResponse,
 } from "@/lib/rate-limit.server";
+import { observeApiRequest } from "@/lib/operational-telemetry.server";
 import { syncRequestSchema } from "@/lib/sync-contracts";
 import {
   CLOUD_SYNC_QUOTA_BYTES,
@@ -31,7 +32,7 @@ function json(value: unknown, status = 200) {
 export const Route = createFileRoute("/api/sync")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: observeApiRequest("/api/sync", async ({ request }) => {
         try {
           assertSameOriginRequest(request);
         } catch (error) {
@@ -101,7 +102,7 @@ export const Route = createFileRoute("/api/sync")({
           }
           throw error;
         }
-      },
+      }),
     },
   },
 });

@@ -20,13 +20,14 @@ import {
   consumeSharedRateLimit,
   rateLimitResponse,
 } from "@/lib/rate-limit.server";
+import { observeApiRequest } from "@/lib/operational-telemetry.server";
 
 const FAIL = "Couldn’t connect.";
 
 export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: observeApiRequest("/api/chat", async ({ request }) => {
         try {
           assertSameOriginRequest(request);
         } catch (error) {
@@ -131,7 +132,7 @@ export const Route = createFileRoute("/api/chat")({
             message: "Go back to Connect and paste the Hermes key.",
           } satisfies ChatEvent);
         }, 400);
-      },
+      }),
     },
   },
 });

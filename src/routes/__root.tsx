@@ -5,6 +5,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { OperationalTelemetry } from "@/components/operational-telemetry";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Alice";
@@ -58,6 +59,7 @@ export const Route = createRootRoute({
       </head>
       <body className="antialiased">
         <PreviewHostBridge />
+        <OperationalTelemetry />
         <Outlet />
         <Scripts />
       </body>

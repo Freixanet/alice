@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { observeApiRequest } from "@/lib/operational-telemetry.server";
 import { tailnetHttpsOrigin } from "@/lib/tailnet.server";
 
 export const Route = createFileRoute("/api/phone")({
   server: {
     handlers: {
-      GET: () => {
+      GET: observeApiRequest("/api/phone", () => {
         if (process.env.VERCEL) {
           return Response.json({ origin: null, install: null, online: false });
         }
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/api/phone")({
           install: `${origin}/?install=1`,
           online: true,
         });
-      },
+      }),
     },
   },
 });
