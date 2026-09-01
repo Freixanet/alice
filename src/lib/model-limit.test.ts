@@ -129,3 +129,33 @@ describe("subscription providers", () => {
     ).toEqual({ kind: "auth" });
   });
 });
+
+describe("wording Hermes actually shows", () => {
+  // Taken from the error banner in the official Hermes app when a
+  // subscription's allowance runs out. Keeping the literal string here means a
+  // future edit to the marker list cannot silently stop recognising it.
+  it("reads the official app's usage-limit banner as spent quota", () => {
+    expect(
+      classifyModelLimit({
+        status: 429,
+        message: "HTTP 429: The usage limit has been reached",
+      }),
+    ).toEqual({ kind: "quota" });
+  });
+
+  it("reads it without the status prefix too", () => {
+    expect(
+      classifyModelLimit({
+        status: 429,
+        message: "The usage limit has been reached",
+      }),
+    ).toEqual({ kind: "quota" });
+  });
+
+  it("still calls a plain overload a rate limit, not spent quota", () => {
+    // The distinction only earns its keep if it does not collapse to "quota".
+    expect(
+      classifyModelLimit({ status: 429, message: "Provider is overloaded" }),
+    ).toEqual({ kind: "rateLimit" });
+  });
+});
