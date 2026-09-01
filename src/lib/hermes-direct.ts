@@ -15,6 +15,7 @@ import {
   type ProbeResult,
 } from "./gateway";
 import { classifyModelLimit } from "./model-limit";
+import { withDiscoveredManagement } from "./hermes-management-probe";
 import {
   parseHermesCapabilityManifest,
   type HermesCapabilityManifest,
@@ -361,6 +362,23 @@ export async function probeHermesDirect(opts: {
     } catch {
       // optional
     }
+
+    // Same discovery as the proxy: both transports must agree on what the
+    // connected Hermes can do. From the browser a management path may also be
+    // blocked by CORS, which reads as "not supported" and is equally correct.
+    manifest = await withDiscoveredManagement(manifest, async (path) => {
+      try {
+        const res = await fetch(`${base}${path}`, {
+          headers: hdrs,
+          signal: ctrl,
+          cache: "no-store",
+          redirect: "manual",
+        });
+        return { ok: res.ok, status: res.status };
+      } catch {
+        return { ok: false, status: 0 };
+      }
+    });
 
     if (opts.save) setDeviceSessionKey(token);
     return {

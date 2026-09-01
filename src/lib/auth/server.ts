@@ -111,13 +111,19 @@ const explicitBaseURL =
 // Explicit `string[]` (not a readonly tuple) — Better Auth's DynamicBaseURLConfig
 // requires a mutable `allowedHosts: string[]`.
 const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
-// Local `npm run dev` (port 8080 contract). Browsers may send Origin as any of
-// these for the same server — trusting only `localhost` rejects `127.0.0.1` and
-// breaks email/password with "Invalid origin".
+// Local development. Browsers may send Origin as any of these for the same
+// server — trusting only `localhost` rejects `127.0.0.1` and breaks
+// email/password with "Invalid origin".
+//
+// The port is wildcarded on purpose: `npm run dev` defaults to 8080, but anyone
+// running Alice may have that port taken and start elsewhere, and pinning the
+// port made sign-in fail with a message that pointed nowhere near the cause.
+// Loopback origins are reachable only from the machine itself, so widening the
+// port adds no exposure.
 const LOCAL_DEV_ORIGINS: string[] = [
-  "http://localhost:8080",
-  "http://127.0.0.1:8080",
-  "http://[::1]:8080",
+  "http://localhost:*",
+  "http://127.0.0.1:*",
+  "http://[::1]:*",
 ];
 const baseURL = explicitBaseURL ?? {
   // Include loopback hosts so dynamic baseURL resolves for local email/password

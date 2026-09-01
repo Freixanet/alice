@@ -1,4 +1,5 @@
 import { classifyModelLimit } from "./model-limit";
+import { withDiscoveredManagement } from "./hermes-management-probe";
 import {
   createCipheriv,
   createDecipheriv,
@@ -589,6 +590,23 @@ export async function probeHermes(
 
     const fromDisk = place === "mac" ? await modelsFromLocalHermesHome() : [];
     models = unionHermesModels(fromDisk, models);
+
+    manifest = await withDiscoveredManagement(manifest, async (path) => {
+      for (const apiBase of managementBases(base, place)) {
+        try {
+          const res = await fetch(`${apiBase}${path}`, {
+            headers,
+            signal: ctrl,
+            cache: "no-store",
+            redirect: "manual",
+          });
+          if (res.ok) return { ok: true, status: res.status };
+        } catch {
+          // try the next management base
+        }
+      }
+      return { ok: false, status: 0 };
+    });
 
     return {
       ok: true,

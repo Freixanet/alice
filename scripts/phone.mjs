@@ -34,7 +34,7 @@ function main() {
           up.stdout ||
           "No se ha podido conectar Tailscale."
         ).trim() +
-          "\nAbre la app Tailscale en este Mac e inicia sesión con marcfreixanet@gmail.com.",
+          "\nAbre la app Tailscale en este Mac e inicia sesión con tu cuenta.",
       );
     }
     status = tailscale(["status", "--json"]);

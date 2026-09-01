@@ -3,13 +3,26 @@ import { hashPassword } from "better-auth/crypto";
 import { ensureDbReady, getSql } from "../db";
 import { DEV_USER_ID, sessionsEnabled } from "./verify.server";
 
-/** Hermes on this Mac belongs to this Google account. Override with `ALICE_OWNER_EMAIL`. */
-export const DEFAULT_OWNER_EMAIL = "marcfreixanet@gmail.com";
+/**
+ * Account that owns the Hermes on this machine, when the deployer pinned one
+ * with `ALICE_OWNER_EMAIL`.
+ *
+ * There is deliberately no default. Baking in an address would hand ownership
+ * of every other install’s Hermes to a stranger, so an unset value means
+ * "whoever registered first here owns it" — the right answer for a personal
+ * deployment, and safe for anyone who clones this.
+ */
+export function pinnedOwnerEmail(): string | null {
+  const value = process.env.ALICE_OWNER_EMAIL?.trim();
+  return value ? value.toLowerCase() : null;
+}
 
-export function pinnedOwnerEmail(): string {
-  return (
-    process.env.ALICE_OWNER_EMAIL?.trim() || DEFAULT_OWNER_EMAIL
-  ).toLowerCase();
+/** Display name for a pinned owner Alice has to create. */
+function ownerDisplayName(email: string): string {
+  const explicit = process.env.ALICE_OWNER_NAME?.trim();
+  if (explicit) return explicit;
+  const local = email.split("@")[0] ?? "";
+  return local ? local.charAt(0).toUpperCase() + local.slice(1) : "Owner";
 }
 
 /** True when this process can read ~/.hermes (this Mac). Off on Vercel. */
@@ -43,6 +56,16 @@ async function resolveOwner(): Promise<{ id: string; email: string } | null> {
   const pinned = pinnedOwnerEmail();
   try {
     const sql = await getSql();
+    if (!pinned) {
+      // No pinned owner: the first account registered here owns this Hermes.
+      const first = await sql.query<{ id: string; email: string }>(
+        `select id, email from "user" order by "createdAt" asc limit 1`,
+      );
+      const row = first[0];
+      return row
+        ? { id: row.id, email: (row.email || "").toLowerCase() }
+        : null;
+    }
     await claimOwnerIdentity(sql, pinned);
     await ensureOwnerPassword(sql, pinned);
     const rows = await sql.query<{ id: string; email: string }>(
@@ -52,7 +75,7 @@ async function resolveOwner(): Promise<{ id: string; email: string } | null> {
     if (rows[0]) return { id: rows[0].id, email: rows[0].email.toLowerCase() };
     return { id: "", email: pinned };
   } catch {
-    return { id: "", email: pinned };
+    return pinned ? { id: "", email: pinned } : null;
   }
 }
 
@@ -82,8 +105,8 @@ async function ensureOwnerPassword(
     const id = randomBytes(16).toString("hex");
     await sql.query(
       `insert into "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
-       values ($1, 'Marcos', $2, true, now(), now())`,
-      [id, pinned],
+       values ($1, $3, $2, true, now(), now())`,
+      [id, pinned, ownerDisplayName(pinned)],
     );
     user = { id };
   }
@@ -114,9 +137,10 @@ const claimRef = globalThis as typeof globalThis & {
 };
 
 /**
- * Point the in-memory test owner (first `@local.test` user) at the Google email
- * so a later Google sign-in with that address reuses the same Alice user — the
- * one that already owns this Mac's Hermes.
+ * Point the throwaway in-memory account (the first `@local.test` user) at the
+ * pinned address, so a later sign-in with that address reuses the same Alice
+ * user — the one that already owns this machine's Hermes. Runs only when the
+ * deployer pinned an owner.
  */
 async function claimOwnerIdentity(
   sql: Awaited<ReturnType<typeof getSql>>,
@@ -128,28 +152,23 @@ async function claimOwnerIdentity(
       [pinned],
     );
     if (already[0]) return;
-    const local = await sql.query<{ id: string }>(
-      `select id from "user" where lower(email) = 'marcos@local.test' limit 1`,
+    // Only a throwaway `@local.test` account may be re-pointed; a real account
+    // is never rewritten to someone else's address.
+    const candidates = await sql.query<{ id: string; email: string }>(
+      `select id, email from "user"
+       where lower(email) like '%@local.test'
+       order by "createdAt" asc limit 1`,
     );
-    const fallback = local[0]
-      ? local
-      : await sql.query<{ id: string; email: string }>(
-          `select id, email from "user" order by "createdAt" asc limit 1`,
-        );
-    const row = fallback[0];
+    const row = candidates[0];
     if (!row) return;
-    if ("email" in row && typeof row.email === "string") {
-      const email = row.email.toLowerCase();
-      if (!email.endsWith("@local.test")) return;
-    }
     await sql.query(
       `update "user"
        set email = $1,
-           name = case when name is null or name in ('', 'Marcos') then 'Marcos' else name end,
+           name = case when name is null or name = '' then $3 else name end,
            "emailVerified" = true,
            "updatedAt" = now()
        where id = $2`,
-      [pinned, row.id],
+      [pinned, row.id, ownerDisplayName(pinned)],
     );
   })().catch((err) => {
     claimRef.__aliceOwnerClaim__ = undefined;
@@ -166,6 +185,7 @@ if (typeof window === "undefined") {
     await ensureDbReady();
     const sql = await getSql();
     const pinned = pinnedOwnerEmail();
+    if (!pinned) return;
     await claimOwnerIdentity(sql, pinned);
     await ensureOwnerPassword(sql, pinned);
   })().catch((err) => {
