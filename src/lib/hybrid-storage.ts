@@ -94,10 +94,14 @@ async function persistSplit(
     (DURABLE_FIELDS.has(key) ? durable : preferences)[key] = value;
   }
   const version = envelope.version;
-  await writeDurable(indexedDb, `${name}:${user}`, { state: durable, version });
+  const versionField = version === undefined ? {} : { version };
+  await writeDurable(indexedDb, `${name}:${user}`, {
+    state: durable,
+    ...versionField,
+  });
   local.setItem(
     preferenceKey(name, user),
-    JSON.stringify({ state: preferences, version }),
+    JSON.stringify({ state: preferences, ...versionField }),
   );
 }
 
@@ -106,9 +110,10 @@ function serializeMerged(
   durable: Envelope | null,
 ): string | null {
   if (!preferences && !durable) return null;
+  const version = preferences?.version ?? durable?.version;
   return JSON.stringify({
     state: { ...(preferences?.state ?? {}), ...(durable?.state ?? {}) },
-    version: preferences?.version ?? durable?.version,
+    ...(version === undefined ? {} : { version }),
   });
 }
 

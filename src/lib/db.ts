@@ -46,9 +46,10 @@ export interface Sql {
  * `getSql()`). A failed init clears its slot so the next call retries.
  */
 const globalRef = globalThis as typeof globalThis & {
-  __pgSqlPromise__?: Promise<Sql>;
-  __pgliteDiskInstance__?: Promise<import("@electric-sql/pglite").PGlite>;
-  __pgliteMigrateChain__?: Promise<void>;
+  __pgSqlPromise__: Promise<Sql> | undefined;
+  __pgliteDiskInstance__:
+    Promise<import("@electric-sql/pglite").PGlite> | undefined;
+  __pgliteMigrateChain__: Promise<void> | undefined;
 };
 
 /**

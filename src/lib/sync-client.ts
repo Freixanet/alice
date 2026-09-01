@@ -101,7 +101,14 @@ export async function syncEncryptedConversations(options: {
       );
       const parsed = conversationSchema.safeParse(value);
       if (parsed.success) {
-        remote.push({ id, tombstone: false, conversation: parsed.data });
+        // The runtime schema has already rejected malformed optional fields;
+        // Zod's inferred optional shape is intentionally broader than the
+        // exact persisted domain type.
+        remote.push({
+          id,
+          tombstone: false,
+          conversation: parsed.data as Conversation,
+        });
       }
     }
     cursor = response.cursor;
@@ -116,7 +123,7 @@ async function postSync(body: unknown, signal?: AbortSignal) {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
-    signal,
+    ...(signal === undefined ? {} : { signal }),
   });
   const value = (await response.json()) as unknown;
   if (!response.ok) throw new Error("cloud_sync_failed");

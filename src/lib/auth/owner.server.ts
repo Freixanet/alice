@@ -110,7 +110,7 @@ async function ensureOwnerPassword(
 }
 
 const claimRef = globalThis as typeof globalThis & {
-  __aliceOwnerClaim__?: Promise<void>;
+  __aliceOwnerClaim__: Promise<void> | undefined;
 };
 
 /**
@@ -159,7 +159,7 @@ async function claimOwnerIdentity(
 }
 
 const ownerBoot = globalThis as typeof globalThis & {
-  __aliceOwnerPasswordBoot__?: Promise<void>;
+  __aliceOwnerPasswordBoot__: Promise<void> | undefined;
 };
 if (typeof window === "undefined") {
   ownerBoot.__aliceOwnerPasswordBoot__ ??= (async () => {

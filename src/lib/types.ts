@@ -145,6 +145,20 @@ export interface Message {
   }>;
 }
 
+type OptionalKeys<T> = {
+  [K in keyof T]-?: object extends Pick<T, K> ? K : never;
+}[keyof T];
+
+/**
+ * A message update may explicitly clear optional state while required fields
+ * must always retain a concrete value.
+ */
+export type MessagePatch = {
+  [K in keyof Message]?: K extends OptionalKeys<Message>
+    ? Message[K] | undefined
+    : Message[K];
+};
+
 export interface Conversation {
   id: string;
   title: string;

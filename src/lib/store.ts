@@ -17,6 +17,7 @@ import type {
   Job,
   MemoryItem,
   Message,
+  MessagePatch,
   Webhook,
 } from "./types";
 import { isHermesProfileName } from "./hermes-profile";
@@ -42,6 +43,7 @@ import {
   type HermesSessionImport,
 } from "./hermes-session-conversation";
 import { clearHermesLiveCache } from "./hermes-live-cache";
+import { applyMessagePatch } from "./message-patch";
 
 const welcomeId = "welcome";
 const freshId = "fresh";
@@ -186,7 +188,7 @@ interface HermesState {
   patchMessage: (
     conversationId: string,
     messageId: string,
-    patch: Partial<Message>,
+    patch: MessagePatch,
   ) => void;
   truncateConversationAfter: (
     conversationId: string,
@@ -427,7 +429,7 @@ export const useHermes = create<HermesState>()(
                   ...c,
                   updatedAt: Date.now(),
                   messages: c.messages.map((m) =>
-                    m.id === messageId ? { ...m, ...patch } : m,
+                    m.id === messageId ? applyMessagePatch(m, patch) : m,
                   ),
                 }
               : c,

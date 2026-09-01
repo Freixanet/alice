@@ -1,6 +1,6 @@
 import type { ChatEvent } from "./gateway-contracts";
 import type { HermesRunStatus } from "./gateway-contracts";
-import type { Message } from "./types";
+import type { Message, MessagePatch } from "./types";
 import { uid } from "./utils";
 
 export type ChatStreamAccumulator = {
@@ -10,7 +10,7 @@ export type ChatStreamAccumulator = {
 };
 
 export type ChatStreamReduction = {
-  patch: Partial<Message>;
+  patch: MessagePatch;
   stop: boolean;
   activeRun?: { runId: string; terminal: boolean };
 };
@@ -71,8 +71,8 @@ export function reduceChatStreamEvent(
         pending: true,
         approval: {
           title: event.title,
-          detail: event.detail,
-          command: event.command,
+          ...(event.detail === undefined ? {} : { detail: event.detail }),
+          ...(event.command === undefined ? {} : { command: event.command }),
           choices: event.choices,
         },
       },
@@ -122,9 +122,9 @@ function mergeToolEvent(
   }
   tools.push({
     id: createId(),
-    callId: event.callId,
     name: event.name,
     status: event.status,
-    detail: event.detail,
+    ...(event.callId === undefined ? {} : { callId: event.callId }),
+    ...(event.detail === undefined ? {} : { detail: event.detail }),
   });
 }

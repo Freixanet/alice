@@ -7,14 +7,24 @@
     "src/lib/abortable-delay.ts",
     "src/lib/api-contracts.ts",
     "src/lib/gateway-contracts.ts",
+    "src/lib/chat-stream.ts",
+    "src/lib/db.ts",
+    "src/lib/hermes-connection.ts",
     "src/lib/hermes-live-parse.ts",
     "src/lib/hermes-live-types.ts",
     "src/lib/hermes-model-cache.ts",
     "src/lib/hermes-operations.ts",
     "src/lib/hermes-profile.ts",
+    "src/lib/hermes-runs.ts",
+    "src/lib/hybrid-storage.ts",
+    "src/lib/message-patch.ts",
+    "src/lib/outbound-http.server.ts",
     "src/lib/shared-read-cache.ts",
+    "src/lib/sync-client.ts",
     "src/lib/sync-contracts.ts",
     "src/lib/sync-crypto.ts",
-    "src/lib/sync-merge.ts"
+    "src/lib/sync-merge.ts",
+    "src/lib/types.ts",
+    "src/lib/auth/owner.server.ts"
   ]
 }

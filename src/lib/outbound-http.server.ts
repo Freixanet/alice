@@ -179,9 +179,9 @@ export async function pinnedFetch(
         {
           ...options,
           hostname: target.address,
-          servername: isIP(target.url.hostname)
-            ? undefined
-            : target.url.hostname,
+          ...(isIP(target.url.hostname)
+            ? {}
+            : { servername: target.url.hostname }),
         },
         callback,
       );

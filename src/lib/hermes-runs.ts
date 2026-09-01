@@ -35,6 +35,13 @@ const APPROVAL_CHOICES = new Set<HermesApprovalChoice>([
   "deny",
 ]);
 
+function present<K extends string, T>(
+  key: K,
+  value: T | undefined,
+): { [P in K]?: T } {
+  return value === undefined ? {} : ({ [key]: value } as { [P in K]: T });
+}
+
 export function buildHermesRunRequest(opts: {
   messages: HermesRunTurn[];
   conversationId?: string;
@@ -121,8 +128,11 @@ export function eventsFromHermesRunValue(value: unknown): ChatEvent[] {
         type: "tool",
         name,
         status: "start",
-        detail: bounded(record.preview, 8_000),
-        callId: bounded(record.call_id ?? record.tool_call_id, 160),
+        ...present("detail", bounded(record.preview, 8_000)),
+        ...present(
+          "callId",
+          bounded(record.call_id ?? record.tool_call_id, 160),
+        ),
       },
     ];
   }
@@ -135,12 +145,17 @@ export function eventsFromHermesRunValue(value: unknown): ChatEvent[] {
         type: "tool",
         name,
         status: "done",
-        detail:
+        ...present(
+          "detail",
           bounded(record.preview, 8_000) ||
-          (event === "tool.failed" || record.error === true
-            ? "Tool failed"
-            : undefined),
-        callId: bounded(record.call_id ?? record.tool_call_id, 160),
+            (event === "tool.failed" || record.error === true
+              ? "Tool failed"
+              : undefined),
+        ),
+        ...present(
+          "callId",
+          bounded(record.call_id ?? record.tool_call_id, 160),
+        ),
       },
     ];
   }
@@ -155,8 +170,11 @@ export function eventsFromHermesRunValue(value: unknown): ChatEvent[] {
         type: "tool",
         name: "delegate_task",
         status: event === "subagent.start" ? "start" : "done",
-        detail,
-        callId: bounded(record.subagent_id ?? record.child_session_id, 160),
+        ...present("detail", detail),
+        ...present(
+          "callId",
+          bounded(record.subagent_id ?? record.child_session_id, 160),
+        ),
       },
     ];
   }
@@ -180,11 +198,11 @@ export function eventsFromHermesRunValue(value: unknown): ChatEvent[] {
         runId,
         title:
           bounded(record.tool ?? record.title, 256) || "Hermes needs approval",
-        detail: bounded(
-          record.description ?? record.preview ?? record.reason,
-          8_000,
+        ...present(
+          "detail",
+          bounded(record.description ?? record.preview ?? record.reason, 8_000),
         ),
-        command: bounded(record.command, 8_000),
+        ...present("command", bounded(record.command, 8_000)),
         choices: choices.length ? choices : ["once", "deny"],
       },
     ];
@@ -200,7 +218,7 @@ export function eventsFromHermesRunValue(value: unknown): ChatEvent[] {
         type: "run",
         runId,
         status: "completed",
-        output: limitedText(record.output, 1_000_000),
+        ...present("output", limitedText(record.output, 1_000_000)),
       },
     ];
   }
@@ -226,7 +244,7 @@ export function eventsFromHermesRunSnapshot(
       type: "run",
       runId: snapshot.runId,
       status: snapshot.status,
-      output: snapshot.output,
+      ...present("output", snapshot.output),
     },
   ];
   if (snapshot.status === "failed") {

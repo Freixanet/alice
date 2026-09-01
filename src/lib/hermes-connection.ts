@@ -15,7 +15,7 @@ export async function readHermesGateStatus(
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ action: "status" }),
-    signal,
+    ...(signal === undefined ? {} : { signal }),
     cache: "no-store",
   });
   if (!response.ok) throw new Error("gate-status");
@@ -24,11 +24,12 @@ export async function readHermesGateStatus(
     owner: Boolean(data.owner),
     local: Boolean(data.local),
     hasKey: Boolean(data.hasKey),
-    url: typeof data.url === "string" ? data.url : undefined,
-    place:
-      data.place === "cloud" || data.place === "mac" || data.place === "device"
-        ? data.place
-        : undefined,
+    ...(typeof data.url === "string" ? { url: data.url } : {}),
+    ...(data.place === "cloud" ||
+    data.place === "mac" ||
+    data.place === "device"
+      ? { place: data.place }
+      : {}),
   };
 }
 
