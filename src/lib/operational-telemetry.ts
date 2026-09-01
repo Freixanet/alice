@@ -39,7 +39,7 @@ const clientContextSchema = {
   viewport: viewportBucketSchema,
 } as const;
 
-export const clientOperationalEventSchema = z.discriminatedUnion("kind", [
+export const clientOperationalEventSchema = z.union([
   z.strictObject({
     kind: z.literal("navigation"),
     ...clientContextSchema,
@@ -49,6 +49,18 @@ export const clientOperationalEventSchema = z.discriminatedUnion("kind", [
     kind: z.literal("client_error"),
     ...clientContextSchema,
     code: z.enum(["runtime_error", "unhandled_rejection", "route_error"]),
+  }),
+  z.strictObject({
+    kind: z.literal("web_vital"),
+    ...clientContextSchema,
+    metric: z.enum(["lcp", "inp"]),
+    latencyMs: z.number().int().min(0).max(120_000),
+  }),
+  z.strictObject({
+    kind: z.literal("web_vital"),
+    ...clientContextSchema,
+    metric: z.literal("cls"),
+    value: z.number().min(0).max(10),
   }),
 ]);
 

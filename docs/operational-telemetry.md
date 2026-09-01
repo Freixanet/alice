@@ -11,6 +11,7 @@ conversations.
 - A coarse browser family and viewport bucket.
 - A stable error category or HTTP outcome.
 - Request or initial-navigation latency.
+- LCP, INP and CLS using their standard browser performance entries.
 
 Successful server requests are sampled at 10%; failures are retained. Anonymous
 client ingestion is bounded per runtime window. Vercel runtime logs are the only

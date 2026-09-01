@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Mark } from "@/components/logo";
 import { ChatRunApproval } from "@/components/chat-run-approval";
+import { VirtualMessageList } from "@/components/virtual-message-list";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -86,7 +87,6 @@ export function ChatView() {
   const [steerError, setSteerError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const activeRunRef = useRef<ActiveHermesRun | null>(null);
-  const scroller = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<HTMLInputElement>(null);
@@ -126,6 +126,14 @@ export function ChatView() {
   const firstIsUser = Boolean(
     conv?.messages[0] && conv.messages[0].role === "user",
   );
+  const hasUserBefore = useMemo(() => {
+    let seenUser = false;
+    return (conv?.messages ?? []).map((message) => {
+      const result = seenUser;
+      if (message.role === "user") seenUser = true;
+      return result;
+    });
+  }, [conv?.messages]);
   const modelChoices = useMemo(
     () => (live ? (gatewayMeta?.models ?? []) : []),
     [gatewayMeta?.models, live],
@@ -182,16 +190,6 @@ export function ChatView() {
       return [choice];
     });
   }, [currentChoice, modelChoices, modelFilter, recentModelRefs]);
-
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    const firstTurn = Boolean(
-      conv?.messages[0]?.role === "user" && conv.messages.length <= 2,
-    );
-    if (firstTurn && el.scrollHeight <= el.clientHeight) return;
-    el.scrollTo({ top: el.scrollHeight });
-  }, [conv?.messages, sending]);
 
   useEffect(() => {
     if (!live) return;
@@ -603,6 +601,96 @@ export function ChatView() {
     setFiles((prev) => [...prev, ...next]);
   }
 
+  function renderMessage(m: Message, i: number) {
+    if (!conv) return null;
+    const text =
+      m.role === "assistant"
+        ? displayMessageContent(locale, m.content.replace(/^\s+/, ""))
+        : m.content;
+    const canTryAgain =
+      m.role === "assistant" &&
+      !m.pending &&
+      !conv?.hermesSessionId &&
+      hasUserBefore[i] === true;
+    return (
+      <article
+        key={m.id}
+        data-message-id={m.id}
+        className={cn("flex flex-col gap-2", m.role === "user" && "items-end")}
+      >
+        {m.role === "user" ? null : (
+          <p className="text-2xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
+            Alice
+          </p>
+        )}
+        {text || m.pending ? (
+          <div
+            className={cn(
+              "alice-message max-w-[42rem] whitespace-pre-wrap text-base leading-relaxed",
+              m.role === "user"
+                ? "alice-user-message rounded-xl bg-card px-4 py-3"
+                : "text-foreground",
+              m.error && "text-destructive",
+            )}
+          >
+            {m.role === "assistant" ? <AssistantContent text={text} /> : text}
+            {m.pending && !text && !m.approval ? <ReplyPending /> : null}
+          </div>
+        ) : null}
+        {m.attachments?.length ? (
+          <MessageAttachments attachments={m.attachments} />
+        ) : null}
+        {m.tools?.length ? <ToolActivity tools={m.tools} /> : null}
+        {m.role === "assistant" && m.approval ? (
+          <ChatRunApproval
+            approval={m.approval}
+            onChoose={(choice) => void resolveRunApproval(conv.id, m, choice)}
+          />
+        ) : null}
+        {m.role === "assistant" && !m.pending && text ? (
+          <div
+            className="-ml-1 flex items-center"
+            role="group"
+            aria-label={t("chat.responseActions")}
+          >
+            <button
+              type="button"
+              onClick={() => void copyResponse(m.id, text)}
+              aria-label={t(copiedId === m.id ? "chat.copied" : "chat.copy")}
+              title={t(copiedId === m.id ? "chat.copied" : "chat.copy")}
+              className="grid h-10 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground md:size-7"
+            >
+              {copiedId === m.id ? (
+                <Check className="size-3.5" />
+              ) : (
+                <Copy className="size-3.5" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => void shareResponse(m.id, text)}
+              aria-label={t("chat.share")}
+              title={t("chat.share")}
+              className="grid h-10 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground md:size-7"
+            >
+              <Share2 className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={!canTryAgain || sending}
+              onClick={() => void retry(m.id)}
+              aria-label={t("chat.tryAgain")}
+              title={t("chat.tryAgain")}
+              className="grid h-10 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-35 md:size-7"
+            >
+              <RotateCw className="size-3.5" />
+            </button>
+          </div>
+        ) : null}
+      </article>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -622,124 +710,15 @@ export function ChatView() {
           </p>
         </div>
       ) : (
-        <div
-          ref={scroller}
-          className="alice-chat-scroller min-h-0 flex-1 overflow-y-auto"
-        >
-          <div
-            role="log"
-            aria-label={t("chat.conversation")}
-            aria-live="polite"
-            aria-relevant="additions text"
-            className={cn(
-              "alice-message-list mx-auto flex w-full max-w-[45rem] flex-col gap-6 px-4 pb-28 sm:px-6",
-              firstIsUser ? "pt-[10vh]" : "pt-8",
-            )}
-          >
-            {conv.messages.map((m, i) => {
-              const text =
-                m.role === "assistant"
-                  ? displayMessageContent(locale, m.content.replace(/^\s+/, ""))
-                  : m.content;
-              const canTryAgain =
-                m.role === "assistant" &&
-                !m.pending &&
-                !conv.hermesSessionId &&
-                conv.messages.slice(0, i).some((msg) => msg.role === "user");
-              return (
-                <article
-                  key={m.id}
-                  className={cn(
-                    "flex flex-col gap-2",
-                    m.role === "user" && "items-end",
-                  )}
-                >
-                  {m.role === "user" ? null : (
-                    <p className="text-2xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
-                      Alice
-                    </p>
-                  )}
-                  {text || m.pending ? (
-                    <div
-                      className={cn(
-                        "alice-message max-w-[42rem] whitespace-pre-wrap text-base leading-relaxed",
-                        m.role === "user"
-                          ? "alice-user-message rounded-xl bg-card px-4 py-3"
-                          : "text-foreground",
-                        m.error && "text-destructive",
-                      )}
-                    >
-                      {m.role === "assistant" ? (
-                        <AssistantContent text={text} />
-                      ) : (
-                        text
-                      )}
-                      {m.pending && !text && !m.approval ? (
-                        <ReplyPending />
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {m.attachments?.length ? (
-                    <MessageAttachments attachments={m.attachments} />
-                  ) : null}
-                  {m.tools?.length ? <ToolActivity tools={m.tools} /> : null}
-                  {m.role === "assistant" && m.approval ? (
-                    <ChatRunApproval
-                      approval={m.approval}
-                      onChoose={(choice) =>
-                        void resolveRunApproval(conv.id, m, choice)
-                      }
-                    />
-                  ) : null}
-                  {m.role === "assistant" && !m.pending && text ? (
-                    <div
-                      className="-ml-1 flex items-center"
-                      role="group"
-                      aria-label={t("chat.responseActions")}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void copyResponse(m.id, text)}
-                        aria-label={t(
-                          copiedId === m.id ? "chat.copied" : "chat.copy",
-                        )}
-                        title={t(
-                          copiedId === m.id ? "chat.copied" : "chat.copy",
-                        )}
-                        className="grid h-10 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground md:size-7"
-                      >
-                        {copiedId === m.id ? (
-                          <Check className="size-3.5" />
-                        ) : (
-                          <Copy className="size-3.5" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void shareResponse(m.id, text)}
-                        aria-label={t("chat.share")}
-                        title={t("chat.share")}
-                        className="grid h-10 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground md:size-7"
-                      >
-                        <Share2 className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!canTryAgain || sending}
-                        onClick={() => void retry(m.id)}
-                        aria-label={t("chat.tryAgain")}
-                        title={t("chat.tryAgain")}
-                        className="grid h-10 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-35 md:size-7"
-                      >
-                        <RotateCw className="size-3.5" />
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })}
-          </div>
-        </div>
+        <VirtualMessageList
+          key={conv.id}
+          conversationId={conv.id}
+          messages={conv.messages}
+          sending={sending}
+          firstIsUser={firstIsUser}
+          label={t("chat.conversation")}
+          renderMessage={renderMessage}
+        />
       )}
 
       <div

@@ -56,6 +56,43 @@ describe("operational telemetry privacy contract", () => {
     }
   });
 
+  it("accepts only bounded, explicitly named Core Web Vitals", () => {
+    const context = {
+      kind: "web_vital",
+      route: "/",
+      browser: "chromium",
+      viewport: "wide",
+    } as const;
+    expect(
+      clientOperationalEventSchema.safeParse({
+        ...context,
+        metric: "lcp",
+        latencyMs: 1_500,
+      }).success,
+    ).toBe(true);
+    expect(
+      clientOperationalEventSchema.safeParse({
+        ...context,
+        metric: "cls",
+        value: 0.05,
+      }).success,
+    ).toBe(true);
+    expect(
+      clientOperationalEventSchema.safeParse({
+        ...context,
+        metric: "memory",
+        value: 123,
+      }).success,
+    ).toBe(false);
+    expect(
+      clientOperationalEventSchema.safeParse({
+        ...context,
+        metric: "inp",
+        latencyMs: 1_000_000,
+      }).success,
+    ).toBe(false);
+  });
+
   it("bounds latency to a finite, non-identifying integer", () => {
     expect(boundedLatency(-1)).toBe(0);
     expect(boundedLatency(12.6)).toBe(13);
