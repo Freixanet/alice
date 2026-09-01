@@ -64,6 +64,13 @@ export class GatewayError extends Error {
 
 const FAIL = "Couldn’t connect.";
 
+function present<K extends string, T>(
+  key: K,
+  value: T | undefined,
+): { [P in K]?: T } {
+  return value === undefined ? {} : ({ [key]: value } as { [P in K]: T });
+}
+
 export function friendlyProbeError(code?: ProbeCode): string {
   if (code === "unauthorized") return "The key is not correct.";
   if (code === "invalid") return "Check the address.";
@@ -280,7 +287,12 @@ function optionFromUnknown(
 ): HermesModelOption | null {
   if (typeof value === "string" && value.trim()) {
     const id = value.trim();
-    return { id, label: prettyModelLabel(id), provider, providerName };
+    return {
+      id,
+      label: prettyModelLabel(id),
+      provider,
+      ...present("providerName", providerName),
+    };
   }
   const rec = asRecord(value);
   if (!rec) return null;
@@ -303,7 +315,12 @@ function optionFromUnknown(
       : typeof rec.owned_by === "string"
         ? rec.owned_by
         : provider;
-  return { id, label, provider: nextProvider, providerName };
+  return {
+    id,
+    label,
+    provider: nextProvider,
+    ...present("providerName", providerName),
+  };
 }
 
 function parsePickerProviders(rec: Record<string, unknown>): {
@@ -346,7 +363,12 @@ function parsePickerProviders(rec: Record<string, unknown>): {
     (typeof rec.provider === "string" && rec.provider) ||
     (typeof rec.current_provider === "string" && rec.current_provider) ||
     models.find((m) => m.id === currentModel)?.provider;
-  return { models, currentModel, currentProvider, source: "picker" };
+  return {
+    models,
+    ...present("currentModel", currentModel),
+    ...present("currentProvider", currentProvider),
+    source: "picker",
+  };
 }
 
 export function parseHermesModelOptions(body: unknown): {
@@ -380,7 +402,12 @@ export function parseHermesModelOptions(body: unknown): {
     (typeof rec?.provider === "string" && rec.provider) ||
     (typeof rec?.current_provider === "string" && rec.current_provider) ||
     models.find((m) => m.id === currentModel)?.provider;
-  return { models, currentModel, currentProvider, source: "compat" };
+  return {
+    models,
+    ...present("currentModel", currentModel),
+    ...present("currentProvider", currentProvider),
+    source: "compat",
+  };
 }
 
 export function modelFromList(body: unknown): string {
@@ -458,8 +485,14 @@ export async function enrichWithModelOptions(
         if (parsed.models.length === 0) continue;
         return {
           models: unionHermesModels(fallback.models, parsed.models),
-          currentModel: parsed.currentModel || fallback.currentModel,
-          currentProvider: parsed.currentProvider || fallback.currentProvider,
+          ...present(
+            "currentModel",
+            parsed.currentModel || fallback.currentModel,
+          ),
+          ...present(
+            "currentProvider",
+            parsed.currentProvider || fallback.currentProvider,
+          ),
         };
       } catch {
         // try next
@@ -569,20 +602,30 @@ export function eventFromChunk(chunk: string): ChatEvent | null {
     if (json.type === "tool.started") {
       const name = json.tool_name || json.tool;
       if (name)
-        return { type: "tool", name, status: "start", detail: json.preview };
+        return {
+          type: "tool",
+          name,
+          status: "start",
+          ...present("detail", json.preview),
+        };
     }
     if (json.type === "tool.completed" || json.type === "tool.failed") {
       const name = json.tool_name || json.tool;
       if (name)
-        return { type: "tool", name, status: "done", detail: json.preview };
+        return {
+          type: "tool",
+          name,
+          status: "done",
+          ...present("detail", json.preview),
+        };
     }
     if (json.type === "hermes.tool.progress" && json.tool) {
       return {
         type: "tool",
         name: json.tool,
         status: json.status === "completed" ? "done" : "start",
-        detail: json.label,
-        callId: json.toolCallId,
+        ...present("detail", json.label),
+        ...present("callId", json.toolCallId),
       };
     }
     const delta = json.choices?.[0]?.delta;
@@ -596,7 +639,7 @@ export function eventFromChunk(chunk: string): ChatEvent | null {
         type: "tool",
         name: toolName,
         status: "start",
-        callId: delta?.tool_calls?.[0]?.id,
+        ...present("callId", delta?.tool_calls?.[0]?.id),
       };
     }
     return null;
@@ -640,9 +683,12 @@ export async function saveHermesCustomEndpoint(opts: {
     };
     return {
       ok: Boolean(data.ok),
-      error: typeof data.error === "string" ? data.error : undefined,
-      model: data.model,
-      provider: data.provider,
+      ...present(
+        "error",
+        typeof data.error === "string" ? data.error : undefined,
+      ),
+      ...present("model", data.model),
+      ...present("provider", data.provider),
       models: Array.isArray(data.models) ? data.models : [],
     };
   } catch {
@@ -658,7 +704,7 @@ export async function listHermesMemory(opts?: {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ action: "memory" }),
-      signal: opts?.signal,
+      ...present("signal", opts?.signal),
     });
     const data = (await res.json()) as HermesMemoryResult;
     if (data && data.ok && Array.isArray(data.profiles)) return data;

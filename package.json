@@ -18,6 +18,7 @@
     "build:dev": "node scripts/with-app-env.mjs vite build --mode development",
     "preview": "node scripts/with-app-env.mjs vite preview",
     "typecheck": "tsc --noEmit",
+    "typecheck:contracts": "tsc --noEmit -p tsconfig.strict-contracts.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
@@ -33,7 +34,7 @@
     "bundle:smoke": "node scripts/smoke-server-bundle.mjs",
     "security:check": "npm audit --audit-level=high",
     "release:verify": "node scripts/verify-release.mjs",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run cycles:check && npm run duplicates:check && npm run design:check && npm run build:ci && npm run bundle:smoke && npm run bundles:check"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run typecheck:contracts && npm test && npm run test:coverage && npm run cycles:check && npm run duplicates:check && npm run design:check && npm run build:ci && npm run bundle:smoke && npm run bundles:check"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

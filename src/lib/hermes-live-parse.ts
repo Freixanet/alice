@@ -88,8 +88,8 @@ export function profilesFromApi(raw: unknown): HermesProfileRow[] {
         description: str(rec.description),
         descriptionAuto: rec.description_auto === true,
         isDefault: rec.is_default === true || name === "default",
-        model: str(rec.model) || undefined,
-        provider: str(rec.provider) || undefined,
+        ...present("model", str(rec.model) || undefined),
+        ...present("provider", str(rec.provider) || undefined),
         skillCount:
           Number.isFinite(skillCount) && skillCount >= 0 ? skillCount : 0,
         hasEnv: rec.has_env === true,
@@ -108,6 +108,13 @@ export function profilesFromApi(raw: unknown): HermesProfileRow[] {
 
 export function str(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function present<K extends string, T>(
+  key: K,
+  value: T | undefined,
+): { [P in K]?: T } {
+  return value === undefined ? {} : ({ [key]: value } as { [P in K]: T });
 }
 
 function bool(value: unknown, fallback = true): boolean {
@@ -151,24 +158,24 @@ export function cronFromUnknown(item: unknown): HermesCronRow {
       "",
     deliver: str(rec.deliver) || str(origin.platform) || "local",
     skills: stringList(rec.skills),
-    model: str(rec.model) || undefined,
-    provider: str(rec.provider) || undefined,
-    script: str(rec.script) || undefined,
-    workdir: str(rec.workdir) || undefined,
+    ...present("model", str(rec.model) || undefined),
+    ...present("provider", str(rec.provider) || undefined),
+    ...present("script", str(rec.script) || undefined),
+    ...present("workdir", str(rec.workdir) || undefined),
     enabledToolsets: stringList(rec.enabled_toolsets),
     noAgent: rec.no_agent === true,
     continuity: contextFrom.some(
       (source) => source.trim().toLowerCase() === "self",
     ),
-    monitorScript: str(rec.monitor_script) || undefined,
-    monitorUrl: str(rec.monitor_url) || undefined,
-    reasoningEffort: str(rec.reasoning_effort) || undefined,
+    ...present("monitorScript", str(rec.monitor_script) || undefined),
+    ...present("monitorUrl", str(rec.monitor_url) || undefined),
+    ...present("reasoningEffort", str(rec.reasoning_effort) || undefined),
     enabled: rec.enabled !== false && str(rec.state) !== "paused",
     state: str(rec.state) || (rec.enabled === false ? "paused" : "scheduled"),
-    lastStatus: str(rec.last_status) || undefined,
-    lastRunAt: str(rec.last_run_at) || undefined,
-    nextRunAt: str(rec.next_run_at) || undefined,
-    origin: str(origin.platform) || str(rec.deliver) || undefined,
+    ...present("lastStatus", str(rec.last_status) || undefined),
+    ...present("lastRunAt", str(rec.last_run_at) || undefined),
+    ...present("nextRunAt", str(rec.next_run_at) || undefined),
+    ...present("origin", str(origin.platform) || str(rec.deliver) || undefined),
   };
 }
 
@@ -219,7 +226,7 @@ export function skillsFromApi(raw: unknown): HermesSkillRow[] {
         group,
         groupLabel: groupLabel(group),
         enabled: bool(rec.enabled, true),
-        provenance: str(rec.provenance) || undefined,
+        ...present("provenance", str(rec.provenance) || undefined),
       };
     })
     .filter((s) => s.id);
@@ -235,8 +242,8 @@ export function skillHubResultsFromApi(raw: unknown): HermesSkillHubRow[] {
         identifier,
         name: str(record.name) || identifier,
         description: str(record.description),
-        source: str(record.source) || undefined,
-        trust: str(record.trust_level) || undefined,
+        ...present("source", str(record.source) || undefined),
+        ...present("trust", str(record.trust_level) || undefined),
       };
     })
     .filter((item) => item.identifier)
@@ -257,10 +264,12 @@ export function toolsetsFromApi(raw: unknown): HermesToolsetRow[] {
         label: str(rec.label) || prettyName(name),
         description: str(rec.description),
         enabled: bool(rec.enabled, false),
-        configured:
+        ...present(
+          "configured",
           typeof rec.configured === "boolean" ? rec.configured : undefined,
+        ),
         tools,
-        platform: str(rec.platform) || undefined,
+        ...present("platform", str(rec.platform) || undefined),
       };
     })
     .filter((t) => t.id);
@@ -280,11 +289,13 @@ function computerUsePermission(raw: unknown) {
       record.authorized === true ||
       record.ok === true ||
       /^(granted|authorized|ready|ok)$/i.test(status),
-    detail:
+    ...present(
+      "detail",
       str(record.detail) ||
-      str(record.message) ||
-      str(record.error) ||
-      undefined,
+        str(record.message) ||
+        str(record.error) ||
+        undefined,
+    ),
   };
 }
 
@@ -299,7 +310,7 @@ export function systemToolsFromApi(
   return {
     terminal: {
       supported: terminalSupported,
-      active: str(terminal.active) || undefined,
+      ...present("active", str(terminal.active) || undefined),
       backends: asList(terminal.backends)
         .map((value) => {
           const row = asRec(value);
@@ -317,21 +328,21 @@ export function systemToolsFromApi(
             description: str(row.description),
             active: row.active === true || name === str(terminal.active),
             status,
-            detail: str(row.detail) || undefined,
+            ...present("detail", str(row.detail) || undefined),
           };
         })
         .filter((backend) => backend.name),
     },
     computerUse: {
       supported: computerUseSupported,
-      platform: str(computerUse.platform) || undefined,
+      ...present("platform", str(computerUse.platform) || undefined),
       platformSupported: computerUse.platform_supported === true,
       installed: computerUse.installed === true,
-      version: str(computerUse.version) || undefined,
+      ...present("version", str(computerUse.version) || undefined),
       ready: computerUse.ready === true,
       canGrant: computerUse.can_grant === true,
-      source: str(computerUse.source) || undefined,
-      error: str(computerUse.error) || undefined,
+      ...present("source", str(computerUse.source) || undefined),
+      ...present("error", str(computerUse.error) || undefined),
       checks: asList(computerUse.checks)
         .map((value) => {
           const row = asRec(value);
@@ -344,20 +355,30 @@ export function systemToolsFromApi(
             ok:
               row.ok === true ||
               /^(ready|ok|passed|granted|available)$/i.test(status),
-            detail:
+            ...present(
+              "detail",
               str(row.detail) ||
-              str(row.message) ||
-              str(row.error) ||
-              undefined,
+                str(row.message) ||
+                str(row.error) ||
+                undefined,
+            ),
           };
         })
         .filter((check) => check.name),
-      accessibility: computerUsePermission(computerUse.accessibility),
-      screenRecording: computerUsePermission(computerUse.screen_recording),
-      screenRecordingCapturable:
+      ...present(
+        "accessibility",
+        computerUsePermission(computerUse.accessibility),
+      ),
+      ...present(
+        "screenRecording",
+        computerUsePermission(computerUse.screen_recording),
+      ),
+      ...present(
+        "screenRecordingCapturable",
         typeof computerUse.screen_recording_capturable === "boolean"
           ? computerUse.screen_recording_capturable
           : undefined,
+      ),
     },
   };
 }
@@ -396,14 +417,14 @@ export function toolsetDetailsFromApi(
               return {
                 key,
                 prompt: str(env.prompt),
-                url: str(env.url) || undefined,
+                ...present("url", str(env.url) || undefined),
                 isSet: env.is_set === true,
               };
             })
             .filter((env) => env.key),
-          postSetup: str(row.post_setup) || undefined,
+          ...present("postSetup", str(row.post_setup) || undefined),
           active: row.is_active === true,
-          status,
+          ...present("status", status),
           capabilities: rawCapabilities.filter(
             (capability): capability is "search" | "extract" =>
               capability === "search" || capability === "extract",
@@ -411,9 +432,15 @@ export function toolsetDetailsFromApi(
         };
       })
       .filter((provider) => provider.name),
-    activeProvider: str(config.active_provider) || undefined,
-    activeSearchProvider: str(config.active_search_backend) || undefined,
-    activeExtractProvider: str(config.active_extract_backend) || undefined,
+    ...present("activeProvider", str(config.active_provider) || undefined),
+    ...present(
+      "activeSearchProvider",
+      str(config.active_search_backend) || undefined,
+    ),
+    ...present(
+      "activeExtractProvider",
+      str(config.active_extract_backend) || undefined,
+    ),
     models: asList(models.models)
       .map((value) => {
         const row = asRec(value);
@@ -427,8 +454,8 @@ export function toolsetDetailsFromApi(
         };
       })
       .filter((model) => model.id),
-    currentModel: str(models.current) || undefined,
-    defaultModel: str(models.default) || undefined,
+    ...present("currentModel", str(models.current) || undefined),
+    ...present("defaultModel", str(models.default) || undefined),
   };
 }
 
@@ -447,7 +474,7 @@ export function pluginsFromApi(raw: unknown): HermesPluginRow[] {
       return {
         id: `plugin:${name}`,
         name,
-        version: str(row.version) || undefined,
+        ...present("version", str(row.version) || undefined),
         description: str(row.description),
         source: str(row.source) || "Hermes",
         enabled: status === "enabled",
@@ -455,7 +482,7 @@ export function pluginsFromApi(raw: unknown): HermesPluginRow[] {
         canRemove: row.can_remove === true,
         canUpdate: row.can_update_git === true,
         authRequired: row.auth_required === true,
-        authCommand: str(row.auth_command) || undefined,
+        ...present("authCommand", str(row.auth_command) || undefined),
       };
     })
     .filter((plugin) => plugin.name);
@@ -478,7 +505,7 @@ export function mcpFromApi(raw: unknown): HermesMcpRow[] {
         transport: str(rec.transport) || (url ? "http" : "stdio"),
         detail: url || command || name,
         enabled: rec.enabled !== false,
-        auth,
+        ...present("auth", auth),
       };
     })
     .filter((m) => m.id);
@@ -555,22 +582,28 @@ export function mcpCatalogFromApi(raw: unknown): HermesMcpCatalogResult {
       return {
         name,
         description: str(row.description).slice(0, 2_000),
-        source: safeUrl(row.source),
+        ...present("source", safeUrl(row.source)),
         transport: str(row.transport).slice(0, 64) || "unknown",
         authType: str(row.auth_type).slice(0, 64) || "none",
         requiredEnv,
-        command: str(row.command).slice(0, 1_024) || undefined,
+        ...present("command", str(row.command).slice(0, 1_024) || undefined),
         args: Array.isArray(row.args)
           ? row.args.map(str).filter(Boolean).slice(0, 64)
           : [],
-        url: safeUrl(row.url),
-        installUrl: safeUrl(row.install_url),
-        installRef: str(row.install_ref).slice(0, 256) || undefined,
+        ...present("url", safeUrl(row.url)),
+        ...present("installUrl", safeUrl(row.install_url)),
+        ...present(
+          "installRef",
+          str(row.install_ref).slice(0, 256) || undefined,
+        ),
         bootstrap: Array.isArray(row.bootstrap)
           ? row.bootstrap.map(str).filter(Boolean).slice(0, 64)
           : [],
         ...(defaultEnabled ? { defaultEnabled } : {}),
-        postInstall: str(row.post_install).slice(0, 4_000) || undefined,
+        ...present(
+          "postInstall",
+          str(row.post_install).slice(0, 4_000) || undefined,
+        ),
         needsInstall: row.needs_install === true,
         installed: row.installed === true,
         enabled: row.enabled === true,
@@ -659,10 +692,13 @@ export function channelsFromApi(raw: unknown): HermesChannelRow[] {
             key,
             required: env.required === true,
             isSet: env.is_set === true,
-            redactedValue: str(env.redacted_value) || undefined,
+            ...present("redactedValue", str(env.redacted_value) || undefined),
             description: str(env.description),
             prompt: str(env.prompt),
-            url: /^https?:\/\//i.test(str(env.url)) ? str(env.url) : undefined,
+            ...present(
+              "url",
+              /^https?:\/\//i.test(str(env.url)) ? str(env.url) : undefined,
+            ),
             isPassword: env.is_password === true,
             advanced: env.advanced === true,
           };
@@ -673,15 +709,20 @@ export function channelsFromApi(raw: unknown): HermesChannelRow[] {
         id,
         name: str(row.name) || prettyName(id),
         enabled: bool(row.enabled, false),
-        configured:
+        ...present(
+          "configured",
           typeof row.configured === "boolean" ? row.configured : undefined,
+        ),
         state:
           str(row.state) || (bool(row.enabled, false) ? "activo" : "apagado"),
-        description: str(row.description) || undefined,
-        error: str(row.error_message) || undefined,
-        docsUrl: /^https?:\/\//i.test(str(row.docs_url))
-          ? str(row.docs_url)
-          : undefined,
+        ...present("description", str(row.description) || undefined),
+        ...present("error", str(row.error_message) || undefined),
+        ...present(
+          "docsUrl",
+          /^https?:\/\//i.test(str(row.docs_url))
+            ? str(row.docs_url)
+            : undefined,
+        ),
         gatewayRunning: row.gateway_running === true,
         envVars,
       };
@@ -697,7 +738,7 @@ export function channelTestFromApi(
   if (typeof row.ok !== "boolean" || !message) return null;
   return {
     ok: row.ok,
-    state: str(row.state).slice(0, 128) || undefined,
+    ...present("state", str(row.state).slice(0, 128) || undefined),
     message,
   };
 }
@@ -734,9 +775,9 @@ export function sessionsFromApi(raw: unknown): HermesSessionRow[] {
       return {
         id,
         title,
-        source: str(rec.source) || undefined,
-        updatedAt: updated || undefined,
-        messages,
+        ...present("source", str(rec.source) || undefined),
+        ...present("updatedAt", updated || undefined),
+        ...present("messages", messages),
         pinned: rec.pinned === true || rec.pinned === 1,
         archived: rec.archived === true || rec.archived === 1,
         unread: rec.unread === true || rec.unread === 1,
@@ -762,8 +803,8 @@ export function sessionMessagesFromApi(raw: unknown): HermesSessionMessage[] {
         id: str(row.id) || `message-${index}`,
         role,
         content: safeMessageContent(row.content),
-        timestamp: stamp(row.timestamp) || undefined,
-        toolName: str(row.tool_name) || undefined,
+        ...present("timestamp", stamp(row.timestamp) || undefined),
+        ...present("toolName", str(row.tool_name) || undefined),
       };
     })
     .filter((message) => message.content || message.toolName);
@@ -801,15 +842,18 @@ export function diagnosticsFromApi(raw: unknown): HermesDiagnostics {
       0,
       64,
     ),
-    version: str(row.version).slice(0, 64) || undefined,
-    gatewayState: str(row.gateway_state).slice(0, 128) || undefined,
+    ...present("version", str(row.version).slice(0, 64) || undefined),
+    ...present(
+      "gatewayState",
+      str(row.gateway_state).slice(0, 128) || undefined,
+    ),
     activeAgents: Number.isFinite(rawAgents)
       ? Math.max(0, Math.min(10_000, Math.trunc(rawAgents)))
       : 0,
     busy: row.gateway_busy === true,
     drainable: row.gateway_drainable === true,
-    updatedAt: stamp(row.updated_at) || undefined,
-    exitReason: str(row.exit_reason).slice(0, 256) || undefined,
+    ...present("updatedAt", stamp(row.updated_at) || undefined),
+    ...present("exitReason", str(row.exit_reason).slice(0, 256) || undefined),
     platforms: platformRows,
   };
 }
@@ -830,15 +874,17 @@ export function pairingList(value: unknown): HermesPairingRow[] {
       const row = asRec(item);
       return {
         platform: str(row.platform) || str(row.id),
-        code: str(row.code) || undefined,
-        requestId: str(row.request_id) || undefined,
-        userId: str(row.user_id) || undefined,
-        user:
+        ...present("code", str(row.code) || undefined),
+        ...present("requestId", str(row.request_id) || undefined),
+        ...present("userId", str(row.user_id) || undefined),
+        ...present(
+          "user",
           str(row.user_name) ||
-          str(row.user) ||
-          str(row.display_name) ||
-          str(row.user_id) ||
-          undefined,
+            str(row.user) ||
+            str(row.display_name) ||
+            str(row.user_id) ||
+            undefined,
+        ),
       };
     })
     .filter((p) => p.platform);
@@ -864,8 +910,11 @@ export function webhooksFromApi(raw: unknown): HermesWebhooksState {
         deliverOnly: rec.deliver_only === true,
         prompt: str(rec.prompt),
         skills,
-        createdAt: stamp(rec.created_at) || undefined,
-        url: /^https?:\/\//i.test(str(rec.url)) ? str(rec.url) : undefined,
+        ...present("createdAt", stamp(rec.created_at) || undefined),
+        ...present(
+          "url",
+          /^https?:\/\//i.test(str(rec.url)) ? str(rec.url) : undefined,
+        ),
         secretSet: rec.secret_set === true,
         enabled: rec.enabled !== false,
       };
@@ -873,9 +922,10 @@ export function webhooksFromApi(raw: unknown): HermesWebhooksState {
     .filter((w) => w.name);
   return {
     enabled: root.enabled === true,
-    baseUrl: /^https?:\/\//i.test(str(root.base_url))
-      ? str(root.base_url)
-      : undefined,
+    ...present(
+      "baseUrl",
+      /^https?:\/\//i.test(str(root.base_url)) ? str(root.base_url) : undefined,
+    ),
     subscriptions,
   };
 }
@@ -898,11 +948,17 @@ export function curatorFromApi(raw: unknown): HermesCuratorStatus | null {
   return {
     enabled: row.enabled,
     paused: row.paused,
-    intervalHours: boundedNumber(row.interval_hours, 0, 24 * 365),
-    lastRunAt: stamp(row.last_run_at) || undefined,
-    minIdleHours: boundedNumber(row.min_idle_hours, 0, 24 * 365),
-    staleAfterDays: boundedNumber(row.stale_after_days, 0, 365_000),
-    archiveAfterDays: boundedNumber(row.archive_after_days, 0, 365_000),
+    ...present("intervalHours", boundedNumber(row.interval_hours, 0, 24 * 365)),
+    ...present("lastRunAt", stamp(row.last_run_at) || undefined),
+    ...present("minIdleHours", boundedNumber(row.min_idle_hours, 0, 24 * 365)),
+    ...present(
+      "staleAfterDays",
+      boundedNumber(row.stale_after_days, 0, 365_000),
+    ),
+    ...present(
+      "archiveAfterDays",
+      boundedNumber(row.archive_after_days, 0, 365_000),
+    ),
   };
 }
 
@@ -946,7 +1002,10 @@ export function projectFromUnknown(item: unknown): HermesProjectRow {
     name: str(rec.name) || prettyName(id),
     slug: str(rec.slug) || id,
     description: str(rec.description),
-    path: str(rec.primary_path) || str(rec.path) || primary?.path || undefined,
+    ...present(
+      "path",
+      str(rec.primary_path) || str(rec.path) || primary?.path || undefined,
+    ),
     folders,
     ...(boardSlug ? { boardSlug } : {}),
     active:

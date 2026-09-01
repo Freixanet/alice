@@ -36,31 +36,29 @@ import {
 
 describe("Pantheon MCP contracts", () => {
   it("bounds catalog data and never forwards unsafe source URLs", () => {
-    expect(
-      mcpCatalogFromApi({
-        entries: [
-          {
-            name: "github",
-            description: "GitHub tools",
-            source: "file:///private/catalog.json",
-            transport: "stdio",
-            auth_type: "oauth",
-            required_env: [
-              { name: "GITHUB_TOKEN", prompt: "Token", required: true },
-            ],
-            command: "uvx",
-            args: ["mcp-github"],
-            installed: false,
-          },
-        ],
-      }),
-    ).toEqual({
+    const result = mcpCatalogFromApi({
+      entries: [
+        {
+          name: "github",
+          description: "GitHub tools",
+          source: "file:///private/catalog.json",
+          transport: "stdio",
+          auth_type: "oauth",
+          required_env: [
+            { name: "GITHUB_TOKEN", prompt: "Token", required: true },
+          ],
+          command: "uvx",
+          args: ["mcp-github"],
+          installed: false,
+        },
+      ],
+    });
+    expect(result).toEqual({
       ok: true,
       diagnostics: [],
       entries: [
         expect.objectContaining({
           name: "github",
-          source: undefined,
           authType: "oauth",
           requiredEnv: [
             { name: "GITHUB_TOKEN", prompt: "Token", required: true },
@@ -68,6 +66,8 @@ describe("Pantheon MCP contracts", () => {
         }),
       ],
     });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.entries[0]).not.toHaveProperty("source");
   });
 
   it("calculates per-request schema cost without trusting client totals", () => {

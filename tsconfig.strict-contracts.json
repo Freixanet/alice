@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "exactOptionalPropertyTypes": true
+  },
+  "include": [
+    "src/lib/abortable-delay.ts",
+    "src/lib/api-contracts.ts",
+    "src/lib/gateway-contracts.ts",
+    "src/lib/hermes-live-parse.ts",
+    "src/lib/hermes-live-types.ts",
+    "src/lib/hermes-model-cache.ts",
+    "src/lib/hermes-operations.ts",
+    "src/lib/hermes-profile.ts",
+    "src/lib/shared-read-cache.ts",
+    "src/lib/sync-contracts.ts",
+    "src/lib/sync-crypto.ts",
+    "src/lib/sync-merge.ts"
+  ]
+}
