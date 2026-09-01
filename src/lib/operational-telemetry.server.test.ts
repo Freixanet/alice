@@ -69,6 +69,15 @@ describe("server operational telemetry", () => {
       outcome: "server_error",
     });
     expect(lines[0]).not.toContain("private database detail");
+    expect(JSON.parse(lines[1] ?? "{}")).toEqual({
+      version: "development",
+      type: "alice_alert",
+      code: "sync_failure",
+      severity: "critical",
+      count: 1,
+      windowMs: 60_000,
+      route: "/api/sync",
+    });
   });
 
   it("samples successes but never samples away HTTP errors", () => {

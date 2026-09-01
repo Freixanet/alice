@@ -26,4 +26,6 @@ and restricts the referrer to the Alice origin.
 
 `tests/e2e/performance.spec.ts` enforces the initial p95 budget of 100 ms for a
 normal Alice API handler, excluding Hermes latency. Every observed API response
-also exposes its Alice overhead through the `Server-Timing` header.
+also exposes its Alice overhead through the `Server-Timing` header. Stable,
+rate-controlled alerts and release verification are specified in
+`docs/release-operations.md`.

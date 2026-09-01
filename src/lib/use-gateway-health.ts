@@ -87,6 +87,13 @@ export function useGatewayHealth() {
       )) {
         setDown(result.error);
       }
+      if (alreadyLive) {
+        void import("./operational-telemetry-client")
+          .then(({ reportClientError }) =>
+            reportClientError("hermes_connection_error"),
+          )
+          .catch(() => undefined);
+      }
       schedule(15_000);
     }
 

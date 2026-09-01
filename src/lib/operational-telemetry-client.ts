@@ -16,7 +16,11 @@ function context() {
 }
 
 export function reportClientError(
-  code: "runtime_error" | "unhandled_rejection" | "route_error",
+  code:
+    | "runtime_error"
+    | "unhandled_rejection"
+    | "route_error"
+    | "hermes_connection_error",
 ): void {
   reportOperationalEvent({
     kind: "client_error",

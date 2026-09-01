@@ -26,6 +26,7 @@ import { Route as AppToolsRouteImport } from './routes/_app/tools'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiHermesRouteImport } from './routes/api/hermes'
 import { Route as ApiPhoneRouteImport } from './routes/api/phone'
+import { Route as ApiStatusRouteImport } from './routes/api/status'
 import { Route as ApiSyncRouteImport } from './routes/api/sync'
 import { Route as ApiTelemetryRouteImport } from './routes/api/telemetry'
 import { Route as AuthCompleteRouteImport } from './routes/auth/complete'
@@ -115,6 +116,11 @@ const ApiPhoneRoute = ApiPhoneRouteImport.update({
   path: '/api/phone',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStatusRoute = ApiStatusRouteImport.update({
+  id: '/api/status',
+  path: '/api/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSyncRoute = ApiSyncRouteImport.update({
   id: '/api/sync',
   path: '/api/sync',
@@ -153,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/api/chat': typeof ApiChatRoute
   '/api/hermes': typeof ApiHermesRoute
   '/api/phone': typeof ApiPhoneRoute
+  '/api/status': typeof ApiStatusRoute
   '/api/sync': typeof ApiSyncRoute
   '/api/telemetry': typeof ApiTelemetryRoute
   '/auth/complete': typeof AuthCompleteRoute
@@ -174,6 +181,7 @@ export interface FileRoutesByTo {
   '/api/chat': typeof ApiChatRoute
   '/api/hermes': typeof ApiHermesRoute
   '/api/phone': typeof ApiPhoneRoute
+  '/api/status': typeof ApiStatusRoute
   '/api/sync': typeof ApiSyncRoute
   '/api/telemetry': typeof ApiTelemetryRoute
   '/auth/complete': typeof AuthCompleteRoute
@@ -198,6 +206,7 @@ export interface FileRoutesById {
   '/api/chat': typeof ApiChatRoute
   '/api/hermes': typeof ApiHermesRoute
   '/api/phone': typeof ApiPhoneRoute
+  '/api/status': typeof ApiStatusRoute
   '/api/sync': typeof ApiSyncRoute
   '/api/telemetry': typeof ApiTelemetryRoute
   '/auth/complete': typeof AuthCompleteRoute
@@ -223,6 +232,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/hermes'
     | '/api/phone'
+    | '/api/status'
     | '/api/sync'
     | '/api/telemetry'
     | '/auth/complete'
@@ -244,6 +254,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/hermes'
     | '/api/phone'
+    | '/api/status'
     | '/api/sync'
     | '/api/telemetry'
     | '/auth/complete'
@@ -267,6 +278,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/hermes'
     | '/api/phone'
+    | '/api/status'
     | '/api/sync'
     | '/api/telemetry'
     | '/auth/complete'
@@ -280,6 +292,7 @@ export interface RootRouteChildren {
   ApiChatRoute: typeof ApiChatRoute
   ApiHermesRoute: typeof ApiHermesRoute
   ApiPhoneRoute: typeof ApiPhoneRoute
+  ApiStatusRoute: typeof ApiStatusRoute
   ApiSyncRoute: typeof ApiSyncRoute
   ApiTelemetryRoute: typeof ApiTelemetryRoute
   AuthCompleteRoute: typeof AuthCompleteRoute
@@ -407,6 +420,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPhoneRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/status': {
+      id: '/api/status'
+      path: '/api/status'
+      fullPath: '/api/status'
+      preLoaderRoute: typeof ApiStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/sync': {
       id: '/api/sync'
       path: '/api/sync'
@@ -476,6 +496,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChatRoute: ApiChatRoute,
   ApiHermesRoute: ApiHermesRoute,
   ApiPhoneRoute: ApiPhoneRoute,
+  ApiStatusRoute: ApiStatusRoute,
   ApiSyncRoute: ApiSyncRoute,
   ApiTelemetryRoute: ApiTelemetryRoute,
   AuthCompleteRoute: AuthCompleteRoute,

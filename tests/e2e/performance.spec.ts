@@ -57,6 +57,28 @@ test("telemetry ingestion accepts only the anonymous contract", async ({
   });
 });
 
+test("release identity is consistent and never cached", async ({
+  request,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium");
+  const response = await request.get("/api/status");
+  expect(response.ok()).toBe(true);
+  expect(response.headers()["cache-control"]).toContain("no-store");
+  const payload = await response.json();
+  expect(payload).toEqual({
+    status: "ok",
+    release: {
+      version: expect.any(String),
+      environment: expect.stringMatching(/^(development|preview|production)$/),
+      source: expect.stringMatching(/^(local|vercel)$/),
+    },
+  });
+  expect(response.headers()["x-alice-version"]).toBe(payload.release.version);
+  expect(response.headers()["x-alice-environment"]).toBe(
+    payload.release.environment,
+  );
+});
+
 test("a 500-message conversation keeps a bounded DOM while remaining scrollable", async ({
   page,
 }, testInfo) => {

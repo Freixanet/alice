@@ -1,7 +1,14 @@
 import type { ClientOperationalEvent } from "./operational-telemetry";
+import { OperationalAlertMonitor } from "./operational-alerts.server";
+import { appendReleaseHeaders, releaseMetadata } from "./release.server";
 
 export type ApiRoute =
-  "/api/chat" | "/api/hermes" | "/api/phone" | "/api/sync" | "/api/telemetry";
+  | "/api/chat"
+  | "/api/hermes"
+  | "/api/phone"
+  | "/api/status"
+  | "/api/sync"
+  | "/api/telemetry";
 
 export type ServerRequestOutcome =
   | "ok"
@@ -27,16 +34,9 @@ type Sink = (line: string) => void;
 const SUCCESS_SAMPLE_RATE = 0.1;
 const MAX_EVENTS_PER_WINDOW = 600;
 const EVENT_WINDOW_MS = 60_000;
+const alertMonitor = new OperationalAlertMonitor();
 
 let eventWindow = { startedAt: 0, count: 0 };
-
-function deploymentVersion(): string {
-  return (
-    process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ||
-    process.env.ALICE_VERSION?.slice(0, 32) ||
-    "development"
-  );
-}
 
 export function serverRequestOutcome(
   status: number,
@@ -76,6 +76,7 @@ export function consumeOperationalEventCapacity(now = Date.now()): boolean {
 
 export function resetOperationalEventCapacityForTest(): void {
   eventWindow = { startedAt: 0, count: 0 };
+  alertMonitor.reset();
 }
 
 export function recordOperationalEvent(
@@ -89,18 +90,27 @@ export function recordOperationalEvent(
   ) {
     return;
   }
-  (sink ?? console.info)(
+  const output = sink ?? console.info;
+  const release = releaseMetadata();
+  output(
     JSON.stringify({
       type: "alice_operational",
-      version: deploymentVersion(),
+      version: release.version,
       ...event,
     }),
   );
+  const alert = alertMonitor.observe(event);
+  if (alert) {
+    const alertOutput =
+      sink ?? (alert.severity === "critical" ? console.error : console.warn);
+    alertOutput(JSON.stringify({ version: release.version, ...alert }));
+  }
 }
 
 function withServerTiming(response: Response, latencyMs: number): Response {
   const headers = new Headers(response.headers);
   headers.append("Server-Timing", `alice;dur=${latencyMs}`);
+  appendReleaseHeaders(headers);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

@@ -31,6 +31,7 @@
     "design:check": "node scripts/check-design-system.mjs",
     "bundles:check": "node scripts/check-bundle-budgets.mjs",
     "security:check": "npm audit --audit-level=high",
+    "release:verify": "node scripts/verify-release.mjs",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run cycles:check && npm run duplicates:check && npm run design:check && npm run build:ci && npm run bundles:check"
   },
   "dependencies": {

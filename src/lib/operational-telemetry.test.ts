@@ -8,6 +8,17 @@ import {
 } from "./operational-telemetry";
 
 describe("operational telemetry privacy contract", () => {
+  it("accepts only a closed Hermes connection regression code", () => {
+    expect(
+      clientOperationalEventSchema.safeParse({
+        kind: "client_error",
+        route: "/",
+        browser: "safari",
+        viewport: "narrow",
+        code: "hermes_connection_error",
+      }).success,
+    ).toBe(true);
+  });
   it("normalizes routes without retaining paths, queries or fragments", () => {
     expect(normalizeOperationalRoute("/skills?query=secret#result")).toBe(
       "/skills",

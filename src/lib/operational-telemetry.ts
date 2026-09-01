@@ -48,7 +48,12 @@ export const clientOperationalEventSchema = z.union([
   z.strictObject({
     kind: z.literal("client_error"),
     ...clientContextSchema,
-    code: z.enum(["runtime_error", "unhandled_rejection", "route_error"]),
+    code: z.enum([
+      "runtime_error",
+      "unhandled_rejection",
+      "route_error",
+      "hermes_connection_error",
+    ]),
   }),
   z.strictObject({
     kind: z.literal("web_vital"),
