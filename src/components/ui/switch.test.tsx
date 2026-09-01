@@ -9,14 +9,14 @@ import { Switch } from "./switch";
 afterEach(cleanup);
 
 describe("Switch", () => {
-  it("uses the shared surface radius and preserves switch behavior", async () => {
+  it("keeps a circular thumb and preserves switch behavior", async () => {
     const user = userEvent.setup();
     const { container } = render(<Switch aria-label="Notifications" />);
     const control = screen.getByRole("switch", { name: "Notifications" });
     const thumb = container.querySelector(".alice-switch-thumb");
 
-    expect(thumb).toHaveClass("rounded-md");
-    expect(thumb).not.toHaveClass("rounded-full");
+    expect(thumb).toHaveClass("rounded-full");
+    expect(thumb).not.toHaveClass("rounded-md");
     expect(control).toHaveAttribute("aria-checked", "false");
 
     await user.click(control);

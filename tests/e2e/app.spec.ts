@@ -105,6 +105,70 @@ test("mobile interactive targets are at least 44px", async ({ page }) => {
   expect(violations).toEqual([]);
 });
 
+test("core chat geometry stays aligned at every target viewport", async ({
+  page,
+}) => {
+  for (const viewport of [
+    { width: 320, height: 700 },
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await waitForAlice(page);
+
+    const geometry = await page.evaluate(() => {
+      const bounds = (selector: string) => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return {
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+          center: rect.left + rect.width / 2,
+        };
+      };
+      return {
+        viewportWidth: window.innerWidth,
+        horizontalOverflow:
+          document.documentElement.scrollWidth > window.innerWidth,
+        main: bounds("#alice-main-content"),
+        empty: bounds(".alice-empty-state"),
+        composer: bounds(".alice-composer"),
+        toggle: bounds('[aria-controls="alice-mobile-sidebar"]'),
+      };
+    });
+
+    expect(geometry.horizontalOverflow).toBe(false);
+    expect(geometry.main).not.toBeNull();
+    expect(geometry.empty).not.toBeNull();
+    expect(geometry.composer).not.toBeNull();
+    expect(
+      Math.abs(geometry.empty!.center - geometry.main!.center),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(geometry.composer!.center - geometry.main!.center),
+    ).toBeLessThanOrEqual(1);
+    expect(geometry.composer!.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.composer!.right).toBeLessThanOrEqual(
+      geometry.viewportWidth,
+    );
+
+    if (viewport.width < 768) {
+      expect(geometry.composer!.left).toBeCloseTo(16, 0);
+      expect(geometry.viewportWidth - geometry.composer!.right).toBeCloseTo(
+        16,
+        0,
+      );
+      expect(geometry.toggle?.width).toBeGreaterThanOrEqual(44);
+    } else {
+      expect(geometry.composer!.width).toBeLessThanOrEqual(624);
+      expect(geometry.toggle?.width ?? 0).toBe(0);
+    }
+  }
+});
+
 test("keyboard users can skip directly to the main content", async ({
   page,
   browserName,
@@ -169,6 +233,20 @@ test("mobile settings is modal, focus-trapped and accessible", async ({
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveAttribute("aria-modal", "true");
+  const sectionBounds = await page
+    .locator('[id^="settings-section-"]')
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      }),
+    );
+  const viewportWidth = page.viewportSize()?.width ?? 390;
+  expect(
+    sectionBounds.every(
+      ({ left, right }) => left >= 0 && right <= viewportWidth,
+    ),
+  ).toBe(true);
   await expect
     .poll(() =>
       dialog.evaluate((element) => element.contains(document.activeElement)),

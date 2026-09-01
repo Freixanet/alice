@@ -4,6 +4,8 @@ const baseURL = "http://127.0.0.1:8091";
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  snapshotPathTemplate:
+    "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}",
   fullyParallel: true,
   workers: 4,
   forbidOnly: Boolean(process.env.CI),
@@ -30,16 +32,31 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testIgnore: /visual\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         ...(process.env.CI ? {} : { channel: "chrome" }),
       },
     },
-    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
-    { name: "webkit", use: { ...devices["Desktop Safari"] } },
+    {
+      name: "firefox",
+      testIgnore: /visual\.spec\.ts/,
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      testIgnore: /visual\.spec\.ts/,
+      use: { ...devices["Desktop Safari"] },
+    },
     {
       name: "mobile-webkit",
+      testIgnore: /visual\.spec\.ts/,
       use: { ...devices["iPhone 13"], viewport: { width: 390, height: 844 } },
+    },
+    {
+      name: "visual-chromium",
+      testMatch: /visual\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
     },
   ],
 });

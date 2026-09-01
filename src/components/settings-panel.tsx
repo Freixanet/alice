@@ -156,7 +156,7 @@ export function SettingsDialog({
               />
             </div>
           </div>
-          <ul className="flex shrink-0 gap-1 overflow-x-auto pb-1 md:min-h-0 md:flex-1 md:flex-col md:gap-0.5 md:overflow-y-auto md:pb-0">
+          <ul className="grid shrink-0 grid-cols-2 gap-1 md:min-h-0 md:flex md:flex-1 md:flex-col md:gap-0.5 md:overflow-y-auto">
             {filtered.length === 0 ? (
               <li className="px-2.5 py-2 text-sm text-muted-foreground">
                 {t("settings.noMatch")}
@@ -165,14 +165,14 @@ export function SettingsDialog({
               filtered.map((s) => {
                 const on = s.id === current?.id;
                 return (
-                  <li key={s.id} className="shrink-0 md:shrink">
+                  <li key={s.id} className="min-w-0 md:shrink">
                     <button
                       id={`settings-section-${s.id}`}
                       type="button"
                       aria-current={on ? "page" : undefined}
                       onClick={() => setSectionId(s.id)}
                       className={cn(
-                        "flex w-full items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-left text-sm",
+                        "flex min-h-11 w-full min-w-0 items-center gap-2 whitespace-nowrap rounded-lg px-2 py-2 text-left text-sm md:min-h-0 md:gap-2.5 md:px-2.5",
                         on
                           ? "bg-accent text-foreground"
                           : "text-foreground/80 hover:bg-accent hover:text-foreground",
