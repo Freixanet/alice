@@ -53,13 +53,19 @@ struct MessageRow: View {
     }
 }
 
+/// The row of things you can do with a finished reply.
+///
+/// Glyphs chosen to match what a reader coming from another model client
+/// expects: overlapping squares for copy, the tray-and-arrow iOS share, a
+/// speaker for reading aloud, and the two-arrow cycle for another attempt.
 private struct MessageActions: View {
     @Environment(AppStore.self) private var store
+    @Environment(ReadAloud.self) private var speech
     let message: Message
     @State private var copied = false
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 20) {
             Button {
                 UIPasteboard.general.string = message.content
                 copied = true
@@ -68,7 +74,7 @@ private struct MessageActions: View {
                     copied = false
                 }
             } label: {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                Image(systemName: copied ? "checkmark" : "square.on.square")
                     .contentTransition(.symbolEffect(.replace))
             }
             .accessibilityLabel(copied ? "Copied" : "Copy")
@@ -79,17 +85,30 @@ private struct MessageActions: View {
             .accessibilityLabel("Share")
 
             Button {
+                speech.toggle(message.content, id: message.id)
+            } label: {
+                Image(
+                    systemName: speech.isSpeaking(message.id)
+                        ? "speaker.slash" : "speaker.wave.2"
+                )
+                .contentTransition(.symbolEffect(.replace))
+            }
+            .accessibilityLabel(
+                speech.isSpeaking(message.id) ? "Stop reading" : "Read aloud"
+            )
+
+            Button {
                 store.retry(message.id)
             } label: {
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: "arrow.triangle.2.circlepath")
             }
             .disabled(store.isSending)
             .accessibilityLabel("Try again")
         }
-        .font(.system(size: 15))
+        .font(.system(size: 16))
         .foregroundStyle(.secondary)
         .buttonStyle(.plain)
-        .padding(.top, 2)
+        .padding(.top, 4)
     }
 }
 
