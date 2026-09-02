@@ -154,13 +154,16 @@ struct AttachmentChips: View {
                         }
                 }
             }
-            // Lined up with the text field's own inset. The remove button
-            // lives inside the square, so the row claims no margin of its own
-            // to hold it.
-            .padding(.horizontal, 4)
+            .padding(.trailing, 4)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
+        // The composer insets its contents by 16 across and 12 down, which
+        // left the squares 20pt from its left edge and 12 from its top — a
+        // corner that read as lopsided. Pulling back against those insets sets
+        // both to 8. The text stays where it is; only this row moves.
+        .padding(.leading, -8)
+        .padding(.top, -4)
     }
 
     @ViewBuilder
