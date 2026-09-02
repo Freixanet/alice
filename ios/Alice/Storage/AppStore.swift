@@ -73,9 +73,12 @@ final class AppStore {
         static let conversations = "alice.conversations"
         static let dashboard = "alice.dashboard"
         static let dashboardUser = "alice.dashboard.user"
+        static let marks = "alice.bot.marks"
     }
 
     init() {
+        botMarks = (defaults.data(forKey: Keys.marks))
+            .flatMap { try? JSONDecoder().decode([String: BotMark].self, from: $0) } ?? [:]
         if let raw = defaults.string(forKey: Keys.theme),
            let value = ThemeChoice(rawValue: raw) { theme = value }
         dashboardURL = defaults.string(forKey: Keys.dashboard) ?? ""
@@ -305,6 +308,29 @@ final class AppStore {
     }
 
     func bots() async throws -> [BotRow] { try await dashboard.bots() }
+    func routines(for bot: String) async throws -> [JobRow] {
+        try await dashboard.routines(for: bot)
+    }
+    func exportBot(_ name: String) async throws -> String? {
+        try await dashboard.exportBot(name)
+    }
+    func renameBot(_ name: String, to newName: String) async throws {
+        try await dashboard.rename(name, to: newName)
+    }
+
+    /// How each bot's mark looks. Hermes stores no such thing, so it lives on
+    /// the phone: losing it costs a colour, not a bot.
+    var botMarks: [String: BotMark] {
+        didSet {
+            if let data = try? JSONEncoder().encode(botMarks) {
+                defaults.set(data, forKey: Keys.marks)
+            }
+        }
+    }
+
+    func mark(for name: String) -> BotMark {
+        botMarks[name] ?? BotMark.derived(from: name)
+    }
     func soul(_ name: String) async throws -> (text: String, exists: Bool) {
         try await dashboard.soul(name)
     }

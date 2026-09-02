@@ -261,6 +261,45 @@ extension DashboardClient {
         try await send("DELETE", "api/profiles/\(name)")
     }
 
+    /// The scheduled jobs belonging to one bot.
+    ///
+    /// The dashboard's copy of the cron list carries a `profile` on each job,
+    /// which the gateway's does not — so this is the only place a routine can
+    /// be tied to the bot that owns it.
+    func routines(for profile: String) async throws -> [JobRow] {
+        let object = try await get("api/cron/jobs")
+        let rows = (object["jobs"] as? [[String: Any]]) ?? []
+        return rows.compactMap { row in
+            guard (row["profile"] as? String) == profile,
+                  let id = row["id"] as? String
+            else { return nil }
+            let schedule = row["schedule"] as? [String: Any]
+            return JobRow(
+                id: id,
+                name: (row["name"] as? String) ?? id,
+                prompt: (row["prompt"] as? String) ?? "",
+                schedule: (row["schedule_display"] as? String)
+                    ?? (schedule?["display"] as? String)
+                    ?? (schedule?["expr"] as? String) ?? "",
+                enabled: (row["enabled"] as? Bool) ?? false,
+                lastStatus: row["last_status"] as? String,
+                lastError: (row["last_error"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                lastRun: HermesClient.date(row["last_run_at"]),
+                nextRun: HermesClient.date(row["next_run_at"])
+            )
+        }
+    }
+
+    /// Writes the bot out as a shareable template and reports where it landed.
+    func exportBot(_ name: String) async throws -> String? {
+        let object = try await send("POST", "api/profiles/\(name)/export")
+        return (object["path"] as? String) ?? (object["file"] as? String)
+    }
+
+    func rename(_ name: String, to newName: String) async throws {
+        try await send("PATCH", "api/profiles/\(name)", ["new_name": newName])
+    }
+
     func projects() async throws -> [ProjectRow] {
         let object = try await get("api/profiles/projects/tree")
         let rows = (object["projects"] as? [[String: Any]]) ?? []

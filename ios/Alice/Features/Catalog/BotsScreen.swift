@@ -2,10 +2,9 @@ import SwiftUI
 
 /// The agent's other selves.
 ///
-/// A bot in Hermes is not a separate kind of thing — it is a profile with its
-/// own standing instructions, model, skills and sessions. Everything the
-/// desktop client shows under Bot Mode is that, which is why it can be shown
-/// here from the same three endpoints.
+/// A bot in Hermes is not a separate kind of thing: it is a profile with its
+/// own standing instructions, model, skills and sessions. What the desktop
+/// client shows under Bot Mode is that, and so is this.
 struct BotsScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -14,8 +13,6 @@ struct BotsScreen: View {
     @State private var failure: String?
     @State private var loading = false
     @State private var creating = false
-    @State private var newName = ""
-    @State private var newDetail = ""
 
     var body: some View {
         Group {
@@ -44,26 +41,29 @@ struct BotsScreen: View {
                     .accessibilityLabel("New bot")
             }
         }
-        .sheet(isPresented: $creating) { createSheet }
+        .sheet(isPresented: $creating) {
+            NewBotSheet { await load() }
+        }
         .task { await load() }
         .refreshable { await load() }
     }
 
     private var list: some View {
-        List {
-            ForEach(rows) { bot in
-                NavigationLink {
-                    BotDetail(bot: bot, onChange: { Task { await load() } })
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
+        List(rows) { bot in
+            NavigationLink {
+                BotDetail(bot: bot, onChange: { Task { await load() } })
+            } label: {
+                HStack(spacing: 12) {
+                    BotMarkView(mark: store.mark(for: bot.name), size: 34)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
                             Text(bot.displayName)
                                 .font(.subheadline.weight(.medium))
                                 .lineLimit(1)
                             if bot.active {
                                 Text("Active")
                                     .font(.caption2)
-                                    .padding(.horizontal, 7)
+                                    .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(
                                         store.accent.primary(scheme).opacity(0.18),
@@ -84,10 +84,10 @@ struct BotsScreen: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 2)
                 }
-                .listRowBackground(Palette.card(scheme))
+                .padding(.vertical, 3)
             }
+            .listRowBackground(Palette.card(scheme))
         }
     }
 
@@ -95,63 +95,70 @@ struct BotsScreen: View {
         var parts: [String] = []
         if let model = bot.model { parts.append(model) }
         parts.append(bot.skills == 1 ? "1 skill" : "\(bot.skills) skills")
-        if bot.isDefault { parts.append("default") }
         return parts.joined(separator: " · ")
-    }
-
-    private var createSheet: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Name", text: $newName)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("What it is for", text: $newDetail, axis: .vertical)
-                        .lineLimit(2...5)
-                } footer: {
-                    Text("A new profile with its own memory, sessions and standing instructions.")
-                }
-            }
-            .navigationTitle("New bot")
-            .navigationBarTitleDisplayMode(.inline)
-            .scrollContentBackground(.hidden)
-            .background(Palette.background(scheme))
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { creating = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        Task {
-                            do {
-                                try await store.createBot(
-                                    name: newName.trimmingCharacters(in: .whitespaces),
-                                    description: newDetail
-                                )
-                                newName = ""; newDetail = ""
-                                creating = false
-                                await load()
-                            } catch {
-                                failure = describe(error)
-                                creating = false
-                            }
-                        }
-                    }
-                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        }
     }
 
     private func load() async {
         loading = true
         defer { loading = false }
         do { rows = try await store.bots(); failure = nil }
-        catch { failure = describe(error) }
+        catch { failure = describeBotError(error) }
     }
 }
 
-/// One bot: what it is told to be, and what it is running on.
+/// The mark pickers, shared by the detail screen and the create sheet.
+struct MarkPicker: View {
+    @Environment(\.colorScheme) private var scheme
+    @Binding var mark: BotMark
+
+    var body: some View {
+        VStack(spacing: 14) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
+                ForEach(BotMark.colours.indices, id: \.self) { index in
+                    Button { mark.colour = index } label: {
+                        Circle()
+                            .fill(BotMark.colours[index])
+                            .frame(width: 30, height: 30)
+                            .overlay {
+                                Circle().strokeBorder(
+                                    Color.primary,
+                                    lineWidth: mark.colour == index ? 2 : 0
+                                )
+                                .padding(-3)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 0) {
+                ForEach(BotMark.Silhouette.allCases, id: \.rawValue) { shape in
+                    Button { mark.shape = shape.rawValue } label: {
+                        BotMarkView(
+                            mark: BotMark(colour: mark.colour, shape: shape.rawValue),
+                            size: 24
+                        )
+                        .frame(maxWidth: .infinity)
+                        .overlay {
+                            Circle().strokeBorder(
+                                Color.primary,
+                                lineWidth: mark.shape == shape.rawValue ? 2 : 0
+                            )
+                            .frame(width: 34, height: 34)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+
+/// One bot: what it is told to be, what it runs on, and what it does on its
+/// own schedule.
 private struct BotDetail: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -159,28 +166,87 @@ private struct BotDetail: View {
     let bot: BotRow
     let onChange: () -> Void
 
-    @State private var soul = ""
-    @State private var soulExists = false
-    @State private var editing = false
+    @State private var mark = BotMark(colour: 0, shape: 0)
+    @State private var name = ""
+    @State private var detail = ""
+    @State private var routines: [JobRow] = []
+    @State private var editingSoul = false
     @State private var busy = false
     @State private var failure: String?
+    @State private var exported: String?
 
     var body: some View {
         Form {
-            Section("Standing instructions") {
-                if editing {
-                    TextEditor(text: $soul)
-                        .frame(minHeight: 220)
-                        .font(.callout)
-                        .listRowBackground(Palette.card(scheme))
-                } else if soul.isEmpty {
-                    Text(soulExists ? "Empty." : "This bot has no SOUL yet.")
+            Section {
+                VStack(spacing: 14) {
+                    BotMarkView(mark: mark, size: 84)
+                    TextField("Name", text: $name)
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                        .onSubmit { commitName() }
+                    Divider()
+                    TextField("Title (optional)", text: $detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .onSubmit { commitDetail() }
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Palette.card(scheme))
+            }
+
+            Section {
+                MarkPicker(mark: $mark)
+                    .listRowBackground(Palette.card(scheme))
+                Button("Reset to default") {
+                    mark = BotMark.derived(from: bot.name)
+                }
+                .listRowBackground(Palette.card(scheme))
+            } header: {
+                Text("Character")
+            } footer: {
+                Text("Kept on this phone. Hermes has no field for a colour.")
+            }
+
+            Section {
+                Button { editingSoul = true } label: {
+                    HStack {
+                        Label("Instructions", systemImage: "doc.text")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Palette.card(scheme))
+            }
+
+            Section("Routines") {
+                if routines.isEmpty {
+                    Text("No routines yet")
                         .foregroundStyle(.secondary)
                         .listRowBackground(Palette.card(scheme))
                 } else {
-                    Text(soul)
-                        .font(.callout)
+                    ForEach(routines) { routine in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(routine.enabled
+                                          ? (routine.lastStatus == "error" ? .red : .green)
+                                          : .secondary.opacity(0.5))
+                                    .frame(width: 6, height: 6)
+                                Text(routine.name).font(.subheadline).lineLimit(1)
+                            }
+                            if !routine.schedule.isEmpty {
+                                Text(routine.schedule)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                         .listRowBackground(Palette.card(scheme))
+                    }
                 }
             }
 
@@ -202,19 +268,11 @@ private struct BotDetail: View {
                     }
                     .listRowBackground(Palette.card(scheme))
                 }
-                if !bot.isDefault {
-                    Button("Delete this bot", role: .destructive) {
-                        act {
-                            try await store.deleteBot(bot.name)
-                        } then: {
-                            dismiss()
-                        }
-                    }
-                    .listRowBackground(Palette.card(scheme))
-                }
             } footer: {
                 if let failure {
                     Text(failure).foregroundStyle(.red)
+                } else if let exported {
+                    Text("Written to \(exported)").foregroundStyle(.secondary)
                 }
             }
         }
@@ -226,26 +284,58 @@ private struct BotDetail: View {
             ToolbarItem(placement: .primaryAction) {
                 if busy {
                     ProgressView()
-                } else if editing {
-                    Button("Save") {
-                        act { try await store.setSoul(bot.name, soul) } then: {
-                            editing = false
-                        }
-                    }
                 } else {
-                    Button("Edit") { editing = true }
+                    Menu {
+                        Button("Share as template", systemImage: "square.and.arrow.up") {
+                            act { exported = try await store.exportBot(bot.name) }
+                        }
+                        Button("Copy name", systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = bot.name
+                        }
+                        if !bot.isDefault {
+                            Divider()
+                            Button("Delete Bot", systemImage: "trash", role: .destructive) {
+                                act { try await store.deleteBot(bot.name) } then: { dismiss() }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
                 }
             }
         }
-        .task {
-            do {
-                let result = try await store.soul(bot.name)
-                soul = result.text
-                soulExists = result.exists
-            } catch {
-                failure = describe(error)
-            }
+        .sheet(isPresented: $editingSoul) {
+            SoulEditor(bot: bot.name)
         }
+        // Only a real change is worth storing. Assigning on appear would file
+        // the derived mark the moment you opened a bot, freezing a colour
+        // nobody picked.
+        .onChange(of: mark) {
+            guard mark != store.mark(for: bot.name) else { return }
+            store.botMarks[bot.name] = mark
+        }
+        .task {
+            mark = store.mark(for: bot.name)
+            name = bot.displayName
+            detail = bot.detail
+            routines = (try? await store.routines(for: bot.name)) ?? []
+        }
+    }
+
+    private func commitName() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard trimmed != bot.name, !trimmed.isEmpty else { return }
+        act {
+            try await store.renameBot(bot.name, to: trimmed)
+            // The mark is filed under the name, so it moves with it.
+            store.botMarks[trimmed] = store.mark(for: bot.name)
+            store.botMarks[bot.name] = nil
+        }
+    }
+
+    private func commitDetail() {
+        guard detail != bot.detail else { return }
+        act { try await store.setBotDescription(bot.name, detail) }
     }
 
     private func act(
@@ -261,12 +351,158 @@ private struct BotDetail: View {
                 onChange()
                 finish()
             } catch {
-                failure = describe(error)
+                failure = describeBotError(error)
             }
         }
     }
 }
 
-private func describe(_ error: Error) -> String {
+/// The SOUL, given the screen. It is prose, often long, and editing it in a
+/// form row means reading it through a letterbox.
+private struct SoulEditor: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+    let bot: String
+
+    @State private var text = ""
+    @State private var loaded = false
+    @State private var saving = false
+    @State private var failure: String?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if loaded {
+                    TextEditor(text: $text)
+                        .font(.callout)
+                        .padding(.horizontal, 12)
+                        .scrollContentBackground(.hidden)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .background(Palette.background(scheme))
+            .navigationTitle("Instructions")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if saving {
+                        ProgressView()
+                    } else {
+                        Button("Save") {
+                            saving = true
+                            Task {
+                                defer { saving = false }
+                                do {
+                                    try await store.setSoul(bot, text)
+                                    dismiss()
+                                } catch {
+                                    failure = describeBotError(error)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .alert("Could not save", isPresented: .constant(failure != nil)) {
+                Button("OK") { failure = nil }
+            } message: {
+                Text(failure ?? "")
+            }
+            .task {
+                text = ((try? await store.soul(bot))?.text) ?? ""
+                loaded = true
+            }
+        }
+    }
+}
+
+private struct NewBotSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+    let onCreated: () async -> Void
+
+    @State private var name = ""
+    @State private var detail = ""
+    @State private var mark = BotMark(colour: 0, shape: 0)
+    @State private var busy = false
+    @State private var failure: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    VStack(spacing: 16) {
+                        BotMarkView(mark: mark, size: 84)
+                        TextField("Name your bot", text: $name)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Palette.card(scheme))
+                }
+
+                Section {
+                    TextField("What it is for", text: $detail, axis: .vertical)
+                        .lineLimit(2...4)
+                        .listRowBackground(Palette.card(scheme))
+                } footer: {
+                    Text("A new profile with its own memory, sessions and standing instructions.")
+                }
+
+                Section("Character") {
+                    MarkPicker(mark: $mark)
+                        .listRowBackground(Palette.card(scheme))
+                }
+
+                if let failure {
+                    Section { Text(failure).foregroundStyle(.red) }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Palette.background(scheme))
+            .navigationTitle("Create New Bot")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if busy {
+                        ProgressView()
+                    } else {
+                        Button("Create") { create() }
+                            .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+        }
+    }
+
+    private func create() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await store.createBot(name: trimmed, description: detail)
+                store.botMarks[trimmed] = mark
+                await onCreated()
+                dismiss()
+            } catch {
+                failure = describeBotError(error)
+            }
+        }
+    }
+}
+
+private func describeBotError(_ error: Error) -> String {
     (error as? LocalizedError)?.errorDescription ?? "The dashboard did not answer."
 }
