@@ -34,15 +34,14 @@ struct ChatScreen: View {
                     Button {
                         store.newChat()
                     } label: {
-                        // `square.and.pencil` puts its square low-left and
-                        // runs the pencil past the top-right of the glyph box,
-                        // so centring that box leaves the ink low and right.
-                        // Measured against the button: +1.17pt across, +0.83pt
-                        // down. This puts it back.
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 17))
-                            .frame(width: 28, height: 28)
-                            .offset(x: -1.2, y: -0.8)
+                        // `square.and.pencil` cannot sit straight in a round
+                        // button: its square holds the visual mass low-left
+                        // while the pencil runs a thin diagonal past the
+                        // top-right, so centring the ink's bounding box —
+                        // which measures as centred — still reads as tilted.
+                        // A symmetric glyph has no such argument with itself.
+                        Image(systemName: "plus")
+                            .font(.system(size: 18, weight: .medium))
                     }
                     .accessibilityLabel("New chat")
                 }

@@ -41,7 +41,8 @@ struct Sidebar: View {
                     store.newChat()
                     onDismiss()
                 } label: {
-                    Image(systemName: "square.and.pencil")
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .medium))
                         .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.glass)
