@@ -140,7 +140,7 @@ struct AttachmentChips: View {
     let attachments: [Attachment]
     let onRemove: (Attachment) -> Void
 
-    private let tile: CGFloat = 68
+    private let tile: CGFloat = 84
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -148,7 +148,7 @@ struct AttachmentChips: View {
                 ForEach(attachments) { attachment in
                     preview(attachment)
                         .frame(width: tile, height: tile)
-                        .clipShape(.rect(cornerRadius: 14))
+                        .clipShape(.rect(cornerRadius: 16))
                         .overlay(alignment: .topTrailing) {
                             remove(attachment).padding(5)
                         }
@@ -172,16 +172,24 @@ struct AttachmentChips: View {
         } else {
             VStack(spacing: 5) {
                 Image(systemName: "doc")
-                    .font(.system(size: 21, weight: .light))
+                    .font(.system(size: 25, weight: .light))
                 Text(attachment.name)
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 5)
+            .padding(.horizontal, 6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.muted(scheme).opacity(0.8))
+            // Full strength, and edged. At 0.8 over the composer's glass this
+            // fill landed three levels from the background: the same 68pt
+            // square as a photo, measured, but with its corners fading out it
+            // read as the smaller of the two.
+            .background(Palette.muted(scheme))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Palette.border(scheme).opacity(0.35), lineWidth: 0.5)
+            )
         }
     }
 
