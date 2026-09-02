@@ -140,7 +140,7 @@ struct AttachmentChips: View {
     let attachments: [Attachment]
     let onRemove: (Attachment) -> Void
 
-    private let tile: CGFloat = 100
+    private let tile: CGFloat = 120
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -148,9 +148,9 @@ struct AttachmentChips: View {
                 ForEach(attachments) { attachment in
                     preview(attachment)
                         .frame(width: tile, height: tile)
-                        .clipShape(.rect(cornerRadius: 18))
+                        .clipShape(.rect(cornerRadius: 20))
                         .overlay(alignment: .topTrailing) {
-                            remove(attachment).padding(5)
+                            remove(attachment).padding(6)
                         }
                 }
             }
@@ -173,11 +173,11 @@ struct AttachmentChips: View {
                 .resizable()
                 .scaledToFill()
         } else {
-            VStack(spacing: 6) {
+            VStack(spacing: 7) {
                 Image(systemName: "doc")
-                    .font(.system(size: 30, weight: .light))
+                    .font(.system(size: 34, weight: .light))
                 Text(attachment.name)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -190,7 +190,7 @@ struct AttachmentChips: View {
             // read as the smaller of the two.
             .background(Palette.muted(scheme))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .strokeBorder(Palette.border(scheme).opacity(0.35), lineWidth: 0.5)
             )
         }
@@ -201,13 +201,15 @@ struct AttachmentChips: View {
             onRemove(attachment)
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .bold))
-                // A material rather than a fixed colour: sitting on top of an
-                // arbitrary photo, a flat circle is legible over some pictures
-                // and invisible over others.
-                .foregroundStyle(.primary)
-                .frame(width: 22, height: 22)
-                .background(.ultraThinMaterial, in: .circle)
+                .font(.system(size: 11, weight: .bold))
+                // Fixed dark-on-white rather than anything that follows the
+                // theme. This badge sits on top of a photograph, which has a
+                // brightness of its own; a material took the page's cue
+                // instead and went pale on pale in the light theme. Dark and
+                // opaque reads on any picture, and reads the same in both.
+                .foregroundStyle(.white)
+                .frame(width: 24, height: 24)
+                .background(Color.black.opacity(0.55), in: .circle)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Remove \(attachment.name)")
