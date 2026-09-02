@@ -24,8 +24,6 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
 	</dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Alice uses Face ID to unlock the connection key for your Hermes agent.</string>

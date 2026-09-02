@@ -54,7 +54,6 @@ targets:
           # travels anywhere else, so the exception is scoped by intent rather
           # than by a list of hosts nobody can predict.
           NSAllowsArbitraryLoads: true
-          NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: >-
           Alice connects to the Hermes agent running on your network.
     settings:
