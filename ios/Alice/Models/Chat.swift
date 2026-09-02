@@ -77,6 +77,12 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     /// conversation you reread today should come back before one you replied
     /// in last week. Absent on anything saved before this was recorded.
     var openedAt: Date?
+    /// Kept at the top of the drawer, above everything else.
+    var pinned: Bool = false
+    /// The project this chat is filed under. Local: the agent's projects group
+    /// its own sessions, and a conversation started on this phone is not one
+    /// of those — this borrows the names so both read the same way.
+    var project: String?
     var messages: [Message] = []
 
     static func blank(title: String = "New chat") -> Conversation {

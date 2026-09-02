@@ -211,6 +211,24 @@ final class AppStore {
         try await client.toggleSkill(name: name, enabled: enabled)
     }
 
+    func rename(_ id: String, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let index = conversations.firstIndex(where: { $0.id == id })
+        else { return }
+        conversations[index].title = trimmed
+    }
+
+    func togglePin(_ id: String) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        conversations[index].pinned.toggle()
+    }
+
+    func file(_ id: String, under project: String?) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        conversations[index].project = project
+    }
+
     func jobs() async throws -> [JobRow] {
         try await client.jobs(manifest)
     }

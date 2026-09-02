@@ -8,6 +8,9 @@ struct Sidebar: View {
     let onDismiss: () -> Void
 
     @State private var showSearch = false
+    @State private var renaming: Conversation?
+    @State private var newTitle = ""
+    @State private var projects: [ProjectRow] = []
     @State private var going: Destination?
 
     /// Where the drawer can take you. The frequent ones sit above the
@@ -71,7 +74,7 @@ struct Sidebar: View {
         // The same 11pt the conversation's controls take, so the search button
         // and the drawer button line up while both are on screen.
         .padding(.top, 11)
-        .padding(.bottom, 12)
+        .padding(.bottom, 20)
     }
 
     /// Every destination gets a way out. A sheet whose only exit is a swipe
@@ -103,9 +106,10 @@ struct Sidebar: View {
             }
             row("Skills", systemImage: "sparkles") { going = .skills }
             row("Tools", systemImage: "wrench.adjustable") { going = .tools }
+            row("Library", systemImage: "photo.on.rectangle") { going = .library }
         }
         .padding(.horizontal, 12)
-        .padding(.bottom, 10)
+        .padding(.bottom, 22)
     }
 
     private func sectionLabel(_ title: String) -> some View {
@@ -121,38 +125,119 @@ struct Sidebar: View {
     private var list: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(store.conversations) { conversation in
+                ForEach(ordered) { conversation in
                     Button {
                         store.activeID = conversation.id
                         onDismiss()
                     } label: {
-                        Text(conversation.title)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(
-                                conversation.id == store.activeID
-                                    ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
-                                    : .clear,
-                                in: .rect(cornerRadius: 10)
-                            )
+                        HStack(spacing: 6) {
+                            if conversation.pinned {
+                                Image(systemName: "pin.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(conversation.title).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        // A definite width, so the long-press preview takes
+                        // its size from the drawer rather than from the label
+                        // and stops spilling past the right edge. Less both
+                        // insets: the stack's 12 either side and the row's.
+                        .frame(width: width - 48, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            conversation.id == store.activeID
+                                ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
+                                : .clear,
+                            in: .rect(cornerRadius: 10)
+                        )
+                        .contentShape(.rect(cornerRadius: 10))
                     }
                     .buttonStyle(.plain)
+                    // An explicit preview rather than a lift of the row.
+                    // The default takes the row's own bounds and enlarges
+                    // them, which on a 300pt drawer reaches past the edge;
+                    // this one has a size of its own and stays inside.
                     .contextMenu {
-                        Button("Delete", systemImage: "trash", role: .destructive) {
-                            store.delete(conversation.id)
-                        }
+                        menu(for: conversation)
+                    } preview: {
+                        Text(conversation.title)
+                            .lineLimit(2)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .frame(width: width - 72, alignment: .leading)
+                            .background(Palette.card(scheme))
                     }
                 }
             }
             .padding(.horizontal, 12)
         }
+        // Keyed on the connection: the drawer is built before the dashboard
+        // has signed in, and a one-shot task would leave the project list
+        // empty for the rest of the session.
+        .task(id: store.dashboardReady) { await loadProjects() }
+        .alert("Rename chat", isPresented: .constant(renaming != nil)) {
+            TextField("Title", text: $newTitle)
+            Button("Cancel", role: .cancel) { renaming = nil }
+            Button("Save") {
+                if let renaming { store.rename(renaming.id, to: newTitle) }
+                renaming = nil
+            }
+        }
+    }
+
+    /// Pinned first, then as they came.
+    private var ordered: [Conversation] {
+        store.conversations.filter(\.pinned) + store.conversations.filter { !$0.pinned }
+    }
+
+    @ViewBuilder
+    private func menu(for conversation: Conversation) -> some View {
+        Button {
+            store.togglePin(conversation.id)
+        } label: {
+            Label(conversation.pinned ? "Unpin" : "Pin", systemImage: "pin")
+        }
+
+        Button {
+            newTitle = conversation.title
+            renaming = conversation
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+
+        // Only where there are projects to file it under. The grouping is
+        // local: the agent's projects hold its own sessions, and a chat
+        // started on this phone is not one of those.
+        if !projects.isEmpty {
+            Menu {
+                ForEach(projects) { project in
+                    Button(project.label) {
+                        store.file(conversation.id, under: project.label)
+                    }
+                }
+                if conversation.project != nil {
+                    Divider()
+                    Button("None") { store.file(conversation.id, under: nil) }
+                }
+            } label: {
+                Label("Add to Project", systemImage: "folder")
+            }
+        }
+
+        Button("Delete", systemImage: "trash", role: .destructive) {
+            store.delete(conversation.id)
+        }
+    }
+
+    private func loadProjects() async {
+        guard store.dashboardReady else { return }
+        projects = (try? await store.projects()) ?? []
     }
 
     private var footer: some View {
         VStack(spacing: 2) {
-            row("Library", systemImage: "photo.on.rectangle") { going = .library }
             row("Settings", systemImage: "gearshape") { going = .settings }
             Button {
                 going = .connect
@@ -180,15 +265,24 @@ struct Sidebar: View {
         .padding(.bottom, 12)
     }
 
+    /// `Label` gives each symbol only the width its own glyph needs, so a
+    /// clock and a wrench push their words to different places. The icon gets
+    /// a column of its own instead, and every word starts on one line.
     private func row(
         _ title: String, systemImage: String, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.subheadline)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15))
+                    .frame(width: 22, alignment: .center)
+                Text(title)
+                Spacer(minLength: 0)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
     }
