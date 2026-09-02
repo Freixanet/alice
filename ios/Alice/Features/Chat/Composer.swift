@@ -222,6 +222,10 @@ struct Composer: View {
                 .background(Palette.muted(scheme).opacity(0.7), in: .circle)
         }
         .buttonStyle(.plain)
+        // A menu opening upward is reordered by default, on the reasoning that
+        // the likeliest choice belongs nearest the thumb. Here the three are
+        // meant to be read in the order they are written.
+        .menuOrder(.fixed)
         .accessibilityLabel("Attach")
     }
 
