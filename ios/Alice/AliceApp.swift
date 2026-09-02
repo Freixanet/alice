@@ -11,7 +11,6 @@ struct AliceApp: App {
                 .environment(store)
                 .environment(speech)
                 .preferredColorScheme(store.theme.colorScheme)
-                .tint(store.accent.primary(store.theme.colorScheme ?? .light))
                 .task { await store.restoreConnection() }
         }
     }

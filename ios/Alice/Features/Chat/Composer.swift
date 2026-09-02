@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 /// The composer every model client has converged on: the text on its own line,
@@ -20,6 +21,13 @@ struct Composer: View {
     /// The command list's natural height, so the panel fits its rows instead
     /// of holding its maximum with one match showing.
     @State private var commandsHeight: CGFloat = 0
+    @State private var photos: [PhotosPickerItem] = []
+    @State private var showPhotos = false
+    @State private var showFiles = false
+    /// Counts taps rather than watching `listening`, so the tap is felt even
+    /// when dictation fails to start — which is exactly when the reader most
+    /// needs to know the button registered.
+    @State private var micTaps = 0
 
     /// One height for every control on the bottom row, so the send button and
     /// the model chip line up instead of each taking the size its own padding
@@ -44,6 +52,33 @@ struct Composer: View {
                 }
         )
         .sheet(isPresented: $showModels) { ModelPicker() }
+        .photosPicker(
+            isPresented: $showPhotos, selection: $photos,
+            maxSelectionCount: 4, matching: .images
+        )
+        .onChange(of: photos) { _, picked in
+            guard !picked.isEmpty else { return }
+            photos = []
+            Task {
+                for item in picked {
+                    if let attachment = await AttachmentLoader.image(from: item) {
+                        store.draftAttachments.append(attachment)
+                    }
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $showFiles,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case let .success(urls) = result else { return }
+            for url in urls {
+                if let attachment = AttachmentLoader.file(at: url) {
+                    store.draftAttachments.append(attachment)
+                }
+            }
+        }
         .onChange(of: store.draft) { commandsDismissed = false }
         .animation(.snappy(duration: 0.2), value: commands.isEmpty)
     }
@@ -111,6 +146,12 @@ struct Composer: View {
 
         return GlassEffectContainer(spacing: 14) {
             VStack(spacing: 18) {
+                if !store.draftAttachments.isEmpty {
+                    AttachmentChips(attachments: store.draftAttachments) { attachment in
+                        store.draftAttachments.removeAll { $0.id == attachment.id }
+                    }
+                }
+
                 TextField("Talk to Alice…", text: $store.draft, axis: .vertical)
                     .lineLimit(1...7)
                     .textFieldStyle(.plain)
@@ -121,6 +162,9 @@ struct Composer: View {
                     // tap anywhere on the upper half of the composer used to
                     // land on inert glass. Give it a real target.
                     .frame(maxWidth: .infinity, minHeight: 30, alignment: .topLeading)
+                    // Sitting flush against the top of its own box read as
+                    // crowded against the glass above it.
+                    .padding(.top, 4)
                     .contentShape(.rect)
                     .onTapGesture { focused.wrappedValue = true }
 
@@ -139,10 +183,23 @@ struct Composer: View {
         }
     }
 
+    /// Photos or files, both folded into the next message.
+    ///
+    /// It was a disabled placeholder holding the layout open for work that had
+    /// not been done; a control that cannot be pressed is worse than no
+    /// control, so it now does the thing it has always looked like it does.
     private var attachButton: some View {
-        Button {
-            // Attachments arrive with the multimodal work; the control is here
-            // so the layout does not shift later.
+        Menu {
+            Button {
+                showPhotos = true
+            } label: {
+                Label("Photos", systemImage: "photo")
+            }
+            Button {
+                showFiles = true
+            } label: {
+                Label("Files", systemImage: "folder")
+            }
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .medium))
@@ -151,7 +208,6 @@ struct Composer: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .disabled(true)
         .accessibilityLabel("Attach")
     }
 
@@ -185,6 +241,7 @@ struct Composer: View {
     private var micButton: some View {
         let listening = dictation.isListening
         Button {
+            micTaps += 1
             dictation.prime(with: store.draft)
             dictation.toggle { store.draft = $0 }
         } label: {
@@ -195,8 +252,12 @@ struct Composer: View {
                 .symbolEffect(.variableColor, isActive: listening)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(listening ? Color.accentColor : .secondary)
+        .foregroundStyle(listening ? AnyShapeStyle(store.accent.primary(scheme)) : AnyShapeStyle(.secondary))
         .glassEffect(.regular.interactive(), in: .circle)
+        // Dictation starts listening before there is anything to see. The tap
+        // has to be felt, or the reader is left talking at a button they are
+        // not sure they pressed.
+        .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
         .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
     }
 
@@ -206,6 +267,7 @@ struct Composer: View {
     private var actionButton: some View {
         let sending = store.isSending
         let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !store.draftAttachments.isEmpty
         let stopping = sending && !hasDraft
 
         Button {
@@ -220,7 +282,13 @@ struct Composer: View {
         // around the label — measured at 44pt tall next to a 34pt chip. Applying
         // the material to an exact frame instead keeps the row one height.
         .buttonStyle(.plain)
-        .foregroundStyle(store.isConnected ? Color.primary : Color.secondary)
+        // The accent's clearest home: the one control that acts. With Stone
+        // it resolves to the same near-black and near-white the button always
+        // had, so the default look is unchanged and every other choice shows.
+        .foregroundStyle(
+            store.isConnected && (sending || hasDraft)
+                ? store.accent.primary(scheme) : Color.secondary
+        )
         .glassEffect(.regular.interactive(), in: .circle)
         .glassEffectID("send", in: glass)
         .disabled(!sending && (!hasDraft || !store.isConnected))

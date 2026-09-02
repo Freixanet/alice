@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -57,6 +58,13 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        // A sheet with nothing but a swipe to close it is a sheet the
+        // reader has to guess at — the same gap Connect had.
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
     }

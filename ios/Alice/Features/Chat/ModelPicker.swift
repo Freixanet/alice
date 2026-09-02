@@ -26,7 +26,7 @@ struct ModelPicker: View {
                                     Spacer()
                                     if model.id == store.selectedModel {
                                         Image(systemName: "checkmark")
-                                            .foregroundStyle(Color.accentColor)
+                                            .foregroundStyle(store.accent.primary(scheme))
                                     }
                                 }
                             }

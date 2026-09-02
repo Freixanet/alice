@@ -31,6 +31,12 @@ enum Accent: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The chosen accent, resolved for a scheme.
+    ///
+    /// Read this rather than `Color.accentColor`, which resolves the asset
+    /// catalogue's colour and ignores the environment's `.tint` entirely — the
+    /// accent setting appeared to do nothing because every place that showed
+    /// it was drawing the system blue instead.
     func primary(_ scheme: ColorScheme) -> Color {
         switch (self, scheme) {
         case (.stone, .dark): Color(hex: 0xECECEA)

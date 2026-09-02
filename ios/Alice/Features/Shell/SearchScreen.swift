@@ -26,11 +26,22 @@ struct SearchScreen: View {
             Palette.background(scheme).ignoresSafeArea()
 
             if query.isEmpty {
-                hint("Search your conversations")
+                // An empty field is not an empty screen: what you most likely
+                // want is a conversation you had recently, and offering them
+                // saves typing a query to find something you could point at.
+                // A heading over nothing, though, is worse than the sentence.
+                if recents.isEmpty {
+                    hint("Search your conversations")
+                } else {
+                    list(
+                        recents.map { Result(conversation: $0, line: nil) },
+                        heading: "Recent"
+                    )
+                }
             } else if results.isEmpty {
                 hint("Nothing matches “\(query)”")
             } else {
-                list
+                list(results, heading: nil)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { bar }
@@ -43,10 +54,16 @@ struct SearchScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var list: some View {
+    private func list(_ rows: [Result], heading: String?) -> some View {
         ScrollView {
-            LazyVStack(spacing: 8) {
-                ForEach(results, id: \.conversation.id) { result in
+            LazyVStack(alignment: .leading, spacing: 8) {
+                if let heading {
+                    Text(heading)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                }
+                ForEach(rows, id: \.conversation.id) { result in
                     Button {
                         store.activeID = result.conversation.id
                         onOpen()
@@ -77,6 +94,17 @@ struct SearchScreen: View {
         // otherwise empty screen.
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    /// Most recently opened first — which is not the same as most recently
+    /// written to: a conversation reread this morning belongs above one that
+    /// was last replied to a week ago.
+    private var recents: [Conversation] {
+        store.conversations
+            .filter { !$0.messages.isEmpty }
+            .sorted { ($0.openedAt ?? $0.updatedAt) > ($1.openedAt ?? $1.updatedAt) }
+            .prefix(12)
+            .map { $0 }
     }
 
     private var bar: some View {

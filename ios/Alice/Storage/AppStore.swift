@@ -37,8 +37,17 @@ final class AppStore {
 
     // Conversations
     var conversations: [Conversation] = [.blank()]
-    var activeID: String?
+    var activeID: String? {
+        didSet {
+            guard activeID != oldValue,
+                  let index = conversations.firstIndex(where: { $0.id == activeID })
+            else { return }
+            conversations[index].openedAt = Date()
+        }
+    }
     var draft: String = ""
+    /// Waiting to go out with the next message.
+    var draftAttachments: [Attachment] = []
     private(set) var isSending = false
 
     private let client = HermesClient()
@@ -208,17 +217,50 @@ final class AppStore {
         persistConversations()
     }
 
+    /// A turn's content, with its attachments folded in: images as data URLs
+    /// the way the OpenAI-compatible shape expects, and text files inlined
+    /// into the prompt, since the agent cannot open a file this app is
+    /// holding in memory.
+    private static func content(
+        of message: Message, includeAttachments: Bool
+    ) -> HermesClient.Turn.Content {
+        guard includeAttachments, !message.attachments.isEmpty else {
+            return .text(message.content)
+        }
+        var text = [message.content]
+        var images: [String] = []
+        for attachment in message.attachments {
+            if attachment.kind == .image {
+                images.append(attachment.dataURL)
+            } else if let contents = attachment.textContents {
+                text.append("Attached file — \(attachment.name):\n\(contents)")
+            } else {
+                text.append("Attached file — \(attachment.name) (\(attachment.mime)), which I cannot read as text.")
+            }
+        }
+        let combined = String(
+            text.filter { !$0.isEmpty }.joined(separator: "\n\n").prefix(60_000)
+        )
+        guard !images.isEmpty else { return .text(combined) }
+        return .parts(text: combined, imageURLs: images)
+    }
+
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending, isConnected else { return }
+        guard !text.isEmpty || !draftAttachments.isEmpty,
+              !isSending, isConnected
+        else { return }
         guard let index = conversations.firstIndex(where: { $0.id == activeID })
         else { return }
 
+        let attachments = draftAttachments
         draft = ""
+        draftAttachments = []
         isSending = true
 
         let user = Message(
-            id: UUID().uuidString, role: .user, content: text, createdAt: Date()
+            id: UUID().uuidString, role: .user, content: text, createdAt: Date(),
+            attachments: attachments
         )
         let replyID = UUID().uuidString
         conversations[index].messages.append(user)
@@ -229,13 +271,26 @@ final class AppStore {
             )
         )
         if conversations[index].title == "New chat" {
-            conversations[index].title = String(text.prefix(40))
+            let name = text.isEmpty ? (attachments.first?.name ?? "New chat") : text
+            conversations[index].title = String(name.prefix(40))
         }
         conversations[index].updatedAt = Date()
 
-        let turns = conversations[index].messages
+        // Only the newest turn that has attachments sends them. Repeating
+        // every image on every request is what turns a long conversation into
+        // a payload the provider refuses, and the earlier ones have already
+        // been read once.
+        let history = conversations[index].messages
             .filter { !$0.pending && $0.error == nil }
-            .map { HermesClient.Turn(role: $0.role.rawValue, content: $0.content) }
+        let newestWithAttachments = history.lastIndex { !$0.attachments.isEmpty }
+        let turns = history.enumerated().map { offset, message in
+            HermesClient.Turn(
+                role: message.role.rawValue,
+                content: Self.content(
+                    of: message, includeAttachments: offset == newestWithAttachments
+                )
+            )
+        }
         let model = selectedModel
         let provider = models.first { $0.id == model }?.provider
 

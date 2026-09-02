@@ -141,7 +141,7 @@ struct CatalogScreen: View {
                 .padding(.vertical, 7)
         }
         .buttonStyle(.glass)
-        .tint(group == value ? Color.accentColor : nil)
+        .tint(group == value ? store.accent.primary(scheme) : nil)
     }
 
     @ViewBuilder

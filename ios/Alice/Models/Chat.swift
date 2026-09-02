@@ -1,5 +1,41 @@
 import Foundation
 
+/// Something the reader attached to a message.
+///
+/// The bytes live with the conversation rather than as a file reference: a
+/// photo picked from the library can be deleted from it, and a conversation
+/// that then shows a broken thumbnail is worse than one that carries its own
+/// copy. Images are downscaled before they get here.
+struct Attachment: Identifiable, Hashable, Sendable, Codable {
+    enum Kind: String, Hashable, Sendable, Codable {
+        case image, file
+    }
+
+    let id: String
+    var name: String
+    var mime: String
+    var kind: Kind
+    var data: Data
+
+    /// What the OpenAI-compatible content array expects for an image.
+    var dataURL: String {
+        "data:\(mime);base64,\(data.base64EncodedString())"
+    }
+
+    /// The contents, if this is something a model can read as text. Mirrors
+    /// the web client, which inlines text files into the prompt rather than
+    /// pretending the agent can open an attachment.
+    var textContents: String? {
+        let textual = mime.hasPrefix("text/")
+            || mime.range(of: "json|javascript|typescript|xml|yaml|csv",
+                          options: [.regularExpression, .caseInsensitive]) != nil
+            || name.range(of: "\\.(md|markdown|json|csv|ts|tsx|js|jsx|py|html|css|xml|ya?ml|txt)$",
+                          options: [.regularExpression, .caseInsensitive]) != nil
+        guard textual, let text = String(data: data, encoding: .utf8) else { return nil }
+        return String(text.prefix(50_000))
+    }
+}
+
 /// One turn in a conversation. Mirrors the web model closely enough that a
 /// conversation exported from one client reads correctly in the other.
 struct Message: Identifiable, Hashable, Sendable, Codable {
@@ -29,6 +65,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// waiting is worth it rather than showing one generic apology.
     var errorLimit: ModelLimit?
     var incomplete: Bool = false
+    var attachments: [Attachment] = []
 }
 
 struct Conversation: Identifiable, Hashable, Sendable, Codable {
@@ -36,6 +73,10 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     var title: String
     var createdAt: Date
     var updatedAt: Date
+    /// When it was last opened, which is not when it was last written to: a
+    /// conversation you reread today should come back before one you replied
+    /// in last week. Absent on anything saved before this was recorded.
+    var openedAt: Date?
     var messages: [Message] = []
 
     static func blank(title: String = "New chat") -> Conversation {

@@ -88,7 +88,8 @@ struct Sidebar: View {
                             .padding(.vertical, 10)
                             .background(
                                 conversation.id == store.activeID
-                                    ? Palette.muted(scheme) : .clear,
+                                    ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
+                                    : .clear,
                                 in: .rect(cornerRadius: 10)
                             )
                     }

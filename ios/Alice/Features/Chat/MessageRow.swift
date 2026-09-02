@@ -9,11 +9,17 @@ struct MessageRow: View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
             switch message.role {
             case .user:
-                Text(message.content)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                if !message.attachments.isEmpty {
+                    SentAttachments(attachments: message.attachments)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                if !message.content.isEmpty {
+                    Text(message.content)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             case .assistant:
                 VStack(alignment: .leading, spacing: 10) {
                     Text("ALICE")
@@ -167,7 +173,39 @@ private struct ActionIcon: View {
     }
 }
 
+/// What went out with a message, shown so the conversation is a record of
+/// what was actually sent rather than only of what was typed.
+private struct SentAttachments: View {
+    @Environment(\.colorScheme) private var scheme
+    let attachments: [Attachment]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(attachments) { attachment in
+                if attachment.kind == .image, let image = UIImage(data: attachment.data) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 84, height: 84)
+                        .clipShape(.rect(cornerRadius: 14))
+                } else {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc")
+                        Text(attachment.name).lineLimit(1)
+                    }
+                    .font(.footnote)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Palette.card(scheme), in: .capsule)
+                }
+            }
+        }
+    }
+}
+
 private struct ToolList: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     let tools: [Message.ToolCall]
 
     var body: some View {
@@ -176,7 +214,7 @@ private struct ToolList: View {
                 HStack(spacing: 8) {
                     Circle()
                         .frame(width: 5, height: 5)
-                        .foregroundStyle(tool.status == .done ? .secondary : Color.accentColor)
+                        .foregroundStyle(tool.status == .done ? AnyShapeStyle(.secondary) : AnyShapeStyle(store.accent.primary(scheme)))
                     Text(tool.name).font(.caption.monospaced())
                     if let detail = tool.detail {
                         Text(detail).font(.caption).foregroundStyle(.secondary)

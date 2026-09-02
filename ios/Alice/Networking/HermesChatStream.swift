@@ -2,8 +2,35 @@ import Foundation
 
 extension HermesClient {
     struct Turn: Sendable {
+        /// What one turn carries. A plain string for the ordinary case, and
+        /// the OpenAI-compatible parts array only when there is an image to
+        /// send — some providers reject the array form for text-only turns.
+        enum Content: Sendable {
+            case text(String)
+            case parts(text: String, imageURLs: [String])
+
+            var json: Any {
+                switch self {
+                case let .text(value):
+                    return value
+                case let .parts(text, imageURLs):
+                    var parts: [[String: Any]] = []
+                    if !text.isEmpty {
+                        parts.append(["type": "text", "text": text])
+                    }
+                    for url in imageURLs {
+                        parts.append([
+                            "type": "image_url",
+                            "image_url": ["url": url, "detail": "auto"],
+                        ])
+                    }
+                    return parts
+                }
+            }
+        }
+
         var role: String
-        var content: String
+        var content: Content
     }
 
     /// Streams a reply.
@@ -23,7 +50,7 @@ extension HermesClient {
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     var body: [String: Any] = [
-                        "messages": messages.map { ["role": $0.role, "content": $0.content] },
+                        "messages": messages.map { ["role": $0.role, "content": $0.content.json] },
                         "stream": true,
                     ]
                     if let model { body["model"] = model }

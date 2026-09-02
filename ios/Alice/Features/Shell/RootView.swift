@@ -80,6 +80,10 @@ struct RootView: View {
             // left the corners opening onto nothing — a wedge of a colour that
             // belongs to neither layer.
             .background(Palette.card(scheme))
+            // Applied here rather than at the app, which had to guess a scheme
+            // for it: on "system" it always resolved the light variant, so the
+            // accent was wrong in the dark exactly where it is most visible.
+            .tint(store.accent.primary(scheme))
             .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
             // The drawer answers a sideways swipe from anywhere, not just from a
             // strip at the edge. `DrawerPan` only claims a drag that starts out
