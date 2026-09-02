@@ -26,7 +26,18 @@ struct ChatScreen: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(action: onOpenDrawer) {
-                        Image(systemName: "line.3.horizontal")
+                        // Two bars, not three, matched to the `plus` opposite
+                        // it. Both are math symbols, so the pairing is a real
+                        // one — but not at the same settings: `equal` at 18pt
+                        // medium draws the plus's 1.88pt stroke on bars 2pt
+                        // too short, and going up a size to fix the width
+                        // thickens it past the plus. 20pt regular lands on
+                        // both: 1.88pt bars, 14.75pt wide against the plus's
+                        // 15.0. (`line.3.horizontal`, the usual menu glyph,
+                        // is a different family entirely and drew at 1.25pt,
+                        // reading thin beside it.)
+                        Image(systemName: "equal")
+                            .font(.system(size: 20, weight: .regular))
                     }
                     .accessibilityLabel("Chats")
                 }

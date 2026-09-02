@@ -33,20 +33,32 @@ struct RootView: View {
             Sidebar(width: drawerWidth, onDismiss: { setDrawer(false) })
                 .frame(width: drawerWidth)
                 .offset(x: offset - drawerWidth)
-
-            // A thin strip owns the open gesture. Putting the drag on the whole
-            // screen fought every scroll view underneath it.
-            if !drawerOpen {
-                Color.clear
-                    .frame(width: 20)
-                    .contentShape(.rect)
-                    .gesture(edgeDrag)
-                    .ignoresSafeArea()
-            }
         }
         .background(Palette.background(scheme))
         .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
-        .gesture(drawerOpen ? closeDrag : nil)
+        // The drawer answers a sideways swipe from anywhere, not just from a
+        // strip at the edge. `DrawerPan` only claims a drag that starts out
+        // sideways, so scrolling the conversation is untouched.
+        .overlay {
+            DrawerPan(
+                shouldBegin: { velocity in
+                    // Sideways enough to be meant sideways, and pointing the
+                    // way the drawer can actually move from here.
+                    guard abs(velocity.x) > abs(velocity.y) * 1.5 else { return false }
+                    return drawerOpen ? velocity.x < 0 : velocity.x > 0
+                },
+                onChange: { translation in
+                    drag = drawerOpen ? min(0, translation) : max(0, translation)
+                },
+                onEnd: { translation, predicted in
+                    let travelled = abs(translation) > drawerWidth * 0.3
+                    let flicked = abs(predicted) > 120
+                    drag = 0
+                    setDrawer(drawerOpen ? !(travelled || flicked) : (travelled || flicked))
+                }
+            )
+            .allowsHitTesting(false)
+        }
     }
 
     private var offset: CGFloat {
@@ -54,28 +66,6 @@ struct RootView: View {
     }
 
     private var progress: CGFloat { offset / drawerWidth }
-
-    private var edgeDrag: some Gesture {
-        DragGesture(minimumDistance: 6)
-            .onChanged { drag = max(0, $0.translation.width) }
-            .onEnded { value in
-                let flick = value.predictedEndTranslation.width > 120
-                let far = drag > drawerWidth * 0.3
-                drag = 0
-                setDrawer(flick || far)
-            }
-    }
-
-    private var closeDrag: some Gesture {
-        DragGesture(minimumDistance: 12)
-            .onChanged { drag = min(0, $0.translation.width) }
-            .onEnded { value in
-                let flick = value.predictedEndTranslation.width < -120
-                let far = drag < -drawerWidth * 0.3
-                drag = 0
-                setDrawer(!(flick || far))
-            }
-    }
 
     private func setDrawer(_ open: Bool) {
         if open {
