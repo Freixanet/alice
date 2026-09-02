@@ -25,6 +25,9 @@ targets:
       path: Alice/Info.plist
       properties:
         CFBundleDisplayName: Alice
+        UIAppFonts:
+          - InstrumentSerif-Regular.ttf
+          - InstrumentSerif-Italic.ttf
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

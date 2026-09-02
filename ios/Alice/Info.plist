@@ -29,6 +29,11 @@
 	<string>Alice uses Face ID to unlock the connection key for your Hermes agent.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Alice connects to the Hermes agent running on your network.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>InstrumentSerif-Regular.ttf</string>
+		<string>InstrumentSerif-Italic.ttf</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

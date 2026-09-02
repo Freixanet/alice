@@ -106,10 +106,23 @@ extension Color {
 }
 
 extension Font {
-    /// Titles are a serif on the web. Rather than bundle a face, this uses the
-    /// system serif, which carries the same weight of voice and stays legible
-    /// at every Dynamic Type size.
+    /// The same face the web sets its titles in, bundled rather than
+    /// approximated: the system serif is close in spirit but visibly a
+    /// different letter, and the two clients should look like one product.
+    ///
+    /// `.custom(size:relativeTo:)` keeps it scaling with Dynamic Type.
     static func aliceTitle(_ style: Font.TextStyle = .largeTitle) -> Font {
-        .system(style, design: .serif)
+        .custom("InstrumentSerif-Regular", size: baseSize(style), relativeTo: style)
+    }
+
+    private static func baseSize(_ style: Font.TextStyle) -> CGFloat {
+        switch style {
+        case .largeTitle: 40
+        case .title: 32
+        case .title2: 25
+        case .title3: 22
+        case .headline, .body: 18
+        default: 16
+        }
     }
 }

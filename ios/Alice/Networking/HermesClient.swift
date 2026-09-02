@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Talks to a Hermes agent directly, with no server of ours in between.
 ///
@@ -89,8 +90,28 @@ actor HermesClient {
         return Self.parseManifest(object)
     }
 
+    /// Every model this Hermes can reach.
+    ///
+    /// `/v1/models` is the OpenAI-compatible surface and answers with the one
+    /// model the agent presents to that API — on a Hermes fronting a hundred
+    /// models across six providers it still returns exactly one. The full
+    /// picker lives on the management surface, so ask there first and keep
+    /// `/v1/models` as the fallback for a build that has no picker.
     func models() async throws -> [ModelOption] {
-        let (data, response) = try await session.data(for: try request("v1/models"))
+        for path in [
+            "api/model/options?include_unconfigured=1",
+            "api/model/options",
+            "api/models",
+        ] {
+            if let found = try? await modelList(path), !found.isEmpty {
+                return found
+            }
+        }
+        return (try? await modelList("v1/models")) ?? []
+    }
+
+    private func modelList(_ path: String) async throws -> [ModelOption] {
+        let (data, response) = try await session.data(for: try request(path))
         guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw failure(status: http.statusCode, data: data, response: http)
@@ -164,6 +185,7 @@ actor HermesClient {
     /// this did first — found a single entry and hid the hundred behind it.
     static func parseModels(_ data: Data) -> [ModelOption] {
         guard let object = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        describeModelPayload(object)
 
         if let map = object as? [String: Any],
            let providers = map["providers"] as? [[String: Any]] {
@@ -226,6 +248,41 @@ actor HermesClient {
             providerName: (row["providerName"] as? String)
                 ?? (row["provider_name"] as? String) ?? providerName
         )
+    }
+
+    /// Reports the shape `/v1/models` came back in.
+    ///
+    /// Which shape a Hermes uses is not documented anywhere, and reading the
+    /// wrong one silently produced a one-item picker on an agent serving a
+    /// hundred models. This says what arrived, so the next mismatch is visible
+    /// rather than inferred.
+    private static func describeModelPayload(_ object: Any) {
+        let log = Logger(subsystem: "com.freixanet.alice", category: "models")
+        // Also to stderr, so `devicectl --console` shows it without the
+        // unified log, which cannot be streamed from a physical device here.
+        func say(_ line: String) {
+            log.notice("\(line)")
+            FileHandle.standardError.write(Data(("[alice] " + line + "\n").utf8))
+        }
+        if let map = object as? [String: Any] {
+            let keys = map.keys.sorted().joined(separator: ", ")
+            if let providers = map["providers"] as? [[String: Any]] {
+                let counts = providers.map { provider -> String in
+                    let slug = (provider["slug"] as? String) ?? "?"
+                    let n = (provider["models"] as? [Any])?.count ?? 0
+                    return "\(slug):\(n)"
+                }
+                say("models payload: object keys [\(keys)] providers \(counts.joined(separator: " "))")
+            } else {
+                let data = (map["data"] as? [Any])?.count
+                let models = (map["models"] as? [Any])?.count
+                say("models payload: object keys [\(keys)] data=\(data ?? -1) models=\(models ?? -1)")
+            }
+        } else if let list = object as? [Any] {
+            say("models payload: top-level array of \(list.count)")
+        } else {
+            say("models payload: unrecognised root")
+        }
     }
 
     /// `openai/gpt-5.6-luna` reads as "Gpt 5.6 Luna" in the picker.
