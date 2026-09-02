@@ -15,6 +15,7 @@ struct Sidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            sectionLabel("Recents")
             list
             Divider().opacity(0.4)
             footer
@@ -46,7 +47,7 @@ struct Sidebar: View {
                 showSearch = true
             } label: {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
                     .imageScale(.large)
                     .frame(width: 44, height: 44)
             }
@@ -60,6 +61,16 @@ struct Sidebar: View {
         // and the drawer button line up while both are on screen.
         .padding(.top, 11)
         .padding(.bottom, 12)
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // The 24pt column the wordmark and the rows below both sit on.
+            .padding(.horizontal, 24)
+            .padding(.bottom, 6)
     }
 
     private var list: some View {

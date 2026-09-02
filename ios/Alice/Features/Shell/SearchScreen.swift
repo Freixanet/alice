@@ -6,6 +6,11 @@ import SwiftUI
 /// A field in the drawer could only ever match titles, which are the one part
 /// of a conversation nobody wrote on purpose. With room to show a matching
 /// line, the same query can look inside the messages too.
+///
+/// The field sits at the bottom, where the thumb already is and where the
+/// keyboard will not have to be reached over — `safeAreaInset` rides it up as
+/// the keyboard arrives. Results grow upward from it, so a single match lands
+/// beside the query rather than a screen away from it.
 struct SearchScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -17,68 +22,105 @@ struct SearchScreen: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if query.isEmpty {
-                    hint("Search your conversations")
-                } else if results.isEmpty {
-                    hint("Nothing matches “\(query)”")
-                } else {
-                    list
-                }
-            }
-            .background(Palette.background(scheme))
-            .navigationTitle("Search")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(
-                text: $query,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Conversations and messages"
-            )
-            // A search field is not a sentence: capitalising the first letter
-            // and second-guessing the rest only gets in the way of finding
-            // what was actually written.
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+        ZStack {
+            Palette.background(scheme).ignoresSafeArea()
+
+            if query.isEmpty {
+                hint("Search your conversations")
+            } else if results.isEmpty {
+                hint("Nothing matches “\(query)”")
+            } else {
+                list
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) { bar }
+        .task { focused = true }
     }
 
     private func hint(_ text: String) -> some View {
-        VStack {
-            Spacer()
-            Text(text).foregroundStyle(.secondary)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
+        Text(text)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var list: some View {
-        List(results, id: \.conversation.id) { result in
-            Button {
-                store.activeID = result.conversation.id
-                onOpen()
-                dismiss()
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(result.conversation.title)
-                        .lineLimit(1)
-                    if let line = result.line {
-                        Text(line)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+        ScrollView {
+            LazyVStack(spacing: 8) {
+                ForEach(results, id: \.conversation.id) { result in
+                    Button {
+                        store.activeID = result.conversation.id
+                        onOpen()
+                        dismiss()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(result.conversation.title)
+                                .lineLimit(1)
+                            if let line = result.line {
+                                Text(line)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .buttonStyle(.plain)
-            .listRowBackground(Palette.card(scheme))
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
         }
-        .scrollContentBackground(.hidden)
+        // Matches settle against the field rather than at the far end of an
+        // otherwise empty screen.
+        .defaultScrollAnchor(.bottom)
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var bar: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.secondary)
+                TextField("Conversations and messages", text: $query)
+                    .textFieldStyle(.plain)
+                    .focused($focused)
+                    .submitLabel(.search)
+                    // A search field is not a sentence: capitalising the first
+                    // letter and second-guessing the rest only gets in the way
+                    // of finding what was actually written.
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                if !query.isEmpty {
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear")
+                }
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .glassEffect(.regular, in: .capsule)
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .medium))
+                    .imageScale(.large)
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Close search")
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 10)
     }
 
     private struct Result {
