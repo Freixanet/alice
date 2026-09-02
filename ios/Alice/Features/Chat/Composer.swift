@@ -14,6 +14,12 @@ struct Composer: View {
     @Namespace private var glass
     @State private var showModels = false
     @State private var dictation = Dictation()
+    /// Set by swiping the command list away. Cleared on the next keystroke,
+    /// so dismissing it is about this moment, not about the whole draft.
+    @State private var commandsDismissed = false
+    /// The command list's natural height, so the panel fits its rows instead
+    /// of holding its maximum with one match showing.
+    @State private var commandsHeight: CGFloat = 0
 
     /// One height for every control on the bottom row, so the send button and
     /// the model chip line up instead of each taking the size its own padding
@@ -21,9 +27,89 @@ struct Composer: View {
     private let controlHeight: CGFloat = 34
 
     var body: some View {
+        // The list grows upward out of a composer pinned to the bottom, so
+        // offering it never moves the field out from under the caret.
+        VStack(spacing: 8) {
+            if !commands.isEmpty { commandList }
+            composer
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
+        // Flicking the composer down puts the keyboard away, which is quicker
+        // than reaching for the transcript to tap it.
+        .gesture(
+            DragGesture(minimumDistance: 24)
+                .onEnded { value in
+                    if value.translation.height > 40 { focused.wrappedValue = false }
+                }
+        )
+        .sheet(isPresented: $showModels) { ModelPicker() }
+        .onChange(of: store.draft) { commandsDismissed = false }
+        .animation(.snappy(duration: 0.2), value: commands.isEmpty)
+    }
+
+    private var commands: [SlashCommand] {
+        commandsDismissed ? [] : Slash.matches(store.draft)
+    }
+
+    private var commandList: some View {
+        ScrollView {
+            // Not lazy: fourteen rows at most, and a lazy stack cannot report
+            // the height this panel is sized from until it has been laid out.
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(commands) { item in
+                    Button {
+                        // The trailing space is the point: it closes the list
+                        // and leaves the caret where the argument goes.
+                        //
+                        // Replacing the draft in one assignment races the
+                        // field's own pending edit — tapping /memory over a
+                        // typed "/mem" produced "/mem ory". Emptying it first
+                        // and writing on the next turn of the run loop gives
+                        // the field a change it cannot merge into the old text.
+                        store.draft = ""
+                        DispatchQueue.main.async { store.draft = item.cmd + " " }
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(item.cmd)
+                                .font(.subheadline.monospaced())
+                            Text(item.hint)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                commandsHeight = $0
+            }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        // Fits its rows, up to a ceiling: tall enough to be worth scrolling
+        // for a narrow query, short enough that "/" alone does not bury the
+        // conversation behind it.
+        .frame(height: min(commandsHeight, 280))
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .gesture(
+            DragGesture(minimumDistance: 24)
+                .onEnded { value in
+                    if value.translation.height > 40 { commandsDismissed = true }
+                }
+        )
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+
+    private var composer: some View {
         @Bindable var store = store
 
-        GlassEffectContainer(spacing: 14) {
+        return GlassEffectContainer(spacing: 14) {
             VStack(spacing: 18) {
                 TextField("Talk to Alice…", text: $store.draft, axis: .vertical)
                     .lineLimit(1...7)
@@ -51,17 +137,6 @@ struct Composer: View {
             .glassEffect(.regular, in: .rect(cornerRadius: 26))
             .glassEffectID("composer", in: glass)
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 10)
-        // Flicking the composer down puts the keyboard away, which is quicker
-        // than reaching for the transcript to tap it.
-        .gesture(
-            DragGesture(minimumDistance: 24)
-                .onEnded { value in
-                    if value.translation.height > 40 { focused.wrappedValue = false }
-                }
-        )
-        .sheet(isPresented: $showModels) { ModelPicker() }
     }
 
     private var attachButton: some View {
