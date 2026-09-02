@@ -44,13 +44,27 @@ struct ModelPicker: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .refreshable { await store.loadModels() }
             .overlay {
-                if store.models.isEmpty {
-                    ContentUnavailableView(
-                        "No models",
-                        systemImage: "cpu",
-                        description: Text("Connect your Hermes to choose a model.")
-                    )
+                if store.isLoadingModels && store.models.isEmpty {
+                    ProgressView()
+                } else if store.models.isEmpty {
+                    ContentUnavailableView {
+                        Label("No models", systemImage: "cpu")
+                    } description: {
+                        Text(
+                            store.isConnected
+                                ? (store.modelsError
+                                    ?? "This Hermes returned no models.")
+                                : "Connect your Hermes to choose a model."
+                        )
+                    } actions: {
+                        if store.isConnected {
+                            Button("Try again") {
+                                Task { await store.loadModels() }
+                            }
+                        }
+                    }
                 } else if groups.isEmpty {
                     ContentUnavailableView.search(text: query)
                 }

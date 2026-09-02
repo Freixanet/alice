@@ -30,6 +30,10 @@ final class AppStore {
 
     var connectionError: String?
     var isConnecting = false
+    /// Why the model list is empty, when it is. A picker that just says "no
+    /// models" leaves you with nowhere to go.
+    private(set) var modelsError: String?
+    private(set) var isLoadingModels = false
 
     // Conversations
     var conversations: [Conversation] = [.blank()]
@@ -101,17 +105,7 @@ final class AppStore {
             firstFailure = error
         }
 
-        do {
-            let found = try await client.models()
-            models = found
-            if selectedModel == nil || !found.contains(where: { $0.id == selectedModel }) {
-                selectedModel = found.first?.id
-            }
-            reachedSomething = true
-        } catch {
-            models = []
-            if firstFailure == nil { firstFailure = error }
-        }
+        if await loadModels() { reachedSomething = true }
 
         if reachedSomething {
             isConnected = true
@@ -124,6 +118,31 @@ final class AppStore {
                 firstFailure ?? HermesClient.Failure.unreachable
             ).localizedDescription
             await client.disconnect()
+        }
+    }
+
+    /// Reads the model list. Separate from connecting so it can be retried on
+    /// its own: the agent is often reachable while this particular endpoint is
+    /// not, and that should not cost you the connection.
+    @discardableResult
+    func loadModels() async -> Bool {
+        isLoadingModels = true
+        defer { isLoadingModels = false }
+        do {
+            let found = try await client.models()
+            models = found
+            modelsError = found.isEmpty
+                ? "This Hermes did not return a model list at that address."
+                : nil
+            if selectedModel == nil
+                || !found.contains(where: { $0.id == selectedModel }) {
+                selectedModel = found.first?.id
+            }
+            return !found.isEmpty
+        } catch {
+            models = []
+            modelsError = HermesClient.describe(error).localizedDescription
+            return false
         }
     }
 

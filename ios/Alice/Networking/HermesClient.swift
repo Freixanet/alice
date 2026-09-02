@@ -126,25 +126,58 @@ actor HermesClient {
     /// picker lives on the management surface, so ask there first and keep
     /// `/v1/models` as the fallback for a build that has no picker.
     func models() async throws -> [ModelOption] {
+        // `/v1/models` is the one surface every build serves, so ask it first
+        // and have something to show immediately. It answers with the single
+        // model the agent presents to OpenAI-compatible clients.
+        var baseline: [ModelOption] = []
+        do {
+            baseline = try await modelList("v1/models")
+            Self.trace("v1/models -> \(baseline.count) models")
+        } catch {
+            Self.trace("v1/models -> \(error.localizedDescription)")
+        }
+
+        // The full picker lives on the management surface, which plenty of
+        // deployments do not expose at this address — a Tailscale Serve rule
+        // that proxies `/v1` and nothing else simply swallows these, so they
+        // get a short leash rather than the full request timeout.
         for path in [
             "api/model/options?include_unconfigured=1",
             "api/model/options",
             "api/models",
         ] {
-            if let found = try? await modelList(path), !found.isEmpty {
-                return found
+            do {
+                let found = try await modelList(path, timeout: 4)
+                Self.trace("\(path) -> \(found.count) models")
+                if found.count > baseline.count { return found }
+            } catch {
+                Self.trace("\(path) -> \(error.localizedDescription)")
             }
         }
-        return (try? await modelList("v1/models")) ?? []
+        return baseline
     }
 
-    private func modelList(_ path: String) async throws -> [ModelOption] {
-        let (data, response) = try await session.data(for: try request(path))
+    private func modelList(
+        _ path: String, timeout: TimeInterval? = nil
+    ) async throws -> [ModelOption] {
+        var call = try request(path)
+        if let timeout { call.timeoutInterval = timeout }
+        let (data, response) = try await session.data(for: call)
         guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
+        Self.trace("\(path) -> HTTP \(http.statusCode), \(data.count) bytes")
         guard (200..<300).contains(http.statusCode) else {
             throw failure(status: http.statusCode, data: data, response: http)
         }
         return Self.parseModels(data)
+    }
+
+    /// Says which endpoint answered and how. Which of these a given Hermes
+    /// serves is documented nowhere, so an empty picker should name the reason
+    /// rather than leave it to be guessed at.
+    nonisolated static func trace(_ line: String) {
+        Logger(subsystem: "com.freixanet.alice", category: "models")
+            .notice("\(line)")
+        FileHandle.standardError.write(Data(("[alice] " + line + "\n").utf8))
     }
 
     // MARK: - Failure shaping
