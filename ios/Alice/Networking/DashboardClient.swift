@@ -91,9 +91,32 @@ actor DashboardClient {
         }
     }
 
-    private func fetch(_ path: String) async throws -> [String: Any] {
+    /// Writes go through the same signed-in session as reads.
+    @discardableResult
+    func send(
+        _ method: String, _ path: String, _ body: [String: Any]? = nil
+    ) async throws -> [String: Any] {
+        guard credentials != nil else { throw Failure.notConfigured }
+        if !signedIn { try await signIn() }
+        do {
+            return try await fetch(path, method: method, body: body)
+        } catch Failure.http(401) {
+            signedIn = false
+            try await signIn()
+            return try await fetch(path, method: method, body: body)
+        }
+    }
+
+    private func fetch(
+        _ path: String, method: String = "GET", body: [String: Any]? = nil
+    ) async throws -> [String: Any] {
         guard let credentials else { throw Failure.notConfigured }
-        let request = URLRequest(url: credentials.url.appending(path: path))
+        var request = URLRequest(url: credentials.url.appending(path: path))
+        request.httpMethod = method
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
         let (data, response) = try await send(request)
         guard let http = response as? HTTPURLResponse else { throw Failure.unreachable }
         guard (200..<300).contains(http.statusCode) else {
@@ -109,6 +132,24 @@ actor DashboardClient {
             throw Failure.unreachable
         }
     }
+}
+
+/// A Hermes profile — what the desktop client calls a bot.
+///
+/// A bot is not a separate kind of thing: it is a profile with its own SOUL,
+/// model, skills and sessions. Everything the desktop shows under Bot Mode is
+/// this, which is why it can be built here at all.
+struct BotRow: Identifiable, Hashable, Sendable {
+    var id: String { name }
+    let name: String
+    var displayName: String
+    var detail: String
+    var model: String?
+    var provider: String?
+    var skills: Int
+    var isDefault: Bool
+    var gatewayRunning: Bool
+    var active: Bool
 }
 
 /// A named workspace, with how much of the agent's time it has taken.
@@ -164,6 +205,62 @@ struct UsageReport: Sendable {
 }
 
 extension DashboardClient {
+    func bots() async throws -> [BotRow] {
+        // Sequential rather than concurrent: `[String: Any]` is not Sendable,
+        // so it cannot cross out of the actor in parallel, and two small reads
+        // over a local network are not worth a wrapper type.
+        let object = try await get("api/profiles")
+        let activeObject = try await get("api/profiles/active")
+        let active = (activeObject["active"] as? String)
+            ?? (activeObject["current"] as? String)
+        let rows = (object["profiles"] as? [[String: Any]]) ?? []
+        return rows.compactMap { row in
+            guard let name = row["name"] as? String else { return nil }
+            return BotRow(
+                name: name,
+                displayName: (row["display_name"] as? String).flatMap {
+                    $0.isEmpty ? nil : $0
+                } ?? name,
+                detail: (row["description"] as? String) ?? "",
+                model: row["model"] as? String,
+                provider: row["provider"] as? String,
+                skills: (row["skill_count"] as? Int) ?? 0,
+                isDefault: (row["is_default"] as? Bool) ?? false,
+                gatewayRunning: (row["gateway_running"] as? Bool) ?? false,
+                active: name == active
+            )
+        }
+    }
+
+    /// The bot's standing instructions. `exists` is false for a profile that
+    /// has never been given one, which is different from an empty one.
+    func soul(_ name: String) async throws -> (text: String, exists: Bool) {
+        let object = try await get("api/profiles/\(name)/soul")
+        return ((object["content"] as? String) ?? "", (object["exists"] as? Bool) ?? false)
+    }
+
+    func setSoul(_ name: String, _ content: String) async throws {
+        try await send("PUT", "api/profiles/\(name)/soul", ["content": content])
+    }
+
+    func setDescription(_ name: String, _ text: String) async throws {
+        try await send("PUT", "api/profiles/\(name)/description", ["description": text])
+    }
+
+    func activate(_ name: String) async throws {
+        try await send("POST", "api/profiles/active", ["name": name])
+    }
+
+    func createBot(name: String, description: String) async throws {
+        var body: [String: Any] = ["name": name]
+        if !description.isEmpty { body["description"] = description }
+        try await send("POST", "api/profiles", body)
+    }
+
+    func deleteBot(_ name: String) async throws {
+        try await send("DELETE", "api/profiles/\(name)")
+    }
+
     func projects() async throws -> [ProjectRow] {
         let object = try await get("api/profiles/projects/tree")
         let rows = (object["projects"] as? [[String: Any]]) ?? []

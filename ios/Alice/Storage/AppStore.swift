@@ -265,6 +265,22 @@ final class AppStore {
 
     static let dashboardAccount = "dashboard-password"
 
+    func bots() async throws -> [BotRow] { try await dashboard.bots() }
+    func soul(_ name: String) async throws -> (text: String, exists: Bool) {
+        try await dashboard.soul(name)
+    }
+    func setSoul(_ name: String, _ text: String) async throws {
+        try await dashboard.setSoul(name, text)
+    }
+    func setBotDescription(_ name: String, _ text: String) async throws {
+        try await dashboard.setDescription(name, text)
+    }
+    func activateBot(_ name: String) async throws { try await dashboard.activate(name) }
+    func createBot(name: String, description: String) async throws {
+        try await dashboard.createBot(name: name, description: description)
+    }
+    func deleteBot(_ name: String) async throws { try await dashboard.deleteBot(name) }
+
     func projects() async throws -> [ProjectRow] { try await dashboard.projects() }
     func memoryProviders() async throws -> [MemoryProvider] { try await dashboard.memory() }
     func usage() async throws -> UsageReport { try await dashboard.usage() }

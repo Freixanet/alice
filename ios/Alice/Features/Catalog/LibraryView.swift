@@ -18,12 +18,13 @@ struct LibraryView: View {
     /// gateway-only install: these collections are served by the dashboard,
     /// which is a separate process, so the row says so rather than opening a
     /// screen that would only ever be empty.
-    /// Artifacts and Agents have no route at all — not on the gateway and not
-    /// on the dashboard, whose 281 published routes include neither. They are
-    /// listed so their absence is stated rather than left as a gap.
+    /// Artifacts has no route at all — not on the gateway and not among the
+    /// dashboard's 281. Subagents have none either: the only agent-shaped
+    /// routes install plugins. Bots, which are profiles, do — they were
+    /// missing here because the search was for the wrong word.
     private let pending: [Surface] = [
         .init(id: "artifacts", title: "Artifacts", symbol: "paperclip", capability: "artifacts"),
-        .init(id: "agents", title: "Agents", symbol: "person.2", capability: "agents"),
+        .init(id: "subagents", title: "Subagents", symbol: "point.3.connected.trianglepath.dotted", capability: "delegation"),
     ]
 
     /// A built screen links through; the capability check happens inside it so
@@ -73,6 +74,9 @@ struct LibraryView: View {
 
                 if store.dashboardReady {
                     Section("From the dashboard") {
+                        NavigationLink { BotsScreen() } label: {
+                            Label("Bots", systemImage: "person.2")
+                        }
                         NavigationLink { ProjectsScreen() } label: {
                             Label("Projects", systemImage: "folder")
                         }
