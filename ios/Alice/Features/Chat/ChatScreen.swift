@@ -61,6 +61,17 @@ struct ChatScreen: View {
 
             Spacer(minLength: 0)
 
+            // The mark, not the name: the drawer already says "Alice", and a
+            // second wordmark on the screen it opens from is one too many.
+            AliceMark(size: 30)
+                .foregroundStyle(.primary)
+                // Its ink sits 0.75pt above the two glyphs either side, the
+                // flags being lighter than the body they sit over.
+                .offset(y: 0.75)
+                .accessibilityHidden(true)
+
+            Spacer(minLength: 0)
+
             Button {
                 store.newChat()
             } label: {

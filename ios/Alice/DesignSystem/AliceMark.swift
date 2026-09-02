@@ -1,0 +1,61 @@
+import SwiftUI
+
+/// The mark from the web client, drawn rather than shipped as an image so it
+/// takes the current foreground colour and any size without a second asset to
+/// keep in step.
+///
+/// One canvas, not a stack of shapes: a `Path` laid out in a `ZStack` is
+/// positioned by its own bounding box, so the wings and the flags each get
+/// re-centred and the drawing falls apart. Here every stroke keeps the SVG's
+/// 32-unit coordinates and the whole thing is scaled once.
+struct AliceMark: View {
+    var size: CGFloat = 24
+
+    private static let box: CGFloat = 32
+
+    var body: some View {
+        Canvas { context, area in
+            context.scaleBy(
+                x: area.width / Self.box, y: area.height / Self.box
+            )
+
+            context.fill(flag(tip: 15.1, corner: 7.6, base: 9.4), with: .foreground)
+            context.fill(flag(tip: 16.9, corner: 24.4, base: 22.6), with: .foreground)
+
+            for direction in [-5.5, 5.5] as [CGFloat] {
+                context.stroke(
+                    wing(toward: direction),
+                    with: .foreground,
+                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round)
+                )
+            }
+
+            context.fill(
+                Path(roundedRect: CGRect(x: 15, y: 7.2, width: 2, height: 18.4),
+                     cornerRadius: 1),
+                with: .foreground
+            )
+        }
+        .frame(width: size, height: size)
+    }
+
+    private func flag(tip: CGFloat, corner: CGFloat, base: CGFloat) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: tip, y: 7.4))
+            path.addLine(to: CGPoint(x: corner, y: 5.1))
+            path.addLine(to: CGPoint(x: base, y: 10.8))
+            path.closeSubpath()
+        }
+    }
+
+    private func wing(toward dx: CGFloat) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: 16, y: 11.2))
+            path.addCurve(
+                to: CGPoint(x: 16, y: 21.2),
+                control1: CGPoint(x: 16 + dx, y: 12.7),
+                control2: CGPoint(x: 16 + dx, y: 19.7)
+            )
+        }
+    }
+}

@@ -39,7 +39,7 @@ struct RootView: View {
                     .overlay {
                         // Grows with the gesture rather than appearing at the end,
                         // so the conversation hands over its prominence gradually.
-                        Color.black.opacity(0.28 * progress)
+                        Color.black.opacity(0.45 * progress)
                             .ignoresSafeArea()
                             // Only swallows touches once the drawer is really
                             // open, so a half-swipe never blocks the chat.

@@ -7,7 +7,7 @@ struct Sidebar: View {
     let width: CGFloat
     let onDismiss: () -> Void
 
-    @State private var query = ""
+    @State private var showSearch = false
     @State private var showSettings = false
     @State private var showConnect = false
     @State private var showLibrary = false
@@ -30,53 +30,42 @@ struct Sidebar: View {
         .sheet(isPresented: $showLibrary) {
             NavigationStack { LibraryView() }
         }
+        .fullScreenCover(isPresented: $showSearch) {
+            SearchScreen(onOpen: onDismiss)
+        }
     }
 
     private var header: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Alice").font(.aliceTitle(.title2))
-                Spacer()
-                Button {
-                    store.newChat()
-                    onDismiss()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .medium))
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.glass)
-                .accessibilityLabel("New chat")
-            }
-
-            HStack(spacing: 8) {
+        HStack {
+            // Aligned with the rows below rather than with the drawer's edge:
+            // a title that starts 8pt left of everything under it reads as a
+            // mistake, not as a heading.
+            Text("Alice").font(.aliceTitle(.title))
+            Spacer()
+            Button {
+                showSearch = true
+            } label: {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .font(.footnote)
-                TextField("Search", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.subheadline)
+                    .font(.system(size: 18, weight: .medium))
+                    .imageScale(.large)
+                    .frame(width: 44, height: 44)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(Palette.muted(scheme), in: .capsule)
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Search")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
+        .padding(.leading, 24)
+        .padding(.trailing, 12)
+        // The same 11pt the conversation's controls take, so the search button
+        // and the drawer button line up while both are on screen.
+        .padding(.top, 11)
         .padding(.bottom, 12)
-    }
-
-    private var filtered: [Conversation] {
-        guard !query.isEmpty else { return store.conversations }
-        return store.conversations.filter {
-            $0.title.localizedCaseInsensitiveContains(query)
-        }
     }
 
     private var list: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(filtered) { conversation in
+                ForEach(store.conversations) { conversation in
                     Button {
                         store.activeID = conversation.id
                         onDismiss()

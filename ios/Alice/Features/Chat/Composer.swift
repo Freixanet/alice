@@ -33,7 +33,7 @@ struct Composer: View {
             if !commands.isEmpty { commandList }
             composer
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 18)
         .padding(.bottom, 10)
         // Flicking the composer down puts the keyboard away, which is quicker
         // than reaching for the transcript to tap it.
@@ -147,6 +147,7 @@ struct Composer: View {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .medium))
                 .frame(width: controlHeight, height: controlHeight)
+                .background(Palette.muted(scheme).opacity(0.7), in: .circle)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
