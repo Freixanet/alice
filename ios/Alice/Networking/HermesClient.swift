@@ -33,21 +33,49 @@ actor HermesClient {
         case badResponse
         case http(status: Int, detail: String, limit: ModelLimit?)
         case unreachable
+        case timedOut
+        case offline
 
         var errorDescription: String? {
             switch self {
             case .badResponse: "Hermes sent something Alice could not read."
             case let .http(_, detail, _): detail
-            case .unreachable: "Couldn’t reach Hermes."
+            case .unreachable: "Couldn’t reach that address from this iPhone."
+            case .timedOut:
+                "Hermes didn’t answer in time. If it is on a private network, "
+                    + "check this iPhone can reach it."
+            case .offline: "This iPhone has no network connection."
             }
+        }
+    }
+
+    /// Turns a URL-loading error into something that names what went wrong,
+    /// rather than surfacing "The request timed out" with no idea whose fault
+    /// that was.
+    static func describe(_ error: Error) -> Failure {
+        if let failure = error as? Failure { return failure }
+        let code = (error as NSError).code
+        switch code {
+        case NSURLErrorTimedOut: return .timedOut
+        case NSURLErrorNotConnectedToInternet: return .offline
+        case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost,
+             NSURLErrorDNSLookupFailed, NSURLErrorNetworkConnectionLost:
+            return .unreachable
+        default: return .unreachable
         }
     }
 
     let session: URLSession
     private var endpoint: Endpoint?
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    init(session: URLSession? = nil) {
+        // A Hermes that is unreachable should say so in seconds, not after the
+        // system default of a minute. The web client settled on twelve.
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 12
+        configuration.timeoutIntervalForResource = 30
+        configuration.waitsForConnectivity = false
+        self.session = session ?? URLSession(configuration: configuration)
     }
 
     func connect(to endpoint: Endpoint) {

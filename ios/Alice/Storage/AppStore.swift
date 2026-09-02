@@ -85,18 +85,44 @@ final class AppStore {
         defer { isConnecting = false }
 
         await client.connect(to: .init(url: url, key: key))
+
+        // Neither call is required on its own. A build can serve models without
+        // a capability manifest, or a manifest while the model list is slow, and
+        // failing the whole connection because one of them did not answer is
+        // what left this spinning until the request timed out.
+        var reachedSomething = false
+        var firstFailure: Error?
+
         do {
-            let manifest = try await client.capabilities()
-            let models = try await client.models()
-            self.manifest = manifest
-            self.models = models
-            if selectedModel == nil { selectedModel = models.first?.id }
+            manifest = try await client.capabilities()
+            reachedSomething = true
+        } catch {
+            manifest = nil
+            firstFailure = error
+        }
+
+        do {
+            let found = try await client.models()
+            models = found
+            if selectedModel == nil || !found.contains(where: { $0.id == selectedModel }) {
+                selectedModel = found.first?.id
+            }
+            reachedSomething = true
+        } catch {
+            models = []
+            if firstFailure == nil { firstFailure = error }
+        }
+
+        if reachedSomething {
             isConnected = true
+            connectionError = nil
             gatewayURL = url.absoluteString
             if persist { try? KeyStore.save(key) }
-        } catch {
+        } else {
             isConnected = false
-            connectionError = error.localizedDescription
+            connectionError = HermesClient.describe(
+                firstFailure ?? HermesClient.Failure.unreachable
+            ).localizedDescription
             await client.disconnect()
         }
     }
