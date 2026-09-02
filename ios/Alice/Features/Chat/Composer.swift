@@ -24,6 +24,7 @@ struct Composer: View {
     @State private var photos: [PhotosPickerItem] = []
     @State private var showPhotos = false
     @State private var showFiles = false
+    @State private var showCamera = false
     /// Counts taps rather than watching `listening`, so the tap is felt even
     /// when dictation fails to start — which is exactly when the reader most
     /// needs to know the button registered.
@@ -52,6 +53,10 @@ struct Composer: View {
                 }
         )
         .sheet(isPresented: $showModels) { ModelPicker() }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { store.draftAttachments.append($0) }
+                .ignoresSafeArea()
+        }
         .photosPicker(
             isPresented: $showPhotos, selection: $photos,
             maxSelectionCount: 4, matching: .images
@@ -190,6 +195,13 @@ struct Composer: View {
     /// control, so it now does the thing it has always looked like it does.
     private var attachButton: some View {
         Menu {
+            if CameraPicker.isAvailable {
+                Button {
+                    showCamera = true
+                } label: {
+                    Label("Camera", systemImage: "camera")
+                }
+            }
             Button {
                 showPhotos = true
             } label: {
@@ -203,11 +215,13 @@ struct Composer: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .medium))
+                // Full strength: at secondary it read as the disabled control
+                // it used to be, which is the opposite of what it now is.
+                .foregroundStyle(.primary)
                 .frame(width: controlHeight, height: controlHeight)
                 .background(Palette.muted(scheme).opacity(0.7), in: .circle)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
         .accessibilityLabel("Attach")
     }
 

@@ -26,6 +26,17 @@ enum AttachmentLoader {
         )
     }
 
+    /// An image already in memory — what the camera hands back.
+    static func photo(_ image: UIImage, name: String = "Photo") -> Attachment? {
+        guard let jpeg = downscale(image).jpegData(compressionQuality: 0.7) else {
+            return nil
+        }
+        return Attachment(
+            id: UUID().uuidString, name: name,
+            mime: "image/jpeg", kind: .image, data: jpeg
+        )
+    }
+
     static func file(at url: URL) -> Attachment? {
         // A file handed over by the document picker lives outside the app's
         // sandbox; without this the read fails with a permission error.
@@ -59,6 +70,61 @@ enum AttachmentLoader {
         )
         return UIGraphicsImageRenderer(size: size).image { _ in
             image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+}
+
+/// The system camera, handed back as an attachment.
+///
+/// `PhotosPicker` covers the library but cannot take a picture, and there is
+/// still no SwiftUI camera, so this is the UIKit controller in a wrapper.
+struct CameraPicker: UIViewControllerRepresentable {
+    let onCapture: (Attachment) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    /// False in the Simulator and on any device without one, where offering
+    /// the option would open a controller that cannot do anything.
+    static var isAvailable: Bool {
+        UIImagePickerController.isSourceTypeAvailable(.camera)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let controller = UIImagePickerController()
+        controller.sourceType = .camera
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCapture: onCapture, onFinish: { dismiss() })
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate,
+                             UINavigationControllerDelegate {
+        private let onCapture: (Attachment) -> Void
+        private let onFinish: () -> Void
+
+        init(onCapture: @escaping (Attachment) -> Void, onFinish: @escaping () -> Void) {
+            self.onCapture = onCapture
+            self.onFinish = onFinish
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage,
+               let attachment = AttachmentLoader.photo(image) {
+                onCapture(attachment)
+            }
+            onFinish()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            onFinish()
         }
     }
 }

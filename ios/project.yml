@@ -34,6 +34,9 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         # The key is read back only for the user who put it there.
+        NSCameraUsageDescription: >-
+          Alice uses the camera when you attach a photo you take from the
+          composer.
         NSMicrophoneUsageDescription: >-
           Alice uses the microphone when you dictate a message.
         NSSpeechRecognitionUsageDescription: >-
