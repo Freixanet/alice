@@ -35,6 +35,7 @@ actor HermesClient {
         case unreachable
         case timedOut
         case offline
+        case blockedByPolicy
 
         var errorDescription: String? {
             switch self {
@@ -45,6 +46,8 @@ actor HermesClient {
                 "Hermes didn’t answer in time. If it is on a private network, "
                     + "check this iPhone can reach it."
             case .offline: "This iPhone has no network connection."
+            case .blockedByPolicy:
+                "iOS refused an unencrypted connection to that address." 
             }
         }
     }
@@ -61,6 +64,8 @@ actor HermesClient {
         case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost,
              NSURLErrorDNSLookupFailed, NSURLErrorNetworkConnectionLost:
             return .unreachable
+        case NSURLErrorAppTransportSecurityRequiresSecureConnection:
+            return .blockedByPolicy
         default: return .unreachable
         }
     }

@@ -43,6 +43,17 @@ targets:
         # A Hermes on the local network is reached over plain HTTP; a hosted one
         # is HTTPS and unaffected by this exception.
         NSAppTransportSecurity:
+          # A self-hosted Hermes usually answers over plain HTTP on an address
+          # only its owner can reach — a LAN box, a tailnet peer, a machine on
+          # the desk. `NSAllowsLocalNetworking` covers `.local` names and
+          # link-local ranges, but not a tailnet address like 100.x, so every
+          # such connection was refused before it left the phone and surfaced
+          # as "couldn't reach that address".
+          #
+          # The app talks only to the address its user typed, and the key never
+          # travels anywhere else, so the exception is scoped by intent rather
+          # than by a list of hosts nobody can predict.
+          NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: >-
           Alice connects to the Hermes agent running on your network.
