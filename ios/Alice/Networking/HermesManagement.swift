@@ -34,6 +34,25 @@ struct JobRow: Identifiable, Hashable, Sendable {
     var nextRun: Date?
 }
 
+/// A run of the agent as the server recorded it — from the phone, the web,
+/// a messaging channel or a scheduled job alike.
+struct SessionRow: Identifiable, Hashable, Sendable {
+    let id: String
+    var title: String
+    var preview: String
+    var source: String?
+    var model: String?
+    var messageCount: Int
+    var toolCallCount: Int
+    var inputTokens: Int
+    var outputTokens: Int
+    /// Nil where the provider bills by subscription and reports nothing.
+    var cost: Double?
+    var lastActive: Date?
+
+    var tokens: Int { inputTokens + outputTokens }
+}
+
 extension HermesClient {
     /// Reads a management collection.
     ///
@@ -176,6 +195,48 @@ extension HermesClient {
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+
+    /// Every run the server has kept, newest first.
+    ///
+    /// One page of 500 covers an install with 129 of them, and `has_more`
+    /// says when it does not — so the caller is told the list is partial
+    /// rather than quietly shown a slice.
+    func sessions(limit: Int = 500) async throws -> (rows: [SessionRow], complete: Bool) {
+        let (data, response) = try await session.data(
+            for: try request("api/sessions?limit=\(limit)")
+        )
+        guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let detail = HermesClient.detail(from: data)
+                ?? "Hermes returned \(http.statusCode)."
+            throw Failure.http(status: http.statusCode, detail: detail, limit: nil)
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rows = object["data"] as? [[String: Any]]
+        else { return ([], true) }
+
+        let parsed = rows.compactMap { row -> SessionRow? in
+            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+            let cost = (row["actual_cost_usd"] as? Double)
+                ?? (row["estimated_cost_usd"] as? Double)
+            return SessionRow(
+                id: id,
+                title: (row["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                    ?? "Untitled",
+                preview: (row["preview"] as? String) ?? "",
+                source: row["source"] as? String,
+                model: row["model"] as? String,
+                messageCount: (row["message_count"] as? Int) ?? 0,
+                toolCallCount: (row["tool_call_count"] as? Int) ?? 0,
+                inputTokens: (row["input_tokens"] as? Int) ?? 0,
+                outputTokens: (row["output_tokens"] as? Int) ?? 0,
+                cost: (cost ?? 0) > 0 ? cost : nil,
+                lastActive: HermesClient.date(row["last_active"])
+                    ?? HermesClient.date(row["started_at"])
+            )
+        }
+        return (parsed, (object["has_more"] as? Bool) != true)
     }
 
     enum CatalogKind { case skill, toolset }

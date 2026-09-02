@@ -22,7 +22,6 @@ struct LibraryView: View {
         .init(id: "projects", title: "Projects", symbol: "folder", capability: "projects"),
         .init(id: "artifacts", title: "Artifacts", symbol: "paperclip", capability: "artifacts"),
         .init(id: "memory", title: "Memory", symbol: "brain", capability: "memory"),
-        .init(id: "insights", title: "Insights", symbol: "chart.line.uptrend.xyaxis", capability: "insights"),
         .init(id: "agents", title: "Agents", symbol: "person.2", capability: "agents"),
     ]
 
@@ -58,6 +57,16 @@ struct LibraryView: View {
                         JobsScreen()
                     } label: {
                         Label("Jobs", systemImage: "clock")
+                    }
+                    NavigationLink {
+                        SessionsScreen()
+                    } label: {
+                        Label("Sessions", systemImage: "clock.arrow.circlepath")
+                    }
+                    NavigationLink {
+                        InsightsScreen()
+                    } label: {
+                        Label("Insights", systemImage: "chart.line.uptrend.xyaxis")
                     }
                 }
 

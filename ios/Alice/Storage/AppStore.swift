@@ -200,6 +200,10 @@ final class AppStore {
         try await client.jobs(manifest)
     }
 
+    func sessions() async throws -> (rows: [SessionRow], complete: Bool) {
+        try await client.sessions()
+    }
+
     func supports(_ capability: String) -> Bool {
         manifest?.supports(capability) ?? false
     }
