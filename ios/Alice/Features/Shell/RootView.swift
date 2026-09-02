@@ -16,64 +16,69 @@ struct RootView: View {
     private let drawerWidth: CGFloat = 300
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                ChatScreen(onOpenDrawer: openDrawer)
-                    .disabled(drawerOpen)
-                    .overlay {
-                        if drawerOpen {
-                            // Tapping the conversation closes the drawer, the
-                            // way it does everywhere else this pattern is used.
-                            Color.black.opacity(0.28 * progress)
-                                .ignoresSafeArea()
-                                .onTapGesture { closeDrawer() }
-                        }
+        ZStack(alignment: .leading) {
+            ChatScreen(onOpenDrawer: { setDrawer(true) })
+                .offset(x: offset * 0.28)
+                .overlay {
+                    if offset > 0 {
+                        Color.black.opacity(0.3 * progress)
+                            .ignoresSafeArea()
+                            // Only swallows touches once the drawer is really
+                            // open, so a half-swipe never blocks the chat.
+                            .allowsHitTesting(drawerOpen)
+                            .onTapGesture { setDrawer(false) }
                     }
-                    .offset(x: offset * 0.35)
+                }
 
-                Sidebar(width: drawerWidth, onDismiss: closeDrawer)
-                    .frame(width: drawerWidth)
-                    .offset(x: offset - drawerWidth)
+            Sidebar(width: drawerWidth, onDismiss: { setDrawer(false) })
+                .frame(width: drawerWidth)
+                .offset(x: offset - drawerWidth)
+
+            // A thin strip owns the open gesture. Putting the drag on the whole
+            // screen fought every scroll view underneath it.
+            if !drawerOpen {
+                Color.clear
+                    .frame(width: 20)
+                    .contentShape(.rect)
+                    .gesture(edgeDrag)
+                    .ignoresSafeArea()
             }
-            .background(Palette.background(scheme))
-            .gesture(edgeDrag(in: geometry.size))
-            .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.86), value: drawerOpen)
         }
+        .background(Palette.background(scheme))
+        .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
+        .gesture(drawerOpen ? closeDrag : nil)
     }
 
     private var offset: CGFloat {
-        let base: CGFloat = drawerOpen ? drawerWidth : 0
-        return min(max(base + drag, 0), drawerWidth)
+        min(max((drawerOpen ? drawerWidth : 0) + drag, 0), drawerWidth)
     }
 
     private var progress: CGFloat { offset / drawerWidth }
 
-    /// Swipe from the left edge to open, and anywhere to close. The threshold is
-    /// a third of the width so a hesitant drag settles rather than sticking.
-    private func edgeDrag(in size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .global)
-            .onChanged { value in
-                if drawerOpen {
-                    drag = min(0, value.translation.width)
-                } else if value.startLocation.x < 28 {
-                    drag = max(0, value.translation.width)
-                }
-            }
+    private var edgeDrag: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { drag = max(0, $0.translation.width) }
             .onEnded { value in
-                let shouldOpen = offset > drawerWidth / 3
-                    || value.predictedEndTranslation.width > drawerWidth / 2
+                let flick = value.predictedEndTranslation.width > 120
+                let far = drag > drawerWidth * 0.3
                 drag = 0
-                drawerOpen = drawerOpen ? offset > drawerWidth / 2 : shouldOpen
+                setDrawer(flick || far)
             }
     }
 
-    private func openDrawer() {
-        drag = 0
-        drawerOpen = true
+    private var closeDrag: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { drag = min(0, $0.translation.width) }
+            .onEnded { value in
+                let flick = value.predictedEndTranslation.width < -120
+                let far = drag < -drawerWidth * 0.3
+                drag = 0
+                setDrawer(!(flick || far))
+            }
     }
 
-    private func closeDrawer() {
+    private func setDrawer(_ open: Bool) {
         drag = 0
-        drawerOpen = false
+        drawerOpen = open
     }
 }

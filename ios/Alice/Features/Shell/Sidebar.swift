@@ -20,8 +20,7 @@ struct Sidebar: View {
             footer
         }
         .frame(maxHeight: .infinity)
-        .background(Palette.card(scheme))
-        .ignoresSafeArea(edges: .bottom)
+        .background(Palette.card(scheme).ignoresSafeArea())
         .sheet(isPresented: $showSettings) {
             NavigationStack { SettingsView() }
         }
@@ -62,7 +61,7 @@ struct Sidebar: View {
             .background(Palette.muted(scheme), in: .capsule)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 60)
+        .padding(.top, 10)
         .padding(.bottom, 12)
     }
 
@@ -131,7 +130,7 @@ struct Sidebar: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
-        .padding(.bottom, 34)
+        .padding(.bottom, 12)
     }
 
     private func row(

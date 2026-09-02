@@ -11,9 +11,16 @@ struct ChatScreen: View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 transcript
+                    // A plain tap anywhere off the composer dismisses the
+                    // keyboard; `simultaneousGesture` leaves scrolling and text
+                    // selection working underneath it.
+                    .simultaneousGesture(
+                        TapGesture().onEnded { composerFocused = false }
+                    )
                 Composer(focused: $composerFocused)
             }
             .background(Palette.background(scheme))
+            .contentShape(.rect)
             .scrollEdgeEffectStyle(.soft, for: .top)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -23,16 +30,15 @@ struct ChatScreen: View {
                     }
                     .accessibilityLabel("Chats")
                 }
-                // The model belongs in the title: it is what the reply depends
-                // on, and it changes far more often than anything else here.
-                ToolbarItem(placement: .principal) {
-                    ModelMenu()
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         store.newChat()
                     } label: {
+                        // `square.and.pencil` hangs its pencil off the top-right,
+                        // so the glyph reads low and left inside a round button.
+                        // Nudge it back to the optical centre.
                         Image(systemName: "square.and.pencil")
+                            .offset(x: 1, y: -1)
                     }
                     .accessibilityLabel("New chat")
                 }
@@ -67,41 +73,6 @@ struct ChatScreen: View {
     }
 
     private var bottomAnchor: String { "bottom" }
-}
-
-private struct ModelMenu: View {
-    @Environment(AppStore.self) private var store
-
-    var body: some View {
-        Menu {
-            if store.models.isEmpty {
-                Text("Connect your Hermes")
-            } else {
-                ForEach(store.models) { model in
-                    Button {
-                        store.selectedModel = model.id
-                    } label: {
-                        if model.id == store.selectedModel {
-                            Label(model.label, systemImage: "checkmark")
-                        } else {
-                            Text(model.label)
-                        }
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text(current).font(.headline)
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var current: String {
-        store.models.first { $0.id == store.selectedModel }?.label ?? "Alice"
-    }
 }
 
 private struct EmptyChatView: View {
