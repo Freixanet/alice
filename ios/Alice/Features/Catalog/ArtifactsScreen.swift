@@ -7,6 +7,8 @@ import SwiftUI
 /// out of what the agent said — so the list is a reading of the record, not a
 /// query against a store, and it says as much at the bottom.
 struct ArtifactsScreen: View {
+    var title = "Artifacts"
+
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.openURL) private var openURL
@@ -28,7 +30,7 @@ struct ArtifactsScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let failure {
                 ContentUnavailableView(
-                    "Artifacts", systemImage: "paperclip", description: Text(failure)
+                    title, systemImage: "paperclip", description: Text(failure)
                 )
             } else if found.isEmpty {
                 ContentUnavailableView(
@@ -39,7 +41,7 @@ struct ArtifactsScreen: View {
                 list
             }
         }
-        .navigationTitle("Artifacts")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))

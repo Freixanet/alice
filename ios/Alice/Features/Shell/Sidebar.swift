@@ -8,13 +8,20 @@ struct Sidebar: View {
     let onDismiss: () -> Void
 
     @State private var showSearch = false
-    @State private var showSettings = false
-    @State private var showConnect = false
-    @State private var showLibrary = false
+    @State private var going: Destination?
+
+    /// Where the drawer can take you. The frequent ones sit above the
+    /// conversations, where they are reached without scrolling; the rest are
+    /// in Settings, which is where things you set once belong.
+    private enum Destination: String, Identifiable {
+        case bots, jobs, projects, skills, tools, library, settings, connect
+        var id: String { rawValue }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             header
+            destinations
             sectionLabel("Recents")
             list
             Divider().opacity(0.4)
@@ -22,14 +29,18 @@ struct Sidebar: View {
         }
         .frame(maxHeight: .infinity)
         .background(Palette.card(scheme).ignoresSafeArea())
-        .sheet(isPresented: $showSettings) {
-            NavigationStack { SettingsView() }
-        }
-        .sheet(isPresented: $showConnect) {
-            ConnectView()
-        }
-        .sheet(isPresented: $showLibrary) {
-            NavigationStack { LibraryView() }
+        .sheet(item: $going) { destination in
+            switch destination {
+            case .bots: closable { BotsScreen() }
+            case .jobs: closable { JobsScreen() }
+            case .projects: closable { ProjectsScreen() }
+            case .skills: closable { CatalogScreen(source: .skills) }
+            case .tools: closable { CatalogScreen(source: .toolsets) }
+            case .library: closable { LibraryView() }
+            // These two bring their own Done; a second would be one too many.
+            case .settings: NavigationStack { SettingsView() }
+            case .connect: ConnectView()
+            }
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchScreen(onOpen: onDismiss)
@@ -61,6 +72,40 @@ struct Sidebar: View {
         // and the drawer button line up while both are on screen.
         .padding(.top, 11)
         .padding(.bottom, 12)
+    }
+
+    /// Every destination gets a way out. A sheet whose only exit is a swipe
+    /// is a sheet the reader has to guess at, and these are opened often
+    /// enough that guessing gets old.
+    private func closable<Content: View>(
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        NavigationStack {
+            content()
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { going = nil }
+                    }
+                }
+        }
+    }
+
+    /// The handful worth reaching in one tap. Bots and Projects come from the
+    /// dashboard, so they appear only once there is one to ask.
+    private var destinations: some View {
+        VStack(spacing: 2) {
+            if store.dashboardReady {
+                row("Bots", systemImage: "person.2") { going = .bots }
+            }
+            row("Jobs", systemImage: "clock") { going = .jobs }
+            if store.dashboardReady {
+                row("Projects", systemImage: "folder") { going = .projects }
+            }
+            row("Skills", systemImage: "sparkles") { going = .skills }
+            row("Tools", systemImage: "wrench.adjustable") { going = .tools }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
     }
 
     private func sectionLabel(_ title: String) -> some View {
@@ -107,10 +152,10 @@ struct Sidebar: View {
 
     private var footer: some View {
         VStack(spacing: 2) {
-            row("Library", systemImage: "square.grid.2x2") { showLibrary = true }
-            row("Settings", systemImage: "gearshape") { showSettings = true }
+            row("Library", systemImage: "photo.on.rectangle") { going = .library }
+            row("Settings", systemImage: "gearshape") { going = .settings }
             Button {
-                showConnect = true
+                going = .connect
             } label: {
                 HStack(spacing: 10) {
                     Circle()

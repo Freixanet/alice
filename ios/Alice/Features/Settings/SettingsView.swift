@@ -9,6 +9,26 @@ struct SettingsView: View {
         @Bindable var store = store
 
         Form {
+            Section("What the agent has been doing") {
+                NavigationLink { SessionsScreen() } label: {
+                    Label("Sessions", systemImage: "clock.arrow.circlepath")
+                }
+                NavigationLink { InsightsScreen() } label: {
+                    Label("Insights", systemImage: "chart.line.uptrend.xyaxis")
+                }
+                if store.dashboardReady {
+                    NavigationLink { UsageScreen() } label: {
+                        Label("Usage", systemImage: "chart.bar")
+                    }
+                    NavigationLink { MemoryScreen() } label: {
+                        Label("Memory", systemImage: "brain")
+                    }
+                }
+                NavigationLink { CatalogScreen(source: .addons) } label: {
+                    Label("Add-ons", systemImage: "puzzlepiece.extension")
+                }
+            }
+
             Section("General") {
                 Picker("Theme", selection: $store.theme) {
                     ForEach(ThemeChoice.allCases) { choice in
