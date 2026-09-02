@@ -46,11 +46,28 @@ struct RootView: View {
                             .allowsHitTesting(drawerOpen)
                             .onTapGesture { setDrawer(false) }
                     }
+                    .overlay {
+                        // The corners need an edge of their own. Dimming a
+                        // near-black conversation over a near-black drawer
+                        // leaves three levels out of 255 between them, and the
+                        // rounding measured as present while being invisible.
+                        // A hairline states the shape instead of implying it.
+                        RoundedRectangle(
+                            cornerRadius: displayCornerRadius, style: .continuous
+                        )
+                        .strokeBorder(
+                            Palette.border(scheme).opacity(0.55 * progress),
+                            lineWidth: 0.75
+                        )
+                    }
                     // Rounded to the display's own radius: once it has moved, its
                     // left corners are out in the middle of the screen, and square
                     // ones there would give away that this is a flat layer rather
-                    // than the phone's surface sliding aside.
-                    .clipShape(.rect(cornerRadius: displayCornerRadius))
+                    // than the phone's surface sliding aside. Continuous, because
+                    // that is the curve the bezel is drawn with.
+                    .clipShape(.rect(
+                        cornerRadius: displayCornerRadius, style: .continuous
+                    ))
                     .offset(x: offset)
             }
             // Both layers have to reach the physical edges: the drawer so it fills
@@ -58,7 +75,11 @@ struct RootView: View {
             // on the bezel rather than being cut at the status bar. The screens
             // inside still take their insets from the window, so nothing moves.
             .ignoresSafeArea()
-            .background(Palette.background(scheme))
+            // The drawer's own surface, because this is what the conversation's
+            // rounded corners cut through to. Painting the page background here
+            // left the corners opening onto nothing — a wedge of a colour that
+            // belongs to neither layer.
+            .background(Palette.card(scheme))
             .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
             // The drawer answers a sideways swipe from anywhere, not just from a
             // strip at the edge. `DrawerPan` only claims a drag that starts out
