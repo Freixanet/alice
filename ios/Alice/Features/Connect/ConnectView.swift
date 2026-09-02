@@ -3,6 +3,7 @@ import SwiftUI
 struct ConnectView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
     @State private var address = ""
     @State private var key = ""
 
@@ -12,8 +13,15 @@ struct ConnectView: View {
                 Section {
                     if store.isConnected {
                         LabeledContent("Status") {
-                            Label("Online", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                            // Not a `Label`: inside a `LabeledContent` one lays
+                            // out as though it were the row's own title, and
+                            // the row grew to about four times its height with
+                            // a stray separator floating in the gap.
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("Online")
+                            }
+                            .foregroundStyle(.green)
                         }
                         LabeledContent("Address", value: store.gatewayURL)
                         if let version = store.manifest?.version {
@@ -60,19 +68,41 @@ struct ConnectView: View {
                     }
                 }
 
-                if store.isConnected, let manifest = store.manifest {
-                    Section("What this Hermes can do") {
-                        // Screens are gated on what the agent advertises, so
-                        // this is also the honest answer to "why is that empty".
-                        ForEach(manifest.advertised.sorted(), id: \.self) { name in
-                            Text(name).font(.caption.monospaced())
-                        }
-                    }
-                }
+                if store.isConnected { abilities }
             }
             .navigationTitle("Connect")
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
+            // A sheet with nothing but a swipe to close it is a sheet the
+            // reader has to guess at.
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    /// What the agent says it can do — and, when it says nothing, that it said
+    /// nothing, which is the honest answer to why half the app is greyed out.
+    @ViewBuilder
+    private var abilities: some View {
+        let advertised = store.manifest?.advertised.sorted() ?? []
+        Section {
+            if advertised.isEmpty {
+                Text("This Hermes did not advertise a capability manifest, so screens that depend on one stay hidden.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(advertised, id: \.self) { name in
+                    Text(name).font(.caption.monospaced())
+                }
+            }
+        } header: {
+            Text("What this Hermes can do")
+        } footer: {
+            if !advertised.isEmpty {
+                Text("Named as your Hermes reports them. Screens that need something missing from this list stay hidden rather than failing when you open them.")
+            }
         }
     }
 }

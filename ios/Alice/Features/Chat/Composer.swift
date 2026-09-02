@@ -160,14 +160,10 @@ struct Composer: View {
         Button {
             showModels = true
         } label: {
-            HStack(spacing: 4) {
-                Text(currentModel)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .foregroundStyle(.secondary)
+            Text(currentModel)
+                .font(.subheadline)
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .frame(height: controlHeight)
             .background(Palette.muted(scheme).opacity(0.7), in: .capsule)

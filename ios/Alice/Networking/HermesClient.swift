@@ -221,18 +221,46 @@ actor HermesClient {
 
     // MARK: - Parsing
 
+    /// Reads what a Hermes says it can do.
+    ///
+    /// It does not say it under one key. The running gateway advertises
+    /// nothing called `capabilities` at all — it publishes a `features` map of
+    /// 29 flags and an `endpoints` map of 28 routes, and reading only
+    /// `capabilities` is why the phone believed a fully-featured agent could
+    /// do nothing. This mirrors the web's `collectAdvertised`: every source
+    /// is read, and an endpoint the server publishes counts as a capability,
+    /// because publishing the route is the server saying it serves it.
+    ///
+    /// A flag whose value is an object counts too — `runs_idempotency` is
+    /// `{supported, durable, retention_seconds}`, not `true` — while a flag
+    /// explicitly `false` does not.
     static func parseManifest(_ object: [String: Any]) -> Manifest {
         var advertised: [String] = []
-        if let list = object["capabilities"] as? [String] {
-            advertised = list
-        } else if let map = object["capabilities"] as? [String: Any] {
-            advertised = map.compactMap { key, value in
-                (value as? Bool) == true ? key : nil
+
+        for key in ["capabilities", "features", "toolsets"] {
+            if let list = object[key] as? [String] {
+                advertised.append(contentsOf: list)
+            } else if let map = object[key] as? [String: Any] {
+                for (name, value) in map {
+                    if value as? Bool == true || value is [String: Any] {
+                        advertised.append(name)
+                    }
+                }
             }
         }
-        if let extra = object["advertised"] as? [String] {
-            advertised.append(contentsOf: extra)
+        if let list = object["advertised"] as? [String] {
+            advertised.append(contentsOf: list)
         }
+        if let endpoints = object["endpoints"] as? [String: Any] {
+            for (name, value) in endpoints {
+                guard let route = value as? [String: Any],
+                      route["method"] is String, route["path"] is String
+                else { continue }
+                advertised.append(name)
+            }
+        }
+
+        advertised = orderedUnique(advertised)
         let normalized = advertised.map {
             $0.lowercased().replacingOccurrences(
                 of: "[ .-]", with: "_", options: .regularExpression
@@ -246,6 +274,11 @@ actor HermesClient {
             capabilities: Set(normalized),
             advertised: advertised
         )
+    }
+
+    private static func orderedUnique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
     }
 
     /// Hermes answers `/v1/models` in one of two shapes.
