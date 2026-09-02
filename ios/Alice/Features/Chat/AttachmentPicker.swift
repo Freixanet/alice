@@ -140,7 +140,7 @@ struct AttachmentChips: View {
     let attachments: [Attachment]
     let onRemove: (Attachment) -> Void
 
-    private let tile: CGFloat = 56
+    private let tile: CGFloat = 68
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -148,18 +148,16 @@ struct AttachmentChips: View {
                 ForEach(attachments) { attachment in
                     preview(attachment)
                         .frame(width: tile, height: tile)
-                        .clipShape(.rect(cornerRadius: 12))
+                        .clipShape(.rect(cornerRadius: 14))
                         .overlay(alignment: .topTrailing) {
-                            remove(attachment)
+                            remove(attachment).padding(5)
                         }
                 }
             }
-            // Room for the remove button, which sits over the corner of the
-            // square rather than inside it, where it would cover the picture
-            // it is asking about.
-            .padding(.horizontal, 8)
-            .padding(.top, 7)
-            .padding(.trailing, 7)
+            // Lined up with the text field's own inset. The remove button
+            // lives inside the square, so the row claims no margin of its own
+            // to hold it.
+            .padding(.horizontal, 4)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
@@ -172,11 +170,11 @@ struct AttachmentChips: View {
                 .resizable()
                 .scaledToFill()
         } else {
-            VStack(spacing: 4) {
+            VStack(spacing: 5) {
                 Image(systemName: "doc")
-                    .font(.system(size: 18, weight: .light))
+                    .font(.system(size: 21, weight: .light))
                 Text(attachment.name)
-                    .font(.system(size: 8))
+                    .font(.system(size: 9))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -192,16 +190,15 @@ struct AttachmentChips: View {
             onRemove(attachment)
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-                .background(Palette.card(scheme), in: .circle)
-                .overlay(
-                    Circle().strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5)
-                )
+                .font(.system(size: 10, weight: .bold))
+                // A material rather than a fixed colour: sitting on top of an
+                // arbitrary photo, a flat circle is legible over some pictures
+                // and invisible over others.
+                .foregroundStyle(.primary)
+                .frame(width: 22, height: 22)
+                .background(.ultraThinMaterial, in: .circle)
         }
         .buttonStyle(.plain)
-        .offset(x: 7, y: -7)
         .accessibilityLabel("Remove \(attachment.name)")
     }
 }
