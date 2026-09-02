@@ -265,6 +265,27 @@ final class AppStore {
 
     static let dashboardAccount = "dashboard-password"
 
+    /// Scans the most recent sessions for what the agent produced.
+    ///
+    /// Bounded on purpose: whole sessions run to hundreds of kilobytes, and
+    /// the desktop client scans thirty. Fifteen is enough to fill a screen
+    /// without making the phone read several megabytes to do it.
+    func artifacts(limit: Int = 15) async throws -> [Artifact] {
+        let recent = try await client.sessions().rows
+            .filter { $0.messageCount > 1 }
+            .prefix(limit)
+        var found: [Artifact] = []
+        var seen = Set<String>()
+        for session in recent {
+            let messages = (try? await client.messages(session.id)) ?? []
+            for artifact in ArtifactScanner.scan(messages, session: session.title)
+            where seen.insert(artifact.id).inserted {
+                found.append(artifact)
+            }
+        }
+        return found.sorted { ($0.when ?? .distantPast) > ($1.when ?? .distantPast) }
+    }
+
     func bots() async throws -> [BotRow] { try await dashboard.bots() }
     func soul(_ name: String) async throws -> (text: String, exists: Bool) {
         try await dashboard.soul(name)

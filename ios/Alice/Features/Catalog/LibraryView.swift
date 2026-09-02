@@ -1,31 +1,14 @@
 import SwiftUI
 
-/// Skills, Tools, Add-ons, Projects, Artifacts and Memory all live on Hermes'
-/// management surface. Each is listed here with the capability it needs, so an
-/// empty section says *why* it is empty rather than just looking broken.
+/// Everything the agent can show that is not the conversation.
+///
+/// Split by where it comes from: the first section is served by the gateway
+/// the app is already talking to, the second only by the dashboard, which is
+/// a separate process and an optional connection. A section that is not there
+/// is not a gap — it is an install without that half.
 struct LibraryView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
-
-    private struct Surface: Identifiable {
-        let id: String
-        let title: String
-        let symbol: String
-        let capability: String
-    }
-
-    /// Everything else the web client shows. None of it is reachable from a
-    /// gateway-only install: these collections are served by the dashboard,
-    /// which is a separate process, so the row says so rather than opening a
-    /// screen that would only ever be empty.
-    /// Artifacts has no route at all — not on the gateway and not among the
-    /// dashboard's 281. Subagents have none either: the only agent-shaped
-    /// routes install plugins. Bots, which are profiles, do — they were
-    /// missing here because the search was for the wrong word.
-    private let pending: [Surface] = [
-        .init(id: "artifacts", title: "Artifacts", symbol: "paperclip", capability: "artifacts"),
-        .init(id: "subagents", title: "Subagents", symbol: "point.3.connected.trianglepath.dotted", capability: "delegation"),
-    ]
 
     /// A built screen links through; the capability check happens inside it so
     /// the reason for an empty list is stated where the user is looking.
@@ -70,6 +53,11 @@ struct LibraryView: View {
                     } label: {
                         Label("Insights", systemImage: "chart.line.uptrend.xyaxis")
                     }
+                    NavigationLink {
+                        ArtifactsScreen()
+                    } label: {
+                        Label("Artifacts", systemImage: "paperclip")
+                    }
                 }
 
                 if store.dashboardReady {
@@ -89,21 +77,6 @@ struct LibraryView: View {
                     }
                 }
 
-                Section(store.dashboardReady
-                    ? "Not served by this Hermes"
-                    : "Needs the Hermes dashboard") {
-                    ForEach(pending) { surface in
-                        let available = store.supports(surface.capability)
-                        HStack {
-                            Label(surface.title, systemImage: surface.symbol)
-                            Spacer()
-                            Text(available ? "Not built yet" : "Not served here")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .foregroundStyle(available ? .primary : .secondary)
-                    }
-                }
                     }
                 } else {
                     ContentUnavailableView(

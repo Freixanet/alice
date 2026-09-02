@@ -239,6 +239,36 @@ extension HermesClient {
         return (parsed, (object["has_more"] as? Bool) != true)
     }
 
+    /// One turn as the server stored it, with the tool that produced it.
+    struct StoredMessage: Sendable {
+        var role: String
+        var content: String
+        var toolName: String?
+        var timestamp: Date?
+    }
+
+    /// The messages of one session. Whole sessions run to hundreds of turns
+    /// and hundreds of kilobytes, so callers scan a bounded number of them.
+    func messages(_ sessionID: String) async throws -> [StoredMessage] {
+        let (data, response) = try await session.data(
+            for: try request("api/sessions/\(sessionID)/messages")
+        )
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode)
+        else { throw Failure.badResponse }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rows = object["data"] as? [[String: Any]]
+        else { return [] }
+        return rows.map { row in
+            StoredMessage(
+                role: (row["role"] as? String) ?? "",
+                content: (row["content"] as? String) ?? "",
+                toolName: row["tool_name"] as? String,
+                timestamp: HermesClient.date(row["timestamp"])
+            )
+        }
+    }
+
     enum CatalogKind { case skill, toolset }
 
     static func parseCatalog(_ rows: [[String: Any]], kind: CatalogKind) -> [CatalogRow] {
