@@ -255,6 +255,31 @@ final class AppStore {
         }
     }
 
+    /// Runs the last exchange again.
+    ///
+    /// Drops the reply and everything after it, then resends the user turn that
+    /// prompted it — so a failed or unsatisfying answer is replaced rather than
+    /// piled on top of, and the model sees the same history it saw the first
+    /// time.
+    func retry(_ messageID: String) {
+        guard !isSending,
+              let chat = conversations.firstIndex(where: { $0.id == activeID }),
+              let index = conversations[chat].messages.firstIndex(where: { $0.id == messageID }),
+              conversations[chat].messages[index].role == .assistant
+        else { return }
+
+        let priorUser = conversations[chat].messages[..<index]
+            .last { $0.role == .user }
+        guard let priorUser else { return }
+
+        conversations[chat].messages.removeSubrange(index...)
+        if let userIndex = conversations[chat].messages.firstIndex(where: { $0.id == priorUser.id }) {
+            conversations[chat].messages.remove(at: userIndex)
+        }
+        draft = priorUser.content
+        send()
+    }
+
     func stop() {
         streamTask?.cancel()
         streamTask = nil

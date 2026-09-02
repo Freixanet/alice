@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MessageRow: View {
+    @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let message: Message
 
@@ -33,6 +34,11 @@ struct MessageRow: View {
 
                     if !message.tools.isEmpty { ToolList(tools: message.tools) }
                     if let limit = message.errorLimit { ModelLimitNote(limit: limit) }
+                    // Only once the reply has finished: acting on half an
+                    // answer copies or shares something that is still changing.
+                    if !message.pending && !message.content.isEmpty {
+                        MessageActions(message: message)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -44,6 +50,46 @@ struct MessageRow: View {
             markdown: message.content,
             options: .init(interpretedSyntax: .full, failurePolicy: .returnPartiallyParsedIfPossible)
         )) ?? AttributedString(message.content)
+    }
+}
+
+private struct MessageActions: View {
+    @Environment(AppStore.self) private var store
+    let message: Message
+    @State private var copied = false
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Button {
+                UIPasteboard.general.string = message.content
+                copied = true
+                Task {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    copied = false
+                }
+            } label: {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .accessibilityLabel(copied ? "Copied" : "Copy")
+
+            ShareLink(item: message.content) {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel("Share")
+
+            Button {
+                store.retry(message.id)
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .disabled(store.isSending)
+            .accessibilityLabel("Try again")
+        }
+        .font(.system(size: 15))
+        .foregroundStyle(.secondary)
+        .buttonStyle(.plain)
+        .padding(.top, 2)
     }
 }
 
