@@ -65,7 +65,10 @@ private struct MessageActions: View {
     @State private var copied = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        // Every slot carries its own half of the gap, so spacing here is 0
+        // and the leading inset pulls the first glyph's ink back onto the
+        // paragraph's left edge rather than onto its slot's edge.
+        HStack(spacing: 0) {
             Button {
                 UIPasteboard.general.string = message.content
                 copied = true
@@ -74,24 +77,22 @@ private struct MessageActions: View {
                     copied = false
                 }
             } label: {
-                Image(systemName: copied ? "checkmark" : "square.on.square")
-                    .contentTransition(.symbolEffect(.replace))
+                ActionIcon(copied ? "checkmark" : "square.on.square", slot: 16.67)
             }
             .accessibilityLabel(copied ? "Copied" : "Copy")
 
             ShareLink(item: message.content) {
-                Image(systemName: "square.and.arrow.up")
+                ActionIcon("square.and.arrow.up", slot: 14)
             }
             .accessibilityLabel("Share")
 
             Button {
                 speech.toggle(message.content, id: message.id)
             } label: {
-                Image(
-                    systemName: speech.isSpeaking(message.id)
-                        ? "speaker.slash" : "speaker.wave.2"
+                ActionIcon(
+                    speech.isSpeaking(message.id) ? "speaker.slash" : "speaker.wave.2",
+                    slot: 17.33
                 )
-                .contentTransition(.symbolEffect(.replace))
             }
             .accessibilityLabel(
                 speech.isSpeaking(message.id) ? "Stop reading" : "Read aloud"
@@ -100,15 +101,69 @@ private struct MessageActions: View {
             Button {
                 store.retry(message.id)
             } label: {
-                Image(systemName: "arrow.triangle.2.circlepath")
+                ActionIcon("arrow.triangle.2.circlepath", slot: 19.33)
             }
             .disabled(store.isSending)
             .accessibilityLabel("Try again")
         }
-        .font(.system(size: 16))
+        // Slots carry half a gap each, so the first glyph's ink would sit
+        // half a gap in from the paragraph. Pull it back out, less the
+        // 0.67pt of left side bearing the text above already carries, so the
+        // copy square lines up with the letters instead of overhanging them.
+        .padding(.leading, -ActionIcon.gap / 2 + 0.67)
         .foregroundStyle(.secondary)
         .buttonStyle(.plain)
-        .padding(.top, 4)
+        .padding(.top, 2)
+    }
+}
+
+/// One action glyph, laid out by the pixels it actually paints.
+///
+/// SF Symbols share neither a layout box nor an ink size. At 16pt the share
+/// tray paints 14x17.75pt inside an 18x21 box while the refresh cycle paints
+/// 19.75x16 inside 20x18, so spacing them by their boxes — or on a fixed
+/// pitch — leaves uneven whitespace: the gap before the refresh glyph
+/// measured 2pt tighter than the others, which is what made the row read as
+/// ragged.
+///
+/// Each glyph gets a slot as wide as its own ink plus one shared gap. Two
+/// neighbours then contribute half a gap each, so the whitespace between any
+/// two glyphs is exactly `gap` whatever their widths. `slot` is the widest
+/// ink among the states one button can show, so the row does not reflow when
+/// a glyph swaps.
+///
+/// Slot widths are the ink the device actually paints, which runs a little
+/// under what `scripts/measure-symbol-ink.swift` reports — the renderer
+/// drops the faintest antialiased edge, 1.4pt of it on the speaker's outer
+/// wave. Take the script's numbers as the starting point and settle them
+/// against a screenshot; re-derive both if the symbol set, weight or point
+/// size changes.
+private struct ActionIcon: View {
+    static let gap: CGFloat = 12
+    private static let pointSize: CGFloat = 16
+
+    private let symbol: String
+    private let slot: CGFloat
+
+    init(_ symbol: String, slot: CGFloat) {
+        self.symbol = symbol
+        self.slot = slot
+    }
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: Self.pointSize))
+            .contentTransition(.symbolEffect(.replace))
+            .offset(y: -Self.inkDropBelowCentre(symbol))
+            .frame(width: slot + Self.gap, height: 30)
+            .contentShape(.rect)
+    }
+
+    /// How far a symbol's ink centre sits below its layout centre. Only the
+    /// share tray is off: its arrow overshoots the box upward, leaving the
+    /// drawn shape 0.63pt low. Everything else is centred as drawn.
+    private static func inkDropBelowCentre(_ symbol: String) -> CGFloat {
+        symbol == "square.and.arrow.up" ? 0.63 : 0
     }
 }
 
