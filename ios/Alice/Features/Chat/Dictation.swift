@@ -30,7 +30,10 @@ final class Dictation {
 
     var isListening: Bool { state == .listening }
 
-    func toggle(locale: Locale = .current, onText: @escaping (String) -> Void) {
+    func toggle(
+        locale: Locale = .current,
+        onText: @escaping @MainActor @Sendable (String) -> Void
+    ) {
         if isListening {
             stop()
         } else {
@@ -38,7 +41,10 @@ final class Dictation {
         }
     }
 
-    private func start(locale: Locale, onText: @escaping (String) -> Void) async {
+    private func start(
+        locale: Locale,
+        onText: @escaping @MainActor @Sendable (String) -> Void
+    ) async {
         guard await requestAccess() else {
             state = .unavailable("Alice needs permission to use the microphone.")
             return
@@ -61,21 +67,39 @@ final class Dictation {
 
             let input = engine.inputNode
             input.removeTap(onBus: 0)
-            input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) {
-                buffer, _ in
-                request.append(buffer)
+            // The hardware's own format. Asking for the output format can hand
+            // back a zero sample rate before the session settles, and
+            // `installTap` raises on that.
+            let format = input.inputFormat(forBus: 0)
+            guard format.sampleRate > 0, format.channelCount > 0 else {
+                state = .unavailable("The microphone is not available right now.")
+                teardown()
+                return
+            }
+            // The tap fires on the realtime audio thread, so the closure must
+            // not inherit this actor: an isolation check there aborts the
+            // process. `append` is safe to call from that thread.
+            nonisolated(unsafe) let sink = request
+            input.installTap(onBus: 0, bufferSize: 1024, format: format) {
+                @Sendable buffer, _ in
+                sink.append(buffer)
             }
             engine.prepare()
             try engine.start()
 
-            task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            task = recognizer.recognitionTask(with: request) {
+                @Sendable [weak self] result, error in
+                let spokenText = result?.bestTranscription.formattedString
+                let done = error != nil || result?.isFinal == true
                 Task { @MainActor in
                     guard let self else { return }
-                    if let result {
-                        let spoken = result.bestTranscription.formattedString
-                        onText(self.prefix.isEmpty ? spoken : self.prefix + " " + spoken)
+                    if let spokenText {
+                        onText(
+                            self.prefix.isEmpty
+                                ? spokenText : self.prefix + " " + spokenText
+                        )
                     }
-                    if error != nil || result?.isFinal == true { self.stop() }
+                    if done { self.stop() }
                 }
             }
             state = .listening
@@ -109,10 +133,21 @@ final class Dictation {
     }
 
     private func requestAccess() async -> Bool {
-        let speech = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
-        }
-        guard speech == .authorized else { return false }
+        guard await Self.speechAuthorization() == .authorized else { return false }
         return await AVAudioApplication.requestRecordPermission()
+    }
+
+    /// `requestAuthorization` answers on whatever queue it likes. Resuming a
+    /// continuation from an actor-isolated closure there trips Swift 6's
+    /// executor check and takes the process down with SIGILL, so this stays
+    /// off the main actor and the caller hops back on its own.
+    private nonisolated static func speechAuthorization()
+        async -> SFSpeechRecognizerAuthorizationStatus
+    {
+        await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
+        }
     }
 }
