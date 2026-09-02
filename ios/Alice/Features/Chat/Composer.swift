@@ -14,11 +14,16 @@ struct Composer: View {
     @Namespace private var glass
     @State private var showModels = false
 
+    /// One height for every control on the bottom row, so the send button and
+    /// the model chip line up instead of each taking the size its own padding
+    /// happens to produce.
+    private let controlHeight: CGFloat = 34
+
     var body: some View {
         @Bindable var store = store
 
         GlassEffectContainer(spacing: 14) {
-            VStack(spacing: 10) {
+            VStack(spacing: 18) {
                 TextField("Talk to Alice…", text: $store.draft, axis: .vertical)
                     .lineLimit(1...7)
                     .textFieldStyle(.plain)
@@ -58,7 +63,7 @@ struct Composer: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .medium))
-                .frame(width: 32, height: 32)
+                .frame(width: controlHeight, height: controlHeight)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
@@ -80,8 +85,8 @@ struct Composer: View {
                     .font(.system(size: 10, weight: .semibold))
             }
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            .frame(height: controlHeight)
             .background(Palette.muted(scheme).opacity(0.7), in: .capsule)
         }
         .buttonStyle(.plain)
@@ -107,10 +112,15 @@ struct Composer: View {
         } label: {
             Image(systemName: stopping ? "stop.fill" : "arrow.up")
                 .font(.system(size: 16, weight: .semibold))
-                .frame(width: 36, height: 36)
+                .frame(width: controlHeight, height: controlHeight)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .buttonStyle(.glassProminent)
+        // `.glassProminent` sizes itself, adding about 10pt of its own padding
+        // around the label — measured at 44pt tall next to a 34pt chip. Applying
+        // the material to an exact frame instead keeps the row one height.
+        .buttonStyle(.plain)
+        .foregroundStyle(store.isConnected ? Color.primary : Color.secondary)
+        .glassEffect(.regular.interactive(), in: .circle)
         .glassEffectID("send", in: glass)
         .disabled(!sending && (!hasDraft || !store.isConnected))
         .accessibilityLabel(stopping ? "Stop" : "Send")
