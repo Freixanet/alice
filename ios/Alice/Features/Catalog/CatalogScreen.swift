@@ -167,11 +167,15 @@ struct CatalogScreen: View {
                 }
             }
             Spacer(minLength: 8)
-            if source.togglable {
+            // Only where the agent both reports the state and accepts a
+            // change. This build serves neither for skills, and a switch that
+            // invents an "off" and then 404s on the way back is worse than a
+            // plain row.
+            if source.togglable, let enabled = row.enabled {
                 if busy.contains(row.id) {
                     ProgressView().frame(width: 51)
                 } else {
-                    Toggle(row.label, isOn: enabledBinding(row))
+                    Toggle(row.label, isOn: enabledBinding(row, enabled))
                         .labelsHidden()
                 }
             }
@@ -181,9 +185,9 @@ struct CatalogScreen: View {
 
     /// Hermes owns the state, so the switch reflects `rows` and only moves once
     /// the agent has accepted the change.
-    private func enabledBinding(_ row: CatalogRow) -> Binding<Bool> {
+    private func enabledBinding(_ row: CatalogRow, _ fallback: Bool) -> Binding<Bool> {
         Binding(
-            get: { rows.first { $0.id == row.id }?.enabled ?? row.enabled },
+            get: { rows.first { $0.id == row.id }?.enabled ?? fallback },
             set: { toggle(row, to: $0) }
         )
     }

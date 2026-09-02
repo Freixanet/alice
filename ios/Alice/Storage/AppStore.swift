@@ -186,14 +186,18 @@ final class AppStore {
     /// list the user is not looking at is never kept in memory or refreshed.
     func catalog(_ source: CatalogScreen.Source) async throws -> [CatalogRow] {
         switch source {
-        case .skills: try await client.skills()
-        case .toolsets: try await client.toolsets()
-        case .addons: try await client.mcpServers()
+        case .skills: try await client.skills(manifest)
+        case .toolsets: try await client.toolsets(manifest)
+        case .addons: try await client.mcpServers(manifest)
         }
     }
 
     func setSkill(_ name: String, enabled: Bool) async throws {
         try await client.toggleSkill(name: name, enabled: enabled)
+    }
+
+    func jobs() async throws -> [JobRow] {
+        try await client.jobs(manifest)
     }
 
     func supports(_ capability: String) -> Bool {

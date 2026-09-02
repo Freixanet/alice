@@ -14,12 +14,16 @@ struct LibraryView: View {
         let capability: String
     }
 
+    /// Everything else the web client shows. None of it is reachable from a
+    /// gateway-only install: these collections are served by the dashboard,
+    /// which is a separate process, so the row says so rather than opening a
+    /// screen that would only ever be empty.
     private let pending: [Surface] = [
         .init(id: "projects", title: "Projects", symbol: "folder", capability: "projects"),
         .init(id: "artifacts", title: "Artifacts", symbol: "paperclip", capability: "artifacts"),
         .init(id: "memory", title: "Memory", symbol: "brain", capability: "memory"),
-        .init(id: "cron", title: "Jobs", symbol: "clock", capability: "cron"),
         .init(id: "insights", title: "Insights", symbol: "chart.line.uptrend.xyaxis", capability: "insights"),
+        .init(id: "agents", title: "Agents", symbol: "person.2", capability: "agents"),
     ]
 
     /// A built screen links through; the capability check happens inside it so
@@ -50,15 +54,20 @@ struct LibraryView: View {
                     row(.skills, symbol: "sparkles")
                     row(.toolsets, symbol: "wrench.adjustable")
                     row(.addons, symbol: "puzzlepiece.extension")
+                    NavigationLink {
+                        JobsScreen()
+                    } label: {
+                        Label("Jobs", systemImage: "clock")
+                    }
                 }
 
-                Section("Coming from the same surface") {
+                Section("Needs the Hermes dashboard") {
                     ForEach(pending) { surface in
                         let available = store.supports(surface.capability)
                         HStack {
                             Label(surface.title, systemImage: surface.symbol)
                             Spacer()
-                            Text(available ? "Not built yet" : "Not advertised")
+                            Text(available ? "Not built yet" : "Not served here")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

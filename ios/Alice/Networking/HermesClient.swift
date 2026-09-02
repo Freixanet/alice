@@ -16,6 +16,15 @@ actor HermesClient {
         var version: String?
         var capabilities: Set<String> = []
         var advertised: [String] = []
+        /// The routes the server publishes, by name. Hermes does not serve
+        /// every collection from the same place — this build answers skills on
+        /// `/v1/skills` while another serves `/api/skills` — and it says which
+        /// in its own manifest. Asking it beats guessing.
+        var endpoints: [String: String] = [:]
+
+        func path(_ name: String) -> String? {
+            endpoints[name].map { $0.hasPrefix("/") ? String($0.dropFirst()) : $0 }
+        }
 
         func supports(_ capability: String) -> Bool {
             capabilities.contains(capability)
@@ -236,6 +245,7 @@ actor HermesClient {
     /// explicitly `false` does not.
     static func parseManifest(_ object: [String: Any]) -> Manifest {
         var advertised: [String] = []
+        var routes: [String: String] = [:]
 
         for key in ["capabilities", "features", "toolsets"] {
             if let list = object[key] as? [String] {
@@ -254,9 +264,11 @@ actor HermesClient {
         if let endpoints = object["endpoints"] as? [String: Any] {
             for (name, value) in endpoints {
                 guard let route = value as? [String: Any],
-                      route["method"] is String, route["path"] is String
+                      route["method"] is String,
+                      let path = route["path"] as? String
                 else { continue }
                 advertised.append(name)
+                routes[name] = path
             }
         }
 
@@ -272,7 +284,8 @@ actor HermesClient {
         return Manifest(
             version: version,
             capabilities: Set(normalized),
-            advertised: advertised
+            advertised: advertised,
+            endpoints: routes
         )
     }
 

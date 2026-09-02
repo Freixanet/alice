@@ -6,12 +6,32 @@ struct CatalogRow: Identifiable, Hashable, Sendable {
     var name: String
     var label: String
     var detail: String
-    var enabled: Bool
+    /// Nil when the server does not report state at all. A gateway serving
+    /// `/v1/skills` sends only a name, a description and a category — reading
+    /// that as `false` put a hundred skills behind switches that said they
+    /// were off, which was not something the agent had said.
+    var enabled: Bool?
     var group: String?
     /// Tool names for a toolset; empty for a skill.
     var tools: [String] = []
     /// Present on toolsets that need keys they do not have.
     var configured: Bool?
+}
+
+/// A scheduled job as Hermes reports it.
+struct JobRow: Identifiable, Hashable, Sendable {
+    let id: String
+    var name: String
+    var prompt: String
+    /// Already in words from the server — "every 10m", "0 9 * * 1-5" — so the
+    /// app does not reinvent cron parsing to say something the agent has
+    /// already said.
+    var schedule: String
+    var enabled: Bool
+    var lastStatus: String?
+    var lastError: String?
+    var lastRun: Date?
+    var nextRun: Date?
 }
 
 extension HermesClient {
@@ -21,6 +41,32 @@ extension HermesClient {
     /// API at `/v1/*` — a build can serve one and not the other, which is why
     /// every screen checks before it asks.
     private func managementList(_ path: String) async throws -> [[String: Any]] {
+        try await managementList(paths: [path])
+    }
+
+    /// Reads the first of these paths the server answers.
+    ///
+    /// The caller passes the manifest's own route first and the historical
+    /// ones after it. Hardcoding `/api/skills` meant a gateway that serves
+    /// `/v1/skills` — and says so in its manifest — returned 404 for a
+    /// hundred installed skills.
+    private func managementList(paths: [String]) async throws -> [[String: Any]] {
+        var lastFailure: Error = Failure.badResponse
+        for path in paths {
+            do {
+                return try await managementRows(path)
+            } catch let failure as Failure {
+                if case let .http(status, _, _) = failure, status == 404 {
+                    lastFailure = failure
+                    continue
+                }
+                throw failure
+            }
+        }
+        throw lastFailure
+    }
+
+    private func managementRows(_ path: String) async throws -> [[String: Any]] {
         let (data, response) = try await session.data(for: try request(path))
         guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
         guard (200..<300).contains(http.statusCode) else {
@@ -35,23 +81,47 @@ extension HermesClient {
         let object = try? JSONSerialization.jsonObject(with: data)
         if let rows = object as? [[String: Any]] { return rows }
         if let map = object as? [String: Any] {
-            for key in ["skills", "toolsets", "items", "data", "results"] {
+            for key in ["skills", "toolsets", "jobs", "items", "data", "results"] {
                 if let rows = map[key] as? [[String: Any]] { return rows }
             }
         }
         return []
     }
 
-    func skills() async throws -> [CatalogRow] {
-        HermesClient.parseCatalog(try await managementList("api/skills"), kind: .skill)
+    func skills(_ manifest: Manifest?) async throws -> [CatalogRow] {
+        HermesClient.parseCatalog(
+            try await managementList(paths: routes(manifest, "skills", "api/skills", "v1/skills")),
+            kind: .skill
+        )
     }
 
-    func toolsets() async throws -> [CatalogRow] {
-        HermesClient.parseCatalog(try await managementList("api/tools/toolsets"), kind: .toolset)
+    func toolsets(_ manifest: Manifest?) async throws -> [CatalogRow] {
+        HermesClient.parseCatalog(
+            try await managementList(
+                paths: routes(manifest, "toolsets", "api/tools/toolsets", "v1/toolsets")
+            ),
+            kind: .toolset
+        )
     }
 
-    func mcpServers() async throws -> [CatalogRow] {
-        HermesClient.parseCatalog(try await managementList("api/mcp/servers"), kind: .toolset)
+    func mcpServers(_ manifest: Manifest?) async throws -> [CatalogRow] {
+        HermesClient.parseCatalog(
+            try await managementList(
+                paths: routes(manifest, "mcp_servers", "api/mcp/servers", "v1/mcp/servers")
+            ),
+            kind: .toolset
+        )
+    }
+
+    /// The manifest's route first, then the paths older builds used.
+    private func routes(
+        _ manifest: Manifest?, _ name: String, _ fallbacks: String...
+    ) -> [String] {
+        var paths = manifest?.path(name).map { [$0] } ?? []
+        for fallback in fallbacks where !paths.contains(fallback) {
+            paths.append(fallback)
+        }
+        return paths
     }
 
     /// Flips a skill on or off. Hermes owns the state; the row is refreshed
@@ -73,6 +143,41 @@ extension HermesClient {
         }
     }
 
+    /// The scheduled jobs. Served by the gateway itself rather than the
+    /// dashboard, which is why this one works where most of `/api/*` does not.
+    func jobs(_ manifest: Manifest?) async throws -> [JobRow] {
+        let rows = try await managementList(
+            paths: routes(manifest, "jobs", "api/jobs", "api/cron")
+        )
+        return rows.compactMap { row in
+            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+            let schedule = row["schedule"] as? [String: Any]
+            return JobRow(
+                id: id,
+                name: (row["name"] as? String) ?? id,
+                prompt: (row["prompt"] as? String) ?? "",
+                schedule: (row["schedule_display"] as? String)
+                    ?? (schedule?["display"] as? String)
+                    ?? (schedule?["expr"] as? String)
+                    ?? "",
+                enabled: (row["enabled"] as? Bool) ?? false,
+                lastStatus: row["last_status"] as? String,
+                lastError: (row["last_error"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                lastRun: HermesClient.date(row["last_run_at"]),
+                nextRun: HermesClient.date(row["next_run_at"])
+            )
+        }
+    }
+
+    /// Hermes sends times as ISO-8601, sometimes with fractional seconds and
+    /// sometimes without; one formatter refuses the other's output.
+    static func date(_ value: Any?) -> Date? {
+        guard let text = value as? String, !text.isEmpty else { return nil }
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+
     enum CatalogKind { case skill, toolset }
 
     static func parseCatalog(_ rows: [[String: Any]], kind: CatalogKind) -> [CatalogRow] {
@@ -86,7 +191,7 @@ extension HermesClient {
                 label: (row["label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
                     ?? prettify(name),
                 detail: (row["description"] as? String) ?? "",
-                enabled: (row["enabled"] as? Bool) ?? false,
+                enabled: row["enabled"] as? Bool,
                 group: (row["group"] as? String) ?? (row["platform"] as? String),
                 tools: tools,
                 configured: row["configured"] as? Bool
