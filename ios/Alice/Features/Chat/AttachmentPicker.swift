@@ -130,52 +130,78 @@ struct CameraPicker: UIViewControllerRepresentable {
 }
 
 /// The row of things waiting to go out with the next message.
+///
+/// One square per attachment, whatever it is. An image is shown and nothing
+/// else — a thumbnail beside its own filename is the filename twice — and a
+/// file takes the same square so the row keeps one rhythm instead of
+/// alternating between pictures and name-shaped pills.
 struct AttachmentChips: View {
     @Environment(\.colorScheme) private var scheme
     let attachments: [Attachment]
     let onRemove: (Attachment) -> Void
 
+    private let tile: CGFloat = 56
+
     var body: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ForEach(attachments) { attachment in
-                    HStack(spacing: 6) {
-                        if attachment.kind == .image,
-                           let image = UIImage(data: attachment.data) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 22, height: 22)
-                                .clipShape(.rect(cornerRadius: 5))
-                        } else {
-                            Image(systemName: "doc")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
+                    preview(attachment)
+                        .frame(width: tile, height: tile)
+                        .clipShape(.rect(cornerRadius: 12))
+                        .overlay(alignment: .topTrailing) {
+                            remove(attachment)
                         }
-                        Text(attachment.name)
-                            .font(.footnote)
-                            .lineLimit(1)
-                        Button {
-                            onRemove(attachment)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 20, height: 20)
-                                .contentShape(.rect)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Remove \(attachment.name)")
-                    }
-                    .padding(.leading, 8)
-                    .padding(.trailing, 2)
-                    .padding(.vertical, 5)
-                    .background(Palette.muted(scheme).opacity(0.7), in: .capsule)
                 }
             }
-            .padding(.horizontal, 4)
+            // Room for the remove button, which sits over the corner of the
+            // square rather than inside it, where it would cover the picture
+            // it is asking about.
+            .padding(.horizontal, 8)
+            .padding(.top, 7)
+            .padding(.trailing, 7)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
+    }
+
+    @ViewBuilder
+    private func preview(_ attachment: Attachment) -> some View {
+        if attachment.kind == .image, let image = UIImage(data: attachment.data) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+        } else {
+            VStack(spacing: 4) {
+                Image(systemName: "doc")
+                    .font(.system(size: 18, weight: .light))
+                Text(attachment.name)
+                    .font(.system(size: 8))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Palette.muted(scheme).opacity(0.8))
+        }
+    }
+
+    private func remove(_ attachment: Attachment) -> some View {
+        Button {
+            onRemove(attachment)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .background(Palette.card(scheme), in: .circle)
+                .overlay(
+                    Circle().strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .offset(x: 7, y: -7)
+        .accessibilityLabel("Remove \(attachment.name)")
     }
 }
