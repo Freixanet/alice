@@ -13,6 +13,7 @@ struct Composer: View {
     var focused: FocusState<Bool>.Binding
     @Namespace private var glass
     @State private var showModels = false
+    @State private var dictation = Dictation()
 
     /// One height for every control on the bottom row, so the send button and
     /// the model chip line up instead of each taking the size its own padding
@@ -30,11 +31,18 @@ struct Composer: View {
                     .font(.body)
                     .focused(focused)
                     .padding(.horizontal, 4)
+                    // The field only claims the height of its own text, so a
+                    // tap anywhere on the upper half of the composer used to
+                    // land on inert glass. Give it a real target.
+                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .topLeading)
+                    .contentShape(.rect)
+                    .onTapGesture { focused.wrappedValue = true }
 
                 HStack(spacing: 8) {
                     attachButton
                     modelChip
                     Spacer(minLength: 4)
+                    micButton
                     actionButton
                 }
             }
@@ -97,6 +105,27 @@ struct Composer: View {
     private var currentModel: String {
         store.models.first { $0.id == store.selectedModel }?.label
             ?? (store.isConnected ? "Model" : "Not connected")
+    }
+
+    /// Dictation writes into the draft rather than sending, so a misheard word
+    /// can be fixed before the agent ever sees it.
+    @ViewBuilder
+    private var micButton: some View {
+        let listening = dictation.isListening
+        Button {
+            dictation.prime(with: store.draft)
+            dictation.toggle { store.draft = $0 }
+        } label: {
+            Image(systemName: listening ? "waveform" : "mic")
+                .font(.system(size: 16, weight: .medium))
+                .frame(width: controlHeight, height: controlHeight)
+                .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.variableColor, isActive: listening)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(listening ? Color.accentColor : .secondary)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
     }
 
     /// One button holds the trailing slot: send when idle, stop while a reply is

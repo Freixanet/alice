@@ -34,6 +34,10 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         # The key is read back only for the user who put it there.
+        NSMicrophoneUsageDescription: >-
+          Alice uses the microphone when you dictate a message.
+        NSSpeechRecognitionUsageDescription: >-
+          Alice transcribes what you dictate so you can edit it before sending.
         NSFaceIDUsageDescription: >-
           Alice uses Face ID to unlock the connection key for your Hermes agent.
         # A Hermes on the local network is reached over plain HTTP; a hosted one
