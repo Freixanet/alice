@@ -65,7 +65,7 @@ private struct MessageActions: View {
     @State private var copied = false
 
     var body: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 10) {
             Button {
                 UIPasteboard.general.string = message.content
                 copied = true
