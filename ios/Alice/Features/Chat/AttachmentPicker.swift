@@ -140,7 +140,7 @@ struct AttachmentChips: View {
     let attachments: [Attachment]
     let onRemove: (Attachment) -> Void
 
-    private let tile: CGFloat = 84
+    private let tile: CGFloat = 100
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -148,7 +148,7 @@ struct AttachmentChips: View {
                 ForEach(attachments) { attachment in
                     preview(attachment)
                         .frame(width: tile, height: tile)
-                        .clipShape(.rect(cornerRadius: 16))
+                        .clipShape(.rect(cornerRadius: 18))
                         .overlay(alignment: .topTrailing) {
                             remove(attachment).padding(5)
                         }
@@ -173,11 +173,11 @@ struct AttachmentChips: View {
                 .resizable()
                 .scaledToFill()
         } else {
-            VStack(spacing: 5) {
+            VStack(spacing: 6) {
                 Image(systemName: "doc")
-                    .font(.system(size: 25, weight: .light))
+                    .font(.system(size: 30, weight: .light))
                 Text(attachment.name)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -190,7 +190,7 @@ struct AttachmentChips: View {
             // read as the smaller of the two.
             .background(Palette.muted(scheme))
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(Palette.border(scheme).opacity(0.35), lineWidth: 0.5)
             )
         }
