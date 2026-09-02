@@ -61,7 +61,7 @@ struct ChatScreen: View {
                         Color.clear.frame(height: 120).id(bottomAnchor)
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                    .padding(.top, 28)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: conversation.messages.last?.content) {
