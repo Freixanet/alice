@@ -146,13 +146,18 @@ actor HermesClient {
         // deployments do not expose at this address — a Tailscale Serve rule
         // that proxies `/v1` and nothing else simply swallows these, so they
         // get a short leash rather than the full request timeout.
+        // Order and timeout come from measuring a real agent: the plain
+        // options endpoint answered in 0.34s with 135 models across 54
+        // providers, while asking it to include unconfigured ones took 5.36s —
+        // past the leash these probes were on, so the fast, sufficient answer
+        // was never reached.
         for path in [
-            "api/model/options?include_unconfigured=1",
             "api/model/options",
+            "api/model/options?include_unconfigured=1",
             "api/models",
         ] {
             do {
-                let found = try await modelList(path, timeout: 4)
+                let found = try await modelList(path, timeout: 10)
                 Self.trace("\(path) -> \(found.count) models")
                 if found.count > baseline.count { return found }
             } catch {

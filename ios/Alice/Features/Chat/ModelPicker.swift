@@ -40,6 +40,18 @@ struct ModelPicker: View {
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        Task { await store.loadModels() }
+                    } label: {
+                        if store.isLoadingModels {
+                            ProgressView()
+                        } else {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .disabled(!store.isConnected || store.isLoadingModels)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
