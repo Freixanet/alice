@@ -13,7 +13,9 @@ import Security
 /// syncs, so a restore on another phone cannot carry it along.
 enum KeyStore {
     private static let service = "com.freixanet.alice.hermes"
-    private static let account = "gateway-key"
+    /// The gateway key. A second entry holds the dashboard password, which is
+    /// a different secret for a different half of the agent.
+    static let gatewayAccount = "gateway-key"
 
     enum Failure: Error, LocalizedError {
         case keychain(OSStatus)
@@ -27,7 +29,7 @@ enum KeyStore {
         }
     }
 
-    static func save(_ key: String) throws {
+    static func save(_ key: String, account: String = gatewayAccount) throws {
         let data = Data(key.utf8)
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -44,7 +46,7 @@ enum KeyStore {
         guard status == errSecSuccess else { throw Failure.keychain(status) }
     }
 
-    static func read() -> String? {
+    static func read(account: String = gatewayAccount) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -60,7 +62,7 @@ enum KeyStore {
     }
 
     @discardableResult
-    static func clear() -> Bool {
+    static func clear(account: String = gatewayAccount) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

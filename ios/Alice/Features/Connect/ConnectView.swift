@@ -6,6 +6,11 @@ struct ConnectView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var address = ""
     @State private var key = ""
+    @State private var panelAddress = ""
+    @State private var panelUser = "alice"
+    @State private var panelPassword = ""
+    @State private var panelBusy = false
+    @State private var panelError: String?
 
     var body: some View {
         NavigationStack {
@@ -69,6 +74,7 @@ struct ConnectView: View {
                 }
 
                 if store.isConnected { abilities }
+                panel
             }
             .navigationTitle("Connect")
             .scrollContentBackground(.hidden)
@@ -80,6 +86,61 @@ struct ConnectView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+
+    /// The dashboard is a second address with a second login.
+    ///
+    /// Hermes serves projects, memory and the usage figures only from here,
+    /// and only over a login — it will not listen beyond its own machine
+    /// without one. An install without a dashboard simply leaves this blank
+    /// and loses those three screens, nothing else.
+    @ViewBuilder
+    private var panel: some View {
+        Section {
+            if store.dashboardReady {
+                LabeledContent("Address", value: store.dashboardURL)
+                LabeledContent("Signed in as", value: store.dashboardUser)
+                Button("Disconnect the dashboard", role: .destructive) {
+                    Task { await store.forgetDashboard() }
+                }
+            } else {
+                TextField("Address", text: $panelAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                TextField("Username", text: $panelUser)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("Password", text: $panelPassword)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button {
+                    Task {
+                        panelBusy = true
+                        panelError = await store.connectDashboard(
+                            urlText: panelAddress,
+                            username: panelUser,
+                            password: panelPassword
+                        )
+                        if panelError == nil { panelPassword = "" }
+                        panelBusy = false
+                    }
+                } label: {
+                    if panelBusy { ProgressView() } else { Text("Sign in") }
+                }
+                .disabled(panelAddress.isEmpty || panelUser.isEmpty
+                    || panelPassword.isEmpty || panelBusy)
+                if let panelError {
+                    Text(panelError).foregroundStyle(.red)
+                }
+            }
+        } header: {
+            Text("Hermes dashboard")
+        } footer: {
+            Text(store.dashboardReady
+                ? "The password is held in the Keychain on this device only, like the connection key."
+                : "Optional. Adds Projects, Memory and Usage, which the agent serves only from its dashboard.")
         }
     }
 

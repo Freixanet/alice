@@ -11,7 +11,10 @@ struct AliceApp: App {
                 .environment(store)
                 .environment(speech)
                 .preferredColorScheme(store.theme.colorScheme)
-                .task { await store.restoreConnection() }
+                .task {
+                    await store.restoreConnection()
+                    await store.restoreDashboard()
+                }
         }
     }
 }

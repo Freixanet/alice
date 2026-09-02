@@ -21,6 +21,16 @@ final class AppStore {
         didSet { defaults.set(gatewayURL, forKey: Keys.gateway) }
     }
 
+    // The dashboard is a separate address with its own login. Kept apart from
+    // the gateway because an install can have one without the other.
+    var dashboardURL: String = "" {
+        didSet { defaults.set(dashboardURL, forKey: Keys.dashboard) }
+    }
+    var dashboardUser: String = "" {
+        didSet { defaults.set(dashboardUser, forKey: Keys.dashboardUser) }
+    }
+    private(set) var dashboardReady = false
+
     private(set) var isConnected = false
     private(set) var manifest: HermesClient.Manifest?
     private(set) var models: [HermesClient.ModelOption] = []
@@ -51,6 +61,7 @@ final class AppStore {
     private(set) var isSending = false
 
     private let client = HermesClient()
+    private let dashboard = DashboardClient()
     private let defaults = UserDefaults.standard
     private var streamTask: Task<Void, Never>?
 
@@ -60,11 +71,15 @@ final class AppStore {
         static let gateway = "alice.gateway"
         static let model = "alice.model"
         static let conversations = "alice.conversations"
+        static let dashboard = "alice.dashboard"
+        static let dashboardUser = "alice.dashboard.user"
     }
 
     init() {
         if let raw = defaults.string(forKey: Keys.theme),
            let value = ThemeChoice(rawValue: raw) { theme = value }
+        dashboardURL = defaults.string(forKey: Keys.dashboard) ?? ""
+        dashboardUser = defaults.string(forKey: Keys.dashboardUser) ?? ""
         if let raw = defaults.string(forKey: Keys.accent),
            let value = Accent(rawValue: raw) { accent = value }
         gatewayURL = defaults.string(forKey: Keys.gateway) ?? ""
@@ -203,6 +218,56 @@ final class AppStore {
     func sessions() async throws -> (rows: [SessionRow], complete: Bool) {
         try await client.sessions()
     }
+
+    // MARK: - Dashboard
+
+    /// Remembers where the dashboard is and how to sign in to it. The password
+    /// goes to the Keychain beside the gateway key, never to preferences.
+    func connectDashboard(urlText: String, username: String, password: String) async -> String? {
+        let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = Self.normalize(trimmed) else { return "Check the address." }
+        await dashboard.use(
+            .init(url: url, username: username, password: password)
+        )
+        do {
+            _ = try await dashboard.memory()
+        } catch {
+            await dashboard.use(nil)
+            dashboardReady = false
+            return (error as? LocalizedError)?.errorDescription
+                ?? "The dashboard did not answer."
+        }
+        dashboardURL = url.absoluteString
+        dashboardUser = username
+        try? KeyStore.save(password, account: Self.dashboardAccount)
+        dashboardReady = true
+        return nil
+    }
+
+    func restoreDashboard() async {
+        guard !dashboardURL.isEmpty, !dashboardUser.isEmpty,
+              let password = KeyStore.read(account: Self.dashboardAccount),
+              let url = Self.normalize(dashboardURL)
+        else { return }
+        await dashboard.use(
+            .init(url: url, username: dashboardUser, password: password)
+        )
+        dashboardReady = true
+    }
+
+    func forgetDashboard() async {
+        await dashboard.use(nil)
+        _ = KeyStore.clear(account: Self.dashboardAccount)
+        dashboardURL = ""
+        dashboardUser = ""
+        dashboardReady = false
+    }
+
+    static let dashboardAccount = "dashboard-password"
+
+    func projects() async throws -> [ProjectRow] { try await dashboard.projects() }
+    func memoryProviders() async throws -> [MemoryProvider] { try await dashboard.memory() }
+    func usage() async throws -> UsageReport { try await dashboard.usage() }
 
     func supports(_ capability: String) -> Bool {
         manifest?.supports(capability) ?? false

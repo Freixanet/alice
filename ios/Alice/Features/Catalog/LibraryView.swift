@@ -18,10 +18,11 @@ struct LibraryView: View {
     /// gateway-only install: these collections are served by the dashboard,
     /// which is a separate process, so the row says so rather than opening a
     /// screen that would only ever be empty.
+    /// Artifacts and Agents have no route at all — not on the gateway and not
+    /// on the dashboard, whose 281 published routes include neither. They are
+    /// listed so their absence is stated rather than left as a gap.
     private let pending: [Surface] = [
-        .init(id: "projects", title: "Projects", symbol: "folder", capability: "projects"),
         .init(id: "artifacts", title: "Artifacts", symbol: "paperclip", capability: "artifacts"),
-        .init(id: "memory", title: "Memory", symbol: "brain", capability: "memory"),
         .init(id: "agents", title: "Agents", symbol: "person.2", capability: "agents"),
     ]
 
@@ -70,7 +71,23 @@ struct LibraryView: View {
                     }
                 }
 
-                Section("Needs the Hermes dashboard") {
+                if store.dashboardReady {
+                    Section("From the dashboard") {
+                        NavigationLink { ProjectsScreen() } label: {
+                            Label("Projects", systemImage: "folder")
+                        }
+                        NavigationLink { MemoryScreen() } label: {
+                            Label("Memory", systemImage: "brain")
+                        }
+                        NavigationLink { UsageScreen() } label: {
+                            Label("Usage", systemImage: "chart.bar")
+                        }
+                    }
+                }
+
+                Section(store.dashboardReady
+                    ? "Not served by this Hermes"
+                    : "Needs the Hermes dashboard") {
                     ForEach(pending) { surface in
                         let available = store.supports(surface.capability)
                         HStack {
