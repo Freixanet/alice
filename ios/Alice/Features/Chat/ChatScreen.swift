@@ -34,11 +34,15 @@ struct ChatScreen: View {
                     Button {
                         store.newChat()
                     } label: {
-                        // `square.and.pencil` hangs its pencil off the top-right,
-                        // so the glyph reads low and left inside a round button.
-                        // Nudge it back to the optical centre.
+                        // `square.and.pencil` puts its square low-left and
+                        // runs the pencil past the top-right of the glyph box,
+                        // so centring that box leaves the ink low and right.
+                        // Measured against the button: +1.17pt across, +0.83pt
+                        // down. This puts it back.
                         Image(systemName: "square.and.pencil")
-                            .offset(x: 1, y: -1)
+                            .font(.system(size: 17))
+                            .frame(width: 28, height: 28)
+                            .offset(x: -1.2, y: -0.8)
                     }
                     .accessibilityLabel("New chat")
                 }

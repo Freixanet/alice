@@ -156,25 +156,76 @@ actor HermesClient {
         )
     }
 
+    /// Hermes answers `/v1/models` in one of two shapes.
+    ///
+    /// The one it actually uses nests every model under a `providers` array,
+    /// each with its own slug, display name and list of models it cannot serve
+    /// right now. Reading only the OpenAI-style `data` array — which is what
+    /// this did first — found a single entry and hid the hundred behind it.
     static func parseModels(_ data: Data) -> [ModelOption] {
         guard let object = try? JSONSerialization.jsonObject(with: data) else { return [] }
-        let rows: [[String: Any]]
-        if let map = object as? [String: Any], let list = map["data"] as? [[String: Any]] {
-            rows = list
-        } else if let list = object as? [[String: Any]] {
-            rows = list
-        } else {
-            return []
+
+        if let map = object as? [String: Any],
+           let providers = map["providers"] as? [[String: Any]] {
+            return parseProviders(providers)
         }
-        return rows.compactMap { row in
-            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+
+        let rows: [[String: Any]]
+        if let map = object as? [String: Any] {
+            rows = (map["data"] as? [[String: Any]])
+                ?? (map["models"] as? [[String: Any]])
+                ?? []
+        } else {
+            rows = (object as? [[String: Any]]) ?? []
+        }
+        return rows.compactMap { option(from: $0) }
+    }
+
+    private static func parseProviders(_ providers: [[String: Any]]) -> [ModelOption] {
+        var models: [ModelOption] = []
+        for provider in providers {
+            guard let slug = (provider["slug"] as? String)?.trimmingCharacters(
+                in: .whitespaces
+            ), !slug.isEmpty else { continue }
+            let name = (provider["name"] as? String)
+                .flatMap { $0.isEmpty ? nil : $0 } ?? prettify(slug)
+            let listed = (provider["models"] as? [Any]) ?? []
+            // A provider can advertise a model it cannot currently serve;
+            // offering it would only produce a failed reply.
+            let unavailable = Set((provider["unavailable_models"] as? [String]) ?? [])
+            for item in listed {
+                guard var model = option(from: item, provider: slug, providerName: name),
+                      !unavailable.contains(model.id)
+                else { continue }
+                model.provider = slug
+                model.providerName = name
+                models.append(model)
+            }
+        }
+        return models
+    }
+
+    /// A model arrives either as a bare id or as an object carrying a label.
+    private static func option(
+        from raw: Any, provider: String? = nil, providerName: String? = nil
+    ) -> ModelOption? {
+        if let id = raw as? String, !id.isEmpty {
             return ModelOption(
-                id: id,
-                label: (row["label"] as? String) ?? Self.prettify(id),
-                provider: row["provider"] as? String,
-                providerName: row["providerName"] as? String
+                id: id, label: prettify(id),
+                provider: provider, providerName: providerName
             )
         }
+        guard let row = raw as? [String: Any] else { return nil }
+        let id = (row["id"] as? String) ?? (row["name"] as? String) ?? ""
+        guard !id.isEmpty else { return nil }
+        return ModelOption(
+            id: id,
+            label: (row["label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                ?? prettify(id),
+            provider: (row["provider"] as? String) ?? provider,
+            providerName: (row["providerName"] as? String)
+                ?? (row["provider_name"] as? String) ?? providerName
+        )
     }
 
     /// `openai/gpt-5.6-luna` reads as "Gpt 5.6 Luna" in the picker.

@@ -78,6 +78,14 @@ struct RootView: View {
     }
 
     private func setDrawer(_ open: Bool) {
+        if open {
+            // The keyboard would otherwise stay up behind the drawer, with
+            // focus on a field the drawer is covering.
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil, from: nil, for: nil
+            )
+        }
         drag = 0
         drawerOpen = open
     }
