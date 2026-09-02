@@ -25,7 +25,6 @@ struct Sidebar: View {
         VStack(spacing: 0) {
             header
             destinations
-            sectionLabel("Recents")
             list
             Divider().opacity(0.4)
             footer
@@ -117,58 +116,29 @@ struct Sidebar: View {
             .font(.footnote.weight(.medium))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // The 24pt column the wordmark and the rows below both sit on.
-            .padding(.horizontal, 24)
+            // The stack around it already carries 12, and the rows add 12
+            // of their own — so 12 here lands on the same 24pt column as
+            // everything else in the drawer.
+            .padding(.horizontal, 12)
             .padding(.bottom, 6)
     }
 
     private var list: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(ordered) { conversation in
-                    Button {
-                        store.activeID = conversation.id
-                        onDismiss()
-                    } label: {
-                        HStack(spacing: 6) {
-                            if conversation.pinned {
-                                Image(systemName: "pin.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text(conversation.title).lineLimit(1)
-                            Spacer(minLength: 0)
-                        }
-                        // A definite width, so the long-press preview takes
-                        // its size from the drawer rather than from the label
-                        // and stops spilling past the right edge. Less both
-                        // insets: the stack's 12 either side and the row's.
-                        .frame(width: width - 48, alignment: .leading)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(
-                            conversation.id == store.activeID
-                                ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
-                                : .clear,
-                            in: .rect(cornerRadius: 10)
-                        )
-                        .contentShape(.rect(cornerRadius: 10))
+                // Only when there is something in it: a heading over nothing
+                // is worse than no heading.
+                if !pinned.isEmpty {
+                    sectionLabel("Pinned")
+                    ForEach(pinned) { conversation in
+                        chatRow(conversation)
                     }
-                    .buttonStyle(.plain)
-                    // An explicit preview rather than a lift of the row.
-                    // The default takes the row's own bounds and enlarges
-                    // them, which on a 300pt drawer reaches past the edge;
-                    // this one has a size of its own and stays inside.
-                    .contextMenu {
-                        menu(for: conversation)
-                    } preview: {
-                        Text(conversation.title)
-                            .lineLimit(2)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            .frame(width: width - 72, alignment: .leading)
-                            .background(Palette.card(scheme))
-                    }
+                    Spacer(minLength: 14)
+                }
+
+                sectionLabel("Recents")
+                ForEach(recents) { conversation in
+                    chatRow(conversation)
                 }
             }
             .padding(.horizontal, 12)
@@ -187,9 +157,45 @@ struct Sidebar: View {
         }
     }
 
-    /// Pinned first, then as they came.
-    private var ordered: [Conversation] {
-        store.conversations.filter(\.pinned) + store.conversations.filter { !$0.pinned }
+    private var pinned: [Conversation] { store.conversations.filter(\.pinned) }
+    private var recents: [Conversation] { store.conversations.filter { !$0.pinned } }
+
+    @ViewBuilder
+    private func chatRow(_ conversation: Conversation) -> some View {
+        Button {
+            store.activeID = conversation.id
+            onDismiss()
+        } label: {
+            Text(conversation.title)
+                .lineLimit(1)
+                // A definite width, so the long-press preview takes its size
+                // from the drawer rather than from the label. Less both
+                // insets: the stack's 12 either side and the row's.
+                .frame(width: width - 48, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    conversation.id == store.activeID
+                        ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
+                        : .clear,
+                    in: .rect(cornerRadius: 10)
+                )
+                .contentShape(.rect(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        // An explicit preview rather than a lift of the row: the default
+        // takes the row's bounds and enlarges them, which on a 300pt drawer
+        // reaches past the edge.
+        .contextMenu {
+            menu(for: conversation)
+        } preview: {
+            Text(conversation.title)
+                .lineLimit(2)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .frame(width: width - 72, alignment: .leading)
+                .background(Palette.card(scheme))
+        }
     }
 
     @ViewBuilder
