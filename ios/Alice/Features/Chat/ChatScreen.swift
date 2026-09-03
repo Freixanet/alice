@@ -32,7 +32,6 @@ struct ChatScreen: View {
                 }
             .background(Palette.background(scheme))
             .contentShape(.rect)
-            .scrollEdgeEffectStyle(.soft, for: .top)
             .navigationBarTitleDisplayMode(.inline)
             // The bar's own buttons cannot be moved down: iOS 26 draws
             // their glass circles from the bar itself, so offsetting a
@@ -87,6 +86,27 @@ struct ChatScreen: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 16)
         .padding(.top, 11)
+        // Something for the conversation to disappear into. The edge effect
+        // has nothing to work against when the bar behind these two discs is
+        // transparent, so a message scrolling past simply collided with them.
+        //
+        // Taller than the controls and anchored to the top, so the fade runs
+        // out below them: sized to the bar alone it ended exactly where the
+        // first line of a message begins, which is where they were colliding.
+        .background(alignment: .top) {
+            LinearGradient(
+                colors: [
+                    Palette.background(scheme),
+                    Palette.background(scheme),
+                    Palette.background(scheme).opacity(0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 190)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+        }
     }
 
     @ViewBuilder
@@ -98,14 +118,34 @@ struct ChatScreen: View {
                         ForEach(conversation.messages) { message in
                             MessageRow(message: message).id(message.id)
                         }
-                        Color.clear.frame(height: 8).id(bottomAnchor)
+                        Color.clear.frame(height: 16).id(bottomAnchor)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 28)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                // On the scroll view itself, where the effect has an edge to
+                // work against. On the container outside it, text ran under
+                // the top controls with nothing between them.
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
+                // Keeps the foot of the conversation against the foot of the
+                // scroll view as the container shrinks — which is what the
+                // keyboard does to it.
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: conversation.messages.last?.content) {
                     withAnimation(.easeOut(duration: 0.15)) {
+                        proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                    }
+                }
+                // Reserving the composer's height stops it covering the
+                // conversation at rest, but it does not move the conversation:
+                // raise the keyboard and whatever was on screen stays put
+                // while the composer climbs over it. Follow it down, so you
+                // can still see what you are answering.
+                .onChange(of: composerFocused) { _, focused in
+                    guard focused else { return }
+                    withAnimation(.easeOut(duration: 0.25)) {
                         proxy.scrollTo(bottomAnchor, anchor: .bottom)
                     }
                 }

@@ -1129,7 +1129,6 @@ struct BotChatScreen: View {
             }
         .background(Palette.background(scheme))
         .contentShape(.rect)
-        .scrollEdgeEffectStyle(.soft, for: .top)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             topControls
@@ -1190,6 +1189,26 @@ struct BotChatScreen: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 6)
+        // See ChatScreen: the conversation needs somewhere to disappear into
+        // rather than colliding with the controls.
+        //
+        // Taller than the controls and anchored to the top, so the fade runs
+        // out below them: sized to the bar alone it ended exactly where the
+        // first line of a message begins, which is where they were colliding.
+        .background(alignment: .top) {
+            LinearGradient(
+                colors: [
+                    Palette.background(scheme),
+                    Palette.background(scheme),
+                    Palette.background(scheme).opacity(0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 190)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+        }
     }
 
     @ViewBuilder
@@ -1205,12 +1224,24 @@ struct BotChatScreen: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 64)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 16)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
+                // See ChatScreen: anchored to the foot so the keyboard
+                // shrinking the container does not leave the conversation
+                // behind the composer.
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: conversation.messages.count) { _, _ in
                     if let last = conversation.messages.last {
                         withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
+                }
+                .onChange(of: composerFocused) { _, focused in
+                    guard focused, let last = conversation.messages.last else { return }
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
             }
