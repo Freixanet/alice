@@ -290,39 +290,52 @@ extension DashboardClient {
     /// The dashboard's copy of the cron list carries a `profile` on each job,
     /// which the gateway's does not — so this is the only place a routine can
     /// be tied to the bot that owns it.
+    /// One bot's routines.
     func routines(for profile: String) async throws -> [JobRow] {
         try await allRoutines()[profile] ?? []
     }
 
-    /// Every routine, grouped by the bot that owns it, in one request.
+    /// Every routine, grouped by the bot that owns it.
+    ///
+    /// Two things this had wrong, and between them every bot reported having
+    /// no routines however many it had. The listing is `api/crons`, and
+    /// without `all_profiles` it answers only for whichever profile the
+    /// dashboard is scoped to — every other bot's were simply not in the
+    /// reply. And a job's own `profile` field says where it *executes*, which
+    /// a Hermes keeping its profiles isolated leaves null; the field that
+    /// says whose it is is `owner_profile`.
     func allRoutines() async throws -> [String: [JobRow]] {
-        let object = try await get("api/cron/jobs")
+        let object = try await get("api/crons?all_profiles=1")
         let rows = (object["jobs"] as? [[String: Any]]) ?? []
         var grouped: [String: [JobRow]] = [:]
         for row in rows {
-            guard let id = row["id"] as? String,
-                  let profile = row["profile"] as? String
+            guard let owner = (row["owner_profile"] as? String)
+                    ?? (row["profile"] as? String),
+                  let job = Self.job(from: row)
             else { continue }
-            let schedule = row["schedule"] as? [String: Any]
-            grouped[profile, default: []].append(
-                JobRow(
-                    id: id,
-                    name: (row["name"] as? String) ?? id,
-                    prompt: (row["prompt"] as? String) ?? "",
-                    schedule: (row["schedule_display"] as? String)
-                        ?? (schedule?["display"] as? String)
-                        ?? (schedule?["expr"] as? String) ?? "",
-                    enabled: (row["enabled"] as? Bool) ?? false,
-                    lastStatus: row["last_status"] as? String,
-                    lastError: (row["last_error"] as? String).flatMap {
-                        $0.isEmpty ? nil : $0
-                    },
-                    lastRun: HermesClient.date(row["last_run_at"]),
-                    nextRun: HermesClient.date(row["next_run_at"])
-                )
-            )
+            grouped[owner, default: []].append(job)
         }
         return grouped
+    }
+
+    private static func job(from row: [String: Any]) -> JobRow? {
+        guard let id = row["id"] as? String else { return nil }
+        let schedule = row["schedule"] as? [String: Any]
+        return JobRow(
+            id: id,
+            name: (row["name"] as? String) ?? id,
+            prompt: (row["prompt"] as? String) ?? "",
+            schedule: (row["schedule_display"] as? String)
+                ?? (schedule?["display"] as? String)
+                ?? (schedule?["expr"] as? String) ?? "",
+            enabled: (row["enabled"] as? Bool) ?? false,
+            lastStatus: row["last_status"] as? String,
+            lastError: (row["last_error"] as? String).flatMap {
+                $0.isEmpty ? nil : $0
+            },
+            lastRun: HermesClient.date(row["last_run_at"]),
+            nextRun: HermesClient.date(row["next_run_at"])
+        )
     }
 
     /// Creates a scheduled job owned by one bot.
