@@ -129,6 +129,7 @@ final class HermesRunProtocolTests: XCTestCase {
 
     func testRunCapabilityAcceptsCompositeManifest() {
         let manifest = HermesClient.Manifest(
+            version: nil,
             capabilities: [],
             advertised: ["run_submission", "run_status", "run_events_sse"],
             endpoints: [:]
@@ -139,6 +140,7 @@ final class HermesRunProtocolTests: XCTestCase {
 
     func testRunIdempotencyAlsoImpliesRunSupport() {
         let manifest = HermesClient.Manifest(
+            version: nil,
             capabilities: [],
             advertised: ["runs_idempotency"],
             endpoints: [:]
@@ -149,6 +151,7 @@ final class HermesRunProtocolTests: XCTestCase {
 
     func testApprovalCapabilityAcceptsCompositeManifest() {
         let manifest = HermesClient.Manifest(
+            version: nil,
             capabilities: [],
             advertised: ["approval_events", "run_approval"],
             endpoints: [:]
