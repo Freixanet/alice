@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 extension HermesClient {
@@ -34,32 +35,40 @@ extension HermesClient {
     }
 
     private enum RunStartOutcome {
-        case started(id: String, status: String)
+        case started(HermesRunProtocol.Start)
         case unsupported
         case failed(message: String, limit: ModelLimit?)
     }
 
-    /// Streams a reply.
+    /// Streams one assistant reply.
     ///
-    /// Pantheon run transport is attempted first. It is the surface that can
-    /// pause for a tool approval and then continue the same execution after the
-    /// reader answers. Older Hermes builds fall back to chat completions.
+    /// Durable runs are the preferred transport because they can pause for an
+    /// explicit tool approval and then continue the same execution. The older
+    /// OpenAI-compatible endpoint remains a compatibility fallback.
     func stream(
         messages: [Turn],
         model: String?,
         provider: String?,
-        profile: String? = nil
+        profile: String? = nil,
+        conversationID: String? = nil,
+        preferRuns: Bool = true,
+        runIdempotency: Bool = false
     ) -> AsyncThrowingStream<ChatEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let handledByRun = try await self.streamRun(
-                        messages: messages,
-                        model: model,
-                        provider: provider,
-                        profile: profile,
-                        continuation: continuation
-                    )
+                    var handledByRun = false
+                    if preferRuns {
+                        handledByRun = try await self.streamRun(
+                            messages: messages,
+                            model: model,
+                            provider: provider,
+                            profile: profile,
+                            conversationID: conversationID,
+                            idempotency: runIdempotency,
+                            continuation: continuation
+                        )
+                    }
                     if !handledByRun {
                         try await self.streamChatCompletions(
                             messages: messages,
@@ -80,76 +89,122 @@ extension HermesClient {
         }
     }
 
-    // MARK: - Runs and approvals
+    /// Reattaches to an already-created run. Used when an approval survived an
+    /// app restart or the live SSE connection had to be rebuilt.
+    func resumeRun(
+        runID: String,
+        profile: String? = nil,
+        conversationID: String? = nil
+    ) -> AsyncThrowingStream<ChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let initial = try await self.runSnapshot(
+                        runID: runID,
+                        profile: profile,
+                        conversationID: conversationID
+                    )
+                    if let initial {
+                        for event in HermesRunProtocol.events(from: initial) {
+                            continuation.yield(event)
+                        }
+                        if initial.status.isTerminal {
+                            continuation.finish()
+                            return
+                        }
+                    }
 
-    /// Returns false only when this Hermes does not serve runs, which is the
-    /// one case where the ordinary chat endpoint should take over.
+                    let terminal = try await self.consumeRunEvents(
+                        runID: runID,
+                        profile: profile,
+                        conversationID: conversationID,
+                        continuation: continuation
+                    )
+                    if !terminal, !Task.isCancelled {
+                        try await self.pollRunUntilTerminal(
+                            runID: runID,
+                            profile: profile,
+                            conversationID: conversationID,
+                            previous: initial,
+                            continuation: continuation
+                        )
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    // MARK: - Durable runs
+
+    /// Returns false only when this Hermes genuinely does not serve `/v1/runs`.
     private func streamRun(
         messages: [Turn],
         model: String?,
         provider: String?,
         profile: String?,
+        conversationID: String?,
+        idempotency: Bool,
         continuation: AsyncThrowingStream<ChatEvent, Error>.Continuation
     ) async throws -> Bool {
-        let started = try await startRun(
-            messages: messages, model: model, provider: provider, profile: profile
+        let outcome = try await startRun(
+            messages: messages,
+            model: model,
+            provider: provider,
+            profile: profile,
+            conversationID: conversationID,
+            idempotency: idempotency
         )
-        switch started {
+
+        switch outcome {
         case .unsupported:
             return false
+
         case let .failed(message, limit):
             continuation.yield(.failure(message: message, limit: limit))
             return true
-        case let .started(runID, initialStatus):
-            continuation.yield(.run(id: runID, status: initialStatus, output: nil))
 
-            await RunApprovalBroker.shared.register(runID: runID) { choice in
-                try await self.respondToRunApproval(
-                    runID: runID, choice: choice, profile: profile
-                )
-                // A successful approval response is enough to remove the
-                // decision card immediately. The server's later
-                // `approval.responded` event is still accepted and is harmless.
-                continuation.yield(
-                    .tool(
-                        id: runID,
-                        name: RunApprovalBroker.toolName,
-                        status: .done,
-                        detail: nil
-                    )
-                )
-            }
-
+        case let .started(run):
+            continuation.yield(.run(id: run.runID, status: run.status, output: nil))
             do {
                 let terminal = try await consumeRunEvents(
-                    runID: runID,
+                    runID: run.runID,
                     profile: profile,
+                    conversationID: conversationID,
                     continuation: continuation
                 )
                 if !terminal, !Task.isCancelled {
                     try await pollRunUntilTerminal(
-                        runID: runID,
+                        runID: run.runID,
                         profile: profile,
+                        conversationID: conversationID,
+                        previous: nil,
                         continuation: continuation
                     )
                 }
-                await RunApprovalBroker.shared.unregister(runID: runID)
                 return true
-            } catch {
-                await RunApprovalBroker.shared.unregister(runID: runID)
-                if error is CancellationError {
-                    // Runs are durable. Merely closing their event stream does
-                    // not stop the work, so the composer's Stop button must
-                    // explicitly cancel the server-side run as well.
-                    Task { try? await self.cancelRun(runID: runID, profile: profile) }
-                }
-                throw error
+            } catch is CancellationError {
+                // A durable run survives closing its event stream. Stop it on
+                // Hermes as well so the composer's Stop button means stop.
+                let runID = run.runID
+                Task { try? await self.stopRun(runID: runID, profile: profile) }
+                throw CancellationError()
             }
         }
     }
 
     private func startRun(
-        messages: [Turn], model: String?, provider: String?, profile: String?
+        messages: [Turn],
+        model: String?,
+        provider: String?,
+        profile: String?,
+        conversationID: String?,
+        idempotency: Bool
     ) async throws -> RunStartOutcome {
         guard let userIndex = messages.lastIndex(where: { $0.role == "user" }) else {
             return .failed(message: "Empty chat.", limit: nil)
@@ -161,60 +216,82 @@ extension HermesClient {
                 ["role": $0.role, "content": $0.content.json]
             },
         ]
+        if let sessionID = boundedSessionID(conversationID) { body["session_id"] = sessionID }
         if let model { body["model"] = model }
         if let provider { body["provider"] = provider }
 
-        func post(_ payload: Data) async throws -> (Data, HTTPURLResponse) {
-            var request = try self.request(
-                "v1/runs", method: "POST", profile: profile,
-                timeout: HermesClient.replyTimeout
-            )
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = payload
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
-            return (data, http)
-        }
+        var payload = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        var response = try await postRun(
+            payload,
+            profile: profile,
+            conversationID: conversationID,
+            idempotency: idempotency
+        )
 
-        let initialPayload = try JSONSerialization.data(withJSONObject: body)
-        var (data, http) = try await post(initialPayload)
-        if !http.isSuccess,
-           [400, 422].contains(http.statusCode),
+        if !response.http.isSuccess,
+           [400, 422].contains(response.http.statusCode),
            model != nil || provider != nil {
             body["model"] = "hermes-agent"
             body.removeValue(forKey: "provider")
-            let fallbackPayload = try JSONSerialization.data(withJSONObject: body)
-            (data, http) = try await post(fallbackPayload)
+            payload = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+            response = try await postRun(
+                payload,
+                profile: profile,
+                conversationID: conversationID,
+                idempotency: idempotency
+            )
         }
 
-        if [404, 405, 501].contains(http.statusCode) { return .unsupported }
-        guard http.isSuccess else {
-            let detail = Self.detail(from: data) ?? "Hermes returned \(http.statusCode)."
+        if [404, 405, 501].contains(response.http.statusCode) { return .unsupported }
+        guard response.http.isSuccess else {
+            let detail = Self.detail(from: response.data)
+                ?? "Hermes returned \(response.http.statusCode)."
             return .failed(
                 message: detail,
                 limit: ModelLimitClassifier.classify(
-                    status: http.statusCode,
+                    status: response.http.statusCode,
                     message: detail,
-                    retryAfter: http.value(forHTTPHeaderField: "Retry-After")
+                    retryAfter: response.http.value(forHTTPHeaderField: "Retry-After")
                 )
             )
         }
 
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { throw Failure.badResponse }
-        let runID = Self.string(object["run_id"])
-        guard !runID.isEmpty else { throw Failure.badResponse }
-        let raw = Self.string(object["status"])
-        let status = raw == "queued" || raw == "running" ? raw : "started"
-        return .started(id: runID, status: status)
+        guard let run = HermesRunProtocol.parseStart(response.data) else {
+            throw Failure.badResponse
+        }
+        return .started(run)
     }
 
-    /// The live event stream normally remains open while Hermes waits for a
-    /// decision. If a proxy closes it, the caller falls through to polling and
-    /// keeps the run alive rather than turning the approval into "Couldn't reply".
+    private func postRun(
+        _ payload: Data,
+        profile: String?,
+        conversationID: String?,
+        idempotency: Bool
+    ) async throws -> (data: Data, http: HTTPURLResponse) {
+        var request = try self.request(
+            "v1/runs",
+            method: "POST",
+            profile: profile,
+            timeout: Self.replyTimeout
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        setSessionKey(conversationID, on: &request)
+        if idempotency {
+            request.setValue(
+                idempotencyKey(payload: payload, conversationID: conversationID),
+                forHTTPHeaderField: "Idempotency-Key"
+            )
+        }
+        request.httpBody = payload
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
+        return (data, http)
+    }
+
     private func consumeRunEvents(
         runID: String,
         profile: String?,
+        conversationID: String?,
         continuation: AsyncThrowingStream<ChatEvent, Error>.Continuation
     ) async throws -> Bool {
         var request = try self.request(
@@ -223,6 +300,7 @@ extension HermesClient {
             timeout: 600
         )
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        setSessionKey(conversationID, on: &request)
 
         do {
             let (bytes, response) = try await session.bytes(for: request)
@@ -235,9 +313,12 @@ extension HermesClient {
                 guard line.hasPrefix("data:") else { continue }
                 let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                 if payload == "[DONE]" { break }
-                for event in Self.decodeRunFrame(payload, fallbackRunID: runID) {
+                for event in HermesRunProtocol.events(
+                    from: payload,
+                    fallbackRunID: runID
+                ) {
                     continuation.yield(event)
-                    if case let .run(_, status, _) = event, Self.isTerminal(status) {
+                    if case let .run(_, status, _) = event, status.isTerminal {
                         terminal = true
                     }
                 }
@@ -248,8 +329,7 @@ extension HermesClient {
             throw CancellationError()
         } catch {
             // Once a run exists, losing SSE is not losing the work. The status
-            // endpoint is the recovery path and also survives long approval
-            // pauses that outlive a proxy's streaming timeout.
+            // endpoint is the recovery path and also survives proxy timeouts.
             return false
         }
     }
@@ -257,76 +337,88 @@ extension HermesClient {
     private func pollRunUntilTerminal(
         runID: String,
         profile: String?,
+        conversationID: String?,
+        previous: HermesRunProtocol.Snapshot?,
         continuation: AsyncThrowingStream<ChatEvent, Error>.Continuation
     ) async throws {
-        var lastApprovalJSON: String?
+        var prior = previous
         var consecutiveFailures = 0
+
         while !Task.isCancelled {
-            var request = try self.request(
-                "v1/runs/\(Self.pathSegment(runID))",
-                profile: profile,
-                timeout: HermesClient.probeTimeout
-            )
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
-            guard http.isSuccess else {
+            let snapshot: HermesRunProtocol.Snapshot?
+            do {
+                snapshot = try await runSnapshot(
+                    runID: runID,
+                    profile: profile,
+                    conversationID: conversationID
+                )
+            } catch {
                 consecutiveFailures += 1
-                if consecutiveFailures >= 5 {
-                    let detail = Self.detail(from: data) ?? "Hermes returned \(http.statusCode)."
-                    throw Failure.http(status: http.statusCode, detail: detail, limit: nil)
-                }
+                if consecutiveFailures >= 5 { throw error }
+                try await Task.sleep(for: .seconds(1))
+                continue
+            }
+
+            guard let snapshot else {
+                consecutiveFailures += 1
+                if consecutiveFailures >= 5 { throw Failure.badResponse }
                 try await Task.sleep(for: .seconds(1))
                 continue
             }
             consecutiveFailures = 0
-            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { throw Failure.badResponse }
 
-            let status = Self.string(object["status"])
-            let output = Self.string(object["output"])
-            if !status.isEmpty {
-                continuation.yield(.run(id: runID, status: status, output: output.isEmpty ? nil : output))
-            }
-
-            if let approval = Self.approvalPayload(from: object, fallbackRunID: runID),
-               let encoded = approval.payload.encoded(), encoded != lastApprovalJSON {
-                lastApprovalJSON = encoded
-                continuation.yield(
-                    .tool(
-                        id: approval.runID,
-                        name: RunApprovalBroker.toolName,
-                        status: .start,
-                        detail: encoded
-                    )
-                )
-            }
-
-            if Self.isTerminal(status) {
-                if status == "failed" {
-                    let error = Self.string(object["error"])
-                    if !error.isEmpty {
-                        continuation.yield(.failure(message: error, limit: nil))
-                    }
+            if snapshot != prior {
+                for event in HermesRunProtocol.events(from: snapshot) {
+                    continuation.yield(event)
                 }
-                return
+                prior = snapshot
             }
-            try await Task.sleep(for: .milliseconds(900))
+            if snapshot.status.isTerminal { return }
+
+            // Waiting for a human choice does not need ten polls a second.
+            let delay: Duration = snapshot.status == .waitingForApproval
+                ? .seconds(2)
+                : .milliseconds(750)
+            try await Task.sleep(for: delay)
         }
         throw CancellationError()
     }
 
-    private func respondToRunApproval(
-        runID: String, choice: String, profile: String?
+    private func runSnapshot(
+        runID: String,
+        profile: String?,
+        conversationID: String?
+    ) async throws -> HermesRunProtocol.Snapshot? {
+        var request = try self.request(
+            "v1/runs/\(Self.pathSegment(runID))",
+            profile: profile,
+            timeout: Self.probeTimeout
+        )
+        setSessionKey(conversationID, on: &request)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
+        guard http.isSuccess else {
+            let detail = Self.detail(from: data) ?? "Hermes returned \(http.statusCode)."
+            throw Failure.http(status: http.statusCode, detail: detail, limit: nil)
+        }
+        return HermesRunProtocol.parseSnapshot(data)
+    }
+
+    func respondToRunApproval(
+        runID: String,
+        choice: Message.ApprovalChoice,
+        profile: String? = nil
     ) async throws {
         var request = try self.request(
             "v1/runs/\(Self.pathSegment(runID))/approval",
             method: "POST",
             profile: profile,
-            timeout: HermesClient.replyTimeout
+            timeout: Self.replyTimeout
         )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["choice": choice])
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: ["choice": choice.rawValue]
+        )
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
         guard http.isSuccess else {
@@ -335,23 +427,20 @@ extension HermesClient {
         }
     }
 
-    private func cancelRun(runID: String, profile: String?) async throws {
+    func stopRun(runID: String, profile: String? = nil) async throws {
         var request = try self.request(
             "v1/runs/\(Self.pathSegment(runID))/stop",
             method: "POST",
             profile: profile,
-            timeout: HermesClient.probeTimeout
+            timeout: Self.probeTimeout
         )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data("{}".utf8)
-        let (_, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
         guard http.isSuccess || [404, 409].contains(http.statusCode) else {
-            throw Failure.http(
-                status: http.statusCode,
-                detail: "Hermes could not stop that run.",
-                limit: nil
-            )
+            let detail = Self.detail(from: data) ?? "Hermes could not stop that run."
+            throw Failure.http(status: http.statusCode, detail: detail, limit: nil)
         }
     }
 
@@ -368,7 +457,10 @@ extension HermesClient {
         // unreliable on this connection.
         if streamingIsUnreliable {
             var body = Self.chatBody(
-                messages: messages, model: model, provider: provider, stream: false
+                messages: messages,
+                model: model,
+                provider: provider,
+                stream: false
             )
             if let profile { body["profile"] = profile }
             if let text = try await completeWithoutStreaming(body, profile: profile) {
@@ -378,13 +470,18 @@ extension HermesClient {
         }
 
         var request = try self.request(
-            "v1/chat/completions", method: "POST",
-            profile: profile, timeout: HermesClient.replyTimeout
+            "v1/chat/completions",
+            method: "POST",
+            profile: profile,
+            timeout: Self.replyTimeout
         )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         var body = Self.chatBody(
-            messages: messages, model: model, provider: provider, stream: true
+            messages: messages,
+            model: model,
+            provider: provider,
+            stream: true
         )
         if let profile { body["profile"] = profile }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -429,10 +526,15 @@ extension HermesClient {
     }
 
     private static func chatBody(
-        messages: [Turn], model: String?, provider: String?, stream: Bool
+        messages: [Turn],
+        model: String?,
+        provider: String?,
+        stream: Bool
     ) -> [String: Any] {
         var body: [String: Any] = [
-            "messages": messages.map { ["role": $0.role, "content": $0.content.json] },
+            "messages": messages.map {
+                ["role": $0.role, "content": $0.content.json]
+            },
             "stream": stream,
         ]
         if let model { body["model"] = model }
@@ -443,13 +545,16 @@ extension HermesClient {
     /// The same request, answered in one piece. Used when streamed chat
     /// completions have proved empty; run transport has its own recovery path.
     private func completeWithoutStreaming(
-        _ body: [String: Any], profile: String?
+        _ body: [String: Any],
+        profile: String?
     ) async throws -> String? {
         var once = body
         once["stream"] = false
         var request = try self.request(
-            "v1/chat/completions", method: "POST",
-            profile: profile, timeout: HermesClient.replyTimeout
+            "v1/chat/completions",
+            method: "POST",
+            profile: profile,
+            timeout: Self.replyTimeout
         )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: once)
@@ -466,7 +571,7 @@ extension HermesClient {
         return text
     }
 
-    // MARK: - Event decoding
+    // MARK: - Compatibility event decoding
 
     nonisolated static func decodeFrame(_ payload: String) -> ChatEvent? {
         guard let data = payload.data(using: .utf8),
@@ -489,15 +594,18 @@ extension HermesClient {
                 let name = (object["name"] as? String) ?? "tool"
                 let raw = (object["status"] as? String) ?? "start"
                 return .tool(
-                    id: (object["callId"] as? String) ?? (object["id"] as? String) ?? name,
+                    id: (object["callId"] as? String)
+                        ?? (object["id"] as? String)
+                        ?? name,
                     name: name,
                     status: raw == "done" ? .done : .start,
                     detail: object["detail"] as? String
                 )
             case "run":
+                let raw = (object["status"] as? String) ?? Message.RunStatus.running.rawValue
                 return .run(
                     id: (object["runId"] as? String) ?? "",
-                    status: (object["status"] as? String) ?? "running",
+                    status: Message.RunStatus(rawValue: raw) ?? .running,
                     output: object["output"] as? String
                 )
             default:
@@ -508,11 +616,13 @@ extension HermesClient {
         if let choices = object["choices"] as? [[String: Any]],
            let first = choices.first {
             if let delta = first["delta"] as? [String: Any],
-               let text = delta["content"] as? String, !text.isEmpty {
+               let text = delta["content"] as? String,
+               !text.isEmpty {
                 return .delta(text)
             }
             if let message = first["message"] as? [String: Any],
-               let text = message["content"] as? String, !text.isEmpty {
+               let text = message["content"] as? String,
+               !text.isEmpty {
                 return .delta(text)
             }
         }
@@ -522,155 +632,26 @@ extension HermesClient {
         return nil
     }
 
-    nonisolated private static func decodeRunFrame(
-        _ payload: String, fallbackRunID: String
-    ) -> [ChatEvent] {
-        guard let data = payload.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return [] }
+    // MARK: - Run helpers
 
-        let event = string(object["event"] ?? object["type"])
-        let runID = string(object["run_id"] ?? object["runId"])
-        let id = runID.isEmpty ? fallbackRunID : runID
-
-        switch event {
-        case "run.started":
-            return [.run(id: id, status: "running", output: nil)]
-        case "message.delta", "assistant.delta":
-            let text = string(object["delta"])
-            return text.isEmpty ? [] : [.delta(text)]
-        case "tool.started":
-            let name = string(object["tool"] ?? object["tool_name"])
-            guard !name.isEmpty else { return [] }
-            let callID = string(object["call_id"] ?? object["tool_call_id"])
-            return [
-                .tool(
-                    id: callID.isEmpty ? "\(id):\(name)" : callID,
-                    name: name,
-                    status: .start,
-                    detail: optionalString(object["preview"])
-                )
-            ]
-        case "tool.completed", "tool.failed":
-            let name = string(object["tool"] ?? object["tool_name"])
-            guard !name.isEmpty else { return [] }
-            let callID = string(object["call_id"] ?? object["tool_call_id"])
-            let detail = optionalString(object["preview"])
-                ?? (event == "tool.failed" ? "Tool failed" : nil)
-            return [
-                .tool(
-                    id: callID.isEmpty ? "\(id):\(name)" : callID,
-                    name: name,
-                    status: .done,
-                    detail: detail
-                )
-            ]
-        case "subagent.start", "subagent.complete":
-            let detail = optionalString(object["summary"])
-                ?? optionalString(object["goal"])
-                ?? optionalString(object["preview"])
-            let subagentID = string(object["subagent_id"] ?? object["child_session_id"])
-            return [
-                .tool(
-                    id: subagentID.isEmpty ? "\(id):delegate_task" : subagentID,
-                    name: "delegate_task",
-                    status: event == "subagent.start" ? .start : .done,
-                    detail: detail
-                )
-            ]
-        case "approval.request":
-            guard let approval = approvalPayload(from: object, fallbackRunID: id),
-                  let encoded = approval.payload.encoded()
-            else { return [.run(id: id, status: "waiting_for_approval", output: nil)] }
-            return [
-                .run(id: id, status: "waiting_for_approval", output: nil),
-                .tool(
-                    id: approval.runID,
-                    name: RunApprovalBroker.toolName,
-                    status: .start,
-                    detail: encoded
-                ),
-            ]
-        case "approval.responded":
-            return [
-                .tool(
-                    id: id,
-                    name: RunApprovalBroker.toolName,
-                    status: .done,
-                    detail: nil
-                ),
-                .run(id: id, status: "running", output: nil),
-            ]
-        case "run.steered":
-            return [.run(id: id, status: "running", output: nil)]
-        case "run.completed":
-            return [
-                .run(
-                    id: id,
-                    status: "completed",
-                    output: optionalString(object["output"])
-                )
-            ]
-        case "run.cancelled":
-            return [.run(id: id, status: "cancelled", output: nil)]
-        case "run.failed":
-            let message = optionalString(object["error"]) ?? "Hermes couldn’t finish."
-            return [
-                .run(id: id, status: "failed", output: nil),
-                .failure(message: message, limit: nil),
-            ]
-        default:
-            return []
+    private func setSessionKey(_ conversationID: String?, on request: inout URLRequest) {
+        if let sessionID = boundedSessionID(conversationID) {
+            request.setValue(sessionID, forHTTPHeaderField: "X-Hermes-Session-Key")
         }
     }
 
-    nonisolated private static func approvalPayload(
-        from object: [String: Any], fallbackRunID: String
-    ) -> (runID: String, payload: RunApprovalPayload)? {
-        let nested = (object["approval"] as? [String: Any])
-            ?? (object["pending_approval"] as? [String: Any])
-            ?? (object["approval_request"] as? [String: Any])
-            ?? object
-        let choices = (nested["choices"] as? [Any])?
-            .compactMap { optionalString($0) }
-            .filter { ["once", "session", "always", "deny"].contains($0) }
-            ?? []
-        let status = string(object["status"])
-        let looksLikeApproval = object["event"] as? String == "approval.request"
-            || object["type"] as? String == "approval.request"
-            || object["approval"] != nil
-            || object["pending_approval"] != nil
-            || object["approval_request"] != nil
-            || status == "waiting_for_approval"
-        guard looksLikeApproval else { return nil }
-        let runID = string(object["run_id"] ?? object["runId"])
-        let title = optionalString(nested["tool"] ?? nested["title"])
-            ?? "Hermes needs approval"
-        return (
-            runID.isEmpty ? fallbackRunID : runID,
-            RunApprovalPayload(
-                title: title,
-                detail: optionalString(
-                    nested["description"] ?? nested["preview"] ?? nested["reason"]
-                ),
-                command: optionalString(nested["command"]),
-                choices: choices.isEmpty ? ["once", "deny"] : choices
-            )
-        )
-    }
-
-    nonisolated private static func isTerminal(_ status: String) -> Bool {
-        ["completed", "failed", "cancelled"].contains(status)
-    }
-
-    nonisolated private static func string(_ value: Any?) -> String {
-        optionalString(value) ?? ""
-    }
-
-    nonisolated private static func optionalString(_ value: Any?) -> String? {
-        guard let value = value as? String else { return nil }
+    private func boundedSessionID(_ value: String?) -> String? {
+        guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(128))
+    }
+
+    private func idempotencyKey(payload: Data, conversationID: String?) -> String {
+        var input = Data((boundedSessionID(conversationID) ?? "").utf8)
+        input.append(0)
+        input.append(payload)
+        let digest = SHA256.hash(data: input)
+        return "alice-" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
     nonisolated private static func pathSegment(_ value: String) -> String {
