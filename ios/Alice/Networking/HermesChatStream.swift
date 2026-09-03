@@ -102,7 +102,10 @@ extension HermesClient {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let initial = try await self.runSnapshot(
+                    // The command being approved may itself restart the
+                    // gateway (notably `hermes update`). A failed first probe
+                    // is therefore a recoverable state, not a terminal error.
+                    let initial = try? await self.runSnapshot(
                         runID: runID,
                         profile: profile,
                         conversationID: conversationID
@@ -231,9 +234,12 @@ extension HermesClient {
             idempotency: idempotency
         )
 
+        // Match the web transport: retry only when the fallback changes the
+        // request. Reposting an identical `hermes-agent` body is both wasteful
+        // and unsafe on a server that does not advertise idempotency.
         if !response.http.isSuccess,
            [400, 422].contains(response.http.statusCode),
-           model != nil || provider != nil {
+           model != "hermes-agent" || provider != nil {
             body["model"] = "hermes-agent"
             body.removeValue(forKey: "provider")
             payload = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
@@ -345,46 +351,49 @@ extension HermesClient {
         continuation: AsyncThrowingStream<ChatEvent, Error>.Continuation
     ) async throws {
         var prior = previous
-        var consecutiveFailures = 0
+        var lastError: Error?
+        // Keep the same recovery budget as the web client. A Hermes update can
+        // intentionally restart the gateway, so five failed one-second probes
+        // would turn a successful update into a false client-side failure.
+        let deadline = Date().addingTimeInterval(180)
 
-        while !Task.isCancelled {
-            let snapshot: HermesRunProtocol.Snapshot?
+        while !Task.isCancelled, Date() < deadline {
             do {
-                snapshot = try await runSnapshot(
+                guard let snapshot = try await runSnapshot(
                     runID: runID,
                     profile: profile,
                     conversationID: conversationID
-                )
-            } catch {
-                consecutiveFailures += 1
-                if consecutiveFailures >= 5 { throw error }
-                try await Task.sleep(for: .seconds(1))
-                continue
-            }
-
-            guard let snapshot else {
-                consecutiveFailures += 1
-                if consecutiveFailures >= 5 { throw Failure.badResponse }
-                try await Task.sleep(for: .seconds(1))
-                continue
-            }
-            consecutiveFailures = 0
-
-            if snapshot != prior {
-                for event in HermesRunProtocol.events(from: snapshot) {
-                    continuation.yield(event)
+                ) else {
+                    lastError = Failure.badResponse
+                    try await Task.sleep(for: .milliseconds(750))
+                    continue
                 }
-                prior = snapshot
-            }
-            if snapshot.status.isTerminal { return }
+                lastError = nil
 
-            // Waiting for a human choice does not need ten polls a second.
-            let delay: Duration = snapshot.status == .waitingForApproval
-                ? .seconds(2)
-                : .milliseconds(750)
-            try await Task.sleep(for: delay)
+                if snapshot != prior {
+                    for event in HermesRunProtocol.events(from: snapshot) {
+                        continuation.yield(event)
+                    }
+                    prior = snapshot
+                }
+                if snapshot.status.isTerminal { return }
+
+                // Waiting for a human choice does not need frequent polling.
+                let delay: Duration = snapshot.status == .waitingForApproval
+                    ? .seconds(2)
+                    : .milliseconds(750)
+                try await Task.sleep(for: delay)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastError = error
+                try await Task.sleep(for: .milliseconds(750))
+            }
         }
-        throw CancellationError()
+
+        if Task.isCancelled { throw CancellationError() }
+        if let lastError { throw lastError }
+        throw Failure.timedOut
     }
 
     private func runSnapshot(
