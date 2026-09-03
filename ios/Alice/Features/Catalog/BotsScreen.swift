@@ -1224,7 +1224,9 @@ struct BotChatScreen: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 64)
-                    .padding(.bottom, 16)
+                    // Matches ChatScreen: the conversation ends rather than
+                    // stopping against the composer's glass.
+                    .padding(.bottom, 34)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .scrollEdgeEffectStyle(.soft, for: .top)
@@ -1235,6 +1237,22 @@ struct BotChatScreen: View {
                 .onChange(of: conversation.messages.count) { _, _ in
                     if let last = conversation.messages.last {
                         withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
+                }
+                // `sizeChanges` covers the case where the keyboard shrinks
+                // the scroll view. Inside a sheet it may not: a sheet can be
+                // moved rather than resized, and then the anchor never fires
+                // while the composer rides up over the conversation. This is
+                // the belt for that — unanimated on purpose, so where the
+                // anchor already did the work it is a no-op rather than a
+                // second journey, which is what made this feel broken before.
+                .onChange(of: composerFocused) { _, focused in
+                    guard focused else { return }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(120))
+                        if let last = conversation.messages.last {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
                     }
                 }
             }

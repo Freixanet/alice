@@ -118,7 +118,10 @@ struct ChatScreen: View {
                         ForEach(conversation.messages) { message in
                             MessageRow(message: message).id(message.id)
                         }
-                        Color.clear.frame(height: 16).id(bottomAnchor)
+                        // Air between the last reply and the composer, so the
+                        // conversation ends rather than stopping against the
+                        // glass.
+                        Color.clear.frame(height: 34).id(bottomAnchor)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 28)
@@ -141,6 +144,20 @@ struct ChatScreen: View {
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .onChange(of: conversation.messages.last?.content) {
                     withAnimation(.easeOut(duration: 0.15)) {
+                        proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                    }
+                }
+                // `sizeChanges` covers the case where the keyboard shrinks
+                // the scroll view. Inside a sheet it may not: a sheet can be
+                // moved rather than resized, and then the anchor never fires
+                // while the composer rides up over the conversation. This is
+                // the belt for that — unanimated on purpose, so where the
+                // anchor already did the work it is a no-op rather than a
+                // second journey, which is what made this feel broken before.
+                .onChange(of: composerFocused) { _, focused in
+                    guard focused else { return }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(120))
                         proxy.scrollTo(bottomAnchor, anchor: .bottom)
                     }
                 }
