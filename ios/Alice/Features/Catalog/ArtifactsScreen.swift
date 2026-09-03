@@ -58,7 +58,11 @@ struct ArtifactsScreen: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            // Room above as well as below. With none, the control sat hard
+            // against the bar and read as part of it rather than as the first
+            // thing under it.
+            .padding(.top, 12)
+            .padding(.bottom, 10)
 
             List {
                 ForEach(rows) { artifact in

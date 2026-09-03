@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// What the agent is scheduled to do without being asked.
 ///
@@ -13,6 +14,7 @@ struct JobsScreen: View {
     @State private var jobs: [JobRow] = []
     @State private var failure: String?
     @State private var loading = false
+    @State private var reading: JobRow?
 
     var body: some View {
         Group {
@@ -70,12 +72,85 @@ struct JobsScreen: View {
                 if let line = status(of: job) {
                     Text(line)
                         .font(.caption)
-                        .foregroundStyle(job.lastStatus == "error" ? .red : .secondary)
+                        .foregroundStyle(.secondary)
+                }
+
+                // What came back can be a stack trace or a page of JSON. Set
+                // in red at full length it took over the screen and told a
+                // reader who is not a programmer nothing they could act on.
+                // One line says it failed and why; the rest is a tap away for
+                // whoever actually wants it.
+                if let error = job.lastError, !error.isEmpty {
+                    Button {
+                        reading = job
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Failed — \(Self.reason(from: error))")
+                                .font(.caption)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                                .opacity(0.7)
+                        }
+                        .foregroundStyle(.red)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows the full error")
                 }
             }
             .padding(.vertical, 4)
             .listRowBackground(Palette.card(scheme))
         }
+        .sheet(item: $reading) { job in
+            NavigationStack {
+                ScrollView {
+                    Text(job.lastError ?? "")
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                }
+                .navigationTitle(job.name)
+                .navigationBarTitleDisplayMode(.inline)
+                .background(Palette.background(scheme))
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { reading = nil }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            UIPasteboard.general.string = job.lastError
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// The one line of a failure worth putting on a row.
+    ///
+    /// Tracebacks say what went wrong on their last line, not their first, so
+    /// that is the one taken; anything else gives up its first real line. The
+    /// language's own decoration — the `Error:` and `Exception:` a reader
+    /// already knows from the colour — comes off.
+    static func reason(from error: String) -> String {
+        let lines = error
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard var line = lines.first else { return "no reason given" }
+        if let last = lines.last, lines.count > 1,
+           line.hasPrefix("Traceback") || line.hasPrefix("  File ") {
+            line = last
+        }
+        for prefix in ["Error:", "Exception:", "error:", "ERROR:"] where line.hasPrefix(prefix) {
+            line = String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+        }
+        return line.count > 90 ? String(line.prefix(89)) + "…" : line
     }
 
     /// Paused, failing, or fine — the one thing worth seeing at a glance.
@@ -88,9 +163,7 @@ struct JobsScreen: View {
     private func status(of job: JobRow) -> String? {
         var parts: [String] = []
         if !job.enabled { parts.append("Paused") }
-        if let error = job.lastError {
-            parts.append("Last run failed — \(error)")
-        } else if let last = job.lastRun {
+        if let last = job.lastRun {
             parts.append("Last ran \(last.formatted(.relative(presentation: .named)))")
         }
         if job.enabled, let next = job.nextRun {

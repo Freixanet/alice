@@ -82,7 +82,7 @@ struct ConnectView: View {
             // A sheet with nothing but a swipe to close it is a sheet the
             // reader has to guess at.
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
             }

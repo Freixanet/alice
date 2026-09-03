@@ -75,6 +75,10 @@ struct CatalogScreen: View {
             }
         }
         .listStyle(.plain)
+        // A plain list rules off the top of the first row and the bottom of
+        // the last. Between rows a line separates two things; there it
+        // separates a row from nothing, and reads as an unfinished box.
+        .listSectionSeparator(.hidden)
         .searchable(text: $query, prompt: "Search \(source.title.lowercased())")
         .navigationTitle(source.title)
         .scrollContentBackground(.hidden)

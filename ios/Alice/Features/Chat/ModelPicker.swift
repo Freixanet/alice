@@ -52,7 +52,7 @@ struct ModelPicker: View {
                     }
                     .disabled(!store.isConnected || store.isLoadingModels)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
             }

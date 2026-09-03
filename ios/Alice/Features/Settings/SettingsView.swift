@@ -93,7 +93,7 @@ struct SettingsView: View {
         // A sheet with nothing but a swipe to close it is a sheet the
         // reader has to guess at — the same gap Connect had.
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
+            ToolbarItem(placement: .cancellationAction) {
                 Button("Done") { dismiss() }
             }
         }
