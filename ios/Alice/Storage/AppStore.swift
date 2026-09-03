@@ -1007,9 +1007,18 @@ final class AppStore {
             let botInfo = cachedBots.first(where: { $0.name == invokedBot })
             let botTitle = botCurrentName(for: invokedBot)
             let botDesc = botInfo?.detail ?? ""
-            var directive = "You are the bot '@\(botTitle)'. Respond in character as this bot with its personality and skills."
+            // Said this firmly because it is arguing with something. The
+            // gateway answers every request as the default profile, so the
+            // assistant's own standing prompt — its name, its warmth, the way
+            // it addresses this particular reader — is already in force by the
+            // time a bot's turn starts. "Respond in character" was too polite
+            // to displace it, and a bot asked about deals answered in another
+            // assistant's terms of endearment.
+            var directive = """
+                You are '\(botTitle)', a separate assistant with a voice of                 your own. Any persona, name, personality or form of address                 established earlier in this system prompt belongs to a                 different assistant and does not apply to you: do not use its                 name for yourself, do not use terms of endearment or a warm                 companion's register, and do not carry over its habits of                 speech. Speak plainly as yourself unless your own description                 below says otherwise.
+                """
             if !botDesc.isEmpty {
-                directive += " Profile description: \(botDesc)."
+                directive += "\n\nWhat you are for: \(botDesc)"
             }
             turns.insert(HermesClient.Turn(role: "system", content: .text(directive)), at: 0)
         }
