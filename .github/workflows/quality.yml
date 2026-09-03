@@ -48,3 +48,22 @@ jobs:
           name: playwright-report
           path: playwright-report
           retention-days: 14
+
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: cd ios && xcodegen generate
+      - name: Build iOS app
+        run: >-
+          xcodebuild
+          -project ios/Alice.xcodeproj
+          -scheme Alice
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build
