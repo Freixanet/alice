@@ -388,6 +388,90 @@ struct BotsScreen: View {
         }
     }
 
+    /// Everything you can do to a bot, wherever the bot is shown.
+    ///
+    /// The pinned shelf used to offer only Unpin. A bot does not become a
+    /// different bot for being pinned, and a long press that answers with one
+    /// item where it answers with six everywhere else reads as the shelf
+    /// being a lesser copy of the list.
+    @ViewBuilder
+    private func botMenu(_ bot: BotRow) -> some View {
+            Button {
+                store.toggleBotUnread(bot.name)
+            } label: {
+                Label(store.unreadBots.contains(bot.name) ? "Mark Read" : "Mark Unread", systemImage: "bubble.left")
+            }
+
+            Button {
+                store.toggleBotPin(bot.name)
+            } label: {
+                Label(store.pinnedBots.contains(bot.name) ? "Unpin" : "Pin", systemImage: "pin")
+            }
+
+            Menu {
+                if !store.botCustomSections.isEmpty {
+                    ForEach(store.botCustomSections, id: \.self) { sec in
+                        Button {
+                            store.setBotSection(bot.name, section: sec)
+                        } label: {
+                            if store.section(for: bot.name) == sec {
+                                Label(sec, systemImage: "checkmark")
+                            } else {
+                                Text(sec)
+                            }
+                        }
+                    }
+                    if store.section(for: bot.name) != nil {
+                        Button("Unassigned") {
+                            store.setBotSection(bot.name, section: nil)
+                        }
+                    }
+                    Divider()
+                }
+                Button {
+                    newSectionTargetBot = bot.name
+                    showNewSectionAlert = true
+                } label: {
+                    Label("New Section", systemImage: "plus")
+                }
+            } label: {
+                Label("Move to", systemImage: "folder")
+            }
+
+            Button(role: .destructive) {
+                store.hideBot(bot.name)
+            } label: {
+                Label("Hide", systemImage: "eye.slash")
+            }
+
+            Menu {
+                Button {
+                    UIPasteboard.general.string = bot.name
+                } label: {
+                    Label("Copy ID", systemImage: "doc.on.doc")
+                }
+
+                Button {
+                    duplicateBot(bot)
+                } label: {
+                    Label("Duplicate", systemImage: "plus.square.on.square")
+                }
+
+                Button(role: .destructive) {
+                    deletingBot = bot
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis")
+            }
+
+            // No "Ask Siri" here: iOS exposes no way to open Siri from a
+            // context menu, and an item that swallows the tap is worse than
+            // one that is absent. Reaching a bot by voice needs an App
+            // Intent, which lives outside this menu.
+            }
+
     private func pinnedTile(_ bot: BotRow) -> some View {
         Button {
             store.openBotConversation(for: bot)
@@ -408,13 +492,7 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button {
-                store.toggleBotPin(bot.name)
-            } label: {
-                Label("Unpin", systemImage: "pin.slash")
-            }
-        }
+        .contextMenu { botMenu(bot) }
     }
 
     /// Said out loud rather than left to be assumed: this list came from the
@@ -1009,82 +1087,7 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button {
-                store.toggleBotUnread(bot.name)
-            } label: {
-                Label(store.unreadBots.contains(bot.name) ? "Mark Read" : "Mark Unread", systemImage: "bubble.left")
-            }
-
-            Button {
-                store.toggleBotPin(bot.name)
-            } label: {
-                Label(store.pinnedBots.contains(bot.name) ? "Unpin" : "Pin", systemImage: "pin")
-            }
-
-            Menu {
-                if !store.botCustomSections.isEmpty {
-                    ForEach(store.botCustomSections, id: \.self) { sec in
-                        Button {
-                            store.setBotSection(bot.name, section: sec)
-                        } label: {
-                            if store.section(for: bot.name) == sec {
-                                Label(sec, systemImage: "checkmark")
-                            } else {
-                                Text(sec)
-                            }
-                        }
-                    }
-                    if store.section(for: bot.name) != nil {
-                        Button("Unassigned") {
-                            store.setBotSection(bot.name, section: nil)
-                        }
-                    }
-                    Divider()
-                }
-                Button {
-                    newSectionTargetBot = bot.name
-                    showNewSectionAlert = true
-                } label: {
-                    Label("New Section", systemImage: "plus")
-                }
-            } label: {
-                Label("Move to", systemImage: "folder")
-            }
-
-            Button(role: .destructive) {
-                store.hideBot(bot.name)
-            } label: {
-                Label("Hide", systemImage: "eye.slash")
-            }
-
-            Menu {
-                Button {
-                    UIPasteboard.general.string = bot.name
-                } label: {
-                    Label("Copy ID", systemImage: "doc.on.doc")
-                }
-
-                Button {
-                    duplicateBot(bot)
-                } label: {
-                    Label("Duplicate", systemImage: "plus.square.on.square")
-                }
-
-                Button(role: .destructive) {
-                    deletingBot = bot
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            } label: {
-                Label("More", systemImage: "ellipsis")
-            }
-
-            // No "Ask Siri" here: iOS exposes no way to open Siri from a
-            // context menu, and an item that swallows the tap is worse than
-            // one that is absent. Reaching a bot by voice needs an App
-            // Intent, which lives outside this menu.
-        }
+        .contextMenu { botMenu(bot) }
     }
 
     private func duplicateBot(_ bot: BotRow) {
