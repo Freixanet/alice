@@ -229,18 +229,120 @@ private struct ToolList: View {
     let tools: [Message.ToolCall]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(tools) { tool in
-                HStack(spacing: 8) {
-                    Circle()
-                        .frame(width: 5, height: 5)
-                        .foregroundStyle(tool.status == .done ? AnyShapeStyle(.secondary) : AnyShapeStyle(store.accent.primary(scheme)))
-                    Text(tool.name).font(.caption.monospaced())
-                    if let detail = tool.detail {
-                        Text(detail).font(.caption).foregroundStyle(.secondary)
+                if tool.name == RunApprovalBroker.toolName {
+                    // The completed event removes the decision surface. The
+                    // transcript already records what Hermes did afterwards,
+                    // so a permanent "approved" row would only add noise.
+                    if tool.status != .done,
+                       let approval = RunApprovalPayload.decode(tool.detail) {
+                        RunApprovalCard(runID: tool.id, approval: approval)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .frame(width: 5, height: 5)
+                            .foregroundStyle(
+                                tool.status == .done
+                                    ? AnyShapeStyle(.secondary)
+                                    : AnyShapeStyle(store.accent.primary(scheme))
+                            )
+                        Text(tool.name).font(.caption.monospaced())
+                        if let detail = tool.detail {
+                            Text(detail).font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/// A run approval is an actual pause in Hermes, not prose asking the reader to
+/// go somewhere else. Answering here resumes the same run and its existing
+/// event stream; the key and endpoint stay inside HermesClient.
+private struct RunApprovalCard: View {
+    @Environment(\.colorScheme) private var scheme
+    let runID: String
+    let approval: RunApprovalPayload
+
+    @State private var submitting: String?
+    @State private var submitted: String?
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(approval.title, systemImage: "checkmark.shield")
+                .font(.subheadline.weight(.semibold))
+
+            if let detail = approval.detail {
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let command = approval.command {
+                Text(command)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Palette.background(scheme), in: .rect(cornerRadius: 10))
+            }
+
+            HStack(spacing: 8) {
+                ForEach(approval.choices, id: \.self) { choice in
+                    Button(label(for: choice)) {
+                        submit(choice)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .disabled(submitting != nil || submitted != nil)
+                    .tint(choice == "deny" ? .secondary : .primary)
+                }
+            }
+
+            if let submitted {
+                Text("Sent: \(label(for: submitted)). Waiting for Hermes…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(Color.red)
+            }
+        }
+        .padding(12)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Palette.border(scheme), lineWidth: 0.5)
+        }
+    }
+
+    private func submit(_ choice: String) {
+        submitting = choice
+        error = nil
+        Task {
+            do {
+                try await RunApprovalBroker.shared.respond(runID: runID, choice: choice)
+                submitted = choice
+            } catch {
+                self.error = error.localizedDescription
+            }
+            submitting = nil
+        }
+    }
+
+    private func label(for choice: String) -> String {
+        switch choice {
+        case "once": "Once"
+        case "session": "Session"
+        case "always": "Always"
+        case "deny": "Deny"
+        default: choice.capitalized
         }
     }
 }
