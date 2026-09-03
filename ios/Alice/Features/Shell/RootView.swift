@@ -72,6 +72,22 @@ struct RootView: View {
                         cornerRadius: displayCornerRadius, style: .continuous
                     ))
                     .offset(x: offset)
+
+                // Bots is a page, not a sheet. It is reached sideways — out
+                // of the drawer, or by backing out of a bot's conversation —
+                // and a screen rising from the bottom in answer to a swipe
+                // to the right reads as the wrong screen appearing. Its own
+                // `NavigationStack` so it takes its insets from the window,
+                // the way the conversation does, rather than from a container
+                // that has given them up.
+                if store.showingBots {
+                    NavigationStack {
+                        BotsScreen(onClose: { store.showingBots = false })
+                    }
+                    .background(Palette.background(scheme))
+                    .transition(.move(edge: .leading))
+                    .zIndex(1)
+                }
             }
             // Both layers have to reach the physical edges: the drawer so it fills
             // the display behind, and the conversation so its rounded corners land
@@ -88,12 +104,14 @@ struct RootView: View {
             // accent was wrong in the dark exactly where it is most visible.
             .tint(store.accent.primary(scheme))
             .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
+            .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingBots)
             // The drawer answers a sideways swipe from anywhere, not just from a
             // strip at the edge. `DrawerPan` only claims a drag that starts out
             // sideways, so scrolling the conversation is untouched.
             .overlay {
                 DrawerPan(
                     shouldBegin: { velocity in
+                        guard !store.showingBots else { return false }
                         // Sideways enough to be meant sideways, and pointing the
                         // way the drawer can actually move from here.
                         guard abs(velocity.x) > abs(velocity.y) * 1.5 else { return false }
@@ -128,14 +146,9 @@ struct RootView: View {
     }
 
     /// Back out of a bot's conversation to the list it was opened from.
-    ///
-    /// The drawer stays shut. The list is a sheet the drawer's view owns, but
-    /// a sheet covers the window whether or not the view that owns it can be
-    /// seen — and opening the drawer to reach it meant watching the sidebar
-    /// slide in and then be covered up, which is not a way back to anything.
     private func goBackToBots() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        store.openBotsList = true
+        store.showingBots = true
     }
 
     private var offset: CGFloat {

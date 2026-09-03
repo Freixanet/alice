@@ -6,13 +6,12 @@ import SwiftUI
 /// own standing instructions, model, skills and sessions. What the desktop
 /// client shows under Bot Mode is that, and so is this.
 struct BotsScreen: View {
-    /// Closes the drawer and everything above it, so the bot's conversation
-    /// lands on the screen the app is built around.
-    var onOpenChat: () -> Void = {}
+    /// Closes the page — Done, or having opened a chat, which lands on the
+    /// conversation the app is built around either way.
+    var onClose: () -> Void = {}
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.dismiss) private var dismiss
 
     @State private var rows: [BotRow] = []
     /// The agent's routines, grouped by bot, so search has something real to
@@ -264,14 +263,23 @@ struct BotsScreen: View {
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Filter: \(selectedFilter.rawValue)")
             } else {
-                Button("Done") {
-                    dismiss()
+                // Now that this is a page rather than a sheet, Done was the
+                // wrong word for it: nothing here is being confirmed, and
+                // there was no way back to the conversation. The same disc
+                // and the same chevron a bot's chat uses to get here.
+                Button {
+                    store.goHome()
+                    onClose()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 20, weight: .medium))
+                        .imageScale(.large)
+                        .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44)
                 }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 18)
-                .frame(height: 44)
-                .glassEffect(.regular.interactive(), in: .capsule)
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Back")
 
                 Spacer()
 
@@ -610,7 +618,7 @@ struct BotsScreen: View {
     private func groupRowView(_ group: Conversation) -> some View {
         Button {
             store.activeID = group.id
-            dismiss()
+            onClose()
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
@@ -643,7 +651,7 @@ struct BotsScreen: View {
     private func messageRowMatchView(_ match: MessageMatch) -> some View {
         Button {
             store.activeID = match.conversation.id
-            dismiss()
+            onClose()
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -671,7 +679,7 @@ struct BotsScreen: View {
     private func fileRowView(_ match: FileMatch) -> some View {
         Button {
             store.activeID = match.conversation.id
-            dismiss()
+            onClose()
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: match.attachment.mime.hasPrefix("image/") ? "photo.fill" : "doc.fill")
@@ -872,7 +880,7 @@ struct BotsScreen: View {
         // handles differently from a screen.
         Button {
             store.openBotConversation(for: bot)
-            onOpenChat()
+            onClose()
         } label: {
             HStack(alignment: .center, spacing: 14) {
                 BotMarkView(mark: store.mark(for: bot.name), size: 44)

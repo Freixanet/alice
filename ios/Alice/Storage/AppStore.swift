@@ -773,6 +773,19 @@ final class AppStore {
 
     // MARK: - Conversations
 
+    /// Back to Alice's own conversation.
+    ///
+    /// Leaving a bot behind means leaving its conversation too: backing out
+    /// of the bots page onto the bot you had just been talking to is not
+    /// backing out of anything.
+    func goHome() {
+        if let home = conversations.first(where: { !$0.isBotChat }) {
+            activeID = home.id
+        } else {
+            newChat()
+        }
+    }
+
     func newChat() {
         let chat = Conversation.blank()
         conversations.insert(chat, at: 0)
@@ -832,11 +845,13 @@ final class AppStore {
         return .parts(text: combined, imageURLs: images)
     }
 
-    /// Set to ask the drawer to show the bots list.
+    /// Whether the bots page is up.
     ///
-    /// The list is a sheet the sidebar owns, and going back to it from a bot's
-    /// conversation has to reach across the drawer to get there.
-    var openBotsList = false
+    /// A page rather than a sheet: it is arrived at sideways, from the drawer
+    /// or by backing out of a bot's conversation, and a screen that rises
+    /// from the bottom in answer to a swipe to the right reads as the wrong
+    /// screen appearing.
+    var showingBots = false
 
     @discardableResult
     func openBotConversation(for bot: BotRow) -> String {

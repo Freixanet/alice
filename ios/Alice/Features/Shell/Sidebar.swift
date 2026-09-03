@@ -18,7 +18,7 @@ struct Sidebar: View {
     /// conversations, where they are reached without scrolling; the rest are
     /// in Settings, which is where things you set once belong.
     private enum Destination: String, Identifiable {
-        case bots, jobs, projects, skills, tools, library, settings, connect
+        case jobs, projects, skills, tools, library, settings, connect
         var id: String { rawValue }
     }
 
@@ -31,20 +31,8 @@ struct Sidebar: View {
         }
         .frame(maxHeight: .infinity)
         .background(Palette.card(scheme).ignoresSafeArea())
-        .onChange(of: store.openBotsList) { _, wants in
-            guard wants else { return }
-            going = .bots
-            store.openBotsList = false
-        }
         .sheet(item: $going) { destination in
             switch destination {
-            case .bots:
-                closable {
-                    BotsScreen(onOpenChat: {
-                        going = nil
-                        onDismiss()
-                    })
-                }
             case .jobs: closable { JobsScreen() }
             case .projects: closable { ProjectsScreen() }
             case .skills: closable { CatalogScreen(source: .skills) }
@@ -108,7 +96,10 @@ struct Sidebar: View {
     private var destinations: some View {
         VStack(spacing: 2) {
             if store.dashboardReady {
-                row("Bots", systemImage: "person.2", weight: .medium) { going = .bots }
+                row("Bots", systemImage: "person.2", weight: .medium) {
+                    onDismiss()
+                    store.showingBots = true
+                }
             }
             row("Jobs", systemImage: "clock", weight: .medium) { going = .jobs }
             if store.dashboardReady {
