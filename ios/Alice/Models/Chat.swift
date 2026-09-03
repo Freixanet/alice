@@ -54,6 +54,41 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         var detail: String?
     }
 
+    enum RunStatus: String, Hashable, Sendable, Codable {
+        case started
+        case queued
+        case running
+        case waitingForApproval = "waiting_for_approval"
+        case stopping
+        case completed
+        case failed
+        case cancelled
+        case interrupted
+
+        var isTerminal: Bool {
+            self == .completed || self == .failed || self == .cancelled || self == .interrupted
+        }
+    }
+
+    enum ApprovalChoice: String, CaseIterable, Hashable, Sendable, Codable {
+        case once
+        case session
+        case always
+        case deny
+    }
+
+    struct Approval: Hashable, Sendable, Codable {
+        var runID: String
+        var title: String
+        var detail: String?
+        var command: String?
+        var choices: [ApprovalChoice]
+        /// UI/network state is optional so conversations written before this
+        /// field existed continue to decode without a migration.
+        var resolving: Bool?
+        var error: String?
+    }
+
     let id: String
     var role: Role
     var content: String
@@ -67,6 +102,11 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var incomplete: Bool = false
     var attachments: [Attachment] = []
     var botName: String? = nil
+    /// Durable Hermes run state. Optional fields preserve compatibility with
+    /// conversations saved by older builds.
+    var runID: String? = nil
+    var runStatus: RunStatus? = nil
+    var approval: Approval? = nil
 }
 
 struct Conversation: Identifiable, Hashable, Sendable, Codable {
@@ -107,6 +147,7 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
 enum ChatEvent: Sendable {
     case delta(String)
     case tool(id: String, name: String, status: Message.ToolCall.Status, detail: String?)
-    case run(id: String, status: String, output: String?)
+    case run(id: String, status: Message.RunStatus, output: String?)
+    case approval(Message.Approval)
     case failure(message: String, limit: ModelLimit?)
 }

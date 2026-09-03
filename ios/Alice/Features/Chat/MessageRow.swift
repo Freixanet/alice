@@ -47,9 +47,9 @@ struct MessageRow: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    if message.content.isEmpty && message.pending {
+                    if message.content.isEmpty && message.pending && message.approval == nil {
                         TypingIndicator()
-                    } else {
+                    } else if !message.content.isEmpty {
                         // Markdown, the way every other model surface shows a
                         // reply. `.full` keeps block structure — lists, quotes
                         // and code — instead of collapsing to one line.
@@ -59,6 +59,9 @@ struct MessageRow: View {
                     }
 
                     if !message.tools.isEmpty { ToolList(tools: message.tools) }
+                    if let approval = message.approval {
+                        RunApprovalCard(messageID: message.id, approval: approval)
+                    }
                     if let limit = message.errorLimit { ModelLimitNote(limit: limit) }
                     // Only once the reply has finished: acting on half an
                     // answer copies or shares something that is still changing.
@@ -229,18 +232,103 @@ private struct ToolList: View {
     let tools: [Message.ToolCall]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(tools) { tool in
                 HStack(spacing: 8) {
                     Circle()
                         .frame(width: 5, height: 5)
-                        .foregroundStyle(tool.status == .done ? AnyShapeStyle(.secondary) : AnyShapeStyle(store.accent.primary(scheme)))
+                        .foregroundStyle(
+                            tool.status == .done
+                                ? AnyShapeStyle(.secondary)
+                                : AnyShapeStyle(store.accent.primary(scheme))
+                        )
                     Text(tool.name).font(.caption.monospaced())
                     if let detail = tool.detail {
                         Text(detail).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
+        }
+    }
+}
+
+/// Hermes pauses the run here until the reader makes an explicit choice.
+/// AppStore owns the mutation, so this view never sees the gateway key or has
+/// to know which endpoint answers the approval.
+private struct RunApprovalCard: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let messageID: String
+    let approval: Message.Approval
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(approval.title, systemImage: "checkmark.shield")
+                .font(.subheadline.weight(.semibold))
+
+            if let detail = approval.detail {
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let command = approval.command {
+                Text(command)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Palette.background(scheme), in: .rect(cornerRadius: 10))
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { choiceButtons }
+                VStack(alignment: .leading, spacing: 8) { choiceButtons }
+            }
+
+            if approval.resolving == true {
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.small)
+                    Text("Sending decision…")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            if let error = approval.error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(Color.red)
+            }
+        }
+        .padding(12)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Palette.border(scheme), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var choiceButtons: some View {
+        ForEach(approval.choices, id: \.self) { choice in
+            Button(label(for: choice)) {
+                Task { await store.resolveApproval(messageID: messageID, choice: choice) }
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .disabled(approval.resolving == true)
+            .tint(choice == .deny ? .secondary : .primary)
+        }
+    }
+
+    private func label(for choice: Message.ApprovalChoice) -> String {
+        switch choice {
+        case .once: "Once"
+        case .session: "Session"
+        case .always: "Always"
+        case .deny: "Deny"
         }
     }
 }
