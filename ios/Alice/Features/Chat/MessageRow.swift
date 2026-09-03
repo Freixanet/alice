@@ -47,9 +47,9 @@ struct MessageRow: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    if message.content.isEmpty && message.pending {
+                    if message.content.isEmpty && message.pending && message.approval == nil {
                         TypingIndicator()
-                    } else {
+                    } else if !message.content.isEmpty {
                         // Markdown, the way every other model surface shows a
                         // reply. `.full` keeps block structure — lists, quotes
                         // and code — instead of collapsing to one line.
@@ -59,6 +59,9 @@ struct MessageRow: View {
                     }
 
                     if !message.tools.isEmpty { ToolList(tools: message.tools) }
+                    if let approval = message.approval {
+                        RunApprovalCard(messageID: message.id, approval: approval)
+                    }
                     if let limit = message.errorLimit { ModelLimitNote(limit: limit) }
                     // Only once the reply has finished: acting on half an
                     // answer copies or shares something that is still changing.
@@ -231,27 +234,17 @@ private struct ToolList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(tools) { tool in
-                if tool.name == RunApprovalBroker.toolName {
-                    // The completed event removes the decision surface. The
-                    // transcript already records what Hermes did afterwards,
-                    // so a permanent "approved" row would only add noise.
-                    if tool.status != .done,
-                       let approval = RunApprovalPayload.decode(tool.detail) {
-                        RunApprovalCard(runID: tool.id, approval: approval)
-                    }
-                } else {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .frame(width: 5, height: 5)
-                            .foregroundStyle(
-                                tool.status == .done
-                                    ? AnyShapeStyle(.secondary)
-                                    : AnyShapeStyle(store.accent.primary(scheme))
-                            )
-                        Text(tool.name).font(.caption.monospaced())
-                        if let detail = tool.detail {
-                            Text(detail).font(.caption).foregroundStyle(.secondary)
-                        }
+                HStack(spacing: 8) {
+                    Circle()
+                        .frame(width: 5, height: 5)
+                        .foregroundStyle(
+                            tool.status == .done
+                                ? AnyShapeStyle(.secondary)
+                                : AnyShapeStyle(store.accent.primary(scheme))
+                        )
+                    Text(tool.name).font(.caption.monospaced())
+                    if let detail = tool.detail {
+                        Text(detail).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -259,17 +252,14 @@ private struct ToolList: View {
     }
 }
 
-/// A run approval is an actual pause in Hermes, not prose asking the reader to
-/// go somewhere else. Answering here resumes the same run and its existing
-/// event stream; the key and endpoint stay inside HermesClient.
+/// Hermes pauses the run here until the reader makes an explicit choice.
+/// AppStore owns the mutation, so this view never sees the gateway key or has
+/// to know which endpoint answers the approval.
 private struct RunApprovalCard: View {
+    @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
-    let runID: String
-    let approval: RunApprovalPayload
-
-    @State private var submitting: String?
-    @State private var submitted: String?
-    @State private var error: String?
+    let messageID: String
+    let approval: Message.Approval
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -291,24 +281,21 @@ private struct RunApprovalCard: View {
                     .background(Palette.background(scheme), in: .rect(cornerRadius: 10))
             }
 
-            HStack(spacing: 8) {
-                ForEach(approval.choices, id: \.self) { choice in
-                    Button(label(for: choice)) {
-                        submit(choice)
-                    }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                    .disabled(submitting != nil || submitted != nil)
-                    .tint(choice == "deny" ? .secondary : .primary)
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { choiceButtons }
+                VStack(alignment: .leading, spacing: 8) { choiceButtons }
             }
 
-            if let submitted {
-                Text("Sent: \(label(for: submitted)). Waiting for Hermes…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if approval.resolving == true {
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.small)
+                    Text("Sending decision…")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            if let error {
+
+            if let error = approval.error {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(Color.red)
@@ -320,29 +307,28 @@ private struct RunApprovalCard: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Palette.border(scheme), lineWidth: 0.5)
         }
+        .accessibilityElement(children: .contain)
     }
 
-    private func submit(_ choice: String) {
-        submitting = choice
-        error = nil
-        Task {
-            do {
-                try await RunApprovalBroker.shared.respond(runID: runID, choice: choice)
-                submitted = choice
-            } catch {
-                self.error = error.localizedDescription
+    @ViewBuilder
+    private var choiceButtons: some View {
+        ForEach(approval.choices, id: \.self) { choice in
+            Button(label(for: choice)) {
+                Task { await store.resolveApproval(messageID: messageID, choice: choice) }
             }
-            submitting = nil
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .disabled(approval.resolving == true)
+            .tint(choice == .deny ? .secondary : .primary)
         }
     }
 
-    private func label(for choice: String) -> String {
+    private func label(for choice: Message.ApprovalChoice) -> String {
         switch choice {
-        case "once": "Once"
-        case "session": "Session"
-        case "always": "Always"
-        case "deny": "Deny"
-        default: choice.capitalized
+        case .once: "Once"
+        case .session: "Session"
+        case .always: "Always"
+        case .deny: "Deny"
         }
     }
 }
