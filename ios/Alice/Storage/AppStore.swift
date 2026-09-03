@@ -755,6 +755,22 @@ final class AppStore {
     /// the way the OpenAI-compatible shape expects, and text files inlined
     /// into the prompt, since the agent cannot open a file this app is
     /// holding in memory.
+    /// Which provider to name, or nil to let the agent choose.
+    ///
+    /// Thirty-seven of the ninety-nine models this agent offers are served by
+    /// more than one, and taking the first of them is taking one at random —
+    /// here it pinned every Anthropic model to `nous`, which has no token, so
+    /// a spent quota came back as an authentication error instead. Where the
+    /// choice is ambiguous the agent routes it, which is what its own
+    /// fallback chain is for.
+    static func provider(
+        for model: String?, among options: [HermesClient.ModelOption]
+    ) -> String? {
+        guard let model else { return nil }
+        let serving = Set(options.filter { $0.id == model }.compactMap(\.provider))
+        return serving.count == 1 ? serving.first : nil
+    }
+
     private static func content(
         of message: Message, includeAttachments: Bool
     ) -> HermesClient.Turn.Content {
@@ -910,7 +926,7 @@ final class AppStore {
         if let invokedBot, let specificModel = botModel(for: invokedBot) {
             model = specificModel
         }
-        let provider = models.first { $0.id == model }?.provider
+        let provider = Self.provider(for: model, among: models)
 
         if let invokedBot {
             let botInfo = cachedBots.first(where: { $0.name == invokedBot })
@@ -1016,12 +1032,41 @@ final class AppStore {
               let index = conversations[chat].messages.firstIndex(where: { $0.id == id })
         else { return }
         conversations[chat].messages[index].pending = false
-        if conversations[chat].messages[index].content.isEmpty,
-           conversations[chat].messages[index].error == nil {
+
+        let text = conversations[chat].messages[index].content
+        if text.isEmpty, conversations[chat].messages[index].error == nil {
             conversations[chat].messages[index].content = "Couldn’t reply."
             conversations[chat].messages[index].incomplete = true
+        } else if conversations[chat].messages[index].error == nil,
+                  let failure = Self.agentFailure(in: text) {
+            conversations[chat].messages[index].error = failure
+            conversations[chat].messages[index].errorLimit =
+                ModelLimitClassifier.classify(status: nil, message: failure)
         }
         persistConversations()
+    }
+
+    /// A reply that is nothing but the provider's failure.
+    ///
+    /// Hermes answers 200 and puts the failure in the reply text, so the
+    /// transport never sees a status to classify and the reader gets
+    /// "API call failed after 3 retries: HTTP 429: The usage limit has been
+    /// reached" as though the agent had said it. Recognised here, the same
+    /// classifier that handles a real 429 can say what it means: the
+    /// allowance is spent, and waiting will not help.
+    ///
+    /// Deliberately narrow — only a short reply that opens with one of these
+    /// counts, so an answer that happens to discuss usage limits is left
+    /// alone.
+    static func agentFailure(in text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count < 400 else { return nil }
+        let lowered = trimmed.lowercased()
+        let openings = [
+            "api call failed", "⚠️ provider", "provider authentication failed",
+            "request failed", "all providers failed",
+        ]
+        return openings.contains(where: lowered.hasPrefix) ? trimmed : nil
     }
 
     // MARK: - Persistence

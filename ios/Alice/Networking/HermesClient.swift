@@ -84,10 +84,15 @@ actor HermesClient {
 
     init(session: URLSession? = nil) {
         // A Hermes that is unreachable should say so in seconds, not after the
-        // system default of a minute. The web client settled on twelve.
+        // system default of a minute. The web client settled on twelve — but
+        // that is the budget for a probe, not for an answer. A reply can take
+        // far longer than twelve seconds to begin, and the resource cap of
+        // thirty would have cut off any reply still streaming after half a
+        // minute. Both are lifted here and the short budget is asked for
+        // per-request where it belongs.
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 12
-        configuration.timeoutIntervalForResource = 30
+        configuration.timeoutIntervalForRequest = 120
+        configuration.timeoutIntervalForResource = 600
         configuration.waitsForConnectivity = false
         self.session = session ?? URLSession(configuration: configuration)
     }
@@ -102,10 +107,21 @@ actor HermesClient {
 
     var isConnected: Bool { endpoint != nil }
 
+    /// What a probe or a list read is given before it is called unreachable.
+    static let probeTimeout: TimeInterval = 12
+    /// What an answer is given. Hermes retries a failing provider three times
+    /// before it reports back, which alone outruns the probe budget.
+    static let replyTimeout: TimeInterval = 120
+
     // MARK: - Requests
 
     /// Shared by the streaming transport in `HermesChatStream`.
-    func request(_ path: String, method: String = "GET", profile: String? = nil) throws -> URLRequest {
+    func request(
+        _ path: String,
+        method: String = "GET",
+        profile: String? = nil,
+        timeout: TimeInterval? = nil
+    ) throws -> URLRequest {
         guard let endpoint else { throw Failure.unreachable }
         // No `p/<profile>/` prefix. This gateway serves no such route, so
         // every mentioned message paid for a 404 and a full retry before the
@@ -124,6 +140,8 @@ actor HermesClient {
         }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        // Probes and list reads keep the short budget; a chat does not.
+        request.timeoutInterval = timeout ?? Self.probeTimeout
         return request
     }
 

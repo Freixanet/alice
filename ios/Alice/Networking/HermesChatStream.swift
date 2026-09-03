@@ -47,7 +47,10 @@ extension HermesClient {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    var request = try self.request("v1/chat/completions", method: "POST", profile: profile)
+                    var request = try self.request(
+                        "v1/chat/completions", method: "POST",
+                        profile: profile, timeout: HermesClient.replyTimeout
+                    )
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     var body: [String: Any] = [
@@ -130,7 +133,9 @@ extension HermesClient {
     private func completeWithoutStreaming(_ body: [String: Any]) async throws -> String? {
         var once = body
         once["stream"] = false
-        var request = try self.request("v1/chat/completions", method: "POST")
+        var request = try self.request(
+            "v1/chat/completions", method: "POST", timeout: HermesClient.replyTimeout
+        )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: once)
 
