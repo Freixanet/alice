@@ -138,6 +138,7 @@ struct ChatScreen: View {
     private var transcript: some View {
         if let conversation = store.activeConversation, !conversation.messages.isEmpty {
             ScrollViewReader { proxy in
+              GeometryReader { area in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 22) {
                         ForEach(conversation.messages) { message in
@@ -150,6 +151,12 @@ struct ChatScreen: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 28)
+                    // At least a screenful, aligned to the top. Without this
+                    // the bottom anchor pinned a short conversation to the
+                    // foot of the view and left a screen of nothing above it;
+                    // now only a conversation long enough to overflow sticks
+                    // to the bottom, which is the whole point of the anchor.
+                    .frame(minHeight: area.size.height, alignment: .top)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 // On the scroll view itself, where the effect has an edge to
@@ -172,6 +179,7 @@ struct ChatScreen: View {
                         proxy.scrollTo(bottomAnchor, anchor: .bottom)
                     }
                 }
+              }
             }
         } else {
             EmptyChatView()
