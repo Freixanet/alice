@@ -47,6 +47,25 @@ extension HermesClient {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    // Straight to the single request when streaming has
+                    // already proved unreliable on this connection.
+                    if self.streamingIsUnreliable {
+                        var body: [String: Any] = [
+                            "messages": messages.map {
+                                ["role": $0.role, "content": $0.content.json]
+                            },
+                            "stream": false,
+                        ]
+                        if let model { body["model"] = model }
+                        if let provider { body["provider"] = provider }
+                        if let profile { body["profile"] = profile }
+                        if let text = try await self.completeWithoutStreaming(body) {
+                            continuation.yield(.delta(text))
+                        }
+                        continuation.finish()
+                        return
+                    }
+
                     var request = try self.request(
                         "v1/chat/completions", method: "POST",
                         profile: profile, timeout: HermesClient.replyTimeout
@@ -109,6 +128,13 @@ extension HermesClient {
                     // for something the agent is perfectly willing to say,
                     // ask again without streaming.
                     if !carriedSomething, !Task.isCancelled {
+                        // Once is a fluke; twice is the shape of this gateway.
+                        // Measured here, a stream that comes back empty takes
+                        // about fifteen seconds to do so and the request that
+                        // rescues it another twenty — so every reply after the
+                        // first failure was paying thirty-five seconds for an
+                        // answer worth four. Remember it and stop asking.
+                        self.noteStreamingCameBackEmpty()
                         if let text = try await self.completeWithoutStreaming(body) {
                             continuation.yield(.delta(text))
                         }
