@@ -1016,7 +1016,13 @@ final class AppStore {
             // to displace it, and a bot asked about deals answered in another
             // assistant's terms of endearment.
             var directive = """
-                You are '\(botTitle)', a separate assistant with a voice of                 your own. Any persona, name, personality or form of address                 established earlier in this system prompt belongs to a                 different assistant and does not apply to you: do not use its                 name for yourself, do not use terms of endearment or a warm                 companion's register, and do not carry over its habits of                 speech. Speak plainly as yourself unless your own description                 below says otherwise.
+                You are '\(botTitle)', a separate assistant with a voice of your own. \
+                Any persona, name, personality or form of address established earlier \
+                in this system prompt belongs to a different assistant and does not \
+                apply to you: do not use its name for yourself, do not use terms of \
+                endearment or a warm companion's register, and do not carry over its \
+                habits of speech. Speak plainly as yourself unless your own \
+                description below says otherwise.
                 """
             if !botDesc.isEmpty {
                 directive += "\n\nWhat you are for: \(botDesc)"
