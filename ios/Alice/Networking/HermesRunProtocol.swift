@@ -54,9 +54,15 @@ enum HermesRunProtocol {
         if let approval = snapshot.approval, snapshot.status == .waitingForApproval {
             events.append(.approval(approval))
         }
-        if snapshot.status == .failed {
+        if snapshot.status == .failed || snapshot.status == .interrupted {
             events.append(
-                .failure(message: snapshot.error ?? "Hermes couldn’t finish.", limit: nil)
+                .failure(
+                    message: snapshot.error
+                        ?? (snapshot.status == .interrupted
+                            ? "Hermes restarted before this run could report a final result."
+                            : "Hermes couldn’t finish."),
+                    limit: nil
+                )
             )
         }
         return events
@@ -147,6 +153,14 @@ enum HermesRunProtocol {
             let message = bounded(object["error"], max: 8_000) ?? "Hermes couldn’t finish."
             return [
                 .run(id: runID, status: .failed, output: nil),
+                .failure(message: message, limit: nil),
+            ]
+
+        case "run.interrupted":
+            let message = bounded(object["error"], max: 8_000)
+                ?? "Hermes restarted before this run could report a final result."
+            return [
+                .run(id: runID, status: .interrupted, output: nil),
                 .failure(message: message, limit: nil),
             ]
 

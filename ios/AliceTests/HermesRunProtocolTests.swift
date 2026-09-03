@@ -68,6 +68,28 @@ final class HermesRunProtocolTests: XCTestCase {
         XCTAssertEqual(snapshot.approval?.choices, [.once, .deny])
     }
 
+    func testInterruptedSnapshotIsTerminalAndExplainsRestart() throws {
+        let data = Data(
+            #"{"run_id":"run-update","status":"interrupted","error":"The gateway restarted before this run settled."}"#.utf8
+        )
+
+        let snapshot = try XCTUnwrap(HermesRunProtocol.parseSnapshot(data))
+        XCTAssertEqual(snapshot.status, .interrupted)
+        XCTAssertTrue(snapshot.status.isTerminal)
+
+        let events = HermesRunProtocol.events(from: snapshot)
+        XCTAssertEqual(events.count, 2)
+        guard case let .run(runID, status, _) = events[0] else {
+            return XCTFail("Expected interrupted run state")
+        }
+        XCTAssertEqual(runID, "run-update")
+        XCTAssertEqual(status, .interrupted)
+        guard case let .failure(message, _) = events[1] else {
+            return XCTFail("Expected interruption explanation")
+        }
+        XCTAssertEqual(message, "The gateway restarted before this run settled.")
+    }
+
     func testRunLifecycleAndToolEvents() {
         let started = HermesRunProtocol.events(
             from: #"{"event":"run.started","run_id":"run-2"}"#,
@@ -102,6 +124,27 @@ final class HermesRunProtocolTests: XCTestCase {
         XCTAssertEqual(runID, "run-9")
         XCTAssertEqual(status, .completed)
         XCTAssertEqual(output, "Finished")
+    }
+
+    func testRunInputWrapsMultimodalPartsAsUserMessage() throws {
+        let content = HermesClient.Turn.Content.parts(
+            text: "What is in this image?",
+            imageURLs: ["data:image/jpeg;base64,AA=="]
+        )
+        let input = try XCTUnwrap(content.runJSON as? [[String: Any]])
+        XCTAssertEqual(input.count, 1)
+        XCTAssertEqual(input[0]["role"] as? String, "user")
+
+        let parts = try XCTUnwrap(input[0]["content"] as? [[String: Any]])
+        XCTAssertEqual(parts.count, 2)
+        XCTAssertEqual(parts[0]["type"] as? String, "text")
+        XCTAssertEqual(parts[0]["text"] as? String, "What is in this image?")
+        XCTAssertEqual(parts[1]["type"] as? String, "image_url")
+    }
+
+    func testRunInputKeepsPlainTextCompact() {
+        let content = HermesClient.Turn.Content.text("hello")
+        XCTAssertEqual(content.runJSON as? String, "hello")
     }
 
     func testSavedMessagesFromBeforeRunFieldsStillDecode() throws {
