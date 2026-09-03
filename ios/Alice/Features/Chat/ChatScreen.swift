@@ -10,6 +10,13 @@ struct ChatScreen: View {
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
 
+    private var placeholder: String {
+        guard let bot = store.activeConversation?.botName, !bot.isEmpty else {
+            return "Talk to Alice…"
+        }
+        return "Ask \(store.botCurrentName(for: bot))…"
+    }
+
     var body: some View {
         NavigationStack {
             transcript
@@ -28,7 +35,7 @@ struct ChatScreen: View {
                 // has. Content still scrolls underneath it; it just no longer
                 // comes to rest there.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Composer(focused: $composerFocused)
+                    Composer(focused: $composerFocused, placeholder: placeholder)
                 }
             .background(Palette.background(scheme))
             .contentShape(.rect)
@@ -68,14 +75,27 @@ struct ChatScreen: View {
 
             Spacer(minLength: 0)
 
-            // The mark, not the name: the drawer already says "Alice", and a
-            // second wordmark on the screen it opens from is one too many.
-            AliceMark(size: 30)
-                .foregroundStyle(.primary)
-                // Its ink sits 0.75pt above the two glyphs either side, the
-                // flags being lighter than the body they sit over.
-                .offset(y: 0.75)
-                .accessibilityHidden(true)
+            // Whose conversation this is. Alice's own mark when it is hers —
+            // the drawer already says "Alice", so a second wordmark here would
+            // be one too many — and the bot's mark and name when it is not.
+            if let bot = store.activeConversation?.botName, !bot.isEmpty {
+                HStack(spacing: 8) {
+                    BotMarkView(mark: store.mark(for: bot), size: 24)
+                    Text(store.botCurrentName(for: bot))
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 36)
+                .glassEffect(.regular, in: .capsule)
+            } else {
+                AliceMark(size: 30)
+                    .foregroundStyle(.primary)
+                    // Its ink sits 0.75pt above the two glyphs either side,
+                    // the flags being lighter than the body they sit over.
+                    .offset(y: 0.75)
+                    .accessibilityHidden(true)
+            }
 
             Spacer(minLength: 0)
 
@@ -147,20 +167,6 @@ struct ChatScreen: View {
                         proxy.scrollTo(bottomAnchor, anchor: .bottom)
                     }
                 }
-                // `sizeChanges` covers the case where the keyboard shrinks
-                // the scroll view. Inside a sheet it may not: a sheet can be
-                // moved rather than resized, and then the anchor never fires
-                // while the composer rides up over the conversation. This is
-                // the belt for that — unanimated on purpose, so where the
-                // anchor already did the work it is a no-op rather than a
-                // second journey, which is what made this feel broken before.
-                .onChange(of: composerFocused) { _, focused in
-                    guard focused else { return }
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(120))
-                        proxy.scrollTo(bottomAnchor, anchor: .bottom)
-                    }
-                }
             }
         } else {
             EmptyChatView()
@@ -179,7 +185,8 @@ private struct EmptyChatView: View {
                 Spacer()
                 BotMarkView(mark: store.mark(for: botName), size: 84, animated: true)
                 Text(store.botCurrentName(for: botName))
-                    .font(.title2.weight(.bold))
+                    // The same face the app's own title wears.
+                    .font(.aliceTitle(.title))
                 let liveDetail = store.cachedBots.first(where: { $0.name == botName })?.detail ?? ""
                 if !liveDetail.isEmpty {
                     Text(liveDetail)

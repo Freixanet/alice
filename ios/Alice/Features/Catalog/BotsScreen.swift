@@ -6,6 +6,10 @@ import SwiftUI
 /// own standing instructions, model, skills and sessions. What the desktop
 /// client shows under Bot Mode is that, and so is this.
 struct BotsScreen: View {
+    /// Closes the drawer and everything above it, so the bot's conversation
+    /// lands on the screen the app is built around.
+    var onOpenChat: () -> Void = {}
+
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
@@ -864,8 +868,14 @@ struct BotsScreen: View {
 
     @ViewBuilder
     private func botRowView(_ bot: BotRow) -> some View {
-        NavigationLink {
-            BotChatScreen(bot: bot)
+        // Opens the bot's conversation on the app's own chat screen rather
+        // than pushing a second one inside this sheet. A bot chat is a
+        // conversation like any other; giving it its own screen inside a
+        // sheet bought a duplicate transcript and a keyboard that a sheet
+        // handles differently from a screen.
+        Button {
+            store.openBotConversation(for: bot)
+            onOpenChat()
         } label: {
             HStack(alignment: .center, spacing: 14) {
                 BotMarkView(mark: store.mark(for: bot.name), size: 44)
@@ -1085,199 +1095,6 @@ struct BotsScreen: View {
         routinesByBot = (try? await store.allRoutines()) ?? routinesByBot
     }
 }
-
-// MARK: - BotChatScreen (Dedicated Bot Conversation)
-
-/// The interactive chat interface for a specific bot.
-struct BotChatScreen: View {
-    @Environment(AppStore.self) private var store
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.dismiss) private var dismiss
-    let bot: BotRow
-
-    @FocusState private var composerFocused: Bool
-    @State private var showingDetail = false
-    /// The conversation this screen opened, so the transcript never follows a
-    /// change of `activeID` made somewhere else.
-    @State private var conversationID: String?
-    /// What was open before, to put back on the way out. Without this, closing
-    /// a bot chat left the home screen showing it — and the drawer filters bot
-    /// chats out, so there was no way back to the previous conversation.
-    @State private var previousActiveID: String?
-
-    private var conversation: Conversation? {
-        store.conversations.first { $0.id == conversationID }
-    }
-
-    private var displayName: String {
-        store.botCustomNames[bot.name] ?? bot.displayName
-    }
-
-    var body: some View {
-        transcript
-            .simultaneousGesture(
-                TapGesture().onEnded { composerFocused = false }
-            )
-            // See ChatScreen: the composer reserves its own height rather than
-            // being compensated for with a fixed gap that stops matching the
-            // moment it grows or the keyboard moves it.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Composer(
-                    focused: $composerFocused,
-                    placeholder: "Ask \(displayName)…"
-                )
-            }
-        .background(Palette.background(scheme))
-        .contentShape(.rect)
-        .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            topControls
-        }
-        .sheet(isPresented: $showingDetail) {
-            NavigationStack {
-                BotDetail(bot: bot, onChange: {})
-            }
-        }
-        .task {
-            if conversationID == nil {
-                previousActiveID = store.activeID
-                conversationID = store.openBotConversation(for: bot)
-            }
-        }
-        .onDisappear {
-            // Only if it is still there: the previous chat may have been
-            // deleted while this screen was up.
-            if let previousActiveID,
-               store.conversations.contains(where: { $0.id == previousActiveID }) {
-                store.activeID = previousActiveID
-            }
-        }
-    }
-
-    private var topControls: some View {
-        HStack(spacing: 10) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel("Back")
-
-            Button {
-                showingDetail = true
-            } label: {
-                HStack(spacing: 8) {
-                    BotMarkView(mark: store.mark(for: bot.name), size: 24)
-                    Text(displayName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 44)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .accessibilityLabel("Bot settings")
-
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
-        // See ChatScreen: the conversation needs somewhere to disappear into
-        // rather than colliding with the controls.
-        //
-        // Taller than the controls and anchored to the top, so the fade runs
-        // out below them: sized to the bar alone it ended exactly where the
-        // first line of a message begins, which is where they were colliding.
-        .background(alignment: .top) {
-            LinearGradient(
-                colors: [
-                    Palette.background(scheme),
-                    Palette.background(scheme),
-                    Palette.background(scheme).opacity(0),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 190)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-        }
-    }
-
-    @ViewBuilder
-    private var transcript: some View {
-        if let conversation, !conversation.messages.isEmpty {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 20) {
-                        ForEach(conversation.messages) { message in
-                            MessageRow(message: message)
-                                .id(message.id)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 64)
-                    // Matches ChatScreen: the conversation ends rather than
-                    // stopping against the composer's glass.
-                    .padding(.bottom, 34)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .scrollEdgeEffectStyle(.soft, for: .top)
-                .scrollEdgeEffectStyle(.soft, for: .bottom)
-                // See ChatScreen: one mechanism, not two.
-                .defaultScrollAnchor(.bottom, for: .initialOffset)
-                .defaultScrollAnchor(.bottom, for: .sizeChanges)
-                .onChange(of: conversation.messages.count) { _, _ in
-                    if let last = conversation.messages.last {
-                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                    }
-                }
-                // `sizeChanges` covers the case where the keyboard shrinks
-                // the scroll view. Inside a sheet it may not: a sheet can be
-                // moved rather than resized, and then the anchor never fires
-                // while the composer rides up over the conversation. This is
-                // the belt for that — unanimated on purpose, so where the
-                // anchor already did the work it is a no-op rather than a
-                // second journey, which is what made this feel broken before.
-                .onChange(of: composerFocused) { _, focused in
-                    guard focused else { return }
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(120))
-                        if let last = conversation.messages.last {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
-                    }
-                }
-            }
-        } else {
-            VStack(spacing: 16) {
-                Spacer()
-                BotMarkView(mark: store.mark(for: bot.name), size: 84, animated: true)
-                Text(displayName)
-                    .font(.title2.weight(.bold))
-                let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
-                if !liveDetail.isEmpty {
-                    Text(liveDetail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-}
-
-// MARK: - MarkPicker (Colors only, no shapes)
 
 /// The mark color picker, shared by the detail screen and the create sheet.
 struct MarkPicker: View {

@@ -33,7 +33,13 @@ struct Sidebar: View {
         .background(Palette.card(scheme).ignoresSafeArea())
         .sheet(item: $going) { destination in
             switch destination {
-            case .bots: closable { BotsScreen() }
+            case .bots:
+                closable {
+                    BotsScreen(onOpenChat: {
+                        going = nil
+                        onDismiss()
+                    })
+                }
             case .jobs: closable { JobsScreen() }
             case .projects: closable { ProjectsScreen() }
             case .skills: closable { CatalogScreen(source: .skills) }
