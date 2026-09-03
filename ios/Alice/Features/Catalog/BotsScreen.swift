@@ -83,13 +83,10 @@ struct BotsScreen: View {
             NewChannelSheet(bots: rows)
         }
         .sheet(item: $editingBot) { bot in
+            // No Done here: the page has one of its own, and unlike this it
+            // commits the name and description on the way out.
             NavigationStack {
                 BotDetail(bot: bot, onChange: { Task { await load() } })
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { editingBot = nil }
-                        }
-                    }
             }
         }
         .alert("New Section", isPresented: $showNewSectionAlert) {

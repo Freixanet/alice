@@ -70,11 +70,6 @@ struct ChatScreen: View {
         .sheet(item: $configuring) { bot in
             NavigationStack {
                 BotDetail(bot: bot, onChange: { Task { await refreshBots() } })
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { configuring = nil }
-                        }
-                    }
             }
         }
         // The list is where these are normally read, and a conversation can

@@ -129,11 +129,13 @@ struct RootView: View {
 
     /// Back out of a bot's conversation to the list it was opened from.
     ///
-    /// That list is a sheet the drawer owns, so getting there means opening
-    /// the drawer and asking it to present it.
+    /// The drawer stays shut. The list is a sheet the drawer's view owns, but
+    /// a sheet covers the window whether or not the view that owns it can be
+    /// seen — and opening the drawer to reach it meant watching the sidebar
+    /// slide in and then be covered up, which is not a way back to anything.
     private func goBackToBots() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         store.openBotsList = true
-        setDrawer(true)
     }
 
     private var offset: CGFloat {
