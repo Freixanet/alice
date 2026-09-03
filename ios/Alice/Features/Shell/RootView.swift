@@ -85,6 +85,28 @@ struct RootView: View {
                         BotsScreen(onClose: { store.showingBots = false })
                     }
                     .background(Palette.background(scheme))
+                    // The same swipe that got here from a bot's conversation,
+                    // one step further out. A page you can only leave by
+                    // reaching for a button is a page the thumb argues with.
+                    .overlay {
+                        DrawerPan(
+                            shouldBegin: { velocity in
+                                abs(velocity.x) > abs(velocity.y) * 1.5
+                                    && velocity.x > 0
+                            },
+                            onChange: { _ in },
+                            onEnd: { translation, predicted in
+                                guard translation > drawerWidth * 0.3
+                                    || predicted > 120
+                                else { return }
+                                UIImpactFeedbackGenerator(style: .medium)
+                                    .impactOccurred()
+                                store.goHome()
+                                store.showingBots = false
+                            }
+                        )
+                        .allowsHitTesting(false)
+                    }
                     .transition(.move(edge: .leading))
                     .zIndex(1)
                 }
@@ -109,9 +131,13 @@ struct RootView: View {
             // strip at the edge. `DrawerPan` only claims a drag that starts out
             // sideways, so scrolling the conversation is untouched.
             .overlay {
-                DrawerPan(
+                // Gone entirely while the bots page is up, not merely told to
+                // say no: both recognisers attach to the same ancestor, and
+                // one swipe was being answered twice — going home and opening
+                // the drawer on top of it.
+                if !store.showingBots {
+                    DrawerPan(
                     shouldBegin: { velocity in
-                        guard !store.showingBots else { return false }
                         // Sideways enough to be meant sideways, and pointing the
                         // way the drawer can actually move from here.
                         guard abs(velocity.x) > abs(velocity.y) * 1.5 else { return false }
@@ -134,8 +160,9 @@ struct RootView: View {
                         }
                         setDrawer(drawerOpen ? !(travelled || flicked) : (travelled || flicked))
                     }
-                )
-                .allowsHitTesting(false)
+                    )
+                    .allowsHitTesting(false)
+                }
             }
         }
     }
