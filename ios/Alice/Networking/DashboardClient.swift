@@ -169,6 +169,14 @@ struct BotRow: Identifiable, Hashable, Sendable, Codable {
 }
 
 /// A named workspace, with how much of the agent's time it has taken.
+/// A project somebody made and named, which can be renamed and removed.
+struct NamedProject: Identifiable, Hashable, Sendable {
+    let id: String
+    var name: String
+    var colour: String?
+    var created: Date?
+}
+
 struct ProjectRow: Identifiable, Hashable, Sendable {
     let id: String
     var label: String
@@ -362,6 +370,61 @@ extension DashboardClient {
                 lastActive: (row["lastActive"] as? Double).map(Date.init(timeIntervalSince1970:))
             )
         }
+    }
+
+    /// The projects somebody made, as opposed to the ones the session tree
+    /// implies. These are the only ones that can be created or renamed.
+    func namedProjects() async throws -> [NamedProject] {
+        let object = try await get("api/projects")
+        let rows = (object["projects"] as? [[String: Any]]) ?? []
+        return rows.compactMap { row in
+            guard let id = row["project_id"] as? String else { return nil }
+            return NamedProject(
+                id: id,
+                name: (row["name"] as? String) ?? id,
+                colour: row["color"] as? String,
+                created: (row["created_at"] as? Double)
+                    .map(Date.init(timeIntervalSince1970:))
+            )
+        }
+    }
+
+    func createProject(name: String, colour: String?) async throws {
+        var body: [String: Any] = ["name": name]
+        if let colour { body["color"] = colour }
+        _ = try await send("POST", "api/projects/create", body)
+    }
+
+    func renameProject(_ id: String, to name: String, colour: String?) async throws {
+        var body: [String: Any] = ["project_id": id, "name": name]
+        if let colour { body["color"] = colour }
+        _ = try await send("POST", "api/projects/rename", body)
+    }
+
+    func deleteProject(_ id: String) async throws {
+        _ = try await send("POST", "api/projects/delete", ["project_id": id])
+    }
+
+    /// A skill is its `SKILL.md`, frontmatter and all — so that is what is
+    /// read and what is written back. Anything cleverer would be this app
+    /// deciding what a skill may say.
+    func skillContent(_ name: String) async throws -> String {
+        let escaped = name.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed
+        ) ?? name
+        let object = try await get("api/skills/content?name=\(escaped)")
+        guard let content = object["content"] as? String else {
+            throw Failure.http(404)
+        }
+        return content
+    }
+
+    func saveSkill(name: String, content: String) async throws {
+        _ = try await send("POST", "api/skills/save", ["name": name, "content": content])
+    }
+
+    func deleteSkill(_ name: String) async throws {
+        _ = try await send("POST", "api/skills/delete", ["name": name])
     }
 
     func memory() async throws -> [MemoryProvider] {

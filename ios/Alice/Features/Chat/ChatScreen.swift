@@ -210,21 +210,23 @@ struct ChatScreen: View {
         // out below them: sized to the bar alone it ended exactly where the
         // first line of a message begins, which is where they were colliding.
         .background(alignment: .top) {
-            // Opaque only as far as the discs reach, then out quickly. Spread
-            // evenly over 190pt it stayed half-opaque for seventy points
-            // below the bar, veiling messages that were sitting exactly where
-            // they should — the first line of a conversation looked greyed out
-            // the moment it opened.
+            // The vanishing point sits above the discs, not below them.
+            // Opaque as far down as they reached, the glass had nothing to
+            // refract: text was already gone by the time it got there, and
+            // two discs over a flat colour are just two flat circles. Solid
+            // across the status bar, out by the time the discs end, so a line
+            // of a message passes behind them in view and disappears over
+            // the top instead.
             LinearGradient(
                 stops: [
                     .init(color: Palette.background(scheme), location: 0),
-                    .init(color: Palette.background(scheme), location: 0.72),
-                    .init(color: Palette.background(scheme).opacity(0), location: 1),
+                    .init(color: Palette.background(scheme), location: 0.42),
+                    .init(color: Palette.background(scheme).opacity(0), location: 0.94),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 160)
+            .frame(height: 132)
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
         }

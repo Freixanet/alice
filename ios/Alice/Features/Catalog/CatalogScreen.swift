@@ -52,6 +52,7 @@ struct CatalogScreen: View {
     @State private var query = ""
     @State private var group: String?
     @State private var busy: Set<String> = []
+    @State private var editing: SkillEditor.Subject?
 
     var body: some View {
         List {
@@ -71,7 +72,16 @@ struct CatalogScreen: View {
             }
 
             ForEach(filtered) { row in
-                rowView(row)
+                if source == .skills {
+                    Button {
+                        editing = .existing(row.name, label: row.label)
+                    } label: {
+                        rowView(row).contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    rowView(row)
+                }
             }
         }
         .listStyle(.plain)
@@ -86,6 +96,23 @@ struct CatalogScreen: View {
         .refreshable { await load() }
         .task { await load() }
         .overlay { overlay }
+        // A skill is a Markdown file the agent reads. Hermes will hand it
+        // over and take it back, so there is no reason to make somebody go
+        // to a laptop to change a sentence in one.
+        .toolbar {
+            if source == .skills, store.dashboardReady {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        editing = .new
+                    } label: {
+                        Label("New Skill", systemImage: "plus")
+                    }
+                }
+            }
+        }
+        .sheet(item: $editing) { subject in
+            SkillEditor(subject: subject, onChange: { Task { await load() } })
+        }
     }
 
     private var groups: [String] {

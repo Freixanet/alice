@@ -741,6 +741,29 @@ final class AppStore {
     func deleteBot(_ name: String) async throws { try await dashboard.deleteBot(name) }
 
     func projects() async throws -> [ProjectRow] { try await dashboard.projects() }
+
+    func namedProjects() async throws -> [NamedProject] {
+        try await dashboard.namedProjects()
+    }
+    func createProject(name: String, colour: String?) async throws {
+        try await dashboard.createProject(name: name, colour: colour)
+    }
+    func renameProject(_ id: String, to name: String, colour: String?) async throws {
+        try await dashboard.renameProject(id, to: name, colour: colour)
+    }
+    func deleteProject(_ id: String) async throws {
+        try await dashboard.deleteProject(id)
+    }
+
+    func skillContent(_ name: String) async throws -> String {
+        try await dashboard.skillContent(name)
+    }
+    func saveSkill(name: String, content: String) async throws {
+        try await dashboard.saveSkill(name: name, content: content)
+    }
+    func deleteSkill(_ name: String) async throws {
+        try await dashboard.deleteSkill(name)
+    }
     func memoryProviders() async throws -> [MemoryProvider] { try await dashboard.memory() }
     func usage() async throws -> UsageReport { try await dashboard.usage() }
 
