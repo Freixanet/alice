@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct ChatScreen: View {
     @Environment(AppStore.self) private var store
@@ -8,7 +7,7 @@ struct ChatScreen: View {
     let onBack: () -> Void
 
     @FocusState private var composerFocused: Bool
-    @State private var deletingBot: String?
+    @State private var configuring: BotRow?
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -63,83 +62,30 @@ struct ChatScreen: View {
             // message sat underneath the new-chat button.
             .safeAreaInset(edge: .top, spacing: 0) { topControls }
         }
-        .confirmationDialog(
-            "Delete \(store.botCurrentName(for: deletingBot ?? ""))?",
-            isPresented: Binding(
-                get: { deletingBot != nil },
-                set: { if !$0 { deletingBot = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                guard let name = deletingBot else { return }
-                deletingBot = nil
-                onBack()
-                Task { try? await store.deleteBot(name) }
-            }
-            Button("Cancel", role: .cancel) { deletingBot = nil }
-        } message: {
-            Text("This removes the bot from the agent.")
-        }
-    }
-
-    /// The bot's own actions, reached by tapping its name.
-    ///
-    /// The same set the list offers, less the two that need a text field of
-    /// their own — a menu opened from the conversation is for acting on the
-    /// bot, not for filing it into a section that does not exist yet.
-    @ViewBuilder
-    private func botMenu(_ bot: String) -> some View {
-        Button {
-            store.toggleBotPin(bot)
-        } label: {
-            Label(
-                store.pinnedBots.contains(bot) ? "Unpin" : "Pin",
-                systemImage: "pin"
-            )
-        }
-
-        if !store.botCustomSections.isEmpty {
-            Menu {
-                ForEach(store.botCustomSections, id: \.self) { section in
-                    Button {
-                        store.setBotSection(bot, section: section)
-                    } label: {
-                        if store.section(for: bot) == section {
-                            Label(section, systemImage: "checkmark")
-                        } else {
-                            Text(section)
+        // The whole settings page, not a shortlist of it. A menu here made
+        // the reader choose between the four things it offered and the
+        // twenty the page has, having been given no way to tell which was
+        // which — and the name of a thing is where you expect to find all of
+        // it, not a summary.
+        .sheet(item: $configuring) { bot in
+            NavigationStack {
+                BotDetail(bot: bot, onChange: { Task { await refreshBots() } })
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { configuring = nil }
                         }
                     }
-                }
-                if store.section(for: bot) != nil {
-                    Button("Unassigned") { store.setBotSection(bot, section: nil) }
-                }
-            } label: {
-                Label("Move to", systemImage: "folder")
             }
         }
+        // The list is where these are normally read, and a conversation can
+        // be opened without ever going through it.
+        .task(id: bot) { await refreshBots() }
+    }
 
-        Button {
-            UIPasteboard.general.string = bot
-        } label: {
-            Label("Copy ID", systemImage: "doc.on.doc")
-        }
-
-        Divider()
-
-        Button(role: .destructive) {
-            store.hideBot(bot)
-            onBack()
-        } label: {
-            Label("Hide", systemImage: "eye.slash")
-        }
-
-        Button(role: .destructive) {
-            deletingBot = bot
-        } label: {
-            Label("Delete", systemImage: "trash")
-        }
+    /// Keeps `cachedBots` good enough for the settings page to open from here.
+    private func refreshBots() async {
+        guard bot != nil, store.dashboardReady else { return }
+        _ = try? await store.bots()
     }
 
     private var topControls: some View {
@@ -170,8 +116,8 @@ struct ChatScreen: View {
             // the drawer already says "Alice", so a second wordmark here would
             // be one too many — and the bot's mark and name when it is not.
             if let bot {
-                Menu {
-                    botMenu(bot)
+                Button {
+                    configuring = store.cachedBots.first { $0.name == bot }
                 } label: {
                     HStack(spacing: 8) {
                         BotMarkView(mark: store.mark(for: bot), size: 24)
@@ -181,9 +127,9 @@ struct ChatScreen: View {
                     }
                     .padding(.horizontal, 14)
                     .frame(height: 36)
-                    .glassEffect(.regular, in: .capsule)
+                    .glassEffect(.regular.interactive(), in: .capsule)
                 }
-                .menuOrder(.fixed)
+                .accessibilityHint("Opens this bot’s settings")
             } else {
                 AliceMark(size: 30)
                     .foregroundStyle(.primary)

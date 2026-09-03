@@ -1126,7 +1126,10 @@ struct MarkPicker: View {
 // MARK: - BotDetail (Fully Editable)
 
 /// One bot: fully editable properties including model, section, instructions, notifications, etc.
-private struct BotDetail: View {
+/// A bot's whole settings page — mark, name, description, model, section,
+/// notifications, soul and routines. Reached from the list and from the top
+/// of its own conversation.
+struct BotDetail: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
