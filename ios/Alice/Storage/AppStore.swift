@@ -822,6 +822,7 @@ final class AppStore {
         else { return }
         guard let index = conversations.firstIndex(where: { $0.id == activeID })
         else { return }
+        let conversationID = conversations[index].id
 
         // Detect bot conversation, bot mention or channel bot
         var invokedBot: String?
@@ -939,19 +940,32 @@ final class AppStore {
             turns.insert(HermesClient.Turn(role: "system", content: .text(directive)), at: 0)
         }
 
+        let preferRuns = manifest?.supportsRuns ?? true
+        let useRunIdempotency = manifest?.supportsRunIdempotency ?? false
         streamTask = Task { [weak self] in
             guard let self else { return }
             let stream = await self.client.stream(
-                messages: turns, model: model, provider: provider, profile: invokedBot
+                messages: turns,
+                model: model,
+                provider: provider,
+                profile: invokedBot,
+                conversationID: conversationID,
+                preferRuns: preferRuns,
+                runIdempotency: useRunIdempotency
             )
             do {
                 for try await event in stream {
-                    self.apply(event, to: replyID)
+                    self.apply(event, to: replyID, conversationID: conversationID)
                 }
             } catch {
-                self.fail(replyID, message: error.localizedDescription, limit: nil)
+                self.fail(
+                    replyID,
+                    conversationID: conversationID,
+                    message: error.localizedDescription,
+                    limit: nil
+                )
             }
-            self.finish(replyID)
+            self.finish(replyID, conversationID: conversationID)
         }
     }
 
@@ -986,14 +1000,90 @@ final class AppStore {
         isSending = false
     }
 
-    private func apply(_ event: ChatEvent, to id: String) {
-        guard let chat = conversations.firstIndex(where: { $0.id == activeID }),
-              let index = conversations[chat].messages.firstIndex(where: { $0.id == id })
+    /// Answers a real Hermes approval request and resumes the same durable run.
+    /// The view never receives the gateway key or constructs a control URL.
+    func resolveApproval(messageID: String, choice: Message.ApprovalChoice) async {
+        guard let location = messageLocation(messageID),
+              let approval = conversations[location.chat].messages[location.message].approval,
+              approval.resolving != true
         else { return }
+
+        conversations[location.chat].messages[location.message].approval?.resolving = true
+        conversations[location.chat].messages[location.message].approval?.error = nil
+        persistConversations()
+
+        let profile = conversations[location.chat].messages[location.message].botName
+        do {
+            try await client.respondToRunApproval(
+                runID: approval.runID,
+                choice: choice,
+                profile: profile
+            )
+            guard let refreshed = messageLocation(messageID) else { return }
+            conversations[refreshed.chat].messages[refreshed.message].approval = nil
+            conversations[refreshed.chat].messages[refreshed.message].runStatus = .running
+            conversations[refreshed.chat].messages[refreshed.message].pending = true
+            persistConversations()
+
+            // A normal live run already has a stream waiting for this response.
+            // If the app was relaunched or SSE had died, reattach explicitly.
+            if streamTask == nil {
+                resumeRun(
+                    runID: approval.runID,
+                    replyID: messageID,
+                    conversationID: conversations[refreshed.chat].id,
+                    profile: profile
+                )
+            }
+        } catch {
+            guard let refreshed = messageLocation(messageID) else { return }
+            conversations[refreshed.chat].messages[refreshed.message].approval?.resolving = false
+            conversations[refreshed.chat].messages[refreshed.message].approval?.error =
+                error.localizedDescription
+            persistConversations()
+        }
+    }
+
+    private func resumeRun(
+        runID: String,
+        replyID: String,
+        conversationID: String,
+        profile: String?
+    ) {
+        guard streamTask == nil else { return }
+        isSending = true
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+            let stream = await self.client.resumeRun(
+                runID: runID,
+                profile: profile,
+                conversationID: conversationID
+            )
+            do {
+                for try await event in stream {
+                    self.apply(event, to: replyID, conversationID: conversationID)
+                }
+            } catch {
+                self.fail(
+                    replyID,
+                    conversationID: conversationID,
+                    message: error.localizedDescription,
+                    limit: nil
+                )
+            }
+            self.finish(replyID, conversationID: conversationID)
+        }
+    }
+
+    private func apply(_ event: ChatEvent, to id: String, conversationID: String) {
+        guard let location = messageLocation(id, conversationID: conversationID) else { return }
+        let chat = location.chat
+        let index = location.message
 
         switch event {
         case let .delta(text):
             conversations[chat].messages[index].content += text
+
         case let .tool(toolID, name, status, detail):
             var tools = conversations[chat].messages[index].tools
             if let existing = tools.firstIndex(where: { $0.id == toolID }) {
@@ -1003,20 +1093,47 @@ final class AppStore {
                 tools.append(.init(id: toolID, name: name, status: status, detail: detail))
             }
             conversations[chat].messages[index].tools = tools
-        case let .run(_, status, output):
+
+        case let .run(runID, status, output):
+            conversations[chat].messages[index].runID = runID
+            conversations[chat].messages[index].runStatus = status
+            if status != .waitingForApproval {
+                conversations[chat].messages[index].approval = nil
+            }
             if let output { conversations[chat].messages[index].content = output }
-            if ["completed", "failed", "cancelled"].contains(status) {
+            if status.isTerminal {
                 conversations[chat].messages[index].pending = false
             }
+            if status == .waitingForApproval || status.isTerminal || output != nil {
+                persistConversations()
+            }
+
+        case let .approval(approval):
+            conversations[chat].messages[index].runID = approval.runID
+            conversations[chat].messages[index].runStatus = .waitingForApproval
+            conversations[chat].messages[index].approval = approval
+            conversations[chat].messages[index].pending = true
+            persistConversations()
+
         case let .failure(message, limit):
-            fail(id, message: message, limit: limit)
+            fail(
+                id,
+                conversationID: conversationID,
+                message: message,
+                limit: limit
+            )
         }
     }
 
-    private func fail(_ id: String, message: String, limit: ModelLimit?) {
-        guard let chat = conversations.firstIndex(where: { $0.id == activeID }),
-              let index = conversations[chat].messages.firstIndex(where: { $0.id == id })
-        else { return }
+    private func fail(
+        _ id: String,
+        conversationID: String,
+        message: String,
+        limit: ModelLimit?
+    ) {
+        guard let location = messageLocation(id, conversationID: conversationID) else { return }
+        let chat = location.chat
+        let index = location.message
         conversations[chat].messages[index].pending = false
         conversations[chat].messages[index].error = message
         conversations[chat].messages[index].errorLimit = limit
@@ -1025,16 +1142,18 @@ final class AppStore {
         }
     }
 
-    private func finish(_ id: String) {
+    private func finish(_ id: String, conversationID: String) {
         isSending = false
         streamTask = nil
-        guard let chat = conversations.firstIndex(where: { $0.id == activeID }),
-              let index = conversations[chat].messages.firstIndex(where: { $0.id == id })
-        else { return }
+        guard let location = messageLocation(id, conversationID: conversationID) else { return }
+        let chat = location.chat
+        let index = location.message
         conversations[chat].messages[index].pending = false
 
         let text = conversations[chat].messages[index].content
-        if text.isEmpty, conversations[chat].messages[index].error == nil {
+        if text.isEmpty,
+           conversations[chat].messages[index].error == nil,
+           conversations[chat].messages[index].approval == nil {
             conversations[chat].messages[index].content = "Couldn’t reply."
             conversations[chat].messages[index].incomplete = true
         } else if conversations[chat].messages[index].error == nil,
@@ -1044,6 +1163,23 @@ final class AppStore {
                 ModelLimitClassifier.classify(status: nil, message: failure)
         }
         persistConversations()
+    }
+
+    private func messageLocation(
+        _ messageID: String,
+        conversationID: String? = nil
+    ) -> (chat: Int, message: Int)? {
+        if let conversationID,
+           let chat = conversations.firstIndex(where: { $0.id == conversationID }),
+           let message = conversations[chat].messages.firstIndex(where: { $0.id == messageID }) {
+            return (chat, message)
+        }
+        for chat in conversations.indices {
+            if let message = conversations[chat].messages.firstIndex(where: { $0.id == messageID }) {
+                return (chat, message)
+            }
+        }
+        return nil
     }
 
     /// A reply that is nothing but the provider's failure.
