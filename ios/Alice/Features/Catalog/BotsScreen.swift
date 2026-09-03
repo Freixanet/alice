@@ -1229,19 +1229,12 @@ struct BotChatScreen: View {
                 .scrollDismissesKeyboard(.interactively)
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
-                // See ChatScreen: anchored to the foot so the keyboard
-                // shrinking the container does not leave the conversation
-                // behind the composer.
-                .defaultScrollAnchor(.bottom)
+                // See ChatScreen: one mechanism, not two.
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .onChange(of: conversation.messages.count) { _, _ in
                     if let last = conversation.messages.last {
                         withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                    }
-                }
-                .onChange(of: composerFocused) { _, focused in
-                    guard focused, let last = conversation.messages.last else { return }
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
             }

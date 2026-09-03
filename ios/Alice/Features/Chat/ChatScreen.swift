@@ -129,23 +129,18 @@ struct ChatScreen: View {
                 // the top controls with nothing between them.
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
-                // Keeps the foot of the conversation against the foot of the
-                // scroll view as the container shrinks — which is what the
-                // keyboard does to it.
-                .defaultScrollAnchor(.bottom)
+                // Opens on the newest message, and stays on it when the
+                // scroll view is resized — which is what the keyboard does.
+                //
+                // One mechanism, not two. Pinning the foot and *also*
+                // animating a scroll when the composer took focus meant the
+                // conversation moved twice for one keystroke: it went under
+                // the composer and then climbed back, which is what read as
+                // broken.
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .onChange(of: conversation.messages.last?.content) {
                     withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo(bottomAnchor, anchor: .bottom)
-                    }
-                }
-                // Reserving the composer's height stops it covering the
-                // conversation at rest, but it does not move the conversation:
-                // raise the keyboard and whatever was on screen stays put
-                // while the composer climbs over it. Follow it down, so you
-                // can still see what you are answering.
-                .onChange(of: composerFocused) { _, focused in
-                    guard focused else { return }
-                    withAnimation(.easeOut(duration: 0.25)) {
                         proxy.scrollTo(bottomAnchor, anchor: .bottom)
                     }
                 }
