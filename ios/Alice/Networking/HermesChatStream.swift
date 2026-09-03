@@ -107,6 +107,17 @@ extension HermesClient {
                 try await self.respondToRunApproval(
                     runID: runID, choice: choice, profile: profile
                 )
+                // A successful approval response is enough to remove the
+                // decision card immediately. The server's later
+                // `approval.responded` event is still accepted and is harmless.
+                continuation.yield(
+                    .tool(
+                        id: runID,
+                        name: RunApprovalBroker.toolName,
+                        status: .done,
+                        detail: nil
+                    )
+                )
             }
 
             do {
@@ -126,6 +137,12 @@ extension HermesClient {
                 return true
             } catch {
                 await RunApprovalBroker.shared.unregister(runID: runID)
+                if error is CancellationError {
+                    // Runs are durable. Merely closing their event stream does
+                    // not stop the work, so the composer's Stop button must
+                    // explicitly cancel the server-side run as well.
+                    Task { try? await self.cancelRun(runID: runID, profile: profile) }
+                }
                 throw error
             }
         }
@@ -241,6 +258,7 @@ extension HermesClient {
         continuation: AsyncThrowingStream<ChatEvent, Error>.Continuation
     ) async throws {
         var lastApprovalJSON: String?
+        var consecutiveFailures = 0
         while !Task.isCancelled {
             var request = try self.request(
                 "v1/runs/\(Self.pathSegment(runID))",
@@ -251,9 +269,15 @@ extension HermesClient {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
             guard http.isSuccess else {
+                consecutiveFailures += 1
+                if consecutiveFailures >= 5 {
+                    let detail = Self.detail(from: data) ?? "Hermes returned \(http.statusCode)."
+                    throw Failure.http(status: http.statusCode, detail: detail, limit: nil)
+                }
                 try await Task.sleep(for: .seconds(1))
                 continue
             }
+            consecutiveFailures = 0
             guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { throw Failure.badResponse }
 
@@ -306,6 +330,26 @@ extension HermesClient {
         guard http.isSuccess else {
             let detail = Self.detail(from: data) ?? "Hermes returned \(http.statusCode)."
             throw Failure.http(status: http.statusCode, detail: detail, limit: nil)
+        }
+    }
+
+    private func cancelRun(runID: String, profile: String?) async throws {
+        var request = try self.request(
+            "v1/runs/\(Self.pathSegment(runID))/stop",
+            method: "POST",
+            profile: profile,
+            timeout: HermesClient.probeTimeout
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("{}".utf8)
+        let (_, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
+        guard http.isSuccess || [404, 409].contains(http.statusCode) else {
+            throw Failure.http(
+                status: http.statusCode,
+                detail: "Hermes could not stop that run.",
+                limit: nil
+            )
         }
     }
 
@@ -496,9 +540,10 @@ extension HermesClient {
         case "tool.started":
             let name = string(object["tool"] ?? object["tool_name"])
             guard !name.isEmpty else { return [] }
+            let callID = string(object["call_id"] ?? object["tool_call_id"])
             return [
                 .tool(
-                    id: string(object["call_id"] ?? object["tool_call_id"]),
+                    id: callID.isEmpty ? "\(id):\(name)" : callID,
                     name: name,
                     status: .start,
                     detail: optionalString(object["preview"])
@@ -507,11 +552,12 @@ extension HermesClient {
         case "tool.completed", "tool.failed":
             let name = string(object["tool"] ?? object["tool_name"])
             guard !name.isEmpty else { return [] }
+            let callID = string(object["call_id"] ?? object["tool_call_id"])
             let detail = optionalString(object["preview"])
                 ?? (event == "tool.failed" ? "Tool failed" : nil)
             return [
                 .tool(
-                    id: string(object["call_id"] ?? object["tool_call_id"]),
+                    id: callID.isEmpty ? "\(id):\(name)" : callID,
                     name: name,
                     status: .done,
                     detail: detail
@@ -521,9 +567,10 @@ extension HermesClient {
             let detail = optionalString(object["summary"])
                 ?? optionalString(object["goal"])
                 ?? optionalString(object["preview"])
+            let subagentID = string(object["subagent_id"] ?? object["child_session_id"])
             return [
                 .tool(
-                    id: string(object["subagent_id"] ?? object["child_session_id"]),
+                    id: subagentID.isEmpty ? "\(id):delegate_task" : subagentID,
                     name: "delegate_task",
                     status: event == "subagent.start" ? .start : .done,
                     detail: detail
