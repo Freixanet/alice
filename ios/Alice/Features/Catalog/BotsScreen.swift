@@ -11,7 +11,15 @@ struct BotsScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var rows: [BotRow] = []
+    /// The agent's routines, grouped by bot, so search has something real to
+    /// look through. It used to search a local mirror that only ever held
+    /// routines the server had rejected.
+    @State private var routinesByBot: [String: [JobRow]] = [:]
     @State private var failure: String?
+    /// True when the list on screen came from the cache because the agent did
+    /// not answer.
+    @State private var stale = false
+    @State private var showHidden = false
     @State private var loading = false
     @State private var creatingBot = false
     @State private var creatingChannel = false
@@ -315,11 +323,79 @@ struct BotsScreen: View {
                 if showSearch {
                     searchResultsView
                 } else {
+                    if stale { staleNotice }
                     normalBotSections
+                    hiddenSection
                 }
             }
             .padding(.top, 24)
             .padding(.bottom, 32)
+        }
+    }
+
+    /// Said out loud rather than left to be assumed: this list came from the
+    /// cache because the agent did not answer.
+    private var staleNotice: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+            Text("Showing the last known list — the dashboard did not answer.")
+                .font(.footnote)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
+        .padding(.horizontal, 16)
+    }
+
+    /// The way back from Hide.
+    ///
+    /// Hiding used to be one-way: `unhideBot` had no caller, so a hidden bot
+    /// left the screen for good and the only recovery was wiping the app's
+    /// data.
+    @ViewBuilder
+    private var hiddenSection: some View {
+        let hidden = rows.filter { store.hiddenBots.contains($0.name) }
+        if !hidden.isEmpty {
+            Button {
+                showHidden.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Text("Hidden")
+                    Text("\(hidden.count)")
+                        .foregroundStyle(.secondary)
+                    Image(systemName: showHidden ? "chevron.down" : "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+
+            if showHidden {
+                ForEach(hidden) { bot in
+                    HStack(spacing: 12) {
+                        BotMarkView(mark: store.mark(for: bot.name), size: 34)
+                        Text(store.botCurrentName(for: bot))
+                            .font(.subheadline)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Button("Unhide") { store.unhideBot(bot.name) }
+                            .font(.subheadline)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(store.accent.primary(scheme))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
+                    .padding(.horizontal, 16)
+                }
+            }
         }
     }
 
@@ -330,7 +406,7 @@ struct BotsScreen: View {
                 botRowView(bot)
             }
         } else {
-            ForEach(store.displaySectionOrder(), id: \.self) { sectionKey in
+            ForEach(store.sectionOrder, id: \.self) { sectionKey in
                 if sectionKey == AppStore.unassignedSectionKey {
                     if !unassignedBots.isEmpty {
                         unassignedSectionHeader
@@ -636,7 +712,7 @@ struct BotsScreen: View {
 
     private func allRoutinesMatching(query: String) -> [(routine: JobRow, botName: String)] {
         var results: [(JobRow, String)] = []
-        for (bName, routinesList) in store.localBotRoutines {
+        for (bName, routinesList) in routinesByBot {
             for r in routinesList {
                 if query.isEmpty ||
                     r.name.localizedCaseInsensitiveContains(query) ||
@@ -708,7 +784,7 @@ struct BotsScreen: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            let order = store.displaySectionOrder()
+            let order = store.sectionOrder
             let isFirst = order.first == title
             let isLast = order.last == title
 
@@ -766,7 +842,7 @@ struct BotsScreen: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            let order = store.displaySectionOrder()
+            let order = store.sectionOrder
             let isFirst = order.first == AppStore.unassignedSectionKey
             let isLast = order.last == AppStore.unassignedSectionKey
 
@@ -913,11 +989,10 @@ struct BotsScreen: View {
                 Label("More", systemImage: "ellipsis")
             }
 
-            Button {
-                // Ask Siri shortcut
-            } label: {
-                Label("Ask Siri", systemImage: "siri")
-            }
+            // No "Ask Siri" here: iOS exposes no way to open Siri from a
+            // context menu, and an item that swallows the tap is worse than
+            // one that is absent. Reaching a bot by voice needs an App
+            // Intent, which lives outside this menu.
         }
     }
 
@@ -965,8 +1040,20 @@ struct BotsScreen: View {
     private func load() async {
         loading = true
         defer { loading = false }
-        do { rows = try await store.bots(); failure = nil }
-        catch { failure = describeBotError(error) }
+        do {
+            rows = try await store.bots()
+            failure = nil
+            stale = false
+        } catch {
+            // Falling back to the cache is fine; pretending it is live is not.
+            // The list still appears, and the header says how old it might be.
+            if rows.isEmpty && !store.cachedBots.isEmpty {
+                rows = store.cachedBots
+            }
+            stale = !rows.isEmpty
+            failure = rows.isEmpty ? describeBotError(error) : nil
+        }
+        routinesByBot = (try? await store.allRoutines()) ?? routinesByBot
     }
 }
 
@@ -981,6 +1068,17 @@ struct BotChatScreen: View {
 
     @FocusState private var composerFocused: Bool
     @State private var showingDetail = false
+    /// The conversation this screen opened, so the transcript never follows a
+    /// change of `activeID` made somewhere else.
+    @State private var conversationID: String?
+    /// What was open before, to put back on the way out. Without this, closing
+    /// a bot chat left the home screen showing it — and the drawer filters bot
+    /// chats out, so there was no way back to the previous conversation.
+    @State private var previousActiveID: String?
+
+    private var conversation: Conversation? {
+        store.conversations.first { $0.id == conversationID }
+    }
 
     private var displayName: String {
         store.botCustomNames[bot.name] ?? bot.displayName
@@ -1010,7 +1108,18 @@ struct BotChatScreen: View {
             }
         }
         .task {
-            store.openBotConversation(for: bot)
+            if conversationID == nil {
+                previousActiveID = store.activeID
+                conversationID = store.openBotConversation(for: bot)
+            }
+        }
+        .onDisappear {
+            // Only if it is still there: the previous chat may have been
+            // deleted while this screen was up.
+            if let previousActiveID,
+               store.conversations.contains(where: { $0.id == previousActiveID }) {
+                store.activeID = previousActiveID
+            }
         }
     }
 
@@ -1053,7 +1162,7 @@ struct BotChatScreen: View {
 
     @ViewBuilder
     private var transcript: some View {
-        if let conversation = store.activeConversation, !conversation.messages.isEmpty {
+        if let conversation, !conversation.messages.isEmpty {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 20) {

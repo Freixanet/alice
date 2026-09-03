@@ -21,6 +21,7 @@ struct Composer: View {
     @State private var commandsDismissed = false
     @State private var commandsHeight: CGFloat = 180
     @State private var botMentionsHeight: CGFloat = 160
+    @State private var fetchedBotsForMention = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var showPhotos = false
     @State private var showFiles = false
@@ -90,10 +91,15 @@ struct Composer: View {
         .task(id: store.dashboardReady) {
             _ = try? await store.bots()
         }
-        .task(id: store.draft) {
-            if store.draft.contains("@") && store.cachedBots.isEmpty {
-                _ = try? await store.bots()
-            }
+        // Once, when the mention list first opens — not on every keystroke.
+        // Keyed on the draft, this fired a dashboard request per character
+        // typed, and since a failed fetch leaves the cache empty it never
+        // stopped firing.
+        .onChange(of: botMentionQuery != nil) { _, mentioning in
+            guard mentioning, store.cachedBots.isEmpty, !fetchedBotsForMention
+            else { return }
+            fetchedBotsForMention = true
+            Task { _ = try? await store.bots() }
         }
     }
 

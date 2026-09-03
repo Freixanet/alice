@@ -110,8 +110,10 @@ actor DashboardClient {
     private func fetch(
         _ path: String, method: String = "GET", body: [String: Any]? = nil
     ) async throws -> [String: Any] {
-        guard let credentials else { throw Failure.notConfigured }
-        var request = URLRequest(url: credentials.url.appending(path: path))
+        guard let credentials, let url = Self.url(credentials.url, path) else {
+            throw Failure.notConfigured
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -123,6 +125,20 @@ actor DashboardClient {
             throw Failure.http(http.statusCode)
         }
         return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    /// Joins a path — with or without a query — onto the dashboard's address.
+    ///
+    /// `appending(path:)` escapes the whole string, so a "?" in it becomes
+    /// %3F and the query arrives as part of the path. Anything with a query
+    /// has to be resolved as a relative URL instead.
+    private static func url(_ base: URL, _ path: String) -> URL? {
+        let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        guard trimmed.contains("?") else { return base.appending(path: trimmed) }
+        let root = base.absoluteString.hasSuffix("/")
+            ? base
+            : URL(string: base.absoluteString + "/") ?? base
+        return URL(string: trimmed, relativeTo: root)
     }
 
     private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
@@ -267,38 +283,59 @@ extension DashboardClient {
     /// which the gateway's does not — so this is the only place a routine can
     /// be tied to the bot that owns it.
     func routines(for profile: String) async throws -> [JobRow] {
-        let object = try await get("api/cron/jobs")
-        let rows = (object["jobs"] as? [[String: Any]]) ?? []
-        return rows.compactMap { row in
-            guard (row["profile"] as? String) == profile,
-                  let id = row["id"] as? String
-            else { return nil }
-            let schedule = row["schedule"] as? [String: Any]
-            return JobRow(
-                id: id,
-                name: (row["name"] as? String) ?? id,
-                prompt: (row["prompt"] as? String) ?? "",
-                schedule: (row["schedule_display"] as? String)
-                    ?? (schedule?["display"] as? String)
-                    ?? (schedule?["expr"] as? String) ?? "",
-                enabled: (row["enabled"] as? Bool) ?? false,
-                lastStatus: row["last_status"] as? String,
-                lastError: (row["last_error"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-                lastRun: HermesClient.date(row["last_run_at"]),
-                nextRun: HermesClient.date(row["next_run_at"])
-            )
-        }
+        try await allRoutines()[profile] ?? []
     }
 
-    func createRoutine(for profile: String, name: String, prompt: String, schedule: String) async throws {
-        let body: [String: Any] = [
+    /// Every routine, grouped by the bot that owns it, in one request.
+    func allRoutines() async throws -> [String: [JobRow]] {
+        let object = try await get("api/cron/jobs")
+        let rows = (object["jobs"] as? [[String: Any]]) ?? []
+        var grouped: [String: [JobRow]] = [:]
+        for row in rows {
+            guard let id = row["id"] as? String,
+                  let profile = row["profile"] as? String
+            else { continue }
+            let schedule = row["schedule"] as? [String: Any]
+            grouped[profile, default: []].append(
+                JobRow(
+                    id: id,
+                    name: (row["name"] as? String) ?? id,
+                    prompt: (row["prompt"] as? String) ?? "",
+                    schedule: (row["schedule_display"] as? String)
+                        ?? (schedule?["display"] as? String)
+                        ?? (schedule?["expr"] as? String) ?? "",
+                    enabled: (row["enabled"] as? Bool) ?? false,
+                    lastStatus: row["last_status"] as? String,
+                    lastError: (row["last_error"] as? String).flatMap {
+                        $0.isEmpty ? nil : $0
+                    },
+                    lastRun: HermesClient.date(row["last_run_at"]),
+                    nextRun: HermesClient.date(row["next_run_at"])
+                )
+            )
+        }
+        return grouped
+    }
+
+    /// Creates a scheduled job owned by one bot.
+    ///
+    /// Two things the first version got wrong, both of which made every
+    /// create fail with a 422 that was then swallowed: `schedule` is a plain
+    /// string, not `{"expr": …}`, and the profile is a query parameter — the
+    /// body has no field for it, so a job sent that way would have landed on
+    /// whichever profile the dashboard was scoped to.
+    func createRoutine(
+        for profile: String, name: String, prompt: String, schedule: String
+    ) async throws {
+        let scoped = profile.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed
+        ) ?? profile
+        try await send("POST", "api/cron/jobs?profile=\(scoped)", [
             "name": name,
-            "profile": profile,
             "prompt": prompt,
-            "schedule": ["expr": schedule],
-            "enabled": true
-        ]
-        _ = try? await send("POST", "api/cron/jobs", body)
+            "schedule": schedule,
+            "enabled": true,
+        ])
     }
 
     /// Writes the bot out as a shareable template and reports where it landed.

@@ -202,7 +202,6 @@ struct Sidebar: View {
                 .contentShape(.rect(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 10, style: .continuous))
         .contextMenu {
             menu(for: conversation)
         } preview: {
@@ -265,24 +264,17 @@ struct Sidebar: View {
         projects = (try? await store.projects()) ?? []
     }
 
-    private var userInitial: String {
-        if !store.dashboardUser.isEmpty {
-            let trimmed = store.dashboardUser.trimmingCharacters(in: .whitespaces)
-            if let first = trimmed.first(where: { $0.isLetter }) {
-                return String(first).uppercased()
-            }
-        }
-        let full = NSFullUserName()
-        if let first = full.first(where: { $0.isLetter }) {
-            return String(first).uppercased()
-        }
-        let device = UIDevice.current.name
-        for char in device {
-            if char.isLetter {
-                return String(char).uppercased()
-            }
-        }
-        return "M"
+    /// The initial to show on the settings button, or nil when there is
+    /// nothing to go on.
+    ///
+    /// `UIDevice.name` is generic on modern iOS without an entitlement, so
+    /// the only real source is the dashboard login. A hardcoded fallback used
+    /// to stand in for it — which showed one person's initial to everybody
+    /// else.
+    private var userInitial: String? {
+        let name = store.dashboardUser.trimmingCharacters(in: .whitespaces)
+        guard let first = name.first(where: { $0.isLetter }) else { return nil }
+        return String(first).uppercased()
     }
 
     private var footer: some View {
@@ -290,10 +282,17 @@ struct Sidebar: View {
             Button {
                 going = .settings
             } label: {
-                Text(userInitial)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 44, height: 44)
+                Group {
+                    if let userInitial {
+                        Text(userInitial)
+                            .font(.system(size: 17, weight: .semibold))
+                    } else {
+                        Image(systemName: "person")
+                            .font(.system(size: 17, weight: .medium))
+                    }
+                }
+                .foregroundStyle(.primary)
+                .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)

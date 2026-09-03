@@ -107,10 +107,12 @@ actor HermesClient {
     /// Shared by the streaming transport in `HermesChatStream`.
     func request(_ path: String, method: String = "GET", profile: String? = nil) throws -> URLRequest {
         guard let endpoint else { throw Failure.unreachable }
-        let basePath = profile.map { "p/\($0)/" } ?? ""
+        // No `p/<profile>/` prefix. This gateway serves no such route, so
+        // every mentioned message paid for a 404 and a full retry before the
+        // reply could start. The header below is the polite way to ask; a
+        // build that honours it will, and one that does not simply ignores it.
         let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        let fullPath = basePath + cleanPath
-        guard let url = URL(string: fullPath, relativeTo: endpoint.url) else {
+        guard let url = URL(string: cleanPath, relativeTo: endpoint.url) else {
             throw Failure.unreachable
         }
         var request = URLRequest(url: url)

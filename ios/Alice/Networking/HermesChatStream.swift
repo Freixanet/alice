@@ -59,21 +59,8 @@ extension HermesClient {
                     if let profile { body["profile"] = profile }
                     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-                    var (bytes, response) = try await self.session.bytes(for: request)
-                    var http = response as? HTTPURLResponse
-
-                    if let statusCode = http?.statusCode, statusCode == 404, profile != nil {
-                        var fallbackReq = try self.request("v1/chat/completions", method: "POST", profile: nil)
-                        fallbackReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                        fallbackReq.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                        if let profile {
-                            fallbackReq.setValue(profile, forHTTPHeaderField: "X-Hermes-Profile")
-                        }
-                        fallbackReq.httpBody = try JSONSerialization.data(withJSONObject: body)
-                        let (fBytes, fResp) = try await self.session.bytes(for: fallbackReq)
-                        bytes = fBytes
-                        http = fResp as? HTTPURLResponse
-                    }
+                    let (bytes, response) = try await self.session.bytes(for: request)
+                    let http = response as? HTTPURLResponse
 
                     guard let httpValid = http else {
                         throw Failure.badResponse

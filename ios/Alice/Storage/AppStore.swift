@@ -98,14 +98,6 @@ final class AppStore {
         didSet { defaults.set(botSectionOrder, forKey: Keys.botSectionOrder) }
     }
 
-    var localBotRoutines: [String: [JobRow]] = [:] {
-        didSet {
-            if let data = try? JSONEncoder().encode(localBotRoutines) {
-                defaults.set(data, forKey: Keys.botRoutines)
-            }
-        }
-    }
-
     var botSections: [String: String] = [:] {
         didSet { defaults.set(botSections, forKey: Keys.botSections) }
     }
@@ -144,7 +136,6 @@ final class AppStore {
         names.formUnion(botSections.keys)
         names.formUnion(botCustomNames.keys)
         names.formUnion(botModels.keys)
-        names.formUnion(localBotRoutines.keys)
         for conv in conversations {
             if let b = conv.botName, !b.isEmpty { names.insert(b) }
             if let bots = conv.channelBots { names.formUnion(bots) }
@@ -155,27 +146,9 @@ final class AppStore {
     init() {
         botMarks = (defaults.data(forKey: Keys.marks))
             .flatMap { try? JSONDecoder().decode([String: BotMark].self, from: $0) } ?? [:]
-        if let savedSections = defaults.stringArray(forKey: Keys.botCustomSections) {
-            if savedSections == ["Pendiente", "News"] {
-                botCustomSections = []
-                defaults.set(botCustomSections, forKey: Keys.botCustomSections)
-            } else {
-                botCustomSections = savedSections
-            }
-        } else {
-            botCustomSections = []
-        }
+        botCustomSections = defaults.stringArray(forKey: Keys.botCustomSections) ?? []
         botSectionOrder = defaults.stringArray(forKey: Keys.botSectionOrder) ?? []
-        if let savedMap = defaults.dictionary(forKey: Keys.botSections) as? [String: String] {
-            if savedMap == ["foundry": "Pendiente", "cuba": "News", "signal": "News"] {
-                botSections = [:]
-                defaults.set(botSections, forKey: Keys.botSections)
-            } else {
-                botSections = savedMap
-            }
-        } else {
-            botSections = [:]
-        }
+        botSections = (defaults.dictionary(forKey: Keys.botSections) as? [String: String]) ?? [:]
         if let savedCollapsed = defaults.stringArray(forKey: Keys.collapsedSections) {
             collapsedSections = Set(savedCollapsed)
         }
@@ -194,8 +167,8 @@ final class AppStore {
         if let savedNotifs = defaults.dictionary(forKey: Keys.botNotifications) as? [String: Bool] {
             botNotifications = savedNotifs
         }
-        localBotRoutines = defaults.data(forKey: Keys.botRoutines)
-            .flatMap { try? JSONDecoder().decode([String: [JobRow]].self, from: $0) } ?? [:]
+        // Routines used to be mirrored locally; they are the agent's now.
+        defaults.removeObject(forKey: Keys.botRoutines)
         botCustomNames = (defaults.dictionary(forKey: Keys.botCustomNames) as? [String: String]) ?? [:]
         if let data = defaults.data(forKey: Keys.cachedBots),
            let saved = try? JSONDecoder().decode([BotRow].self, from: data) {
@@ -443,80 +416,100 @@ final class AppStore {
         botCustomNames[bot.name] ?? (bot.displayName.isEmpty ? bot.name : bot.displayName)
     }
 
+    /// The bots, from the agent.
+    ///
+    /// Throws when the dashboard does not answer rather than quietly handing
+    /// back the cache: a caller that cannot tell a live list from a stale one
+    /// will show hours-old data as though it were current. `cachedBots` stays
+    /// available for callers that would rather show something than nothing —
+    /// but they have to choose that.
     func bots() async throws -> [BotRow] {
-        var list = (try? await dashboard.bots()) ?? cachedBots
-        for i in list.indices {
-            if let custom = botCustomNames[list[i].name] {
-                list[i].displayName = custom
+        var list = try await dashboard.bots()
+        for index in list.indices {
+            if let custom = botCustomNames[list[index].name] {
+                list[index].displayName = custom
             }
         }
-        cachedBots = list
+        // Only when it differs. Assigning unconditionally wrote UserDefaults
+        // and invalidated every observer on every call, including the ones
+        // that fire while somebody is typing a mention.
+        if list != cachedBots { cachedBots = list }
         return list
     }
+    /// The bot's routines, as the agent has them.
+    ///
+    /// There is deliberately no local copy merged in. There used to be, keyed
+    /// by a UUID this app invented, and since the server assigns its own id
+    /// the same routine came back twice for ever.
     func routines(for bot: String) async throws -> [JobRow] {
-        var list = (try? await dashboard.routines(for: bot)) ?? []
-        if let local = localBotRoutines[bot] {
-            for item in local {
-                if !list.contains(where: { $0.id == item.id }) {
-                    list.append(item)
-                }
-            }
-        }
-        return list
+        try await dashboard.routines(for: bot)
     }
 
+    /// Every routine grouped by its bot, in one request rather than one per
+    /// bot — the search screen needs them all at once.
+    func allRoutines() async throws -> [String: [JobRow]] {
+        try await dashboard.allRoutines()
+    }
+
+    /// Creates a routine on the agent and reports whether it worked.
+    ///
+    /// No optimistic local row: the previous version wrote one with a
+    /// client-side id and `lastStatus: "ok"`, so a routine that had never run
+    /// — and, because the request was malformed, had never been created —
+    /// showed a green tick.
     func addRoutine(for bot: String, name: String, prompt: String, schedule: String) async throws {
-        let newJob = JobRow(
-            id: UUID().uuidString,
-            name: name,
-            prompt: prompt,
-            schedule: schedule,
-            enabled: true,
-            lastStatus: "ok",
-            lastError: nil,
-            lastRun: nil,
-            nextRun: nil
+        try await dashboard.createRoutine(
+            for: bot, name: name, prompt: prompt, schedule: schedule
         )
-        var current = localBotRoutines[bot] ?? []
-        current.append(newJob)
-        localBotRoutines[bot] = current
-
-        _ = try? await dashboard.createRoutine(for: bot, name: name, prompt: prompt, schedule: schedule)
     }
+
     func exportBot(_ name: String) async throws -> String? {
         try await dashboard.exportBot(name)
     }
+    /// Renames the bot on the agent, then moves everything this app keeps
+    /// under the old slug to the new one.
+    ///
+    /// The agent goes first on purpose. Applying the change locally and
+    /// firing the request with `try?` meant a rejected rename still showed
+    /// the new name, and the aliases it left behind — including a key that
+    /// mapped a name to itself — made a second rename resolve through the
+    /// first one's stale value.
     func renameBot(_ name: String, to newName: String) async throws {
-        botCustomNames[name] = newName
-        botCustomNames[newName] = newName
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != name else { return }
 
-        if let idx = cachedBots.firstIndex(where: { $0.name == name }) {
-            cachedBots[idx].displayName = newName
-        }
+        try await dashboard.rename(name, to: trimmed)
 
-        if let mark = botMarks[name] {
-            botMarks[newName] = mark
+        move(&botMarks, from: name, to: trimmed)
+        move(&botSections, from: name, to: trimmed)
+        move(&botModels, from: name, to: trimmed)
+        move(&botNotifications, from: name, to: trimmed)
+        botCustomNames.removeValue(forKey: name)
+
+        if let index = cachedBots.firstIndex(where: { $0.name == name }) {
+            cachedBots.remove(at: index)
         }
-        if let sec = botSections[name] {
-            botSections[newName] = sec
+        for index in conversations.indices where conversations[index].botName == name {
+            conversations[index].botName = trimmed
+            conversations[index].title = trimmed
         }
-        if let model = botModels[name] {
-            botModels[newName] = model
-        }
-        if let notif = botNotifications[name] {
-            botNotifications[newName] = notif
-        }
-        if let routines = localBotRoutines[name] {
-            localBotRoutines[newName] = routines
-        }
-        for i in conversations.indices {
-            if conversations[i].botName == name {
-                conversations[i].title = newName
+        for index in conversations.indices {
+            for messageIndex in conversations[index].messages.indices
+            where conversations[index].messages[messageIndex].botName == name {
+                conversations[index].messages[messageIndex].botName = trimmed
             }
         }
         persistConversations()
+    }
 
-        _ = try? await dashboard.rename(name, to: newName)
+    /// Carries one entry to a new key and leaves nothing behind at the old one.
+    private func move<Value>(
+        _ table: inout [String: Value], from old: String, to new: String
+    ) {
+        if let value = table.removeValue(forKey: old) {
+            table[new] = value
+        }
+        table.removeValue(forKey: old.lowercased())
     }
 
     func section(for bot: String) -> String? {
@@ -533,33 +526,49 @@ final class AppStore {
         }
     }
 
-    func displaySectionOrder() -> [String] {
-        var current = botSectionOrder.filter { $0 == Self.unassignedSectionKey || botCustomSections.contains($0) }
-        for sec in botCustomSections {
-            if !current.contains(sec) {
-                current.append(sec)
-            }
+    /// The order the sections are shown in, derived and never stored from
+    /// here.
+    ///
+    /// This used to assign `botSectionOrder` when the derived order differed,
+    /// and it is read from inside a `ForEach` — so a fresh install mutated
+    /// observed state, and wrote UserDefaults, in the middle of a render
+    /// pass. Normalising is now the job of the calls that actually change
+    /// something.
+    var sectionOrder: [String] {
+        var order = botSectionOrder.filter {
+            $0 == Self.unassignedSectionKey || botCustomSections.contains($0)
         }
-        if !current.contains(Self.unassignedSectionKey) {
-            current.append(Self.unassignedSectionKey)
+        for section in botCustomSections where !order.contains(section) {
+            order.append(section)
         }
-        if current != botSectionOrder {
-            botSectionOrder = current
+        if !order.contains(Self.unassignedSectionKey) {
+            order.append(Self.unassignedSectionKey)
         }
-        return current
+        return order
+    }
+
+    /// Writes the derived order back. Call it from an action, never from a
+    /// view's body.
+    private func normaliseSectionOrder() {
+        let order = sectionOrder
+        if order != botSectionOrder { botSectionOrder = order }
     }
 
     func addSection(_ name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.lowercased() != "unassigned", !botCustomSections.contains(trimmed) else { return }
+        guard !trimmed.isEmpty,
+              trimmed.lowercased() != "unassigned",
+              !botCustomSections.contains(trimmed)
+        else { return }
         botCustomSections.append(trimmed)
         if !botSectionOrder.contains(trimmed) {
-            if let unassignedIdx = botSectionOrder.firstIndex(of: Self.unassignedSectionKey) {
-                botSectionOrder.insert(trimmed, at: unassignedIdx)
+            if let unassigned = botSectionOrder.firstIndex(of: Self.unassignedSectionKey) {
+                botSectionOrder.insert(trimmed, at: unassigned)
             } else {
                 botSectionOrder.append(trimmed)
             }
         }
+        normaliseSectionOrder()
     }
 
     func toggleSectionCollapsed(_ section: String) {
@@ -571,7 +580,7 @@ final class AppStore {
     }
 
     func moveSectionUp(_ section: String) {
-        var list = displaySectionOrder()
+        var list = sectionOrder
         let key = (section == "Unassigned" || section == Self.unassignedSectionKey) ? Self.unassignedSectionKey : section
         guard let index = list.firstIndex(of: key), index > 0 else { return }
         list.swapAt(index, index - 1)
@@ -580,7 +589,7 @@ final class AppStore {
     }
 
     func moveSectionDown(_ section: String) {
-        var list = displaySectionOrder()
+        var list = sectionOrder
         let key = (section == "Unassigned" || section == Self.unassignedSectionKey) ? Self.unassignedSectionKey : section
         guard let index = list.firstIndex(of: key), index < list.count - 1 else { return }
         list.swapAt(index, index + 1)
@@ -613,6 +622,7 @@ final class AppStore {
             botSections.removeValue(forKey: bot)
         }
         collapsedSections.remove(section)
+        normaliseSectionOrder()
     }
 
     func toggleBotPin(_ bot: String) {
@@ -703,10 +713,12 @@ final class AppStore {
         try await dashboard.setSoul(name, text)
     }
     func setBotDescription(_ name: String, _ text: String) async throws {
-        if let idx = cachedBots.firstIndex(where: { $0.name == name }) {
-            cachedBots[idx].detail = text
+        // The agent first: a swallowed failure left the row showing a
+        // description the profile does not have.
+        try await dashboard.setDescription(name, text)
+        if let index = cachedBots.firstIndex(where: { $0.name == name }) {
+            cachedBots[index].detail = text
         }
-        _ = try? await dashboard.setDescription(name, text)
     }
     func activateBot(_ name: String) async throws { try await dashboard.activate(name) }
     func createBot(name: String, description: String) async throws {
