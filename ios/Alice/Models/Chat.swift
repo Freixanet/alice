@@ -63,9 +63,10 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         case completed
         case failed
         case cancelled
+        case interrupted
 
         var isTerminal: Bool {
-            self == .completed || self == .failed || self == .cancelled
+            self == .completed || self == .failed || self == .cancelled || self == .interrupted
         }
     }
 
