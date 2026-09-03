@@ -181,9 +181,10 @@ extension HermesClient {
             )
         }
 
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let runID = Self.string(object["run_id"]), !runID.isEmpty
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { throw Failure.badResponse }
+        let runID = Self.string(object["run_id"])
+        guard !runID.isEmpty else { throw Failure.badResponse }
         let raw = Self.string(object["status"])
         let status = raw == "queued" || raw == "running" ? raw : "started"
         return .started(id: runID, status: status)
