@@ -12,16 +12,24 @@ struct ChatScreen: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottom) {
-                transcript
-                    // A plain tap anywhere off the composer dismisses the
-                    // keyboard; `simultaneousGesture` leaves scrolling and text
-                    // selection working underneath it.
-                    .simultaneousGesture(
-                        TapGesture().onEnded { composerFocused = false }
-                    )
-                Composer(focused: $composerFocused)
-            }
+            transcript
+                // A plain tap anywhere off the composer dismisses the
+                // keyboard; `simultaneousGesture` leaves scrolling and text
+                // selection working underneath it.
+                .simultaneousGesture(
+                    TapGesture().onEnded { composerFocused = false }
+                )
+                // `safeAreaInset` rather than a layer in a `ZStack`. Overlaid,
+                // the composer had to be compensated for with a fixed 120pt
+                // of empty space under the transcript — a guess that is wrong
+                // the moment the composer grows for an attachment, a second
+                // line, or the command list, and wrong again when the keyboard
+                // pushes it up. The inset reserves whatever height it actually
+                // has. Content still scrolls underneath it; it just no longer
+                // comes to rest there.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    Composer(focused: $composerFocused)
+                }
             .background(Palette.background(scheme))
             .contentShape(.rect)
             .scrollEdgeEffectStyle(.soft, for: .top)
@@ -90,7 +98,7 @@ struct ChatScreen: View {
                         ForEach(conversation.messages) { message in
                             MessageRow(message: message).id(message.id)
                         }
-                        Color.clear.frame(height: 120).id(bottomAnchor)
+                        Color.clear.frame(height: 8).id(bottomAnchor)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 28)
@@ -131,7 +139,6 @@ private struct EmptyChatView: View {
                 Spacer()
             }
             .padding(.horizontal, 32)
-            .padding(.bottom, 120)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 8) {

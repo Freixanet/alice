@@ -1114,16 +1114,19 @@ struct BotChatScreen: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            transcript
-                .simultaneousGesture(
-                    TapGesture().onEnded { composerFocused = false }
-                )
-            Composer(
-                focused: $composerFocused,
-                placeholder: "Ask \(displayName)…"
+        transcript
+            .simultaneousGesture(
+                TapGesture().onEnded { composerFocused = false }
             )
-        }
+            // See ChatScreen: the composer reserves its own height rather than
+            // being compensated for with a fixed gap that stops matching the
+            // moment it grows or the keyboard moves it.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Composer(
+                    focused: $composerFocused,
+                    placeholder: "Ask \(displayName)…"
+                )
+            }
         .background(Palette.background(scheme))
         .contentShape(.rect)
         .scrollEdgeEffectStyle(.soft, for: .top)
@@ -1202,7 +1205,7 @@ struct BotChatScreen: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 64)
-                    .padding(.bottom, 130)
+                    .padding(.bottom, 8)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: conversation.messages.count) { _, _ in
@@ -1228,7 +1231,6 @@ struct BotChatScreen: View {
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.bottom, 80)
         }
     }
 }
