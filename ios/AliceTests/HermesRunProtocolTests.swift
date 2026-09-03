@@ -126,4 +126,33 @@ final class HermesRunProtocolTests: XCTestCase {
         XCTAssertNil(decoded.runStatus)
         XCTAssertNil(decoded.approval)
     }
+
+    func testRunCapabilityAcceptsCompositeManifest() {
+        let manifest = HermesClient.Manifest(
+            capabilities: [],
+            advertised: ["run_submission", "run_status", "run_events_sse"],
+            endpoints: [:]
+        )
+        XCTAssertTrue(manifest.supportsRuns)
+        XCTAssertFalse(manifest.supportsRunIdempotency)
+    }
+
+    func testRunIdempotencyAlsoImpliesRunSupport() {
+        let manifest = HermesClient.Manifest(
+            capabilities: [],
+            advertised: ["runs_idempotency"],
+            endpoints: [:]
+        )
+        XCTAssertTrue(manifest.supportsRuns)
+        XCTAssertTrue(manifest.supportsRunIdempotency)
+    }
+
+    func testApprovalCapabilityAcceptsCompositeManifest() {
+        let manifest = HermesClient.Manifest(
+            capabilities: [],
+            advertised: ["approval_events", "run_approval"],
+            endpoints: [:]
+        )
+        XCTAssertTrue(manifest.supportsRunApprovals)
+    }
 }
