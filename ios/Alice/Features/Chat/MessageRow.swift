@@ -348,14 +348,22 @@ private struct ModelLimitNote: View {
     }
 
     private var text: String {
-        var body = limit.kind == .quota
-            ? "You’ve used up your allowance for this model. Waiting won’t help — switch model or top up the provider’s plan."
-            : "This model is taking requests too fast right now. It should work again shortly."
-        if let seconds = limit.retryAfterSeconds {
-            let wait = seconds >= 90 ? "\(Int((Double(seconds) / 60).rounded())) min" : "\(max(1, seconds))s"
-            body += " Try again in about \(wait)."
+        // "Waiting won’t help" and "try again in twenty minutes" were being
+        // printed one after the other. A free tier that answers with a
+        // Retry-After is telling you exactly when it comes back, which is the
+        // opposite of what the first half said — so when the provider names a
+        // time, that is the whole message.
+        guard let seconds = limit.retryAfterSeconds else {
+            return limit.kind == .quota
+                ? "You’ve used up your allowance for this model. Waiting won’t help — switch model or top up the provider’s plan."
+                : "This model is taking requests too fast right now. It should work again shortly."
         }
-        return body
+        let wait = seconds >= 90
+            ? "\(Int((Double(seconds) / 60).rounded())) min"
+            : "\(max(1, seconds))s"
+        return limit.kind == .quota
+            ? "This model’s allowance is spent. It comes back in about \(wait) — or switch model now."
+            : "This model is taking requests too fast right now. Try again in about \(wait)."
     }
 }
 
