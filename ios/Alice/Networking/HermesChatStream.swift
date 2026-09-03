@@ -164,25 +164,27 @@ extension HermesClient {
         if let model { body["model"] = model }
         if let provider { body["provider"] = provider }
 
-        func post(_ payload: [String: Any]) async throws -> (Data, HTTPURLResponse) {
+        func post(_ payload: Data) async throws -> (Data, HTTPURLResponse) {
             var request = try self.request(
                 "v1/runs", method: "POST", profile: profile,
                 timeout: HermesClient.replyTimeout
             )
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+            request.httpBody = payload
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
             return (data, http)
         }
 
-        var (data, http) = try await post(body)
+        let initialPayload = try JSONSerialization.data(withJSONObject: body)
+        var (data, http) = try await post(initialPayload)
         if !http.isSuccess,
            [400, 422].contains(http.statusCode),
            model != nil || provider != nil {
             body["model"] = "hermes-agent"
             body.removeValue(forKey: "provider")
-            (data, http) = try await post(body)
+            let fallbackPayload = try JSONSerialization.data(withJSONObject: body)
+            (data, http) = try await post(fallbackPayload)
         }
 
         if [404, 405, 501].contains(http.statusCode) { return .unsupported }
