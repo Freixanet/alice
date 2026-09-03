@@ -24,7 +24,14 @@ struct MessageRow: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if let bot = message.botName, !bot.isEmpty {
                         HStack(spacing: 6) {
-                            BotMarkView(mark: store.mark(for: bot), size: 16)
+                            // The one moment a thinking face means something:
+                            // while this reply is still being written.
+                            BotMarkView(
+                                mark: store.mark(for: bot),
+                                size: 16,
+                                animated: message.pending,
+                                mood: .thinking
+                            )
                             Text(store.botCurrentName(for: bot).uppercased())
                                 .font(.caption2.weight(.medium))
                                 .tracking(1.4)
