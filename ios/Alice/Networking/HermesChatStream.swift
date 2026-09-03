@@ -225,15 +225,32 @@ extension HermesClient {
         }
 
         // The run contract accepts conversation turns, not OpenAI system
-        // messages. Profile selection already travels in X-Hermes-Profile; a
-        // local system directive is retained only for the chat-completions
-        // compatibility path below.
+        // messages, so a system turn cannot be sent as one. Dropping it
+        // outright was worse: profile selection travels in X-Hermes-Profile,
+        // but this gateway answers every run as the default profile anyway,
+        // and the system turn is the only thing that makes a bot a bot. Sent
+        // as a run, a bot answered in the assistant's voice — its name, its
+        // endearments — because the instruction not to had been discarded on
+        // the way out.
+        //
+        // So it rides on the turn it governs, ahead of what was typed.
+        let directives = messages[..<userIndex]
+            .filter { $0.role == "system" }
+            .compactMap { turn -> String? in
+                if case let .text(value) = turn.content, !value.isEmpty {
+                    return value
+                }
+                return nil
+            }
+
         let history = messages[..<userIndex]
             .filter { $0.role == "user" || $0.role == "assistant" }
             .map { ["role": $0.role, "content": $0.content.json] }
 
         var body: [String: Any] = [
-            "input": messages[userIndex].content.runJSON,
+            "input": Self.runInput(
+                messages[userIndex].content, prefacedBy: directives
+            ),
             "conversation_history": history,
         ]
         if let sessionID = boundedSessionID(conversationID) { body["session_id"] = sessionID }
@@ -558,6 +575,28 @@ extension HermesClient {
             if let text = try await completeWithoutStreaming(body, profile: profile) {
                 continuation.yield(.delta(text))
             }
+        }
+    }
+
+    /// The run's input, with any system directives ahead of it.
+    ///
+    /// Plain text keeps its shape and gains a preamble. A multimodal turn is
+    /// already a list of messages, so the directives go in front as their own
+    /// user turn rather than being spliced into the parts of the real one.
+    private static func runInput(
+        _ content: Turn.Content, prefacedBy directives: [String]
+    ) -> Any {
+        guard !directives.isEmpty else { return content.runJSON }
+        let preamble = directives.joined(separator: "\n\n")
+        switch content {
+        case let .text(value):
+            return "\(preamble)\n\n\(value)"
+        case .parts:
+            var turns: [[String: Any]] = [["role": "user", "content": preamble]]
+            if let own = content.runJSON as? [[String: Any]] {
+                turns.append(contentsOf: own)
+            }
+            return turns
         }
     }
 
