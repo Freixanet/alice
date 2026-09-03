@@ -853,6 +853,14 @@ final class AppStore {
     /// screen appearing.
     var showingBots = false
 
+    /// Which side the bots page comes from and leaves by.
+    ///
+    /// Forward is leftward and back is rightward, so the page has to know
+    /// which of the two is happening: arriving from the drawer it comes in
+    /// off the right, and backing into it out of a bot's conversation it
+    /// comes in off the left, the way the finger went.
+    var botsFromLeading = false
+
     @discardableResult
     func openBotConversation(for bot: BotRow) -> String {
         if let existing = conversations.first(where: { $0.botName == bot.name }) {

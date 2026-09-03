@@ -190,12 +190,24 @@ struct BotsScreen: View {
         }
     }
 
+    /// Pinned bots keep the order the list has, not the order they were
+    /// pinned in — the shelf is a shortcut to the same list, not a second one.
+    private var pinnedRows: [BotRow] {
+        filteredRows.filter { store.pinnedBots.contains($0.name) }
+    }
+
+    /// Everything the shelf above is not already showing. A pinned bot in
+    /// both places is the same bot twice.
+    private var unpinnedRows: [BotRow] {
+        filteredRows.filter { !store.pinnedBots.contains($0.name) }
+    }
+
     private func bots(in section: String) -> [BotRow] {
-        filteredRows.filter { store.section(for: $0.name) == section }
+        unpinnedRows.filter { store.section(for: $0.name) == section }
     }
 
     private var unassignedBots: [BotRow] {
-        filteredRows.filter { store.section(for: $0.name) == nil }
+        unpinnedRows.filter { store.section(for: $0.name) == nil }
     }
 
     private var topControls: some View {
@@ -269,6 +281,7 @@ struct BotsScreen: View {
                 // and the same chevron a bot's chat uses to get here.
                 Button {
                     store.goHome()
+                    store.botsFromLeading = false
                     onClose()
                 } label: {
                     Image(systemName: "chevron.left")
@@ -333,12 +346,63 @@ struct BotsScreen: View {
                     searchResultsView
                 } else {
                     if stale { staleNotice }
+                    pinnedShelf
                     normalBotSections
                     hiddenSection
                 }
             }
             .padding(.top, 24)
             .padding(.bottom, 32)
+        }
+    }
+
+    /// The bots worth reaching without reading.
+    ///
+    /// A pinned bot is one you go to often, and a row of text is the wrong
+    /// shape for that: you pick it out by its face long before you have read
+    /// its name. So it gets the face at a size you can aim a thumb at, the
+    /// name underneath, and nothing else — the description, the last message
+    /// and the rest of what a row carries are for bots you are still deciding
+    /// about.
+    @ViewBuilder
+    private var pinnedShelf: some View {
+        let pinned = pinnedRows
+        if !pinned.isEmpty {
+            LazyVGrid(
+                columns: Array(
+                    repeating: GridItem(.flexible(), spacing: 12), count: 3
+                ),
+                spacing: 18
+            ) {
+                ForEach(pinned) { bot in
+                    Button {
+                        store.openBotConversation(for: bot)
+                        store.botsFromLeading = true
+                        onClose()
+                    } label: {
+                        VStack(spacing: 8) {
+                            BotMarkView(mark: store.mark(for: bot.name), size: 76)
+                            Text(store.botCurrentName(for: bot.name))
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button {
+                            store.toggleBotPin(bot.name)
+                        } label: {
+                            Label("Unpin", systemImage: "pin.slash")
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
         }
     }
 
@@ -411,7 +475,7 @@ struct BotsScreen: View {
     @ViewBuilder
     private var normalBotSections: some View {
         if store.botCustomSections.isEmpty {
-            ForEach(filteredRows) { bot in
+            ForEach(unpinnedRows) { bot in
                 botRowView(bot)
             }
         } else {
@@ -880,6 +944,7 @@ struct BotsScreen: View {
         // handles differently from a screen.
         Button {
             store.openBotConversation(for: bot)
+            store.botsFromLeading = true
             onClose()
         } label: {
             HStack(alignment: .center, spacing: 14) {

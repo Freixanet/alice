@@ -102,12 +102,18 @@ struct RootView: View {
                                 UIImpactFeedbackGenerator(style: .medium)
                                     .impactOccurred()
                                 store.goHome()
+                                // Home is behind this page, so the page has
+                                // to move the way the finger did — off the
+                                // right — and uncover it from the left.
+                                // Leaving by the left uncovered home from the
+                                // right, against the gesture.
+                                store.botsFromLeading = false
                                 store.showingBots = false
                             }
                         )
                         .allowsHitTesting(false)
                     }
-                    .transition(.move(edge: .leading))
+                    .transition(.move(edge: store.botsFromLeading ? .leading : .trailing))
                     .zIndex(1)
                 }
             }
@@ -175,6 +181,7 @@ struct RootView: View {
     /// Back out of a bot's conversation to the list it was opened from.
     private func goBackToBots() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        store.botsFromLeading = true
         store.showingBots = true
     }
 

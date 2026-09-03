@@ -98,6 +98,7 @@ struct Sidebar: View {
             if store.dashboardReady {
                 row("Bots", systemImage: "person.2", weight: .medium) {
                     onDismiss()
+                    store.botsFromLeading = false
                     store.showingBots = true
                 }
             }
