@@ -368,41 +368,52 @@ struct BotsScreen: View {
     private var pinnedShelf: some View {
         let pinned = pinnedRows
         if !pinned.isEmpty {
-            LazyVGrid(
-                columns: Array(
-                    repeating: GridItem(.flexible(), spacing: 12), count: 3
-                ),
-                spacing: 18
-            ) {
-                ForEach(pinned) { bot in
-                    Button {
-                        store.openBotConversation(for: bot)
-                        store.botsFromLeading = true
-                        onClose()
-                    } label: {
-                        VStack(spacing: 8) {
-                            BotMarkView(mark: store.mark(for: bot.name), size: 76)
-                            Text(store.botCurrentName(for: bot.name))
-                                .font(.footnote.weight(.medium))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        Button {
-                            store.toggleBotPin(bot.name)
-                        } label: {
-                            Label("Unpin", systemImage: "pin.slash")
+            // Rows of three, each centred on its own. A grid would have held
+            // three columns open whatever was in them, so a single pinned bot
+            // sat in the left one with two empty columns beside it, looking
+            // less like the one thing worth reaching first than like the first
+            // of three you had failed to pin.
+            VStack(spacing: 18) {
+                ForEach(Array(stride(from: 0, to: pinned.count, by: 3)), id: \.self) { start in
+                    HStack(spacing: 12) {
+                        ForEach(pinned[start..<min(start + 3, pinned.count)]) { bot in
+                            pinnedTile(bot)
                         }
                     }
                 }
             }
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
+        }
+    }
+
+    private func pinnedTile(_ bot: BotRow) -> some View {
+        Button {
+            store.openBotConversation(for: bot)
+            store.botsFromLeading = true
+            onClose()
+        } label: {
+            VStack(spacing: 8) {
+                BotMarkView(mark: store.mark(for: bot.name), size: 76)
+                Text(store.botCurrentName(for: bot.name))
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            // Fixed, so a row of three lines up and a row of one still knows
+            // how wide it is to be centred in.
+            .frame(width: 100)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                store.toggleBotPin(bot.name)
+            } label: {
+                Label("Unpin", systemImage: "pin.slash")
+            }
         }
     }
 
