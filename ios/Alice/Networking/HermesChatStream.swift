@@ -28,6 +28,20 @@ extension HermesClient {
                     return parts
                 }
             }
+
+            /// `/v1/runs` overloads a top-level array as a list of messages.
+            /// A raw multimodal parts array is therefore misread as messages
+            /// and Hermes cannot find the user turn. Wrap multimodal content
+            /// in one explicit user message while keeping ordinary text as the
+            /// compact string form the endpoint accepts.
+            var runJSON: Any {
+                switch self {
+                case let .text(value):
+                    return value
+                case .parts:
+                    return [["role": "user", "content": json]]
+                }
+            }
         }
 
         var role: String
@@ -219,7 +233,7 @@ extension HermesClient {
             .map { ["role": $0.role, "content": $0.content.json] }
 
         var body: [String: Any] = [
-            "input": messages[userIndex].content.json,
+            "input": messages[userIndex].content.runJSON,
             "conversation_history": history,
         ]
         if let sessionID = boundedSessionID(conversationID) { body["session_id"] = sessionID }
