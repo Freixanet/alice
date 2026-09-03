@@ -114,16 +114,21 @@ struct ChatScreen: View {
         // out below them: sized to the bar alone it ended exactly where the
         // first line of a message begins, which is where they were colliding.
         .background(alignment: .top) {
+            // Opaque only as far as the discs reach, then out quickly. Spread
+            // evenly over 190pt it stayed half-opaque for seventy points
+            // below the bar, veiling messages that were sitting exactly where
+            // they should — the first line of a conversation looked greyed out
+            // the moment it opened.
             LinearGradient(
-                colors: [
-                    Palette.background(scheme),
-                    Palette.background(scheme),
-                    Palette.background(scheme).opacity(0),
+                stops: [
+                    .init(color: Palette.background(scheme), location: 0),
+                    .init(color: Palette.background(scheme), location: 0.72),
+                    .init(color: Palette.background(scheme).opacity(0), location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 190)
+            .frame(height: 160)
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
         }
@@ -152,16 +157,16 @@ struct ChatScreen: View {
                 // the top controls with nothing between them.
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
-                // Opens on the newest message, and stays on it when the
-                // scroll view is resized — which is what the keyboard does.
+                // Opens on the newest message and stays there.
                 //
-                // One mechanism, not two. Pinning the foot and *also*
-                // animating a scroll when the composer took focus meant the
-                // conversation moved twice for one keystroke: it went under
-                // the composer and then climbed back, which is what read as
-                // broken.
-                .defaultScrollAnchor(.bottom, for: .initialOffset)
-                .defaultScrollAnchor(.bottom, for: .sizeChanges)
+                // The plain form, not `.sizeChanges`. The keyboard does not
+                // resize this scroll view — the composer is a safe-area inset,
+                // so what grows is the inset, and an anchor watching for size
+                // changes never fires. This one follows the inset, which is
+                // what was wanted all along. And only this one: pairing it
+                // with a scroll driven by focus moved the conversation twice
+                // for one keystroke, which is what read as broken.
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: conversation.messages.last?.content) {
                     withAnimation(.easeOut(duration: 0.15)) {
                         proxy.scrollTo(bottomAnchor, anchor: .bottom)
@@ -180,6 +185,16 @@ private struct EmptyChatView: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
+        centred
+            // An empty chat has nothing for the composer to cover, so there is
+            // no reason for it to move out of the way. Centred in a safe area
+            // the keyboard shrinks, the title lifted every time the keyboard
+            // opened — motion in answer to nothing.
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+    }
+
+    @ViewBuilder
+    private var centred: some View {
         if let botName = store.activeConversation?.botName, !botName.isEmpty {
             VStack(spacing: 16) {
                 Spacer()
