@@ -98,7 +98,6 @@ actor HermesClient {
     }
 
     func connect(to endpoint: Endpoint) {
-        streamingIsUnreliable = false
         self.endpoint = endpoint
     }
 
@@ -107,15 +106,6 @@ actor HermesClient {
     }
 
     var isConnected: Bool { endpoint != nil }
-
-    /// Set once a streamed reply has come back empty. Streaming on this
-    /// gateway is intermittent, and when it fails it fails slowly — so after
-    /// the first time, replies go straight to the single request rather than
-    /// paying for both. Lives only as long as the connection: reconnecting,
-    /// or relaunching, gives streaming another chance.
-    private(set) var streamingIsUnreliable = false
-
-    func noteStreamingCameBackEmpty() { streamingIsUnreliable = true }
 
     /// What a probe or a list read is given before it is called unreachable.
     static let probeTimeout: TimeInterval = 12

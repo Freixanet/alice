@@ -47,25 +47,6 @@ extension HermesClient {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    // Straight to the single request when streaming has
-                    // already proved unreliable on this connection.
-                    if self.streamingIsUnreliable {
-                        var body: [String: Any] = [
-                            "messages": messages.map {
-                                ["role": $0.role, "content": $0.content.json]
-                            },
-                            "stream": false,
-                        ]
-                        if let model { body["model"] = model }
-                        if let provider { body["provider"] = provider }
-                        if let profile { body["profile"] = profile }
-                        if let text = try await self.completeWithoutStreaming(body) {
-                            continuation.yield(.delta(text))
-                        }
-                        continuation.finish()
-                        return
-                    }
-
                     var request = try self.request(
                         "v1/chat/completions", method: "POST",
                         profile: profile, timeout: HermesClient.replyTimeout
@@ -108,14 +89,39 @@ extension HermesClient {
                         return
                     }
 
+                    // Streaming is the fast path when it works — four and a
+                    // half seconds against twenty for the same question asked
+                    // in one piece — but on this gateway it intermittently
+                    // runs for fifteen seconds and then ends having said
+                    // nothing. Waiting to find that out and only then asking
+                    // again cost thirty-five seconds for a four-second answer.
+                    //
+                    // So both are run. The stream gets a head start; if it has
+                    // produced nothing by the time that runs out, the single
+                    // request goes out alongside it and whichever speaks first
+                    // wins. Best case is unchanged; worst case is capped.
                     var carriedSomething = false
+                    let hedge = Task { [body] in
+                        try? await Task.sleep(for: .seconds(3))
+                        guard !Task.isCancelled, !carriedSomething else { return }
+                        if let text = try? await self.completeWithoutStreaming(body),
+                           !carriedSomething {
+                            carriedSomething = true
+                            continuation.yield(.delta(text))
+                            continuation.finish()
+                        }
+                    }
+                    defer { hedge.cancel() }
+
                     for try await line in bytes.lines {
                         if Task.isCancelled { break }
                         guard line.hasPrefix("data:") else { continue }
                         let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                         if payload == "[DONE]" { break }
                         guard let event = HermesClient.decodeFrame(payload) else { continue }
+                        if carriedSomething { break }   // the hedge got there first
                         carriedSomething = true
+                        hedge.cancel()
                         continuation.yield(event)
                         if case .failure = event { break }
                     }
@@ -128,13 +134,8 @@ extension HermesClient {
                     // for something the agent is perfectly willing to say,
                     // ask again without streaming.
                     if !carriedSomething, !Task.isCancelled {
-                        // Once is a fluke; twice is the shape of this gateway.
-                        // Measured here, a stream that comes back empty takes
-                        // about fifteen seconds to do so and the request that
-                        // rescues it another twenty — so every reply after the
-                        // first failure was paying thirty-five seconds for an
-                        // answer worth four. Remember it and stop asking.
-                        self.noteStreamingCameBackEmpty()
+                        // The hedge may still be in flight; wait on the
+                        // same answer rather than opening a third request.
                         if let text = try await self.completeWithoutStreaming(body) {
                             continuation.yield(.delta(text))
                         }

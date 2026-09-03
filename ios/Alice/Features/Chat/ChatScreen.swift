@@ -1,14 +1,25 @@
 import SwiftUI
+import UIKit
 
 struct ChatScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let onOpenDrawer: () -> Void
+    let onBack: () -> Void
 
     @FocusState private var composerFocused: Bool
+    @State private var deletingBot: String?
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
+
+    /// The bot this conversation belongs to, if it belongs to one.
+    private var bot: String? {
+        guard let name = store.activeConversation?.botName, !name.isEmpty else {
+            return nil
+        }
+        return name
+    }
 
     private var placeholder: String {
         guard let bot = store.activeConversation?.botName, !bot.isEmpty else {
@@ -52,11 +63,88 @@ struct ChatScreen: View {
             // message sat underneath the new-chat button.
             .safeAreaInset(edge: .top, spacing: 0) { topControls }
         }
+        .confirmationDialog(
+            "Delete \(store.botCurrentName(for: deletingBot ?? ""))?",
+            isPresented: Binding(
+                get: { deletingBot != nil },
+                set: { if !$0 { deletingBot = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let name = deletingBot else { return }
+                deletingBot = nil
+                onBack()
+                Task { try? await store.deleteBot(name) }
+            }
+            Button("Cancel", role: .cancel) { deletingBot = nil }
+        } message: {
+            Text("This removes the bot from the agent.")
+        }
+    }
+
+    /// The bot's own actions, reached by tapping its name.
+    ///
+    /// The same set the list offers, less the two that need a text field of
+    /// their own — a menu opened from the conversation is for acting on the
+    /// bot, not for filing it into a section that does not exist yet.
+    @ViewBuilder
+    private func botMenu(_ bot: String) -> some View {
+        Button {
+            store.toggleBotPin(bot)
+        } label: {
+            Label(
+                store.pinnedBots.contains(bot) ? "Unpin" : "Pin",
+                systemImage: "pin"
+            )
+        }
+
+        if !store.botCustomSections.isEmpty {
+            Menu {
+                ForEach(store.botCustomSections, id: \.self) { section in
+                    Button {
+                        store.setBotSection(bot, section: section)
+                    } label: {
+                        if store.section(for: bot) == section {
+                            Label(section, systemImage: "checkmark")
+                        } else {
+                            Text(section)
+                        }
+                    }
+                }
+                if store.section(for: bot) != nil {
+                    Button("Unassigned") { store.setBotSection(bot, section: nil) }
+                }
+            } label: {
+                Label("Move to", systemImage: "folder")
+            }
+        }
+
+        Button {
+            UIPasteboard.general.string = bot
+        } label: {
+            Label("Copy ID", systemImage: "doc.on.doc")
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            store.hideBot(bot)
+            onBack()
+        } label: {
+            Label("Hide", systemImage: "eye.slash")
+        }
+
+        Button(role: .destructive) {
+            deletingBot = bot
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
     }
 
     private var topControls: some View {
         HStack(spacing: 0) {
-            Button(action: onOpenDrawer) {
+            Button(action: bot == nil ? onOpenDrawer : onBack) {
                 // Two bars, not three, matched to the `plus` across from it.
                 // Both are math symbols, so the pairing is a real one — but
                 // not at the same settings: `equal` at 18pt medium matches
@@ -65,29 +153,37 @@ struct ChatScreen: View {
                 // regular lands on both. (`line.3.horizontal`, the usual menu
                 // glyph, is a different family and drew at 1.25pt, reading
                 // thin beside it.)
-                Image(systemName: "equal")
-                    .font(.system(size: 20, weight: .regular))
+                // A bot's conversation is somewhere you arrived at from the
+                // list of bots, not a place the drawer leads anywhere useful
+                // from — so from here the same disc goes back instead.
+                Image(systemName: bot == nil ? "equal" : "chevron.left")
+                    .font(.system(size: 20, weight: bot == nil ? .regular : .medium))
                     .imageScale(.large)
                     .frame(width: discSize, height: discSize)
             }
             .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel("Chats")
+            .accessibilityLabel(bot == nil ? "Chats" : "Bots")
 
             Spacer(minLength: 0)
 
             // Whose conversation this is. Alice's own mark when it is hers —
             // the drawer already says "Alice", so a second wordmark here would
             // be one too many — and the bot's mark and name when it is not.
-            if let bot = store.activeConversation?.botName, !bot.isEmpty {
-                HStack(spacing: 8) {
-                    BotMarkView(mark: store.mark(for: bot), size: 24)
-                    Text(store.botCurrentName(for: bot))
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
+            if let bot {
+                Menu {
+                    botMenu(bot)
+                } label: {
+                    HStack(spacing: 8) {
+                        BotMarkView(mark: store.mark(for: bot), size: 24)
+                        Text(store.botCurrentName(for: bot))
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 36)
+                    .glassEffect(.regular, in: .capsule)
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 36)
-                .glassEffect(.regular, in: .capsule)
+                .menuOrder(.fixed)
             } else {
                 AliceMark(size: 30)
                     .foregroundStyle(.primary)

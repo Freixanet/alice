@@ -219,12 +219,26 @@ final class AppStore {
         var reachedSomething = false
         var firstFailure: Error?
 
-        do {
-            manifest = try await client.capabilities()
-            reachedSomething = true
-        } catch {
-            manifest = nil
-            firstFailure = error
+        // Three tries, not one. A phone changing Wi-Fi cell, a gateway a
+        // second from being ready, a packet lost on the tailnet — any of them
+        // used to drop the connection outright and leave the address and key
+        // to be typed again for something that was momentary.
+        for attempt in 0..<3 {
+            do {
+                manifest = try await client.capabilities()
+                reachedSomething = true
+                firstFailure = nil
+                break
+            } catch {
+                manifest = nil
+                if firstFailure == nil { firstFailure = error }
+                // No point retrying a key the agent has rejected.
+                if case HermesClient.Failure.http(401, _, _) = error { break }
+                if case HermesClient.Failure.http(403, _, _) = error { break }
+                if attempt < 2 {
+                    try? await Task.sleep(for: .milliseconds(400 << attempt))
+                }
+            }
         }
 
         if await loadModels() { reachedSomething = true }
@@ -795,6 +809,12 @@ final class AppStore {
         return .parts(text: combined, imageURLs: images)
     }
 
+    /// Set to ask the drawer to show the bots list.
+    ///
+    /// The list is a sheet the sidebar owns, and going back to it from a bot's
+    /// conversation has to reach across the drawer to get there.
+    var openBotsList = false
+
     @discardableResult
     func openBotConversation(for bot: BotRow) -> String {
         if let existing = conversations.first(where: { $0.botName == bot.name }) {
@@ -817,9 +837,18 @@ final class AppStore {
 
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !draftAttachments.isEmpty,
-              !isSending, isConnected
-        else { return }
+        guard !text.isEmpty || !draftAttachments.isEmpty, !isSending else { return }
+
+        // Dropped since the last message? Pick it back up rather than making
+        // somebody go to Connect and press a button for a connection that is
+        // still perfectly good.
+        guard isConnected else {
+            Task { [weak self] in
+                await self?.restoreConnection()
+                if self?.isConnected == true { self?.send() }
+            }
+            return
+        }
         guard let index = conversations.firstIndex(where: { $0.id == activeID })
         else { return }
 

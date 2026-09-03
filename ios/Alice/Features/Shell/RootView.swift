@@ -35,7 +35,10 @@ struct RootView: View {
                         trailing: 0
                     ))
 
-                ChatScreen(onOpenDrawer: { setDrawer(true) })
+                ChatScreen(
+                    onOpenDrawer: { setDrawer(true) },
+                    onBack: goBackToBots
+                )
                     .overlay {
                         // Grows with the gesture rather than appearing at the end,
                         // so the conversation hands over its prominence gradually.
@@ -97,18 +100,40 @@ struct RootView: View {
                         return drawerOpen ? velocity.x < 0 : velocity.x > 0
                     },
                     onChange: { translation in
+                        // In a bot's conversation the swipe is a back gesture,
+                        // so nothing follows the finger: the drawer it would
+                        // otherwise reveal has nothing to do with this bot.
+                        guard !inBotChat || drawerOpen else { return }
                         drag = drawerOpen ? min(0, translation) : max(0, translation)
                     },
                     onEnd: { translation, predicted in
                         let travelled = abs(translation) > drawerWidth * 0.3
                         let flicked = abs(predicted) > 120
                         drag = 0
+                        guard !inBotChat || drawerOpen else {
+                            if travelled || flicked { goBackToBots() }
+                            return
+                        }
                         setDrawer(drawerOpen ? !(travelled || flicked) : (travelled || flicked))
                     }
                 )
                 .allowsHitTesting(false)
             }
         }
+    }
+
+    /// Whether the conversation on screen belongs to a bot.
+    private var inBotChat: Bool {
+        !(store.activeConversation?.botName ?? "").isEmpty
+    }
+
+    /// Back out of a bot's conversation to the list it was opened from.
+    ///
+    /// That list is a sheet the drawer owns, so getting there means opening
+    /// the drawer and asking it to present it.
+    private func goBackToBots() {
+        store.openBotsList = true
+        setDrawer(true)
     }
 
     private var offset: CGFloat {

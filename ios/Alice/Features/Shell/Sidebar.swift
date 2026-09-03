@@ -31,6 +31,11 @@ struct Sidebar: View {
         }
         .frame(maxHeight: .infinity)
         .background(Palette.card(scheme).ignoresSafeArea())
+        .onChange(of: store.openBotsList) { _, wants in
+            guard wants else { return }
+            going = .bots
+            store.openBotsList = false
+        }
         .sheet(item: $going) { destination in
             switch destination {
             case .bots:
