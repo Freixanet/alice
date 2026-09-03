@@ -74,10 +74,21 @@ struct MessageRow: View {
         }
     }
 
+    /// The reply, with its emphasis but also its shape.
+    ///
+    /// `.full` parses block structure that `AttributedString` has nowhere to
+    /// put: a numbered list came back as one run with the items welded
+    /// together — "…en renovación.Amazon: Cupón directo…" — because the
+    /// paragraph breaks were understood and then discarded. Inline-only keeps
+    /// bold, italics and code while leaving every newline exactly where the
+    /// model put it, which is the half of Markdown that survives here.
     private var attributed: AttributedString {
         (try? AttributedString(
             markdown: message.content,
-            options: .init(interpretedSyntax: .full, failurePolicy: .returnPartiallyParsedIfPossible)
+            options: .init(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                failurePolicy: .returnPartiallyParsedIfPossible
+            )
         )) ?? AttributedString(message.content)
     }
 }
