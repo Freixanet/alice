@@ -86,14 +86,29 @@ extension HermesClient {
                         return
                     }
 
+                    var carriedSomething = false
                     for try await line in bytes.lines {
                         if Task.isCancelled { break }
                         guard line.hasPrefix("data:") else { continue }
                         let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                         if payload == "[DONE]" { break }
                         guard let event = HermesClient.decodeFrame(payload) else { continue }
+                        carriedSomething = true
                         continuation.yield(event)
                         if case .failure = event { break }
+                    }
+
+                    // A stream that ends having said nothing is not an answer.
+                    // Measured against the running gateway, seven of eight
+                    // streamed replies came back as two frames and a [DONE]
+                    // with no content, while the same request unstreamed
+                    // answered every time. Rather than show "Couldn't reply"
+                    // for something the agent is perfectly willing to say,
+                    // ask again without streaming.
+                    if !carriedSomething, !Task.isCancelled {
+                        if let text = try await self.completeWithoutStreaming(body) {
+                            continuation.yield(.delta(text))
+                        }
                     }
                     continuation.finish()
                 } catch is CancellationError {
@@ -108,6 +123,29 @@ extension HermesClient {
 
     /// Decodes one SSE frame. Unknown shapes are skipped rather than failing the
     /// stream, so a build that adds a field does not break the conversation.
+    /// The same request, answered in one piece.
+    ///
+    /// Used only when the streamed attempt produced nothing, so it costs
+    /// nothing while streaming works.
+    private func completeWithoutStreaming(_ body: [String: Any]) async throws -> String? {
+        var once = body
+        once["stream"] = false
+        var request = try self.request("v1/chat/completions", method: "POST")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: once)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = object["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any],
+              let text = message["content"] as? String,
+              !text.isEmpty
+        else { return nil }
+        return text
+    }
+
     nonisolated static func decodeFrame(_ payload: String) -> ChatEvent? {
         guard let data = payload.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]

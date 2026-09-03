@@ -231,11 +231,14 @@ struct BotFaceView: View {
     }
 }
 
-/// A mark that floats, and answers a tap.
+/// A mark that answers a tap, and — where it has room — floats.
 struct AnimatedBotMarkView: View {
     let mark: BotMark
     var size: CGFloat = 84
     var mood: BotMood = .idle
+    /// The float is a flourish for a mark standing on its own. Beside a line
+    /// of text it just lifts out of alignment with the name it belongs to.
+    var floats: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -255,14 +258,14 @@ struct AnimatedBotMarkView: View {
             BotFaceView(size: size, animated: true, mood: mood)
         }
         .frame(width: size, height: size)
-        .scaleEffect((floating ? 1.06 : 1) * bounceScale)
-        .rotationEffect(.degrees((floating ? 3.5 : 0) + bounceRotation))
-        .offset(y: floating ? -12 : 0)
+        .scaleEffect((lifted ? 1.06 : 1) * bounceScale)
+        .rotationEffect(.degrees((lifted ? 3.5 : 0) + bounceRotation))
+        .offset(y: lifted ? -12 : 0)
         .animation(
             reduceMotion
                 ? nil
                 : .easeInOut(duration: 2).repeatForever(autoreverses: true),
-            value: floating
+            value: lifted
         )
         .contentShape(.rect)
         .onTapGesture { bounce() }
@@ -272,6 +275,8 @@ struct AnimatedBotMarkView: View {
         .onAppear { floating = true }
         .onDisappear { floating = false }
     }
+
+    private var lifted: Bool { floats && floating }
 
     private func bounce() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -300,10 +305,11 @@ struct BotMarkView: View {
     var size: CGFloat = 28
     var animated: Bool = false
     var mood: BotMood = .idle
+    var floats: Bool = true
 
     var body: some View {
         if animated {
-            AnimatedBotMarkView(mark: mark, size: size, mood: mood)
+            AnimatedBotMarkView(mark: mark, size: size, mood: mood, floats: floats)
         } else {
             ZStack {
                 MarkShape(silhouette: mark.silhouette)

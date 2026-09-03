@@ -30,7 +30,10 @@ struct MessageRow: View {
                                 mark: store.mark(for: bot),
                                 size: 16,
                                 animated: message.pending,
-                                mood: .thinking
+                                mood: .thinking,
+                                // Sitting on a line with the name: it thinks,
+                                // it does not levitate away from it.
+                                floats: false
                             )
                             Text(store.botCurrentName(for: bot).uppercased())
                                 .font(.caption2.weight(.medium))

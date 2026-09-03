@@ -1029,12 +1029,41 @@ struct BotsScreen: View {
         ""
     }
 
+    /// What the bot last said, which is what a list of conversations is
+    /// supposed to show. Its description is already on the line above, on the
+    /// badge beside the name — printing it twice told you nothing new.
     private func snippet(for bot: BotRow) -> String {
-        let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
-        if !liveDetail.isEmpty {
-            return liveDetail
-        }
-        return "Ready for messages"
+        if let line = lastReply(from: bot) { return line }
+        let detail = store.cachedBots.first(where: { $0.name == bot.name })?.detail
+            ?? bot.detail
+        return detail.isEmpty ? "Ready for messages" : detail
+    }
+
+    /// The opening of the bot's most recent reply, flattened onto one line.
+    ///
+    /// A reply often starts with a heading or a list, so the raw first line
+    /// can be a lone "#" or a bullet. Newlines collapse to spaces and the
+    /// markdown that only makes sense in a rendered block is dropped.
+    private func lastReply(from bot: BotRow) -> String? {
+        guard let conversation = store.conversations.first(
+            where: { $0.botName == bot.name }
+        ) else { return nil }
+        guard let reply = conversation.messages.last(where: {
+            $0.role == .assistant && !$0.pending
+                && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else { return nil }
+
+        var line = reply.content
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(
+                of: "^[#>*\\-\\s]+", with: "", options: .regularExpression
+            )
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "`", with: "")
+        line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return nil }
+        // Well past what one line shows; the label truncates the rest.
+        return String(line.prefix(160))
     }
 
     private func load() async {
