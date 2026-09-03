@@ -131,6 +131,9 @@ struct RootView: View {
     }
 
     private func setDrawer(_ open: Bool) {
+        if drawerOpen != open {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
         if open {
             // The keyboard would otherwise stay up behind the drawer, with
             // focus on a field the drawer is covering.

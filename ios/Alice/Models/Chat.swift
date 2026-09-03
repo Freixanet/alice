@@ -66,6 +66,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var errorLimit: ModelLimit?
     var incomplete: Bool = false
     var attachments: [Attachment] = []
+    var botName: String? = nil
 }
 
 struct Conversation: Identifiable, Hashable, Sendable, Codable {
@@ -84,6 +85,15 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     /// of those — this borrows the names so both read the same way.
     var project: String?
     var messages: [Message] = []
+    var botName: String? = nil
+    var isChannel: Bool? = false
+    var channelBots: [String]? = []
+
+    var isBotChat: Bool {
+        if let botName, !botName.isEmpty { return true }
+        if isChannel == true { return true }
+        return false
+    }
 
     static func blank(title: String = "New chat") -> Conversation {
         let now = Date()

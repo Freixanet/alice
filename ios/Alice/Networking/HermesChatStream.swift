@@ -41,12 +41,13 @@ extension HermesClient {
     func stream(
         messages: [Turn],
         model: String?,
-        provider: String?
+        provider: String?,
+        profile: String? = nil
     ) -> AsyncThrowingStream<ChatEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    var request = try self.request("v1/chat/completions", method: "POST")
+                    var request = try self.request("v1/chat/completions", method: "POST", profile: profile)
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     var body: [String: Any] = [
@@ -55,26 +56,42 @@ extension HermesClient {
                     ]
                     if let model { body["model"] = model }
                     if let provider { body["provider"] = provider }
+                    if let profile { body["profile"] = profile }
                     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-                    let (bytes, response) = try await self.session.bytes(for: request)
-                    guard let http = response as? HTTPURLResponse else {
+                    var (bytes, response) = try await self.session.bytes(for: request)
+                    var http = response as? HTTPURLResponse
+
+                    if let statusCode = http?.statusCode, statusCode == 404, profile != nil {
+                        var fallbackReq = try self.request("v1/chat/completions", method: "POST", profile: nil)
+                        fallbackReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                        fallbackReq.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                        if let profile {
+                            fallbackReq.setValue(profile, forHTTPHeaderField: "X-Hermes-Profile")
+                        }
+                        fallbackReq.httpBody = try JSONSerialization.data(withJSONObject: body)
+                        let (fBytes, fResp) = try await self.session.bytes(for: fallbackReq)
+                        bytes = fBytes
+                        http = fResp as? HTTPURLResponse
+                    }
+
+                    guard let httpValid = http else {
                         throw Failure.badResponse
                     }
-                    guard (200..<300).contains(http.statusCode) else {
+                    guard (200..<300).contains(httpValid.statusCode) else {
                         // Drain the body so the reason survives: without this the
                         // user gets "couldn't reply" for a spent quota.
                         var raw = Data()
                         for try await byte in bytes { raw.append(byte) }
                         let detail = HermesClient.detail(from: raw)
-                            ?? "Hermes returned \(http.statusCode)."
+                            ?? "Hermes returned \(httpValid.statusCode)."
                         continuation.yield(
                             .failure(
                                 message: detail,
                                 limit: ModelLimitClassifier.classify(
-                                    status: http.statusCode,
+                                    status: httpValid.statusCode,
                                     message: detail,
-                                    retryAfter: http.value(forHTTPHeaderField: "Retry-After")
+                                    retryAfter: httpValid.value(forHTTPHeaderField: "Retry-After")
                                 )
                             )
                         )

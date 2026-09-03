@@ -22,10 +22,20 @@ struct MessageRow: View {
                 }
             case .assistant:
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("ALICE")
-                        .font(.caption2.weight(.medium))
-                        .tracking(1.4)
-                        .foregroundStyle(.secondary)
+                    if let bot = message.botName, !bot.isEmpty {
+                        HStack(spacing: 6) {
+                            BotMarkView(mark: store.mark(for: bot), size: 16)
+                            Text(store.botCurrentName(for: bot).uppercased())
+                                .font(.caption2.weight(.medium))
+                                .tracking(1.4)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("ALICE")
+                            .font(.caption2.weight(.medium))
+                            .tracking(1.4)
+                            .foregroundStyle(.secondary)
+                    }
 
                     if message.content.isEmpty && message.pending {
                         TypingIndicator()

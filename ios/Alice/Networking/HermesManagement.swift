@@ -19,7 +19,7 @@ struct CatalogRow: Identifiable, Hashable, Sendable {
 }
 
 /// A scheduled job as Hermes reports it.
-struct JobRow: Identifiable, Hashable, Sendable {
+struct JobRow: Identifiable, Hashable, Sendable, Codable {
     let id: String
     var name: String
     var prompt: String

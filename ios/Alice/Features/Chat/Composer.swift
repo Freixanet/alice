@@ -12,15 +12,15 @@ struct Composer: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     var focused: FocusState<Bool>.Binding
+    var placeholder: String = "Talk to Alice…"
     @Namespace private var glass
     @State private var showModels = false
     @State private var dictation = Dictation()
     /// Set by swiping the command list away. Cleared on the next keystroke,
     /// so dismissing it is about this moment, not about the whole draft.
     @State private var commandsDismissed = false
-    /// The command list's natural height, so the panel fits its rows instead
-    /// of holding its maximum with one match showing.
-    @State private var commandsHeight: CGFloat = 0
+    @State private var commandsHeight: CGFloat = 180
+    @State private var botMentionsHeight: CGFloat = 160
     @State private var photos: [PhotosPickerItem] = []
     @State private var showPhotos = false
     @State private var showFiles = false
@@ -40,6 +40,7 @@ struct Composer: View {
         // offering it never moves the field out from under the caret.
         VStack(spacing: 8) {
             if !commands.isEmpty { commandList }
+            else if !matchingBots.isEmpty { botMentionList }
             composer
         }
         .padding(.horizontal, 18)
@@ -85,11 +86,124 @@ struct Composer: View {
             }
         }
         .onChange(of: store.draft) { commandsDismissed = false }
-        .animation(.snappy(duration: 0.2), value: commands.isEmpty)
+        .animation(.snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
+        .task(id: store.dashboardReady) {
+            _ = try? await store.bots()
+        }
+        .task(id: store.draft) {
+            if store.draft.contains("@") && store.cachedBots.isEmpty {
+                _ = try? await store.bots()
+            }
+        }
     }
 
     private var commands: [SlashCommand] {
         commandsDismissed ? [] : Slash.matches(store.draft)
+    }
+
+    private var botMentionQuery: String? {
+        guard let atIndex = store.draft.lastIndex(of: "@") else { return nil }
+        if atIndex > store.draft.startIndex {
+            let prev = store.draft[store.draft.index(before: atIndex)]
+            guard prev.isWhitespace || prev.isNewline else { return nil }
+        }
+        let afterAt = store.draft[atIndex...]
+        if afterAt.contains("\n") { return nil }
+        let word = String(afterAt)
+        if word.dropFirst().contains(" ") { return nil }
+        return String(word.dropFirst()).lowercased()
+    }
+
+    private var matchingBots: [BotRow] {
+        guard let query = botMentionQuery, !commandsDismissed else { return [] }
+        let all: [BotRow]
+        if !store.cachedBots.isEmpty {
+            all = store.cachedBots
+        } else {
+            all = store.knownBotNames.map { name in
+                BotRow(
+                    name: name,
+                    displayName: store.botCurrentName(for: name),
+                    detail: "",
+                    model: nil,
+                    provider: nil,
+                    skills: 0,
+                    isDefault: false,
+                    gatewayRunning: false,
+                    active: false
+                )
+            }
+        }
+        if query.isEmpty { return all }
+        return all.filter {
+            $0.name.lowercased().contains(query) ||
+            $0.displayName.lowercased().contains(query) ||
+            store.botCurrentName(for: $0).lowercased().contains(query)
+        }
+    }
+
+    private var botMentionList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(matchingBots) { bot in
+                    Button {
+                        if let atIndex = store.draft.lastIndex(of: "@") {
+                            let prefix = store.draft[..<atIndex]
+                            let botName = store.botCurrentName(for: bot)
+                            store.draft = ""
+                            DispatchQueue.main.async {
+                                store.draft = prefix + "@" + botName + " "
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            BotMarkView(mark: store.mark(for: bot.name), size: 28)
+                            VStack(alignment: .leading, spacing: 1) {
+                                HStack(spacing: 6) {
+                                    Text("@\(store.botCurrentName(for: bot))")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    let currentName = store.botCurrentName(for: bot)
+                                    if currentName.lowercased() != bot.name.lowercased() {
+                                        Text(bot.name)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
+                                if !liveDetail.isEmpty {
+                                    Text(liveDetail)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                if $0 > 0 { botMentionsHeight = $0 }
+            }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(height: min(botMentionsHeight, 260))
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .gesture(
+            DragGesture(minimumDistance: 24)
+                .onEnded { value in
+                    if value.translation.height > 40 { commandsDismissed = true }
+                }
+        )
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     private var commandList: some View {
@@ -157,7 +271,7 @@ struct Composer: View {
                     }
                 }
 
-                TextField("Talk to Alice…", text: $store.draft, axis: .vertical)
+                TextField(placeholder, text: $store.draft, axis: .vertical)
                     .lineLimit(1...7)
                     .textFieldStyle(.plain)
                     .font(.body)

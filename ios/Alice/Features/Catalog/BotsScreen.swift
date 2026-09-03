@@ -8,11 +8,38 @@ import SwiftUI
 struct BotsScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
 
     @State private var rows: [BotRow] = []
     @State private var failure: String?
     @State private var loading = false
-    @State private var creating = false
+    @State private var creatingBot = false
+    @State private var creatingChannel = false
+    @State private var editingBot: BotRow?
+    @State private var deletingBot: BotRow?
+    enum SearchFilter: String, CaseIterable, Identifiable {
+        case all = "All"
+        case messages = "Messages"
+        case bots = "Bots"
+        case groups = "Groups"
+        case files = "Files"
+        case routines = "Routines"
+
+        var id: String { rawValue }
+    }
+
+    @State private var showSearch = false
+    @State private var searchQuery = ""
+    @State private var selectedFilter: SearchFilter = .all
+    @FocusState private var searchFocused: Bool
+    @State private var showUnassigned = false
+    @State private var showNewSectionAlert = false
+    @State private var newSectionName = ""
+    @State private var newSectionTargetBot: String?
+    @State private var deletingSection: String?
+    @State private var renamingSection: String?
+    @State private var renameSectionName = ""
+    @State private var showRenameSectionAlert = false
 
     var body: some View {
         Group {
@@ -28,74 +55,911 @@ struct BotsScreen: View {
                     description: Text("Every Hermes has at least a default profile.")
                 )
             } else {
-                list
+                botList
             }
         }
-        .navigationTitle("Bots")
-        .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { creating = true } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("New bot")
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            topControls
+        }
+        .sheet(isPresented: $creatingBot) {
+            NewBotSheet { await load() }
+        }
+        .sheet(isPresented: $creatingChannel) {
+            NewChannelSheet(bots: rows)
+        }
+        .sheet(item: $editingBot) { bot in
+            NavigationStack {
+                BotDetail(bot: bot, onChange: { Task { await load() } })
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { editingBot = nil }
+                        }
+                    }
             }
         }
-        .sheet(isPresented: $creating) {
-            NewBotSheet { await load() }
+        .alert("New Section", isPresented: $showNewSectionAlert) {
+            TextField("Section Name", text: $newSectionName)
+            Button("Cancel", role: .cancel) {
+                newSectionName = ""
+                newSectionTargetBot = nil
+            }
+            Button("Create") {
+                let trimmed = newSectionName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    store.addSection(trimmed)
+                    if let target = newSectionTargetBot {
+                        store.setBotSection(target, section: trimmed)
+                    }
+                }
+                newSectionName = ""
+                newSectionTargetBot = nil
+            }
+        } message: {
+            Text("Enter a name for the new bot section.")
+        }
+        .alert("Rename Section", isPresented: $showRenameSectionAlert) {
+            TextField("Section Name", text: $renameSectionName)
+            Button("Cancel", role: .cancel) {
+                renamingSection = nil
+                renameSectionName = ""
+            }
+            Button("Save") {
+                if let renamingSection {
+                    store.renameSection(from: renamingSection, to: renameSectionName)
+                }
+                renamingSection = nil
+                renameSectionName = ""
+            }
+        } message: {
+            Text("Enter a new name for this section.")
+        }
+        .confirmationDialog(
+            "Delete Section",
+            isPresented: .init(
+                get: { deletingSection != nil },
+                set: { if !$0 { deletingSection = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let deletingSection {
+                    store.deleteSection(deletingSection)
+                }
+                deletingSection = nil
+            }
+            Button("Cancel", role: .cancel) {
+                deletingSection = nil
+            }
+        } message: {
+            if let deletingSection {
+                Text("Are you sure you want to delete '\(deletingSection)'? The bots inside will become Unassigned.")
+            }
+        }
+        .confirmationDialog(
+            "Delete Bot",
+            isPresented: .init(
+                get: { deletingBot != nil },
+                set: { if !$0 { deletingBot = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let deletingBot {
+                    Task {
+                        try? await store.deleteBot(deletingBot.name)
+                        await load()
+                    }
+                }
+                deletingBot = nil
+            }
+            Button("Cancel", role: .cancel) {
+                deletingBot = nil
+            }
+        } message: {
+            if let deletingBot {
+                Text("Are you sure you want to delete '\(deletingBot.displayName)'? This cannot be undone.")
+            }
         }
         .task { await load() }
         .refreshable { await load() }
     }
 
-    private var list: some View {
-        List(rows) { bot in
-            NavigationLink {
-                BotDetail(bot: bot, onChange: { Task { await load() } })
-            } label: {
-                HStack(spacing: 12) {
-                    BotMarkView(mark: store.mark(for: bot.name), size: 34)
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(bot.displayName)
-                                .font(.subheadline.weight(.medium))
-                                .lineLimit(1)
-                            if bot.active {
-                                Text("Active")
-                                    .font(.caption2)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(
-                                        store.accent.primary(scheme).opacity(0.18),
-                                        in: .capsule
-                                    )
-                            }
-                            if bot.gatewayRunning {
-                                Circle().fill(.green).frame(width: 6, height: 6)
-                            }
-                        }
-                        if !bot.detail.isEmpty {
-                            Text(bot.detail)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        Text(subtitle(bot))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 3)
-            }
-            .listRowBackground(Palette.card(scheme))
+    // MARK: - Sections & List
+
+    private var filteredRows: [BotRow] {
+        let visible = rows.filter { !store.hiddenBots.contains($0.name) }
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return visible }
+        return visible.filter { bot in
+            let dName = store.botCustomNames[bot.name] ?? bot.displayName
+            let dDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
+            return bot.name.lowercased().contains(query) ||
+            dName.lowercased().contains(query) ||
+            dDetail.lowercased().contains(query)
         }
     }
 
-    private func subtitle(_ bot: BotRow) -> String {
-        var parts: [String] = []
-        if let model = bot.model { parts.append(model) }
-        parts.append(bot.skills == 1 ? "1 skill" : "\(bot.skills) skills")
-        return parts.joined(separator: " · ")
+    private func bots(in section: String) -> [BotRow] {
+        filteredRows.filter { store.section(for: $0.name) == section }
+    }
+
+    private var unassignedBots: [BotRow] {
+        filteredRows.filter { store.section(for: $0.name) == nil }
+    }
+
+    private var topControls: some View {
+        HStack(spacing: 10) {
+            if showSearch {
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) {
+                        showSearch = false
+                        searchQuery = ""
+                        searchFocused = false
+                        selectedFilter = .all
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Close search")
+
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    TextField("Search…", text: $searchQuery)
+                        .font(.body)
+                        .textFieldStyle(.plain)
+                        .focused($searchFocused)
+                        .submitLabel(.search)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    if !searchQuery.isEmpty {
+                        Button {
+                            searchQuery = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 15))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Clear")
+                    }
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .glassEffect(.regular, in: .capsule)
+
+                Menu {
+                    Picker("Filter", selection: $selectedFilter) {
+                        ForEach(SearchFilter.allCases) { filter in
+                            Text(filter.rawValue).tag(filter)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Filter: \(selectedFilter.rawValue)")
+            } else {
+                Button("Done") {
+                    dismiss()
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 18)
+                .frame(height: 44)
+                .glassEffect(.regular.interactive(), in: .capsule)
+
+                Spacer()
+
+                HStack(spacing: 16) {
+                    Button {
+                        withAnimation(.snappy(duration: 0.25)) {
+                            showSearch = true
+                        }
+                        searchFocused = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 19, weight: .medium))
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Search bots")
+
+                    Menu {
+                        Button {
+                            creatingBot = true
+                        } label: {
+                            Label("New Bot", systemImage: "person.fill")
+                        }
+                        Button {
+                            creatingChannel = true
+                        } label: {
+                            Label("New Channel", systemImage: "bubble.left.and.bubble.right")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add")
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                .glassEffect(.regular, in: .capsule)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 6)
+    }
+
+    private var botList: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                if showSearch {
+                    searchResultsView
+                } else {
+                    normalBotSections
+                }
+            }
+            .padding(.top, 24)
+            .padding(.bottom, 32)
+        }
+    }
+
+    @ViewBuilder
+    private var normalBotSections: some View {
+        if store.botCustomSections.isEmpty {
+            ForEach(filteredRows) { bot in
+                botRowView(bot)
+            }
+        } else {
+            ForEach(store.displaySectionOrder(), id: \.self) { sectionKey in
+                if sectionKey == AppStore.unassignedSectionKey {
+                    if !unassignedBots.isEmpty {
+                        unassignedSectionHeader
+                        if showUnassigned {
+                            ForEach(unassignedBots) { bot in
+                                botRowView(bot)
+                            }
+                        }
+                    }
+                } else {
+                    let sectionBots = bots(in: sectionKey)
+                    sectionHeader(sectionKey, count: sectionBots.count)
+
+                    if !store.collapsedSections.contains(sectionKey) {
+                        ForEach(sectionBots) { bot in
+                            botRowView(bot)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var searchResultsView: some View {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch selectedFilter {
+        case .bots:
+            let matches = filteredRows
+            if matches.isEmpty {
+                ContentUnavailableView.search(text: searchQuery)
+                    .padding(.top, 40)
+            } else {
+                ForEach(matches) { bot in
+                    botRowView(bot)
+                }
+            }
+        case .messages:
+            let matches = allMessagesMatching(query: q)
+            if matches.isEmpty {
+                ContentUnavailableView(
+                    q.isEmpty ? "Search Messages" : "No Messages Found",
+                    systemImage: "bubble.left.and.bubble.right",
+                    description: Text(q.isEmpty ? "Type to find messages across chats." : "No messages matched “\(searchQuery)”.")
+                )
+                .padding(.top, 40)
+            } else {
+                ForEach(matches) { match in
+                    messageRowMatchView(match)
+                }
+            }
+        case .groups:
+            let matches = allGroupsMatching(query: q)
+            if matches.isEmpty {
+                ContentUnavailableView(
+                    q.isEmpty ? "No Channels" : "No Channels Found",
+                    systemImage: "person.3",
+                    description: Text(q.isEmpty ? "No group channels found." : "No channels matched “\(searchQuery)”.")
+                )
+                .padding(.top, 40)
+            } else {
+                ForEach(matches) { group in
+                    groupRowView(group)
+                }
+            }
+        case .files:
+            let matches = allFilesMatching(query: q)
+            if matches.isEmpty {
+                ContentUnavailableView(
+                    q.isEmpty ? "No Files" : "No Files Found",
+                    systemImage: "doc",
+                    description: Text(q.isEmpty ? "No files shared in chats yet." : "No files matched “\(searchQuery)”.")
+                )
+                .padding(.top, 40)
+            } else {
+                ForEach(matches) { file in
+                    fileRowView(file)
+                }
+            }
+        case .routines:
+            let matches = allRoutinesMatching(query: q)
+            if matches.isEmpty {
+                ContentUnavailableView(
+                    q.isEmpty ? "No Routines" : "No Routines Found",
+                    systemImage: "clock",
+                    description: Text(q.isEmpty ? "No routines configured on bots." : "No routines matched “\(searchQuery)”.")
+                )
+                .padding(.top, 40)
+            } else {
+                ForEach(matches, id: \.routine.id) { item in
+                    routineRowView(item.routine, botName: item.botName)
+                }
+            }
+        case .all:
+            if q.isEmpty {
+                normalBotSections
+            } else {
+                allSearchResults(query: q)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func allSearchResults(query: String) -> some View {
+        let matchingBots = filteredRows
+        let matchingRoutines = allRoutinesMatching(query: query)
+        let matchingMessages = allMessagesMatching(query: query)
+        let matchingGroups = allGroupsMatching(query: query)
+        let matchingFiles = allFilesMatching(query: query)
+
+        let hasAny = !matchingBots.isEmpty || !matchingRoutines.isEmpty || !matchingMessages.isEmpty || !matchingGroups.isEmpty || !matchingFiles.isEmpty
+
+        if !hasAny {
+            ContentUnavailableView.search(text: searchQuery)
+                .padding(.top, 40)
+        } else {
+            if !matchingBots.isEmpty {
+                searchCategoryHeader("Bots", count: matchingBots.count)
+                ForEach(matchingBots) { bot in
+                    botRowView(bot)
+                }
+            }
+
+            if !matchingRoutines.isEmpty {
+                searchCategoryHeader("Routines", count: matchingRoutines.count)
+                ForEach(matchingRoutines, id: \.routine.id) { item in
+                    routineRowView(item.routine, botName: item.botName)
+                }
+            }
+
+            if !matchingGroups.isEmpty {
+                searchCategoryHeader("Groups", count: matchingGroups.count)
+                ForEach(matchingGroups) { group in
+                    groupRowView(group)
+                }
+            }
+
+            if !matchingMessages.isEmpty {
+                searchCategoryHeader("Messages", count: matchingMessages.count)
+                ForEach(matchingMessages) { match in
+                    messageRowMatchView(match)
+                }
+            }
+
+            if !matchingFiles.isEmpty {
+                searchCategoryHeader("Files", count: matchingFiles.count)
+                ForEach(matchingFiles) { file in
+                    fileRowView(file)
+                }
+            }
+        }
+    }
+
+    private func searchCategoryHeader(_ title: String, count: Int) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("\(count)")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 4)
+    }
+
+    private func routineRowView(_ routine: JobRow, botName: String) -> some View {
+        HStack(spacing: 12) {
+            BotMarkView(mark: store.mark(for: botName), size: 36)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(routine.name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if !routine.schedule.isEmpty {
+                        Text(routine.schedule)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.14), in: .rect(cornerRadius: 5))
+                    }
+                }
+                Text(routine.prompt.isEmpty ? "Bot: \(store.botCustomNames[botName] ?? botName)" : routine.prompt)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
+        .padding(.horizontal, 16)
+    }
+
+    private func groupRowView(_ group: Conversation) -> some View {
+        Button {
+            store.activeID = group.id
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(store.accent.primary(scheme))
+                    .frame(width: 36, height: 36)
+                    .background(Color.secondary.opacity(0.12), in: .circle)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(group.title)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if let bots = group.channelBots, !bots.isEmpty {
+                        Text(bots.joined(separator: ", "))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func messageRowMatchView(_ match: MessageMatch) -> some View {
+        Button {
+            store.activeID = match.conversation.id
+            dismiss()
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(match.conversation.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(store.accent.primary(scheme))
+                    Spacer()
+                    Text(match.message.createdAt.formatted(.relative(presentation: .named)))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Text(match.message.content)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func fileRowView(_ match: FileMatch) -> some View {
+        Button {
+            store.activeID = match.conversation.id
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: match.attachment.mime.hasPrefix("image/") ? "photo.fill" : "doc.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(store.accent.primary(scheme))
+                    .frame(width: 36, height: 36)
+                    .background(Color.secondary.opacity(0.12), in: .circle)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(match.attachment.name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text("In: \(match.conversation.title)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+    }
+
+    struct MessageMatch: Identifiable {
+        var id: String { message.id }
+        let message: Message
+        let conversation: Conversation
+    }
+
+    struct FileMatch: Identifiable {
+        var id: String { "\(conversation.id)-\(attachment.name)" }
+        let attachment: Attachment
+        let conversation: Conversation
+    }
+
+    private func allRoutinesMatching(query: String) -> [(routine: JobRow, botName: String)] {
+        var results: [(JobRow, String)] = []
+        for (bName, routinesList) in store.localBotRoutines {
+            for r in routinesList {
+                if query.isEmpty ||
+                    r.name.localizedCaseInsensitiveContains(query) ||
+                    r.prompt.localizedCaseInsensitiveContains(query) ||
+                    r.schedule.localizedCaseInsensitiveContains(query) ||
+                    bName.localizedCaseInsensitiveContains(query) {
+                    results.append((r, bName))
+                }
+            }
+        }
+        return results
+    }
+
+    private func allGroupsMatching(query: String) -> [Conversation] {
+        store.conversations.filter { conv in
+            guard conv.isChannel == true else { return false }
+            if query.isEmpty { return true }
+            return conv.title.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private func allMessagesMatching(query: String) -> [MessageMatch] {
+        guard !query.isEmpty else { return [] }
+        var results: [MessageMatch] = []
+        for conv in store.conversations {
+            for msg in conv.messages {
+                if msg.content.localizedCaseInsensitiveContains(query) {
+                    results.append(MessageMatch(message: msg, conversation: conv))
+                }
+            }
+        }
+        return results
+    }
+
+    private func allFilesMatching(query: String) -> [FileMatch] {
+        var results: [FileMatch] = []
+        for conv in store.conversations {
+            for msg in conv.messages {
+                for att in msg.attachments {
+                    if query.isEmpty || att.name.localizedCaseInsensitiveContains(query) {
+                        results.append(FileMatch(attachment: att, conversation: conv))
+                    }
+                }
+            }
+        }
+        return results
+    }
+
+    private func sectionHeader(_ title: String, count: Int) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) {
+                store.toggleSectionCollapsed(title)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(store.collapsedSections.contains(title) ? -90 : 0))
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            let order = store.displaySectionOrder()
+            let isFirst = order.first == title
+            let isLast = order.last == title
+
+            Button {
+                renamingSection = title
+                renameSectionName = title
+                showRenameSectionAlert = true
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+
+            Button {
+                store.moveSectionUp(title)
+            } label: {
+                Label("Move Up", systemImage: "arrow.up")
+            }
+            .disabled(isFirst)
+
+            Button {
+                store.moveSectionDown(title)
+            } label: {
+                Label("Move Down", systemImage: "arrow.down")
+            }
+            .disabled(isLast)
+
+            Button(role: .destructive) {
+                deletingSection = title
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    private var unassignedSectionHeader: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) {
+                showUnassigned.toggle()
+            }
+        } label: {
+            HStack {
+                Text("Unassigned")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text("\(unassignedBots.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                Image(systemName: showUnassigned ? "chevron.down" : "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            let order = store.displaySectionOrder()
+            let isFirst = order.first == AppStore.unassignedSectionKey
+            let isLast = order.last == AppStore.unassignedSectionKey
+
+            Button {
+                store.moveSectionUp(AppStore.unassignedSectionKey)
+            } label: {
+                Label("Move Up", systemImage: "arrow.up")
+            }
+            .disabled(isFirst)
+
+            Button {
+                store.moveSectionDown(AppStore.unassignedSectionKey)
+            } label: {
+                Label("Move Down", systemImage: "arrow.down")
+            }
+            .disabled(isLast)
+        }
+    }
+
+    @ViewBuilder
+    private func botRowView(_ bot: BotRow) -> some View {
+        NavigationLink {
+            BotChatScreen(bot: bot)
+        } label: {
+            HStack(alignment: .center, spacing: 14) {
+                BotMarkView(mark: store.mark(for: bot.name), size: 44)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .center, spacing: 6) {
+                        Text(store.botCustomNames[bot.name] ?? bot.displayName)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+
+                        let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
+                        if !liveDetail.isEmpty {
+                            Text(liveDetail)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2.5)
+                                .background(Color.secondary.opacity(0.16), in: .rect(cornerRadius: 5))
+                        }
+
+                        if store.pinnedBots.contains(bot.name) {
+                            Image(systemName: "pin.fill")
+                                .font(.caption2)
+                                .foregroundStyle(store.accent.primary(scheme))
+                        }
+
+                        if store.unreadBots.contains(bot.name) {
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 7, height: 7)
+                        }
+
+                        Spacer(minLength: 4)
+
+                        Text(timestamp(for: bot))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(snippet(for: bot))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                store.toggleBotUnread(bot.name)
+            } label: {
+                Label(store.unreadBots.contains(bot.name) ? "Mark Read" : "Mark Unread", systemImage: "bubble.left")
+            }
+
+            Button {
+                store.toggleBotPin(bot.name)
+            } label: {
+                Label(store.pinnedBots.contains(bot.name) ? "Unpin" : "Pin", systemImage: "pin")
+            }
+
+            Menu {
+                if !store.botCustomSections.isEmpty {
+                    ForEach(store.botCustomSections, id: \.self) { sec in
+                        Button {
+                            store.setBotSection(bot.name, section: sec)
+                        } label: {
+                            if store.section(for: bot.name) == sec {
+                                Label(sec, systemImage: "checkmark")
+                            } else {
+                                Text(sec)
+                            }
+                        }
+                    }
+                    if store.section(for: bot.name) != nil {
+                        Button("Unassigned") {
+                            store.setBotSection(bot.name, section: nil)
+                        }
+                    }
+                    Divider()
+                }
+                Button {
+                    newSectionTargetBot = bot.name
+                    showNewSectionAlert = true
+                } label: {
+                    Label("New Section", systemImage: "plus")
+                }
+            } label: {
+                Label("Move to", systemImage: "folder")
+            }
+
+            Button(role: .destructive) {
+                store.hideBot(bot.name)
+            } label: {
+                Label("Hide", systemImage: "eye.slash")
+            }
+
+            Menu {
+                Button {
+                    UIPasteboard.general.string = bot.name
+                } label: {
+                    Label("Copy ID", systemImage: "doc.on.doc")
+                }
+
+                Button {
+                    duplicateBot(bot)
+                } label: {
+                    Label("Duplicate", systemImage: "plus.square.on.square")
+                }
+
+                Button(role: .destructive) {
+                    deletingBot = bot
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis")
+            }
+
+            Button {
+                // Ask Siri shortcut
+            } label: {
+                Label("Ask Siri", systemImage: "siri")
+            }
+        }
+    }
+
+    private func duplicateBot(_ bot: BotRow) {
+        let baseName = bot.name
+        var newName = baseName + "-copy"
+        var counter = 2
+        while rows.contains(where: { $0.name == newName }) {
+            newName = "\(baseName)-copy-\(counter)"
+            counter += 1
+        }
+        Task {
+            do {
+                try await store.createBot(name: newName, description: bot.detail)
+                store.botMarks[newName] = store.mark(for: bot.name)
+                if let model = store.botModel(for: bot.name) {
+                    store.setBotModel(newName, model: model)
+                }
+                if let section = store.section(for: bot.name) {
+                    store.setBotSection(newName, section: section)
+                }
+                let originalSoul = (try? await store.soul(bot.name))?.text
+                if let originalSoul, !originalSoul.isEmpty {
+                    try? await store.setSoul(newName, originalSoul)
+                }
+                await load()
+            } catch {
+                failure = describeBotError(error)
+            }
+        }
+    }
+
+    private func timestamp(for bot: BotRow) -> String {
+        ""
+    }
+
+    private func snippet(for bot: BotRow) -> String {
+        let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
+        if !liveDetail.isEmpty {
+            return liveDetail
+        }
+        return "Ready for messages"
     }
 
     private func load() async {
@@ -106,59 +970,163 @@ struct BotsScreen: View {
     }
 }
 
-/// The mark pickers, shared by the detail screen and the create sheet.
+// MARK: - BotChatScreen (Dedicated Bot Conversation)
+
+/// The interactive chat interface for a specific bot.
+struct BotChatScreen: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+    let bot: BotRow
+
+    @FocusState private var composerFocused: Bool
+    @State private var showingDetail = false
+
+    private var displayName: String {
+        store.botCustomNames[bot.name] ?? bot.displayName
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            transcript
+                .simultaneousGesture(
+                    TapGesture().onEnded { composerFocused = false }
+                )
+            Composer(
+                focused: $composerFocused,
+                placeholder: "Ask \(displayName)…"
+            )
+        }
+        .background(Palette.background(scheme))
+        .contentShape(.rect)
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            topControls
+        }
+        .sheet(isPresented: $showingDetail) {
+            NavigationStack {
+                BotDetail(bot: bot, onChange: {})
+            }
+        }
+        .task {
+            store.openBotConversation(for: bot)
+        }
+    }
+
+    private var topControls: some View {
+        HStack(spacing: 10) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Back")
+
+            Button {
+                showingDetail = true
+            } label: {
+                HStack(spacing: 8) {
+                    BotMarkView(mark: store.mark(for: bot.name), size: 24)
+                    Text(displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .accessibilityLabel("Bot settings")
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private var transcript: some View {
+        if let conversation = store.activeConversation, !conversation.messages.isEmpty {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 20) {
+                        ForEach(conversation.messages) { message in
+                            MessageRow(message: message)
+                                .id(message.id)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 64)
+                    .padding(.bottom, 130)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: conversation.messages.count) { _, _ in
+                    if let last = conversation.messages.last {
+                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
+                }
+            }
+        } else {
+            VStack(spacing: 16) {
+                Spacer()
+                BotMarkView(mark: store.mark(for: bot.name), size: 84, animated: true)
+                Text(displayName)
+                    .font(.title2.weight(.bold))
+                let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
+                if !liveDetail.isEmpty {
+                    Text(liveDetail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, 80)
+        }
+    }
+}
+
+// MARK: - MarkPicker (Colors only, no shapes)
+
+/// The mark color picker, shared by the detail screen and the create sheet.
 struct MarkPicker: View {
     @Environment(\.colorScheme) private var scheme
     @Binding var mark: BotMark
 
     var body: some View {
-        VStack(spacing: 14) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
-                ForEach(BotMark.colours.indices, id: \.self) { index in
-                    Button { mark.colour = index } label: {
-                        Circle()
-                            .fill(BotMark.colours[index])
-                            .frame(width: 30, height: 30)
-                            .overlay {
-                                Circle().strokeBorder(
-                                    Color.primary,
-                                    lineWidth: mark.colour == index ? 2 : 0
-                                )
-                                .padding(-3)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            Divider()
-
-            HStack(spacing: 0) {
-                ForEach(BotMark.Silhouette.allCases, id: \.rawValue) { shape in
-                    Button { mark.shape = shape.rawValue } label: {
-                        BotMarkView(
-                            mark: BotMark(colour: mark.colour, shape: shape.rawValue),
-                            size: 24
-                        )
-                        .frame(maxWidth: .infinity)
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
+            ForEach(BotMark.colours.indices, id: \.self) { index in
+                Button { mark.colour = index } label: {
+                    Circle()
+                        .fill(BotMark.colours[index])
+                        .frame(width: 30, height: 30)
                         .overlay {
                             Circle().strokeBorder(
                                 Color.primary,
-                                lineWidth: mark.shape == shape.rawValue ? 2 : 0
+                                lineWidth: mark.colour == index ? 2 : 0
                             )
-                            .frame(width: 34, height: 34)
+                            .padding(-3)
                         }
-                    }
-                    .buttonStyle(.plain)
                 }
+                .buttonStyle(.plain)
             }
-            .padding(.vertical, 4)
         }
+        .padding(.vertical, 6)
     }
 }
 
-/// One bot: what it is told to be, what it runs on, and what it does on its
-/// own schedule.
+// MARK: - BotDetail (Fully Editable)
+
+/// One bot: fully editable properties including model, section, instructions, notifications, etc.
 private struct BotDetail: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -169,7 +1137,11 @@ private struct BotDetail: View {
     @State private var mark = BotMark(colour: 0, shape: 0)
     @State private var name = ""
     @State private var detail = ""
+    @State private var selectedModel: String?
+    @State private var selectedSection = ""
+    @State private var notifications = false
     @State private var routines: [JobRow] = []
+    @State private var addingRoutine = false
     @State private var editingSoul = false
     @State private var busy = false
     @State private var failure: String?
@@ -179,7 +1151,7 @@ private struct BotDetail: View {
         Form {
             Section {
                 VStack(spacing: 14) {
-                    BotMarkView(mark: mark, size: 84)
+                    BotMarkView(mark: mark, size: 84, animated: true)
                     TextField("Name", text: $name)
                         .font(.headline)
                         .multilineTextAlignment(.center)
@@ -206,7 +1178,7 @@ private struct BotDetail: View {
             } header: {
                 Text("Character")
             } footer: {
-                Text("Kept on this phone. Hermes has no field for a colour.")
+                Text("How this Bot's mark looks everywhere.")
             }
 
             Section {
@@ -248,11 +1220,38 @@ private struct BotDetail: View {
                         .listRowBackground(Palette.card(scheme))
                     }
                 }
+
+                Button {
+                    addingRoutine = true
+                } label: {
+                    Label("Add routine", systemImage: "plus")
+                }
+                .listRowBackground(Palette.card(scheme))
             }
 
-            Section {
-                LabeledContent("Model", value: bot.model ?? "—")
-                    .listRowBackground(Palette.card(scheme))
+            Section("Configuration") {
+                Picker("Model", selection: $selectedModel) {
+                    Text("Default (\(store.selectedModel ?? "Auto"))").tag(nil as String?)
+                    ForEach(store.models) { model in
+                        Text(model.label).tag(model.id as String?)
+                    }
+                }
+                .listRowBackground(Palette.card(scheme))
+                .onChange(of: selectedModel) { _, next in
+                    store.setBotModel(bot.name, model: next)
+                }
+
+                Picker("Section", selection: $selectedSection) {
+                    Text("Unassigned").tag("")
+                    ForEach(store.botCustomSections, id: \.self) { sec in
+                        Text(sec).tag(sec)
+                    }
+                }
+                .listRowBackground(Palette.card(scheme))
+                .onChange(of: selectedSection) { _, next in
+                    store.setBotSection(bot.name, section: next.isEmpty ? nil : next)
+                }
+
                 if let provider = bot.provider {
                     LabeledContent("Provider", value: provider)
                         .listRowBackground(Palette.card(scheme))
@@ -262,6 +1261,21 @@ private struct BotDetail: View {
             }
 
             Section {
+                Toggle("Notifications", isOn: $notifications)
+                    .listRowBackground(Palette.card(scheme))
+                    .onChange(of: notifications) { _, next in
+                        store.setBotNotifications(bot.name, enabled: next)
+                    }
+            } footer: {
+                Text("Get notified when this Bot finishes or needs input")
+            }
+
+            Section {
+                Button("Share as template", systemImage: "square.and.arrow.up") {
+                    act { exported = try await store.exportBot(bot.name) }
+                }
+                .listRowBackground(Palette.card(scheme))
+
                 if !bot.active {
                     Button("Make this the active bot") {
                         act { try await store.activateBot(bot.name) }
@@ -276,11 +1290,19 @@ private struct BotDetail: View {
                 }
             }
         }
-        .navigationTitle(bot.displayName)
+        .navigationTitle(store.botCustomNames[bot.name] ?? bot.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") {
+                    commitName()
+                    commitDetail()
+                    dismiss()
+                }
+            }
+
             ToolbarItem(placement: .primaryAction) {
                 if busy {
                     ProgressView()
@@ -307,35 +1329,50 @@ private struct BotDetail: View {
         .sheet(isPresented: $editingSoul) {
             SoulEditor(bot: bot.name)
         }
-        // Only a real change is worth storing. Assigning on appear would file
-        // the derived mark the moment you opened a bot, freezing a colour
-        // nobody picked.
+        .sheet(isPresented: $addingRoutine) {
+            AddRoutineSheet { rName, rSchedule, rPrompt in
+                Task {
+                    try? await store.addRoutine(for: bot.name, name: rName, prompt: rPrompt, schedule: rSchedule)
+                    routines = (try? await store.routines(for: bot.name)) ?? []
+                }
+            }
+        }
         .onChange(of: mark) {
             guard mark != store.mark(for: bot.name) else { return }
             store.botMarks[bot.name] = mark
         }
+        .onDisappear {
+            commitName()
+            commitDetail()
+        }
         .task {
             mark = store.mark(for: bot.name)
-            name = bot.displayName
-            detail = bot.detail
+            name = store.botCustomNames[bot.name] ?? bot.displayName
+            detail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
+            selectedModel = store.botModel(for: bot.name)
+            selectedSection = store.section(for: bot.name) ?? ""
+            notifications = store.botNotificationsEnabled(for: bot.name)
             routines = (try? await store.routines(for: bot.name)) ?? []
         }
     }
 
     private func commitName() {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard trimmed != bot.name, !trimmed.isEmpty else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let current = store.botCustomNames[bot.name] ?? bot.displayName
+        guard trimmed != current else { return }
         act {
             try await store.renameBot(bot.name, to: trimmed)
-            // The mark is filed under the name, so it moves with it.
-            store.botMarks[trimmed] = store.mark(for: bot.name)
-            store.botMarks[bot.name] = nil
         }
     }
 
     private func commitDetail() {
-        guard detail != bot.detail else { return }
-        act { try await store.setBotDescription(bot.name, detail) }
+        let trimmed = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let current = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
+        guard trimmed != current else { return }
+        act {
+            try await store.setBotDescription(bot.name, trimmed)
+        }
     }
 
     private func act(
@@ -357,8 +1394,8 @@ private struct BotDetail: View {
     }
 }
 
-/// The SOUL, given the screen. It is prose, often long, and editing it in a
-/// form row means reading it through a letterbox.
+// MARK: - SoulEditor
+
 private struct SoulEditor: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -421,6 +1458,57 @@ private struct SoulEditor: View {
     }
 }
 
+// MARK: - AddRoutineSheet
+
+private struct AddRoutineSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
+    let onSave: (String, String, String) -> Void
+
+    @State private var name = ""
+    @State private var schedule = "Every morning at 9:00 AM"
+    @State private var prompt = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Routine Details") {
+                    TextField("Name (e.g. Daily Briefing)", text: $name)
+                    TextField("Schedule (e.g. Every day at 9am)", text: $schedule)
+                }
+                .listRowBackground(Palette.card(scheme))
+
+                Section("Instructions / Prompt") {
+                    TextField("What should this routine do?", text: $prompt, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                .listRowBackground(Palette.card(scheme))
+            }
+            .scrollContentBackground(.hidden)
+            .background(Palette.background(scheme))
+            .navigationTitle("New Routine")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmedName.isEmpty {
+                            onSave(trimmedName, schedule, prompt)
+                            dismiss()
+                        }
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - NewBotSheet
+
 private struct NewBotSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -429,6 +1517,8 @@ private struct NewBotSheet: View {
 
     @State private var name = ""
     @State private var detail = ""
+    @State private var selectedModel: String?
+    @State private var selectedSection = ""
     @State private var mark = BotMark(colour: 0, shape: 0)
     @State private var busy = false
     @State private var failure: String?
@@ -438,13 +1528,14 @@ private struct NewBotSheet: View {
             Form {
                 Section {
                     VStack(spacing: 16) {
-                        BotMarkView(mark: mark, size: 84)
-                        TextField("Name your bot", text: $name)
+                        BotMarkView(mark: mark, size: 96)
+                        TextField("Name your Bot", text: $name)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .font(.title3.weight(.medium))
                             .multilineTextAlignment(.center)
                     }
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 14)
                     .frame(maxWidth: .infinity)
                     .listRowBackground(Palette.card(scheme))
                 }
@@ -462,8 +1553,40 @@ private struct NewBotSheet: View {
                         .listRowBackground(Palette.card(scheme))
                 }
 
+                Section("Options") {
+                    Picker("Model", selection: $selectedModel) {
+                        Text("Default model").tag(nil as String?)
+                        ForEach(store.models) { model in
+                            Text(model.label).tag(model.id as String?)
+                        }
+                    }
+                    .listRowBackground(Palette.card(scheme))
+
+                    Picker("Section", selection: $selectedSection) {
+                        Text("Unassigned").tag("")
+                        ForEach(store.botCustomSections, id: \.self) { sec in
+                            Text(sec).tag(sec)
+                        }
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                }
+
                 if let failure {
                     Section { Text(failure).foregroundStyle(.red) }
+                }
+
+                Section {
+                    Button {
+                        create()
+                    } label: {
+                        Text(busy ? "Creating…" : "Create")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .foregroundStyle(.white)
+                            .background(name.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary.opacity(0.4) : store.accent.primary(scheme), in: .capsule)
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                    .listRowBackground(Color.clear)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -472,14 +1595,10 @@ private struct NewBotSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    if busy {
-                        ProgressView()
-                    } else {
-                        Button("Create") { create() }
-                            .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -488,16 +1607,125 @@ private struct NewBotSheet: View {
 
     private func create() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
         busy = true
         Task {
             defer { busy = false }
             do {
                 try await store.createBot(name: trimmed, description: detail)
                 store.botMarks[trimmed] = mark
+                if let model = selectedModel {
+                    store.setBotModel(trimmed, model: model)
+                }
+                if !selectedSection.isEmpty {
+                    store.setBotSection(trimmed, section: selectedSection)
+                }
                 await onCreated()
                 dismiss()
             } catch {
                 failure = describeBotError(error)
+            }
+        }
+    }
+}
+
+// MARK: - NewChannelSheet
+
+private struct NewChannelSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+    let bots: [BotRow]
+
+    @State private var channelName = ""
+    @State private var topic = ""
+    @State private var selectedBots: Set<String> = []
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name your channel (e.g. operations)", text: $channelName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .listRowBackground(Palette.card(scheme))
+
+                    TextField("Topic (optional)", text: $topic)
+                        .listRowBackground(Palette.card(scheme))
+                } header: {
+                    Text("Channel Details")
+                } footer: {
+                    Text("Channels bring multiple bots together into a shared workspace.")
+                }
+
+                Section("Bots in this Channel") {
+                    if bots.isEmpty {
+                        Text("No bots available")
+                            .foregroundStyle(.secondary)
+                            .listRowBackground(Palette.card(scheme))
+                    } else {
+                        ForEach(bots) { bot in
+                            Button {
+                                if selectedBots.contains(bot.name) {
+                                    selectedBots.remove(bot.name)
+                                } else {
+                                    selectedBots.insert(bot.name)
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    BotMarkView(mark: store.mark(for: bot.name), size: 30)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(bot.displayName)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(.primary)
+                                        if !bot.detail.isEmpty {
+                                            Text(bot.detail)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    if selectedBots.contains(bot.name) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(store.accent.primary(scheme))
+                                    } else {
+                                        Image(systemName: "circle")
+                                            .foregroundStyle(.secondary.opacity(0.4))
+                                    }
+                                }
+                                .padding(.vertical, 3)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowBackground(Palette.card(scheme))
+                        }
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Palette.background(scheme))
+            .navigationTitle("New Channel")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        let trimmed = channelName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return }
+                        store.createChannel(
+                            name: trimmed,
+                            bots: Array(selectedBots),
+                            topic: topic.isEmpty ? nil : topic
+                        )
+                        dismiss()
+                    }
+                    .disabled(channelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
         }
     }

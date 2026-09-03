@@ -139,7 +139,7 @@ actor DashboardClient {
 /// A bot is not a separate kind of thing: it is a profile with its own SOUL,
 /// model, skills and sessions. Everything the desktop shows under Bot Mode is
 /// this, which is why it can be built here at all.
-struct BotRow: Identifiable, Hashable, Sendable {
+struct BotRow: Identifiable, Hashable, Sendable, Codable {
     var id: String { name }
     let name: String
     var displayName: String
@@ -288,6 +288,17 @@ extension DashboardClient {
                 nextRun: HermesClient.date(row["next_run_at"])
             )
         }
+    }
+
+    func createRoutine(for profile: String, name: String, prompt: String, schedule: String) async throws {
+        let body: [String: Any] = [
+            "name": name,
+            "profile": profile,
+            "prompt": prompt,
+            "schedule": ["expr": schedule],
+            "enabled": true
+        ]
+        _ = try? await send("POST", "api/cron/jobs", body)
     }
 
     /// Writes the bot out as a shareable template and reports where it landed.

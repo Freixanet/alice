@@ -42,8 +42,178 @@ struct BotMark: Codable, Hashable, Sendable {
         // card behind it is near-white too.
         return BotMark(
             colour: 1 + Int(hash % UInt64(colours.count - 1)),
-            shape: Int((hash / 11) % UInt64(Silhouette.allCases.count))
+            shape: Silhouette.circle.rawValue
         )
+    }
+}
+
+/// The expressive face drawn inside a bot mark.
+struct BotFaceView: View {
+    let size: CGFloat
+    var animated: Bool = false
+
+    @State private var blinkScaleY: CGFloat = 1.0
+    @State private var rightEyeBlinkScaleY: CGFloat = 1.0
+    @State private var lookOffset: CGSize = .zero
+    @State private var eyeAngle: Double = 12
+    @State private var eyeScaleX: CGFloat = 1.0
+    @State private var isWinking = false
+
+    var body: some View {
+        let eyeWidth = max(1.5, size * 0.125)
+        let eyeHeight = max(4.0, size * 0.34)
+        let spacing = max(1.2, size * 0.09)
+
+        HStack(spacing: spacing) {
+            Capsule()
+                .fill(Color.black.opacity(0.88))
+                .frame(width: eyeWidth, height: eyeHeight)
+                .scaleEffect(x: eyeScaleX, y: blinkScaleY, anchor: .center)
+            Capsule()
+                .fill(Color.black.opacity(0.88))
+                .frame(width: eyeWidth, height: eyeHeight)
+                .scaleEffect(
+                    x: eyeScaleX,
+                    y: isWinking ? 0.08 : (animated ? rightEyeBlinkScaleY : blinkScaleY),
+                    anchor: .center
+                )
+        }
+        .rotationEffect(.degrees(eyeAngle))
+        .offset(
+            x: size * 0.05 + (animated ? lookOffset.width : 0),
+            y: size * 0.03 + (animated ? lookOffset.height : 0)
+        )
+        .animation(.spring(response: 0.28, dampingFraction: 0.65), value: lookOffset)
+        .animation(.spring(response: 0.3, dampingFraction: 0.62), value: eyeAngle)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: eyeScaleX)
+        .task {
+            guard animated else { return }
+            while !Task.isCancelled {
+                // Livelier, more frequent actions (1.4 to 2.8s)
+                let waitSec = Double.random(in: 1.4...2.8)
+                try? await Task.sleep(nanoseconds: UInt64(waitSec * 1_000_000_000))
+                if Task.isCancelled { break }
+
+                let roll = Int.random(in: 0...10)
+                if roll <= 4 {
+                    // Natural snappy blink
+                    withAnimation(.easeOut(duration: 0.08)) {
+                        blinkScaleY = 0.06
+                        rightEyeBlinkScaleY = 0.06
+                    }
+                    try? await Task.sleep(nanoseconds: 85_000_000)
+                    withAnimation(.easeIn(duration: 0.1)) {
+                        blinkScaleY = 1.0
+                        rightEyeBlinkScaleY = 1.0
+                    }
+                    // 35% chance of lively double-blink
+                    if Bool.random() {
+                        try? await Task.sleep(nanoseconds: 110_000_000)
+                        withAnimation(.easeOut(duration: 0.07)) {
+                            blinkScaleY = 0.06
+                            rightEyeBlinkScaleY = 0.06
+                            eyeScaleX = 1.2
+                        }
+                        try? await Task.sleep(nanoseconds: 80_000_000)
+                        withAnimation(.easeIn(duration: 0.1)) {
+                            blinkScaleY = 1.0
+                            rightEyeBlinkScaleY = 1.0
+                            eyeScaleX = 1.0
+                        }
+                    }
+                } else if roll <= 8 {
+                    // Pronounced, wide glances across the screen
+                    let glances: [(offset: CGSize, angle: Double)] = [
+                        (CGSize(width: -size * 0.11, height: -size * 0.02), 2.0),
+                        (CGSize(width: size * 0.12, height: -size * 0.02), 22.0),
+                        (CGSize(width: 0, height: -size * 0.09), 12.0),
+                        (CGSize(width: size * 0.09, height: -size * 0.07), 24.0),
+                        (CGSize(width: -size * 0.09, height: size * 0.04), 0.0),
+                        (CGSize(width: size * 0.05, height: size * 0.06), 16.0),
+                    ]
+                    let target = glances.randomElement()!
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.65)) {
+                        lookOffset = target.offset
+                        eyeAngle = target.angle
+                    }
+                    let holdTime = Double.random(in: 1.1...2.2)
+                    try? await Task.sleep(nanoseconds: UInt64(holdTime * 1_000_000_000))
+                    if Task.isCancelled { break }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                        lookOffset = .zero
+                        eyeAngle = 12
+                    }
+                } else {
+                    // Playful, clear wink with angle tilt
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        isWinking = true
+                        eyeAngle = 20
+                        lookOffset = CGSize(width: size * 0.04, height: -size * 0.03)
+                    }
+                    try? await Task.sleep(nanoseconds: 280_000_000)
+                    withAnimation(.easeIn(duration: 0.12)) {
+                        isWinking = false
+                        eyeAngle = 12
+                        lookOffset = .zero
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// An animated hero mark view with pronounced floating, tilting and interactive responsiveness.
+struct AnimatedBotMarkView: View {
+    let mark: BotMark
+    var size: CGFloat = 84
+
+    @State private var floatOffset: CGFloat = 0
+    @State private var floatScale: CGFloat = 1.0
+    @State private var floatTilt: Double = 0
+    @State private var bounceScale: CGFloat = 1.0
+    @State private var bounceRotation: Double = 0
+
+    var body: some View {
+        ZStack {
+            MarkShape(silhouette: mark.silhouette)
+                .fill(mark.color)
+                .overlay {
+                    MarkShape(silhouette: mark.silhouette)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.75)
+                }
+
+            BotFaceView(size: size, animated: true)
+        }
+        .frame(width: size, height: size)
+        .scaleEffect(floatScale * bounceScale)
+        .rotationEffect(.degrees(floatTilt + bounceRotation))
+        .offset(y: floatOffset)
+        .contentShape(.rect)
+        .onTapGesture {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.45)) {
+                bounceScale = 1.22
+                bounceRotation = 10
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
+                    bounceRotation = -6
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+                    bounceScale = 1.0
+                    bounceRotation = 0
+                }
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                floatOffset = -12
+                floatScale = 1.06
+                floatTilt = 3.5
+            }
+        }
     }
 }
 
@@ -51,17 +221,26 @@ struct BotMark: Codable, Hashable, Sendable {
 struct BotMarkView: View {
     let mark: BotMark
     var size: CGFloat = 28
+    var animated: Bool = false
 
     var body: some View {
-        MarkShape(silhouette: mark.silhouette)
-            .fill(mark.color)
-            // A hairline, so the palest colour still reads on a light card
-            // and the darkest still reads on a dark one.
-            .overlay {
+        if animated {
+            AnimatedBotMarkView(mark: mark, size: size)
+        } else {
+            ZStack {
                 MarkShape(silhouette: mark.silhouette)
-                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.75)
+                    .fill(mark.color)
+                    // A hairline, so the palest colour still reads on a light card
+                    // and the darkest still reads on a dark one.
+                    .overlay {
+                        MarkShape(silhouette: mark.silhouette)
+                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.75)
+                    }
+
+                BotFaceView(size: size, animated: false)
             }
             .frame(width: size, height: size)
+        }
     }
 }
 

@@ -72,22 +72,8 @@ struct ChatScreen: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                store.newChat()
-            } label: {
-                // `square.and.pencil` cannot sit straight in a round button:
-                // its square holds the visual mass low-left while the pencil
-                // runs a thin diagonal past the top-right, so centring the
-                // ink's bounding box — which measures as centred — still
-                // reads as tilted. A symmetric glyph has no such argument
-                // with itself.
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .medium))
-                    .imageScale(.large)
-                    .frame(width: discSize, height: discSize)
-            }
-            .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel("New chat")
+            Color.clear
+                .frame(width: discSize, height: discSize)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
@@ -125,17 +111,40 @@ struct ChatScreen: View {
 }
 
 private struct EmptyChatView: View {
+    @Environment(AppStore.self) private var store
+
     var body: some View {
-        VStack(spacing: 8) {
-            Text("What are we working on?")
-                .font(.aliceTitle(.title))
-                .multilineTextAlignment(.center)
-            Text("You talk to Alice. One thing at a time.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        if let botName = store.activeConversation?.botName, !botName.isEmpty {
+            VStack(spacing: 16) {
+                Spacer()
+                BotMarkView(mark: store.mark(for: botName), size: 84, animated: true)
+                Text(store.botCurrentName(for: botName))
+                    .font(.title2.weight(.bold))
+                let liveDetail = store.cachedBots.first(where: { $0.name == botName })?.detail ?? ""
+                if !liveDetail.isEmpty {
+                    Text(liveDetail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 32)
+            .padding(.bottom, 120)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            VStack(spacing: 8) {
+                Text("What are we working on?")
+                    .font(.aliceTitle(.title))
+                    .multilineTextAlignment(.center)
+                Text("You talk to Alice. One thing at a time.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 32)
+            .padding(.bottom, 140)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, 32)
-        .padding(.bottom, 140)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -101,7 +101,7 @@ struct SearchScreen: View {
     /// was last replied to a week ago.
     private var recents: [Conversation] {
         store.conversations
-            .filter { !$0.messages.isEmpty }
+            .filter { !$0.messages.isEmpty && !$0.isBotChat }
             .sorted { ($0.openedAt ?? $0.updatedAt) > ($1.openedAt ?? $1.updatedAt) }
             .prefix(12)
             .map { $0 }

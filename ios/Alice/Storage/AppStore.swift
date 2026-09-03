@@ -74,11 +74,133 @@ final class AppStore {
         static let dashboard = "alice.dashboard"
         static let dashboardUser = "alice.dashboard.user"
         static let marks = "alice.bot.marks"
+        static let botSections = "alice.bot.sections"
+        static let botCustomSections = "alice.bot.customSections"
+        static let collapsedSections = "alice.bot.collapsedSections"
+        static let pinnedBots = "alice.bot.pinned"
+        static let unreadBots = "alice.bot.unread"
+        static let hiddenBots = "alice.bot.hidden"
+        static let botModels = "alice.bot.models"
+        static let botNotifications = "alice.bot.notifications"
+        static let botRoutines = "alice.bot.routines"
+        static let botCustomNames = "alice.bot.customNames"
+        static let botSectionOrder = "alice.bot.sectionOrder"
+        static let cachedBots = "alice.cached.bots"
+    }
+
+    static let unassignedSectionKey = "__unassigned__"
+
+    var botCustomNames: [String: String] = [:] {
+        didSet { defaults.set(botCustomNames, forKey: Keys.botCustomNames) }
+    }
+
+    var botSectionOrder: [String] = [] {
+        didSet { defaults.set(botSectionOrder, forKey: Keys.botSectionOrder) }
+    }
+
+    var localBotRoutines: [String: [JobRow]] = [:] {
+        didSet {
+            if let data = try? JSONEncoder().encode(localBotRoutines) {
+                defaults.set(data, forKey: Keys.botRoutines)
+            }
+        }
+    }
+
+    var botSections: [String: String] = [:] {
+        didSet { defaults.set(botSections, forKey: Keys.botSections) }
+    }
+    var botCustomSections: [String] = [] {
+        didSet { defaults.set(botCustomSections, forKey: Keys.botCustomSections) }
+    }
+    var collapsedSections: Set<String> = [] {
+        didSet { defaults.set(Array(collapsedSections), forKey: Keys.collapsedSections) }
+    }
+    var pinnedBots: Set<String> = [] {
+        didSet { defaults.set(Array(pinnedBots), forKey: Keys.pinnedBots) }
+    }
+    var unreadBots: Set<String> = [] {
+        didSet { defaults.set(Array(unreadBots), forKey: Keys.unreadBots) }
+    }
+    var hiddenBots: Set<String> = [] {
+        didSet { defaults.set(Array(hiddenBots), forKey: Keys.hiddenBots) }
+    }
+    var botModels: [String: String] = [:] {
+        didSet { defaults.set(botModels, forKey: Keys.botModels) }
+    }
+    var botNotifications: [String: Bool] = [:] {
+        didSet { defaults.set(botNotifications, forKey: Keys.botNotifications) }
+    }
+    var cachedBots: [BotRow] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(cachedBots) {
+                defaults.set(data, forKey: Keys.cachedBots)
+            }
+        }
+    }
+
+    var knownBotNames: [String] {
+        var names = Set(cachedBots.map(\.name))
+        names.formUnion(botMarks.keys)
+        names.formUnion(botSections.keys)
+        names.formUnion(botCustomNames.keys)
+        names.formUnion(botModels.keys)
+        names.formUnion(localBotRoutines.keys)
+        for conv in conversations {
+            if let b = conv.botName, !b.isEmpty { names.insert(b) }
+            if let bots = conv.channelBots { names.formUnion(bots) }
+        }
+        return Array(names).sorted()
     }
 
     init() {
         botMarks = (defaults.data(forKey: Keys.marks))
             .flatMap { try? JSONDecoder().decode([String: BotMark].self, from: $0) } ?? [:]
+        if let savedSections = defaults.stringArray(forKey: Keys.botCustomSections) {
+            if savedSections == ["Pendiente", "News"] {
+                botCustomSections = []
+                defaults.set(botCustomSections, forKey: Keys.botCustomSections)
+            } else {
+                botCustomSections = savedSections
+            }
+        } else {
+            botCustomSections = []
+        }
+        botSectionOrder = defaults.stringArray(forKey: Keys.botSectionOrder) ?? []
+        if let savedMap = defaults.dictionary(forKey: Keys.botSections) as? [String: String] {
+            if savedMap == ["foundry": "Pendiente", "cuba": "News", "signal": "News"] {
+                botSections = [:]
+                defaults.set(botSections, forKey: Keys.botSections)
+            } else {
+                botSections = savedMap
+            }
+        } else {
+            botSections = [:]
+        }
+        if let savedCollapsed = defaults.stringArray(forKey: Keys.collapsedSections) {
+            collapsedSections = Set(savedCollapsed)
+        }
+        if let savedPinned = defaults.stringArray(forKey: Keys.pinnedBots) {
+            pinnedBots = Set(savedPinned)
+        }
+        if let savedUnread = defaults.stringArray(forKey: Keys.unreadBots) {
+            unreadBots = Set(savedUnread)
+        }
+        if let savedHidden = defaults.stringArray(forKey: Keys.hiddenBots) {
+            hiddenBots = Set(savedHidden)
+        }
+        if let savedModels = defaults.dictionary(forKey: Keys.botModels) as? [String: String] {
+            botModels = savedModels
+        }
+        if let savedNotifs = defaults.dictionary(forKey: Keys.botNotifications) as? [String: Bool] {
+            botNotifications = savedNotifs
+        }
+        localBotRoutines = defaults.data(forKey: Keys.botRoutines)
+            .flatMap { try? JSONDecoder().decode([String: [JobRow]].self, from: $0) } ?? [:]
+        botCustomNames = (defaults.dictionary(forKey: Keys.botCustomNames) as? [String: String]) ?? [:]
+        if let data = defaults.data(forKey: Keys.cachedBots),
+           let saved = try? JSONDecoder().decode([BotRow].self, from: data) {
+            cachedBots = saved
+        }
         if let raw = defaults.string(forKey: Keys.theme),
            let value = ThemeChoice(rawValue: raw) { theme = value }
         dashboardURL = defaults.string(forKey: Keys.dashboard) ?? ""
@@ -88,7 +210,7 @@ final class AppStore {
         gatewayURL = defaults.string(forKey: Keys.gateway) ?? ""
         selectedModel = defaults.string(forKey: Keys.model)
         loadConversations()
-        activeID = conversations.first?.id
+        activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
     }
 
     var activeConversation: Conversation? {
@@ -307,15 +429,258 @@ final class AppStore {
         return found.sorted { ($0.when ?? .distantPast) > ($1.when ?? .distantPast) }
     }
 
-    func bots() async throws -> [BotRow] { try await dashboard.bots() }
+    func botCurrentName(for name: String) -> String {
+        if let custom = botCustomNames[name], !custom.isEmpty {
+            return custom
+        }
+        if let found = cachedBots.first(where: { $0.name == name }), !found.displayName.isEmpty {
+            return found.displayName
+        }
+        return name
+    }
+
+    func botCurrentName(for bot: BotRow) -> String {
+        botCustomNames[bot.name] ?? (bot.displayName.isEmpty ? bot.name : bot.displayName)
+    }
+
+    func bots() async throws -> [BotRow] {
+        var list = (try? await dashboard.bots()) ?? cachedBots
+        for i in list.indices {
+            if let custom = botCustomNames[list[i].name] {
+                list[i].displayName = custom
+            }
+        }
+        cachedBots = list
+        return list
+    }
     func routines(for bot: String) async throws -> [JobRow] {
-        try await dashboard.routines(for: bot)
+        var list = (try? await dashboard.routines(for: bot)) ?? []
+        if let local = localBotRoutines[bot] {
+            for item in local {
+                if !list.contains(where: { $0.id == item.id }) {
+                    list.append(item)
+                }
+            }
+        }
+        return list
+    }
+
+    func addRoutine(for bot: String, name: String, prompt: String, schedule: String) async throws {
+        let newJob = JobRow(
+            id: UUID().uuidString,
+            name: name,
+            prompt: prompt,
+            schedule: schedule,
+            enabled: true,
+            lastStatus: "ok",
+            lastError: nil,
+            lastRun: nil,
+            nextRun: nil
+        )
+        var current = localBotRoutines[bot] ?? []
+        current.append(newJob)
+        localBotRoutines[bot] = current
+
+        _ = try? await dashboard.createRoutine(for: bot, name: name, prompt: prompt, schedule: schedule)
     }
     func exportBot(_ name: String) async throws -> String? {
         try await dashboard.exportBot(name)
     }
     func renameBot(_ name: String, to newName: String) async throws {
-        try await dashboard.rename(name, to: newName)
+        botCustomNames[name] = newName
+        botCustomNames[newName] = newName
+
+        if let idx = cachedBots.firstIndex(where: { $0.name == name }) {
+            cachedBots[idx].displayName = newName
+        }
+
+        if let mark = botMarks[name] {
+            botMarks[newName] = mark
+        }
+        if let sec = botSections[name] {
+            botSections[newName] = sec
+        }
+        if let model = botModels[name] {
+            botModels[newName] = model
+        }
+        if let notif = botNotifications[name] {
+            botNotifications[newName] = notif
+        }
+        if let routines = localBotRoutines[name] {
+            localBotRoutines[newName] = routines
+        }
+        for i in conversations.indices {
+            if conversations[i].botName == name {
+                conversations[i].title = newName
+            }
+        }
+        persistConversations()
+
+        _ = try? await dashboard.rename(name, to: newName)
+    }
+
+    func section(for bot: String) -> String? {
+        botSections[bot] ?? botSections[bot.lowercased()]
+    }
+
+    func setBotSection(_ bot: String, section: String?) {
+        if let section, !section.isEmpty {
+            botSections[bot] = section
+            botSections[bot.lowercased()] = section
+        } else {
+            botSections.removeValue(forKey: bot)
+            botSections.removeValue(forKey: bot.lowercased())
+        }
+    }
+
+    func displaySectionOrder() -> [String] {
+        var current = botSectionOrder.filter { $0 == Self.unassignedSectionKey || botCustomSections.contains($0) }
+        for sec in botCustomSections {
+            if !current.contains(sec) {
+                current.append(sec)
+            }
+        }
+        if !current.contains(Self.unassignedSectionKey) {
+            current.append(Self.unassignedSectionKey)
+        }
+        if current != botSectionOrder {
+            botSectionOrder = current
+        }
+        return current
+    }
+
+    func addSection(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.lowercased() != "unassigned", !botCustomSections.contains(trimmed) else { return }
+        botCustomSections.append(trimmed)
+        if !botSectionOrder.contains(trimmed) {
+            if let unassignedIdx = botSectionOrder.firstIndex(of: Self.unassignedSectionKey) {
+                botSectionOrder.insert(trimmed, at: unassignedIdx)
+            } else {
+                botSectionOrder.append(trimmed)
+            }
+        }
+    }
+
+    func toggleSectionCollapsed(_ section: String) {
+        if collapsedSections.contains(section) {
+            collapsedSections.remove(section)
+        } else {
+            collapsedSections.insert(section)
+        }
+    }
+
+    func moveSectionUp(_ section: String) {
+        var list = displaySectionOrder()
+        let key = (section == "Unassigned" || section == Self.unassignedSectionKey) ? Self.unassignedSectionKey : section
+        guard let index = list.firstIndex(of: key), index > 0 else { return }
+        list.swapAt(index, index - 1)
+        botSectionOrder = list
+        botCustomSections = list.filter { $0 != Self.unassignedSectionKey }
+    }
+
+    func moveSectionDown(_ section: String) {
+        var list = displaySectionOrder()
+        let key = (section == "Unassigned" || section == Self.unassignedSectionKey) ? Self.unassignedSectionKey : section
+        guard let index = list.firstIndex(of: key), index < list.count - 1 else { return }
+        list.swapAt(index, index + 1)
+        botSectionOrder = list
+        botCustomSections = list.filter { $0 != Self.unassignedSectionKey }
+    }
+
+    func renameSection(from oldName: String, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != oldName else { return }
+        if let index = botCustomSections.firstIndex(of: oldName) {
+            botCustomSections[index] = trimmed
+        }
+        if let index = botSectionOrder.firstIndex(of: oldName) {
+            botSectionOrder[index] = trimmed
+        }
+        for (bot, sec) in botSections where sec == oldName {
+            botSections[bot] = trimmed
+        }
+        if collapsedSections.contains(oldName) {
+            collapsedSections.remove(oldName)
+            collapsedSections.insert(trimmed)
+        }
+    }
+
+    func deleteSection(_ section: String) {
+        botCustomSections.removeAll { $0 == section }
+        botSectionOrder.removeAll { $0 == section }
+        for (bot, sec) in botSections where sec == section {
+            botSections.removeValue(forKey: bot)
+        }
+        collapsedSections.remove(section)
+    }
+
+    func toggleBotPin(_ bot: String) {
+        if pinnedBots.contains(bot) { pinnedBots.remove(bot) }
+        else { pinnedBots.insert(bot) }
+    }
+
+    func toggleBotUnread(_ bot: String) {
+        if unreadBots.contains(bot) { unreadBots.remove(bot) }
+        else { unreadBots.insert(bot) }
+    }
+
+    func hideBot(_ bot: String) {
+        hiddenBots.insert(bot)
+    }
+
+    func unhideBot(_ bot: String) {
+        hiddenBots.remove(bot)
+    }
+
+    func botModel(for bot: String) -> String? {
+        botModels[bot] ?? botModels[bot.lowercased()]
+    }
+
+    func setBotModel(_ bot: String, model: String?) {
+        if let model {
+            botModels[bot] = model
+            botModels[bot.lowercased()] = model
+        } else {
+            botModels.removeValue(forKey: bot)
+            botModels.removeValue(forKey: bot.lowercased())
+        }
+    }
+
+    func botNotificationsEnabled(for bot: String) -> Bool {
+        botNotifications[bot] ?? botNotifications[bot.lowercased()] ?? false
+    }
+
+    func setBotNotifications(_ bot: String, enabled: Bool) {
+        botNotifications[bot] = enabled
+        botNotifications[bot.lowercased()] = enabled
+    }
+
+    @discardableResult
+    func createChannel(name: String, bots: [String], topic: String? = nil) -> Conversation {
+        let now = Date()
+        var conversation = Conversation(
+            id: UUID().uuidString,
+            title: "#" + name,
+            createdAt: now,
+            updatedAt: now,
+            isChannel: true,
+            channelBots: bots
+        )
+        if let topic, !topic.isEmpty {
+            conversation.messages.append(
+                Message(
+                    id: UUID().uuidString,
+                    role: .assistant,
+                    content: "Channel **#\(name)** created with bots: \(bots.joined(separator: ", ")).\nTopic: \(topic)",
+                    createdAt: now
+                )
+            )
+        }
+        conversations.insert(conversation, at: 0)
+        activeID = conversation.id
+        persistConversations()
+        return conversation
     }
 
     /// How each bot's mark looks. Hermes stores no such thing, so it lives on
@@ -338,7 +703,10 @@ final class AppStore {
         try await dashboard.setSoul(name, text)
     }
     func setBotDescription(_ name: String, _ text: String) async throws {
-        try await dashboard.setDescription(name, text)
+        if let idx = cachedBots.firstIndex(where: { $0.name == name }) {
+            cachedBots[idx].detail = text
+        }
+        _ = try? await dashboard.setDescription(name, text)
     }
     func activateBot(_ name: String) async throws { try await dashboard.activate(name) }
     func createBot(name: String, description: String) async throws {
@@ -367,7 +735,7 @@ final class AppStore {
     func delete(_ id: String) {
         conversations.removeAll { $0.id == id }
         if conversations.isEmpty { conversations = [.blank()] }
-        if activeID == id { activeID = conversations.first?.id }
+        if activeID == id { activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id }
         persistConversations()
     }
 
@@ -399,6 +767,26 @@ final class AppStore {
         return .parts(text: combined, imageURLs: images)
     }
 
+    @discardableResult
+    func openBotConversation(for bot: BotRow) -> String {
+        if let existing = conversations.first(where: { $0.botName == bot.name }) {
+            activeID = existing.id
+            return existing.id
+        }
+        let now = Date()
+        let chat = Conversation(
+            id: UUID().uuidString,
+            title: bot.displayName,
+            createdAt: now,
+            updatedAt: now,
+            botName: bot.name
+        )
+        conversations.insert(chat, at: 0)
+        activeID = chat.id
+        persistConversations()
+        return chat.id
+    }
+
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !draftAttachments.isEmpty,
@@ -406,6 +794,66 @@ final class AppStore {
         else { return }
         guard let index = conversations.firstIndex(where: { $0.id == activeID })
         else { return }
+
+        // Detect bot conversation, bot mention or channel bot
+        var invokedBot: String?
+        if let directBot = conversations[index].botName, !directBot.isEmpty {
+            invokedBot = directBot
+        } else {
+            var candidates: [(slug: String, mention: String)] = []
+            for bot in cachedBots {
+                let current = botCurrentName(for: bot)
+                candidates.append((bot.name, current))
+                candidates.append((bot.name, bot.displayName))
+                candidates.append((bot.name, bot.name))
+            }
+            for (key, custom) in botCustomNames {
+                candidates.append((key, custom))
+            }
+            for name in knownBotNames {
+                candidates.append((name, botCurrentName(for: name)))
+                candidates.append((name, name))
+            }
+            var seen = Set<String>()
+            let uniqueCandidates = candidates.filter { seen.insert("\($0.slug)|\($0.mention)").inserted }
+                .sorted { $0.mention.count > $1.mention.count }
+
+            for item in uniqueCandidates {
+                let pattern = "@" + item.mention
+                if let range = text.range(of: pattern, options: .caseInsensitive) {
+                    let isStart = range.lowerBound == text.startIndex ||
+                        text[text.index(before: range.lowerBound)].isWhitespace
+                    if isStart {
+                        invokedBot = item.slug
+                        break
+                    }
+                }
+            }
+
+            if invokedBot == nil {
+                let tokens = text.components(separatedBy: .whitespacesAndNewlines)
+                if let mentionToken = tokens.first(where: { $0.hasPrefix("@") && $0.count > 1 }) {
+                    let candidate = String(mentionToken.dropFirst()).trimmingCharacters(in: .punctuationCharacters)
+                    if !candidate.isEmpty {
+                        if let bot = cachedBots.first(where: {
+                            $0.name.localizedCaseInsensitiveCompare(candidate) == .orderedSame ||
+                            $0.displayName.localizedCaseInsensitiveCompare(candidate) == .orderedSame ||
+                            botCurrentName(for: $0).localizedCaseInsensitiveCompare(candidate) == .orderedSame
+                        }) {
+                            invokedBot = bot.name
+                        } else if let custom = botCustomNames.first(where: { $0.value.localizedCaseInsensitiveCompare(candidate) == .orderedSame }) {
+                            invokedBot = custom.key
+                        } else if knownBotNames.contains(where: { $0.localizedCaseInsensitiveCompare(candidate) == .orderedSame }) {
+                            invokedBot = candidate.lowercased()
+                        } else {
+                            invokedBot = candidate
+                        }
+                    }
+                } else if let channelBots = conversations[index].channelBots, !channelBots.isEmpty {
+                    invokedBot = channelBots.first
+                }
+            }
+        }
 
         let attachments = draftAttachments
         draft = ""
@@ -421,7 +869,7 @@ final class AppStore {
         conversations[index].messages.append(
             Message(
                 id: replyID, role: .assistant, content: "",
-                createdAt: Date(), pending: true
+                createdAt: Date(), pending: true, botName: invokedBot
             )
         )
         if conversations[index].title == "New chat" {
@@ -437,7 +885,7 @@ final class AppStore {
         let history = conversations[index].messages
             .filter { !$0.pending && $0.error == nil }
         let newestWithAttachments = history.lastIndex { !$0.attachments.isEmpty }
-        let turns = history.enumerated().map { offset, message in
+        var turns = history.enumerated().map { offset, message in
             HermesClient.Turn(
                 role: message.role.rawValue,
                 content: Self.content(
@@ -445,13 +893,28 @@ final class AppStore {
                 )
             )
         }
-        let model = selectedModel
+
+        var model = selectedModel
+        if let invokedBot, let specificModel = botModel(for: invokedBot) {
+            model = specificModel
+        }
         let provider = models.first { $0.id == model }?.provider
+
+        if let invokedBot {
+            let botInfo = cachedBots.first(where: { $0.name == invokedBot })
+            let botTitle = botCurrentName(for: invokedBot)
+            let botDesc = botInfo?.detail ?? ""
+            var directive = "You are the bot '@\(botTitle)'. Respond in character as this bot with its personality and skills."
+            if !botDesc.isEmpty {
+                directive += " Profile description: \(botDesc)."
+            }
+            turns.insert(HermesClient.Turn(role: "system", content: .text(directive)), at: 0)
+        }
 
         streamTask = Task { [weak self] in
             guard let self else { return }
             let stream = await self.client.stream(
-                messages: turns, model: model, provider: provider
+                messages: turns, model: model, provider: provider, profile: invokedBot
             )
             do {
                 for try await event in stream {

@@ -76,6 +76,18 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section("Connection") {
+                NavigationLink { ConnectView() } label: {
+                    HStack {
+                        Label(store.isConnected ? "Hermes connected" : "Connect your Hermes", systemImage: "antenna.radiowaves.left.and.right")
+                        Spacer()
+                        Circle()
+                            .fill(store.isConnected ? Color.green : Color.secondary.opacity(0.4))
+                            .frame(width: 8, height: 8)
+                    }
+                }
+            }
         }
         .navigationTitle("Settings")
         // A sheet with nothing but a swipe to close it is a sheet the

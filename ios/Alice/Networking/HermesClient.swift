@@ -105,15 +105,21 @@ actor HermesClient {
     // MARK: - Requests
 
     /// Shared by the streaming transport in `HermesChatStream`.
-    func request(_ path: String, method: String = "GET") throws -> URLRequest {
+    func request(_ path: String, method: String = "GET", profile: String? = nil) throws -> URLRequest {
         guard let endpoint else { throw Failure.unreachable }
-        guard let url = URL(string: path, relativeTo: endpoint.url) else {
+        let basePath = profile.map { "p/\($0)/" } ?? ""
+        let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        let fullPath = basePath + cleanPath
+        guard let url = URL(string: fullPath, relativeTo: endpoint.url) else {
             throw Failure.unreachable
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(endpoint.key)", forHTTPHeaderField: "Authorization")
         request.setValue(endpoint.key, forHTTPHeaderField: "X-Hermes-Session-Token")
+        if let profile {
+            request.setValue(profile, forHTTPHeaderField: "X-Hermes-Profile")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         return request

@@ -10,6 +10,7 @@ struct Sidebar: View {
     @State private var showSearch = false
     @State private var renaming: Conversation?
     @State private var newTitle = ""
+    @State private var deletingConversation: Conversation?
     @State private var projects: [ProjectRow] = []
     @State private var going: Destination?
 
@@ -26,7 +27,6 @@ struct Sidebar: View {
             header
             destinations
             list
-            Divider().opacity(0.4)
             footer
         }
         .frame(maxHeight: .infinity)
@@ -97,15 +97,15 @@ struct Sidebar: View {
     private var destinations: some View {
         VStack(spacing: 2) {
             if store.dashboardReady {
-                row("Bots", systemImage: "person.2") { going = .bots }
+                row("Bots", systemImage: "person.2", weight: .medium) { going = .bots }
             }
-            row("Jobs", systemImage: "clock") { going = .jobs }
+            row("Jobs", systemImage: "clock", weight: .medium) { going = .jobs }
             if store.dashboardReady {
-                row("Projects", systemImage: "folder") { going = .projects }
+                row("Projects", systemImage: "folder", weight: .medium) { going = .projects }
             }
-            row("Skills", systemImage: "sparkles") { going = .skills }
-            row("Tools", systemImage: "wrench.adjustable") { going = .tools }
-            row("Library", systemImage: "photo.on.rectangle") { going = .library }
+            row("Skills", systemImage: "sparkles", weight: .medium) { going = .skills }
+            row("Tools", systemImage: "wrench.adjustable", weight: .medium) { going = .tools }
+            row("Library", systemImage: "photo.on.rectangle", weight: .medium) { going = .library }
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 22)
@@ -113,7 +113,7 @@ struct Sidebar: View {
 
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
-            .font(.footnote.weight(.medium))
+            .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             // The stack around it already carries 12, and the rows add 12
@@ -155,10 +155,30 @@ struct Sidebar: View {
                 renaming = nil
             }
         }
+        .confirmationDialog(
+            "Delete Chat",
+            isPresented: .init(
+                get: { deletingConversation != nil },
+                set: { if !$0 { deletingConversation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let deletingConversation {
+                    store.delete(deletingConversation.id)
+                }
+                deletingConversation = nil
+            }
+            Button("Cancel", role: .cancel) {
+                deletingConversation = nil
+            }
+        } message: {
+            Text("Are you sure you want to delete this chat? This cannot be undone.")
+        }
     }
 
-    private var pinned: [Conversation] { store.conversations.filter(\.pinned) }
-    private var recents: [Conversation] { store.conversations.filter { !$0.pinned } }
+    private var pinned: [Conversation] { store.conversations.filter { $0.pinned && !$0.isBotChat } }
+    private var recents: [Conversation] { store.conversations.filter { !$0.pinned && !$0.isBotChat } }
 
     @ViewBuilder
     private func chatRow(_ conversation: Conversation) -> some View {
@@ -168,9 +188,8 @@ struct Sidebar: View {
         } label: {
             Text(conversation.title)
                 .lineLimit(1)
-                // A definite width, so the long-press preview takes its size
-                // from the drawer rather than from the label. Less both
-                // insets: the stack's 12 either side and the row's.
+                // A definite width, matching row and preview width exactly
+                // so the long-press preview never shrinks or stretches.
                 .frame(width: width - 48, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -183,18 +202,22 @@ struct Sidebar: View {
                 .contentShape(.rect(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        // An explicit preview rather than a lift of the row: the default
-        // takes the row's bounds and enlarges them, which on a 300pt drawer
-        // reaches past the edge.
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 10, style: .continuous))
         .contextMenu {
             menu(for: conversation)
         } preview: {
             Text(conversation.title)
-                .lineLimit(2)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .frame(width: width - 72, alignment: .leading)
-                .background(Palette.card(scheme))
+                .lineLimit(1)
+                .frame(width: width - 48, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    conversation.id == store.activeID
+                        ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
+                        : Palette.card(scheme),
+                    in: .rect(cornerRadius: 10)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 
@@ -233,7 +256,7 @@ struct Sidebar: View {
         }
 
         Button("Delete", systemImage: "trash", role: .destructive) {
-            store.delete(conversation.id)
+            deletingConversation = conversation
         }
     }
 
@@ -242,32 +265,69 @@ struct Sidebar: View {
         projects = (try? await store.projects()) ?? []
     }
 
+    private var userInitial: String {
+        if !store.dashboardUser.isEmpty {
+            let trimmed = store.dashboardUser.trimmingCharacters(in: .whitespaces)
+            if let first = trimmed.first(where: { $0.isLetter }) {
+                return String(first).uppercased()
+            }
+        }
+        let full = NSFullUserName()
+        if let first = full.first(where: { $0.isLetter }) {
+            return String(first).uppercased()
+        }
+        let device = UIDevice.current.name
+        for char in device {
+            if char.isLetter {
+                return String(char).uppercased()
+            }
+        }
+        return "M"
+    }
+
     private var footer: some View {
-        VStack(spacing: 2) {
-            row("Settings", systemImage: "gearshape") { going = .settings }
+        HStack {
             Button {
-                going = .connect
+                going = .settings
             } label: {
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(store.isConnected ? Color.green : Color.secondary.opacity(0.4))
-                        .frame(width: 8, height: 8)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(store.isConnected ? "Hermes connected" : "Connect your Hermes")
-                            .font(.subheadline)
-                        if store.isConnected, let host = URL(string: store.gatewayURL)?.host {
-                            Text(host).font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                Text(userInitial)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Settings")
+            .contextMenu {
+                Button {
+                    going = .settings
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                Button {
+                    going = .connect
+                } label: {
+                    Label(store.isConnected ? "Hermes Connected" : "Connect Hermes", systemImage: "antenna.radiowaves.left.and.right")
+                }
+            }
+
+            Spacer()
+
+            Button {
+                store.newChat()
+                onDismiss()
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .medium))
+                    .imageScale(.large)
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("New chat")
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
         .padding(.bottom, 12)
     }
 
@@ -275,17 +335,17 @@ struct Sidebar: View {
     /// clock and a wrench push their words to different places. The icon gets
     /// a column of its own instead, and every word starts on one line.
     private func row(
-        _ title: String, systemImage: String, action: @escaping () -> Void
+        _ title: String, systemImage: String, weight: Font.Weight = .regular, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 15))
+                    .font(.system(size: 15, weight: weight))
                     .frame(width: 22, alignment: .center)
                 Text(title)
                 Spacer(minLength: 0)
             }
-            .font(.subheadline)
+            .font(.subheadline.weight(weight))
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .contentShape(.rect)
