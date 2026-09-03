@@ -89,8 +89,11 @@ extension HermesClient {
         }
     }
 
-    /// Reattaches to an already-created run. Used when an approval survived an
-    /// app restart or the live SSE connection had to be rebuilt.
+    /// Reattaches to an already-created run after an app restart or a lost SSE
+    /// connection. Recovery polls snapshots instead of reopening the event
+    /// stream: an event endpoint may replay old deltas, which would duplicate
+    /// text already saved in the conversation, while the final snapshot is
+    /// authoritative and safely replaces it.
     func resumeRun(
         runID: String,
         profile: String? = nil,
@@ -114,23 +117,17 @@ extension HermesClient {
                         }
                     }
 
-                    let terminal = try await self.consumeRunEvents(
+                    try await self.pollRunUntilTerminal(
                         runID: runID,
                         profile: profile,
                         conversationID: conversationID,
+                        previous: initial,
                         continuation: continuation
                     )
-                    if !terminal, !Task.isCancelled {
-                        try await self.pollRunUntilTerminal(
-                            runID: runID,
-                            profile: profile,
-                            conversationID: conversationID,
-                            previous: initial,
-                            continuation: continuation
-                        )
-                    }
                     continuation.finish()
                 } catch is CancellationError {
+                    let id = runID
+                    Task { try? await self.stopRun(runID: id, profile: profile) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -210,11 +207,17 @@ extension HermesClient {
             return .failed(message: "Empty chat.", limit: nil)
         }
 
+        // The run contract accepts conversation turns, not OpenAI system
+        // messages. Profile selection already travels in X-Hermes-Profile; a
+        // local system directive is retained only for the chat-completions
+        // compatibility path below.
+        let history = messages[..<userIndex]
+            .filter { $0.role == "user" || $0.role == "assistant" }
+            .map { ["role": $0.role, "content": $0.content.json] }
+
         var body: [String: Any] = [
             "input": messages[userIndex].content.json,
-            "conversation_history": messages[..<userIndex].map {
-                ["role": $0.role, "content": $0.content.json]
-            },
+            "conversation_history": history,
         ]
         if let sessionID = boundedSessionID(conversationID) { body["session_id"] = sessionID }
         if let model { body["model"] = model }
