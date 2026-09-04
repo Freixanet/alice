@@ -372,8 +372,13 @@ struct Sidebar: View {
                 // both corrections were applied — but SwiftUI centres the
                 // glyph's layout box, not its ink, and horizontally those
                 // already agree. Nudging x as well simply pushed it right.
+                // Regular, not medium. The other discs carry `equal` and a
+                // chevron — narrow marks that need weight to read — while
+                // this one is a filled outline whose strokes already have
+                // presence, and at medium it sat heavier than everything
+                // around it.
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 19, weight: .regular))
                     .imageScale(.large)
                     .offset(y: -1.17)
                     .frame(width: 44, height: 44)
