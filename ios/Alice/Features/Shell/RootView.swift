@@ -83,7 +83,12 @@ struct RootView: View {
                 // that has given them up.
                 if store.showingBots {
                     NavigationStack {
-                        BotsScreen(onClose: { store.showingBots = false })
+                        // Deferred for the same reason as the gesture's: the page's
+                        // exit direction and whatever it uncovers both have to
+                        // be settled before it starts moving.
+                        BotsScreen(onClose: {
+                            DispatchQueue.main.async { store.showingBots = false }
+                        })
                     }
                     .background(Palette.background(scheme))
                     // The same swipe that got here from a bot's conversation,
@@ -105,26 +110,17 @@ struct RootView: View {
                                         || predicted < -120,
                                           let chat = store.lastBotConversation
                                     else { return }
-                                    UIImpactFeedbackGenerator(style: .soft)
-                                        .impactOccurred()
-                                    store.activeID = chat.id
-                                    store.botsFromLeading = true
-                                    store.showingBots = false
+                                    closeBots(exitLeading: true) {
+                                        store.activeID = chat.id
+                                    }
                                     return
                                 }
                                 guard translation > drawerWidth * 0.3
                                     || predicted > 120
                                 else { return }
-                                UIImpactFeedbackGenerator(style: .soft)
-                                    .impactOccurred()
-                                store.goHome()
-                                // Home is behind this page, so the page has
-                                // to move the way the finger did — off the
-                                // right — and uncover it from the left.
-                                // Leaving by the left uncovered home from the
-                                // right, against the gesture.
-                                store.botsFromLeading = false
-                                store.showingBots = false
+                                closeBots(exitLeading: false) {
+                                    store.goHome()
+                                }
                             }
                         )
                         .allowsHitTesting(false)
@@ -141,7 +137,9 @@ struct RootView: View {
                         insertion: .move(
                             edge: store.botsFromLeading ? .leading : .trailing
                         ),
-                        removal: .move(edge: .trailing)
+                        removal: .move(
+                            edge: store.botsExitLeading ? .leading : .trailing
+                        )
                     ))
                     .zIndex(1)
                 }
@@ -219,6 +217,21 @@ struct RootView: View {
     /// Whether the conversation on screen belongs to a bot.
     private var inBotChat: Bool {
         !(store.activeConversation?.botName ?? "").isEmpty
+    }
+
+    /// Dismisses the bots page, one frame after settling what is behind it.
+    ///
+    /// Two things have to be true before the page starts moving: the exit
+    /// direction, because a removal transition is read from the view as it
+    /// last stood rather than as it is being dismissed; and whatever the page
+    /// is uncovering. Changing the conversation in the same breath showed the
+    /// old one for an instant as the page slid off, and the page left by
+    /// whichever side it had arrived from.
+    private func closeBots(exitLeading: Bool, _ settle: () -> Void) {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        store.botsExitLeading = exitLeading
+        settle()
+        DispatchQueue.main.async { store.showingBots = false }
     }
 
     /// Back out of a bot's conversation to the list it was opened from.

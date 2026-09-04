@@ -951,6 +951,14 @@ final class AppStore {
     /// comes in off the left, the way the finger went.
     var botsFromLeading = false
 
+    /// Which way the bots page leaves.
+    ///
+    /// Separate from the way it arrived, because the two are decided at
+    /// different moments and by different gestures — and because a removal
+    /// transition is read from the view as it last stood, so this has to be
+    /// settled a frame before the page is dismissed.
+    var botsExitLeading = false
+
     @discardableResult
     func openBotConversation(for bot: BotRow) -> String {
         if let existing = conversations.first(where: { $0.botName == bot.name }) {

@@ -141,10 +141,14 @@ struct ChatScreen: View {
                         Button {
                             store.openBotConversation(for: other)
                         } label: {
-                            Label(
-                                store.botCurrentName(for: other.name),
-                                systemImage: "arrow.left.arrow.right"
-                            )
+                            // Their own faces. An arrow says "switch", which
+                            // the menu already says by existing; the mark says
+                            // which bot, which is the only question here.
+                            Label {
+                                Text(store.botCurrentName(for: other.name))
+                            } icon: {
+                                BotMarkView(mark: store.mark(for: other.name), size: 22)
+                            }
                         }
                     }
                 }

@@ -295,7 +295,7 @@ struct BotsScreen: View {
                 // and the same chevron a bot's chat uses to get here.
                 Button {
                     store.goHome()
-                    store.botsFromLeading = false
+                    store.botsExitLeading = false
                     onClose()
                 } label: {
                     Image(systemName: "chevron.left")
@@ -489,7 +489,7 @@ struct BotsScreen: View {
     private func pinnedTile(_ bot: BotRow) -> some View {
         Button {
             store.openBotConversation(for: bot)
-            store.botsFromLeading = true
+            store.botsExitLeading = true
             onClose()
         } label: {
             VStack(spacing: 8) {
@@ -1061,7 +1061,7 @@ struct BotsScreen: View {
         // handles differently from a screen.
         Button {
             store.openBotConversation(for: bot)
-            store.botsFromLeading = true
+            store.botsExitLeading = true
             onClose()
         } label: {
             HStack(alignment: .center, spacing: 14) {
