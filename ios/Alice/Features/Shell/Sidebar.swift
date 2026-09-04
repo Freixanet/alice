@@ -381,7 +381,7 @@ struct Sidebar: View {
                     // lightens a shape fill far more than a symbol stroke,
                     // and inherited it came out grey against black glyphs.
                     .foregroundStyle(scheme == .dark ? Color.white : .black)
-                    .frame(width: 21, height: 21)
+                    .frame(width: 24, height: 24)
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)

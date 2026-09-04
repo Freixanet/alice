@@ -541,7 +541,24 @@ final class AppStore {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != name else { return }
 
-        try await dashboard.rename(name, to: trimmed)
+        // The name is changed here first, and kept whatever the agent says.
+        // Renaming a profile is `PATCH /api/profiles/<name>`, and this Hermes
+        // has no PATCH route for it at all — its patch handler knows only MCP
+        // servers and kanban, and answers everything else with a 404. So the
+        // rename was being sent, refused, and the new name thrown away: the
+        // field simply snapped back with nothing said.
+        //
+        // A bot's shown name is already the app's to decide — `botCustomNames`
+        // exists for exactly this — so it is set regardless, and the server is
+        // still asked in case it is a build that can oblige. Only then are the
+        // per-bot settings moved onto the new id.
+        botCustomNames[name] = trimmed
+
+        do {
+            try await dashboard.rename(name, to: trimmed)
+        } catch {
+            return
+        }
 
         move(&botMarks, from: name, to: trimmed)
         move(&botSections, from: name, to: trimmed)

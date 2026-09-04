@@ -20,7 +20,7 @@ actor DashboardClient {
     enum Failure: Error, LocalizedError {
         case notConfigured
         case rejected
-        case http(Int)
+        case http(Int, detail: String? = nil)
         case unreachable
 
         var errorDescription: String? {
@@ -29,8 +29,12 @@ actor DashboardClient {
                 "Add your Hermes dashboard in Connect to see this."
             case .rejected:
                 "The dashboard did not accept that username and password."
-            case let .http(status):
-                "The dashboard returned \(status)."
+            case let .http(status, detail):
+                if let detail, !detail.isEmpty {
+                    "The dashboard returned \(status): \(detail)"
+                } else {
+                    "The dashboard returned \(status)."
+                }
             case .unreachable:
                 "The dashboard did not answer. It only listens on your own network."
             }
@@ -63,7 +67,7 @@ actor DashboardClient {
         if !signedIn { try await signIn() }
         do {
             return try await fetch(path)
-        } catch Failure.http(401) {
+        } catch Failure.http(401, _) {
             signedIn = false
             try await signIn()
             return try await fetch(path)
@@ -100,7 +104,7 @@ actor DashboardClient {
         if !signedIn { try await signIn() }
         do {
             return try await fetch(path, method: method, body: body)
-        } catch Failure.http(401) {
+        } catch Failure.http(401, _) {
             signedIn = false
             try await signIn()
             return try await fetch(path, method: method, body: body)
@@ -122,9 +126,30 @@ actor DashboardClient {
         let (data, response) = try await send(request)
         guard let http = response as? HTTPURLResponse else { throw Failure.unreachable }
         guard (200..<300).contains(http.statusCode) else {
-            throw Failure.http(http.statusCode)
+            // Carry whatever the server said. Throwing the bare number left
+            // every failure looking identical — "the dashboard returned 405"
+            // and nothing about which of its rules had been broken, which is
+            // most of what you need to know.
+            throw Failure.http(http.statusCode, detail: Self.detail(from: data))
         }
         return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    /// Best-effort read of whatever the dashboard put in the body.
+    static func detail(from data: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any]
+        else {
+            let text = String(decoding: data, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty || text.count > 200 ? nil : text
+        }
+        for key in ["error", "detail", "message"] {
+            if let text = object[key] as? String, !text.isEmpty { return text }
+            if let nested = object[key] as? [String: Any],
+               let text = nested["message"] as? String, !text.isEmpty { return text }
+        }
+        return nil
     }
 
     /// Joins a path — with or without a query — onto the dashboard's address.
