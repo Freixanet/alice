@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ChatScreen: View {
     @Environment(AppStore.self) private var store
@@ -19,6 +20,28 @@ struct ChatScreen: View {
             return nil
         }
         return name
+    }
+
+    /// A bot's mark, rasterised so a menu can show it.
+    ///
+    /// Kept per mark: the renderer is not free, and the same handful of faces
+    /// are asked for every time the menu opens.
+    private static var markImages: [BotMark: UIImage] = [:]
+
+    @MainActor
+    static func markImage(_ mark: BotMark) -> UIImage {
+        if let cached = markImages[mark] { return cached }
+        let renderer = ImageRenderer(
+            content: BotMarkView(mark: mark, size: 26).frame(width: 26, height: 26)
+        )
+        renderer.scale = UITraitCollection.current.displayScale
+        // Original, not template: a menu tints what it is given, and a bot's
+        // mark is its colour. Flattened to the menu's own ink they would all
+        // be the same silhouette.
+        let image = (renderer.uiImage ?? UIImage())
+            .withRenderingMode(.alwaysOriginal)
+        markImages[mark] = image
+        return image
     }
 
     /// Every bot except the one already on screen.
@@ -144,10 +167,15 @@ struct ChatScreen: View {
                             // Their own faces. An arrow says "switch", which
                             // the menu already says by existing; the mark says
                             // which bot, which is the only question here.
+                            // Rendered to an image first. A menu is built by
+                            // UIKit from the label's text and symbol, and a
+                            // SwiftUI view in the icon slot is simply dropped
+                            // — which is why the marks never appeared. An
+                            // image it will carry.
                             Label {
                                 Text(store.botCurrentName(for: other.name))
                             } icon: {
-                                BotMarkView(mark: store.mark(for: other.name), size: 22)
+                                Image(uiImage: Self.markImage(store.mark(for: other.name)))
                             }
                         }
                     }

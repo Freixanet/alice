@@ -61,6 +61,13 @@ struct MessageRow: View {
                         // the runs instead, body and links alike.
                         Text(attributed)
                             .textSelection(.enabled)
+                            // Links are painted from the environment's tint,
+                            // not from the colour set on their run — which is
+                            // why setting the run's colour changed nothing and
+                            // the links kept coming out in the app's accent.
+                            // The accent here is Stone: #ECECEA in the dark,
+                            // the same near-white as the body.
+                            .tint(Palette.link(scheme))
                     }
 
                     if !message.tools.isEmpty { ToolList(tools: message.tools) }
