@@ -68,6 +68,10 @@ struct BotFaceView: View {
     let size: CGFloat
     var animated: Bool = false
     var mood: BotMood = .idle
+    /// The eyes' colour. Black on a bot's own coloured mark, where it always
+    /// reads; but on a glass disc that follows the system theme it has to
+    /// follow too, or in the dark it is ink on ink.
+    var ink: Color = Color.black.opacity(0.88)
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -102,7 +106,7 @@ struct BotFaceView: View {
 
     private func eye(width: CGFloat, height: CGFloat, lid: CGFloat) -> some View {
         Capsule()
-            .fill(Color.black.opacity(0.88))
+            .fill(ink)
             .frame(width: width, height: height)
             .scaleEffect(x: stretch, y: lid, anchor: .center)
     }

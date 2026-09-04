@@ -148,8 +148,15 @@ struct ChatScreen: View {
                     // marks in it, so the disc that leads to them reads as one
                     // of them — a small bot sitting in the corner — instead of
                     // as a generic pair of shoulders.
-                    BotFaceView(size: 26)
-                        .frame(width: discSize, height: discSize)
+                    // Stated, not inherited. `.primary` inside the glass came
+                    // out at a fifth of the contrast the glyph opposite has —
+                    // the disc's own vibrancy lightens what it holds, and a
+                    // shape fill takes more of that than a symbol stroke does.
+                    BotFaceView(
+                        size: 32,
+                        ink: scheme == .dark ? .white : .black
+                    )
+                    .frame(width: discSize, height: discSize)
                 }
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Bots")

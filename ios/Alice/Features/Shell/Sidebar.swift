@@ -140,15 +140,19 @@ struct Sidebar: View {
 
     /// Opaque through the middle, out at both ends.
     ///
-    /// Short fades: long ones dim rows that are perfectly legible and merely
-    /// near an edge. Twenty-two points is about one row's worth of travel —
-    /// enough to read as dissolving rather than as clipping.
+    /// Both fades were too far into the list. The top one reached far enough
+    /// down to dim "Pinned" the moment the drawer opened — a heading greyed
+    /// out while sitting still, which reads as disabled rather than as going
+    /// somewhere. And the bottom one began well above the buttons, so rows
+    /// started dissolving in clear space with nothing to dissolve behind.
+    /// Both now hug their edges: a row is legible until it actually reaches
+    /// something.
     private var edgeFade: some View {
         LinearGradient(
             stops: [
                 .init(color: .clear, location: 0),
-                .init(color: .black, location: 0.035),
-                .init(color: .black, location: 0.88),
+                .init(color: .black, location: 0.012),
+                .init(color: .black, location: 0.955),
                 .init(color: .clear, location: 1),
             ],
             startPoint: .top,
@@ -355,9 +359,15 @@ struct Sidebar: View {
                 // centre already lands within a third of a point of it, and a
                 // 2.5pt "correction" moved it that far off. Apple has already
                 // balanced this one.
+                // Measured off the rendered glyph: the pencil hangs above
+                // and right of the square, so centring the symbol's own box
+                // leaves the square 1.17pt low and left of the button's
+                // centre. That is the whole correction — small, but it is
+                // exactly the amount that reads as "not centred".
                 Image(systemName: "square.and.pencil")
                     .font(.system(size: 18, weight: .medium))
                     .imageScale(.large)
+                    .offset(x: 1.17, y: -1.17)
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
