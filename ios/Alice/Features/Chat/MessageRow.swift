@@ -53,9 +53,14 @@ struct MessageRow: View {
                         // Markdown, the way every other model surface shows a
                         // reply. `.full` keeps block structure — lists, quotes
                         // and code — instead of collapsing to one line.
+                        // No foregroundStyle here. Applied to the Text it
+                        // wins over every colour set inside the attributed
+                        // string, which repainted the links in the body
+                        // colour: tappable, underlined, and indistinguishable
+                        // from the prose around them. The colours are set on
+                        // the runs instead, body and links alike.
                         Text(attributed)
                             .textSelection(.enabled)
-                            .foregroundStyle(message.error == nil ? .primary : Color.red)
                     }
 
                     if !message.tools.isEmpty { ToolList(tools: message.tools) }
@@ -89,7 +94,11 @@ struct MessageRow: View {
     /// bold, italics and code while leaving every newline exactly where the
     /// model put it, which is the half of Markdown that survives here.
     private var attributed: AttributedString {
-        Self.linkified(parsed, accent: store.accent.primary(scheme))
+        Self.linkified(
+            parsed,
+            body: message.error == nil ? Color.primary : Color.red,
+            accent: store.accent.primary(scheme)
+        )
     }
 
     /// Makes a bare URL tappable.
@@ -104,9 +113,11 @@ struct MessageRow: View {
     /// the two is the obvious route and the fragile one: markdown parsing does
     /// not preserve them, and every failed conversion silently dropped a link.
     private static func linkified(
-        _ input: AttributedString, accent: Color
+        _ input: AttributedString, body: Color, accent: Color
     ) -> AttributedString {
         var output = input
+        // The body colour first, so the links can then be picked out of it.
+        output.foregroundColor = body
         let plain = String(output.characters)
         guard !plain.isEmpty,
               let detector = try? NSDataDetector(
@@ -130,10 +141,6 @@ struct MessageRow: View {
                 if output[range].link == nil {
                     output[range].link = url
                     output[range].underlineStyle = .single
-                    // Painted here rather than left to the environment: the
-                    // whole reply carries a foregroundStyle, and it was
-                    // covering the link colour so the addresses read as plain
-                    // text — tappable, but with nothing to say so.
                     output[range].foregroundColor = accent
                 }
                 searchFrom = range.upperBound
