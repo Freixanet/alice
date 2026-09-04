@@ -83,6 +83,42 @@ struct MessageRow: View {
     /// bold, italics and code while leaving every newline exactly where the
     /// model put it, which is the half of Markdown that survives here.
     private var attributed: AttributedString {
+        Self.linkified(parsed)
+    }
+
+    /// Makes a bare URL tappable.
+    ///
+    /// Markdown only marks a link that was written as one, and a model listing
+    /// deals writes the address plainly. Left as text it was something to copy
+    /// out by hand, which for a list of seven offers is most of the work the
+    /// list was meant to save.
+    private static func linkified(_ input: AttributedString) -> AttributedString {
+        var output = input
+        let plain = String(output.characters)
+        guard !plain.isEmpty,
+              let detector = try? NSDataDetector(
+                  types: NSTextCheckingResult.CheckingType.link.rawValue
+              )
+        else { return output }
+
+        let matches = detector.matches(
+            in: plain, range: NSRange(plain.startIndex..., in: plain)
+        )
+        for match in matches.reversed() {
+            guard let url = match.url,
+                  let range = Range(match.range, in: plain),
+                  let lower = AttributedString.Index(range.lowerBound, within: output),
+                  let upper = AttributedString.Index(range.upperBound, within: output)
+            else { continue }
+            // Anything already carrying a link was written as one; leave it.
+            guard output[lower..<upper].link == nil else { continue }
+            output[lower..<upper].link = url
+            output[lower..<upper].underlineStyle = .single
+        }
+        return output
+    }
+
+    private var parsed: AttributedString {
         (try? AttributedString(
             markdown: message.content,
             options: .init(
