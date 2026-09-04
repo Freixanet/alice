@@ -316,14 +316,13 @@ struct BotMarkView: View {
             AnimatedBotMarkView(mark: mark, size: size, mood: mood, floats: floats)
         } else {
             ZStack {
+                // No outline. It was there so the palest mark would still
+                // read on a light card, but every face carries two dark eyes
+                // that separate it from any background on their own, and the
+                // hairline only made a small face look drawn rather than
+                // printed.
                 MarkShape(silhouette: mark.silhouette)
                     .fill(mark.color)
-                    // A hairline, so the palest colour still reads on a light card
-                    // and the darkest still reads on a dark one.
-                    .overlay {
-                        MarkShape(silhouette: mark.silhouette)
-                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.75)
-                    }
 
                 BotFaceView(size: size, animated: false, mood: mood)
             }

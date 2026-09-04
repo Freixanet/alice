@@ -149,27 +149,44 @@ struct Sidebar: View {
     /// to disappear over.
     private var edgeFade: some View {
         VStack(spacing: 0) {
-            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                .frame(height: 14)
+            // Both ramps are long, and both hold near-opaque for their first
+            // third. That is what makes a fade look like it starts late and
+            // still takes its time: a row stays fully legible well into the
+            // band and then loses itself over the rest of it. A short ramp
+            // reads as a rule however many stops it has.
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black.opacity(0.18), location: 0.22),
+                    .init(color: .black.opacity(0.55), location: 0.48),
+                    .init(color: .black.opacity(0.85), location: 0.74),
+                    .init(color: .black, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 30)
+
             Color.black
+
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0),
-                    .init(color: .black.opacity(0.86), location: 0.18),
-                    .init(color: .black.opacity(0.62), location: 0.38),
-                    .init(color: .black.opacity(0.34), location: 0.60),
-                    .init(color: .black.opacity(0.12), location: 0.80),
+                    .init(color: .black.opacity(0.96), location: 0.22),
+                    .init(color: .black.opacity(0.78), location: 0.44),
+                    .init(color: .black.opacity(0.48), location: 0.64),
+                    .init(color: .black.opacity(0.20), location: 0.82),
                     .init(color: .clear, location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 130)
+            .frame(height: 180)
         }
     }
 
     private var list: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 2) {
                 // Only when there is something in it: a heading over nothing
                 // is worse than no heading.
