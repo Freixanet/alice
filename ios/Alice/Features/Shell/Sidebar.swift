@@ -140,35 +140,32 @@ struct Sidebar: View {
 
     /// Opaque through the middle, out at both ends.
     ///
-    /// Both fades were too far into the list. The top one reached far enough
-    /// down to dim "Pinned" the moment the drawer opened — a heading greyed
-    /// out while sitting still, which reads as disabled rather than as going
-    /// somewhere. And the bottom one began well above the buttons, so rows
-    /// started dissolving in clear space with nothing to dissolve behind.
-    /// Both now hug their edges: a row is legible until it actually reaches
-    /// something.
+    /// In points, not in fractions of the container. Expressed as fractions
+    /// the ramp changed length with the height it happened to be given, and
+    /// at this size that made the bottom one about a finger's width — short
+    /// enough to read as a rule with a soft edge rather than as a row losing
+    /// itself. A hundred and thirty points is most of the way from the last
+    /// legible row to the buttons, which is the distance a row actually has
+    /// to disappear over.
     private var edgeFade: some View {
-        LinearGradient(
-            stops: [
-                // Top: short, because anything longer dims a heading that is
-                // sitting still. Two stops on the way in keep it from reading
-                // as a cut.
-                .init(color: .clear, location: 0),
-                .init(color: .black.opacity(0.55), location: 0.008),
-                .init(color: .black, location: 0.022),
-                // Bottom: long, because this is where rows actually travel.
-                // A single stop from opaque to clear over a few points is a
-                // line with a soft edge; a row has to lose itself gradually
-                // over most of the height of the buttons it passes behind.
-                .init(color: .black, location: 0.885),
-                .init(color: .black.opacity(0.82), location: 0.915),
-                .init(color: .black.opacity(0.45), location: 0.952),
-                .init(color: .black.opacity(0.16), location: 0.978),
-                .init(color: .clear, location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        VStack(spacing: 0) {
+            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                .frame(height: 14)
+            Color.black
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black.opacity(0.86), location: 0.18),
+                    .init(color: .black.opacity(0.62), location: 0.38),
+                    .init(color: .black.opacity(0.34), location: 0.60),
+                    .init(color: .black.opacity(0.12), location: 0.80),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 130)
+        }
     }
 
     private var list: some View {

@@ -13,7 +13,11 @@ struct BotsScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
 
+    /// Seeded from the cache, not empty. Starting at empty meant the page
+    /// opened on "No bots" for the one frame before the cached list was
+    /// read — an answer that was never true, shown and then taken back.
     @State private var rows: [BotRow] = []
+    @State private var seeded = false
     /// The agent's routines, grouped by bot, so search has something real to
     /// look through. It used to search a local mirror that only ever held
     /// routines the server had rejected.
@@ -62,7 +66,11 @@ struct BotsScreen: View {
                 ContentUnavailableView(
                     "Bots", systemImage: "person.2", description: Text(failure)
                 )
-            } else if rows.isEmpty {
+            } else if rows.isEmpty, seeded {
+                // Only once a load has actually finished. Seeding in `.task`
+                // still leaves one frame drawn against an empty array, which
+                // is long enough to flash "No bots" and take it back — an
+                // answer that was never true.
                 ContentUnavailableView(
                     "No bots", systemImage: "person.2",
                     description: Text("Every Hermes has at least a default profile.")
@@ -173,7 +181,11 @@ struct BotsScreen: View {
                 Text("Are you sure you want to delete '\(deletingBot.displayName)'? This cannot be undone.")
             }
         }
-        .task { await load() }
+        .task {
+            if rows.isEmpty { rows = store.cachedBots }
+            await load()
+            seeded = true
+        }
         .refreshable { await load() }
     }
 
