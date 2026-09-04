@@ -47,9 +47,7 @@ struct MessageRow: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    if message.content.isEmpty && message.pending && message.approval == nil {
-                        TypingIndicator()
-                    } else if !message.content.isEmpty {
+                    if !message.content.isEmpty {
                         // Markdown, the way every other model surface shows a
                         // reply. `.full` keeps block structure — lists, quotes
                         // and code — instead of collapsing to one line.
@@ -70,8 +68,12 @@ struct MessageRow: View {
                             .tint(Palette.link(scheme))
                     }
 
-                    if !message.tools.isEmpty {
-                        ToolList(tools: message.tools, pending: message.pending)
+                    if message.pending || !message.tools.isEmpty {
+                        ToolList(
+                            tools: message.tools,
+                            pending: message.pending && message.approval == nil,
+                            hasContent: !message.content.isEmpty
+                        )
                     }
                     if let approval = message.approval {
                         RunApprovalCard(messageID: message.id, approval: approval)
@@ -332,8 +334,13 @@ private struct ToolList: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let tools: [Message.ToolCall]
+    @State private var breathing = false
+
     /// Whether the reply is still being written.
     let pending: Bool
+    /// Whether any of it has arrived. Once the words are appearing the reader
+    /// can see for themselves that it is not thinking any more.
+    let hasContent: Bool
 
     /// The last one still going. Hermes reports a tool twice — start, then
     /// done — so anything with a later `done` is behind us.
@@ -347,15 +354,24 @@ private struct ToolList: View {
     /// what the gap actually is; the line only disappears when the reply does.
     private var caption: String? {
         if let running { return Self.phrase(for: running) }
-        return pending ? "Thinking…" : nil
+        return pending && !hasContent ? "Thinking…" : nil
     }
 
     var body: some View {
         if let caption {
             HStack(spacing: 8) {
+                // Slow enough to read as breathing rather than as blinking:
+                // this marks that something is happening, and a fast pulse
+                // beside a line of quiet text reads as an alarm.
                 Circle()
                     .frame(width: 5, height: 5)
                     .foregroundStyle(store.accent.primary(scheme))
+                    .opacity(breathing ? 0.28 : 1)
+                    .animation(
+                        .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
+                        value: breathing
+                    )
+                    .onAppear { breathing = true }
                 Text(caption)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -521,24 +537,3 @@ private struct ModelLimitNote: View {
     }
 }
 
-private struct TypingIndicator: View {
-    @State private var phase = 0.0
-
-    var body: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<3, id: \.self) { index in
-                Circle()
-                    .frame(width: 6, height: 6)
-                    .foregroundStyle(.secondary)
-                    .opacity(0.3 + 0.7 * abs(sin(phase + Double(index) * 0.6)))
-            }
-        }
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(90))
-                phase += 0.28
-            }
-        }
-        .accessibilityLabel("Alice is responding")
-    }
-}
