@@ -88,6 +88,22 @@ enum Palette {
         scheme == .dark ? Color(hex: 0x151517) : Color(hex: 0xFFFCF7)
     }
 
+    /// What a link is set in, whatever the theme.
+    ///
+    /// Deliberately outside the accent. The accent is a preference, and one
+    /// of them — Stone, the default — is #ECECEA in the dark, the same
+    /// near-white the body is set in: links took it faithfully and became
+    /// invisible. A link also has a colour people already know, and blue is
+    /// the one word of that vocabulary everybody speaks.
+    ///
+    /// Not the system blue, which is louder than anything else on these
+    /// screens. A step deeper in the light so it holds against off-white
+    /// paper, a step lighter in the dark so it does not vibrate against
+    /// near-black.
+    static func link(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(hex: 0x7FA9F0) : Color(hex: 0x2C5FC4)
+    }
+
     static func muted(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(hex: 0x1C1C1E) : Color(hex: 0xEBE9E2)
     }

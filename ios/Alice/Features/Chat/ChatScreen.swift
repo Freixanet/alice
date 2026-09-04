@@ -21,6 +21,11 @@ struct ChatScreen: View {
         return name
     }
 
+    /// Every bot except the one already on screen.
+    private var otherBots: [BotRow] {
+        store.cachedBots.filter { $0.name != bot }
+    }
+
     private var placeholder: String {
         guard let bot = store.activeConversation?.botName, !bot.isEmpty else {
             return "Talk to Alice…"
@@ -126,6 +131,23 @@ struct ChatScreen: View {
                     .glassEffect(.regular.interactive(), in: .capsule)
                 }
                 .accessibilityHint("Opens this bot’s settings")
+                // Held rather than tapped: the other bots. The name is where
+                // you look to know whose conversation this is, so it is also
+                // where you would look to make it somebody else's — and a
+                // press-and-hold adds that without taking the tap away from
+                // the settings it already opens.
+                .contextMenu {
+                    ForEach(otherBots) { other in
+                        Button {
+                            store.openBotConversation(for: other)
+                        } label: {
+                            Label(
+                                store.botCurrentName(for: other.name),
+                                systemImage: "arrow.left.arrow.right"
+                            )
+                        }
+                    }
+                }
             } else {
                 AliceMark(size: 30)
                     .foregroundStyle(.primary)

@@ -839,6 +839,13 @@ final class AppStore {
 
     // MARK: - Conversations
 
+    /// The bot conversation most recently opened, if there is one.
+    var lastBotConversation: Conversation? {
+        conversations
+            .filter { $0.isBotChat }
+            .max { ($0.openedAt ?? $0.updatedAt) < ($1.openedAt ?? $1.updatedAt) }
+    }
+
     /// Back to Alice's own conversation.
     ///
     /// Leaving a bot behind means leaving its conversation too: backing out

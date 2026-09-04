@@ -93,10 +93,25 @@ struct RootView: View {
                         DrawerPan(
                             shouldBegin: { velocity in
                                 abs(velocity.x) > abs(velocity.y) * 1.5
-                                    && velocity.x > 0
                             },
                             onChange: { _ in },
                             onEnd: { translation, predicted in
+                                // Leftward is forward, back into the bot you
+                                // were last talking to — the page is between
+                                // home and that conversation, so it should
+                                // give onto both.
+                                if translation < 0 || predicted < -120 {
+                                    guard translation < -drawerWidth * 0.3
+                                        || predicted < -120,
+                                          let chat = store.lastBotConversation
+                                    else { return }
+                                    UIImpactFeedbackGenerator(style: .soft)
+                                        .impactOccurred()
+                                    store.activeID = chat.id
+                                    store.botsFromLeading = true
+                                    store.showingBots = false
+                                    return
+                                }
                                 guard translation > drawerWidth * 0.3
                                     || predicted > 120
                                 else { return }

@@ -97,7 +97,7 @@ struct MessageRow: View {
         Self.linkified(
             parsed,
             body: message.error == nil ? Color.primary : Color.red,
-            accent: store.accent.primary(scheme)
+            link: Palette.link(scheme)
         )
     }
 
@@ -113,7 +113,7 @@ struct MessageRow: View {
     /// the two is the obvious route and the fragile one: markdown parsing does
     /// not preserve them, and every failed conversion silently dropped a link.
     private static func linkified(
-        _ input: AttributedString, body: Color, accent: Color
+        _ input: AttributedString, body: Color, link: Color
     ) -> AttributedString {
         var output = input
         // The body colour first, so the links can then be picked out of it.
@@ -141,7 +141,7 @@ struct MessageRow: View {
                 if output[range].link == nil {
                     output[range].link = url
                     output[range].underlineStyle = .single
-                    output[range].foregroundColor = accent
+                    output[range].foregroundColor = link
                 }
                 searchFrom = range.upperBound
             }
