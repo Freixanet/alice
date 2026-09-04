@@ -38,6 +38,16 @@ final class AppStore {
         didSet { defaults.set(selectedModel, forKey: Keys.model) }
     }
 
+    /// The provider the reader picked the model *under*.
+    ///
+    /// The picker groups by provider, so tapping a model under "Nous Portal"
+    /// is choosing Nous — but the same model id is often served by several,
+    /// and without this the agent was left to route it and sent an Anthropic
+    /// model listed under Nous to OpenRouter, which billed for it and refused.
+    var selectedProvider: String? {
+        didSet { defaults.set(selectedProvider, forKey: Keys.provider) }
+    }
+
     var connectionError: String?
     var isConnecting = false
     /// Why the model list is empty, when it is. A picker that just says "no
@@ -70,6 +80,7 @@ final class AppStore {
         static let accent = "alice.accent"
         static let gateway = "alice.gateway"
         static let model = "alice.model"
+        static let provider = "alice.model.provider"
         static let conversations = "alice.conversations"
         static let dashboard = "alice.dashboard"
         static let dashboardUser = "alice.dashboard.user"
@@ -182,6 +193,7 @@ final class AppStore {
            let value = Accent(rawValue: raw) { accent = value }
         gatewayURL = defaults.string(forKey: Keys.gateway) ?? ""
         selectedModel = defaults.string(forKey: Keys.model)
+        selectedProvider = defaults.string(forKey: Keys.provider)
         loadConversations()
         activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
     }
@@ -273,6 +285,7 @@ final class AppStore {
             if selectedModel == nil
                 || !found.contains(where: { $0.id == selectedModel }) {
                 selectedModel = found.first?.id
+                selectedProvider = found.first?.provider
             }
             return !found.isEmpty
         } catch {
@@ -814,10 +827,15 @@ final class AppStore {
     /// choice is ambiguous the agent routes it, which is what its own
     /// fallback chain is for.
     static func provider(
-        for model: String?, among options: [HermesClient.ModelOption]
+        for model: String?,
+        among options: [HermesClient.ModelOption],
+        chosen: String? = nil
     ) -> String? {
         guard let model else { return nil }
         let serving = Set(options.filter { $0.id == model }.compactMap(\.provider))
+        // What the reader picked, when it still serves this model. Only then
+        // does the ambiguity below matter.
+        if let chosen, serving.contains(chosen) { return chosen }
         return serving.count == 1 ? serving.first : nil
     }
 
@@ -1002,7 +1020,9 @@ final class AppStore {
         if let invokedBot, let specificModel = botModel(for: invokedBot) {
             model = specificModel
         }
-        let provider = Self.provider(for: model, among: models)
+        let provider = Self.provider(
+            for: model, among: models, chosen: selectedProvider
+        )
 
         if let invokedBot {
             let botInfo = cachedBots.first(where: { $0.name == invokedBot })

@@ -33,6 +33,9 @@ struct ModelPicker: View {
                     Section("Use anyway") {
                         Button {
                             store.selectedModel = typed
+                            // Typed by hand: no section to take a provider
+                            // from, so the agent routes it.
+                            store.selectedProvider = nil
                             dismiss()
                         } label: {
                             HStack {
@@ -65,6 +68,7 @@ struct ModelPicker: View {
                         ForEach(group.models) { model in
                             Button {
                                 store.selectedModel = model.id
+                                store.selectedProvider = model.provider
                                 dismiss()
                             } label: {
                                 HStack {
