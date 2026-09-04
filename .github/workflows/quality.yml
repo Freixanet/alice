@@ -50,6 +50,13 @@ jobs:
           retention-days: 14
 
   ios:
+    # Pull requests only. GitHub bills macOS at ten times the Linux rate, so
+    # this one job costs more than the rest of the workflow put together —
+    # around two hours of quota per run once Xcode, a brew install and the
+    # tests are counted. Running it again on the push that merges the very
+    # commit it just passed on buys nothing, and thirteen pushes in a night
+    # empty a month's allowance.
+    if: github.event_name == 'pull_request'
     runs-on: macos-26
     timeout-minutes: 20
     steps:
