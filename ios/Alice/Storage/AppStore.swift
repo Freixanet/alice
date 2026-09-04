@@ -1269,8 +1269,14 @@ final class AppStore {
         } else if conversations[chat].messages[index].error == nil,
                   let failure = Self.agentFailure(in: text) {
             conversations[chat].messages[index].error = failure
-            conversations[chat].messages[index].errorLimit =
-                ModelLimitClassifier.classify(status: nil, message: failure)
+            // Deliberately unclassified. A failure wrapped in a 200 is what
+            // the agent says after exhausting its own fallback chain, and the
+            // message is the *last* provider's, not the chosen model's — a
+            // model whose free period had ended was reported as "you have
+            // used up your allowance for this model", naming a limit that
+            // belonged to a different account entirely. Better a bare,
+            // accurate sentence than a confident wrong explanation.
+            conversations[chat].messages[index].errorLimit = nil
         }
         persistConversations()
     }

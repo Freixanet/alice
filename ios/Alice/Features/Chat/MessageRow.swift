@@ -62,7 +62,13 @@ struct MessageRow: View {
                     if let approval = message.approval {
                         RunApprovalCard(messageID: message.id, approval: approval)
                     }
-                    if let limit = message.errorLimit { ModelLimitNote(limit: limit) }
+                    if let limit = message.errorLimit {
+                        ModelLimitNote(limit: limit)
+                    } else if AppStore.agentFailure(in: message.error ?? "") != nil {
+                        Text("This is what the last provider Hermes tried said — it may not be the model you picked. Its own fallbacks are tried in order, and only the final failure comes back.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                     // Only once the reply has finished: acting on half an
                     // answer copies or shares something that is still changing.
                     if !message.pending && !message.content.isEmpty {
