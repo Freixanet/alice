@@ -145,13 +145,21 @@ struct MessageRow: View {
             var searchFrom = output.startIndex
             while searchFrom < output.endIndex,
                   let range = output[searchFrom...].range(of: text) {
-                if output[range].link == nil {
-                    output[range].link = url
-                    output[range].underlineStyle = .single
-                    output[range].foregroundColor = link
-                }
+                if output[range].link == nil { output[range].link = url }
                 searchFrom = range.upperBound
             }
+        }
+
+        // Colouring is a second pass, over ranges taken from the string
+        // itself. Assigned through a range that came from a slice — which is
+        // how the addresses are found — `link` takes and `foregroundColor`
+        // silently does not: the run ends up a link in the body's colour,
+        // which is exactly what it looked like. Verified against the real
+        // AttributedString rather than reasoned about.
+        let linked = output.runs.filter { $0.link != nil }.map(\.range)
+        for range in linked {
+            output[range].foregroundColor = link
+            output[range].underlineStyle = .single
         }
         return output
     }
@@ -311,28 +319,76 @@ private struct SentAttachments: View {
     }
 }
 
+/// What the agent is doing, while it is doing it.
+///
+/// Every tool call used to be listed and kept, so a reply that searched, read
+/// a page and ran a command left a tower of `web_search`, `web_extract`,
+/// `terminal` standing under it for ever — a build log where a sentence was
+/// wanted. Only the step still running is shown, it is replaced by the next,
+/// and when the reply is finished nothing is left behind.
 private struct ToolList: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let tools: [Message.ToolCall]
 
+    /// The last one still going. Hermes reports a tool twice — start, then
+    /// done — so anything with a later `done` is behind us.
+    private var running: Message.ToolCall? {
+        tools.last { $0.status != .done }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(tools) { tool in
-                HStack(spacing: 8) {
-                    Circle()
-                        .frame(width: 5, height: 5)
-                        .foregroundStyle(
-                            tool.status == .done
-                                ? AnyShapeStyle(.secondary)
-                                : AnyShapeStyle(store.accent.primary(scheme))
-                        )
-                    Text(tool.name).font(.caption.monospaced())
-                    if let detail = tool.detail {
-                        Text(detail).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+        if let running {
+            HStack(spacing: 8) {
+                Circle()
+                    .frame(width: 5, height: 5)
+                    .foregroundStyle(store.accent.primary(scheme))
+                Text(Self.phrase(for: running))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.2), value: running.id)
+        }
+    }
+
+    /// A tool's name said as an action.
+    ///
+    /// `web_extract` tells a reader nothing they wanted to know, and a reader
+    /// who does not write software it actively puts off. The names come from
+    /// Hermes and change between builds, so an unknown one falls back to its
+    /// own words tidied up rather than to a shrug.
+    static func phrase(for tool: Message.ToolCall) -> String {
+        let name = tool.name.lowercased()
+        switch true {
+        case name.contains("search"):       return "Searching the web…"
+        case name.contains("browser"),
+             name.contains("playwright"):   return "Opening a page…"
+        case name.contains("extract"),
+             name.contains("fetch"),
+             name.contains("scrape"):       return "Reading a page…"
+        case name.contains("terminal"),
+             name.contains("shell"),
+             name.contains("bash"),
+             name.contains("execute_code"): return "Running a command…"
+        case name.contains("skill"):        return "Checking its notes…"
+        case name.contains("memory"):       return "Remembering…"
+        case name.contains("file"),
+             name.contains("read"):         return "Reading a file…"
+        case name.contains("write"),
+             name.contains("edit"):         return "Writing…"
+        case name.contains("mail"),
+             name.contains("email"):        return "Looking at mail…"
+        case name.contains("calendar"):     return "Checking the calendar…"
+        case name.contains("image"),
+             name.contains("vision"):       return "Looking at an image…"
+        case name.contains("cron"),
+             name.contains("job"):          return "Checking its routines…"
+        default:
+            let words = name
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "-", with: " ")
+            return words.prefix(1).uppercased() + words.dropFirst() + "…"
         }
     }
 }
