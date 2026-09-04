@@ -546,8 +546,12 @@ struct BotsScreen: View {
             .frame(width: 100)
             .contentShape(.rect)
         }
-        // Plain: the glass answers the press itself now.
-        .buttonStyle(.plain)
+        // Interactive glass gives the recoil, and this takes the shine off
+        // it: on a tile this size the system's highlight is a flash rather
+        // than a press, bright enough to lose the bot's colour for the length
+        // of the tap. A little counter-brightness leaves the movement and
+        // keeps the face.
+        .buttonStyle(GlassTile())
         .contextMenu { botMenu(bot) }
     }
 
@@ -1886,4 +1890,15 @@ private struct NewChannelSheet: View {
 
 private func describeBotError(_ error: Error) -> String {
     (error as? LocalizedError)?.errorDescription ?? "The dashboard did not answer."
+}
+
+
+/// Damps the highlight the system's interactive glass throws on a press.
+private struct GlassTile: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .brightness(configuration.isPressed ? -0.06 : 0)
+            .saturation(configuration.isPressed ? 1.08 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
 }
