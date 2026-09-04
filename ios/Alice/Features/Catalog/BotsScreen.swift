@@ -486,6 +486,23 @@ struct BotsScreen: View {
             // Intent, which lives outside this menu.
             }
 
+    private func mark(_ bot: BotRow) -> BotMark { store.mark(for: bot.name) }
+
+    /// How much of the colour to lay under the glass.
+    ///
+    /// Measured off the colour's own lightness rather than fixed. On paper a
+    /// pale mark has almost nothing to say against a pale page and needs
+    /// nearly all of itself; a deep one at the same strength would read as a
+    /// sticker rather than as glass. In the dark it is the other way round.
+    static func backing(_ colour: Color, _ scheme: ColorScheme) -> Double {
+        var white: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(colour).getWhite(&white, alpha: &alpha)
+        let lightness = Double(white)
+        return scheme == .dark
+            ? 0.50 - 0.28 * lightness
+            : 0.48 + 0.46 * lightness
+    }
+
     private func pinnedTile(_ bot: BotRow) -> some View {
         Button {
             store.openBotConversation(for: bot)
@@ -500,25 +517,23 @@ struct BotsScreen: View {
                 // a flat mark.
                 // A tint alone cannot carry colour on a light ground: glass
                 // over near-white is mostly the white, and the bots came out
-                // washed. So the colour is laid underneath as well, and the
-                // glass sits over it — much heavier in the light, where it
-                // has to fight the paper, and light in the dark, where the
-                // same weight would go muddy.
+                // washed. The colour goes underneath as well, at a strength
+                // that depends on the colour: eleven of them, from a near-
+                // white to a deep blue, and one opacity cannot serve both.
+                // Pale marks need almost all of it on paper and very little
+                // in the dark; deep ones the other way round.
                 ZStack {
-                    MarkShape(silhouette: store.mark(for: bot.name).silhouette)
-                        .fill(
-                            store.mark(for: bot.name).color
-                                .opacity(scheme == .dark ? 0.22 : 0.62)
-                        )
+                    MarkShape(silhouette: mark(bot).silhouette)
+                        .fill(mark(bot).color.opacity(Self.backing(mark(bot).color, scheme)))
                     BotFaceView(size: 76)
                 }
                 .frame(width: 76, height: 76)
+                // Interactive, so it answers a press the way every other glass
+                // control in the app does — the system's own recoil, not a
+                // scale effect imitating one.
                 .glassEffect(
-                    .regular.tint(
-                        store.mark(for: bot.name).color
-                            .opacity(scheme == .dark ? 0.50 : 0.40)
-                    ),
-                    in: MarkShape(silhouette: store.mark(for: bot.name).silhouette)
+                    .regular.interactive().tint(mark(bot).color.opacity(0.4)),
+                    in: MarkShape(silhouette: mark(bot).silhouette)
                 )
                 Text(store.botCurrentName(for: bot.name))
                     .font(.footnote.weight(.medium))
@@ -531,10 +546,8 @@ struct BotsScreen: View {
             .frame(width: 100)
             .contentShape(.rect)
         }
-        // Not `.plain`, which gives back nothing at all: a face large enough
-        // to aim at should answer being pressed, the way the one in the middle
-        // of an empty chat does.
-        .buttonStyle(PressedTile())
+        // Plain: the glass answers the press itself now.
+        .buttonStyle(.plain)
         .contextMenu { botMenu(bot) }
     }
 
@@ -1873,15 +1886,4 @@ private struct NewChannelSheet: View {
 
 private func describeBotError(_ error: Error) -> String {
     (error as? LocalizedError)?.errorDescription ?? "The dashboard did not answer."
-}
-
-
-/// A tile that shrinks and dims under the finger.
-private struct PressedTile: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : 1)
-            .opacity(configuration.isPressed ? 0.65 : 1)
-            .animation(.snappy(duration: 0.18), value: configuration.isPressed)
-    }
 }
