@@ -100,7 +100,7 @@ struct RootView: View {
                                 guard translation > drawerWidth * 0.3
                                     || predicted > 120
                                 else { return }
-                                UIImpactFeedbackGenerator(style: .medium)
+                                UIImpactFeedbackGenerator(style: .soft)
                                     .impactOccurred()
                                 store.goHome()
                                 // Home is behind this page, so the page has
@@ -205,13 +205,13 @@ struct RootView: View {
     /// Forward into the bots from Alice's own conversation: in off the right,
     /// the way anything you are moving towards should arrive.
     private func openBots() {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         store.botsFromLeading = false
         store.showingBots = true
     }
 
     private func goBackToBots() {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         store.botsFromLeading = true
         store.showingBots = true
     }
@@ -237,7 +237,7 @@ struct RootView: View {
 
     private func setDrawer(_ open: Bool) {
         if drawerOpen != open {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         }
         if open {
             // The keyboard would otherwise stay up behind the drawer, with

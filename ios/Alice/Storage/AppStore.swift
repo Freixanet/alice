@@ -38,6 +38,14 @@ final class AppStore {
         didSet { defaults.set(selectedModel, forKey: Keys.model) }
     }
 
+    /// The last few models picked, most recent first.
+    ///
+    /// Somebody who uses one or two models does not want to hunt for them
+    /// among a hundred every time.
+    var recentModels: [String] = [] {
+        didSet { defaults.set(recentModels, forKey: Keys.recentModels) }
+    }
+
     /// The provider the reader picked the model *under*.
     ///
     /// The picker groups by provider, so tapping a model under "Nous Portal"
@@ -81,6 +89,7 @@ final class AppStore {
         static let gateway = "alice.gateway"
         static let model = "alice.model"
         static let provider = "alice.model.provider"
+        static let recentModels = "alice.models.recent"
         static let conversations = "alice.conversations"
         static let dashboard = "alice.dashboard"
         static let dashboardUser = "alice.dashboard.user"
@@ -194,6 +203,7 @@ final class AppStore {
         gatewayURL = defaults.string(forKey: Keys.gateway) ?? ""
         selectedModel = defaults.string(forKey: Keys.model)
         selectedProvider = defaults.string(forKey: Keys.provider)
+        recentModels = defaults.stringArray(forKey: Keys.recentModels) ?? []
         loadConversations()
         activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
     }
@@ -303,8 +313,13 @@ final class AppStore {
                 hasRefreshedModels = true
                 Task { [weak self] in _ = await self?.loadModels(refreshing: true) }
             }
-            if selectedModel == nil
-                || !models.contains(where: { $0.id == selectedModel }) {
+            // A saved choice is kept even when the list does not currently
+            // contain it. The catalogue arrives late, incomplete and sometimes
+            // wrong — a provider missing from the cheap answer used to be
+            // enough to overwrite the model somebody had chosen, so every
+            // reconnection landed on whatever happened to be first in the
+            // list. Only an empty choice gets filled in.
+            if selectedModel == nil {
                 selectedModel = models.first?.id
                 selectedProvider = models.first?.provider
             }
@@ -818,6 +833,15 @@ final class AppStore {
         } else {
             newChat()
         }
+    }
+
+    /// Records a model as chosen, keeping the short list of recent ones.
+    func chooseModel(_ id: String, provider: String?) {
+        selectedModel = id
+        selectedProvider = provider
+        var recent = recentModels.filter { $0 != id }
+        recent.insert(id, at: 0)
+        recentModels = Array(recent.prefix(6))
     }
 
     func newChat() {

@@ -26,8 +26,20 @@ struct Sidebar: View {
         VStack(spacing: 0) {
             header
             destinations
-            list
-            footer
+
+            // The conversations run underneath the footer rather than stopping
+            // above it. Glass has to have something behind it to be glass: with
+            // the list ending where the buttons begin, those two discs sat over
+            // flat card colour and refracted nothing. Now a row slides beneath
+            // them and, at the very bottom, fades out instead of being cut off.
+            //
+            // The same at the top, where the list passes under the fixed rows —
+            // Bots, Jobs, Library — so a conversation scrolling up dissolves
+            // rather than vanishing at a hard line.
+            ZStack(alignment: .bottom) {
+                list.mask(edgeFade)
+                footer
+            }
         }
         .frame(maxHeight: .infinity)
         .background(Palette.card(scheme).ignoresSafeArea())
@@ -95,17 +107,17 @@ struct Sidebar: View {
     /// dashboard, so they appear only once there is one to ask.
     private var destinations: some View {
         VStack(spacing: 2) {
-            if store.dashboardReady {
-                row("Bots", systemImage: "person.2", weight: .medium) {
-                    onDismiss()
-                    store.botsFromLeading = false
-                    store.showingBots = true
-                }
+            // Always listed, connected or not. A row that disappears when the
+            // agent is unreachable teaches the reader that the app is broken
+            // rather than that the connection is: the destination still knows
+            // what it last saw, and says so when it cannot refresh.
+            row("Bots", systemImage: "person.2", weight: .medium) {
+                onDismiss()
+                store.botsFromLeading = false
+                store.showingBots = true
             }
             row("Jobs", systemImage: "clock", weight: .medium) { going = .jobs }
-            if store.dashboardReady {
-                row("Projects", systemImage: "folder", weight: .medium) { going = .projects }
-            }
+            row("Projects", systemImage: "folder", weight: .medium) { going = .projects }
             row("Skills", systemImage: "sparkles", weight: .medium) { going = .skills }
             row("Tools", systemImage: "wrench.adjustable", weight: .medium) { going = .tools }
             row("Library", systemImage: "photo.on.rectangle", weight: .medium) { going = .library }
@@ -124,6 +136,24 @@ struct Sidebar: View {
             // everything else in the drawer.
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
+    }
+
+    /// Opaque through the middle, out at both ends.
+    ///
+    /// Short fades: long ones dim rows that are perfectly legible and merely
+    /// near an edge. Twenty-two points is about one row's worth of travel —
+    /// enough to read as dissolving rather than as clipping.
+    private var edgeFade: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black, location: 0.035),
+                .init(color: .black, location: 0.88),
+                .init(color: .clear, location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     private var list: some View {
@@ -319,7 +349,13 @@ struct Sidebar: View {
                 store.newChat()
                 onDismiss()
             } label: {
-                Image(systemName: "plus")
+                // No nudge. The pencil hangs off the square's top-right, so
+                // the obvious correction is to shove the glyph back down and
+                // left — but measured against the 44pt frame the square's own
+                // centre already lands within a third of a point of it, and a
+                // 2.5pt "correction" moved it that far off. Apple has already
+                // balanced this one.
+                Image(systemName: "square.and.pencil")
                     .font(.system(size: 18, weight: .medium))
                     .imageScale(.large)
                     .frame(width: 44, height: 44)
@@ -330,6 +366,8 @@ struct Sidebar: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
+        // No background: the discs are the only thing meant to be seen here,
+        // and anything behind them is the point.
         .padding(.bottom, 12)
     }
 

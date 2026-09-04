@@ -30,6 +30,7 @@ struct Composer: View {
     /// when dictation fails to start — which is exactly when the reader most
     /// needs to know the button registered.
     @State private var micTaps = 0
+    @State private var pendingListen: Bool?
 
     /// One height for every control on the bottom row, so the send button and
     /// the model chip line up instead of each taking the size its own padding
@@ -377,11 +378,22 @@ struct Composer: View {
     /// can be fixed before the agent ever sees it.
     @ViewBuilder
     private var micButton: some View {
-        let listening = dictation.isListening
+        // What the finger asked for, until the recogniser catches up. Starting
+        // dictation sets up an audio session and a speech recogniser before
+        // `isListening` turns over, and the icon was waiting for all of it —
+        // long enough on a cold start to look like the tap had missed. The
+        // symbol now changes on the tap and the real state takes over when it
+        // arrives.
+        let listening = pendingListen ?? dictation.isListening
         Button {
             micTaps += 1
-            dictation.prime(with: store.draft)
-            dictation.toggle { store.draft = $0 }
+            pendingListen = !listening
+            let draft = store.draft
+            // Off this run loop turn, so the button redraws first.
+            Task {
+                dictation.prime(with: draft)
+                dictation.toggle { store.draft = $0 }
+            }
         } label: {
             Image(systemName: listening ? "waveform" : "mic")
                 .font(.system(size: 16, weight: .medium))
@@ -397,6 +409,7 @@ struct Composer: View {
         // not sure they pressed.
         .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
         .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
+        .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
     }
 
     /// One button holds the trailing slot: send when idle, stop while a reply is

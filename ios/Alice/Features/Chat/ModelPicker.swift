@@ -32,10 +32,9 @@ struct ModelPicker: View {
                 if let typed = customCandidate {
                     Section("Use anyway") {
                         Button {
-                            store.selectedModel = typed
                             // Typed by hand: no section to take a provider
                             // from, so the agent routes it.
-                            store.selectedProvider = nil
+                            store.chooseModel(typed, provider: nil)
                             dismiss()
                         } label: {
                             HStack {
@@ -63,23 +62,20 @@ struct ModelPicker: View {
                     }
                 }
 
+                // Recents first. Somebody who lives in one or two models
+                // should not read past ninety-eight others to reach them.
+                if !recents.isEmpty, query.isEmpty {
+                    Section("Recent") {
+                        ForEach(recents) { model in
+                            row(model)
+                        }
+                    }
+                }
+
                 ForEach(groups, id: \.name) { group in
                     Section(group.name) {
                         ForEach(group.models) { model in
-                            Button {
-                                store.selectedModel = model.id
-                                store.selectedProvider = model.provider
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Text(model.label).foregroundStyle(.primary)
-                                    Spacer()
-                                    if model.id == store.selectedModel {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(store.accent.primary(scheme))
-                                    }
-                                }
-                            }
+                            row(model)
                         }
                     }
                 }
@@ -137,6 +133,30 @@ struct ModelPicker: View {
     private struct Group {
         let name: String
         let models: [HermesClient.ModelOption]
+    }
+
+    /// The recently chosen models that the agent still offers, in the order
+    /// they were last picked.
+    private var recents: [HermesClient.ModelOption] {
+        store.recentModels.compactMap { id in
+            store.models.first { $0.id == id }
+        }
+    }
+
+    private func row(_ model: HermesClient.ModelOption) -> some View {
+        Button {
+            store.chooseModel(model.id, provider: model.provider)
+            dismiss()
+        } label: {
+            HStack {
+                Text(model.label).foregroundStyle(.primary)
+                Spacer()
+                if model.id == store.selectedModel {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(store.accent.primary(scheme))
+                }
+            }
+        }
     }
 
     private var groups: [Group] {

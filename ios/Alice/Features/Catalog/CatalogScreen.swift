@@ -95,7 +95,16 @@ struct CatalogScreen: View {
         .background(Palette.background(scheme))
         .refreshable { await load() }
         .task { await load() }
-        .overlay { overlay }
+        .overlay {
+            ScrollView {
+                overlay.frame(maxWidth: .infinity, minHeight: 420)
+            }
+            .scrollContentBackground(.hidden)
+            .background(Palette.background(scheme))
+            .refreshable { await load() }
+            .opacity(showsOverlay ? 1 : 0)
+            .allowsHitTesting(showsOverlay)
+        }
         // A skill is a Markdown file the agent reads. Hermes will hand it
         // over and take it back, so there is no reason to make somebody go
         // to a laptop to change a sentence in one.
@@ -115,6 +124,16 @@ struct CatalogScreen: View {
         }
     }
 
+    /// Whether one of the replacement states is showing.
+    private var showsOverlay: Bool {
+        !store.isConnected
+            || !store.supports(source.capability)
+            || (loading && rows.isEmpty)
+            || error != nil
+            || rows.isEmpty
+            || filtered.isEmpty
+    }
+
     private var groups: [String] {
         Array(Set(rows.compactMap(\.group))).sorted()
     }
@@ -128,6 +147,10 @@ struct CatalogScreen: View {
         }
     }
 
+    /// The states that replace the list, wrapped so a pull still reaches
+    /// `.refreshable`. An overlay laid over an empty List does not scroll, so
+    /// a failure recorded while the agent was down could not be cleared by
+    /// asking again — it simply stayed.
     @ViewBuilder
     private var overlay: some View {
         if !store.isConnected {

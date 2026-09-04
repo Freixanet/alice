@@ -491,7 +491,10 @@ struct BotsScreen: View {
             .frame(width: 100)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        // Not `.plain`, which gives back nothing at all: a face large enough
+        // to aim at should answer being pressed, the way the one in the middle
+        // of an empty chat does.
+        .buttonStyle(PressedTile())
         .contextMenu { botMenu(bot) }
     }
 
@@ -1830,4 +1833,15 @@ private struct NewChannelSheet: View {
 
 private func describeBotError(_ error: Error) -> String {
     (error as? LocalizedError)?.errorDescription ?? "The dashboard did not answer."
+}
+
+
+/// A tile that shrinks and dims under the finger.
+private struct PressedTile: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .opacity(configuration.isPressed ? 0.65 : 1)
+            .animation(.snappy(duration: 0.18), value: configuration.isPressed)
+    }
 }

@@ -190,13 +190,21 @@ struct ProjectsScreen: View {
     private func load() async {
         loading = true
         defer { loading = false }
+
+        // Two independent reads, and they must fail independently. The
+        // session tree answers 404 on this agent, and taking both in one `do`
+        // meant that 404 threw away the projects that had already loaded and
+        // put "The dashboard returned 404." over the whole screen — including
+        // over the button that creates one, and over whatever a creation had
+        // just reported. A section that cannot be read is a missing section,
+        // not a broken screen.
         do {
             mine = try await store.namedProjects()
-            rows = try await store.projects()
             failure = nil
         } catch {
             failure = message(error)
         }
+        rows = (try? await store.projects()) ?? []
     }
 }
 
@@ -364,13 +372,25 @@ private struct DashboardList<Content: View>: View {
             if loading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let failure {
-                ContentUnavailableView(
-                    title, systemImage: symbol, description: Text(failure)
-                )
+                // In a scroll view so it can be pulled. A bare
+                // ContentUnavailableView does not scroll, and `.refreshable`
+                // on something that cannot scroll does nothing at all — so an
+                // error from a moment when the agent was unreachable stayed on
+                // screen after the agent came back, with no way to ask again
+                // short of leaving and returning.
+                ScrollView {
+                    ContentUnavailableView(
+                        title, systemImage: symbol, description: Text(failure)
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 420)
+                }
             } else if isEmpty {
-                ContentUnavailableView(
-                    title, systemImage: symbol, description: Text(empty)
-                )
+                ScrollView {
+                    ContentUnavailableView(
+                        title, systemImage: symbol, description: Text(empty)
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 420)
+                }
             } else {
                 content
             }
