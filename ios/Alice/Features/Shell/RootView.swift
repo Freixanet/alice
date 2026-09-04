@@ -37,7 +37,8 @@ struct RootView: View {
 
                 ChatScreen(
                     onOpenDrawer: { setDrawer(true) },
-                    onBack: goBackToBots
+                    onBack: goBackToBots,
+                    onOpenBots: openBots
                 )
                     .overlay {
                         // Grows with the gesture rather than appearing at the end,
@@ -113,7 +114,20 @@ struct RootView: View {
                         )
                         .allowsHitTesting(false)
                     }
-                    .transition(.move(edge: store.botsFromLeading ? .leading : .trailing))
+                    // Only the arrival varies. A removal transition is read
+                    // from the view as it last existed, not as it is being
+                    // dismissed, so setting the direction in the same breath
+                    // as closing the page had no effect: it left by whichever
+                    // side it had arrived from. Backing out of a bot's chat
+                    // set that to the left, and home was then uncovered from
+                    // the right, against the finger, for every swipe after.
+                    // Leaving is always rightward, which is what leaving is.
+                    .transition(.asymmetric(
+                        insertion: .move(
+                            edge: store.botsFromLeading ? .leading : .trailing
+                        ),
+                        removal: .move(edge: .trailing)
+                    ))
                     .zIndex(1)
                 }
             }
@@ -144,16 +158,21 @@ struct RootView: View {
                 if !store.showingBots {
                     DrawerPan(
                     shouldBegin: { velocity in
-                        // Sideways enough to be meant sideways, and pointing the
-                        // way the drawer can actually move from here.
+                        // Sideways enough to be meant sideways.
                         guard abs(velocity.x) > abs(velocity.y) * 1.5 else { return false }
-                        return drawerOpen ? velocity.x < 0 : velocity.x > 0
+                        // With the drawer open there is only one way to go.
+                        // With it shut there are two: right opens it, left
+                        // goes to the bots.
+                        return drawerOpen ? velocity.x < 0 : true
                     },
                     onChange: { translation in
                         // In a bot's conversation the swipe is a back gesture,
                         // so nothing follows the finger: the drawer it would
                         // otherwise reveal has nothing to do with this bot.
                         guard !inBotChat || drawerOpen else { return }
+                        // A leftward drag is heading for the bots page, which
+                        // arrives as a page rather than by being dragged in.
+                        guard drawerOpen || translation > 0 else { return }
                         drag = drawerOpen ? min(0, translation) : max(0, translation)
                     },
                     onEnd: { translation, predicted in
@@ -162,6 +181,10 @@ struct RootView: View {
                         drag = 0
                         guard !inBotChat || drawerOpen else {
                             if travelled || flicked { goBackToBots() }
+                            return
+                        }
+                        if !drawerOpen, translation < 0 {
+                            if travelled || flicked { openBots() }
                             return
                         }
                         setDrawer(drawerOpen ? !(travelled || flicked) : (travelled || flicked))
@@ -179,6 +202,14 @@ struct RootView: View {
     }
 
     /// Back out of a bot's conversation to the list it was opened from.
+    /// Forward into the bots from Alice's own conversation: in off the right,
+    /// the way anything you are moving towards should arrive.
+    private func openBots() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        store.botsFromLeading = false
+        store.showingBots = true
+    }
+
     private func goBackToBots() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         store.botsFromLeading = true

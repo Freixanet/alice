@@ -282,6 +282,17 @@ final class AppStore {
             modelsError = found.isEmpty
                 ? "This Hermes did not return a model list at that address."
                 : nil
+            if refreshing { hasRefreshedModels = true }
+            // The cheap answer comes from a computed cache that can be wrong
+            // in one direction only: it drops providers whose models it last
+            // judged unavailable. So take it for the first paint, then ask
+            // once for the real thing and let the picker fill in. Waiting for
+            // the slow call up front would cost eight seconds on every launch
+            // to fix a list that is usually already right.
+            if !refreshing, !hasRefreshedModels {
+                hasRefreshedModels = true
+                Task { [weak self] in _ = await self?.loadModels(refreshing: true) }
+            }
             if selectedModel == nil
                 || !found.contains(where: { $0.id == selectedModel }) {
                 selectedModel = found.first?.id
@@ -869,6 +880,9 @@ final class AppStore {
     /// or by backing out of a bot's conversation, and a screen that rises
     /// from the bottom in answer to a swipe to the right reads as the wrong
     /// screen appearing.
+    /// Whether the catalogue has been genuinely recomputed this launch.
+    @ObservationIgnored private var hasRefreshedModels = false
+
     var showingBots = false
 
     /// Which side the bots page comes from and leaves by.

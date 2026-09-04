@@ -5,6 +5,7 @@ struct ChatScreen: View {
     @Environment(\.colorScheme) private var scheme
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
+    let onOpenBots: () -> Void
 
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
@@ -136,8 +137,23 @@ struct ChatScreen: View {
 
             Spacer(minLength: 0)
 
-            Color.clear
-                .frame(width: discSize, height: discSize)
+            // Where a bot's conversation has nothing to put here — it came
+            // from the bots and goes back with the chevron opposite — Alice's
+            // own gets the way in, so the list is one tap from the place you
+            // start, not two through a drawer.
+            if bot == nil {
+                Button(action: onOpenBots) {
+                    Image(systemName: "person.2")
+                        .font(.system(size: 18, weight: .regular))
+                        .imageScale(.large)
+                        .frame(width: discSize, height: discSize)
+                }
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Bots")
+            } else {
+                Color.clear
+                    .frame(width: discSize, height: discSize)
+            }
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)

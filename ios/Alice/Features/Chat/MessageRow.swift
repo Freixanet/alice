@@ -89,7 +89,7 @@ struct MessageRow: View {
     /// bold, italics and code while leaving every newline exactly where the
     /// model put it, which is the half of Markdown that survives here.
     private var attributed: AttributedString {
-        Self.linkified(parsed)
+        Self.linkified(parsed, accent: store.accent.primary(scheme))
     }
 
     /// Makes a bare URL tappable.
@@ -103,7 +103,9 @@ struct MessageRow: View {
     /// attributed copy by searching for them. Converting string offsets across
     /// the two is the obvious route and the fragile one: markdown parsing does
     /// not preserve them, and every failed conversion silently dropped a link.
-    private static func linkified(_ input: AttributedString) -> AttributedString {
+    private static func linkified(
+        _ input: AttributedString, accent: Color
+    ) -> AttributedString {
         var output = input
         let plain = String(output.characters)
         guard !plain.isEmpty,
@@ -128,6 +130,11 @@ struct MessageRow: View {
                 if output[range].link == nil {
                     output[range].link = url
                     output[range].underlineStyle = .single
+                    // Painted here rather than left to the environment: the
+                    // whole reply carries a foregroundStyle, and it was
+                    // covering the link colour so the addresses read as plain
+                    // text — tappable, but with nothing to say so.
+                    output[range].foregroundColor = accent
                 }
                 searchFrom = range.upperBound
             }
