@@ -278,25 +278,35 @@ final class AppStore {
         defer { isLoadingModels = false }
         do {
             let found = try await client.models(refreshing: refreshing)
-            models = found
-            modelsError = found.isEmpty
-                ? "This Hermes did not return a model list at that address."
-                : nil
+
+            // The cheap answer comes from a computed cache that is wrong in
+            // one direction: it marks a provider's models unavailable and
+            // then keeps saying so, which is how Nous — thirty-eight models,
+            // all thirty-eight declared unavailable — vanished from the
+            // picker. Recomputing fixes it but does not write the correction
+            // back, so the cheap call keeps its wrong answer for ever.
+            //
+            // So the cheap answer is a first paint only, and once a real
+            // refresh has landed it is not allowed to overwrite it. Several
+            // things ask for the list — connecting, opening the picker — and
+            // any one of them arriving after the refresh used to put the
+            // truncated list back, which is why refreshing appeared to work
+            // and then undo itself.
+            if refreshing || !hasRefreshedModels {
+                models = found
+                modelsError = found.isEmpty
+                    ? "This Hermes did not return a model list at that address."
+                    : nil
+            }
             if refreshing { hasRefreshedModels = true }
-            // The cheap answer comes from a computed cache that can be wrong
-            // in one direction only: it drops providers whose models it last
-            // judged unavailable. So take it for the first paint, then ask
-            // once for the real thing and let the picker fill in. Waiting for
-            // the slow call up front would cost eight seconds on every launch
-            // to fix a list that is usually already right.
-            if !refreshing, !hasRefreshedModels {
+            if !refreshing, !hasRefreshedModels, !found.isEmpty {
                 hasRefreshedModels = true
                 Task { [weak self] in _ = await self?.loadModels(refreshing: true) }
             }
             if selectedModel == nil
-                || !found.contains(where: { $0.id == selectedModel }) {
-                selectedModel = found.first?.id
-                selectedProvider = found.first?.provider
+                || !models.contains(where: { $0.id == selectedModel }) {
+                selectedModel = models.first?.id
+                selectedProvider = models.first?.provider
             }
             return !found.isEmpty
         } catch {
