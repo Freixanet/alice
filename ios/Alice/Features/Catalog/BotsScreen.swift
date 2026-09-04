@@ -387,9 +387,12 @@ struct BotsScreen: View {
             // sat in the left one with two empty columns beside it, looking
             // less like the one thing worth reaching first than like the first
             // of three you had failed to pin.
-            VStack(spacing: 18) {
+            // Generous gaps. The menu lifts a bot out of the row and grows
+            // it, and at twelve points apart it had nowhere to grow into —
+            // the lifted tile arrived overlapping its neighbours.
+            VStack(spacing: 26) {
                 ForEach(Array(stride(from: 0, to: pinned.count, by: 3)), id: \.self) { start in
-                    HStack(spacing: 12) {
+                    HStack(spacing: 22) {
                         ForEach(pinned[start..<min(start + 3, pinned.count)]) { bot in
                             pinnedTile(bot)
                         }
@@ -531,9 +534,20 @@ struct BotsScreen: View {
                 // Interactive, so it answers a press the way every other glass
                 // control in the app does — the system's own recoil, not a
                 // scale effect imitating one.
+                // Not `.interactive()`. Its highlight is sized for a small
+                // control and on a 76pt tile it reads as a flash, and while
+                // the finger is held the effect morphs past the silhouette —
+                // colour spilling out of the shape before the menu opens. The
+                // press is given below instead, where it can be judged.
                 .glassEffect(
-                    .regular.interactive().tint(mark(bot).color.opacity(0.4)),
+                    .regular.tint(mark(bot).color.opacity(0.4)),
                     in: MarkShape(silhouette: mark(bot).silhouette)
+                )
+                // The menu lifts the bot's own outline rather than a square
+                // drawn around it.
+                .contentShape(
+                    .contextMenuPreview,
+                    MarkShape(silhouette: mark(bot).silhouette)
                 )
                 Text(store.botCurrentName(for: bot.name))
                     .font(.footnote.weight(.medium))
@@ -546,11 +560,6 @@ struct BotsScreen: View {
             .frame(width: 100)
             .contentShape(.rect)
         }
-        // Interactive glass gives the recoil, and this takes the shine off
-        // it: on a tile this size the system's highlight is a flash rather
-        // than a press, bright enough to lose the bot's colour for the length
-        // of the tap. A little counter-brightness leaves the movement and
-        // keeps the face.
         .buttonStyle(GlassTile())
         .contextMenu { botMenu(bot) }
     }
@@ -1893,12 +1902,16 @@ private func describeBotError(_ error: Error) -> String {
 }
 
 
-/// Damps the highlight the system's interactive glass throws on a press.
+/// The press, given as movement rather than as light.
+///
+/// The system's interactive glass answers with a highlight, which at this
+/// size is a flash — and held, it morphs the effect out past the silhouette.
+/// A tile this large only needs to give a little under the finger to read as
+/// pressed.
 private struct GlassTile: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .brightness(configuration.isPressed ? -0.06 : 0)
-            .saturation(configuration.isPressed ? 1.08 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.955 : 1)
+            .animation(.snappy(duration: 0.16), value: configuration.isPressed)
     }
 }
