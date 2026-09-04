@@ -95,9 +95,14 @@ struct MessageRow: View {
     /// Makes a bare URL tappable.
     ///
     /// Markdown only marks a link that was written as one, and a model listing
-    /// deals writes the address plainly. Left as text it was something to copy
-    /// out by hand, which for a list of seven offers is most of the work the
-    /// list was meant to save.
+    /// deals writes the address plainly. Left as text it is something to copy
+    /// out by hand, which for a list of offers is most of the work the list
+    /// was meant to save.
+    ///
+    /// The addresses are found in the plain text and then located again in the
+    /// attributed copy by searching for them. Converting string offsets across
+    /// the two is the obvious route and the fragile one: markdown parsing does
+    /// not preserve them, and every failed conversion silently dropped a link.
     private static func linkified(_ input: AttributedString) -> AttributedString {
         var output = input
         let plain = String(output.characters)
@@ -107,19 +112,25 @@ struct MessageRow: View {
               )
         else { return output }
 
-        let matches = detector.matches(
-            in: plain, range: NSRange(plain.startIndex..., in: plain)
-        )
-        for match in matches.reversed() {
-            guard let url = match.url,
-                  let range = Range(match.range, in: plain),
-                  let lower = AttributedString.Index(range.lowerBound, within: output),
-                  let upper = AttributedString.Index(range.upperBound, within: output)
-            else { continue }
-            // Anything already carrying a link was written as one; leave it.
-            guard output[lower..<upper].link == nil else { continue }
-            output[lower..<upper].link = url
-            output[lower..<upper].underlineStyle = .single
+        let found = detector
+            .matches(in: plain, range: NSRange(plain.startIndex..., in: plain))
+            .compactMap { match -> (String, URL)? in
+                guard let url = match.url,
+                      let range = Range(match.range, in: plain)
+                else { return nil }
+                return (String(plain[range]), url)
+            }
+
+        for (text, url) in found {
+            var searchFrom = output.startIndex
+            while searchFrom < output.endIndex,
+                  let range = output[searchFrom...].range(of: text) {
+                if output[range].link == nil {
+                    output[range].link = url
+                    output[range].underlineStyle = .single
+                }
+                searchFrom = range.upperBound
+            }
         }
         return output
     }
