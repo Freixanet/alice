@@ -498,12 +498,28 @@ struct BotsScreen: View {
                 // one thing on this page you reach for without reading, so
                 // it is the one that can afford to be a surface rather than
                 // a flat mark.
-                BotFaceView(size: 76)
-                    .frame(width: 76, height: 76)
-                    .glassEffect(
-                        .regular.tint(store.mark(for: bot.name).color.opacity(0.55)),
-                        in: MarkShape(silhouette: store.mark(for: bot.name).silhouette)
-                    )
+                // A tint alone cannot carry colour on a light ground: glass
+                // over near-white is mostly the white, and the bots came out
+                // washed. So the colour is laid underneath as well, and the
+                // glass sits over it — much heavier in the light, where it
+                // has to fight the paper, and light in the dark, where the
+                // same weight would go muddy.
+                ZStack {
+                    MarkShape(silhouette: store.mark(for: bot.name).silhouette)
+                        .fill(
+                            store.mark(for: bot.name).color
+                                .opacity(scheme == .dark ? 0.22 : 0.62)
+                        )
+                    BotFaceView(size: 76)
+                }
+                .frame(width: 76, height: 76)
+                .glassEffect(
+                    .regular.tint(
+                        store.mark(for: bot.name).color
+                            .opacity(scheme == .dark ? 0.50 : 0.40)
+                    ),
+                    in: MarkShape(silhouette: store.mark(for: bot.name).silhouette)
+                )
                 Text(store.botCurrentName(for: bot.name))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.primary)
