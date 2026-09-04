@@ -11,9 +11,55 @@ struct ModelPicker: View {
     @Environment(\.colorScheme) private var scheme
     @State private var query = ""
 
+    /// A typed id worth offering: it looks like a model name, and nothing in
+    /// the catalogue already matches it exactly.
+    private var customCandidate: String? {
+        let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard typed.count >= 3, !typed.contains(" ") else { return nil }
+        guard !store.models.contains(where: { $0.id == typed }) else { return nil }
+        return typed
+    }
+
     var body: some View {
         NavigationStack {
             List {
+                // Hermes does not always list everything it can serve. Its
+                // catalogue for Nous, for one, holds only that provider's paid
+                // models, so the free ones — which answer perfectly well —
+                // appear nowhere and their provider vanishes from this screen
+                // along with them. Typing an id is the way to reach anything
+                // the catalogue has left out.
+                if let typed = customCandidate {
+                    Section("Use anyway") {
+                        Button {
+                            store.selectedModel = typed
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Text(typed).foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "arrow.turn.down.left")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                // And once chosen, it has to be visible: a model this list has
+                // never heard of would otherwise leave the screen looking as
+                // though nothing were selected at all.
+                if let current = store.selectedModel,
+                   !store.models.contains(where: { $0.id == current }) {
+                    Section("Current") {
+                        HStack {
+                            Text(current).foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(store.accent.primary(scheme))
+                        }
+                    }
+                }
+
                 ForEach(groups, id: \.name) { group in
                     Section(group.name) {
                         ForEach(group.models) { model in
