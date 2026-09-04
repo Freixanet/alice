@@ -502,9 +502,13 @@ struct BotsScreen: View {
         var white: CGFloat = 0, alpha: CGFloat = 0
         UIColor(colour).getWhite(&white, alpha: &alpha)
         let lightness = Double(white)
+        // Raised in both, and most in the dark. Interactive glass sits darker
+        // than the plain kind — it has a shadow and a deeper surface — so the
+        // colour underneath has to come up to meet it or every bot reads as a
+        // muddy version of itself.
         return scheme == .dark
-            ? 0.50 - 0.28 * lightness
-            : 0.48 + 0.46 * lightness
+            ? 0.72 - 0.26 * lightness
+            : 0.60 + 0.38 * lightness
     }
 
     private func pinnedTile(_ bot: BotRow) -> some View {
@@ -553,13 +557,16 @@ struct BotsScreen: View {
         }
         .frame(width: size, height: size)
         // Interactive, which is what makes it stretch under a finger the way
-        // the discs in the conversation do. It brings a highlight with it —
-        // the flash that had to go — so the tint underneath is lighter than
-        // it would otherwise be: the system's light has less to blow out.
+        // the discs in the conversation do.
         .glassEffect(
-            .regular.interactive().tint(mark(bot).color.opacity(0.26)),
+            .regular.interactive().tint(mark(bot).color.opacity(0.42)),
             in: MarkShape(silhouette: mark(bot).silhouette)
         )
+        // Slack outside the glass, not inside it: the shape is cut to the
+        // mark first and the room comes after. The stretch draws beyond the
+        // mark's own bounds, and with nothing around it the top of the bulge
+        // was cut off against the edge of the layer.
+        .padding(size * 0.16)
     }
 
     /// Said out loud rather than left to be assumed: this list came from the
