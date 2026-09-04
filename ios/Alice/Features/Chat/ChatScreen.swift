@@ -143,9 +143,14 @@ struct ChatScreen: View {
             // start, not two through a drawer.
             if bot == nil {
                 Button(action: onOpenBots) {
+                    // Not the 20pt the glyphs opposite are set at. `equal`
+                    // and `chevron.left` are narrow marks that need the size
+                    // to read; two figures side by side are half again as
+                    // wide as they are tall, so at the same setting the icon
+                    // reached the rim of its disc. Sized to match their ink,
+                    // not their point size.
                     Image(systemName: "person.2")
-                        .font(.system(size: 18, weight: .regular))
-                        .imageScale(.large)
+                        .font(.system(size: 15, weight: .regular))
                         .frame(width: discSize, height: discSize)
                 }
                 .glassEffect(.regular.interactive(), in: .circle)
