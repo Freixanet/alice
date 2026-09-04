@@ -31,6 +31,7 @@ struct BotsScreen: View {
     @State private var creatingBot = false
     @State private var creatingChannel = false
     @State private var editingBot: BotRow?
+    @State private var pressedBot: String?
     @State private var deletingBot: BotRow?
     enum SearchFilter: String, CaseIterable, Identifiable {
         case all = "All"
@@ -507,32 +508,26 @@ struct BotsScreen: View {
     }
 
     private func pinnedTile(_ bot: BotRow) -> some View {
-        Button {
+        let pressed = pressedBot == bot.name
+
+        return Button {
             store.openBotConversation(for: bot)
             store.botsExitLeading = true
             onClose()
         } label: {
             VStack(spacing: 8) {
-                // Glass cut to the bot's own outline, tinted its own colour,
-                // with the eyes on top. The colour also goes underneath: a
-                // tint alone cannot carry it on a light ground, where glass
-                // over near-white is mostly the white. How much depends on
-                // the colour — eleven of them, from a near-white to a deep
-                // blue, and one opacity cannot serve both.
-                ZStack {
-                    MarkShape(silhouette: mark(bot).silhouette)
-                        .fill(mark(bot).color.opacity(Self.backing(mark(bot).color, scheme)))
-                    BotFaceView(size: 76)
-                }
-                .frame(width: 76, height: 76)
-                // Not `.interactive()`: its highlight is sized for a small
-                // control and on a tile this size reads as a flash, and held,
-                // the effect morphs out past the silhouette. The press is
-                // given as movement instead, in the button style below.
-                .glassEffect(
-                    .regular.tint(mark(bot).color.opacity(0.4)),
-                    in: MarkShape(silhouette: mark(bot).silhouette)
-                )
+                glassMark(bot, size: 76)
+                    // Our own sheen, not the system's. `.interactive()` gives
+                    // the right *idea* — light answering the finger — at four
+                    // times the strength this size wants, and it morphs out
+                    // past the silhouette when held. This is the same idea at
+                    // a twelfth of the brightness, clipped to the shape.
+                    .overlay {
+                        MarkShape(silhouette: mark(bot).silhouette)
+                            .fill(.white.opacity(pressed ? 0.16 : 0))
+                    }
+                    .scaleEffect(pressed ? 0.94 : 1)
+                    .animation(.snappy(duration: 0.16), value: pressed)
 
                 Text(store.botCurrentName(for: bot.name))
                     .font(.footnote.weight(.medium))
@@ -540,21 +535,41 @@ struct BotsScreen: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            // Fixed, so a row of three lines up and a row of one still knows
-            // how wide it is to be centred in.
             .frame(width: 100)
         }
-        .buttonStyle(GlassTile())
-        // What the menu lifts. Declared on the button, after the label, and
-        // before the menu itself — an inner one is overridden by whatever the
-        // button ends up using, which is how a hard-edged square kept being
-        // raised around a round face. A card rather than the silhouette,
-        // because the preview has to hold the name as well.
-        .contentShape(
-            .contextMenuPreview,
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+        .buttonStyle(.plain)
+        // Touch-down, not the button's own pressed state. With a context menu
+        // attached SwiftUI holds that back until it knows whether the press is
+        // a tap or a hold, so a quick tap animated nothing at all — the very
+        // thing the system's highlight was doing for us.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in pressedBot = bot.name }
+                .onEnded { _ in pressedBot = nil }
         )
-        .contextMenu { botMenu(bot) }
+        // The menu lifts the face alone. Given no preview of our own it
+        // raises a card sized to the whole tile, name included, which is the
+        // square that kept appearing however its corners were rounded.
+        .contextMenu {
+            botMenu(bot)
+        } preview: {
+            glassMark(bot, size: 96).padding(10)
+        }
+    }
+
+    /// The bot's mark as a glass surface.
+    @ViewBuilder
+    private func glassMark(_ bot: BotRow, size: CGFloat) -> some View {
+        ZStack {
+            MarkShape(silhouette: mark(bot).silhouette)
+                .fill(mark(bot).color.opacity(Self.backing(mark(bot).color, scheme)))
+            BotFaceView(size: size)
+        }
+        .frame(width: size, height: size)
+        .glassEffect(
+            .regular.tint(mark(bot).color.opacity(0.4)),
+            in: MarkShape(silhouette: mark(bot).silhouette)
+        )
     }
 
     /// Said out loud rather than left to be assumed: this list came from the
