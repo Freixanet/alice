@@ -261,11 +261,11 @@ final class AppStore {
     /// its own: the agent is often reachable while this particular endpoint is
     /// not, and that should not cost you the connection.
     @discardableResult
-    func loadModels() async -> Bool {
+    func loadModels(refreshing: Bool = false) async -> Bool {
         isLoadingModels = true
         defer { isLoadingModels = false }
         do {
-            let found = try await client.models()
+            let found = try await client.models(refreshing: refreshing)
             models = found
             modelsError = found.isEmpty
                 ? "This Hermes did not return a model list at that address."

@@ -165,7 +165,7 @@ actor HermesClient {
     /// models across six providers it still returns exactly one. The full
     /// picker lives on the management surface, so ask there first and keep
     /// `/v1/models` as the fallback for a build that has no picker.
-    func models() async throws -> [ModelOption] {
+    func models(refreshing: Bool = false) async throws -> [ModelOption] {
         // `/v1/models` is the one surface every build serves, so ask it first
         // and have something to show immediately. It answers with the single
         // model the agent presents to OpenAI-compatible clients.
@@ -186,11 +186,19 @@ actor HermesClient {
         // providers, while asking it to include unconfigured ones took 5.36s —
         // past the leash these probes were on, so the fast, sufficient answer
         // was never reached.
-        for path in [
-            "api/model/options",
-            "api/model/options?include_unconfigured=1",
-            "api/models",
-        ] {
+        // Asking to refresh is not the same as asking again. The plain
+        // options endpoint answers from a computed cache, and that cache had
+        // every one of Nous's models marked unavailable — a stale reading of
+        // an account without credits — which emptied the provider out of the
+        // picker entirely. The same call with `refresh=1` came back with the
+        // list intact and nothing marked unavailable, including the free
+        // models the cached answer had dropped. It is slower, so it is only
+        // asked for when somebody actually pulls to refresh.
+        var paths = ["api/model/options"]
+        if refreshing { paths.insert("api/model/options?refresh=1", at: 0) }
+        paths += ["api/model/options?include_unconfigured=1", "api/models"]
+
+        for path in paths {
             do {
                 let found = try await modelList(path, timeout: 10)
                 Self.trace("\(path) -> \(found.count) models")

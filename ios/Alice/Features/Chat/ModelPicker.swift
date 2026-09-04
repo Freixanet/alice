@@ -88,7 +88,7 @@ struct ModelPicker: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        Task { await store.loadModels() }
+                        Task { await store.loadModels(refreshing: true) }
                     } label: {
                         if store.isLoadingModels {
                             ProgressView()
@@ -102,7 +102,7 @@ struct ModelPicker: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .refreshable { await store.loadModels() }
+            .refreshable { await store.loadModels(refreshing: true) }
             .overlay {
                 if store.isLoadingModels && store.models.isEmpty {
                     ProgressView()
@@ -119,7 +119,7 @@ struct ModelPicker: View {
                     } actions: {
                         if store.isConnected {
                             Button("Try again") {
-                                Task { await store.loadModels() }
+                                Task { await store.loadModels(refreshing: true) }
                             }
                         }
                     }
