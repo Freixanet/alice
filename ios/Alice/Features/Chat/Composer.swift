@@ -287,12 +287,25 @@ struct Composer: View {
                     // The field only claims the height of its own text, so a
                     // tap anywhere on the upper half of the composer used to
                     // land on inert glass. Give it a real target.
-                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .topLeading)
+                    // Room to write, taken on focus rather than on the first
+                    // character. Tapping a one-line box and watching it stay
+                    // one line reads as not having landed; growing to three
+                    // lines' worth on the way in says the box is ready and
+                    // gives the spring something to do.
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: focused.wrappedValue ? 62 : 30,
+                        alignment: .topLeading
+                    )
                     // Sitting flush against the top of its own box read as
                     // crowded against the glass above it.
                     .padding(.top, 4)
                     .contentShape(.rect)
                     .onTapGesture { focused.wrappedValue = true }
+                    .animation(
+                        .spring(response: 0.34, dampingFraction: 0.72),
+                        value: focused.wrappedValue
+                    )
 
                 HStack(spacing: 8) {
                     attachButton

@@ -150,9 +150,20 @@ struct Sidebar: View {
     private var edgeFade: some View {
         LinearGradient(
             stops: [
+                // Top: short, because anything longer dims a heading that is
+                // sitting still. Two stops on the way in keep it from reading
+                // as a cut.
                 .init(color: .clear, location: 0),
-                .init(color: .black, location: 0.012),
-                .init(color: .black, location: 0.955),
+                .init(color: .black.opacity(0.55), location: 0.008),
+                .init(color: .black, location: 0.022),
+                // Bottom: long, because this is where rows actually travel.
+                // A single stop from opaque to clear over a few points is a
+                // line with a soft edge; a row has to lose itself gradually
+                // over most of the height of the buttons it passes behind.
+                .init(color: .black, location: 0.885),
+                .init(color: .black.opacity(0.82), location: 0.915),
+                .init(color: .black.opacity(0.45), location: 0.952),
+                .init(color: .black.opacity(0.16), location: 0.978),
                 .init(color: .clear, location: 1),
             ],
             startPoint: .top,
@@ -359,15 +370,15 @@ struct Sidebar: View {
                 // centre already lands within a third of a point of it, and a
                 // 2.5pt "correction" moved it that far off. Apple has already
                 // balanced this one.
-                // Measured off the rendered glyph: the pencil hangs above
-                // and right of the square, so centring the symbol's own box
-                // leaves the square 1.17pt low and left of the button's
-                // centre. That is the whole correction — small, but it is
-                // exactly the amount that reads as "not centred".
+                // Vertically only. The measurement said the square sat low
+                // and left of the symbol's own box by the same amount, and
+                // both corrections were applied — but SwiftUI centres the
+                // glyph's layout box, not its ink, and horizontally those
+                // already agree. Nudging x as well simply pushed it right.
                 Image(systemName: "square.and.pencil")
                     .font(.system(size: 18, weight: .medium))
                     .imageScale(.large)
-                    .offset(x: 1.17, y: -1.17)
+                    .offset(y: -1.17)
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)

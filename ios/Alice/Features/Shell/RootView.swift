@@ -160,10 +160,15 @@ struct RootView: View {
                     shouldBegin: { velocity in
                         // Sideways enough to be meant sideways.
                         guard abs(velocity.x) > abs(velocity.y) * 1.5 else { return false }
-                        // With the drawer open there is only one way to go.
-                        // With it shut there are two: right opens it, left
-                        // goes to the bots.
-                        return drawerOpen ? velocity.x < 0 : true
+                        if drawerOpen { return velocity.x < 0 }
+                        // In a bot's conversation only the way back means
+                        // anything: leftward would be going deeper into the
+                        // bots from inside one of them, which is where the
+                        // finger already is.
+                        if inBotChat { return velocity.x > 0 }
+                        // On Alice's own: right opens the drawer, left goes
+                        // to the bots.
+                        return true
                     },
                     onChange: { translation in
                         // In a bot's conversation the swipe is a back gesture,

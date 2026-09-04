@@ -54,9 +54,11 @@ struct BotsScreen: View {
 
     var body: some View {
         Group {
-            if loading && rows.isEmpty {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let failure {
+            // No spinner on the way in. The list is cached, so the page has
+            // something to show immediately and a wheel over it only says
+            // "wait" for work that has usually already finished by the time
+            // the animation has drawn its first frame.
+            if let failure, rows.isEmpty {
                 ContentUnavailableView(
                     "Bots", systemImage: "person.2", description: Text(failure)
                 )
