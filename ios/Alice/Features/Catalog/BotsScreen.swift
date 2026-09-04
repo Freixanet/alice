@@ -513,42 +513,27 @@ struct BotsScreen: View {
             onClose()
         } label: {
             VStack(spacing: 8) {
-                // Glass, cut to the bot's own outline and tinted its own
-                // colour, with the eyes sitting on top. A pinned bot is the
-                // one thing on this page you reach for without reading, so
-                // it is the one that can afford to be a surface rather than
-                // a flat mark.
-                // A tint alone cannot carry colour on a light ground: glass
-                // over near-white is mostly the white, and the bots came out
-                // washed. The colour goes underneath as well, at a strength
-                // that depends on the colour: eleven of them, from a near-
-                // white to a deep blue, and one opacity cannot serve both.
-                // Pale marks need almost all of it on paper and very little
-                // in the dark; deep ones the other way round.
+                // Glass cut to the bot's own outline, tinted its own colour,
+                // with the eyes on top. The colour also goes underneath: a
+                // tint alone cannot carry it on a light ground, where glass
+                // over near-white is mostly the white. How much depends on
+                // the colour — eleven of them, from a near-white to a deep
+                // blue, and one opacity cannot serve both.
                 ZStack {
                     MarkShape(silhouette: mark(bot).silhouette)
                         .fill(mark(bot).color.opacity(Self.backing(mark(bot).color, scheme)))
                     BotFaceView(size: 76)
                 }
                 .frame(width: 76, height: 76)
-                // Interactive, so it answers a press the way every other glass
-                // control in the app does — the system's own recoil, not a
-                // scale effect imitating one.
-                // Not `.interactive()`. Its highlight is sized for a small
-                // control and on a 76pt tile it reads as a flash, and while
-                // the finger is held the effect morphs past the silhouette —
-                // colour spilling out of the shape before the menu opens. The
-                // press is given below instead, where it can be judged.
+                // Not `.interactive()`: its highlight is sized for a small
+                // control and on a tile this size reads as a flash, and held,
+                // the effect morphs out past the silhouette. The press is
+                // given as movement instead, in the button style below.
                 .glassEffect(
                     .regular.tint(mark(bot).color.opacity(0.4)),
                     in: MarkShape(silhouette: mark(bot).silhouette)
                 )
-                // The menu lifts the bot's own outline rather than a square
-                // drawn around it.
-                .contentShape(
-                    .contextMenuPreview,
-                    MarkShape(silhouette: mark(bot).silhouette)
-                )
+
                 Text(store.botCurrentName(for: bot.name))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.primary)
@@ -558,9 +543,17 @@ struct BotsScreen: View {
             // Fixed, so a row of three lines up and a row of one still knows
             // how wide it is to be centred in.
             .frame(width: 100)
-            .contentShape(.rect)
         }
         .buttonStyle(GlassTile())
+        // What the menu lifts. Declared on the button, after the label, and
+        // before the menu itself — an inner one is overridden by whatever the
+        // button ends up using, which is how a hard-edged square kept being
+        // raised around a round face. A card rather than the silhouette,
+        // because the preview has to hold the name as well.
+        .contentShape(
+            .contextMenuPreview,
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+        )
         .contextMenu { botMenu(bot) }
     }
 
@@ -1911,7 +1904,13 @@ private func describeBotError(_ error: Error) -> String {
 private struct GlassTile: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.955 : 1)
-            .animation(.snappy(duration: 0.16), value: configuration.isPressed)
+            // Enough to see. At 0.955 the tile moved two points and the press
+            // read as nothing happening at all; the give has to be visible
+            // from a hand's distance to stand in for the light that was
+            // taken away.
+            .scaleEffect(configuration.isPressed ? 0.90 : 1)
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .animation(.snappy(duration: 0.18, extraBounce: 0.1),
+                       value: configuration.isPressed)
     }
 }
