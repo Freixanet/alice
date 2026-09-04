@@ -200,7 +200,15 @@ actor HermesClient {
 
         for path in paths {
             do {
-                let found = try await modelList(path, timeout: 10)
+                // A recalculation is not a lookup. Measured against the
+                // running agent the cached answer comes back in 0.39s and the
+                // refresh in 8.2s — on a warm cache, on the machine itself.
+                // Over the tailnet from a phone, with providers to re-poll,
+                // that clears ten seconds easily, and the leash meant for the
+                // cheap call was cutting the expensive one off and quietly
+                // falling through to the stale list it was asked to replace.
+                let leash: TimeInterval = path.contains("refresh=1") ? 45 : 10
+                let found = try await modelList(path, timeout: leash)
                 Self.trace("\(path) -> \(found.count) models")
                 if found.count > baseline.count { return found }
             } catch {
