@@ -258,11 +258,15 @@ extension HermesClient {
         if let provider { body["provider"] = provider }
 
         var payload = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        // One attempt id for this send, shared by the fallback repost below
+        // so a retry is still a retry rather than a second run.
+        let attempt = UUID().uuidString
         var response = try await postRun(
             payload,
             profile: profile,
             conversationID: conversationID,
-            idempotency: idempotency
+            idempotency: idempotency,
+            attempt: attempt
         )
 
         // Match the web transport: retry only when the fallback changes the
@@ -278,7 +282,8 @@ extension HermesClient {
                 payload,
                 profile: profile,
                 conversationID: conversationID,
-                idempotency: idempotency
+                idempotency: idempotency,
+                attempt: attempt
             )
         }
 
@@ -306,7 +311,8 @@ extension HermesClient {
         _ payload: Data,
         profile: String?,
         conversationID: String?,
-        idempotency: Bool
+        idempotency: Bool,
+        attempt: String
     ) async throws -> (data: Data, http: HTTPURLResponse) {
         var request = try self.request(
             "v1/runs",
@@ -318,7 +324,11 @@ extension HermesClient {
         setSessionKey(conversationID, on: &request)
         if idempotency {
             request.setValue(
-                idempotencyKey(payload: payload, conversationID: conversationID),
+                idempotencyKey(
+                    payload: payload,
+                    conversationID: conversationID,
+                    attempt: attempt
+                ),
                 forHTTPHeaderField: "Idempotency-Key"
             )
         }
@@ -721,8 +731,24 @@ extension HermesClient {
         return trimmed.isEmpty ? nil : String(trimmed.prefix(128))
     }
 
-    private func idempotencyKey(payload: Data, conversationID: String?) -> String {
+    /// A key for *this send*, not for its contents.
+    ///
+    /// Hashing the conversation and the payload alone made the key a function
+    /// of what was typed, so asking the same thing twice in the same chat
+    /// asked for the same run — and a server honouring the header answered by
+    /// replaying the first one. A run that had failed therefore kept failing
+    /// with its original error however long ago it happened and whatever had
+    /// been fixed since: an authentication error from before a login went on
+    /// being served after it, because nothing was being run at all.
+    ///
+    /// The attempt is what makes two identical questions two different runs.
+    /// Retries within one send share it, which is what the header is for.
+    private func idempotencyKey(
+        payload: Data, conversationID: String?, attempt: String
+    ) -> String {
         var input = Data((boundedSessionID(conversationID) ?? "").utf8)
+        input.append(0)
+        input.append(Data(attempt.utf8))
         input.append(0)
         input.append(payload)
         let digest = SHA256.hash(data: input)
