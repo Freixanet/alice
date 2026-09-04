@@ -31,7 +31,6 @@ struct BotsScreen: View {
     @State private var creatingBot = false
     @State private var creatingChannel = false
     @State private var editingBot: BotRow?
-    @State private var pressedBot: String?
     @State private var deletingBot: BotRow?
     enum SearchFilter: String, CaseIterable, Identifiable {
         case all = "All"
@@ -509,26 +508,13 @@ struct BotsScreen: View {
     }
 
     private func pinnedTile(_ bot: BotRow) -> some View {
-        let pressed = pressedBot == bot.name
-
-        return Button {
+        Button {
             store.openBotConversation(for: bot)
             store.botsExitLeading = true
             onClose()
         } label: {
             VStack(spacing: 8) {
                 glassMark(bot, size: 76)
-                    // Our own sheen, not the system's. `.interactive()` gives
-                    // the right *idea* — light answering the finger — at four
-                    // times the strength this size wants, and it morphs out
-                    // past the silhouette when held. This is the same idea at
-                    // a twelfth of the brightness, clipped to the shape.
-                    .overlay {
-                        MarkShape(silhouette: mark(bot).silhouette)
-                            .fill(.white.opacity(pressed ? 0.16 : 0))
-                    }
-                    .scaleEffect(pressed ? 0.94 : 1)
-                    .animation(.snappy(duration: 0.16), value: pressed)
 
                 Text(store.botCurrentName(for: bot.name))
                     .font(.footnote.weight(.medium))
@@ -543,18 +529,17 @@ struct BotsScreen: View {
         // attached SwiftUI holds that back until it knows whether the press is
         // a tap or a hold, so a quick tap animated nothing at all — the very
         // thing the system's highlight was doing for us.
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in pressedBot = bot.name }
-                .onEnded { _ in pressedBot = nil }
-        )
         // The menu lifts the face alone. Given no preview of our own it
         // raises a card sized to the whole tile, name included, which is the
         // square that kept appearing however its corners were rounded.
         .contextMenu {
             botMenu(bot)
         } preview: {
-            glassMark(bot, size: 96).padding(10)
+            // The flat mark, not the glass one. Two glass surfaces morphing
+            // into one another is what left the bot pale and smeared after
+            // the menu closed: the source kept the preview's residue. A solid
+            // face has nothing to leave behind.
+            BotMarkView(mark: mark(bot), size: 96).padding(10)
         }
     }
 
@@ -567,8 +552,12 @@ struct BotsScreen: View {
             BotFaceView(size: size)
         }
         .frame(width: size, height: size)
+        // Interactive, which is what makes it stretch under a finger the way
+        // the discs in the conversation do. It brings a highlight with it —
+        // the flash that had to go — so the tint underneath is lighter than
+        // it would otherwise be: the system's light has less to blow out.
         .glassEffect(
-            .regular.tint(mark(bot).color.opacity(0.4)),
+            .regular.interactive().tint(mark(bot).color.opacity(0.26)),
             in: MarkShape(silhouette: mark(bot).silhouette)
         )
     }
@@ -1130,12 +1119,6 @@ struct BotsScreen: View {
                 // answering a press the same way. A bot should not be made of
                 // different stuff depending on where it happens to be listed.
                 glassMark(bot, size: 44)
-                    .overlay {
-                        MarkShape(silhouette: mark(bot).silhouette)
-                            .fill(.white.opacity(pressedBot == bot.name ? 0.16 : 0))
-                    }
-                    .scaleEffect(pressedBot == bot.name ? 0.94 : 1)
-                    .animation(.snappy(duration: 0.16), value: pressedBot)
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .center, spacing: 6) {
@@ -1185,15 +1168,14 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in pressedBot = bot.name }
-                .onEnded { _ in pressedBot = nil }
-        )
         .contextMenu {
             botMenu(bot)
         } preview: {
-            glassMark(bot, size: 96).padding(10)
+            // The flat mark, not the glass one. Two glass surfaces morphing
+            // into one another is what left the bot pale and smeared after
+            // the menu closed: the source kept the preview's residue. A solid
+            // face has nothing to leave behind.
+            BotMarkView(mark: mark(bot), size: 96).padding(10)
         }
     }
 
