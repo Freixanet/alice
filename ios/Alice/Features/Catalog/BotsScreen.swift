@@ -98,6 +98,7 @@ struct BotsScreen: View {
             NavigationStack {
                 BotDetail(bot: bot, onChange: { Task { await load() } })
             }
+            .preferredColorScheme(store.theme.colorScheme)
         }
         .alert("New Section", isPresented: $showNewSectionAlert) {
             TextField("Section Name", text: $newSectionName)

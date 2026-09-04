@@ -44,16 +44,23 @@ struct Sidebar: View {
         .frame(maxHeight: .infinity)
         .background(Palette.card(scheme).ignoresSafeArea())
         .sheet(item: $going) { destination in
-            switch destination {
-            case .jobs: closable { JobsScreen() }
-            case .projects: closable { ProjectsScreen() }
-            case .skills: closable { CatalogScreen(source: .skills) }
-            case .tools: closable { CatalogScreen(source: .toolsets) }
-            case .library: closable { LibraryView() }
-            // These two bring their own Done; a second would be one too many.
-            case .settings: NavigationStack { SettingsView() }
-            case .connect: ConnectView()
+            Group {
+                switch destination {
+                case .jobs: closable { JobsScreen() }
+                case .projects: closable { ProjectsScreen() }
+                case .skills: closable { CatalogScreen(source: .skills) }
+                case .tools: closable { CatalogScreen(source: .toolsets) }
+                case .library: closable { LibraryView() }
+                // These two bring their own Done; a second would be one too many.
+                case .settings: NavigationStack { SettingsView() }
+                case .connect: ConnectView()
+                }
             }
+            // Said again here. The app sets its scheme once at the window, and
+            // a sheet is presented outside that: changing from light to dark
+            // repainted everything behind Settings and left Settings itself —
+            // the screen the switch is on — in the colours it had opened in.
+            .preferredColorScheme(store.theme.colorScheme)
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchScreen(onOpen: onDismiss)

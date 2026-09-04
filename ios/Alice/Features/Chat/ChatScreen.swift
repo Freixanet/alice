@@ -100,6 +100,7 @@ struct ChatScreen: View {
             NavigationStack {
                 BotDetail(bot: bot, onChange: { Task { await refreshBots() } })
             }
+            .preferredColorScheme(store.theme.colorScheme)
         }
         // The list is where these are normally read, and a conversation can
         // be opened without ever going through it.
