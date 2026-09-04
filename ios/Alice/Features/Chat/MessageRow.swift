@@ -70,7 +70,9 @@ struct MessageRow: View {
                             .tint(Palette.link(scheme))
                     }
 
-                    if !message.tools.isEmpty { ToolList(tools: message.tools) }
+                    if !message.tools.isEmpty {
+                        ToolList(tools: message.tools, pending: message.pending)
+                    }
                     if let approval = message.approval {
                         RunApprovalCard(messageID: message.id, approval: approval)
                     }
@@ -330,6 +332,8 @@ private struct ToolList: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let tools: [Message.ToolCall]
+    /// Whether the reply is still being written.
+    let pending: Bool
 
     /// The last one still going. Hermes reports a tool twice — start, then
     /// done — so anything with a later `done` is behind us.
@@ -337,18 +341,27 @@ private struct ToolList: View {
         tools.last { $0.status != .done }
     }
 
+    /// What to say. Between two tool calls there is often a real pause while
+    /// the model decides what to do next, and showing the finished step would
+    /// claim it was still running. Saying it is thinking is both true and
+    /// what the gap actually is; the line only disappears when the reply does.
+    private var caption: String? {
+        if let running { return Self.phrase(for: running) }
+        return pending ? "Thinking…" : nil
+    }
+
     var body: some View {
-        if let running {
+        if let caption {
             HStack(spacing: 8) {
                 Circle()
                     .frame(width: 5, height: 5)
                     .foregroundStyle(store.accent.primary(scheme))
-                Text(Self.phrase(for: running))
+                Text(caption)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
             .transition(.opacity)
-            .animation(.easeInOut(duration: 0.2), value: running.id)
+            .animation(.easeInOut(duration: 0.2), value: caption)
         }
     }
 
