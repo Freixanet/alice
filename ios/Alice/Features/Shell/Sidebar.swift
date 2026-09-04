@@ -372,15 +372,16 @@ struct Sidebar: View {
                 // both corrections were applied — but SwiftUI centres the
                 // glyph's layout box, not its ink, and horizontally those
                 // already agree. Nudging x as well simply pushed it right.
-                // Regular, not medium. The other discs carry `equal` and a
-                // chevron — narrow marks that need weight to read — while
-                // this one is a filled outline whose strokes already have
-                // presence, and at medium it sat heavier than everything
-                // around it.
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 19, weight: .regular))
-                    .imageScale(.large)
-                    .offset(y: -1.17)
+                // ChatGPT's own compose mark, from OpenAI's MIT-licensed
+                // Apps SDK icon set. Drawn on a 24-unit grid that is already
+                // balanced, so it needs no nudge: unlike the SF Symbol, the
+                // pencil is inside the square's own bounds.
+                PencilSquareMark()
+                    // Stated, like the bots' eyes: the disc's vibrancy
+                    // lightens a shape fill far more than a symbol stroke,
+                    // and inherited it came out grey against black glyphs.
+                    .foregroundStyle(scheme == .dark ? Color.white : .black)
+                    .frame(width: 21, height: 21)
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
