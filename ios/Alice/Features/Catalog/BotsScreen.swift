@@ -986,17 +986,28 @@ struct BotsScreen: View {
                 showUnassigned.toggle()
             }
         } label: {
-            HStack {
+            // Laid out like the named sections: the title, then the mark that
+            // opens it, then whatever space is left. Pushed to the far edge by
+            // a Spacer, the chevron sat a phone's width from the word it acts
+            // on and read as a separate control.
+            //
+            // The count goes with it, and only while the section is shut: open,
+            // the bots are right there to be counted, and the number is one
+            // more thing to read that says nothing new.
+            HStack(spacing: 6) {
                 Text("Unassigned")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                Text("\(unassignedBots.count)")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.tertiary)
-                Spacer()
-                Image(systemName: showUnassigned ? "chevron.down" : "chevron.right")
+                if !showUnassigned {
+                    Text("\(unassignedBots.count)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.tertiary)
+                }
+                Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(showUnassigned ? 0 : -90))
+                Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
