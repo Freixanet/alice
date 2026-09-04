@@ -493,7 +493,17 @@ struct BotsScreen: View {
             onClose()
         } label: {
             VStack(spacing: 8) {
-                BotMarkView(mark: store.mark(for: bot.name), size: 76)
+                // Glass, cut to the bot's own outline and tinted its own
+                // colour, with the eyes sitting on top. A pinned bot is the
+                // one thing on this page you reach for without reading, so
+                // it is the one that can afford to be a surface rather than
+                // a flat mark.
+                BotFaceView(size: 76)
+                    .frame(width: 76, height: 76)
+                    .glassEffect(
+                        .regular.tint(store.mark(for: bot.name).color.opacity(0.55)),
+                        in: MarkShape(silhouette: store.mark(for: bot.name).silhouette)
+                    )
                 Text(store.botCurrentName(for: bot.name))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.primary)

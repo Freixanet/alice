@@ -331,7 +331,8 @@ struct BotMarkView: View {
     }
 }
 
-private struct MarkShape: InsettableShape {
+/// A bot's outline. Internal so a glass surface can be cut to it.
+struct MarkShape: InsettableShape {
     var inset: CGFloat = 0
 
     func inset(by amount: CGFloat) -> MarkShape {
