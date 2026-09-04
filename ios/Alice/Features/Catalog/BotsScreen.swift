@@ -1125,7 +1125,16 @@ struct BotsScreen: View {
             onClose()
         } label: {
             HStack(alignment: .center, spacing: 14) {
-                BotMarkView(mark: store.mark(for: bot.name), size: 44)
+                // The same face the pinned shelf shows, at a row's size, and
+                // answering a press the same way. A bot should not be made of
+                // different stuff depending on where it happens to be listed.
+                glassMark(bot, size: 44)
+                    .overlay {
+                        MarkShape(silhouette: mark(bot).silhouette)
+                            .fill(.white.opacity(pressedBot == bot.name ? 0.16 : 0))
+                    }
+                    .scaleEffect(pressedBot == bot.name ? 0.94 : 1)
+                    .animation(.snappy(duration: 0.16), value: pressedBot)
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .center, spacing: 6) {
@@ -1175,7 +1184,16 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .contextMenu { botMenu(bot) }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in pressedBot = bot.name }
+                .onEnded { _ in pressedBot = nil }
+        )
+        .contextMenu {
+            botMenu(bot)
+        } preview: {
+            glassMark(bot, size: 96).padding(10)
+        }
     }
 
     private func duplicateBot(_ bot: BotRow) {
