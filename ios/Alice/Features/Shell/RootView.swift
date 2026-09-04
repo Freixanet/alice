@@ -72,6 +72,18 @@ struct RootView: View {
                     .clipShape(.rect(
                         cornerRadius: displayCornerRadius, style: .continuous
                     ))
+                    // Cast to the left, onto the drawer. The hairline states
+                    // where the conversation ends; this says which of the two
+                    // is on top, which an edge alone cannot — two flat panels
+                    // meeting at a line could be either order. Grows with the
+                    // gesture so a half-open drawer is half-lit, and costs
+                    // nothing at rest, where its opacity is zero.
+                    .shadow(
+                        color: .black.opacity(0.30 * progress),
+                        radius: 22 * progress,
+                        x: -10 * progress,
+                        y: 0
+                    )
                     .offset(x: offset)
 
                 // Bots is a page, not a sheet. It is reached sideways — out
