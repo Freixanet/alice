@@ -28,10 +28,10 @@ export function isHermesSelfUpdateIntent(value: string): boolean {
   return new RegExp(
     `^${polite}(?:` +
       `actualizate${suffix}|` +
-      `actualiza ${target}${suffix}|` +
+      `actualiza(?:r)? ${target}${suffix}|` +
       `update ${target}${suffix}|` +
       `upgrade ${target}${suffix}|` +
-      `instala (?:la )?(?:ultima|nueva) actualizacion (?:de )?${target}` +
+      `instala(?:r)? (?:la )?(?:ultima|nueva) actualizacion (?:de )?${target}` +
       `)$`,
   ).test(text);
 }
