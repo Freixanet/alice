@@ -94,7 +94,16 @@ export function reduceChatStreamEvent(
 
   if (event.type === "model-fallback") {
     accumulator.modelFallbackSeen = true;
-    const { type: _type, ...modelFallback } = event;
+    const modelFallback = {
+      requestedModel: event.requestedModel,
+      ...(event.requestedProvider
+        ? { requestedProvider: event.requestedProvider }
+        : {}),
+      model: event.model,
+      ...(event.provider ? { provider: event.provider } : {}),
+      reason: event.reason,
+      occurredAt: event.occurredAt,
+    };
     return {
       patch: { modelFallback, pending: true },
       stop: false,
@@ -126,7 +135,7 @@ function mergeToolEvent(
       return;
     }
   }
-  if (event.type === "tool" && event.status === "done") {
+  if (event.status === "done") {
     const running = [...tools]
       .reverse()
       .find(
