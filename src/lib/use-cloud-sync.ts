@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { useCurrentUser } from "./auth/use-current-user";
 import { loadMasterSecretForDevice } from "./sync-device-key";
 import { syncEncryptedConversations } from "./sync-client";
-import { useHermes } from "./store";
+import { seedBlankChat, useHermes } from "./store";
+import { uid } from "./utils";
 
 export function useCloudSync() {
   const user = useCurrentUser();
@@ -69,18 +70,19 @@ export function useCloudSync() {
             const next = [...byId.values()].sort(
               (a, b) => b.updatedAt - a.updatedAt,
             );
-            // Everything remote was a tombstone: still a walk that happened,
-            // so the position moves even though the list did not.
-            if (!next.length) {
-              return {
-                ...state,
-                syncCursors: { ...state.syncCursors, [user.id]: cursor },
-              };
-            }
+            // A deletion that empties the list is still a deletion. Returning
+            // the old state here kept the conversation another device had
+            // deleted — and threw away the tombstones that recorded it — so a
+            // device holding only that one went on showing it for ever. The
+            // interface wants a conversation to exist; the way to give it one
+            // is a new one, as deleting the last chat by hand already does.
+            const list = next.length
+              ? next
+              : [{ ...seedBlankChat(), id: uid(), title: "New chat" }];
             return {
-              conversations: next,
+              conversations: list,
               conversationTombstones: nextTombstones,
-              activeId: byId.has(state.activeId) ? state.activeId : next[0]!.id,
+              activeId: byId.has(state.activeId) ? state.activeId : list[0]!.id,
               // In the same update as the records it describes. Both are
               // persisted together, so IndexedDB either has the conversations
               // and the position that accounts for them, or has neither —

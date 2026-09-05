@@ -65,7 +65,15 @@ function seedConversation(): Conversation {
   };
 }
 
-function seedBlankChat(): Conversation {
+/**
+ * A fresh, empty conversation.
+ *
+ * Exported because cloud sync needs the same answer to the same question:
+ * the interface wants at least one conversation to exist, and when the last
+ * one is deleted — here or on another device — the way to keep that true is a
+ * new one, not the old one kept against its deletion.
+ */
+export function seedBlankChat(): Conversation {
   return {
     id: freshId,
     title: "New chat",
