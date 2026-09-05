@@ -56,9 +56,6 @@ function ModelFallbackStatus() {
 
   useEffect(() => {
     if (!currentKey || !latestAssistant?.modelFallback) {
-      // A retry clears stale fallback metadata before receiving its new
-      // stream. Resetting the key here lets the same assistant message show a
-      // fresh notice if that retry legitimately falls back again.
       previousKey.current = null;
       return;
     }
@@ -100,6 +97,7 @@ function fallbackKey(message: Message | undefined): string | null {
   const fallback = message.modelFallback;
   return [
     message.id,
+    String(fallback.occurredAt),
     fallback.requestedProvider ?? "",
     fallback.requestedModel,
     fallback.provider ?? "",
