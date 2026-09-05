@@ -77,7 +77,7 @@ struct RadarIASetupScreen: View {
                     "Europe/Madrid is Barcelona time, including daylight-saving changes. Use a named zone such as Europe/London or America/New_York."
                 )
                 .font(.caption)
-                .foregroundStyle(valid || zone.isEmpty ? .secondary : .red)
+                .foregroundStyle(valid || zone.isEmpty ? Color.secondary : Color.red)
             }
         }
         .padding(16)
