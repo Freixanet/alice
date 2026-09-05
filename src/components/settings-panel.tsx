@@ -263,6 +263,17 @@ function GeneralSection() {
       if (existing) {
         setCloudSyncEnabled(true);
       } else {
+        // Starting a set and joining one are different acts, and this used to
+        // do the first without asking whether the second was called for: a
+        // second device generated its own phrase and began a rival set beside
+        // the account's real one. If anything is already up there, the only
+        // honest offer is to ask for the phrase that opens it.
+        const { accountHasSyncSet } = await import("@/lib/sync-client");
+        if (await accountHasSyncSet()) {
+          setImportingRecovery(true);
+          setSyncError(t("settings.syncAlreadyExists"));
+          return;
+        }
         const master = generateMasterSecret();
         setPendingMaster(master);
         setRecoveryPhrase(encodeRecoveryPhrase(master));
@@ -284,6 +295,11 @@ function GeneralSection() {
     setSyncError(null);
     try {
       await saveMasterSecretForDevice(user.id, pendingMaster);
+      // The set's own proof, written once by the device that starts it, so
+      // every later device can test a phrase against one small record rather
+      // than against somebody's conversations.
+      const { ensureSyncVerifier } = await import("@/lib/sync-client");
+      await ensureSyncVerifier({ userId: user.id, master: pendingMaster });
       setCloudSyncEnabled(true);
       setRecoveryPhrase(null);
       setPendingMaster(null);

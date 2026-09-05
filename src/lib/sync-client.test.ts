@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateMasterSecret } from "./sync-crypto";
-import { syncEncryptedConversations } from "./sync-client";
+import {
+  VERIFIER_ID,
+  accountHasSyncSet,
+  ensureSyncVerifier,
+  syncEncryptedConversations,
+  verifySyncKey,
+} from "./sync-client";
 import type { Conversation } from "./types";
 
 beforeEach(() => {
@@ -224,5 +230,51 @@ describe("encrypted sync client", () => {
       cursor: "42",
     });
     expect(result.cursor).toBe("43");
+  });
+});
+
+describe("key verification", () => {
+  it("answers from the verifier without touching conversations", async () => {
+    const master = generateMasterSecret();
+    let written: Array<Record<string, unknown>> = [];
+    const seed = vi.fn(async (_i: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.action === "push") {
+        written = (body.records as Array<Record<string, unknown>>).map((r) => ({
+          ...r,
+          revision: 1,
+        }));
+        return Response.json({ ok: true, replayed: false, accepted: 1 });
+      }
+      return Response.json({ ok: true, records: [], cursor: "1", hasMore: false });
+    });
+    vi.stubGlobal("fetch", seed);
+    await ensureSyncVerifier({ userId: "account-e", master });
+    expect(written[0]?.id).toBe(VERIFIER_ID);
+    expect(written[0]?.kind).toBe("verifier");
+
+    const reader = vi.fn(async () =>
+      Response.json({ ok: true, records: written, cursor: "2", hasMore: false }),
+    );
+    vi.stubGlobal("fetch", reader);
+    await expect(
+      verifySyncKey({ userId: "account-e", master }),
+    ).resolves.toBe("matches");
+    await expect(
+      verifySyncKey({ userId: "account-e", master: generateMasterSecret() }),
+    ).resolves.toBe("mismatch");
+  });
+
+  it("calls an untouched account empty, so the first device may start it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ ok: true, records: [], cursor: "0", hasMore: false }),
+      ),
+    );
+    await expect(
+      verifySyncKey({ userId: "account-f", master: generateMasterSecret() }),
+    ).resolves.toBe("empty");
+    await expect(accountHasSyncSet()).resolves.toBe(false);
   });
 });

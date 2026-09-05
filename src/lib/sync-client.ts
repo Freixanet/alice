@@ -39,6 +39,36 @@ export class SyncKeyMismatchError extends Error {
  * `empty` means there is nothing to read, and any key is therefore the right
  * one: this is the device that starts the set.
  */
+/**
+ * Whether this account already has an encrypted set.
+ *
+ * Asked before offering to make a key. Offering one regardless is how a
+ * second device ended up starting a rival set beside the real one: the phrase
+ * was generated, saved and switched on without anyone checking whether the
+ * account was already syncing under a key this device simply did not have.
+ */
+export async function accountHasSyncSet(signal?: AbortSignal): Promise<boolean> {
+  const response = syncPullResponseSchema.parse(
+    await postSync({ action: "pull", cursor: "0", limit: 1 }, signal),
+  );
+  return response.records.length > 0;
+}
+
+/** The one record an account keeps purely so a key can be tested against it. */
+export const VERIFIER_ID = "verifier:v1";
+const VERIFIER_PLAINTEXT = { alice: "sync-verifier", version: 1 } as const;
+
+/**
+ * Whether `master` can read what this account already holds.
+ *
+ * Answered from the verifier where there is one — a single small record whose
+ * plaintext is known, so a key can be tested without decrypting anybody's
+ * conversations. Accounts written before the verifier existed fall back to
+ * trying the conversations themselves.
+ *
+ * `empty` means there is nothing to read and any key is therefore the right
+ * one: this is the device that starts the set.
+ */
 export async function verifySyncKey(options: {
   userId: string;
   master: Uint8Array;
@@ -46,8 +76,19 @@ export async function verifySyncKey(options: {
 }): Promise<"matches" | "empty" | "mismatch"> {
   const key = await deriveContentKey(options.master, options.userId);
   const response = syncPullResponseSchema.parse(
-    await postSync({ action: "pull", cursor: "0", limit: 20 }, options.signal),
+    await postSync({ action: "pull", cursor: "0", limit: 50 }, options.signal),
   );
+
+  const verifier = response.records.find((record) => record.id === VERIFIER_ID);
+  if (verifier) {
+    try {
+      await decryptPayload<unknown>(verifier.payload, key, VERIFIER_ID);
+      return "matches";
+    } catch {
+      return "mismatch";
+    }
+  }
+
   const readable = response.records.filter((record) =>
     record.id.startsWith("conversation:"),
   );
@@ -62,6 +103,43 @@ export async function verifySyncKey(options: {
     }
   }
   return "mismatch";
+}
+
+/**
+ * Writes the verifier if the account has none.
+ *
+ * Called when a device starts a set, so every account written from here on
+ * can be checked cheaply — and so a wrong key is refused by something that
+ * costs one small record to read.
+ */
+export async function ensureSyncVerifier(options: {
+  userId: string;
+  master: Uint8Array;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const key = await deriveContentKey(options.master, options.userId);
+  const payload = await encryptPayload(VERIFIER_PLAINTEXT, key, VERIFIER_ID);
+  await postSync(
+    {
+      action: "push",
+      requestId: crypto.randomUUID(),
+      records: [
+        {
+          id: VERIFIER_ID,
+          kind: "verifier",
+          clock: {
+            wallTime: Date.now(),
+            counter: 0,
+            deviceId: deviceIdFor(options.userId),
+          },
+          tombstone: false,
+          payload,
+          byteSize: 0,
+        },
+      ],
+    },
+    options.signal,
+  );
 }
 
 /** What a pull produced, and where it got to. */

@@ -203,6 +203,8 @@ const en = {
   "settings.recoveryError": "The recovery key does not match.",
   "settings.recoveryMismatch":
     "That phrase does not open this account's conversations. Nothing was changed.",
+  "settings.syncAlreadyExists":
+    "This account already syncs. Enter its recovery phrase to add this device.",
   "settings.syncSetupError":
     "Encrypted sync could not be prepared on this device.",
   "settings.language": "Language",
@@ -1135,6 +1137,8 @@ const es: Record<MsgKey, string> = {
   "settings.recoveryError": "La clave de recuperación no coincide.",
   "settings.recoveryMismatch":
     "Esa frase no abre las conversaciones de esta cuenta. No se ha cambiado nada.",
+  "settings.syncAlreadyExists":
+    "Esta cuenta ya se sincroniza. Escribe su frase de recuperación para añadir este dispositivo.",
   "settings.syncSetupError":
     "No se ha podido preparar la sincronización cifrada en este dispositivo.",
   "settings.language": "Idioma",

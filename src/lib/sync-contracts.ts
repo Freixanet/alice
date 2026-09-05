@@ -9,7 +9,10 @@ const opaque = (max: number) =>
 
 export const encryptedSyncRecordSchema = z.strictObject({
   id: z.string().trim().min(1).max(160),
-  kind: z.enum(["conversation", "attachment"]),
+  // `verifier` is a single record per account holding a known plaintext. It
+  // lets a device test a key by opening one small thing rather than by
+  // reading conversations it may have no business reading.
+  kind: z.enum(["conversation", "attachment", "verifier"]),
   clock: z.strictObject({
     wallTime: z.number().int().nonnegative().safe(),
     counter: z.number().int().nonnegative().max(2_147_483_647),
