@@ -136,7 +136,8 @@ final class WebSocketBotChatTests: XCTestCase {
         )
 
         XCTAssertEqual(chat.hermesSessionID, "live-tip", "the durable live tip is what gets read")
-        XCTAssertEqual(await rpc.runtimeSessionID(for: "live-tip"), "s")
+        let runtime = await rpc.runtimeSessionID(for: "live-tip")
+        XCTAssertEqual(runtime, "s")
         let created = await rpc.methods().filter { $0 == "session.create" }
         XCTAssertTrue(created.isEmpty, "a moved tip is not a reason to mint a chat")
     }
@@ -155,7 +156,8 @@ final class WebSocketBotChatTests: XCTestCase {
         let params = await rpc.params(of: "session.resume")
         XCTAssertEqual(params?["profile"], "radar-ia")
         XCTAssertEqual(params?["session_id"], "s1")
-        XCTAssertEqual(await rpc.runtimeSessionID(for: "s1"), "s")
+        let runtime = await rpc.runtimeSessionID(for: "s1")
+        XCTAssertEqual(runtime, "s")
     }
 
     // MARK: - D. The transcript maps onto messages
@@ -222,8 +224,10 @@ final class WebSocketBotChatTests: XCTestCase {
             sessionID: "durable", requestID: "approval-1", choice: "allow"
         )
 
-        XCTAssertEqual(await rpc.params(of: "session.interrupt")?["session_id"], "s")
-        XCTAssertEqual(await rpc.params(of: "approval.respond")?["session_id"], "s")
+        let interrupted = await rpc.params(of: "session.interrupt")
+        let approved = await rpc.params(of: "approval.respond")
+        XCTAssertEqual(interrupted?["session_id"], "s")
+        XCTAssertEqual(approved?["session_id"], "s")
     }
 
     /// The model the UI shows for a bot must be the one the turn actually
