@@ -2,6 +2,12 @@ import XCTest
 @testable import Alice
 
 final class RadarIATests: XCTestCase {
+    func testRadarIsARealBotTemplate() {
+        XCTAssertEqual(RadarIA.botName, "radar-ia")
+        XCTAssertEqual(RadarIA.displayName, "Radar IA")
+        XCTAssertTrue(RadarIA.ownsSoul(RadarIA.editorialPrompt))
+    }
+
     func testDefaultScheduleMatchesProposal() {
         XCTAssertEqual(RadarIA.defaultTime, "10:00")
         XCTAssertEqual(RadarIA.defaultZone, "Europe/Madrid")
@@ -14,15 +20,18 @@ final class RadarIATests: XCTestCase {
         XCTAssertFalse(RadarIA.validSchedule(time: "10:00", zone: "Not/AZone"))
     }
 
-    func testSetupPromptPreservesSafetyBoundary() throws {
+    func testSetupPromptPreservesBotAndSchedulerBoundaries() throws {
         let prompt = try XCTUnwrap(
             RadarIA.setupPrompt(time: "08:45", zone: "America/New_York")
         )
+        XCTAssertTrue(prompt.contains("perfil real de Hermes `radar-ia`"))
+        XCTAssertTrue(prompt.contains("No crees otro perfil"))
         XCTAssertTrue(prompt.contains("08:45"))
         XCTAssertTrue(prompt.contains("America/New_York"))
         XCTAssertTrue(prompt.contains("no crees duplicados"))
-        XCTAssertTrue(prompt.contains("Verifica un destino que pueda leer desde Alice"))
-        XCTAssertTrue(prompt.contains("INSTRUCCIONES EDITORIALES DE LA RUTINA"))
+        XCTAssertTrue(prompt.contains("No inventes un campo `timezone`"))
+        XCTAssertTrue(prompt.contains("`CRON_TZ`"))
+        XCTAssertTrue(prompt.contains("UNA rutina propiedad de `radar-ia`"))
         XCTAssertTrue(prompt.contains("fuentes actuales"))
     }
 
