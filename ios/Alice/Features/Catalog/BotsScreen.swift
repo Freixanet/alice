@@ -22,6 +22,7 @@ struct BotsScreen: View {
     /// look through. It used to search a local mirror that only ever held
     /// routines the server had rejected.
     @State private var routinesByBot: [String: [JobRow]] = [:]
+    @State private var routinesUnavailable: String?
     @State private var failure: String?
     /// True when the list on screen came from the cache because the agent did
     /// not answer.
@@ -168,7 +169,11 @@ struct BotsScreen: View {
             Button("Delete", role: .destructive) {
                 if let deletingBot {
                     Task {
-                        try? await store.deleteBot(deletingBot.name)
+                        do {
+                            try await store.deleteBot(deletingBot.name)
+                        } catch {
+                            failure = describeBotError(error)
+                        }
                         await load()
                     }
                 }
@@ -726,9 +731,15 @@ struct BotsScreen: View {
             let matches = allRoutinesMatching(query: q)
             if matches.isEmpty {
                 ContentUnavailableView(
-                    q.isEmpty ? "No Routines" : "No Routines Found",
-                    systemImage: "clock",
-                    description: Text(q.isEmpty ? "No routines configured on bots." : "No routines matched “\(searchQuery)”.")
+                    routinesUnavailable != nil ? "Routines Unavailable"
+                        : (q.isEmpty ? "No Routines" : "No Routines Found"),
+                    systemImage: routinesUnavailable != nil
+                        ? "clock.badge.exclamationmark" : "clock",
+                    description: Text(
+                        routinesUnavailable
+                            ?? (q.isEmpty ? "No routines configured on bots."
+                                : "No routines matched “\(searchQuery)”.")
+                    )
                 )
                 .padding(.top, 40)
             } else {
@@ -1204,9 +1215,9 @@ struct BotsScreen: View {
                 if let section = store.section(for: bot.name) {
                     store.setBotSection(newName, section: section)
                 }
-                let originalSoul = (try? await store.soul(bot.name))?.text
-                if let originalSoul, !originalSoul.isEmpty {
-                    try? await store.setSoul(newName, originalSoul)
+                let originalSoul = try await store.soul(bot.name).text
+                if !originalSoul.isEmpty {
+                    try await store.setSoul(newName, originalSoul)
                 }
                 await load()
             } catch {
@@ -1272,7 +1283,15 @@ struct BotsScreen: View {
             stale = !rows.isEmpty
             failure = rows.isEmpty ? describeBotError(error) : nil
         }
-        routinesByBot = (try? await store.allRoutines()) ?? routinesByBot
+        do {
+            routinesByBot = try await store.allRoutines()
+            routinesUnavailable = nil
+        } catch {
+            // Keep whatever was already listed — it is still true of the last
+            // successful read — but do not let a failed refresh pass for an
+            // agent that has no routines.
+            routinesUnavailable = describeBotError(error)
+        }
     }
 }
 
@@ -1322,7 +1341,7 @@ struct BotDetail: View {
     @State private var selectedModel: String?
     @State private var selectedSection = ""
     @State private var notifications = false
-    @State private var routines: [JobRow] = []
+    @State private var routines: RoutineState = .loading
     @State private var addingRoutine = false
     @State private var editingSoul = false
     @State private var busy = false
@@ -1378,12 +1397,27 @@ struct BotDetail: View {
             }
 
             Section("Routines") {
-                if routines.isEmpty {
+                switch routines {
+                case .loading:
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Loading routines…").foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                case let .failed(message):
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Routines unavailable")
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                case .loaded(let rows) where rows.isEmpty:
                     Text("No routines yet")
                         .foregroundStyle(.secondary)
                         .listRowBackground(Palette.card(scheme))
-                } else {
-                    ForEach(routines) { routine in
+                case let .loaded(rows):
+                    ForEach(rows) { routine in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 8) {
                                 Circle()
@@ -1514,8 +1548,21 @@ struct BotDetail: View {
         .sheet(isPresented: $addingRoutine) {
             AddRoutineSheet { rName, rSchedule, rPrompt in
                 Task {
-                    try? await store.addRoutine(for: bot.name, name: rName, prompt: rPrompt, schedule: rSchedule)
-                    routines = (try? await store.routines(for: bot.name)) ?? []
+                    do {
+                        try await store.addRoutine(
+                            for: bot.name, name: rName, prompt: rPrompt,
+                            schedule: rSchedule
+                        )
+                        failure = nil
+                    } catch {
+                        // Without this the routine simply never appeared, and
+                        // the reason the agent gave went nowhere.
+                        failure = describeBotError(error)
+                    }
+                    routines = await .resolving(
+                        { try await store.routines(for: bot.name) },
+                        describe: describeBotError
+                    )
                 }
             }
         }
@@ -1534,7 +1581,10 @@ struct BotDetail: View {
             selectedModel = store.botModel(for: bot.name)
             selectedSection = store.section(for: bot.name) ?? ""
             notifications = store.botNotificationsEnabled(for: bot.name)
-            routines = (try? await store.routines(for: bot.name)) ?? []
+            routines = await .resolving(
+                { try await store.routines(for: bot.name) },
+                describe: describeBotError
+            )
         }
     }
 
@@ -1588,11 +1638,18 @@ private struct SoulEditor: View {
     @State private var loaded = false
     @State private var saving = false
     @State private var failure: String?
+    @State private var unreadable: String?
 
     var body: some View {
         NavigationStack {
             Group {
-                if loaded {
+                if let unreadable {
+                    ContentUnavailableView(
+                        "Instructions unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(unreadable)
+                    )
+                } else if loaded {
                     TextEditor(text: $text)
                         .font(.callout)
                         .padding(.horizontal, 12)
@@ -1611,7 +1668,7 @@ private struct SoulEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     if saving {
                         ProgressView()
-                    } else {
+                    } else if loaded {
                         Button("Save") {
                             saving = true
                             Task {
@@ -1633,8 +1690,15 @@ private struct SoulEditor: View {
                 Text(failure ?? "")
             }
             .task {
-                text = ((try? await store.soul(bot))?.text) ?? ""
-                loaded = true
+                do {
+                    text = try await store.soul(bot).text
+                    loaded = true
+                } catch {
+                    // Never fall through to an empty editor. `loaded` stays
+                    // false, so Save cannot replace a perfectly good SOUL with
+                    // the blank left by a read that failed.
+                    unreadable = describeBotError(error)
+                }
             }
         }
     }

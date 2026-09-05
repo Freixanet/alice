@@ -93,3 +93,51 @@ struct GatewayRoutines: SingleProfileRoutines {
 }
 
 extension DashboardClient: CrossProfileRoutines {}
+
+/// A remote routine list, with failure kept distinct from emptiness.
+///
+/// `(try? await …) ?? []` collapses every way a read can go wrong into the
+/// same value a healthy agent with no routines returns, and the screen then
+/// says "No routines yet" over a dashboard that is unconfigured, refusing the
+/// session, or simply not answering. Those are four different things and only
+/// one of them is news about the bot.
+enum RoutineState: Equatable {
+    case loading
+    /// The agent answered. An empty array here means it really has none.
+    case loaded([JobRow])
+    case failed(String)
+
+    /// Runs a read and keeps what happened.
+    ///
+    /// The only place the result of a routine read is turned into state, so
+    /// there is one answer to "what counts as no routines" rather than one per
+    /// call site.
+    static func resolving(
+        isolation: isolated (any Actor)? = #isolation,
+        _ read: () async throws -> [JobRow],
+        describe: (Error) -> String = { ($0 as? LocalizedError)?.errorDescription
+            ?? "The dashboard did not answer." }
+    ) async -> RoutineState {
+        do {
+            return .loaded(try await read())
+        } catch {
+            return .failed(describe(error))
+        }
+    }
+
+    /// True only for a successful read that returned nothing.
+    var isEmptyAnswer: Bool {
+        if case let .loaded(rows) = self { return rows.isEmpty }
+        return false
+    }
+
+    var rows: [JobRow] {
+        if case let .loaded(rows) = self { return rows }
+        return []
+    }
+
+    var failure: String? {
+        if case let .failed(message) = self { return message }
+        return nil
+    }
+}
