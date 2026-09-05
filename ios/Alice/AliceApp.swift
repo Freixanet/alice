@@ -28,7 +28,9 @@ struct AliceApp: App {
     /// Radar IA was briefly shipped as a special Jobs setup card. The corrected
     /// representation is a normal Hermes profile. Offer that migration only
     /// when the dashboard is actually reachable and the real bot is absent (or
-    /// was only partially created without standing instructions).
+    /// was only partially created without standing instructions). A profile
+    /// created by the buggy migration can contain Hermes' generic bootstrap
+    /// SOUL; repair that in place without sending the scheduler setup twice.
     @MainActor
     private func offerRadarBotIfNeeded() async {
         do {
@@ -39,13 +41,30 @@ struct AliceApp: App {
             }
 
             let soul = try await store.soul(RadarIA.botName)
-            if !soul.exists || soul.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let emptySoul = !soul.exists
+                || soul.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if emptySoul {
                 showRadarBotInstaller = true
+                return
+            }
+
+            // The first real-bot migration mistook Hermes' default profile SOUL
+            // for user-authored content. Repair only that known bootstrap text;
+            // custom instructions remain untouched.
+            if RadarIA.isGenericHermesSoul(soul.text) {
+                do {
+                    try await store.setSoul(RadarIA.botName, RadarIA.editorialPrompt)
+                    let verified = try await store.soul(RadarIA.botName)
+                    if !verified.exists || !RadarIA.ownsSoul(verified.text) {
+                        showRadarBotInstaller = true
+                    }
+                } catch {
+                    showRadarBotInstaller = true
+                }
             }
         } catch {
             // No dashboard/profile management means Alice cannot truthfully
-            // create a Hermes bot. Leave the existing app usable and do not
-            // present a setup flow that could not complete.
+            // create or repair a Hermes bot. Leave the existing app usable.
         }
     }
 }
