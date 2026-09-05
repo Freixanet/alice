@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { CloudSyncStatusIndicator } from "@/components/cloud-sync-status";
 import { AppShell } from "@/components/shell";
 import { authEnabled } from "@/lib/auth/client";
 import { RedirectToSignIn } from "@/lib/auth/gates";
@@ -21,10 +22,19 @@ function AppBoundary() {
   );
 }
 
+function AppContent() {
+  return (
+    <>
+      <AppShell />
+      <CloudSyncStatusIndicator />
+    </>
+  );
+}
+
 function AppGate() {
   const t = useT();
   const { user, isPending } = useCurrentUserState();
-  if (!authEnabled) return <AppShell />;
+  if (!authEnabled) return <AppContent />;
   if (isPending) {
     return (
       <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">
@@ -33,5 +43,5 @@ function AppGate() {
     );
   }
   if (!user) return <RedirectToSignIn />;
-  return <AppShell />;
+  return <AppContent />;
 }
