@@ -22,6 +22,9 @@ actor DashboardClient {
         case rejected
         case http(Int, detail: String? = nil)
         case unreachable
+        /// A 200 whose body could not be read as the listing it should be.
+        /// Distinct from an empty listing, which is a real answer.
+        case unreadable
 
         var errorDescription: String? {
             switch self {
@@ -37,6 +40,8 @@ actor DashboardClient {
                 }
             case .unreachable:
                 "The dashboard did not answer. It only listens on your own network."
+            case .unreadable:
+                "The dashboard sent something this app could not read."
             }
         }
     }
@@ -161,14 +166,22 @@ actor DashboardClient {
         guard (200..<300).contains(http.statusCode) else {
             throw Failure.http(http.statusCode, detail: Self.detail(from: data))
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        // An unreadable body is not an empty listing. Returning [] here put a
+        // parse failure on screen as "no routines", which is a claim about the
+        // bot rather than about the answer.
+        guard let object = try? JSONSerialization.jsonObject(with: data) else {
+            throw Failure.unreadable
+        }
         if let rows = object as? [[String: Any]] { return rows }
         if let map = object as? [String: Any] {
             for key in ["jobs", "items", "data", "results"] {
                 if let rows = map[key] as? [[String: Any]] { return rows }
             }
+            // An object with none of those keys and no rows in it is an empty
+            // listing in the shape this agent's older surfaces use.
+            if map.isEmpty || map["jobs"] != nil { return [] }
         }
-        return []
+        throw Failure.unreadable
     }
 
     /// Best-effort read of whatever the dashboard put in the body.

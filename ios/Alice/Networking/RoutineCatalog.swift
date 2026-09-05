@@ -58,8 +58,16 @@ struct RoutineCatalog {
     }
 
     /// One bot's routines, from the same dictionary the Jobs screen flattens.
+    ///
+    /// With no cross-profile source there is no answer to give. The gateway
+    /// cannot stand in the way it does for the global list: it serves one
+    /// profile, so it cannot say whether *this* bot has no routines or whether
+    /// it simply is not the profile being served. Returning [] here said the
+    /// first when only the second was known, which is the whole defect
+    /// `RoutineState` exists to prevent — and it prevented nothing, because
+    /// the empty list arrived as a success.
     func routines(for profile: String) async throws -> [JobRow] {
-        guard let across else { return [] }
+        guard let across else { throw DashboardClient.Failure.notConfigured }
         return try await across.allRoutines()[profile] ?? []
     }
 

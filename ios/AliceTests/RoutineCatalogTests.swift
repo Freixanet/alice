@@ -125,6 +125,68 @@ final class RoutineCatalogTests: XCTestCase {
         XCTAssertEqual(listing.rows.map(\.id), ["c3cf075a5b68"])
     }
 
+    // MARK: - One bot's routines, with no cross-profile source
+    //
+    // The global list may fall back to the gateway, because the screen labels
+    // that partial. One bot's list may not: a gateway serving another profile
+    // cannot tell an empty bot from a bot it has never heard of.
+
+    /// The real path, not `RoutineState` in isolation: with no dashboard,
+    /// asking for one bot's routines must throw.
+    func testOneBotsRoutinesThrowWithoutACrossProfileSource() async {
+        let catalog = Self.catalog(nil, gateway: Gateway(rows: [Self.radarIA]))
+
+        do {
+            let rows = try await catalog.routines(for: "radar-ia")
+            XCTFail("returned \(rows.count) rows instead of failing")
+        } catch DashboardClient.Failure.notConfigured {
+            // What the screen needs to hear: there is no source, not no work.
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+    }
+
+    /// The same call as the screen makes it. This is the assertion the earlier
+    /// `RoutineState`-only test could not make: the catalog used to answer []
+    /// successfully, so `resolving` saw a success and BotDetail drew
+    /// "No routines yet" for a dashboard that was never configured.
+    func testThatPathResolvesToFailedRatherThanAnEmptyBot() async {
+        let catalog = Self.catalog(nil, gateway: Gateway(rows: [Self.radarIA]))
+
+        let state = await RoutineState.resolving {
+            try await catalog.routines(for: "radar-ia")
+        }
+
+        XCTAssertFalse(state.isEmptyAnswer, "an unconfigured dashboard is not an empty bot")
+        XCTAssertNotNil(state.failure)
+    }
+
+    /// A configured dashboard that really answers nothing still reads as
+    /// empty — the one case that is allowed to.
+    func testAConfiguredDashboardWithNoRoutinesStillResolvesToEmpty() async {
+        let catalog = Self.catalog(Across(["radar-ia": []]))
+
+        let state = await RoutineState.resolving {
+            try await catalog.routines(for: "radar-ia")
+        }
+
+        XCTAssertEqual(state, .loaded([]))
+        XCTAssertTrue(state.isEmptyAnswer)
+    }
+
+    /// And the real routine still arrives through the same path.
+    func testTheRealRoutineArrivesThroughTheSamePath() async {
+        let catalog = Self.catalog(
+            Across(["radar-ia": [Self.radarIA], "chollometro": [Self.chollo]])
+        )
+
+        let state = await RoutineState.resolving {
+            try await catalog.routines(for: "radar-ia")
+        }
+
+        XCTAssertEqual(state.rows.map(\.id), ["c3cf075a5b68"])
+    }
+
     /// With no dashboard there is no cross-profile source, and the answer says
     /// so rather than passing one gateway's profile off as the whole agent.
     func testWithoutADashboardTheListingIsMarkedPartial() async throws {
