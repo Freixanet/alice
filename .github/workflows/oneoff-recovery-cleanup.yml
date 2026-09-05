@@ -1,0 +1,125 @@
+name: One-off recovery cleanup
+
+on:
+  push:
+    branches: [fix/radar-recovery-cleanup]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/radar-recovery-cleanup
+          fetch-depth: 0
+
+      - name: Remove one-off recovery plumbing and enable canonical Bot Chat
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('ios/Alice/Storage/AppStore.swift')
+          s = p.read_text()
+
+          def replace_once(old: str, new: str, label: str):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              s = s.replace(old, new, 1)
+
+          replace_once(
+          '''    /// Temporary. Keeps this build to loading state and importing recovered
+              /// history: no bot-chat sync, no socket, no sends. It exists so a recovery
+              /// on the phone cannot be confused by the unvalidated WebSocket path, and
+              /// comes out once that path is proven.
+              #if DEBUG
+              nonisolated static let recoverySafeMode = true
+              #else
+              nonisolated static let recoverySafeMode = false
+              #endif
+
+          ''',
+          '',
+          'recoverySafeMode declaration'
+          )
+
+          replace_once(
+          '''        if !Self.recoverySafeMode {
+              Task { [weak self] in await self?.refreshBotChat(id) }
+          }
+          ''',
+          '''        Task { [weak self] in await self?.refreshBotChat(id) }
+          ''',
+          'openBotConversation gate'
+          )
+
+          for label in ('refreshBotChat gate', 'refreshVisibleBotChats gate'):
+              old = '        if Self.recoverySafeMode { return }\n'
+              if old not in s:
+                  raise SystemExit(f'{label}: missing')
+              s = s.replace(old, '', 1)
+
+          replace_once(
+          '        guard !Self.recoverySafeMode, dashboardReady else { return nil }\n',
+          '        guard dashboardReady else { return nil }\n',
+          'botChatSource gate'
+          )
+
+          replace_once(
+          '''        if let directBot = conversations[index].routedBotName,
+             conversations[index].isChannel != true, !Self.recoverySafeMode {
+          ''',
+          '''        if let directBot = conversations[index].routedBotName,
+             conversations[index].isChannel != true {
+          ''',
+          'direct bot send gate'
+          )
+
+          start_marker = '''    /// Batches of recovered history already folded in, so a second import
+          '''
+          end_marker = '''    /// Puts a salvaged archive back once it can be read again.
+          '''
+          if s.count(start_marker) != 1 or s.count(end_marker) != 1:
+              raise SystemExit('recovery importer block markers not unique')
+          start = s.index(start_marker)
+          end = s.index(end_marker)
+          s = s[:start] + s[end:]
+
+          if 'recoverySafeMode' in s:
+              raise SystemExit('recoverySafeMode still present')
+          if 'RecoveryImporter' in s or 'RecoveryPlan' in s or 'appliedRecoveryKey' in s:
+              raise SystemExit('recovery importer references still present in AppStore')
+
+          p.write_text(s)
+
+          Path('ios/Alice/Storage/RecoveryImporter.swift').unlink()
+          Path('ios/AliceTests/RecoveryImporterTests.swift').unlink()
+          PY
+
+          if grep -R --line-number --exclude-dir=.git -E 'recoverySafeMode|RecoveryImporter|planRecovery\(|importRecovery\(|migrateRecoveryAssociations\(|alice\.recovery\.applied' ios/Alice ios/AliceTests; then
+            echo 'Temporary recovery code still referenced.' >&2
+            exit 1
+          fi
+
+          git diff --check
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Nothing to commit.'
+            exit 0
+          fi
+          git commit -m 'cleanup(ios): remove one-off recovery tooling'
+          git push origin HEAD:fix/radar-recovery-cleanup
