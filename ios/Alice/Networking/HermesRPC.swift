@@ -79,20 +79,35 @@ actor HermesRPCClient: HermesRPCTransport {
         return parts.url
     }
 
-    func call(_ method: String, _ params: JSONObject) async throws -> JSONObject {
-        try await connectIfNeeded()
-        let id = nextID
-        nextID += 1
+    /// Hermes' WebSocket endpoint reads JSON-RPC with `receive_text()`, and its
+    /// browser/TUI clients send `JSON.stringify(...)`. A binary WebSocket frame
+    /// is therefore not an interchangeable representation of the same JSON:
+    /// Starlette rejects it before the RPC dispatcher sees a method at all.
+    /// Keep the encoder here so tests can lock the wire contract down.
+    nonisolated static func wireText(
+        id: Int, method: String, params: JSONObject
+    ) throws -> String {
         let frame: [String: Any] = [
             "jsonrpc": "2.0", "id": id, "method": method, "params": params.fields,
         ]
         let data = try JSONSerialization.data(withJSONObject: frame)
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    func call(_ method: String, _ params: JSONObject) async throws -> JSONObject {
+        try await connectIfNeeded()
+        let id = nextID
+        nextID += 1
+        let text = try Self.wireText(id: id, method: method, params: params)
         guard let socket else { throw Failure(reason: "Not connected to Hermes.") }
         return try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
             Task { [weak self] in
                 do {
-                    try await socket.send(.data(data))
+                    // Hermes calls `receive_text()` server-side. Sending Data
+                    // here creates a binary frame and closes the connection
+                    // before `profiles.list`/`session.resume` can run.
+                    try await socket.send(.string(text))
                 } catch {
                     await self?.settle(id, with: .failure(error))
                 }
