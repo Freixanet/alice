@@ -55,7 +55,7 @@ struct JobsScreen: View {
                         systemImage: "clock"
                     )
                 } else {
-                    ForEach(jobs) { job in
+                    ForEach(jobs, id: \.listIdentity) { job in
                         jobRow(job)
                     }
                     if partial {

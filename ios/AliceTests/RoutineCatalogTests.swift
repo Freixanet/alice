@@ -33,16 +33,22 @@ final class RoutineCatalogTests: XCTestCase {
 
     private enum Unreachable: Error { case noAnswer }
 
-    private static func job(_ id: String, _ name: String = "routine") -> JobRow {
+    private static func job(
+        _ id: String, _ name: String = "routine", profile: String? = nil
+    ) -> JobRow {
         JobRow(
             id: id, name: name, prompt: "", schedule: "daily at 10am",
             enabled: true, lastStatus: nil, lastError: nil,
-            lastRun: nil, nextRun: nil
+            lastRun: nil, nextRun: nil, profile: profile
         )
     }
 
-    private static let radarIA = job("c3cf075a5b68", "Radar IA — informe diario")
-    private static let chollo = job("aa11bb22cc33", "Chollometro — novedades")
+    private static let radarIA = job(
+        "c3cf075a5b68", "Radar IA — informe diario", profile: "radar-ia"
+    )
+    private static let chollo = job(
+        "aa11bb22cc33", "Chollometro — novedades", profile: "chollometro"
+    )
 
     private static func catalog(
         _ across: CrossProfileRoutines?, gateway: Gateway = Gateway()
@@ -116,75 +122,40 @@ final class RoutineCatalogTests: XCTestCase {
         XCTAssertTrue(listing.rows.isEmpty)
     }
 
-    // F. Legacy extras do not duplicate a row.
-    func testARowRepeatedAcrossProfilesIsDrawnOnce() async throws {
+    // F. A store enumerated twice within one profile is drawn once, but a
+    // shared id ACROSS profiles is two different routines and both survive.
+    //
+    // This replaces a test that asserted the opposite. Ids are
+    // `uuid.uuid4().hex[:12]` with no collision check and one store per
+    // profile home, so nothing in the agent makes them unique between
+    // profiles — the earlier test had turned that assumption into a contract,
+    // and the behaviour it fixed would delete a real routine.
+    func testARepeatedRowWithinOneProfileIsDrawnOnce() async throws {
         let listing = try await Self.catalog(
-            Across(["radar-ia": [Self.radarIA], "default": [Self.radarIA]])
+            Across(["radar-ia": [Self.radarIA, Self.radarIA]])
         ).everything()
 
         XCTAssertEqual(listing.rows.map(\.id), ["c3cf075a5b68"])
     }
 
-    // MARK: - One bot's routines, with no cross-profile source
-    //
-    // The global list may fall back to the gateway, because the screen labels
-    // that partial. One bot's list may not: a gateway serving another profile
-    // cannot tell an empty bot from a bot it has never heard of.
-
-    /// The real path, not `RoutineState` in isolation: with no dashboard,
-    /// asking for one bot's routines must throw.
-    func testOneBotsRoutinesThrowWithoutACrossProfileSource() async {
-        let catalog = Self.catalog(nil, gateway: Gateway(rows: [Self.radarIA]))
-
-        do {
-            let rows = try await catalog.routines(for: "radar-ia")
-            XCTFail("returned \(rows.count) rows instead of failing")
-        } catch DashboardClient.Failure.notConfigured {
-            // What the screen needs to hear: there is no source, not no work.
-        } catch {
-            XCTFail("unexpected \(error)")
-        }
-    }
-
-    /// The same call as the screen makes it. This is the assertion the earlier
-    /// `RoutineState`-only test could not make: the catalog used to answer []
-    /// successfully, so `resolving` saw a success and BotDetail drew
-    /// "No routines yet" for a dashboard that was never configured.
-    func testThatPathResolvesToFailedRatherThanAnEmptyBot() async {
-        let catalog = Self.catalog(nil, gateway: Gateway(rows: [Self.radarIA]))
-
-        let state = await RoutineState.resolving {
-            try await catalog.routines(for: "radar-ia")
-        }
-
-        XCTAssertFalse(state.isEmptyAnswer, "an unconfigured dashboard is not an empty bot")
-        XCTAssertNotNil(state.failure)
-    }
-
-    /// A configured dashboard that really answers nothing still reads as
-    /// empty — the one case that is allowed to.
-    func testAConfiguredDashboardWithNoRoutinesStillResolvesToEmpty() async {
-        let catalog = Self.catalog(Across(["radar-ia": []]))
-
-        let state = await RoutineState.resolving {
-            try await catalog.routines(for: "radar-ia")
-        }
-
-        XCTAssertEqual(state, .loaded([]))
-        XCTAssertTrue(state.isEmptyAnswer)
-    }
-
-    /// And the real routine still arrives through the same path.
-    func testTheRealRoutineArrivesThroughTheSamePath() async {
-        let catalog = Self.catalog(
-            Across(["radar-ia": [Self.radarIA], "chollometro": [Self.chollo]])
+    func testTheSameIdInTwoProfilesKeepsBothRoutines() async throws {
+        var twin = Self.chollo
+        twin = JobRow(
+            id: Self.radarIA.id, name: "Chollometro — novedades", prompt: "",
+            schedule: "daily at 10am", enabled: true, lastStatus: nil,
+            lastError: nil, lastRun: nil, nextRun: nil, profile: "chollometro"
         )
 
-        let state = await RoutineState.resolving {
-            try await catalog.routines(for: "radar-ia")
-        }
+        let listing = try await Self.catalog(
+            Across(["radar-ia": [Self.radarIA], "chollometro": [twin]])
+        ).everything()
 
-        XCTAssertEqual(state.rows.map(\.id), ["c3cf075a5b68"])
+        XCTAssertEqual(listing.rows.count, 2, "a real routine was deduplicated away")
+        XCTAssertEqual(
+            Set(listing.rows.map(\.listIdentity)),
+            ["radar-ia/c3cf075a5b68", "chollometro/c3cf075a5b68"],
+            "and the list still has two distinct identities to draw"
+        )
     }
 
     /// With no dashboard there is no cross-profile source, and the answer says

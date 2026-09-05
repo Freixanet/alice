@@ -32,6 +32,14 @@ struct JobRow: Identifiable, Hashable, Sendable, Codable {
     var lastError: String?
     var lastRun: Date?
     var nextRun: Date?
+    /// The profile this row was listed under, when it was read from a listing
+    /// that says. Ids are `uuid4().hex[:12]` with no collision check and a
+    /// store per profile home, so nothing makes them unique across profiles —
+    /// the pair is the identity, and the id alone is not.
+    var profile: String?
+
+    /// Stable identity for a list drawn from more than one profile.
+    var listIdentity: String { profile.map { "\($0)/\(id)" } ?? id }
 }
 
 /// A run of the agent as the server recorded it — from the phone, the web,

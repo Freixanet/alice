@@ -87,7 +87,7 @@ final class CronGroupingTests: XCTestCase {
     /// The whole point: this row has to land under the slug, because that is
     /// what `BotRow.name` holds and what `routines(for:)` is asked for.
     func testTheRealRadarIARowLandsUnderItsSlug() throws {
-        let grouped = DashboardClient.group([Self.radarIARow()])
+        let grouped = DashboardClient.group([Self.radarIARow()], ownership: .canonical)
 
         XCTAssertEqual(Array(grouped.keys), ["radar-ia"])
         let job = try XCTUnwrap(grouped["radar-ia"]?.first)
@@ -107,7 +107,7 @@ final class CronGroupingTests: XCTestCase {
         row["profile"] = "radar-ia"
         row["profile_name"] = "Radar IA"
 
-        let grouped = DashboardClient.group([row])
+        let grouped = DashboardClient.group([row], ownership: .canonical)
 
         XCTAssertEqual(grouped["radar-ia"]?.count, 1)
         XCTAssertNil(grouped["Radar IA"])
@@ -116,8 +116,8 @@ final class CronGroupingTests: XCTestCase {
     /// A profile with no routines is an empty answer, not a missing key that
     /// the screen could mistake for a failure.
     func testAProfileWithNoRoutinesGroupsToNothing() {
-        XCTAssertTrue(DashboardClient.group([]).isEmpty)
-        XCTAssertNil(DashboardClient.group([]).keys.first)
+        XCTAssertTrue(DashboardClient.group([], ownership: .canonical).isEmpty)
+        XCTAssertNil(DashboardClient.group([], ownership: .canonical).keys.first)
     }
 
     /// `profile=all` concatenates every profile's store. One bot's routine
@@ -128,7 +128,7 @@ final class CronGroupingTests: XCTestCase {
         other["profile"] = "chollometro"
         other["profile_name"] = "chollometro"
 
-        let grouped = DashboardClient.group([Self.radarIARow(), other])
+        let grouped = DashboardClient.group([Self.radarIARow(), other], ownership: .canonical)
 
         XCTAssertEqual(grouped["radar-ia"]?.map(\.id), ["c3cf075a5b68"])
         XCTAssertEqual(grouped["chollometro"]?.map(\.id), ["aa11bb22cc33"])
@@ -143,7 +143,7 @@ final class CronGroupingTests: XCTestCase {
             ["id": "a", "schedule": "0 10 * * *", "owner_profile": "radar-ia"],
             ["id": "b", "schedule": "0 9 * * *", "owner_profile": "chollometro"],
             ["id": "c", "schedule": "0 8 * * *", "owner_profile": "radar-ia"],
-        ])
+        ], ownership: .legacyWebUI)
 
         XCTAssertEqual(Set(grouped.keys), ["radar-ia", "chollometro"])
         XCTAssertEqual(grouped["radar-ia"]?.map(\.id), ["a", "c"])
@@ -159,7 +159,7 @@ final class CronGroupingTests: XCTestCase {
                 "id": "a", "schedule": "0 10 * * *",
                 "owner_profile": "radar-ia", "profile": "default",
             ]
-        ])
+        ], ownership: .legacyWebUI)
 
         XCTAssertEqual(grouped["radar-ia"]?.count, 1)
         XCTAssertNil(grouped["default"])
@@ -173,7 +173,7 @@ final class CronGroupingTests: XCTestCase {
                 "id": "a", "schedule": "0 10 * * *",
                 "profile": "radar-ia", "profile_name": "radar-ia",
             ]
-        ])
+        ], ownership: .legacyWebUI)
 
         XCTAssertEqual(grouped["radar-ia"]?.count, 1)
     }
@@ -185,7 +185,7 @@ final class CronGroupingTests: XCTestCase {
             ["id": "a", "owner_profile": "", "profile": "radar-ia"],
             ["id": "b", "owner_profile": ""],
             ["schedule": "0 10 * * *", "owner_profile": "radar-ia"],
-        ])
+        ], ownership: .legacyWebUI)
 
         XCTAssertEqual(grouped["radar-ia"]?.map(\.id), ["a"])
         XCTAssertNil(grouped[""])

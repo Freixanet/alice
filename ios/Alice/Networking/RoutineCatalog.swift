@@ -30,11 +30,16 @@ protocol SingleProfileRoutines: Sendable {
 
 /// One reader behind both the Jobs screen and a bot's own routines.
 ///
-/// They used to disagree: the bot read the dashboard and Jobs read the
-/// gateway, so a routine belonging to a named profile appeared on one screen
-/// and not the other. Both go through `allRoutines()` now, and a bot's list is
-/// a slice of the same dictionary rather than a second request answered by a
-/// different server.
+/// They used to disagree by construction: the bot read the dashboard and Jobs
+/// read the gateway, so a routine belonging to a named profile appeared on one
+/// screen and not the other. Both go through `allRoutines()` now.
+///
+/// This buys one source and one contract, not one snapshot. Each screen still
+/// makes its own read, and the agent can change between them — a routine added
+/// after Jobs loaded will be on the bot's screen and not on the list behind
+/// it, until that list is refreshed. That is ordinary staleness, and cheaper
+/// to accept than a shared cache would be; what it is not is the two screens
+/// disagreeing about what the same answer meant.
 struct RoutineCatalog {
     /// Absent when no dashboard is configured; there is then no source that
     /// can see across profiles at all.
@@ -73,14 +78,18 @@ struct RoutineCatalog {
 
     /// The grouped listing as one list.
     ///
-    /// Ordered by profile so the screen does not reshuffle between reads, and
-    /// keyed by id on the way through: `profile=all` concatenates one store per
-    /// profile, and a row that turned up under two of them would otherwise be
-    /// drawn twice.
+    /// Ordered by profile so the screen does not reshuffle between reads.
+    ///
+    /// Deduplication is per profile, never across them. Ids are
+    /// `uuid.uuid4().hex[:12]` — forty-eight bits, generated with no collision
+    /// check, in a separate store per profile home — so nothing in the agent
+    /// makes them unique between profiles. Keying the whole list on id alone
+    /// would silently delete one bot's real routine to keep another's, which
+    /// is a worse failure than drawing an unlikely duplicate.
     static func flatten(_ grouped: [String: [JobRow]]) -> [JobRow] {
-        var seen = Set<String>()
         var rows: [JobRow] = []
         for profile in grouped.keys.sorted() {
+            var seen = Set<String>()
             for job in grouped[profile] ?? [] where seen.insert(job.id).inserted {
                 rows.append(job)
             }
