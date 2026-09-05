@@ -25,4 +25,8 @@ final class RadarIATests: XCTestCase {
         XCTAssertTrue(prompt.contains("INSTRUCCIONES EDITORIALES DE LA RUTINA"))
         XCTAssertTrue(prompt.contains("fuentes actuales"))
     }
+
+    func testSetupPromptRejectsFixedOffsetZone() {
+        XCTAssertNil(RadarIA.setupPrompt(time: "10:00", zone: "UTC+02:00"))
+    }
 }
