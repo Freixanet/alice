@@ -162,36 +162,55 @@ extension HermesClient {
         }
     }
 
-    /// The scheduled jobs. Served by the gateway itself rather than the
-    /// dashboard, which is why this one works where most of `/api/*` does not.
+    /// The scheduled jobs. Current Hermes serves them from `/api/cron/jobs`
+    /// and defaults that route to all profiles. Keep the advertised/legacy
+    /// routes as fallbacks for older agents, but do not let an obsolete empty
+    /// collection hide real profile-scoped cron jobs.
     func jobs(_ manifest: Manifest?) async throws -> [JobRow] {
-        let rows = try await managementList(
-            paths: routes(manifest, "jobs", "api/jobs", "api/cron")
-        )
-        return rows.compactMap { row in
-            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
-            let schedule = row["schedule"] as? [String: Any]
-            return JobRow(
-                id: id,
-                name: (row["name"] as? String) ?? id,
-                prompt: (row["prompt"] as? String) ?? "",
-                schedule: (row["schedule_display"] as? String)
-                    ?? (schedule?["display"] as? String)
-                    ?? (schedule?["expr"] as? String)
-                    ?? "",
-                enabled: (row["enabled"] as? Bool) ?? false,
-                lastStatus: row["last_status"] as? String,
-                lastError: (row["last_error"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-                lastRun: HermesClient.date(row["last_run_at"]),
-                nextRun: HermesClient.date(row["next_run_at"])
-            )
+        var paths = ["api/cron/jobs?profile=all", "api/cron/jobs"]
+        if let advertised = manifest?.path("jobs"), !paths.contains(advertised) {
+            paths.append(advertised)
         }
+        for fallback in ["api/jobs", "api/cron"] where !paths.contains(fallback) {
+            paths.append(fallback)
+        }
+        let rows = try await managementList(paths: paths)
+        return rows.compactMap(Self.jobRow(from:))
     }
 
-    /// Hermes sends times as ISO-8601, sometimes with fractional seconds and
-    /// sometimes without; one formatter refuses the other's output.
+    /// One cron row, accepting both the current plain-string schedule and the
+    /// nested schedule shape used by older builds/dashboard adapters.
+    static func jobRow(from row: [String: Any]) -> JobRow? {
+        guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+        let scheduleObject = row["schedule"] as? [String: Any]
+        let scheduleText = (row["schedule_display"] as? String)
+            ?? (row["schedule"] as? String)
+            ?? (scheduleObject?["display"] as? String)
+            ?? (scheduleObject?["expr"] as? String)
+            ?? ""
+        return JobRow(
+            id: id,
+            name: (row["name"] as? String) ?? id,
+            prompt: (row["prompt"] as? String) ?? "",
+            schedule: scheduleText,
+            enabled: (row["enabled"] as? Bool) ?? false,
+            lastStatus: row["last_status"] as? String,
+            lastError: (row["last_error"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            lastRun: HermesClient.date(row["last_run_at"]),
+            nextRun: HermesClient.date(row["next_run_at"])
+        )
+    }
+
+    /// Hermes sends times as ISO-8601 on some surfaces and Unix timestamps on
+    /// others. Accept both instead of dropping the next/last-run fields.
     static func date(_ value: Any?) -> Date? {
+        if let number = value as? NSNumber {
+            return Date(timeIntervalSince1970: number.doubleValue)
+        }
         guard let text = value as? String, !text.isEmpty else { return nil }
+        if let seconds = Double(text), seconds > 1_000_000_000 {
+            return Date(timeIntervalSince1970: seconds)
+        }
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
