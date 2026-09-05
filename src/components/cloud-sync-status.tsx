@@ -55,7 +55,7 @@ export function CloudSyncStatusIndicator() {
       role="status"
       aria-live="polite"
       className={cn(
-        "fixed right-3 bottom-3 z-50 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-popover/95 px-3 py-2 text-xs shadow-sm backdrop-blur",
+        "pointer-events-none fixed right-3 bottom-3 z-50 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-popover/95 px-3 py-2 text-xs shadow-sm backdrop-blur",
         severe && "text-destructive",
       )}
     >
@@ -74,7 +74,12 @@ export function CloudSyncStatusIndicator() {
         ) : null}
       </div>
       {last ? (
-        <div className={cn("mt-0.5 text-muted-foreground", severe && "text-current/70")}>
+        <div
+          className={cn(
+            "mt-0.5 text-muted-foreground",
+            severe && "text-current/70",
+          )}
+        >
           {copy.last}: {last}
         </div>
       ) : null}
