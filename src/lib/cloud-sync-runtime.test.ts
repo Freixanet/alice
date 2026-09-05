@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clearPendingDeletedThrough,
   clearPendingThrough,
   loadSyncAccountState,
   queueLocalConversationChanges,
@@ -15,6 +16,10 @@ beforeEach(() => {
     removeItem: (key: string) => values.delete(key),
     clear: () => values.clear(),
   });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 function conversation(id: string, content: string): Conversation {
@@ -73,6 +78,20 @@ describe("incremental sync queue", () => {
 
     clearPendingThrough("account-b", { chat: 100 }, 250);
     expect(loadSyncAccountState("account-b").pending.chat?.version).toBe(200);
+  });
+
+  it("clears an older pending edit when a newer remote deletion wins", () => {
+    const chat = conversation("chat", "local edit");
+    queueLocalConversationChanges({
+      userId: "account-c",
+      previous: [],
+      next: [chat],
+      tombstones: {},
+      now: 100,
+    });
+
+    clearPendingDeletedThrough("account-c", "chat", 200);
+    expect(loadSyncAccountState("account-c").pending.chat).toBeUndefined();
   });
 });
 
