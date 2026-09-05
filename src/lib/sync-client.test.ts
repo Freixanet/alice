@@ -35,7 +35,7 @@ describe("encrypted sync client", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("uploads ciphertext and validates/decrypts resumed pull pages", async () => {
+  it("uploads ciphertext, then reads it back on a later run", async () => {
     const conversation: Conversation = {
       id: "chat-one",
       title: "Private title",
@@ -58,10 +58,15 @@ describe("encrypted sync client", () => {
           uploaded = body;
           return Response.json({ ok: true, replayed: false, accepted: 1 });
         }
-        const record = (uploaded?.records as Array<Record<string, unknown>>)[0];
+        const records = uploaded
+          ? (uploaded.records as Array<Record<string, unknown>>).map((r) => ({
+              ...r,
+              revision: 1,
+            }))
+          : [];
         return Response.json({
           ok: true,
-          records: [{ ...record, revision: 1 }],
+          records,
           cursor: "1",
           hasMore: false,
         });
@@ -69,21 +74,87 @@ describe("encrypted sync client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await syncEncryptedConversations({
+    const master = generateMasterSecret();
+    // First run: an empty account, so the walk reads nothing and this device's
+    // conversation goes up.
+    const first = await syncEncryptedConversations({
       userId: "account-a",
-      master: generateMasterSecret(),
+      master,
       conversations: [conversation],
       tombstones: {},
     });
-
+    expect(first.remote).toEqual([]);
     expect(JSON.stringify(uploaded)).not.toContain("private content");
-    expect(result.remote).toEqual([
+
+    // Second run: what was written comes back, and decrypts.
+    const second = await syncEncryptedConversations({
+      userId: "account-a",
+      master,
+      conversations: [],
+      tombstones: {},
+    });
+    expect(second.remote).toEqual([
       { id: conversation.id, tombstone: false, conversation },
     ]);
-    // Handed back, and written nowhere by the client itself: the caller puts
-    // it into the same persisted state as the records.
-    expect(result.cursor).toBe("1");
+    expect(second.cursor).toBe("1");
     expect(localStorage.getItem("alice:sync-cursor:account-a")).toBeNull();
+  });
+
+  it("refuses a key that cannot read the account, before writing", async () => {
+    // A well-formed phrase belonging to a different key. The account already
+    // holds records, so the walk fails on the first one it tries to open —
+    // and it must fail with nothing pushed.
+    const owner = generateMasterSecret();
+    let stored: Array<Record<string, unknown>> = [];
+    let pushes = 0;
+    const seed = vi.fn(async (_i: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.action === "push") {
+        stored = (body.records as Array<Record<string, unknown>>).map((r) => ({
+          ...r,
+          revision: 1,
+        }));
+        return Response.json({ ok: true, replayed: false, accepted: 1 });
+      }
+      return Response.json({ ok: true, records: [], cursor: "1", hasMore: false });
+    });
+    vi.stubGlobal("fetch", seed);
+    await syncEncryptedConversations({
+      userId: "account-d",
+      master: owner,
+      conversations: [
+        { id: "c", title: "t", createdAt: 1, updatedAt: 2, messages: [] },
+      ],
+      tombstones: {},
+    });
+
+    const intruder = vi.fn(async (_i: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.action === "push") {
+        pushes += 1;
+        return Response.json({ ok: true, replayed: false, accepted: 1 });
+      }
+      return Response.json({
+        ok: true,
+        records: stored,
+        cursor: "2",
+        hasMore: false,
+      });
+    });
+    vi.stubGlobal("fetch", intruder);
+
+    await expect(
+      syncEncryptedConversations({
+        userId: "account-d",
+        master: generateMasterSecret(),
+        conversations: [
+          { id: "mine", title: "m", createdAt: 1, updatedAt: 9, messages: [] },
+        ],
+        tombstones: {},
+        cursor: "0",
+      }),
+    ).rejects.toThrow();
+    expect(pushes).toBe(0);
   });
 
   it("leaves the cursor alone when a later page fails", async () => {

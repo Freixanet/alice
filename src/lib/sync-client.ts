@@ -17,6 +17,53 @@ export type RemoteConversation =
   | { id: string; tombstone: true; updatedAt: number }
   | { id: string; tombstone: false; conversation: Conversation };
 
+/**
+ * The key cannot read what is already in this account.
+ *
+ * Thrown before anything is written. A recovery phrase is well-formed long
+ * before it is the *right* phrase, and a wrong one used to be accepted, saved
+ * and switched on — then the client pushed this device's conversations into
+ * the account before it ever tried to read what was there, leaving one
+ * account holding records under two keys.
+ */
+export class SyncKeyMismatchError extends Error {
+  constructor() {
+    super("This recovery phrase does not open this account's conversations.");
+    this.name = "SyncKeyMismatchError";
+  }
+}
+
+/**
+ * Whether `master` can read what this account already holds.
+ *
+ * `empty` means there is nothing to read, and any key is therefore the right
+ * one: this is the device that starts the set.
+ */
+export async function verifySyncKey(options: {
+  userId: string;
+  master: Uint8Array;
+  signal?: AbortSignal;
+}): Promise<"matches" | "empty" | "mismatch"> {
+  const key = await deriveContentKey(options.master, options.userId);
+  const response = syncPullResponseSchema.parse(
+    await postSync({ action: "pull", cursor: "0", limit: 20 }, options.signal),
+  );
+  const readable = response.records.filter((record) =>
+    record.id.startsWith("conversation:"),
+  );
+  if (!readable.length) return "empty";
+  for (const record of readable) {
+    try {
+      await decryptPayload<unknown>(record.payload, key, record.id);
+      return "matches";
+    } catch {
+      // Try the next one: a single record could be corrupt for its own
+      // reasons, and one failure is not proof the key is wrong.
+    }
+  }
+  return "mismatch";
+}
+
 /** What a pull produced, and where it got to. */
 export type SyncPull = {
   remote: RemoteConversation[];
@@ -83,19 +130,6 @@ export async function syncEncryptedConversations(options: {
     });
   }
 
-  for (const batch of batches(records)) {
-    options.signal?.throwIfAborted();
-    const response = await postSync(
-      {
-        action: "push",
-        requestId: crypto.randomUUID(),
-        records: batch,
-      },
-      options.signal,
-    );
-    syncPushResponseSchema.parse(response);
-  }
-
   const remote: RemoteConversation[] = [];
   let cursor = options.cursor ?? cursorFor(options.userId);
   for (let page = 0; page < 100; page += 1) {
@@ -130,6 +164,24 @@ export async function syncEncryptedConversations(options: {
     }
     cursor = response.cursor;
     if (!response.hasMore) break;
+  }
+
+  // Only now does anything leave this device. Pushing first meant a key that
+  // could not read the account still wrote to it: the failure surfaced on the
+  // way back down, by which time this device's conversations were already in
+  // there under a second key. Reading first, a wrong key throws while the
+  // account is still untouched.
+  for (const batch of batches(records)) {
+    options.signal?.throwIfAborted();
+    const response = await postSync(
+      {
+        action: "push",
+        requestId: crypto.randomUUID(),
+        records: batch,
+      },
+      options.signal,
+    );
+    syncPushResponseSchema.parse(response);
   }
 
   // Handed back, never written here. Written per page, a failure on the

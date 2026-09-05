@@ -301,6 +301,20 @@ function GeneralSection() {
     setSyncError(null);
     try {
       const master = decodeRecoveryPhrase(recoveryConfirmation);
+      // Checked against the account before it is kept. A phrase can be
+      // perfectly well-formed and belong to a different key entirely, and
+      // that used to be saved and switched on regardless — after which this
+      // device pushed its conversations into somebody's account under a key
+      // nothing there could read. Nothing is stored, and the switch is not
+      // moved, until the phrase has opened something that is already up
+      // there. An account with nothing in it accepts any key: that device is
+      // the one starting the set.
+      const { verifySyncKey } = await import("@/lib/sync-client");
+      const verdict = await verifySyncKey({ userId: user.id, master });
+      if (verdict === "mismatch") {
+        setSyncError(t("settings.recoveryMismatch"));
+        return;
+      }
       await saveMasterSecretForDevice(user.id, master);
       setCloudSyncEnabled(true);
       setImportingRecovery(false);
