@@ -11,6 +11,24 @@ protocol HermesRPCTransport: Sendable {
 
     /// Every `event` frame the agent pushes, for as long as the caller listens.
     func events() -> AsyncStream<HermesRPCEvent>
+
+    /// Associates the ephemeral runtime session returned by `session.resume`
+    /// with the durable session Alice stores on a conversation.
+    ///
+    /// Hermes uses the runtime id for RPC methods and pushed events, while a
+    /// reconnect resumes from the durable id. Keeping the association in the
+    /// transport lets callers continue to key UI state on the durable chat.
+    func aliasSession(runtimeID: String, durableID: String) async
+
+    /// The current runtime session for a durable chat, when this socket has
+    /// resumed it already.
+    func runtimeSessionID(for durableID: String) async -> String?
+}
+
+/// Test transports that do not model pushed events do not need session aliases.
+extension HermesRPCTransport {
+    func aliasSession(runtimeID: String, durableID: String) async {}
+    func runtimeSessionID(for durableID: String) async -> String? { nil }
 }
 
 /// A JSON object crossing an isolation boundary.
@@ -58,6 +76,12 @@ actor HermesRPCClient: HermesRPCTransport {
     private var listeners: [UUID: AsyncStream<HermesRPCEvent>.Continuation] = [:]
     private var nextID = 1
     private var pump: Task<Void, Never>?
+
+    /// Hermes has two session identities: a durable stored id used to resume a
+    /// chat, and an ephemeral runtime id used by live RPC calls and events.
+    /// These maps live only as long as the socket that produced the runtime ids.
+    private var durableByRuntime: [String: String] = [:]
+    private var runtimeByDurable: [String: String] = [:]
 
     init(
         endpoint: URL,
@@ -125,6 +149,16 @@ actor HermesRPCClient: HermesRPCTransport {
         }
     }
 
+    func aliasSession(runtimeID: String, durableID: String) {
+        guard !runtimeID.isEmpty, !durableID.isEmpty else { return }
+        durableByRuntime[runtimeID] = durableID
+        runtimeByDurable[durableID] = runtimeID
+    }
+
+    func runtimeSessionID(for durableID: String) -> String? {
+        runtimeByDurable[durableID]
+    }
+
     /// Drops the socket so the next call reconnects with a fresh ticket.
     /// Pending calls fail rather than hang; the caller keeps its cache.
     func disconnect(_ reason: Error? = nil) {
@@ -132,6 +166,8 @@ actor HermesRPCClient: HermesRPCTransport {
         pump = nil
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
+        durableByRuntime.removeAll()
+        runtimeByDurable.removeAll()
         let failures = pending
         pending.removeAll()
         for (_, continuation) in failures {
@@ -204,9 +240,12 @@ actor HermesRPCClient: HermesRPCTransport {
               let params = frame["params"] as? [String: Any],
               let type = params["type"] as? String
         else { return }
+        let runtimeID = (params["session_id"] as? String) ?? ""
         let event = HermesRPCEvent(
             type: type,
-            sessionID: (params["session_id"] as? String) ?? "",
+            // AppStore keys conversations on the durable chat. Normalize the
+            // pushed runtime id back to that durable identity when we know it.
+            sessionID: durableByRuntime[runtimeID] ?? runtimeID,
             payload: (params["payload"] as? [String: Any]) ?? [:]
         )
         for (_, continuation) in listeners { continuation.yield(event) }
