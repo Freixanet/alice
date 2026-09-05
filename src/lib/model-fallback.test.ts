@@ -67,6 +67,7 @@ describe("model fallback transport policy", () => {
       requestedProvider: "openai",
       model: "hermes-agent",
       reason: "incompatible",
+      occurredAt: expect.any(Number),
     });
   });
 
