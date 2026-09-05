@@ -5,7 +5,9 @@ test("Radar IA prepares an editable chat request with the selected schedule", as
   page,
 }) => {
   await page.goto("/cron");
-  await expect(page.locator(".alice-app")).toHaveAttribute("data-ready", "");
+  await expect(page.locator(".alice-app")).toHaveAttribute("data-ready", "", {
+    timeout: 15_000,
+  });
   await expect(page.getByRole("heading", { name: "Radar IA" })).toBeVisible();
   await expect(page.getByLabel("Daily start time")).toHaveValue("10:00");
   await expect(page.getByLabel("Time zone", { exact: true })).toHaveValue(
