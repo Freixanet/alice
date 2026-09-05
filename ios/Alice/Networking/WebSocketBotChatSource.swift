@@ -54,31 +54,36 @@ struct WebSocketBotChatSource: BotChatSessionSource {
             "hidden": true,
         ]))
         if let resolved = try await canonicalBotChat(profile: profile) { return resolved }
-        // The roster has not caught up. The sanctioned fallback is the
-        // exact-title registry lookup, which resolves hidden rows and
-        // un-archives a canonical one a reaper had filed away.
+        // The roster has not caught up. Resume by exact title, then keep the
+        // durable id Hermes says it resumed. `session_id` in this response is
+        // the ephemeral runtime handle and must never be persisted as the chat.
         let resumed = try await resume(profile: profile, target: Self.canonicalTitle)
-        guard let id = resumed["session_id"] as? String, !id.isEmpty else {
+        guard let durable = (resumed["resumed"] as? String).flatMap({ $0.isEmpty ? nil : $0 })
+        else {
             throw HermesRPCClient.Failure(
                 reason: "Hermes did not report a canonical Bot Chat for '\(profile)'."
             )
         }
-        return CanonicalBotChat(id: id)
+        _ = try await bindRuntimeSession(resumed, durableID: durable)
+        return CanonicalBotChat(id: durable)
     }
 
     // MARK: - Reading
 
     func transcript(profile: String, sessionID: String) async throws -> [BotChatTurn] {
-        // Resume binds this connection's active session to the bot's chat in
-        // the bot's profile; the history comes back with it, so this is one
-        // round trip rather than two.
+        // Resume binds this connection's active runtime session to the bot's
+        // durable chat in the bot's profile; the history comes back with it.
+        // Keep the durable id on Alice's Conversation and use the returned
+        // runtime id only for live RPC calls on this socket.
         let resumed = try await resume(profile: profile, target: sessionID)
+        _ = try await bindRuntimeSession(resumed, durableID: sessionID)
         return Self.turns(from: resumed.rows)
     }
 
-    /// Resumes a session in a profile. `target` is a session id or an exact
-    /// title — the agent accepts either, and the title form is how Bot Mode's
-    /// canonical chat is addressed.
+    /// Resumes a durable session in a profile. `target` is a stored session id
+    /// or an exact title. The result contains a *runtime* `session_id`; that id
+    /// is valid for live RPC calls on this socket but is not the durable chat
+    /// Alice stores for reconnects.
     @discardableResult
     func resume(profile: String, target: String) async throws -> JSONObject {
         try await rpc.call("session.resume", JSONObject([
@@ -120,6 +125,20 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         return nil
     }
 
+    /// Records the runtime/durable pair and returns the runtime handle Hermes
+    /// expects on live methods such as `prompt.submit`.
+    private func bindRuntimeSession(
+        _ resumed: JSONObject, durableID: String
+    ) async throws -> String {
+        guard let runtimeID = resumed["session_id"] as? String, !runtimeID.isEmpty else {
+            throw HermesRPCClient.Failure(
+                reason: "Hermes resumed the chat without a runtime session id."
+            )
+        }
+        await rpc.aliasSession(runtimeID: runtimeID, durableID: durableID)
+        return runtimeID
+    }
+
     // MARK: - Writing
 
     /// Sends a turn into the bot's own chat.
@@ -128,24 +147,29 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// telling it who to pretend to be is both unnecessary and the thing that
     /// used to make one assistant impersonate another.
     func submit(profile: String, sessionID: String, text: String) async throws {
-        try await resume(profile: profile, target: sessionID)
+        let resumed = try await resume(profile: profile, target: sessionID)
+        let runtimeID = try await bindRuntimeSession(resumed, durableID: sessionID)
         _ = try await rpc.call("prompt.submit", JSONObject([
-            "session_id": sessionID,
+            "session_id": runtimeID,
             "text": text,
         ]))
     }
 
-    /// Stops the run in that session.
+    /// Stops the run in that session. During a live send `submit` has already
+    /// bound the durable chat to its runtime id; a reconnect clears that map so
+    /// a stale runtime handle is never reused.
     func interrupt(sessionID: String) async throws {
-        _ = try await rpc.call("session.interrupt", JSONObject(["session_id": sessionID]))
+        let target = await rpc.runtimeSessionID(for: sessionID) ?? sessionID
+        _ = try await rpc.call("session.interrupt", JSONObject(["session_id": target]))
     }
 
     /// Answers an approval in that session.
     func respondToApproval(
         sessionID: String, requestID: String, choice: String
     ) async throws {
+        let target = await rpc.runtimeSessionID(for: sessionID) ?? sessionID
         _ = try await rpc.call("approval.respond", JSONObject([
-            "session_id": sessionID,
+            "session_id": target,
             "request_id": requestID,
             "choice": choice,
         ]))
@@ -158,8 +182,9 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// Cheaper than re-reading a transcript, and the reason a visible bot chat
     /// can notice a cron delivery without polling for it.
     func hasChanged(sessionID: String, since cursor: Int) async throws -> Bool {
+        let target = await rpc.runtimeSessionID(for: sessionID) ?? sessionID
         let result = try await rpc.call("session.events.stats", JSONObject([
-            "session_id": sessionID,
+            "session_id": target,
         ]))
         guard let latest = (result["latest"] as? Int)
             ?? (result["count"] as? Int)
