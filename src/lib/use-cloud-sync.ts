@@ -21,19 +21,23 @@ export function useCloudSync() {
             useHermes.getState().setCloudSyncEnabled(false);
             return;
           }
-          const { remote, commitCursor } = await syncEncryptedConversations({
+          const { remote, cursor } = await syncEncryptedConversations({
             userId: user.id,
             master,
             conversations,
             tombstones,
+            cursor: useHermes.getState().syncCursors[user.id],
             signal: controller.signal,
           });
           // Aborted: the records were never applied, so the position must not
-          // move either. Nothing to apply: the walk finished, and the position
-          // is worth keeping so the next run does not re-read the same pages.
+          // move either.
           if (controller.signal.aborted) return;
+          // Nothing to apply, but the walk did finish: keep the position so
+          // the next run does not re-read pages it has already caught up with.
           if (!remote.length) {
-            commitCursor();
+            useHermes.setState((state) => ({
+              syncCursors: { ...state.syncCursors, [user.id]: cursor },
+            }));
             return;
           }
           useHermes.setState((state) => {
@@ -65,16 +69,25 @@ export function useCloudSync() {
             const next = [...byId.values()].sort(
               (a, b) => b.updatedAt - a.updatedAt,
             );
-            if (!next.length) return state;
+            // Everything remote was a tombstone: still a walk that happened,
+            // so the position moves even though the list did not.
+            if (!next.length) {
+              return {
+                ...state,
+                syncCursors: { ...state.syncCursors, [user.id]: cursor },
+              };
+            }
             return {
               conversations: next,
               conversationTombstones: nextTombstones,
               activeId: byId.has(state.activeId) ? state.activeId : next[0]!.id,
+              // In the same update as the records it describes. Both are
+              // persisted together, so IndexedDB either has the conversations
+              // and the position that accounts for them, or has neither —
+              // never a position for records that were lost on the way.
+              syncCursors: { ...state.syncCursors, [user.id]: cursor },
             };
           });
-          // Only now. The position records what this device has taken in, so
-          // it moves after the records are in the store and not before.
-          commitCursor();
         })
         .catch(() => undefined);
     }, 1_000);

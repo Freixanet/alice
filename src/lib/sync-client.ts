@@ -17,11 +17,15 @@ export type RemoteConversation =
   | { id: string; tombstone: true; updatedAt: number }
   | { id: string; tombstone: false; conversation: Conversation };
 
-/** What a pull produced, and the receipt for it. */
+/** What a pull produced, and where it got to. */
 export type SyncPull = {
   remote: RemoteConversation[];
-  /** Records the position reached. Call it only once the records are stored. */
-  commitCursor: () => void;
+  /**
+   * How far this walk read. The caller writes it into the same persisted
+   * state as the records, so both reach IndexedDB in one transaction or
+   * neither does.
+   */
+  cursor: string;
 };
 
 export async function syncEncryptedConversations(options: {
@@ -29,6 +33,12 @@ export async function syncEncryptedConversations(options: {
   master: Uint8Array;
   conversations: Conversation[];
   tombstones: ConversationTombstones;
+  /**
+   * Where to resume. Omitted only by callers that have never stored one, in
+   * which case the position left behind by the old localStorage scheme is
+   * read once so those devices do not re-walk their whole history.
+   */
+  cursor?: string;
   signal?: AbortSignal;
 }): Promise<SyncPull> {
   options.signal?.throwIfAborted();
@@ -87,7 +97,7 @@ export async function syncEncryptedConversations(options: {
   }
 
   const remote: RemoteConversation[] = [];
-  let cursor = cursorFor(options.userId);
+  let cursor = options.cursor ?? cursorFor(options.userId);
   for (let page = 0; page < 100; page += 1) {
     options.signal?.throwIfAborted();
     const response = syncPullResponseSchema.parse(
@@ -122,21 +132,17 @@ export async function syncEncryptedConversations(options: {
     if (!response.hasMore) break;
   }
 
-  // The cursor is handed back rather than written here. Written per page, a
-  // failure on the second page rejected the whole call — so the caller never
-  // saw the first page's conversations — while the cursor had already moved
-  // past them. The next run started after records it had never applied, and
-  // they stayed missing until something changed them on the server. Nothing
-  // was deleted; the device simply stopped being told.
+  // Handed back, never written here. Written per page, a failure on the
+  // second page rejected the whole call — so the caller never saw the first
+  // page's conversations — while the cursor had already moved past them. The
+  // next run started after records it had never applied, and they stayed
+  // missing until something changed them on the server.
   //
-  // Now it advances only once the records are in hand and the caller has put
-  // them away. A failure anywhere in the walk leaves the cursor where it was,
-  // and the next run fetches the same pages again — which is the safe way to
-  // be wrong.
-  return {
-    remote,
-    commitCursor: () => setCursor(options.userId, cursor),
-  };
+  // Nor is it written on its own afterwards: saved apart from the records, a
+  // tab closing between the two saves the position and loses the contents.
+  // The caller puts both into the persisted state together, and they reach
+  // IndexedDB in one transaction or neither does.
+  return { remote, cursor };
 }
 
 async function postSync(body: unknown, signal?: AbortSignal) {
@@ -181,10 +187,15 @@ function deviceIdFor(userId: string) {
   return created;
 }
 
+/**
+ * Where a device last read up to, for accounts synced before the position
+ * moved into the store. Read-only: nothing writes here any more, and once the
+ * caller has saved a position of its own this is never consulted again.
+ */
 function cursorFor(userId: string) {
-  return localStorage.getItem(`alice:sync-cursor:${userId}`) ?? "0";
-}
-
-function setCursor(userId: string, cursor: string) {
-  localStorage.setItem(`alice:sync-cursor:${userId}`, cursor);
+  try {
+    return localStorage.getItem(`alice:sync-cursor:${userId}`) ?? "0";
+  } catch {
+    return "0";
+  }
 }

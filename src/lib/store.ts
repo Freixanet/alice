@@ -143,6 +143,16 @@ interface HermesState {
   pinned: string[];
   conversations: Conversation[];
   conversationTombstones: Record<string, number>;
+  /**
+   * How far cloud sync has read, per account.
+   *
+   * Kept in the persisted state rather than in localStorage so that it is
+   * written in the same IndexedDB transaction as the conversations it
+   * describes. Apart, the two could disagree: the position saved and the
+   * records not, which is how a device came to skip conversations that were
+   * still in the cloud.
+   */
+  syncCursors: Record<string, string>;
   activeId: string;
   memories: MemoryItem[];
   jobs: Job[];
@@ -251,6 +261,7 @@ function initialHermesData() {
     pinned: ["hermes-core", "grok", "web_search", "memory"],
     conversations: [seedBlankChat(), seedConversation()],
     conversationTombstones: {} as Record<string, number>,
+    syncCursors: {} as Record<string, string>,
     activeId: freshId,
     memories: seedMemories,
     jobs: seedJobs,
@@ -746,6 +757,7 @@ export const useHermes = create<HermesState>()(
         pinned: s.pinned,
         conversations: s.conversations,
         conversationTombstones: s.conversationTombstones,
+        syncCursors: s.syncCursors,
         activeId: s.activeId,
         memories: s.memories,
         jobs: s.jobs,

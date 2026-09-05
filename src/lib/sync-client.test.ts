@@ -80,10 +80,10 @@ describe("encrypted sync client", () => {
     expect(result.remote).toEqual([
       { id: conversation.id, tombstone: false, conversation },
     ]);
-    // Not yet: the walk finished but nobody has stored anything.
+    // Handed back, and written nowhere by the client itself: the caller puts
+    // it into the same persisted state as the records.
+    expect(result.cursor).toBe("1");
     expect(localStorage.getItem("alice:sync-cursor:account-a")).toBeNull();
-    result.commitCursor();
-    expect(localStorage.getItem("alice:sync-cursor:account-a")).toBe("1");
   });
 
   it("leaves the cursor alone when a later page fails", async () => {
@@ -125,10 +125,33 @@ describe("encrypted sync client", () => {
     expect(localStorage.getItem("alice:sync-cursor:account-b")).toBe("7");
   });
 
-  it("keeps each account's position apart", async () => {
-    localStorage.setItem("alice:sync-cursor:account-a", "4");
-    localStorage.setItem("alice:sync-cursor:account-b", "11");
-    expect(localStorage.getItem("alice:sync-cursor:account-a")).toBe("4");
-    expect(localStorage.getItem("alice:sync-cursor:account-b")).toBe("11");
+  it("resumes from the position it is given", async () => {
+    // The caller keeps the position, so the client asks for pages after
+    // whatever it is handed rather than looking it up for itself.
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (body.action === "push") {
+          return Response.json({ ok: true, replayed: false, accepted: 0 });
+        }
+        expect(body.cursor).toBe("42");
+        return Response.json({
+          ok: true,
+          records: [],
+          cursor: "43",
+          hasMore: false,
+        });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await syncEncryptedConversations({
+      userId: "account-c",
+      master: generateMasterSecret(),
+      conversations: [],
+      tombstones: {},
+      cursor: "42",
+    });
+    expect(result.cursor).toBe("43");
   });
 });
