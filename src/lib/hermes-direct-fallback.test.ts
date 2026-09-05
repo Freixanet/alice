@@ -72,6 +72,7 @@ describe("direct chat model fallback", () => {
       requestedProvider: "chosen-provider",
       model: "hermes-agent",
       reason: "incompatible",
+      occurredAt: expect.any(Number),
     });
     expect(events).toContainEqual({ type: "delta", text: "fallback reply" });
   });
