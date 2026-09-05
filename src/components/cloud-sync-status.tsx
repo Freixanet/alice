@@ -90,7 +90,7 @@ function ModelFallbackStatus() {
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none fixed right-3 bottom-16 z-[60] max-w-[min(28rem,calc(100vw-1.5rem))] rounded-lg border border-border bg-popover/95 px-3 py-2 text-xs shadow-sm backdrop-blur"
+      className="pointer-events-none fixed right-3 bottom-16 z-[60] max-w-[min(28rem,calc(100vw-1.5rem))] rounded-md border border-border bg-popover px-3 py-2 text-xs"
     >
       <span className="font-medium">{text}</span>
     </div>
@@ -138,7 +138,7 @@ function CloudSyncStatus() {
       role="status"
       aria-live="polite"
       className={cn(
-        "pointer-events-none fixed right-3 bottom-3 z-50 max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-popover/95 px-3 py-2 text-xs shadow-sm backdrop-blur",
+        "pointer-events-none fixed right-3 bottom-3 z-50 max-w-[calc(100vw-1.5rem)] rounded-md border border-border bg-popover px-3 py-2 text-xs",
         severe && "text-destructive",
       )}
     >
@@ -146,7 +146,7 @@ function CloudSyncStatus() {
         <span
           aria-hidden
           className={cn(
-            "size-1.5 shrink-0 rounded-full bg-muted-foreground",
+            "size-1.5 shrink-0 rounded-[2px] bg-muted-foreground",
             runtime.status === "synced" && "bg-foreground",
             severe && "bg-destructive",
           )}

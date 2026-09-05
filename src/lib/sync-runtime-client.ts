@@ -10,7 +10,7 @@ import {
   deriveContentKey,
   encryptPayload,
 } from "./sync-crypto";
-import { SyncKeyMismatchError } from "./sync-client";
+import { SyncKeyMismatchError } from "./sync-errors";
 import {
   legacyConversationReplica,
   type ConversationReplicaV2,

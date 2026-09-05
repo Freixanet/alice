@@ -17,21 +17,7 @@ export type RemoteConversation =
   | { id: string; tombstone: true; updatedAt: number }
   | { id: string; tombstone: false; conversation: Conversation };
 
-/**
- * The key cannot read what is already in this account.
- *
- * Thrown before anything is written. A recovery phrase is well-formed long
- * before it is the *right* phrase, and a wrong one used to be accepted, saved
- * and switched on — then the client pushed this device's conversations into
- * the account before it ever tried to read what was there, leaving one
- * account holding records under two keys.
- */
-export class SyncKeyMismatchError extends Error {
-  constructor() {
-    super("This recovery phrase does not open this account's conversations.");
-    this.name = "SyncKeyMismatchError";
-  }
-}
+export { SyncKeyMismatchError } from "./sync-errors";
 
 /**
  * Whether `master` can read what this account already holds.

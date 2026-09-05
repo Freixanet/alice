@@ -163,9 +163,10 @@ extension HermesClient {
     }
 
     /// The scheduled jobs. Current Hermes serves them from `/api/cron/jobs`
-    /// and defaults that route to all profiles. Keep the advertised/legacy
-    /// routes as fallbacks for older agents, but do not let an obsolete empty
-    /// collection hide real profile-scoped cron jobs.
+    /// and defaults that route to all profiles, so it is asked first and the
+    /// advertised and legacy routes follow it. Order is what keeps an obsolete
+    /// route from answering for a current one: `managementList` takes the
+    /// first path that returns at all, an empty collection included.
     func jobs(_ manifest: Manifest?) async throws -> [JobRow] {
         var paths = ["api/cron/jobs?profile=all", "api/cron/jobs"]
         if let advertised = manifest?.path("jobs"), !paths.contains(advertised) {

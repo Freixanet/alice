@@ -1,5 +1,5 @@
+import { lazy, Suspense } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { CloudSyncStatusIndicator } from "@/components/cloud-sync-status";
 import { AppShell } from "@/components/shell";
 import { authEnabled } from "@/lib/auth/client";
 import { RedirectToSignIn } from "@/lib/auth/gates";
@@ -7,6 +7,12 @@ import { AuthProvider } from "@/lib/auth/provider";
 import { SessionBoundary } from "@/lib/auth/session-boundary";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { useT } from "@/lib/use-i18n";
+
+const CloudSync = lazy(() =>
+  import("@/components/cloud-sync").then(({ CloudSync }) => ({
+    default: CloudSync,
+  })),
+);
 
 export const Route = createFileRoute("/_app")({
   component: AppBoundary,
@@ -26,7 +32,9 @@ function AppContent() {
   return (
     <>
       <AppShell />
-      <CloudSyncStatusIndicator />
+      <Suspense fallback={null}>
+        <CloudSync />
+      </Suspense>
     </>
   );
 }

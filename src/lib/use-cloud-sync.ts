@@ -13,7 +13,7 @@ import {
   syncBackoffDelay,
 } from "./cloud-sync-runtime";
 import { loadMasterSecretForDevice } from "./sync-device-key";
-import { SyncKeyMismatchError } from "./sync-client";
+import { SyncKeyMismatchError } from "./sync-errors";
 import {
   CloudSyncHttpError,
   CloudSyncNetworkError,

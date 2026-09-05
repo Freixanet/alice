@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateMasterSecret } from "./sync-crypto";
-import { SyncKeyMismatchError } from "./sync-client";
+import { SyncKeyMismatchError } from "./sync-errors";
 import {
   CloudSyncQuotaError,
   pullConversationReplicas,

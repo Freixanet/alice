@@ -371,12 +371,18 @@ extension DashboardClient {
                 hadSuccessfulRead = true
                 rows = found
                 if !found.isEmpty { break }
-            } catch let failure as Failure {
-                if case let .http(status, _) = failure, status == 404 {
+            } catch {
+                // Once a route has answered, its list is the answer — empty
+                // included. The older route is consulted only in case that
+                // answer was empty, so whatever it says when it fails must not
+                // turn a bot with no routines into an error.
+                if hadSuccessfulRead { break }
+                if let failure = error as? Failure,
+                   case let .http(status, _) = failure, status == 404 {
                     lastFailure = failure
                     continue
                 }
-                throw failure
+                throw error
             }
         }
         if !hadSuccessfulRead, let lastFailure { throw lastFailure }

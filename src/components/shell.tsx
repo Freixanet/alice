@@ -65,7 +65,6 @@ import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { displayChatTitle } from "@/lib/i18n";
 import { useDocumentLocale, useLocale, useT } from "@/lib/use-i18n";
-import { useCloudSync } from "@/lib/use-cloud-sync";
 
 const SettingsDialog = lazy(() =>
   import("@/components/settings-panel").then(({ SettingsDialog }) => ({
@@ -76,7 +75,6 @@ const SettingsDialog = lazy(() =>
 export function AppShell() {
   useDocumentLocale();
   useGatewayHealth();
-  useCloudSync();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const theme = useHermes((s) => s.theme);
