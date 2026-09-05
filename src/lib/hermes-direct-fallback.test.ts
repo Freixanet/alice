@@ -17,8 +17,10 @@ function sse(text: string) {
 
 afterEach(() => vi.unstubAllGlobals());
 
-async function collect(fetchMock: ReturnType<typeof vi.fn>) {
-  vi.stubGlobal("fetch", fetchMock);
+async function collect(
+  fetchMock: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+) {
+  vi.stubGlobal("fetch", vi.fn(fetchMock));
   const events = [];
   for await (const event of streamHermesDirect({
     url: "http://127.0.0.1:8642",
@@ -39,26 +41,31 @@ describe("direct chat model fallback", () => {
     [429, { detail: "usage_limit_reached" }],
     [503, { detail: "provider overloaded" }],
   ])("does not change model or retry on status %s", async (status, body) => {
-    const fetchMock = vi.fn(async () => json(status, body));
-    const events = await collect(fetchMock);
+    let calls = 0;
+    const events = await collect(async () => {
+      calls += 1;
+      return json(status, body);
+    });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(calls).toBe(1);
     expect(events.some((event) => event.type === "model-fallback")).toBe(false);
     expect(events.at(-1)?.type).toBe("error");
   });
 
   it("retries only an identified incompatibility and announces the switch", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(json(404, { error: { message: "model_not_found" } }))
-      .mockResolvedValueOnce(sse("fallback reply"));
+    const bodies: Array<Record<string, unknown>> = [];
+    let calls = 0;
+    const events = await collect(async (_input, init) => {
+      calls += 1;
+      bodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return calls === 1
+        ? json(404, { error: { message: "model_not_found" } })
+        : sse("fallback reply");
+    });
 
-    const events = await collect(fetchMock);
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const secondBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
-    expect(secondBody).toMatchObject({ model: "hermes-agent", stream: true });
-    expect(secondBody.provider).toBeUndefined();
+    expect(calls).toBe(2);
+    expect(bodies[1]).toMatchObject({ model: "hermes-agent", stream: true });
+    expect(bodies[1]?.provider).toBeUndefined();
     expect(events[0]).toEqual({
       type: "model-fallback",
       requestedModel: "chosen-model",
