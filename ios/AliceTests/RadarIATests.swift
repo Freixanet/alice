@@ -8,6 +8,16 @@ final class RadarIATests: XCTestCase {
         XCTAssertTrue(RadarIA.ownsSoul(RadarIA.editorialPrompt))
     }
 
+    func testDetectsHermesBootstrapSoulWithoutMatchingCustomInstructions() {
+        XCTAssertTrue(RadarIA.isGenericHermesSoul(
+            "You are Hermes Agent, built by Nous Research. Be direct."
+        ))
+        XCTAssertFalse(RadarIA.isGenericHermesSoul(RadarIA.editorialPrompt))
+        XCTAssertFalse(RadarIA.isGenericHermesSoul(
+            "You are Radar IA. Keep my custom editorial preferences."
+        ))
+    }
+
     func testDefaultScheduleMatchesProposal() {
         XCTAssertEqual(RadarIA.defaultTime, "10:00")
         XCTAssertEqual(RadarIA.defaultZone, "Europe/Madrid")
