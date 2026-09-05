@@ -24,6 +24,7 @@ enum Slash {
         SlashCommand("/model", "Switch model"),
         SlashCommand("/help", "List commands"),
         SlashCommand("/status", "Status of this session"),
+        SlashCommand("/update", "Update Hermes"),
         SlashCommand("/tools", "Available tools"),
         SlashCommand("/skills", "Skills"),
         SlashCommand("/memory", "Memory"),
