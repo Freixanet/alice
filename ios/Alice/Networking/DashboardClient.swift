@@ -353,23 +353,21 @@ extension DashboardClient {
 
     /// Every routine grouped by the bot that owns it.
     ///
-    /// The route is `api/crons`, and without `all_profiles` it answers only
-    /// for whichever profile the dashboard is scoped to — every other bot's
-    /// routines are simply absent. It replies with an object carrying `jobs`,
-    /// not a bare array.
+    /// Verified against this agent's own source, not inferred. `hermes serve`
+    /// registers `@router.get("/api/cron/jobs")` with `profile: str = "all"`
+    /// (`hermes_cli/web_routers/cron.py`), and for `all` it walks every
+    /// profile home and concatenates, so the reply is a bare JSON array.
+    /// `api/crons` belongs to the separate web UI, which this client does not
+    /// talk to; asking this agent for it gets a FastAPI 404, which is what
+    /// used to leave every bot reporting no routines at all.
     ///
-    /// Group by `owner_profile`. The server sets it per row to the profile
-    /// home the row came from, and says why it is not the same as `profile`:
-    /// "The persisted field controls where the job executes; `owner_profile`
-    /// tells the UI which profile home the row came from."
-    /// (`hermes-webui/api/routes.py`, `_cron_jobs_cross_profile`.)
-    ///
-    /// `api/cron/jobs` is a newer upstream shape — a bare array annotated with
-    /// `profile` and `profile_name` — that this agent does not serve; an
-    /// unknown path here is a 404. It is tried second so that an agent that
-    /// does grow it keeps working, and costs nothing on one that has not.
+    /// `_annotate_cron_job` stamps each row with `profile` and `profile_name`,
+    /// both set to the same canonical profile name — the directory slug, from
+    /// a scan validated by `normalize_profile_name`, never a display name. It
+    /// sets no `owner_profile`; that field comes from the web UI's own
+    /// listing, where it is the authoritative one, so it still leads.
     func allRoutines() async throws -> [String: [JobRow]] {
-        let paths = ["api/crons?all_profiles=1", "api/cron/jobs?profile=all"]
+        let paths = ["api/cron/jobs?profile=all", "api/crons?all_profiles=1"]
         var rows: [[String: Any]] = []
         var hadSuccessfulRead = false
         var lastFailure: Error?

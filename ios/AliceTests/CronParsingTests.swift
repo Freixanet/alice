@@ -37,7 +37,81 @@ final class CronParsingTests: XCTestCase {
 }
 
 /// The grouping, which decides whether a routine is ever found again.
+///
+/// The fixture is the real row for `c3cf075a5b68` as this agent serves it:
+/// the stored job from `profiles/radar-ia/cron/jobs.json` plus the `profile`
+/// and `profile_name` that `_annotate_cron_job` stamps on the way out. The
+/// prompt is elided and nothing else is altered.
 final class CronGroupingTests: XCTestCase {
+    static func radarIARow() -> [String: Any] { [
+        "id": "c3cf075a5b68",
+        "name": "Radar IA — informe diario",
+        "prompt": "<elided>",
+        "model": "stepfun/step-3.7-flash:free",
+        "provider": "nous",
+        "schedule": ["kind": "cron", "expr": "0 10 * * *", "display": "daily at 10am"],
+        "schedule_display": "daily at 10am",
+        "enabled": true,
+        "state": "scheduled",
+        "created_at": "2026-09-05T05:12:40.009802+02:00",
+        "next_run_at": "2026-09-05T10:00:00+02:00",
+        "last_run_at": NSNull(),
+        "deliver": "bot-chat:default",
+        "profile": "radar-ia",
+        "profile_name": "radar-ia",
+        "is_default_profile": false,
+    ] }
+
+    /// The whole point: this row has to land under the slug, because that is
+    /// what `BotRow.name` holds and what `routines(for:)` is asked for.
+    func testTheRealRadarIARowLandsUnderItsSlug() throws {
+        let grouped = DashboardClient.group([Self.radarIARow()])
+
+        XCTAssertEqual(Array(grouped.keys), ["radar-ia"])
+        let job = try XCTUnwrap(grouped["radar-ia"]?.first)
+        XCTAssertEqual(job.id, "c3cf075a5b68")
+        XCTAssertEqual(job.name, "Radar IA — informe diario")
+        XCTAssertEqual(job.schedule, "daily at 10am")
+        XCTAssertTrue(job.enabled)
+        XCTAssertNotNil(job.nextRun)
+        XCTAssertNil(job.lastRun)
+    }
+
+    /// A display name must never become the key. This agent sends the slug in
+    /// both fields, but a row that carried a pretty name would file the
+    /// routine where nobody looks — the original bug, exactly.
+    func testADisplayNameDoesNotDisplaceTheSlug() throws {
+        var row = Self.radarIARow()
+        row["profile"] = "radar-ia"
+        row["profile_name"] = "Radar IA"
+
+        let grouped = DashboardClient.group([row])
+
+        XCTAssertEqual(grouped["radar-ia"]?.count, 1)
+        XCTAssertNil(grouped["Radar IA"])
+    }
+
+    /// A profile with no routines is an empty answer, not a missing key that
+    /// the screen could mistake for a failure.
+    func testAProfileWithNoRoutinesGroupsToNothing() {
+        XCTAssertTrue(DashboardClient.group([]).isEmpty)
+        XCTAssertNil(DashboardClient.group([]).keys.first)
+    }
+
+    /// `profile=all` concatenates every profile's store. One bot's routine
+    /// must not appear under another.
+    func testAnotherProfilesRoutineStaysOutOfRadarIA() throws {
+        var other = Self.radarIARow()
+        other["id"] = "aa11bb22cc33"
+        other["profile"] = "chollometro"
+        other["profile_name"] = "chollometro"
+
+        let grouped = DashboardClient.group([Self.radarIARow(), other])
+
+        XCTAssertEqual(grouped["radar-ia"]?.map(\.id), ["c3cf075a5b68"])
+        XCTAssertEqual(grouped["chollometro"]?.map(\.id), ["aa11bb22cc33"])
+    }
+
     /// The shape this agent actually serves: `api/crons?all_profiles=1`
     /// answers `{"jobs": [...]}` with `owner_profile` set per row.
     func testGroupsByOwnerProfile() {

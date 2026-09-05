@@ -170,12 +170,17 @@ extension HermesClient {
     /// trip, because `managementList` takes the first path that answers at
     /// all and rethrows anything that is not a 404 — so a guessed path an
     /// agent answers with 401 or 500 would break a listing that works.
-    /// `api/cron/jobs` is the newer upstream route, tried after.
+    /// Probed unauthenticated against this gateway: `api/jobs` answers 401,
+    /// so it is there; `api/cron/jobs` and `api/cron` answer 404, so they are
+    /// not. The two that exist lead. Note this listing is the gateway's, and
+    /// the gateway serves one profile — another bot's routines are not absent
+    /// here because of a parsing fault but because they are not this
+    /// gateway's to report. Cross-profile listing is `DashboardClient`.
     func jobs(_ manifest: Manifest?) async throws -> [JobRow] {
         var paths: [String] = []
         if let advertised = manifest?.path("jobs") { paths.append(advertised) }
         for fallback in [
-            "api/cron/jobs?profile=all", "api/cron/jobs", "api/jobs", "api/cron",
+            "api/jobs", "api/cron/jobs?profile=all", "api/cron/jobs", "api/cron",
         ] where !paths.contains(fallback) {
             paths.append(fallback)
         }
