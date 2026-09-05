@@ -71,6 +71,17 @@ extension HermesClient {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    // Self-update is maintenance, not an agent tool call. If
+                    // Hermes restarts the process that owns the tool call, the
+                    // native chat can otherwise wait forever for that same
+                    // process to report completion. The management endpoint
+                    // launches the updater independently and returns first.
+                    if let reply = try await self.selfUpdateReplyIfRequested(messages: messages) {
+                        continuation.yield(.delta(reply))
+                        continuation.finish()
+                        return
+                    }
+
                     var handledByRun = false
                     if preferRuns {
                         handledByRun = try await self.streamRun(

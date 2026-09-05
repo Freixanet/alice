@@ -12,6 +12,7 @@ import {
 import { classifyModelLimit } from "./model-limit";
 import { resolveChatModelFallback } from "./model-fallback";
 import { startHermesRun, streamStartedHermesRun } from "./hermes-run-transport";
+import { isHermesSelfUpdateIntent } from "./hermes-update-intent";
 import { whenDefined } from "./exact-optional";
 
 const FAIL = "Couldn’t connect.";
@@ -42,6 +43,85 @@ async function directFailureDetail(response: Response): Promise<string> {
   return "";
 }
 
+async function* streamHermesSelfUpdateDirect(opts: {
+  base: string;
+  token: string;
+  signal: AbortSignal;
+}): AsyncGenerator<ChatEvent> {
+  const requestHeaders = headers(opts.token, {
+    "Content-Type": "application/json",
+  });
+
+  try {
+    const check = await fetch(`${opts.base}/api/hermes/update/check?force=true`, {
+      headers: requestHeaders,
+      signal: opts.signal,
+      cache: "no-store",
+      redirect: "manual",
+    });
+    if (check.ok) {
+      const body = (await check.json()) as Record<string, unknown>;
+      if (body.can_apply === false) {
+        const message =
+          typeof body.message === "string" && body.message.trim()
+            ? body.message.trim()
+            : "Esta instalación de Hermes no admite actualizaciones desde Alice.";
+        yield { type: "delta", text: message };
+        return;
+      }
+      if (body.update_available === false && body.behind === 0) {
+        yield { type: "delta", text: "Hermes ya está actualizado." };
+        return;
+      }
+    }
+  } catch (error) {
+    if ((error as Error).name === "AbortError") return;
+    // The apply endpoint performs its own admission checks, so a failed preview
+    // should not block an explicitly requested update.
+  }
+
+  try {
+    const response = await fetch(`${opts.base}/api/hermes/update`, {
+      method: "POST",
+      headers: requestHeaders,
+      signal: opts.signal,
+      cache: "no-store",
+      redirect: "manual",
+    });
+    if (!response.ok) {
+      yield {
+        type: "error",
+        message:
+          (await directFailureDetail(response)) ||
+          "No pude iniciar la actualización de Hermes.",
+      };
+      return;
+    }
+    const body = (await response.json()) as Record<string, unknown>;
+    if (body.ok !== true) {
+      const message = body.message ?? body.error;
+      yield {
+        type: "error",
+        message:
+          typeof message === "string" && message.trim()
+            ? message.trim()
+            : "Hermes rechazó la actualización.",
+      };
+      return;
+    }
+    yield {
+      type: "delta",
+      text:
+        body.already_running === true
+          ? "La actualización de Hermes ya estaba en curso. Se está ejecutando en segundo plano."
+          : "Actualización de Hermes iniciada en segundo plano. No tienes que mantener este turno abierto; Hermes reiniciará los gateways al terminar y Alice puede desconectarse unos segundos durante el reinicio.",
+    };
+  } catch (error) {
+    if ((error as Error).name === "AbortError") return;
+    yield { type: "error", message: CORS_ERROR };
+  }
+}
+
 /**
  * Direct-browser counterpart of the proxy chat transport. The fallback policy
  * is intentionally delegated to the same shared resolver as the proxy so a
@@ -59,14 +139,28 @@ export async function* streamHermesDirect(opts: {
   signal: AbortSignal;
   profile?: string;
 }): AsyncGenerator<ChatEvent> {
-  const base = scopeHermesGatewayBase(
-    normalizeGatewayUrl(opts.url),
-    opts.profile,
-  );
+  const managementBase = normalizeGatewayUrl(opts.url);
+  const base = scopeHermesGatewayBase(managementBase, opts.profile);
   const token = assertGatewayKey(opts.key);
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(180_000)]);
   const requestedModel = opts.model?.trim() || "hermes-agent";
   const requestedProvider = opts.provider?.trim() || "";
+  const latestUser = [...opts.messages]
+    .reverse()
+    .find((message) => message.role === "user");
+
+  if (
+    latestUser &&
+    typeof latestUser.content === "string" &&
+    isHermesSelfUpdateIntent(latestUser.content)
+  ) {
+    yield* streamHermesSelfUpdateDirect({
+      base: managementBase,
+      token,
+      signal,
+    });
+    return;
+  }
 
   if (opts.preferRuns) {
     try {
