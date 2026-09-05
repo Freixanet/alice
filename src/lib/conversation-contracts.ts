@@ -48,6 +48,7 @@ const modelFallbackSchema = z.strictObject({
   model: z.string().trim().min(1).max(512),
   provider: z.string().trim().min(1).max(256).optional(),
   reason: z.literal("incompatible"),
+  occurredAt: z.number().int().nonnegative().safe(),
 });
 
 export const conversationSchema = z.strictObject({
