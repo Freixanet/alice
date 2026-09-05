@@ -62,14 +62,12 @@ export function isModelCompatibilityFailure(input: {
     "(?:not found|unknown|unsupported|not supported|does not exist|invalid)";
 
   return (
-    new RegExp(
-      `\\bmodel\\b.{0,120}\\b${modelIncompatibility}\\b`,
-      "i",
-    ).test(normalized) ||
-    new RegExp(
-      `\\b${modelIncompatibility}\\b.{0,80}\\bmodel\\b`,
-      "i",
-    ).test(normalized) ||
+    new RegExp(`\\bmodel\\b.{0,120}\\b${modelIncompatibility}\\b`, "i").test(
+      normalized,
+    ) ||
+    new RegExp(`\\b${modelIncompatibility}\\b.{0,80}\\bmodel\\b`, "i").test(
+      normalized,
+    ) ||
     new RegExp(
       `\\bprovider\\b.{0,100}\\b${providerIdentityFailure}\\b`,
       "i",

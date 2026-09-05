@@ -81,7 +81,8 @@ function parseReplica(value: unknown): ConversationReplicaV2 | null {
   const conversation = conversationSchema.safeParse(candidate.conversation);
   const messageVersions = finiteRecord(candidate.messageVersions);
   const messageTombstones = finiteRecord(candidate.messageTombstones);
-  if (!conversation.success || !messageVersions || !messageTombstones) return null;
+  if (!conversation.success || !messageVersions || !messageTombstones)
+    return null;
   return {
     version: 2,
     updatedAt: candidate.updatedAt,
@@ -118,7 +119,8 @@ async function postSync(body: unknown, signal?: AbortSignal) {
       ...(signal === undefined ? {} : { signal }),
     });
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    if (error instanceof DOMException && error.name === "AbortError")
+      throw error;
     throw new CloudSyncNetworkError();
   }
 
@@ -185,7 +187,9 @@ async function recordDigest(
 ) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(`${purpose}\u0000${conversationId}\u0000${deviceId}`),
+    new TextEncoder().encode(
+      `${purpose}\u0000${conversationId}\u0000${deviceId}`,
+    ),
   );
   return toBase64Url(new Uint8Array(digest));
 }

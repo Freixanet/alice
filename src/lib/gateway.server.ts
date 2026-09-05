@@ -12,10 +12,7 @@ import {
   type GatewayPlace,
   type HermesChatContent,
 } from "./gateway";
-import {
-  startHermesRun,
-  streamStartedHermesRun,
-} from "./hermes-run-transport";
+import { startHermesRun, streamStartedHermesRun } from "./hermes-run-transport";
 import { whenDefined } from "./exact-optional";
 import {
   matchStoredEndpoint,
@@ -77,7 +74,11 @@ function hermesDetail(
     return body.message.trim();
   if (typeof body.error === "string" && body.error.trim())
     return body.error.trim();
-  if (body.error && typeof body.error === "object" && !Array.isArray(body.error)) {
+  if (
+    body.error &&
+    typeof body.error === "object" &&
+    !Array.isArray(body.error)
+  ) {
     const nested = body.error as Record<string, unknown>;
     if (typeof nested.message === "string" && nested.message.trim()) {
       return nested.message.trim();

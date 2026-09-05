@@ -122,7 +122,12 @@ describe("encrypted sync client", () => {
         }));
         return Response.json({ ok: true, replayed: false, accepted: 1 });
       }
-      return Response.json({ ok: true, records: [], cursor: "1", hasMore: false });
+      return Response.json({
+        ok: true,
+        records: [],
+        cursor: "1",
+        hasMore: false,
+      });
     });
     vi.stubGlobal("fetch", seed);
     await syncEncryptedConversations({
@@ -134,19 +139,21 @@ describe("encrypted sync client", () => {
       tombstones: {},
     });
 
-    const intruder = vi.fn(async (_i: RequestInfo | URL, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      if (body.action === "push") {
-        pushes += 1;
-        return Response.json({ ok: true, replayed: false, accepted: 1 });
-      }
-      return Response.json({
-        ok: true,
-        records: stored,
-        cursor: "2",
-        hasMore: false,
-      });
-    });
+    const intruder = vi.fn(
+      async (_i: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (body.action === "push") {
+          pushes += 1;
+          return Response.json({ ok: true, replayed: false, accepted: 1 });
+        }
+        return Response.json({
+          ok: true,
+          records: stored,
+          cursor: "2",
+          hasMore: false,
+        });
+      },
+    );
     vi.stubGlobal("fetch", intruder);
 
     await expect(
@@ -246,7 +253,12 @@ describe("key verification", () => {
         }));
         return Response.json({ ok: true, replayed: false, accepted: 1 });
       }
-      return Response.json({ ok: true, records: [], cursor: "1", hasMore: false });
+      return Response.json({
+        ok: true,
+        records: [],
+        cursor: "1",
+        hasMore: false,
+      });
     });
     vi.stubGlobal("fetch", seed);
     await ensureSyncVerifier({ userId: "account-e", master });
@@ -254,12 +266,17 @@ describe("key verification", () => {
     expect(written[0]?.kind).toBe("verifier");
 
     const reader = vi.fn(async () =>
-      Response.json({ ok: true, records: written, cursor: "2", hasMore: false }),
+      Response.json({
+        ok: true,
+        records: written,
+        cursor: "2",
+        hasMore: false,
+      }),
     );
     vi.stubGlobal("fetch", reader);
-    await expect(
-      verifySyncKey({ userId: "account-e", master }),
-    ).resolves.toBe("matches");
+    await expect(verifySyncKey({ userId: "account-e", master })).resolves.toBe(
+      "matches",
+    );
     await expect(
       verifySyncKey({ userId: "account-e", master: generateMasterSecret() }),
     ).resolves.toBe("mismatch");

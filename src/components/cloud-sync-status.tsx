@@ -43,7 +43,9 @@ function ModelFallbackStatus() {
   const locale = useHermes((state) => state.locale);
   const activeId = useHermes((state) => state.activeId);
   const conversations = useHermes((state) => state.conversations);
-  const active = conversations.find((conversation) => conversation.id === activeId);
+  const active = conversations.find(
+    (conversation) => conversation.id === activeId,
+  );
   const latestAssistant = [...(active?.messages ?? [])]
     .reverse()
     .find((message) => message.role === "assistant");
@@ -61,7 +63,10 @@ function ModelFallbackStatus() {
     }
     if (currentKey === previousKey.current) return;
     previousKey.current = currentKey;
-    setNotice({ id: latestAssistant.id, fallback: latestAssistant.modelFallback });
+    setNotice({
+      id: latestAssistant.id,
+      fallback: latestAssistant.modelFallback,
+    });
     const timer = window.setTimeout(() => setNotice(null), 8_000);
     return () => window.clearTimeout(timer);
   }, [currentKey, latestAssistant]);

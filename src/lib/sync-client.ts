@@ -47,7 +47,9 @@ export class SyncKeyMismatchError extends Error {
  * was generated, saved and switched on without anyone checking whether the
  * account was already syncing under a key this device simply did not have.
  */
-export async function accountHasSyncSet(signal?: AbortSignal): Promise<boolean> {
+export async function accountHasSyncSet(
+  signal?: AbortSignal,
+): Promise<boolean> {
   const response = syncPullResponseSchema.parse(
     await postSync({ action: "pull", cursor: "0", limit: 1 }, signal),
   );

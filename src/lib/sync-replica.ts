@@ -30,7 +30,9 @@ function chooseMessage(
   if (!right) return left;
   if (left.version !== right.version)
     return left.version > right.version ? left : right;
-  return stableMessage(left.message) <= stableMessage(right.message) ? left : right;
+  return stableMessage(left.message) <= stableMessage(right.message)
+    ? left
+    : right;
 }
 
 function stableMetadata(conversation: Conversation) {
@@ -91,7 +93,9 @@ export function mergeConversationReplicas(
     messages.push(candidate.message);
     messageVersions[id] = candidate.version;
   }
-  messages.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  messages.sort(
+    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+  );
 
   const conversation: Conversation = {
     ...primary.conversation,

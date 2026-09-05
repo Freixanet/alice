@@ -67,7 +67,11 @@ describe("incremental sync transport errors", () => {
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         stored = body.records as Array<Record<string, unknown>>;
-        return Response.json({ ok: true, replayed: false, accepted: stored.length });
+        return Response.json({
+          ok: true,
+          replayed: false,
+          accepted: stored.length,
+        });
       }),
     );
     await pushConversationReplicas({

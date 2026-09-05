@@ -49,15 +49,13 @@ describe("applying a remote deletion", () => {
 
   it("keeps the tombstone, so the deletion is not undone on the next run", () => {
     const first = merge([only], {}, [{ id: only.id, updatedAt: 5 }]);
-    const second = merge(
-      first.conversations,
-      first.conversationTombstones,
-      [{ id: only.id, updatedAt: 5 }],
-    );
+    const second = merge(first.conversations, first.conversationTombstones, [
+      { id: only.id, updatedAt: 5 },
+    ]);
     expect(second.conversationTombstones[only.id]).toBe(5);
-    expect(
-      second.conversations.some((item) => item.id === only.id),
-    ).toBe(false);
+    expect(second.conversations.some((item) => item.id === only.id)).toBe(
+      false,
+    );
   });
 
   it("leaves other conversations alone", () => {

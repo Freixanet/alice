@@ -127,7 +127,9 @@ function parsePending(value: unknown): Record<string, SyncPendingEntry> {
   return out;
 }
 
-export function loadSyncAccountState(userId: string): PersistedAccountSyncState {
+export function loadSyncAccountState(
+  userId: string,
+): PersistedAccountSyncState {
   const raw = storageGet(accountKey(userId));
   if (!raw) return { ...EMPTY_ACCOUNT, pending: {}, conversationVersions: {} };
   try {
@@ -149,7 +151,10 @@ export function loadSyncAccountState(userId: string): PersistedAccountSyncState 
   }
 }
 
-function saveSyncAccountState(userId: string, state: PersistedAccountSyncState) {
+function saveSyncAccountState(
+  userId: string,
+  state: PersistedAccountSyncState,
+) {
   storageSet(accountKey(userId), JSON.stringify(state));
   const runtime = useCloudSyncRuntime.getState();
   if (runtime.userId === userId) {
@@ -253,7 +258,13 @@ export function queueLocalConversationChanges(options: {
   for (const conversation of options.next) {
     const previous = previousById.get(conversation.id);
     if (previous === conversation) continue;
-    markConversationChanged(options.userId, account, previous, conversation, now);
+    markConversationChanged(
+      options.userId,
+      account,
+      previous,
+      conversation,
+      now,
+    );
   }
 
   for (const previous of options.previous) {

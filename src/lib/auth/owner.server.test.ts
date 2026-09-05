@@ -70,9 +70,9 @@ describe("isLocalHermesOwner", () => {
       { id: "stranger", email: "owner@example.test", emailVerified: false },
     ];
     const { isLocalHermesOwner } = await subject();
-    expect(
-      await isLocalHermesOwner("stranger", "owner@example.test"),
-    ).toBe(false);
+    expect(await isLocalHermesOwner("stranger", "owner@example.test")).toBe(
+      false,
+    );
   });
 
   it("refuses a signed-in stranger while the owner exists", async () => {
@@ -87,7 +87,9 @@ describe("isLocalHermesOwner", () => {
   });
 
   it("gives a fresh install no owner at all", async () => {
-    rows.user = [{ id: "first", email: "first@example.test", emailVerified: true }];
+    rows.user = [
+      { id: "first", email: "first@example.test", emailVerified: true },
+    ];
     const { isLocalHermesOwner } = await subject();
     expect(await isLocalHermesOwner("first", "first@example.test")).toBe(false);
   });
@@ -102,9 +104,13 @@ describe("isLocalHermesOwner", () => {
 
   it("never promotes a local account unless asked to", async () => {
     process.env.ALICE_OWNER_EMAIL = "owner@example.test";
-    rows.user = [{ id: "scratch", email: "someone@local.test", emailVerified: false }];
+    rows.user = [
+      { id: "scratch", email: "someone@local.test", emailVerified: false },
+    ];
     const { isLocalHermesOwner } = await subject();
-    expect(await isLocalHermesOwner("scratch", "owner@example.test")).toBe(false);
-    expect(queries.some((q) => q.includes("update \"user\""))).toBe(false);
+    expect(await isLocalHermesOwner("scratch", "owner@example.test")).toBe(
+      false,
+    );
+    expect(queries.some((q) => q.includes('update "user"'))).toBe(false);
   });
 });

@@ -98,14 +98,7 @@ describe("incremental sync queue", () => {
 describe("sync retry backoff", () => {
   it("grows exponentially and caps at one minute", () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7].map(syncBackoffDelay)).toEqual([
-      1_000,
-      2_000,
-      4_000,
-      8_000,
-      16_000,
-      32_000,
-      60_000,
-      60_000,
+      1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000,
     ]);
   });
 });

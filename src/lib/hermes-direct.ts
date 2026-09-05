@@ -11,10 +11,7 @@ import {
 } from "./gateway";
 import { classifyModelLimit } from "./model-limit";
 import { resolveChatModelFallback } from "./model-fallback";
-import {
-  startHermesRun,
-  streamStartedHermesRun,
-} from "./hermes-run-transport";
+import { startHermesRun, streamStartedHermesRun } from "./hermes-run-transport";
 import { whenDefined } from "./exact-optional";
 
 const FAIL = "Couldn’t connect.";

@@ -18,7 +18,10 @@ function sse(text: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 async function collect(
-  fetchMock: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+  fetchMock: (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>,
 ) {
   vi.stubGlobal("fetch", vi.fn(fetchMock));
   const events = [];
@@ -57,7 +60,9 @@ describe("direct chat model fallback", () => {
     let calls = 0;
     const events = await collect(async (_input, init) => {
       calls += 1;
-      bodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      bodies.push(
+        JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+      );
       return calls === 1
         ? json(404, { error: { message: "model_not_found" } })
         : sse("fallback reply");

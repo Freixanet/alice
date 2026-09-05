@@ -34,12 +34,28 @@ function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+/** The connection as it is now, past any narrowing of an earlier check. */
+function isOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
 export function useCloudSync() {
   const user = useCurrentUser();
-  const userId = user?.id;
+  const accountId = user?.id;
   const enabled = useHermes((state) => state.cloudSyncEnabled);
 
   useEffect(() => {
+    // A string by declaration, not by inference. The account id is optional
+    // out in the component, and a narrowing made there does not reach inside
+    // `run()` — a function declared now and called later — so every use in it
+    // was `string | undefined` and the file did not typecheck. The build
+    // passed regardless: Vite strips types rather than checking them, so
+    // `tsc` was the only thing that ever saw this.
+    //
+    // Empty stands for absent, and the guard below turns it away, so the
+    // dependency list can keep watching the id rather than the user object,
+    // which is a new reference on every render.
+    const userId: string = accountId ?? "";
     if (!enabled || !userId) {
       resetCloudSyncRuntimeStatus();
       return;
@@ -81,7 +97,9 @@ export function useCloudSync() {
       }
 
       const current = useHermes.getState();
-      const byId = new Map(current.conversations.map((item) => [item.id, item]));
+      const byId = new Map(
+        current.conversations.map((item) => [item.id, item]),
+      );
       const nextTombstones = { ...current.conversationTombstones };
       const grouped = new Map<string, RemoteReplicaRecord[]>();
       for (const record of remote) {
@@ -135,7 +153,8 @@ export function useCloudSync() {
     };
 
     const unsubscribe = useHermes.subscribe((state, previous) => {
-      if (applyingRemote || state.conversations === previous.conversations) return;
+      if (applyingRemote || state.conversations === previous.conversations)
+        return;
       queueLocalConversationChanges({
         userId,
         previous: previous.conversations,
@@ -210,7 +229,10 @@ export function useCloudSync() {
         const account = loadSyncAccountState(userId);
         const latest = useHermes.getState();
         const conversations = new Map(
-          latest.conversations.map((conversation) => [conversation.id, conversation]),
+          latest.conversations.map((conversation) => [
+            conversation.id,
+            conversation,
+          ]),
         );
         const replicas = [];
         const deletions: Array<{ id: string; updatedAt: number }> = [];
@@ -263,11 +285,18 @@ export function useCloudSync() {
           schedule(TERMINAL_RECHECK_MS);
         } else if (
           error instanceof CloudSyncNetworkError ||
-          navigator.onLine === false
+          // Read again, not remembered. `run()` checks this on the way in and
+          // the compiler took that check as settled for the rest of the
+          // function — but a device can lose its connection during the very
+          // request being handled here, which is the case this branch is for.
+          isOffline()
         ) {
           setCloudSyncRuntimeStatus(userId, "offline");
           schedule(syncBackoffDelay(retryAttempt - 1));
-        } else if (error instanceof CloudSyncHttpError && error.status === 429) {
+        } else if (
+          error instanceof CloudSyncHttpError &&
+          error.status === 429
+        ) {
           setCloudSyncRuntimeStatus(userId, "pending");
           schedule(syncBackoffDelay(retryAttempt - 1));
         } else {
@@ -292,5 +321,5 @@ export function useCloudSync() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [enabled, userId]);
+  }, [accountId, enabled]);
 }

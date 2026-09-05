@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mergeConversationReplicas, type ConversationReplicaV2 } from "./sync-replica";
+import {
+  mergeConversationReplicas,
+  type ConversationReplicaV2,
+} from "./sync-replica";
 import type { Conversation } from "./types";
 
 function baseConversation(): Conversation {
@@ -38,7 +41,9 @@ describe("conversation replica merge", () => {
         ...base,
         updatedAt: 20,
         messages: base.messages.map((message) =>
-          message.id === "m1" ? { ...message, content: "edited on A" } : message,
+          message.id === "m1"
+            ? { ...message, content: "edited on A" }
+            : message,
         ),
       },
       20,
@@ -49,7 +54,9 @@ describe("conversation replica merge", () => {
         ...base,
         updatedAt: 21,
         messages: base.messages.map((message) =>
-          message.id === "m2" ? { ...message, content: "edited on B" } : message,
+          message.id === "m2"
+            ? { ...message, content: "edited on B" }
+            : message,
         ),
       },
       21,
@@ -69,7 +76,10 @@ describe("conversation replica merge", () => {
     const older = replica(
       {
         ...base,
-        messages: [{ ...base.messages[0]!, content: "older" }, base.messages[1]!],
+        messages: [
+          { ...base.messages[0]!, content: "older" },
+          base.messages[1]!,
+        ],
       },
       30,
       { m1: 30, m2: 10 },
@@ -77,7 +87,10 @@ describe("conversation replica merge", () => {
     const newer = replica(
       {
         ...base,
-        messages: [{ ...base.messages[0]!, content: "newer" }, base.messages[1]!],
+        messages: [
+          { ...base.messages[0]!, content: "newer" },
+          base.messages[1]!,
+        ],
       },
       31,
       { m1: 31, m2: 10 },
