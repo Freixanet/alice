@@ -351,16 +351,25 @@ extension DashboardClient {
         try await allRoutines()[profile] ?? []
     }
 
-    /// Every routine grouped by the profile that owns it.
+    /// Every routine grouped by the bot that owns it.
     ///
-    /// Current Hermes exposes a top-level array at
-    /// `/api/cron/jobs?profile=all`, annotating each row with `profile` and
-    /// `profile_name`. Older Alice asked `/api/crons?all_profiles=1` and then
-    /// tried to decode the array as a dictionary, which turned every real
-    /// routine into an empty list. Keep the old route only as a compatibility
-    /// fallback.
+    /// The route is `api/crons`, and without `all_profiles` it answers only
+    /// for whichever profile the dashboard is scoped to — every other bot's
+    /// routines are simply absent. It replies with an object carrying `jobs`,
+    /// not a bare array.
+    ///
+    /// Group by `owner_profile`. The server sets it per row to the profile
+    /// home the row came from, and says why it is not the same as `profile`:
+    /// "The persisted field controls where the job executes; `owner_profile`
+    /// tells the UI which profile home the row came from."
+    /// (`hermes-webui/api/routes.py`, `_cron_jobs_cross_profile`.)
+    ///
+    /// `api/cron/jobs` is a newer upstream shape — a bare array annotated with
+    /// `profile` and `profile_name` — that this agent does not serve; an
+    /// unknown path here is a 404. It is tried second so that an agent that
+    /// does grow it keeps working, and costs nothing on one that has not.
     func allRoutines() async throws -> [String: [JobRow]] {
-        let paths = ["api/cron/jobs?profile=all", "api/crons?all_profiles=1"]
+        let paths = ["api/crons?all_profiles=1", "api/cron/jobs?profile=all"]
         var rows: [[String: Any]] = []
         var hadSuccessfulRead = false
         var lastFailure: Error?
@@ -387,13 +396,24 @@ extension DashboardClient {
         }
         if !hadSuccessfulRead, let lastFailure { throw lastFailure }
 
+        return Self.group(rows)
+    }
+
+    /// Cron rows keyed by the bot that owns them.
+    ///
+    /// The key has to be the profile's own name, because that is what
+    /// `routines(for:)` is asked for and what `BotRow.name` holds — a bot
+    /// carries a separate `displayName` for the screen. A row keyed by
+    /// anything else is a routine no one can find, which is the shape the
+    /// original bug took.
+    static func group(_ rows: [[String: Any]]) -> [String: [JobRow]] {
         var grouped: [String: [JobRow]] = [:]
         for row in rows {
-            guard let owner = (row["owner_profile"] as? String)
-                    ?? (row["profile"] as? String)
-                    ?? (row["profile_name"] as? String),
-                  let job = HermesClient.jobRow(from: row)
-            else { continue }
+            let owner = ["owner_profile", "profile", "profile_name"]
+                .lazy
+                .compactMap { row[$0] as? String }
+                .first { !$0.isEmpty }
+            guard let owner, let job = HermesClient.jobRow(from: row) else { continue }
             grouped[owner, default: []].append(job)
         }
         return grouped

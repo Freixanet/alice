@@ -162,17 +162,21 @@ extension HermesClient {
         }
     }
 
-    /// The scheduled jobs. Current Hermes serves them from `/api/cron/jobs`
-    /// and defaults that route to all profiles, so it is asked first and the
-    /// advertised and legacy routes follow it. Order is what keeps an obsolete
-    /// route from answering for a current one: `managementList` takes the
-    /// first path that returns at all, an empty collection included.
+    /// The scheduled jobs.
+    ///
+    /// The gateway's own manifest goes first, as everywhere else here: it is
+    /// the server saying where its routes are, and a guess that precedes it
+    /// can only be wrong more often. That matters more than one wasted round
+    /// trip, because `managementList` takes the first path that answers at
+    /// all and rethrows anything that is not a 404 — so a guessed path an
+    /// agent answers with 401 or 500 would break a listing that works.
+    /// `api/cron/jobs` is the newer upstream route, tried after.
     func jobs(_ manifest: Manifest?) async throws -> [JobRow] {
-        var paths = ["api/cron/jobs?profile=all", "api/cron/jobs"]
-        if let advertised = manifest?.path("jobs"), !paths.contains(advertised) {
-            paths.append(advertised)
-        }
-        for fallback in ["api/jobs", "api/cron"] where !paths.contains(fallback) {
+        var paths: [String] = []
+        if let advertised = manifest?.path("jobs") { paths.append(advertised) }
+        for fallback in [
+            "api/cron/jobs?profile=all", "api/cron/jobs", "api/jobs", "api/cron",
+        ] where !paths.contains(fallback) {
             paths.append(fallback)
         }
         let rows = try await managementList(paths: paths)
