@@ -17,6 +17,7 @@ describe("model fallback classification", () => {
     [404, { error: { message: "model_not_found" } }],
     [422, { detail: "Provider x does not support model y" }],
     [400, { detail: "No provider available for model y" }],
+    [404, { detail: "Unknown provider selected" }],
   ])("allows identified incompatibility (%s)", (status, body) => {
     expect(
       isModelCompatibilityFailure({
@@ -38,6 +39,9 @@ describe("model fallback classification", () => {
     [400, "invalid provider credentials for model gpt-5"],
     [422, "provider temporarily unavailable for model gpt-5"],
     [404, "model unavailable because upstream connection timed out"],
+    [404, "provider unavailable"],
+    [404, "model unavailable for this account"],
+    [422, "provider unavailable for subscription plan"],
   ])("never falls back for unrelated failure (%s)", (status, message) => {
     expect(isModelCompatibilityFailure({ status, message })).toBe(false);
   });
