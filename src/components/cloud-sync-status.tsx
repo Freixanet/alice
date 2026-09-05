@@ -44,21 +44,30 @@ function ModelFallbackStatus() {
   const activeId = useHermes((state) => state.activeId);
   const conversations = useHermes((state) => state.conversations);
   const active = conversations.find((conversation) => conversation.id === activeId);
-  const latest = [...(active?.messages ?? [])]
+  const latestAssistant = [...(active?.messages ?? [])]
     .reverse()
-    .find((message) => message.role === "assistant" && message.modelFallback);
-  const initialId = useRef(latest?.id ?? null);
+    .find((message) => message.role === "assistant");
+  const currentKey = fallbackKey(latestAssistant);
+  const previousKey = useRef(currentKey);
   const [notice, setNotice] = useState<{
     id: string;
     fallback: NonNullable<Message["modelFallback"]>;
   } | null>(null);
 
   useEffect(() => {
-    if (!latest?.modelFallback || latest.id === initialId.current) return;
-    setNotice({ id: latest.id, fallback: latest.modelFallback });
+    if (!currentKey || !latestAssistant?.modelFallback) {
+      // A retry clears stale fallback metadata before receiving its new
+      // stream. Resetting the key here lets the same assistant message show a
+      // fresh notice if that retry legitimately falls back again.
+      previousKey.current = null;
+      return;
+    }
+    if (currentKey === previousKey.current) return;
+    previousKey.current = currentKey;
+    setNotice({ id: latestAssistant.id, fallback: latestAssistant.modelFallback });
     const timer = window.setTimeout(() => setNotice(null), 8_000);
     return () => window.clearTimeout(timer);
-  }, [latest]);
+  }, [currentKey, latestAssistant]);
 
   if (!notice) return null;
   const requested = notice.fallback.requestedProvider
@@ -84,6 +93,19 @@ function ModelFallbackStatus() {
       <span className="font-medium">{text}</span>
     </div>
   );
+}
+
+function fallbackKey(message: Message | undefined): string | null {
+  if (!message?.modelFallback) return null;
+  const fallback = message.modelFallback;
+  return [
+    message.id,
+    fallback.requestedProvider ?? "",
+    fallback.requestedModel,
+    fallback.provider ?? "",
+    fallback.model,
+    fallback.reason,
+  ].join("\u0000");
 }
 
 function CloudSyncStatus() {
