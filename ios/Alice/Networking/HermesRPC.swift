@@ -1,0 +1,199 @@
+import Foundation
+
+/// One JSON-RPC exchange with the agent, and the events it pushes back.
+///
+/// A protocol so the bot-chat source can be tested without a socket: the
+/// interesting behaviour is which methods are called with which parameters,
+/// and that is exactly what a fake can record.
+protocol HermesRPCTransport: Sendable {
+    /// Calls a method and returns its `result` object.
+    func call(_ method: String, _ params: JSONObject) async throws -> JSONObject
+
+    /// Every `event` frame the agent pushes, for as long as the caller listens.
+    func events() -> AsyncStream<HermesRPCEvent>
+}
+
+/// A JSON object crossing an isolation boundary.
+///
+/// `[String: Any]` is not `Sendable`, but what `JSONSerialization` produces is:
+/// value types throughout, made per message and handed on without being kept.
+struct JSONObject: @unchecked Sendable {
+    let fields: [String: Any]
+    init(_ fields: [String: Any]) { self.fields = fields }
+
+    subscript(key: String) -> Any? { fields[key] }
+    var rows: [[String: Any]] { (fields["messages"] as? [[String: Any]]) ?? [] }
+}
+
+/// A pushed frame: `{"method":"event","params":{"type":…,"session_id":…,"payload":…}}`
+struct HermesRPCEvent: @unchecked Sendable {
+    let type: String
+    let sessionID: String
+    let payload: [String: Any]
+}
+
+/// The dashboard's JSON-RPC WebSocket.
+///
+/// Authentication reuses the dashboard login Alice already has. A browser
+/// cannot set `Authorization` on an upgrade, so the agent mints a single-use
+/// 30-second ticket for an authenticated session and the socket carries it in
+/// the query — the same path the agent's own SPA and native clients use. The
+/// ticket is short-lived and single-use by design, so every connect asks for a
+/// fresh one and a reconnect is simply another connect.
+actor HermesRPCClient: HermesRPCTransport {
+    struct Failure: Error, LocalizedError {
+        let reason: String
+        var errorDescription: String? { reason }
+    }
+
+    /// Mints one ticket. Held as a closure so this actor never sees the
+    /// password: `DashboardClient` owns the credential and the session cookie,
+    /// and hands over only a value that expires in thirty seconds.
+    private let ticket: @Sendable () async throws -> String
+    private let endpoint: URL
+    private let session: URLSession
+
+    private var socket: URLSessionWebSocketTask?
+    private var pending: [Int: CheckedContinuation<JSONObject, Error>] = [:]
+    private var listeners: [UUID: AsyncStream<HermesRPCEvent>.Continuation] = [:]
+    private var nextID = 1
+    private var pump: Task<Void, Never>?
+
+    init(
+        endpoint: URL,
+        session: URLSession = .shared,
+        ticket: @escaping @Sendable () async throws -> String
+    ) {
+        self.endpoint = endpoint
+        self.session = session
+        self.ticket = ticket
+    }
+
+    /// The socket URL for one connection attempt.
+    static func socketURL(dashboard: URL, ticket: String) -> URL? {
+        guard var parts = URLComponents(url: dashboard, resolvingAgainstBaseURL: false)
+        else { return nil }
+        parts.scheme = parts.scheme == "https" ? "wss" : "ws"
+        parts.path = (parts.path.hasSuffix("/") ? parts.path : parts.path + "/") + "api/ws"
+        parts.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
+        return parts.url
+    }
+
+    func call(_ method: String, _ params: JSONObject) async throws -> JSONObject {
+        try await connectIfNeeded()
+        let id = nextID
+        nextID += 1
+        let frame: [String: Any] = [
+            "jsonrpc": "2.0", "id": id, "method": method, "params": params.fields,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: frame)
+        guard let socket else { throw Failure(reason: "Not connected to Hermes.") }
+        return try await withCheckedThrowingContinuation { continuation in
+            pending[id] = continuation
+            Task { [weak self] in
+                do {
+                    try await socket.send(.data(data))
+                } catch {
+                    await self?.settle(id, with: .failure(error))
+                }
+            }
+        }
+    }
+
+    nonisolated func events() -> AsyncStream<HermesRPCEvent> {
+        AsyncStream { continuation in
+            let key = UUID()
+            Task { await self.addListener(key, continuation) }
+            continuation.onTermination = { _ in
+                Task { await self.removeListener(key) }
+            }
+        }
+    }
+
+    /// Drops the socket so the next call reconnects with a fresh ticket.
+    /// Pending calls fail rather than hang; the caller keeps its cache.
+    func disconnect(_ reason: Error? = nil) {
+        pump?.cancel()
+        pump = nil
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
+        let failures = pending
+        pending.removeAll()
+        for (_, continuation) in failures {
+            continuation.resume(throwing: reason ?? Failure(reason: "Hermes disconnected."))
+        }
+    }
+
+    // MARK: - Internals
+
+    private func addListener(
+        _ key: UUID, _ continuation: AsyncStream<HermesRPCEvent>.Continuation
+    ) {
+        listeners[key] = continuation
+    }
+
+    private func removeListener(_ key: UUID) { listeners[key] = nil }
+
+    private func settle(_ id: Int, with result: Result<JSONObject, Error>) {
+        guard let continuation = pending.removeValue(forKey: id) else { return }
+        continuation.resume(with: result)
+    }
+
+    private func connectIfNeeded() async throws {
+        if socket != nil { return }
+        let value = try await ticket()
+        guard let url = Self.socketURL(dashboard: endpoint, ticket: value) else {
+            throw Failure(reason: "The dashboard address is not usable for a socket.")
+        }
+        let task = session.webSocketTask(with: url)
+        task.resume()
+        socket = task
+        pump = Task { [weak self] in await self?.receive(on: task) }
+    }
+
+    private func receive(on task: URLSessionWebSocketTask) async {
+        while !Task.isCancelled {
+            do {
+                let message = try await task.receive()
+                let data: Data?
+                switch message {
+                case let .data(payload): data = payload
+                case let .string(text): data = text.data(using: .utf8)
+                @unknown default: data = nil
+                }
+                guard let data,
+                      let frame = try? JSONSerialization.jsonObject(with: data)
+                        as? [String: Any]
+                else { continue }
+                deliver(frame)
+            } catch {
+                // The socket is gone. Everything waiting is told so, and the
+                // next call reconnects — the ticket it used is spent anyway.
+                disconnect(error)
+                return
+            }
+        }
+    }
+
+    private func deliver(_ frame: [String: Any]) {
+        if let id = frame["id"] as? Int {
+            if let error = frame["error"] as? [String: Any] {
+                let message = (error["message"] as? String) ?? "Hermes refused that."
+                settle(id, with: .failure(Failure(reason: message)))
+            } else {
+                settle(id, with: .success(JSONObject((frame["result"] as? [String: Any]) ?? [:])))
+            }
+            return
+        }
+        guard frame["method"] as? String == "event",
+              let params = frame["params"] as? [String: Any],
+              let type = params["type"] as? String
+        else { return }
+        let event = HermesRPCEvent(
+            type: type,
+            sessionID: (params["session_id"] as? String) ?? "",
+            payload: (params["payload"] as? [String: Any]) ?? [:]
+        )
+        for (_, continuation) in listeners { continuation.yield(event) }
+    }
+}

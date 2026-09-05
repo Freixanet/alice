@@ -107,6 +107,74 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var runID: String? = nil
     var runStatus: RunStatus? = nil
     var approval: Approval? = nil
+    /// The id this turn has in the Hermes session it belongs to, when it came
+    /// from there. Alice's own `id` is a UUID it minted locally; this is the
+    /// agent's, and it is what makes merging a transcript idempotent — two
+    /// reads of the same turn are the same turn, however the text was
+    /// re-rendered in between.
+    var remoteID: String? = nil
+    /// A turn this device has that the agent's transcript does not.
+    ///
+    /// Set on messages inherited from a bot chat Alice kept before it learned
+    /// to read the canonical one. They are kept visible and never replayed
+    /// into Hermes — the agent has no record of them, and inventing one would
+    /// put words in its mouth.
+    var localOnly: Bool = false
+
+    /// Decoded field by field, every optional one at a time.
+    ///
+    /// A default on a non-optional property does **not** make the synthesized
+    /// decoder tolerant of a missing key — it still demands one, and throws
+    /// `keyNotFound` when an archive written before the field existed does not
+    /// carry it. Adding `localOnly` that way threw on the first message of the
+    /// first conversation, which the loader swallowed and then persisted over.
+    /// Nothing here may depend on a key an older build had no reason to write.
+    init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        id = try box.decode(String.self, forKey: .id)
+        role = try box.decode(Role.self, forKey: .role)
+        content = try box.decodeIfPresent(String.self, forKey: .content) ?? ""
+        createdAt = try box.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        pending = try box.decodeIfPresent(Bool.self, forKey: .pending) ?? false
+        tools = try box.decodeIfPresent([ToolCall].self, forKey: .tools) ?? []
+        error = try box.decodeIfPresent(String.self, forKey: .error)
+        errorLimit = try box.decodeIfPresent(ModelLimit.self, forKey: .errorLimit)
+        incomplete = try box.decodeIfPresent(Bool.self, forKey: .incomplete) ?? false
+        attachments = try box.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
+        botName = try box.decodeIfPresent(String.self, forKey: .botName)
+        runID = try box.decodeIfPresent(String.self, forKey: .runID)
+        runStatus = try box.decodeIfPresent(RunStatus.self, forKey: .runStatus)
+        approval = try box.decodeIfPresent(Approval.self, forKey: .approval)
+        remoteID = try box.decodeIfPresent(String.self, forKey: .remoteID)
+        localOnly = try box.decodeIfPresent(Bool.self, forKey: .localOnly) ?? false
+    }
+
+    init(
+        id: String, role: Role, content: String, createdAt: Date,
+        pending: Bool = false, tools: [ToolCall] = [], error: String? = nil,
+        errorLimit: ModelLimit? = nil, incomplete: Bool = false,
+        attachments: [Attachment] = [], botName: String? = nil,
+        runID: String? = nil, runStatus: RunStatus? = nil,
+        approval: Approval? = nil, remoteID: String? = nil,
+        localOnly: Bool = false
+    ) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.createdAt = createdAt
+        self.pending = pending
+        self.tools = tools
+        self.error = error
+        self.errorLimit = errorLimit
+        self.incomplete = incomplete
+        self.attachments = attachments
+        self.botName = botName
+        self.runID = runID
+        self.runStatus = runStatus
+        self.approval = approval
+        self.remoteID = remoteID
+        self.localOnly = localOnly
+    }
 }
 
 struct Conversation: Identifiable, Hashable, Sendable, Codable {
@@ -126,14 +194,105 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     var project: String?
     var messages: [Message] = []
     var botName: String? = nil
+    /// The canonical Hermes session this chat *is*, once resolved.
+    ///
+    /// Deliberately not `id`: that one is Alice's, minted before any agent was
+    /// asked, and overloading it to mean both identities is how a local UUID
+    /// ended up being sent as a Hermes session key — which made every bot chat
+    /// a private conversation with the default profile instead of the bot's
+    /// own forever-chat.
+    var hermesSessionID: String? = nil
+    /// The bot a recovered conversation belongs to *on screen only*.
+    ///
+    /// Ownership and routing used to be the same field, and they are not the
+    /// same thing any more. A conversation recovered from before Alice read
+    /// canonical Bot Chats was a default-profile session wearing a synthetic
+    /// persona: it is that bot's history to the reader, and to nobody else.
+    /// Setting `botName` would route sends into the bot's real session and
+    /// splice two agents' conversations together; leaving both nil filed the
+    /// history under Home, where it does not belong either.
+    var legacyBotName: String? = nil
     var isChannel: Bool? = false
     var channelBots: [String]? = []
 
-    var isBotChat: Bool {
-        if let botName, !botName.isEmpty { return true }
-        if isChannel == true { return true }
-        return false
+    /// Same contract as `Message.init(from:)`: every key an older build might
+    /// not have written is optional here, so a new field can never turn an
+    /// existing archive into a decode failure.
+    init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        id = try box.decode(String.self, forKey: .id)
+        title = try box.decodeIfPresent(String.self, forKey: .title) ?? "New chat"
+        createdAt = try box.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try box.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+        openedAt = try box.decodeIfPresent(Date.self, forKey: .openedAt)
+        pinned = try box.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        project = try box.decodeIfPresent(String.self, forKey: .project)
+        messages = try box.decodeIfPresent([Message].self, forKey: .messages) ?? []
+        botName = try box.decodeIfPresent(String.self, forKey: .botName)
+        legacyBotName = try box.decodeIfPresent(String.self, forKey: .legacyBotName)
+        hermesSessionID = try box.decodeIfPresent(String.self, forKey: .hermesSessionID)
+        isChannel = try box.decodeIfPresent(Bool.self, forKey: .isChannel)
+        channelBots = try box.decodeIfPresent([String].self, forKey: .channelBots)
     }
+
+    init(
+        id: String, title: String, createdAt: Date, updatedAt: Date,
+        openedAt: Date? = nil, pinned: Bool = false, project: String? = nil,
+        messages: [Message] = [], botName: String? = nil,
+        legacyBotName: String? = nil,
+        hermesSessionID: String? = nil, isChannel: Bool? = false,
+        channelBots: [String]? = []
+    ) {
+        self.id = id
+        self.title = title
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.openedAt = openedAt
+        self.pinned = pinned
+        self.project = project
+        self.messages = messages
+        self.botName = botName
+        self.legacyBotName = legacyBotName
+        self.hermesSessionID = hermesSessionID
+        self.isChannel = isChannel
+        self.channelBots = channelBots
+    }
+
+    /// The profile a turn typed here is sent to, if any.
+    ///
+    /// The routing identity, and the only one. Never `legacyBotName`: that
+    /// bot never held this conversation.
+    var routedBotName: String? {
+        guard let botName, !botName.isEmpty else { return nil }
+        return botName
+    }
+
+    /// The bot this conversation is filed under on screen, routed or not.
+    var owningBotName: String? { routedBotName ?? legacyBotName }
+
+    /// Filed under a bot rather than under Home. Display only.
+    var isBotOwnedConversation: Bool {
+        owningBotName != nil || isChannel == true
+    }
+
+    /// A live chat with a bot: it routes, and it has a canonical session to
+    /// read and write. A recovered legacy thread is not one of these.
+    var isCanonicalBotChat: Bool {
+        routedBotName != nil && isChannel != true
+    }
+
+    /// Recovered history, kept for reading. Sending into it would resume a
+    /// simulated default-profile session, or worse, be redirected into the
+    /// bot's real one.
+    var isRecoveredHistory: Bool {
+        routedBotName == nil && legacyBotName != nil
+    }
+
+    /// Filed under a bot on screen.
+    ///
+    /// Kept as the name every screen already uses, but it now means ownership
+    /// and nothing else — every send path asks `routedBotName`.
+    var isBotChat: Bool { isBotOwnedConversation }
 
     static func blank(title: String = "New chat") -> Conversation {
         let now = Date()

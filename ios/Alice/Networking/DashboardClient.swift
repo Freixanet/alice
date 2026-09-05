@@ -82,15 +82,15 @@ actor DashboardClient {
     /// Some dashboard routes — notably current Hermes' cron list — return a
     /// top-level JSON array rather than an object. Keep that shape instead of
     /// coercing it to an empty dictionary and making the UI say "no routines".
-    func rows(_ path: String, shape: BodyShape) async throws -> DashboardRows {
+    func rows(_ path: String, shape: BodyShape) async throws -> JSONRows {
         guard credentials != nil else { throw Failure.notConfigured }
         if !signedIn { try await signIn() }
         do {
-            return DashboardRows(try await fetchRows(path, shape: shape))
+            return JSONRows(try await fetchRows(path, shape: shape))
         } catch Failure.http(401, _) {
             signedIn = false
             try await signIn()
-            return DashboardRows(try await fetchRows(path, shape: shape))
+            return JSONRows(try await fetchRows(path, shape: shape))
         }
     }
 
@@ -363,6 +363,26 @@ extension DashboardClient {
         // agent without bots.
         if !rows.isEmpty && bots.isEmpty { throw Failure.unreadable }
         return bots
+    }
+
+    /// Where the dashboard lives, for callers that must build their own URL —
+    /// the WebSocket, which cannot be expressed as a path on this client.
+    var baseURL: URL? { credentials?.url }
+
+    /// A single-use ticket for the JSON-RPC WebSocket.
+    ///
+    /// A WebSocket upgrade cannot carry an Authorization header, so the agent
+    /// mints a thirty-second, single-use ticket for an already-authenticated
+    /// session and the socket presents it in the query. This reuses the
+    /// dashboard login Alice already has — the password stays in the Keychain
+    /// where `connectDashboard` put it, and never reaches the socket layer,
+    /// a URL, a log or a preference.
+    func webSocketTicket() async throws -> String {
+        let object = try await send("POST", "api/auth/ws-ticket", nil)
+        guard let ticket = object["ticket"] as? String, !ticket.isEmpty else {
+            throw Failure.unreadable
+        }
+        return ticket
     }
 
     /// The bot's standing instructions. `exists` is false for a profile that
@@ -678,13 +698,13 @@ extension DashboardClient {
     }
 }
 
-/// A listing body, crossing an isolation boundary.
+/// A JSON `data` array crossing an isolation boundary.
 ///
 /// `[[String: Any]]` is not `Sendable`, but what `JSONSerialization` puts in
 /// one is: value types all the way down, freshly made per read and handed on
 /// without being kept. The wrapper carries that promise explicitly rather than
 /// spreading `@unchecked` over every signature.
-struct DashboardRows: @unchecked Sendable {
+struct JSONRows: @unchecked Sendable {
     let rows: [[String: Any]]
     init(_ rows: [[String: Any]]) { self.rows = rows }
 }
@@ -694,7 +714,7 @@ struct DashboardRows: @unchecked Sendable {
 protocol DashboardRowReading: Sendable {
     func rows(
         _ path: String, shape: DashboardClient.BodyShape
-    ) async throws -> DashboardRows
+    ) async throws -> JSONRows
 }
 
 extension DashboardClient: DashboardRowReading {}

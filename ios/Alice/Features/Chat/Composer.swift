@@ -41,9 +41,21 @@ struct Composer: View {
         // The list grows upward out of a composer pinned to the bottom, so
         // offering it never moves the field out from under the caret.
         VStack(spacing: 8) {
-            if !commands.isEmpty { commandList }
-            else if !matchingBots.isEmpty { botMentionList }
-            composer
+            if store.activeIsRecoveredHistory {
+                // Read-only, and it says so. Typing into recovered history
+                // would either resume a simulated session on the wrong profile
+                // or be redirected into the bot's real one — two different
+                // agents' conversations spliced into one apparent history.
+                Text("Recovered history")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 10)
+            } else {
+                if !commands.isEmpty { commandList }
+                else if !matchingBots.isEmpty { botMentionList }
+                composer
+            }
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 10)
