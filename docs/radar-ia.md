@@ -1,9 +1,10 @@
 # Radar IA
 
-Open **Scheduled tasks → Radar IA**. The initial requested schedule is daily
+Open **Scheduled tasks / Jobs → Radar IA**. The initial requested schedule is daily
 at **10:00 Europe/Madrid**. Change the time and named time zone, then select
-**Configure with Hermes**. This opens a new chat with an editable setup request;
-send it to your connected Hermes to perform setup or update an existing routine.
+**Configure with Hermes**. On web and iOS this opens a new chat with an editable
+setup request; send it to your connected Hermes to perform setup or update an
+existing routine.
 
 The form is a setup assistant, not a scheduler. Its values are proposed settings,
 not saved job state. The request requires Hermes to read back the actual job,
@@ -12,9 +13,12 @@ The selected time starts research; delivery follows completion, rather than
 guaranteeing a completed report at precisely that minute.
 
 Once Hermes confirms setup, select the owning profile and refresh Scheduled tasks.
-Use **Edit** to change the routine's hour, **Pause/Resume**, or **Run now**.
-Reopen the setup assistant to request a time-zone change. It must find and update
-the existing Radar IA routine rather than create another one.
+Use **Edit** where the connected Hermes exposes writable scheduled tasks to change
+the routine's hour, **Pause/Resume**, or **Run now**. Reopen the setup assistant to
+request a time-zone change. It must find and update the existing Radar IA routine
+rather than create another one. The current native iOS Jobs surface remains
+read-only for existing jobs; Radar IA setup hands the request to chat instead of
+pretending to mutate a scheduler API the phone has not verified.
 
 ## Compatibility
 
