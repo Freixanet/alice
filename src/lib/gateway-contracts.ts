@@ -125,6 +125,7 @@ export type ChatEvent =
       command?: string;
       choices: HermesApprovalChoice[];
     }
+  | ({ type: "model-fallback" } & import("./model-fallback").ModelFallbackNotice)
   | {
       type: "error";
       message: string;

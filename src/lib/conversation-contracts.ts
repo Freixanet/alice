@@ -42,6 +42,15 @@ const modelLimitSchema = z.strictObject({
   scope: z.string().max(256).optional(),
 });
 
+const modelFallbackSchema = z.strictObject({
+  requestedModel: z.string().trim().min(1).max(512),
+  requestedProvider: z.string().trim().min(1).max(256).optional(),
+  model: z.string().trim().min(1).max(512),
+  provider: z.string().trim().min(1).max(256).optional(),
+  reason: z.literal("incompatible"),
+  occurredAt: z.number().int().nonnegative().safe(),
+});
+
 export const conversationSchema = z.strictObject({
   id: z.string().min(1).max(160),
   title: z.string().max(512),
@@ -60,6 +69,7 @@ export const conversationSchema = z.strictObject({
         pending: z.boolean().optional(),
         error: z.string().max(8_000).optional(),
         errorLimit: modelLimitSchema.optional(),
+        modelFallback: modelFallbackSchema.optional(),
         incomplete: z.boolean().optional(),
         runId: z.string().min(1).max(160).optional(),
         runStatus: runStatusSchema.optional(),

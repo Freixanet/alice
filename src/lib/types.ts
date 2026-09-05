@@ -126,6 +126,8 @@ export interface Message {
   error?: string;
   /** Why the model refused, when the failure was a quota or rate limit. */
   errorLimit?: import("./model-limit").ModelLimit;
+  /** Records an explicit, user-visible one-request compatibility fallback. */
+  modelFallback?: import("./model-fallback").ModelFallbackNotice;
   incomplete?: boolean;
   runId?: string;
   runStatus?: import("./gateway-contracts").HermesRunStatus;

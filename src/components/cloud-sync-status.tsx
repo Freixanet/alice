@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { useCloudSyncRuntime } from "@/lib/cloud-sync-runtime";
 import { useHermes } from "@/lib/store";
+import type { Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const LABELS = {
@@ -29,6 +31,82 @@ const LABELS = {
 } as const;
 
 export function CloudSyncStatusIndicator() {
+  return (
+    <>
+      <ModelFallbackStatus />
+      <CloudSyncStatus />
+    </>
+  );
+}
+
+function ModelFallbackStatus() {
+  const locale = useHermes((state) => state.locale);
+  const activeId = useHermes((state) => state.activeId);
+  const conversations = useHermes((state) => state.conversations);
+  const active = conversations.find((conversation) => conversation.id === activeId);
+  const latestAssistant = [...(active?.messages ?? [])]
+    .reverse()
+    .find((message) => message.role === "assistant");
+  const currentKey = fallbackKey(latestAssistant);
+  const previousKey = useRef(currentKey);
+  const [notice, setNotice] = useState<{
+    id: string;
+    fallback: NonNullable<Message["modelFallback"]>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!currentKey || !latestAssistant?.modelFallback) {
+      previousKey.current = null;
+      return;
+    }
+    if (currentKey === previousKey.current) return;
+    previousKey.current = currentKey;
+    setNotice({ id: latestAssistant.id, fallback: latestAssistant.modelFallback });
+    const timer = window.setTimeout(() => setNotice(null), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [currentKey, latestAssistant]);
+
+  if (!notice) return null;
+  const requested = notice.fallback.requestedProvider
+    ? `${notice.fallback.requestedProvider} · ${notice.fallback.requestedModel}`
+    : notice.fallback.requestedModel;
+  const used =
+    notice.fallback.model === "hermes-agent"
+      ? "Hermes Agent"
+      : notice.fallback.provider
+        ? `${notice.fallback.provider} · ${notice.fallback.model}`
+        : notice.fallback.model;
+  const text =
+    locale === "es"
+      ? `Modelo cambiado para esta respuesta: ${requested} no era compatible; se usó ${used}.`
+      : `Model changed for this response: ${requested} was incompatible; ${used} was used.`;
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="pointer-events-none fixed right-3 bottom-16 z-[60] max-w-[min(28rem,calc(100vw-1.5rem))] rounded-lg border border-border bg-popover/95 px-3 py-2 text-xs shadow-sm backdrop-blur"
+    >
+      <span className="font-medium">{text}</span>
+    </div>
+  );
+}
+
+function fallbackKey(message: Message | undefined): string | null {
+  if (!message?.modelFallback) return null;
+  const fallback = message.modelFallback;
+  return [
+    message.id,
+    String(fallback.occurredAt),
+    fallback.requestedProvider ?? "",
+    fallback.requestedModel,
+    fallback.provider ?? "",
+    fallback.model,
+    fallback.reason,
+  ].join("\u0000");
+}
+
+function CloudSyncStatus() {
   const user = useCurrentUser();
   const enabled = useHermes((state) => state.cloudSyncEnabled);
   const locale = useHermes((state) => state.locale);
