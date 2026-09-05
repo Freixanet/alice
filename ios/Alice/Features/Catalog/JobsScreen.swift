@@ -3,13 +3,12 @@ import UIKit
 
 /// What the agent is scheduled to do without being asked.
 ///
-/// Existing jobs stay read-only here. Radar IA is an assisted setup entry: it
-/// prepares a request for Hermes rather than pretending this gateway-only view
-/// can safely create a scheduler job by itself.
+/// This screen is a read-only view of the jobs Hermes actually reports. A bot
+/// such as Radar IA appears here only through a real routine owned by its
+/// profile; Alice does not manufacture special pseudo-jobs in the interface.
 struct JobsScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.dismiss) private var dismiss
 
     @State private var jobs: [JobRow] = []
     @State private var failure: String?
@@ -31,15 +30,6 @@ struct JobsScreen: View {
 
     private var list: some View {
         List {
-            Section {
-                NavigationLink {
-                    RadarIASetupScreen(onConfigure: prepareRadar)
-                } label: {
-                    radarRow
-                }
-                .listRowBackground(Palette.card(scheme))
-            }
-
             Section("Scheduled") {
                 if loading && jobs.isEmpty {
                     HStack(spacing: 10) {
@@ -67,36 +57,6 @@ struct JobsScreen: View {
                 }
             }
         }
-    }
-
-    private var radarRow: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.subheadline.weight(.semibold))
-                Text("Radar IA")
-                    .font(.subheadline.weight(.semibold))
-                Spacer(minLength: 8)
-                Text("10:00 · Europe/Madrid")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Text(
-                "Daily AI news in Spanish, researched from current sources and prepared around what matters to you."
-            )
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-
-            Text("Set up or update with Hermes")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(store.accent.primary(scheme))
-        }
-        .padding(.vertical, 5)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens Radar IA setup")
     }
 
     @ViewBuilder
@@ -197,15 +157,6 @@ struct JobsScreen: View {
             }
         }
         .presentationDetents([.medium, .large])
-    }
-
-    /// Opens an editable setup request in Alice instead of claiming this view
-    /// configured the scheduler itself. Dismissing Jobs reveals the new chat;
-    /// the drawer remains available exactly as it was before opening Jobs.
-    private func prepareRadar(_ prompt: String) {
-        store.newChat()
-        store.draft = prompt
-        dismiss()
     }
 
     /// The one line of a failure worth putting on a row.
