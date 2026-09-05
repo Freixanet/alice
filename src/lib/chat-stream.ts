@@ -7,6 +7,7 @@ export type ChatStreamAccumulator = {
   content: string;
   tools: NonNullable<Message["tools"]>;
   runStatus?: HermesRunStatus;
+  modelFallbackSeen?: boolean;
 };
 
 export type ChatStreamReduction = {
@@ -27,7 +28,11 @@ export function reduceChatStreamEvent(
     if (!chunk) return { patch: {}, stop: false };
     accumulator.content += chunk;
     return {
-      patch: { content: accumulator.content, pending: true },
+      patch: {
+        content: accumulator.content,
+        pending: true,
+        ...(!accumulator.modelFallbackSeen ? { modelFallback: undefined } : {}),
+      },
       stop: false,
     };
   }
@@ -35,7 +40,11 @@ export function reduceChatStreamEvent(
   if (event.type === "tool") {
     mergeToolEvent(accumulator.tools, event, createId);
     return {
-      patch: { tools: [...accumulator.tools], pending: true },
+      patch: {
+        tools: [...accumulator.tools],
+        pending: true,
+        ...(!accumulator.modelFallbackSeen ? { modelFallback: undefined } : {}),
+      },
       stop: false,
     };
   }
@@ -57,6 +66,7 @@ export function reduceChatStreamEvent(
         ...(event.status === "running" || terminal
           ? { approval: undefined }
           : {}),
+        ...(!accumulator.modelFallbackSeen ? { modelFallback: undefined } : {}),
       },
       stop: false,
       activeRun: { runId: event.runId, terminal },
@@ -75,6 +85,7 @@ export function reduceChatStreamEvent(
           ...(event.command === undefined ? {} : { command: event.command }),
           choices: event.choices,
         },
+        ...(!accumulator.modelFallbackSeen ? { modelFallback: undefined } : {}),
       },
       stop: false,
       activeRun: { runId: event.runId, terminal: false },
@@ -82,6 +93,7 @@ export function reduceChatStreamEvent(
   }
 
   if (event.type === "model-fallback") {
+    accumulator.modelFallbackSeen = true;
     const { type: _type, ...modelFallback } = event;
     return {
       patch: { modelFallback, pending: true },
@@ -96,6 +108,7 @@ export function reduceChatStreamEvent(
       ...(event.limit ? { errorLimit: event.limit } : {}),
       incomplete: undefined,
       content: accumulator.content || event.message,
+      ...(!accumulator.modelFallbackSeen ? { modelFallback: undefined } : {}),
     },
     stop: true,
   };
@@ -113,7 +126,7 @@ function mergeToolEvent(
       return;
     }
   }
-  if (event.status === "done") {
+  if (event.type === "tool" && event.status === "done") {
     const running = [...tools]
       .reverse()
       .find(
