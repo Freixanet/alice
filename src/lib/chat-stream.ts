@@ -81,6 +81,14 @@ export function reduceChatStreamEvent(
     };
   }
 
+  if (event.type === "model-fallback") {
+    const { type: _type, ...modelFallback } = event;
+    return {
+      patch: { modelFallback, pending: true },
+      stop: false,
+    };
+  }
+
   return {
     patch: {
       pending: false,
