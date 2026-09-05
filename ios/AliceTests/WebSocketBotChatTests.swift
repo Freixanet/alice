@@ -19,6 +19,7 @@ final class WebSocketBotChatTests: XCTestCase {
         private var results: [String: JSONObject]
         private(set) var calls: [Call] = []
         private var pushes: [HermesRPCEvent] = []
+        private var runtimeByDurable: [String: String] = [:]
         var failNext: Error?
 
         init(results: [String: [String: Any]] = [:]) {
@@ -41,6 +42,14 @@ final class WebSocketBotChatTests: XCTestCase {
                     continuation.finish()
                 }
             }
+        }
+
+        func aliasSession(runtimeID: String, durableID: String) {
+            runtimeByDurable[durableID] = runtimeID
+        }
+
+        func runtimeSessionID(for durableID: String) -> String? {
+            runtimeByDurable[durableID]
         }
 
         func set(_ method: String, _ result: [String: Any]) {
@@ -126,7 +135,8 @@ final class WebSocketBotChatTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(chat.hermesSessionID, "live-tip", "the live tip is what gets read")
+        XCTAssertEqual(chat.hermesSessionID, "live-tip", "the durable live tip is what gets read")
+        XCTAssertEqual(await rpc.runtimeSessionID(for: "live-tip"), "s")
         let created = await rpc.methods().filter { $0 == "session.create" }
         XCTAssertTrue(created.isEmpty, "a moved tip is not a reason to mint a chat")
     }
@@ -145,6 +155,7 @@ final class WebSocketBotChatTests: XCTestCase {
         let params = await rpc.params(of: "session.resume")
         XCTAssertEqual(params?["profile"], "radar-ia")
         XCTAssertEqual(params?["session_id"], "s1")
+        XCTAssertEqual(await rpc.runtimeSessionID(for: "s1"), "s")
     }
 
     // MARK: - D. The transcript maps onto messages
@@ -165,7 +176,7 @@ final class WebSocketBotChatTests: XCTestCase {
 
     // MARK: - E. Sending — the heart of it
 
-    func testSendingGoesToTheCanonicalSessionUnderTheBotsProfile() async throws {
+    func testSendingResumesTheDurableChatThenUsesTheRuntimeSession() async throws {
         let rpc = FakeRPC(results: [
             "profiles.list": Self.roster("radar-ia", id: "20260905_104136_281747"),
             "session.resume": Self.history([]),
@@ -179,15 +190,19 @@ final class WebSocketBotChatTests: XCTestCase {
             text: "¿algo nuevo?"
         )
 
+        let resume = await rpc.params(of: "session.resume")
+        XCTAssertEqual(resume?["profile"], "radar-ia", "the turn runs as the bot")
+        XCTAssertEqual(resume?["session_id"], "20260905_104136_281747",
+                       "reconnects address the durable canonical chat")
+        XCTAssertNotEqual(resume?["profile"], "default")
+
         let submit = await rpc.params(of: "prompt.submit")
-        XCTAssertEqual(submit?["session_id"], "20260905_104136_281747")
+        XCTAssertEqual(submit?["session_id"], "s",
+                       "live RPC uses the runtime id returned by session.resume")
+        XCTAssertNotEqual(submit?["session_id"], "20260905_104136_281747")
         XCTAssertNotEqual(submit?["session_id"], aliceLocalUUID,
                           "a local UUID must never be the session")
         XCTAssertEqual(submit?["text"], "¿algo nuevo?")
-
-        let resume = await rpc.params(of: "session.resume")
-        XCTAssertEqual(resume?["profile"], "radar-ia", "the turn runs as the bot")
-        XCTAssertNotEqual(resume?["profile"], "default")
 
         // Nothing anywhere tells the agent to pretend to be someone.
         let everything = await rpc.calls.flatMap { $0.params.values }
@@ -195,6 +210,20 @@ final class WebSocketBotChatTests: XCTestCase {
             everything.contains { $0.localizedCaseInsensitiveContains("a separate assistant") },
             "the synthetic persona directive must be gone"
         )
+    }
+
+    func testStopAndApprovalUseTheRuntimeSessionBoundByResume() async throws {
+        let rpc = FakeRPC(results: ["session.resume": Self.history([])])
+        let source = WebSocketBotChatSource(rpc: rpc)
+
+        _ = try await source.transcript(profile: "radar-ia", sessionID: "durable")
+        try await source.interrupt(sessionID: "durable")
+        try await source.respondToApproval(
+            sessionID: "durable", requestID: "approval-1", choice: "allow"
+        )
+
+        XCTAssertEqual(await rpc.params(of: "session.interrupt")?["session_id"], "s")
+        XCTAssertEqual(await rpc.params(of: "approval.respond")?["session_id"], "s")
     }
 
     /// The model the UI shows for a bot must be the one the turn actually
