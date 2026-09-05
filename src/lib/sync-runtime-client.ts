@@ -19,6 +19,7 @@ import type { Conversation } from "./types";
 
 const REPLICA_PREFIX = "conversation:v2:";
 const DELETE_PREFIX = "conversation-delete:v2:";
+const volatileDeviceIds = new Map<string, string>();
 
 export type RemoteReplicaRecord =
   | { type: "replica"; id: string; replica: ConversationReplicaV2 }
@@ -125,13 +126,15 @@ async function postSync(body: unknown, signal?: AbortSignal) {
   try {
     value = (await response.json()) as unknown;
   } catch {
-    if (!response.ok) throw new CloudSyncHttpError(response.status, "cloud_sync_failed");
+    if (!response.ok)
+      throw new CloudSyncHttpError(response.status, "cloud_sync_failed");
   }
 
   if (!response.ok) {
     const code =
       value && typeof value === "object" && !Array.isArray(value)
-        ? ((value as { error?: { code?: unknown } }).error?.code ?? "cloud_sync_failed")
+        ? ((value as { error?: { code?: unknown } }).error?.code ??
+          "cloud_sync_failed")
         : "cloud_sync_failed";
     if (code === "cloud_quota_exceeded") throw new CloudSyncQuotaError();
     throw new CloudSyncHttpError(
@@ -146,15 +149,24 @@ function deviceIdFor(userId: string) {
   const key = `alice:sync-device:${userId}`;
   try {
     const current = localStorage.getItem(key);
-    if (current) return current;
-    const created = crypto.randomUUID();
-    localStorage.setItem(key, created);
-    return created;
+    if (current) {
+      volatileDeviceIds.set(userId, current);
+      return current;
+    }
   } catch {
-    // A stable id is strongly preferred, but private browsing/storage denial
-    // must not turn sync into an exception loop for the life of the tab.
-    return crypto.randomUUID();
+    // Use the stable tab-local fallback below.
   }
+
+  const existing = volatileDeviceIds.get(userId);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  volatileDeviceIds.set(userId, created);
+  try {
+    localStorage.setItem(key, created);
+  } catch {
+    // The map keeps the id stable for this tab when storage is unavailable.
+  }
+  return created;
 }
 
 function toBase64Url(bytes: Uint8Array) {
@@ -166,10 +178,14 @@ function toBase64Url(bytes: Uint8Array) {
     .replace(/=+$/g, "");
 }
 
-async function conversationDigest(id: string) {
+async function recordDigest(
+  conversationId: string,
+  deviceId: string,
+  purpose: "replica" | "delete",
+) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(id),
+    new TextEncoder().encode(`${purpose}\u0000${conversationId}\u0000${deviceId}`),
   );
   return toBase64Url(new Uint8Array(digest));
 }
@@ -180,7 +196,10 @@ function batches(records: EncryptedSyncRecord[]) {
   let bytes = 0;
   for (const record of records) {
     const size = record.payload.ciphertext.length + 1_024;
-    if (current.length && (current.length >= 100 || bytes + size > 12_000_000)) {
+    if (
+      current.length &&
+      (current.length >= 100 || bytes + size > 12_000_000)
+    ) {
       out.push(current);
       current = [];
       bytes = 0;
@@ -214,7 +233,11 @@ export async function pullConversationReplicas(options: {
       if (record.kind !== "conversation") continue;
       try {
         if (record.id.startsWith(REPLICA_PREFIX)) {
-          const value = await decryptPayload<unknown>(record.payload, key, record.id);
+          const value = await decryptPayload<unknown>(
+            record.payload,
+            key,
+            record.id,
+          );
           const replica = parseReplica(value);
           if (replica) {
             remote.push({
@@ -227,7 +250,11 @@ export async function pullConversationReplicas(options: {
         }
 
         if (record.id.startsWith(DELETE_PREFIX)) {
-          const value = await decryptPayload<unknown>(record.payload, key, record.id);
+          const value = await decryptPayload<unknown>(
+            record.payload,
+            key,
+            record.id,
+          );
           const deletion = parseDeletion(value);
           if (deletion) remote.push({ type: "tombstone", ...deletion });
           continue;
@@ -237,10 +264,18 @@ export async function pullConversationReplicas(options: {
         if (!record.id.startsWith("conversation:")) continue;
         const id = record.id.slice("conversation:".length);
         if (record.tombstone) {
-          remote.push({ type: "tombstone", id, updatedAt: record.clock.wallTime });
+          remote.push({
+            type: "tombstone",
+            id,
+            updatedAt: record.clock.wallTime,
+          });
           continue;
         }
-        const value = await decryptPayload<unknown>(record.payload, key, record.id);
+        const value = await decryptPayload<unknown>(
+          record.payload,
+          key,
+          record.id,
+        );
         const parsed = conversationSchema.safeParse(value);
         if (parsed.success) {
           const conversation = parsed.data as Conversation;
@@ -251,10 +286,10 @@ export async function pullConversationReplicas(options: {
           });
         }
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") throw error;
-        // The key was already verified when it was saved; if it can no longer
-        // open account ciphertext, surface that explicitly instead of silently
-        // skipping records and claiming the set is synchronized.
+        if (error instanceof DOMException && error.name === "AbortError")
+          throw error;
+        // A saved key that can no longer open account ciphertext is not a
+        // successful sync. Surface it instead of silently skipping records.
         throw new SyncKeyMismatchError();
       }
     }
@@ -274,7 +309,8 @@ export async function pushConversationReplicas(options: {
   signal?: AbortSignal;
 }) {
   options.signal?.throwIfAborted();
-  if (!options.replicas.length && !options.deletions.length) return { accepted: 0 };
+  if (!options.replicas.length && !options.deletions.length)
+    return { accepted: 0 };
 
   const key = await deriveContentKey(options.master, options.userId);
   const deviceId = deviceIdFor(options.userId);
@@ -282,8 +318,12 @@ export async function pushConversationReplicas(options: {
 
   for (const replica of options.replicas) {
     options.signal?.throwIfAborted();
-    const digest = await conversationDigest(replica.conversation.id);
-    const recordId = `${REPLICA_PREFIX}${digest}:${deviceId}`;
+    const digest = await recordDigest(
+      replica.conversation.id,
+      deviceId,
+      "replica",
+    );
+    const recordId = `${REPLICA_PREFIX}${digest}`;
     const payload = await encryptPayload(replica, key, recordId);
     records.push({
       id: recordId,
@@ -297,8 +337,8 @@ export async function pushConversationReplicas(options: {
 
   for (const deletion of options.deletions) {
     options.signal?.throwIfAborted();
-    const digest = await conversationDigest(deletion.id);
-    const recordId = `${DELETE_PREFIX}${digest}:${deviceId}`;
+    const digest = await recordDigest(deletion.id, deviceId, "delete");
+    const recordId = `${DELETE_PREFIX}${digest}`;
     const value = { version: 2 as const, ...deletion };
     const payload = await encryptPayload(value, key, recordId);
     records.push({
