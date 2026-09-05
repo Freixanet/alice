@@ -28,10 +28,12 @@ describe("chat model fallback metadata", () => {
       requestedProvider: "chosen-provider",
       model: "hermes-agent",
       reason: "incompatible",
+      occurredAt: 123,
     });
     expect(notice.patch.modelFallback).toMatchObject({
       requestedModel: "missing-model",
       model: "hermes-agent",
+      occurredAt: 123,
     });
 
     const delta = reduceChatStreamEvent(acc, {
