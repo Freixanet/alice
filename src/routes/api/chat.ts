@@ -2,15 +2,19 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   GatewayError,
   type ChatEvent,
+  type GatewayPlace,
   type HermesChatContent,
 } from "@/lib/gateway";
 import {
+  hermesDashboardGet,
+  hermesDashboardSendJson,
   ndjsonResponse,
   resolveAliceGate,
   streamHermesProxy,
   streamHermesSessionProxy,
 } from "@/lib/gateway.server";
 import { chatRequestSchema } from "@/lib/api-contracts";
+import { isHermesSelfUpdateIntent } from "@/lib/hermes-update-intent";
 import {
   assertSameOriginRequest,
   parseJsonRequest,
@@ -81,10 +85,22 @@ export const Route = createFileRoute("/api/chat")({
 
         if (gate?.u && gate.k) {
           try {
+            const latestUser = [...clean]
+              .reverse()
+              .find((message) => message.role === "user");
+            if (
+              latestUser &&
+              typeof latestUser.content === "string" &&
+              isHermesSelfUpdateIntent(latestUser.content)
+            ) {
+              return await startHermesSelfUpdate({
+                url: gate.u,
+                key: gate.k,
+                place: gate.p,
+                requestSignal: request.signal,
+              });
+            }
             if (body.hermesSessionId) {
-              const latestUser = [...clean]
-                .reverse()
-                .find((message) => message.role === "user");
               if (!latestUser) {
                 return Response.json({ error: "empty" }, { status: 400 });
               }
@@ -137,6 +153,115 @@ export const Route = createFileRoute("/api/chat")({
     },
   },
 });
+
+async function startHermesSelfUpdate(opts: {
+  url: string;
+  key: string;
+  place: GatewayPlace;
+  requestSignal: AbortSignal;
+}): Promise<Response> {
+  const reply = (text: string) =>
+    ndjsonResponse(async (send) => {
+      send({ type: "delta", text } satisfies ChatEvent);
+    });
+  const fail = (message: string) =>
+    ndjsonResponse(async (send) => {
+      send({ type: "error", message } satisfies ChatEvent);
+    }, 502);
+
+  let check: Record<string, unknown> | null = null;
+  try {
+    const raw = await hermesDashboardGet(
+      {
+        url: opts.url,
+        key: opts.key,
+        place: opts.place,
+        signal: AbortSignal.any([
+          opts.requestSignal,
+          AbortSignal.timeout(20_000),
+        ]),
+      },
+      "/api/hermes/update/check?force=true",
+    );
+    check = asRecord(raw);
+  } catch (error) {
+    if (opts.requestSignal.aborted) throw error;
+    // A failed preview must not block an explicitly requested update. The
+    // apply endpoint performs its own admission checks and fetches upstream.
+  }
+
+  if (check?.can_apply === false) {
+    const message = stringField(check, "message");
+    const command = stringField(check, "update_command");
+    return reply(
+      [
+        message || "Esta instalación de Hermes no admite actualizaciones desde Alice.",
+        command && command !== "managed outside dashboard"
+          ? `Actualízala con: ${command}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    );
+  }
+
+  if (check?.update_available === false && check.behind === 0) {
+    return reply("Hermes ya está actualizado.");
+  }
+
+  let raw: unknown;
+  try {
+    raw = await hermesDashboardSendJson(
+      {
+        url: opts.url,
+        key: opts.key,
+        place: opts.place,
+        signal: AbortSignal.any([
+          opts.requestSignal,
+          AbortSignal.timeout(20_000),
+        ]),
+      },
+      "/api/hermes/update",
+      "POST",
+    );
+  } catch (error) {
+    if (opts.requestSignal.aborted) throw error;
+    return fail("No pude iniciar la actualización de Hermes.");
+  }
+
+  const started = asRecord(raw);
+  if (started?.ok !== true) {
+    return fail(
+      stringField(started, "message") ||
+        stringField(started, "error") ||
+        "Hermes rechazó la actualización.",
+    );
+  }
+
+  if (started.already_running === true) {
+    return reply(
+      "La actualización de Hermes ya estaba en curso. Se está ejecutando en segundo plano.",
+    );
+  }
+
+  return reply(
+    "Actualización de Hermes iniciada en segundo plano. No tienes que mantener este turno abierto; Hermes reiniciará los gateways al terminar y Alice puede desconectarse unos segundos durante el reinicio.",
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringField(
+  value: Record<string, unknown> | null,
+  key: string,
+): string {
+  const field = value?.[key];
+  return typeof field === "string" ? field.trim() : "";
+}
 
 function cleanChatContent(value: unknown): HermesChatContent {
   if (typeof value === "string") return value.slice(0, 8000);
