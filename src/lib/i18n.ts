@@ -736,6 +736,16 @@ const en = {
     "“{name}” will be removed from Hermes. This cannot be undone.",
   "cron.actionError": "Hermes couldn’t complete the action.",
   "cron.new": "New job",
+  "radar.description":
+    "A daily AI briefing in Spanish: important models, tools and advances, with verified sources and practical relevance.",
+  "radar.time": "Daily start time",
+  "radar.zone": "Time zone",
+  "radar.zoneHint":
+    "Europe/Madrid is Barcelona time, including daylight-saving changes. Use a named zone such as Europe/London or America/New_York.",
+  "radar.setupHint":
+    "Prepare a request in chat to create or update Radar IA. Send it so Hermes can verify the schedule, web access and delivery. This form does not activate or save a schedule. Existing jobs can be edited, paused or run from this page.",
+  "radar.prepare": "Configure with Hermes",
+
   "cron.createTitle": "Create a scheduled job",
   "cron.createDescription":
     "Tell Hermes what to do and when. Alice handles the schedule format.",
@@ -1673,6 +1683,16 @@ const es: Record<MsgKey, string> = {
     "“{name}” se eliminará de Hermes. Esta acción no se puede deshacer.",
   "cron.actionError": "Hermes no ha podido completar la acción.",
   "cron.new": "Nueva tarea",
+  "radar.description":
+    "Un informe diario de IA en español: modelos, herramientas y avances importantes, con fuentes verificadas y utilidad práctica.",
+  "radar.time": "Hora de inicio diaria",
+  "radar.zone": "Zona horaria",
+  "radar.zoneHint":
+    "Europe/Madrid corresponde a Barcelona y contempla el horario de verano. Usa una zona como Europe/London o America/New_York.",
+  "radar.setupHint":
+    "Prepara una petición en el chat para crear o actualizar Radar IA. Envíala para que Hermes compruebe el horario, el acceso web y la entrega. Este formulario no activa ni guarda una programación. Las tareas existentes se pueden editar, pausar o ejecutar desde esta página.",
+  "radar.prepare": "Configurar con Hermes",
+
   "cron.createTitle": "Crear una tarea programada",
   "cron.createDescription":
     "Dile a Hermes qué debe hacer y cuándo. Alice se ocupa del formato del horario.",

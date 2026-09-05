@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { RadarIASetup } from "@/components/radar-ia-setup";
 import { PageHeader } from "@/components/catalog-page";
 import { CronJobDialog, type CronJobDraft } from "@/components/cron-job-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,8 @@ function CronPage() {
   const t = useT();
   const locale = useLocale();
   const navigate = useNavigate();
+  const newChat = useHermes((state) => state.newChat);
+  const setDraft = useHermes((state) => state.setDraft);
   const { data, error, loading, setData } = useHermesLive();
   // `manifest.version` is Hermes' raw string ("v0.21.0", "0.21.0-rc1", …), so
   // comparing it to a bare "0.21.0" turned the Pantheon fields off for builds
@@ -90,6 +93,13 @@ function CronPage() {
               {t("cron.new")}
             </Button>
           }
+        />
+        <RadarIASetup
+          onPrepare={(prompt) => {
+            newChat();
+            setDraft(prompt);
+            void navigate({ to: "/" });
+          }}
         />
         {loading ? (
           <p className="text-sm text-muted-foreground">{t("cron.loading")}</p>
