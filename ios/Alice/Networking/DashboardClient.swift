@@ -22,6 +22,9 @@ actor DashboardClient {
         case rejected
         case http(Int, detail: String? = nil)
         case unreachable
+        /// A 200 whose body could not be read as the listing it should be.
+        /// Distinct from an empty listing, which is a real answer.
+        case unreadable
 
         var errorDescription: String? {
             switch self {
@@ -37,6 +40,8 @@ actor DashboardClient {
                 }
             case .unreachable:
                 "The dashboard did not answer. It only listens on your own network."
+            case .unreadable:
+                "The dashboard sent something this app could not read."
             }
         }
     }
@@ -77,15 +82,15 @@ actor DashboardClient {
     /// Some dashboard routes — notably current Hermes' cron list — return a
     /// top-level JSON array rather than an object. Keep that shape instead of
     /// coercing it to an empty dictionary and making the UI say "no routines".
-    func getRows(_ path: String) async throws -> [[String: Any]] {
+    func rows(_ path: String, shape: BodyShape) async throws -> DashboardRows {
         guard credentials != nil else { throw Failure.notConfigured }
         if !signedIn { try await signIn() }
         do {
-            return try await fetchRows(path)
+            return DashboardRows(try await fetchRows(path, shape: shape))
         } catch Failure.http(401, _) {
             signedIn = false
             try await signIn()
-            return try await fetchRows(path)
+            return DashboardRows(try await fetchRows(path, shape: shape))
         }
     }
 
@@ -150,7 +155,9 @@ actor DashboardClient {
         return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
     }
 
-    private func fetchRows(_ path: String) async throws -> [[String: Any]] {
+    private func fetchRows(
+        _ path: String, shape: BodyShape
+    ) async throws -> [[String: Any]] {
         guard let credentials, let url = Self.url(credentials.url, path) else {
             throw Failure.notConfigured
         }
@@ -161,14 +168,39 @@ actor DashboardClient {
         guard (200..<300).contains(http.statusCode) else {
             throw Failure.http(http.statusCode, detail: Self.detail(from: data))
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data) else { return [] }
-        if let rows = object as? [[String: Any]] { return rows }
-        if let map = object as? [String: Any] {
+        return try Self.rows(from: data, shape: shape)
+    }
+
+    /// What a listing body is allowed to look like, decided by the route that
+    /// answered rather than by trying every shape on every reply.
+    ///
+    /// Mixing them let a malformed answer from one route pass as a valid empty
+    /// listing in another's shape: `api/cron/jobs` returns a bare array, and a
+    /// `{}` from it used to read as "no routines" because the legacy
+    /// envelope's tolerance was applied to it.
+    enum BodyShape: Sendable {
+        /// `api/cron/jobs?profile=all` — a bare JSON array.
+        case array
+        /// The web UI's `api/crons` — `{"jobs": [...]}`.
+        case legacyEnvelope
+    }
+
+    static func rows(from data: Data, shape: BodyShape) throws -> [[String: Any]] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) else {
+            throw Failure.unreadable
+        }
+        switch shape {
+        case .array:
+            guard let rows = object as? [[String: Any]] else { throw Failure.unreadable }
+            return rows
+        case .legacyEnvelope:
+            if let rows = object as? [[String: Any]] { return rows }
+            guard let map = object as? [String: Any] else { throw Failure.unreadable }
             for key in ["jobs", "items", "data", "results"] {
                 if let rows = map[key] as? [[String: Any]] { return rows }
             }
+            throw Failure.unreadable
         }
-        return []
     }
 
     /// Best-effort read of whatever the dashboard put in the body.
@@ -298,9 +330,21 @@ extension DashboardClient {
         let activeObject = try await get("api/profiles/active")
         let active = (activeObject["active"] as? String)
             ?? (activeObject["current"] as? String)
-        let rows = (object["profiles"] as? [[String: Any]]) ?? []
-        return rows.compactMap { row in
-            guard let name = row["name"] as? String else { return nil }
+        return try Self.bots(from: object, active: active)
+    }
+
+    /// The profiles body as bots.
+    ///
+    /// `GET /api/profiles` always answers `{"profiles": [...]}`, falling back
+    /// to a directory scan rather than to a body without the key. One without
+    /// it is malformed, and reading it as [] used to put "no bots" on screen
+    /// for an agent that has four.
+    static func bots(from object: [String: Any], active: String?) throws -> [BotRow] {
+        guard let rows = object["profiles"] as? [[String: Any]] else {
+            throw Failure.unreadable
+        }
+        let bots: [BotRow] = rows.compactMap { row in
+            guard let name = row["name"] as? String, !name.isEmpty else { return nil }
             return BotRow(
                 name: name,
                 displayName: (row["display_name"] as? String).flatMap {
@@ -315,6 +359,10 @@ extension DashboardClient {
                 active: name == active
             )
         }
+        // Rows arrived and none of them had a name: a shape problem, not an
+        // agent without bots.
+        if !rows.isEmpty && bots.isEmpty { throw Failure.unreadable }
+        return bots
     }
 
     /// The bot's standing instructions. `exists` is false for a profile that
@@ -353,39 +401,47 @@ extension DashboardClient {
 
     /// Every routine grouped by the bot that owns it.
     ///
-    /// The route is `api/crons`, and without `all_profiles` it answers only
-    /// for whichever profile the dashboard is scoped to — every other bot's
-    /// routines are simply absent. It replies with an object carrying `jobs`,
-    /// not a bare array.
+    /// Verified against this agent's own source, not inferred. `hermes serve`
+    /// registers `@router.get("/api/cron/jobs")` with `profile: str = "all"`
+    /// (`hermes_cli/web_routers/cron.py`), and for `all` it walks every
+    /// profile home and concatenates, so the reply is a bare JSON array.
+    /// `api/crons` belongs to the separate web UI, which this client does not
+    /// talk to; asking this agent for it gets a FastAPI 404, which is what
+    /// used to leave every bot reporting no routines at all.
     ///
-    /// Group by `owner_profile`. The server sets it per row to the profile
-    /// home the row came from, and says why it is not the same as `profile`:
-    /// "The persisted field controls where the job executes; `owner_profile`
-    /// tells the UI which profile home the row came from."
-    /// (`hermes-webui/api/routes.py`, `_cron_jobs_cross_profile`.)
-    ///
-    /// `api/cron/jobs` is a newer upstream shape — a bare array annotated with
-    /// `profile` and `profile_name` — that this agent does not serve; an
-    /// unknown path here is a 404. It is tried second so that an agent that
-    /// does grow it keeps working, and costs nothing on one that has not.
+    /// `_annotate_cron_job` stamps each row with `profile` and `profile_name`,
+    /// both set to the same canonical profile name — the directory slug, from
+    /// a scan validated by `normalize_profile_name`, never a display name. It
+    /// sets no `owner_profile`; that field comes from the web UI's own
+    /// listing, where it is the authoritative one, so it still leads.
     func allRoutines() async throws -> [String: [JobRow]] {
-        let paths = ["api/crons?all_profiles=1", "api/cron/jobs?profile=all"]
-        var rows: [[String: Any]] = []
-        var hadSuccessfulRead = false
+        try await Self.routines(reading: self)
+    }
+
+    /// One route per contract, in the order they should be tried.
+    static let routeContracts: [(path: String, shape: BodyShape, ownership: Ownership)] = [
+        ("api/cron/jobs?profile=all", .array, .canonical),
+        ("api/crons?all_profiles=1", .legacyEnvelope, .legacyWebUI),
+    ]
+
+    /// The listing, from whichever route answers.
+    ///
+    /// A route that answers is the answer, empty included. The fallback exists
+    /// for an agent that does not serve the canonical route at all — a 404 —
+    /// not for one that serves it and has nothing to report. Trying the legacy
+    /// route after a valid canonical `[]` and taking its rows would replace a
+    /// true answer with an older contract's.
+    static func routines(
+        reading reader: DashboardRowReading
+    ) async throws -> [String: [JobRow]] {
         var lastFailure: Error?
 
-        for path in paths {
+        for contract in routeContracts {
+            let found: [[String: Any]]
             do {
-                let found = try await getRows(path)
-                hadSuccessfulRead = true
-                rows = found
-                if !found.isEmpty { break }
+                found = try await reader.rows(contract.path, shape: contract.shape).rows
             } catch {
-                // Once a route has answered, its list is the answer — empty
-                // included. The older route is consulted only in case that
-                // answer was empty, so whatever it says when it fails must not
-                // turn a bot with no routines into an error.
-                if hadSuccessfulRead { break }
+                // Only an absent route is a reason to try an older one.
                 if let failure = error as? Failure,
                    case let .http(status, _) = failure, status == 404 {
                     lastFailure = failure
@@ -393,10 +449,16 @@ extension DashboardClient {
                 }
                 throw error
             }
-        }
-        if !hadSuccessfulRead, let lastFailure { throw lastFailure }
 
-        return Self.group(rows)
+            let grouped = group(found, ownership: contract.ownership)
+            // Rows arrived and none of them could be placed. That is a shape
+            // problem; reporting it as an agent with no routines would put a
+            // parse failure on screen as a fact about the bots.
+            if !found.isEmpty && grouped.isEmpty { throw Failure.unreadable }
+            return grouped
+        }
+
+        throw lastFailure ?? Failure.unreadable
     }
 
     /// Cron rows keyed by the bot that owns them.
@@ -406,17 +468,61 @@ extension DashboardClient {
     /// carries a separate `displayName` for the screen. A row keyed by
     /// anything else is a routine no one can find, which is the shape the
     /// original bug took.
-    static func group(_ rows: [[String: Any]]) -> [String: [JobRow]] {
+    /// Which field on a row says whose routine it is, which is not the same
+    /// question on every route.
+    enum Ownership: Sendable {
+        /// `api/cron/jobs`. `_annotate_cron_job` sets `profile` and
+        /// `profile_name` to one canonical profile name and sends no
+        /// `owner_profile`; a row carrying one that disagrees is two contracts
+        /// mixed, and picking either would attribute a real routine to a bot
+        /// that may not own it.
+        case canonical
+        /// The web UI's listing, where `owner_profile` is documented as the
+        /// profile home the row came from and the persisted `profile` says
+        /// where the job executes — so they may differ by design.
+        case legacyWebUI
+    }
+
+    static func group(
+        _ rows: [[String: Any]], ownership: Ownership
+    ) -> [String: [JobRow]] {
         var grouped: [String: [JobRow]] = [:]
         for row in rows {
-            let owner = ["owner_profile", "profile", "profile_name"]
-                .lazy
-                .compactMap { row[$0] as? String }
-                .first { !$0.isEmpty }
-            guard let owner, let job = HermesClient.jobRow(from: row) else { continue }
+            guard let owner = owner(of: row, ownership: ownership),
+                  var job = HermesClient.jobRow(from: row)
+            else { continue }
+            job.profile = owner
             grouped[owner, default: []].append(job)
         }
         return grouped
+    }
+
+    private static func owner(
+        of row: [String: Any], ownership: Ownership
+    ) -> String? {
+        func text(_ key: String) -> String? {
+            guard let value = row[key] as? String, !value.isEmpty else { return nil }
+            return value
+        }
+        switch ownership {
+        case .canonical:
+            // `profile` is the canonical name `_cron_profile_home` resolved,
+            // so it wins outright — a `profile_name` that differs is a display
+            // name from another surface, and the slug is what a bot is looked
+            // up by. Rejecting the row over that disagreement would hide a
+            // routine whose owner is perfectly well known.
+            //
+            // `owner_profile` is different: this route never sends it, so a
+            // row carrying one that disagrees is two contracts mixed, and
+            // there is no demonstrated rule saying which wins. Filing it under
+            // either would attribute a real routine to a bot that may not own
+            // it, so it is not filed at all.
+            guard let name = text("profile") ?? text("profile_name") else { return nil }
+            if let owner = text("owner_profile"), owner != name { return nil }
+            return name
+        case .legacyWebUI:
+            return text("owner_profile") ?? text("profile") ?? text("profile_name")
+        }
     }
 
     /// Creates a scheduled job owned by one bot.
@@ -571,3 +677,24 @@ extension DashboardClient {
         )
     }
 }
+
+/// A listing body, crossing an isolation boundary.
+///
+/// `[[String: Any]]` is not `Sendable`, but what `JSONSerialization` puts in
+/// one is: value types all the way down, freshly made per read and handed on
+/// without being kept. The wrapper carries that promise explicitly rather than
+/// spreading `@unchecked` over every signature.
+struct DashboardRows: @unchecked Sendable {
+    let rows: [[String: Any]]
+    init(_ rows: [[String: Any]]) { self.rows = rows }
+}
+
+/// Reads one listing body. `DashboardClient` in the app; a stub in tests, so
+/// the order routes are tried in can be checked without a server.
+protocol DashboardRowReading: Sendable {
+    func rows(
+        _ path: String, shape: DashboardClient.BodyShape
+    ) async throws -> DashboardRows
+}
+
+extension DashboardClient: DashboardRowReading {}

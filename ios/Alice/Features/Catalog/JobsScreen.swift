@@ -12,6 +12,7 @@ struct JobsScreen: View {
 
     @State private var jobs: [JobRow] = []
     @State private var failure: String?
+    @State private var partial = false
     @State private var loading = false
     @State private var reading: JobRow?
 
@@ -46,13 +47,25 @@ struct JobsScreen: View {
                     )
                 } else if jobs.isEmpty {
                     stateRow(
-                        title: "No scheduled jobs",
-                        detail: "Nothing is set to run on its own yet.",
+                        title: partial ? "No jobs on this gateway"
+                            : "No scheduled jobs",
+                        detail: partial
+                            ? "Connect the dashboard to see every bot's routines."
+                            : "Nothing is set to run on its own yet.",
                         systemImage: "clock"
                     )
                 } else {
-                    ForEach(jobs) { job in
+                    ForEach(jobs, id: \.listIdentity) { job in
                         jobRow(job)
+                    }
+                    if partial {
+                        Text(
+                            "This gateway's profile only. "
+                                + "Connect the dashboard for every bot's routines."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .listRowBackground(Palette.card(scheme))
                     }
                 }
             }
@@ -198,7 +211,9 @@ struct JobsScreen: View {
         loading = true
         defer { loading = false }
         do {
-            jobs = try await store.jobs()
+            let listing = try await store.scheduledRoutines()
+            jobs = listing.rows
+            partial = listing.scope == .oneGatewayProfile
             failure = nil
         } catch {
             failure = (error as? LocalizedError)?.errorDescription
