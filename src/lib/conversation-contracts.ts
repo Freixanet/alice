@@ -36,12 +36,20 @@ const approvalSchema = z.strictObject({
   error: z.string().max(8_000).optional(),
 });
 
+const modelLimitSchema = z.strictObject({
+  kind: z.enum(["quota", "rateLimit", "auth"]),
+  retryAfterSeconds: z.number().nonnegative().finite().optional(),
+  scope: z.string().max(256).optional(),
+});
+
 export const conversationSchema = z.strictObject({
   id: z.string().min(1).max(160),
   title: z.string().max(512),
   createdAt: z.number().int().nonnegative().safe(),
   updatedAt: z.number().int().nonnegative().safe(),
   pinned: z.boolean().optional(),
+  hermesSessionId: z.string().trim().min(1).max(160).optional(),
+  hermesProfile: z.string().trim().min(1).max(160).optional(),
   messages: z
     .array(
       z.strictObject({
@@ -51,6 +59,7 @@ export const conversationSchema = z.strictObject({
         createdAt: z.number().int().nonnegative().safe(),
         pending: z.boolean().optional(),
         error: z.string().max(8_000).optional(),
+        errorLimit: modelLimitSchema.optional(),
         incomplete: z.boolean().optional(),
         runId: z.string().min(1).max(160).optional(),
         runStatus: runStatusSchema.optional(),
