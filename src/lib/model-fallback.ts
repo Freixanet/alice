@@ -16,6 +16,10 @@ export type ModelFallbackResolution = {
 };
 
 const COMPATIBILITY_STATUSES = new Set([400, 404, 422]);
+const AUTH_CONTEXT =
+  /\b(?:credential|credentials|api key|token|authentication|authenticate|unauthorized|forbidden|permission|billing)\b/i;
+const TRANSIENT_CONTEXT =
+  /\b(?:temporarily|temporary|timeout|timed out|overloaded|capacity|try again|service unavailable|connection|network|upstream|rate limit|too many requests)\b/i;
 
 /**
  * Only errors that explicitly say the selected model/provider is incompatible
@@ -42,6 +46,13 @@ export function isModelCompatibilityFailure(input: {
     .replace(/\s+/g, " ")
     .trim();
   if (!normalized) return false;
+
+  // Be conservative when an upstream incorrectly maps auth/transient failures
+  // onto a 400/404/422. Those errors must never be converted into a provider
+  // switch merely because their text also happens to mention a model.
+  if (AUTH_CONTEXT.test(normalized) || TRANSIENT_CONTEXT.test(normalized)) {
+    return false;
+  }
 
   const subject = "(?:model|provider|model/provider|provider/model)";
   const incompatibility =
