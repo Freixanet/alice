@@ -17,7 +17,7 @@ export type ModelFallbackResolution = {
 
 const COMPATIBILITY_STATUSES = new Set([400, 404, 422]);
 const AUTH_CONTEXT =
-  /\b(?:credential|credentials|api key|token|authentication|authenticate|unauthorized|forbidden|permission|billing)\b/i;
+  /\b(?:credential|credentials|api key|token|authentication|authenticate|unauthorized|forbidden|permission|billing|account|subscription|entitlement|access)\b/i;
 const TRANSIENT_CONTEXT =
   /\b(?:temporarily|temporary|timeout|timed out|overloaded|capacity|try again|service unavailable|connection|network|upstream|rate limit|too many requests)\b/i;
 
@@ -54,17 +54,28 @@ export function isModelCompatibilityFailure(input: {
     return false;
   }
 
-  const subject = "(?:model|provider|model/provider|provider/model)";
-  const incompatibility =
+  const modelIncompatibility =
     "(?:not found|unknown|unsupported|not supported|unavailable|not available|does not exist|invalid)";
+  const providerIdentityFailure =
+    "(?:not found|unknown|unsupported|not supported|does not exist|invalid)";
 
   return (
-    new RegExp(`\\b${subject}\\b.{0,120}\\b${incompatibility}\\b`, "i").test(
-      normalized,
-    ) ||
-    new RegExp(`\\b${incompatibility}\\b.{0,80}\\b${subject}\\b`, "i").test(
-      normalized,
-    ) ||
+    new RegExp(
+      `\\bmodel\\b.{0,120}\\b${modelIncompatibility}\\b`,
+      "i",
+    ).test(normalized) ||
+    new RegExp(
+      `\\b${modelIncompatibility}\\b.{0,80}\\bmodel\\b`,
+      "i",
+    ).test(normalized) ||
+    new RegExp(
+      `\\bprovider\\b.{0,100}\\b${providerIdentityFailure}\\b`,
+      "i",
+    ).test(normalized) ||
+    new RegExp(
+      `\\b${providerIdentityFailure}\\b.{0,80}\\bprovider\\b`,
+      "i",
+    ).test(normalized) ||
     /\bprovider\b.{0,80}\bdoes not support\b.{0,80}\bmodel\b/i.test(
       normalized,
     ) ||
