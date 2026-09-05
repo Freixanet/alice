@@ -110,11 +110,19 @@ struct RadarIABotInstaller: View {
                     )
                 }
 
-                // A retry after a partial create repairs an empty profile, but
-                // an existing non-empty SOUL is treated as user-owned and kept.
+                // Hermes seeds new profiles with its generic SOUL. That text is
+                // bootstrap content, not a user customization, so Radar IA must
+                // replace it with its real standing editorial instructions. A
+                // genuinely custom non-empty SOUL is preserved.
                 let soul = try await store.soul(RadarIA.botName)
-                if !soul.exists || soul.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let emptySoul = !soul.exists
+                    || soul.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                if !alreadyExists || emptySoul || RadarIA.isGenericHermesSoul(soul.text) {
                     try await store.setSoul(RadarIA.botName, RadarIA.editorialPrompt)
+                    let verified = try await store.soul(RadarIA.botName)
+                    guard verified.exists, RadarIA.ownsSoul(verified.text) else {
+                        throw RadarIAInstallError.soulDidNotPersist
+                    }
                 }
 
                 store.botCustomNames[RadarIA.botName] = RadarIA.displayName
@@ -140,11 +148,14 @@ struct RadarIABotInstaller: View {
 
 private enum RadarIAInstallError: LocalizedError {
     case profileDidNotAppear
+    case soulDidNotPersist
 
     var errorDescription: String? {
         switch self {
         case .profileDidNotAppear:
             "Hermes accepted the profile request but Radar IA did not appear when Alice read the bot list back. Nothing is being reported as configured until that read-back succeeds."
+        case .soulDidNotPersist:
+            "Hermes did not keep Radar IA's editorial instructions when Alice read the profile back. The setup was stopped rather than leaving the bot with generic Hermes instructions."
         }
     }
 }
