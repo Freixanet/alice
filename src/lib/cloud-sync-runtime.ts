@@ -50,6 +50,8 @@ const EMPTY_ACCOUNT: PersistedAccountSyncState = {
   lastSyncedAt: null,
 };
 
+const memoryStorage = new Map<string, string>();
+
 export const useCloudSyncRuntime = create<RuntimeStore>((set) => ({
   userId: null,
   status: "idle",
@@ -68,18 +70,26 @@ function messageKey(userId: string, conversationId: string) {
 
 function storageGet(key: string) {
   try {
-    return typeof localStorage === "undefined" ? null : localStorage.getItem(key);
+    if (typeof localStorage !== "undefined") {
+      const stored = localStorage.getItem(key);
+      if (stored !== null) {
+        memoryStorage.set(key, stored);
+        return stored;
+      }
+    }
   } catch {
-    return null;
+    // Fall through to the tab-local copy below.
   }
+  return memoryStorage.get(key) ?? null;
 }
 
 function storageSet(key: string, value: string) {
+  memoryStorage.set(key, value);
   try {
     if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
   } catch {
-    // The in-memory queue still keeps this tab correct. A later successful
-    // storage write will make it crash-safe again.
+    // Storage-denied/private contexts still retain a correct queue for the
+    // lifetime of this tab instead of generating and forgetting state.
   }
 }
 
@@ -87,7 +97,11 @@ function finiteRecord(value: unknown): Record<string, number> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const out: Record<string, number> = {};
   for (const [key, candidate] of Object.entries(value)) {
-    if (typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= 0) {
+    if (
+      typeof candidate === "number" &&
+      Number.isSafeInteger(candidate) &&
+      candidate >= 0
+    ) {
       out[key] = candidate;
     }
   }
@@ -98,7 +112,8 @@ function parsePending(value: unknown): Record<string, SyncPendingEntry> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const out: Record<string, SyncPendingEntry> = {};
   for (const [id, candidate] of Object.entries(value)) {
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
+      continue;
     const item = candidate as Record<string, unknown>;
     if (
       typeof item.version === "number" &&
@@ -187,7 +202,9 @@ function markConversationChanged(
   account.pending[next.id] = { version, tombstone: false };
 
   const messageState = loadMessageSyncState(userId, next.id);
-  const previousById = new Map(previous?.messages.map((message) => [message.id, message]));
+  const previousById = new Map(
+    previous?.messages.map((message) => [message.id, message]),
+  );
   const nextIds = new Set<string>();
   for (const message of next.messages) {
     nextIds.add(message.id);
@@ -287,7 +304,11 @@ export function bootstrapSyncQueue(options: {
   }
 
   for (const [id, deletedAt] of Object.entries(options.tombstones)) {
-    const version = Math.max(deletedAt, account.conversationVersions[id] ?? 0, 1);
+    const version = Math.max(
+      deletedAt,
+      account.conversationVersions[id] ?? 0,
+      1,
+    );
     account.conversationVersions[id] = version;
     account.pending[id] = { version, tombstone: true };
   }
@@ -357,7 +378,7 @@ export function clearPendingDeletedThrough(
 ) {
   const account = loadSyncAccountState(userId);
   const pending = account.pending[conversationId];
-  if (pending?.tombstone && pending.version <= deletedAt) {
+  if (pending && pending.version <= deletedAt) {
     delete account.pending[conversationId];
     saveSyncAccountState(userId, account);
   }
