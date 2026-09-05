@@ -94,7 +94,14 @@ actor HermesClient {
         configuration.timeoutIntervalForRequest = 120
         configuration.timeoutIntervalForResource = 600
         configuration.waitsForConnectivity = false
-        self.session = session ?? URLSession(configuration: configuration)
+        // A redirect is the other way a remote answer can move a credentialed
+        // request to a host of its choosing, and the session had no policy of
+        // its own — it followed wherever it was sent, headers and all.
+        self.session = session ?? URLSession(
+            configuration: configuration,
+            delegate: SameOriginRedirects(),
+            delegateQueue: nil
+        )
     }
 
     func connect(to endpoint: Endpoint) {
@@ -115,6 +122,14 @@ actor HermesClient {
 
     // MARK: - Requests
 
+    nonisolated static func relativeRoute(_ path: String) -> String? {
+        GatewayOrigin.relativeRoute(path)
+    }
+
+    nonisolated static func sameOrigin(_ url: URL, as base: URL) -> Bool {
+        GatewayOrigin.sameOrigin(url, as: base)
+    }
+
     /// Shared by the streaming transport in `HermesChatStream`.
     func request(
         _ path: String,
@@ -128,7 +143,12 @@ actor HermesClient {
         // reply could start. The header below is the polite way to ask; a
         // build that honours it will, and one that does not simply ignores it.
         let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        guard let url = URL(string: cleanPath, relativeTo: endpoint.url) else {
+        guard let url = URL(string: cleanPath, relativeTo: endpoint.url),
+              // Belt as well as braces. The parser refuses an absolute route,
+              // and this refuses one that reached here anyway: the key is
+              // attached below, and it goes to the gateway or nowhere.
+              Self.sameOrigin(url, as: endpoint.url)
+        else {
             throw Failure.unreachable
         }
         var request = URLRequest(url: url)
@@ -307,10 +327,11 @@ actor HermesClient {
             for (name, value) in endpoints {
                 guard let route = value as? [String: Any],
                       route["method"] is String,
-                      let path = route["path"] as? String
+                      let path = route["path"] as? String,
+                      let safe = relativeRoute(path)
                 else { continue }
                 advertised.append(name)
-                routes[name] = path
+                routes[name] = safe
             }
         }
 
@@ -452,5 +473,31 @@ actor HermesClient {
             .split(separator: " ")
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
             .joined(separator: " ")
+    }
+}
+
+
+/// Refuses a redirect that leaves the host the request was addressed to.
+///
+/// URLSession follows redirects by default and carries the request's headers
+/// with it, so a 302 from the agent — or from anything answering in its place
+/// — could have walked the gateway key to another origin. A redirect within
+/// the same origin is ordinary and still followed.
+private final class SameOriginRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let from = task.originalRequest?.url,
+              let to = request.url,
+              HermesClient.sameOrigin(to, as: from)
+        else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
     }
 }
