@@ -77,9 +77,58 @@ describe("encrypted sync client", () => {
     });
 
     expect(JSON.stringify(uploaded)).not.toContain("private content");
-    expect(result).toEqual([
+    expect(result.remote).toEqual([
       { id: conversation.id, tombstone: false, conversation },
     ]);
+    // Not yet: the walk finished but nobody has stored anything.
+    expect(localStorage.getItem("alice:sync-cursor:account-a")).toBeNull();
+    result.commitCursor();
     expect(localStorage.getItem("alice:sync-cursor:account-a")).toBe("1");
+  });
+
+  it("leaves the cursor alone when a later page fails", async () => {
+    // The first page arrives and the second does not. Nothing reaches the
+    // caller, so the position must not move: a device that advanced here
+    // would never be sent the first page again, and would go on missing
+    // conversations that are still in the cloud.
+    localStorage.setItem("alice:sync-cursor:account-b", "7");
+    let pulls = 0;
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (body.action === "push") {
+          return Response.json({ ok: true, replayed: false, accepted: 0 });
+        }
+        pulls += 1;
+        if (pulls === 1) {
+          return Response.json({
+            ok: true,
+            records: [],
+            cursor: "9",
+            hasMore: true,
+          });
+        }
+        throw new Error("network went away");
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      syncEncryptedConversations({
+        userId: "account-b",
+        master: generateMasterSecret(),
+        conversations: [],
+        tombstones: {},
+      }),
+    ).rejects.toThrow("network went away");
+
+    expect(localStorage.getItem("alice:sync-cursor:account-b")).toBe("7");
+  });
+
+  it("keeps each account's position apart", async () => {
+    localStorage.setItem("alice:sync-cursor:account-a", "4");
+    localStorage.setItem("alice:sync-cursor:account-b", "11");
+    expect(localStorage.getItem("alice:sync-cursor:account-a")).toBe("4");
+    expect(localStorage.getItem("alice:sync-cursor:account-b")).toBe("11");
   });
 });

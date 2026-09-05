@@ -17,13 +17,20 @@ export type RemoteConversation =
   | { id: string; tombstone: true; updatedAt: number }
   | { id: string; tombstone: false; conversation: Conversation };
 
+/** What a pull produced, and the receipt for it. */
+export type SyncPull = {
+  remote: RemoteConversation[];
+  /** Records the position reached. Call it only once the records are stored. */
+  commitCursor: () => void;
+};
+
 export async function syncEncryptedConversations(options: {
   userId: string;
   master: Uint8Array;
   conversations: Conversation[];
   tombstones: ConversationTombstones;
   signal?: AbortSignal;
-}): Promise<RemoteConversation[]> {
+}): Promise<SyncPull> {
   options.signal?.throwIfAborted();
   const key = await deriveContentKey(options.master, options.userId);
   options.signal?.throwIfAborted();
@@ -112,10 +119,24 @@ export async function syncEncryptedConversations(options: {
       }
     }
     cursor = response.cursor;
-    setCursor(options.userId, cursor);
     if (!response.hasMore) break;
   }
-  return remote;
+
+  // The cursor is handed back rather than written here. Written per page, a
+  // failure on the second page rejected the whole call — so the caller never
+  // saw the first page's conversations — while the cursor had already moved
+  // past them. The next run started after records it had never applied, and
+  // they stayed missing until something changed them on the server. Nothing
+  // was deleted; the device simply stopped being told.
+  //
+  // Now it advances only once the records are in hand and the caller has put
+  // them away. A failure anywhere in the walk leaves the cursor where it was,
+  // and the next run fetches the same pages again — which is the safe way to
+  // be wrong.
+  return {
+    remote,
+    commitCursor: () => setCursor(options.userId, cursor),
+  };
 }
 
 async function postSync(body: unknown, signal?: AbortSignal) {

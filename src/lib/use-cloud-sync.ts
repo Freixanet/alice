@@ -21,14 +21,21 @@ export function useCloudSync() {
             useHermes.getState().setCloudSyncEnabled(false);
             return;
           }
-          const remote = await syncEncryptedConversations({
+          const { remote, commitCursor } = await syncEncryptedConversations({
             userId: user.id,
             master,
             conversations,
             tombstones,
             signal: controller.signal,
           });
-          if (controller.signal.aborted || !remote.length) return;
+          // Aborted: the records were never applied, so the position must not
+          // move either. Nothing to apply: the walk finished, and the position
+          // is worth keeping so the next run does not re-read the same pages.
+          if (controller.signal.aborted) return;
+          if (!remote.length) {
+            commitCursor();
+            return;
+          }
           useHermes.setState((state) => {
             const byId = new Map(
               state.conversations.map((item) => [item.id, item]),
@@ -65,6 +72,9 @@ export function useCloudSync() {
               activeId: byId.has(state.activeId) ? state.activeId : next[0]!.id,
             };
           });
+          // Only now. The position records what this device has taken in, so
+          // it moves after the records are in the store and not before.
+          commitCursor();
         })
         .catch(() => undefined);
     }, 1_000);
