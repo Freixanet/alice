@@ -73,3 +73,12 @@ targets:
       - path: AliceTests
     dependencies:
       - target: Alice
+    settings:
+      base:
+        # The app target ships a hand-written Info.plist and turns generation
+        # off for everything; a test bundle has nothing to say in one, so it
+        # takes the generated version. Without this the target declared here
+        # could never actually be built — which is why two sets of tests were
+        # written against it and neither had ever run.
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.tests
