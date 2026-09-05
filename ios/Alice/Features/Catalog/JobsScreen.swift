@@ -9,17 +9,12 @@ import UIKit
 struct JobsScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
-
-    let onPrepareRadar: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
 
     @State private var jobs: [JobRow] = []
     @State private var failure: String?
     @State private var loading = false
     @State private var reading: JobRow?
-
-    init(onPrepareRadar: @escaping (String) -> Void = { _ in }) {
-        self.onPrepareRadar = onPrepareRadar
-    }
 
     var body: some View {
         list
@@ -38,7 +33,7 @@ struct JobsScreen: View {
         List {
             Section {
                 NavigationLink {
-                    RadarIASetupScreen(onConfigure: onPrepareRadar)
+                    RadarIASetupScreen(onConfigure: prepareRadar)
                 } label: {
                     radarRow
                 }
@@ -202,6 +197,15 @@ struct JobsScreen: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    /// Opens an editable setup request in Alice instead of claiming this view
+    /// configured the scheduler itself. Dismissing Jobs reveals the new chat;
+    /// the drawer remains available exactly as it was before opening Jobs.
+    private func prepareRadar(_ prompt: String) {
+        store.newChat()
+        store.draft = prompt
+        dismiss()
     }
 
     /// The one line of a failure worth putting on a row.
