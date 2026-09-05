@@ -35,6 +35,9 @@ describe("model fallback classification", () => {
     [503, "provider unavailable"],
     [400, "invalid request body"],
     [404, "route not found"],
+    [400, "invalid provider credentials for model gpt-5"],
+    [422, "provider temporarily unavailable for model gpt-5"],
+    [404, "model unavailable because upstream connection timed out"],
   ])("never falls back for unrelated failure (%s)", (status, message) => {
     expect(isModelCompatibilityFailure({ status, message })).toBe(false);
   });
