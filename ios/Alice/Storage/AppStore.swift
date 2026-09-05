@@ -390,8 +390,28 @@ final class AppStore {
         conversations[index].project = project
     }
 
-    func jobs() async throws -> [JobRow] {
+    /// Every routine on the agent, and how much of it the answer covers.
+    ///
+    /// The dashboard is the only source that sees across profiles, so it is
+    /// the source. The gateway serves one profile and stands in only when no
+    /// dashboard is configured — labelled `oneGatewayProfile`, because a list
+    /// missing every named bot's routines must not be drawn as if it were
+    /// everything. Errors travel; they are not flattened into an empty list.
+    func scheduledRoutines() async throws -> RoutineListing {
+        try await routineCatalog.everything()
+    }
+
+    /// The gateway's own profile. Kept for callers that mean this one gateway
+    /// rather than the agent as a whole.
+    func gatewayJobs() async throws -> [JobRow] {
         try await client.jobs(manifest)
+    }
+
+    private var routineCatalog: RoutineCatalog {
+        RoutineCatalog(
+            across: dashboardReady ? dashboard : nil,
+            gateway: GatewayRoutines(client: client, manifest: manifest)
+        )
     }
 
     func sessions() async throws -> (rows: [SessionRow], complete: Bool) {
@@ -505,7 +525,7 @@ final class AppStore {
     /// by a UUID this app invented, and since the server assigns its own id
     /// the same routine came back twice for ever.
     func routines(for bot: String) async throws -> [JobRow] {
-        try await dashboard.routines(for: bot)
+        try await routineCatalog.routines(for: bot)
     }
 
     /// Every routine grouped by its bot, in one request rather than one per

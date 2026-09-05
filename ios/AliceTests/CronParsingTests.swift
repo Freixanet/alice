@@ -2,20 +2,42 @@ import XCTest
 @testable import Alice
 
 final class CronParsingTests: XCTestCase {
-    func testCurrentHermesCronRowUsesPlainSchedule() throws {
+    /// The real row for `c3cf075a5b68` stores `schedule` as an object and
+    /// sends its times as ISO-8601 with an offset — not the plain string and
+    /// Unix seconds an earlier fixture here assumed. Both are accepted; this
+    /// asserts the one this installation actually sends.
+    func testTheStoredScheduleObjectAndIsoTimesParse() throws {
         let row: [String: Any] = [
             "id": "c3cf075a5b68",
-            "name": "Radar IA daily briefing",
-            "schedule": "0 10 * * *",
+            "name": "Radar IA — informe diario",
+            "schedule": ["kind": "cron", "expr": "0 10 * * *", "display": "daily at 10am"],
+            "schedule_display": "daily at 10am",
             "enabled": true,
             "profile": "radar-ia",
-            "next_run_at": 1_788_600_000.0,
+            "next_run_at": "2026-09-05T10:00:00+02:00",
+            "last_run_at": NSNull(),
         ]
 
         let job = try XCTUnwrap(HermesClient.jobRow(from: row))
         XCTAssertEqual(job.id, "c3cf075a5b68")
-        XCTAssertEqual(job.schedule, "0 10 * * *")
+        XCTAssertEqual(job.schedule, "daily at 10am")
         XCTAssertTrue(job.enabled)
+        XCTAssertNotNil(job.nextRun)
+        XCTAssertNil(job.lastRun)
+    }
+
+    /// A plain-string schedule and Unix seconds, which other Hermes surfaces
+    /// send. Tolerated, not this one's contract.
+    func testPlainStringScheduleAndUnixTimesAlsoParse() throws {
+        let row: [String: Any] = [
+            "id": "other",
+            "schedule": "0 10 * * *",
+            "enabled": true,
+            "next_run_at": 1_788_600_000.0,
+        ]
+
+        let job = try XCTUnwrap(HermesClient.jobRow(from: row))
+        XCTAssertEqual(job.schedule, "0 10 * * *")
         XCTAssertNotNil(job.nextRun)
     }
 
@@ -112,9 +134,11 @@ final class CronGroupingTests: XCTestCase {
         XCTAssertEqual(grouped["chollometro"]?.map(\.id), ["aa11bb22cc33"])
     }
 
-    /// The shape this agent actually serves: `api/crons?all_profiles=1`
-    /// answers `{"jobs": [...]}` with `owner_profile` set per row.
-    func testGroupsByOwnerProfile() {
+    /// Legacy shape. The web UI's own listing sets `owner_profile` per row;
+    /// the agent Alice talks to does not send that field at all. Kept so a
+    /// dashboard pointed at the web UI still groups, not as this
+    /// installation's contract.
+    func testLegacyOwnerProfilePayloadStillGroups() {
         let grouped = DashboardClient.group([
             ["id": "a", "schedule": "0 10 * * *", "owner_profile": "radar-ia"],
             ["id": "b", "schedule": "0 9 * * *", "owner_profile": "chollometro"],
@@ -125,11 +149,11 @@ final class CronGroupingTests: XCTestCase {
         XCTAssertEqual(grouped["radar-ia"]?.map(\.id), ["a", "c"])
     }
 
-    /// `owner_profile` says whose the routine is; the persisted `profile` says
-    /// where it runs, and the two differ for a job that executes elsewhere.
-    /// Grouping by the wrong one files the routine under a bot that does not
-    /// own it, and the owner's screen shows nothing.
-    func testOwnerWinsOverTheExecutionProfile() {
+    /// Legacy shape again, and the reason `owner_profile` leads the chain: in
+    /// the web UI's listing the persisted `profile` says where a job executes,
+    /// which can be another home entirely, while `owner_profile` says whose it
+    /// is. This agent never sends both, so the case is only reachable there.
+    func testLegacyOwnerProfileWinsOverTheExecutionProfile() {
         let grouped = DashboardClient.group([
             [
                 "id": "a", "schedule": "0 10 * * *",
@@ -141,9 +165,9 @@ final class CronGroupingTests: XCTestCase {
         XCTAssertNil(grouped["default"])
     }
 
-    /// The newer upstream shape, which annotates rows with `profile` and
-    /// `profile_name` and no owner at all.
-    func testFallsBackToProfileWhenNoOwnerIsSent() {
+    /// This installation's actual shape: `_annotate_cron_job` sets `profile`
+    /// and `profile_name` to the same canonical profile name and no owner.
+    func testGroupsByProfileWhenNoOwnerIsSent() {
         let grouped = DashboardClient.group([
             [
                 "id": "a", "schedule": "0 10 * * *",
@@ -154,8 +178,8 @@ final class CronGroupingTests: XCTestCase {
         XCTAssertEqual(grouped["radar-ia"]?.count, 1)
     }
 
-    /// An empty owner is not an owner. It used to key the whole dictionary
-    /// under "", where nothing looks.
+    /// An empty ownership field is not an owner. It used to key the whole
+    /// dictionary under "", where nothing looks.
     func testSkipsRowsWithNoUsableOwner() {
         let grouped = DashboardClient.group([
             ["id": "a", "owner_profile": "", "profile": "radar-ia"],
