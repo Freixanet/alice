@@ -60,7 +60,7 @@ actor DashboardClient {
 
     var isConfigured: Bool { credentials != nil }
 
-    /// Reads a collection, signing in first and once more if the session has
+    /// Reads an object, signing in first and once more if the session has
     /// lapsed — they are stateless and do not survive the agent restarting.
     func get(_ path: String) async throws -> [String: Any] {
         guard credentials != nil else { throw Failure.notConfigured }
@@ -71,6 +71,21 @@ actor DashboardClient {
             signedIn = false
             try await signIn()
             return try await fetch(path)
+        }
+    }
+
+    /// Some dashboard routes — notably current Hermes' cron list — return a
+    /// top-level JSON array rather than an object. Keep that shape instead of
+    /// coercing it to an empty dictionary and making the UI say "no routines".
+    func getRows(_ path: String) async throws -> [[String: Any]] {
+        guard credentials != nil else { throw Failure.notConfigured }
+        if !signedIn { try await signIn() }
+        do {
+            return try await fetchRows(path)
+        } catch Failure.http(401, _) {
+            signedIn = false
+            try await signIn()
+            return try await fetchRows(path)
         }
     }
 
@@ -133,6 +148,27 @@ actor DashboardClient {
             throw Failure.http(http.statusCode, detail: Self.detail(from: data))
         }
         return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    private func fetchRows(_ path: String) async throws -> [[String: Any]] {
+        guard let credentials, let url = Self.url(credentials.url, path) else {
+            throw Failure.notConfigured
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        let (data, response) = try await send(request)
+        guard let http = response as? HTTPURLResponse else { throw Failure.unreachable }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Failure.http(http.statusCode, detail: Self.detail(from: data))
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        if let rows = object as? [[String: Any]] { return rows }
+        if let map = object as? [String: Any] {
+            for key in ["jobs", "items", "data", "results"] {
+                if let rows = map[key] as? [[String: Any]] { return rows }
+            }
+        }
+        return []
     }
 
     /// Best-effort read of whatever the dashboard put in the body.
@@ -311,65 +347,57 @@ extension DashboardClient {
     }
 
     /// The scheduled jobs belonging to one bot.
-    ///
-    /// The dashboard's copy of the cron list carries a `profile` on each job,
-    /// which the gateway's does not — so this is the only place a routine can
-    /// be tied to the bot that owns it.
-    /// One bot's routines.
     func routines(for profile: String) async throws -> [JobRow] {
         try await allRoutines()[profile] ?? []
     }
 
-    /// Every routine, grouped by the bot that owns it.
+    /// Every routine grouped by the profile that owns it.
     ///
-    /// Two things this had wrong, and between them every bot reported having
-    /// no routines however many it had. The listing is `api/crons`, and
-    /// without `all_profiles` it answers only for whichever profile the
-    /// dashboard is scoped to — every other bot's were simply not in the
-    /// reply. And a job's own `profile` field says where it *executes*, which
-    /// a Hermes keeping its profiles isolated leaves null; the field that
-    /// says whose it is is `owner_profile`.
+    /// Current Hermes exposes a top-level array at
+    /// `/api/cron/jobs?profile=all`, annotating each row with `profile` and
+    /// `profile_name`. Older Alice asked `/api/crons?all_profiles=1` and then
+    /// tried to decode the array as a dictionary, which turned every real
+    /// routine into an empty list. Keep the old route only as a compatibility
+    /// fallback.
     func allRoutines() async throws -> [String: [JobRow]] {
-        let object = try await get("api/crons?all_profiles=1")
-        let rows = (object["jobs"] as? [[String: Any]]) ?? []
+        let paths = ["api/cron/jobs?profile=all", "api/crons?all_profiles=1"]
+        var rows: [[String: Any]] = []
+        var hadSuccessfulRead = false
+        var lastFailure: Error?
+
+        for path in paths {
+            do {
+                let found = try await getRows(path)
+                hadSuccessfulRead = true
+                rows = found
+                if !found.isEmpty { break }
+            } catch let failure as Failure {
+                if case let .http(status, _) = failure, status == 404 {
+                    lastFailure = failure
+                    continue
+                }
+                throw failure
+            }
+        }
+        if !hadSuccessfulRead, let lastFailure { throw lastFailure }
+
         var grouped: [String: [JobRow]] = [:]
         for row in rows {
             guard let owner = (row["owner_profile"] as? String)
-                    ?? (row["profile"] as? String),
-                  let job = Self.job(from: row)
+                    ?? (row["profile"] as? String)
+                    ?? (row["profile_name"] as? String),
+                  let job = HermesClient.jobRow(from: row)
             else { continue }
             grouped[owner, default: []].append(job)
         }
         return grouped
     }
 
-    private static func job(from row: [String: Any]) -> JobRow? {
-        guard let id = row["id"] as? String else { return nil }
-        let schedule = row["schedule"] as? [String: Any]
-        return JobRow(
-            id: id,
-            name: (row["name"] as? String) ?? id,
-            prompt: (row["prompt"] as? String) ?? "",
-            schedule: (row["schedule_display"] as? String)
-                ?? (schedule?["display"] as? String)
-                ?? (schedule?["expr"] as? String) ?? "",
-            enabled: (row["enabled"] as? Bool) ?? false,
-            lastStatus: row["last_status"] as? String,
-            lastError: (row["last_error"] as? String).flatMap {
-                $0.isEmpty ? nil : $0
-            },
-            lastRun: HermesClient.date(row["last_run_at"]),
-            nextRun: HermesClient.date(row["next_run_at"])
-        )
-    }
-
     /// Creates a scheduled job owned by one bot.
     ///
-    /// Two things the first version got wrong, both of which made every
-    /// create fail with a 422 that was then swallowed: `schedule` is a plain
-    /// string, not `{"expr": …}`, and the profile is a query parameter — the
-    /// body has no field for it, so a job sent that way would have landed on
-    /// whichever profile the dashboard was scoped to.
+    /// `schedule` is a plain string and the profile is a query parameter; the
+    /// body has no field for it. That keeps the routine in the selected
+    /// profile's isolated cron store.
     func createRoutine(
         for profile: String, name: String, prompt: String, schedule: String
     ) async throws {
