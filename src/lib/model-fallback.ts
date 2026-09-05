@@ -8,6 +8,8 @@ export type ModelFallbackNotice = {
   model: string;
   provider?: string;
   reason: "incompatible";
+  /** Distinguishes repeated fallbacks of the same retried response. */
+  occurredAt: number;
 };
 
 export type ModelFallbackResolution = {
@@ -142,6 +144,7 @@ export async function resolveChatModelFallback(options: {
         : {}),
       model: HERMES_FALLBACK_MODEL,
       reason: "incompatible",
+      occurredAt: Date.now(),
     },
   };
 }
