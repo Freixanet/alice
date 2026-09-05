@@ -1,47 +1,56 @@
 # Radar IA
 
-Open **Scheduled tasks / Jobs → Radar IA**. The initial requested schedule is daily
-at **10:00 Europe/Madrid**. Change the time and named time zone, then select
-**Configure with Hermes**. On web and iOS this opens a new chat with an editable
-setup request; send it to your connected Hermes to perform setup or update an
-existing routine.
+Radar IA is a **Hermes bot/profile**, not a special scheduled-task type. Its stable
+profile name is `radar-ia`; it owns standing editorial instructions, its normal bot
+chat and sessions, and the routine that produces the daily briefing.
 
-The form is a setup assistant, not a scheduler. Its values are proposed settings,
-not saved job state. The request requires Hermes to read back the actual job,
-effective time zone, delivery destination and next run before claiming success.
-The selected time starts research; delivery follows completion, rather than
-guaranteeing a completed report at precisely that minute.
+## Native iOS
 
-Once Hermes confirms setup, select the owning profile and refresh Scheduled tasks.
-Use **Edit** where the connected Hermes exposes writable scheduled tasks to change
-the routine's hour, **Pause/Resume**, or **Run now**. Reopen the setup assistant to
-request a time-zone change. It must find and update the existing Radar IA routine
-rather than create another one. The current native iOS Jobs surface remains
-read-only for existing jobs; Radar IA setup hands the request to chat instead of
-pretending to mutate a scheduler API the phone has not verified.
+Alice no longer hard-codes Radar IA into **Jobs**. After upgrading from the old
+setup-card implementation, Alice offers to create the real `radar-ia` profile when
+the Hermes dashboard is reachable. **Create & Configure**:
 
-## Compatibility
+1. creates the profile if it does not already exist;
+2. installs the Radar IA SOUL when the profile has no standing instructions;
+3. opens the ordinary Radar IA bot conversation;
+4. sends one setup request from that bot so Hermes can inspect the installed
+   runtime and create or update the bot-owned daily routine safely.
 
-The upstream dashboard create operation passes a schedule string to the scheduler;
-the inspected implementation resolves cron expressions in the Hermes profile's
-configured zone. Alice must not invent a per-job `timezone` field or a `CRON_TZ`
-prefix, nor turn Barcelona time into a fixed UTC offset. The setup request asks
-Hermes to check its installed version and, when necessary, use an isolated
-`radar-ia` profile without changing other routines' time zones.
+After that, Radar IA appears in **Bots** and behaves like every other Hermes bot.
+**Jobs** shows only jobs Hermes actually reports; if Radar IA has a working daily
+routine, that routine appears there naturally instead of through a synthetic UI
+row.
 
-The runtime needs current web search and page reading, a working model, persistent
-history, an active scheduler and a verified way to deliver or read reports in
-Alice. `local` delivery alone only saves output; it does not prove Alice can show
-it. If delivery is unavailable, setup must explain the missing destination instead
-of inventing support or choosing an external service.
+The requested default is **10:00 Europe/Madrid**. This time is the start of
+research; delivery follows when the report is complete.
 
-The editorial policy includes original sources, evidence qualification, event-date
-checks, deduplication, catch-up after failures, transparent partial coverage, and
-short daily reports even when nothing important changed. These are instructions
-to Hermes; the UI cannot guarantee that a model follows them. No live schedule is
-installed merely by deploying this UI change.
+## Runtime verification
 
-Upstream references inspected:
+Alice deliberately does not manufacture a per-job timezone field. Hermes versions
+can derive cron time from the effective profile/runtime timezone, and multi-profile
+scheduler behavior has changed across releases. The setup request therefore makes
+Radar IA inspect the installed version, reuse/update an existing Radar routine by
+identifier, verify ownership by `radar-ia`, and read back the actual state before
+claiming success.
 
-- https://github.com/NousResearch/hermes-agent/blob/main/cron/jobs.py
-- https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/web_server_cron.py
+It must not create a second Radar profile, duplicate the routine, invent a
+`timezone` API field or `CRON_TZ` prefix, or convert Barcelona time to a fixed UTC
+offset. If the installed runtime cannot guarantee the requested local time, it must
+report that limitation rather than presenting the schedule as correct.
+
+The runtime also needs current web search/page reading, a working model, persistent
+history, an active scheduler and a verified path for the result to be readable from
+Alice. Saving output locally is not by itself proof of delivery to Alice.
+
+## Editorial behavior
+
+The Radar IA SOUL covers current models and capabilities, tools, agents,
+automation, Hermes/Alice, research, open models/local AI, prices, licenses and
+availability. It prioritizes original/current sources, checks event dates and
+product availability, qualifies evidence, deduplicates repeated announcements,
+recovers missed important items, and produces a short daily Spanish briefing even
+when there are no major developments.
+
+The web client may still expose an assisted setup entry under scheduled tasks, but
+that setup targets the same `radar-ia` Hermes profile. It does not change the data
+model: Radar IA is the bot; the cron entry is only one routine owned by that bot.
