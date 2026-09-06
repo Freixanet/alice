@@ -31,6 +31,16 @@ describe("claim store", () => {
     expect(store.consume("tok")).toBe("expired");
   });
 
+  it("quantizes expiry to the exact whole second carried by the QR", () => {
+    let now = 1_000_123;
+    const store = createClaimStore({ ttlMs: 5_000, now: () => now });
+    const expiresAt = store.issue("tok");
+
+    expect(expiresAt).toBe(1_005_000);
+    now = 1_005_000;
+    expect(store.consume("tok")).toBe("expired");
+  });
+
   it("reports unknown tokens without touching the store", () => {
     const store = createClaimStore();
     expect(store.consume("never-issued")).toBe("unknown");
