@@ -13,7 +13,7 @@ struct PairingClient {
     }
 
     enum Failure: Error, LocalizedError {
-        /// 410 — the QR sat too long or someone paired already.
+        /// 410/404 — the QR sat too long or someone paired already.
         case stale
         /// 403 — this network may not claim; the helper only serves the tailnet.
         case forbidden
@@ -30,7 +30,7 @@ struct PairingClient {
             case .forbidden:
                 "Your Hermes accepts pairing requests from its own network only. Join the same Tailscale and try again."
             case .badResponse:
-                "Hermes sent something Alice could not read."
+                "Hermes sent pairing information Alice could not safely use."
             case let .http(status):
                 "Hermes answered with an unexpected error (\(status))."
             case .unreachable:
@@ -50,11 +50,17 @@ struct PairingClient {
             self.session = session
         } else {
             // A pairing claim is one small request; nothing here needs to
-            // outlive the sheet that started it.
+            // outlive the sheet that started it. Redirects are refused: the QR
+            // named the one endpoint allowed to receive its bearer token.
             let configuration = URLSessionConfiguration.ephemeral
             configuration.timeoutIntervalForRequest = 15
             configuration.timeoutIntervalForResource = 30
-            self.session = URLSession(configuration: configuration)
+            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+            self.session = URLSession(
+                configuration: configuration,
+                delegate: PairingNoRedirects(),
+                delegateQueue: nil
+            )
         }
     }
 
@@ -62,6 +68,8 @@ struct PairingClient {
         var request = URLRequest(url: payload.claimURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.httpBody = try JSONEncoder().encode(
             ClaimRequest(token: payload.token, deviceName: deviceName)
         )
@@ -84,20 +92,60 @@ struct PairingClient {
         default: throw Failure.http(status: http.statusCode)
         }
 
+        // The response carries long-lived credentials. Keep the accepted shape
+        // deliberately small and validate every endpoint before any of it is
+        // committed to AppStore/Keychain.
+        guard data.count <= 64 * 1024 else { throw Failure.badResponse }
         let body: ClaimResponse
         do {
             body = try JSONDecoder().decode(ClaimResponse.self, from: data)
         } catch {
             throw Failure.badResponse
         }
+
+        guard let gatewayURL = validatedServiceURL(
+            body.gateway.url, relativeToClaim: payload.claimURL
+        ), !body.gateway.key.isEmpty else {
+            throw Failure.badResponse
+        }
+
+        var dashboardURL: String?
+        var dashboardUsername: String?
+        var dashboardPassword: String?
+        if let dashboard = body.dashboard {
+            guard let validated = validatedServiceURL(
+                dashboard.url, relativeToClaim: payload.claimURL
+            ), !dashboard.username.isEmpty, !dashboard.password.isEmpty else {
+                throw Failure.badResponse
+            }
+            dashboardURL = validated.absoluteString
+            dashboardUsername = dashboard.username
+            dashboardPassword = dashboard.password
+        }
+
+        let profile = body.profile?.trimmingCharacters(in: .whitespacesAndNewlines)
         return Claimed(
-            profileName: body.profile ?? payload.profileName,
-            gatewayURLText: body.gateway.url,
+            profileName: profile?.isEmpty == false ? profile : payload.profileName,
+            gatewayURLText: gatewayURL.absoluteString,
             gatewayKey: body.gateway.key,
-            dashboardURLText: body.dashboard?.url,
-            dashboardUsername: body.dashboard?.username,
-            dashboardPassword: body.dashboard?.password
+            dashboardURLText: dashboardURL,
+            dashboardUsername: dashboardUsername,
+            dashboardPassword: dashboardPassword
         )
+    }
+
+    /// Pairing v1 is one Mac. The claim endpoint may use a different port from
+    /// the gateway/dashboard, but it must not hand Alice off to another host.
+    private func validatedServiceURL(_ text: String, relativeToClaim claim: URL) -> URL? {
+        guard let url = URL(string: text),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = url.host?.lowercased(),
+              host == claim.host?.lowercased(),
+              url.user == nil,
+              url.password == nil
+        else { return nil }
+        return url
     }
 
     /// The claim request is a fixed little shape; keys are the contract's.
@@ -138,5 +186,20 @@ struct PairingClient {
         case .notConnectedToInternet: return .offline
         default: return .unreachable
         }
+    }
+}
+
+/// A pairing token is a bearer credential. Unlike an ordinary web request,
+/// there is no useful redirect here: the QR already named its destination.
+/// Refusing every redirect means a 30x cannot walk that token to another host.
+private final class PairingNoRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
     }
 }
