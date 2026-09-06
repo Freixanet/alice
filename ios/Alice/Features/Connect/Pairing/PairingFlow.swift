@@ -22,9 +22,8 @@ final class PairingFlow {
         case failed(message: String, retryable: Bool)
     }
 
-    /// Declared to the Hermes at claim time. The system's real device name
-    /// needs an entitlement Alice does not have, so this is a plain, editable
-    /// name — better an honest "iPhone" than a generic lie.
+    /// Declared to Hermes at claim time. The system's real device name needs
+    /// an entitlement Alice does not have, so this is a plain, editable name.
     var deviceName: String {
         didSet { defaults.set(deviceName, forKey: Self.deviceNameKey) }
     }
@@ -63,7 +62,7 @@ final class PairingFlow {
     }
 
     func run(store: AppStore) async {
-        guard payload != nil else { return }
+        guard let payload else { return }
 
         // A previous claim may already have succeeded. Reuse it: asking the
         // helper for it again can only return "used" and turns a recoverable
@@ -76,14 +75,12 @@ final class PairingFlow {
         guard stage == .confirming || stage.canRetry else { return }
         stage = .claiming
 
-        let name = deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if name.isEmpty { deviceName = "iPhone" }
+        let trimmed = deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let claimName = trimmed.isEmpty ? "iPhone" : String(trimmed.prefix(64))
+        if deviceName != claimName { deviceName = claimName }
 
         do {
-            let result = try await client.claim(
-                payload!,
-                deviceName: deviceName
-            )
+            let result = try await client.claim(payload, deviceName: claimName)
             claimed = result
             await connect(result, store: store)
         } catch {
