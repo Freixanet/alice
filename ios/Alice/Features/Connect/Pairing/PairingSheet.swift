@@ -17,15 +17,27 @@ struct PairingForm: View {
     var body: some View {
         Form {
             if let flow {
-                switch flow.stage {
-                case .confirming:
-                    confirmation(flow)
-                case .claiming, .connecting:
-                    progress(flow)
-                case let .connected(profile, dashboardWarning):
-                    connected(flow, profile: profile, dashboardWarning: dashboardWarning)
-                case let .failed(message, retryable):
-                    failure(flow, message: message, retryable: retryable)
+                // A system-camera deep link can arrive while Alice is already
+                // connected even though Connect hides the scanner then. Never
+                // let a QR silently replace long-lived credentials: replacing
+                // a Hermes starts with an explicit disconnect in Connect.
+                if store.isConnected, flow.stage == .confirming {
+                    alreadyConnected
+                } else {
+                    switch flow.stage {
+                    case .confirming:
+                        confirmation(flow)
+                    case .claiming, .connecting:
+                        progress(flow)
+                    case let .connected(profile, dashboardWarning):
+                        connected(
+                            flow,
+                            profile: profile,
+                            dashboardWarning: dashboardWarning
+                        )
+                    case let .failed(message, retryable):
+                        failure(flow, message: message, retryable: retryable)
+                    }
                 }
             } else {
                 Text("This pairing code is incomplete or damaged.")
@@ -40,6 +52,17 @@ struct PairingForm: View {
     }
 
     // MARK: - Stages
+
+    private var alreadyConnected: some View {
+        Section {
+            Label("Alice is already connected to Hermes.", systemImage: "checkmark.circle.fill")
+            Text("To pair a different Hermes, close this screen, disconnect the current one in Connect, then scan the new QR again.")
+                .foregroundStyle(.secondary)
+            Button("Done") { onDone() }
+        } header: {
+            Text("Already connected")
+        }
+    }
 
     private func confirmation(_ flow: PairingFlow) -> some View {
         Section {
