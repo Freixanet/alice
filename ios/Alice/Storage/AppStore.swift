@@ -526,7 +526,7 @@ final class AppStore {
     /// available for callers that would rather show something than nothing —
     /// but they have to choose that.
     func bots() async throws -> [BotRow] {
-        var list = try await dashboard.bots()
+        var list = Self.botRoster(from: try await dashboard.bots())
         for index in list.indices {
             if let custom = botCustomNames[list[index].name] {
                 list[index].displayName = custom
@@ -537,6 +537,14 @@ final class AppStore {
         // that fire while somebody is typing a mention.
         if list != cachedBots { cachedBots = list }
         return list
+    }
+
+    /// The bot roster is every NAMED Hermes profile. The main profile — the
+    /// one `is_default` marks, the one Home chat talks to — is not a bot and
+    /// must never appear as one: bots are secondary resources, discovered
+    /// here and addressed explicitly, never the Home connection's identity.
+    nonisolated static func botRoster(from profiles: [BotRow]) -> [BotRow] {
+        profiles.filter { !$0.isDefault }
     }
     /// The bot's routines, as the agent has them.
     ///

@@ -109,7 +109,7 @@ final class PairingFlow {
             password: claimed.dashboardPassword ?? ""
         )
         stage = .connected(
-            profile: claimed.profileName,
+            profile: claimed.profileDisplayName ?? claimed.profileName,
             dashboardWarning: warning
         )
     }
@@ -161,7 +161,7 @@ final class PairingFlow {
         }
 
         stage = .connected(
-            profile: claimed.profileName,
+            profile: claimed.profileDisplayName ?? claimed.profileName,
             dashboardWarning: dashboardWarning
         )
     }

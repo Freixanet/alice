@@ -5,6 +5,7 @@ import Foundation
 struct PairingClient {
     struct Claimed: Equatable {
         let profileName: String?
+        let profileDisplayName: String?
         let gatewayURLText: String
         let gatewayKey: String
         let dashboardURLText: String?
@@ -26,7 +27,7 @@ struct PairingClient {
         var errorDescription: String? {
             switch self {
             case .stale:
-                "That QR has expired or was already used. Run the pairing command on your Hermes again for a fresh one."
+                "That QR has expired or was already used. Open the Hermes dashboard and generate a fresh code (Pairing → Connect Alice)."
             case .forbidden:
                 "Your Hermes accepts pairing requests from its own network only. Join the same Tailscale and try again."
             case .badResponse:
@@ -127,8 +128,11 @@ struct PairingClient {
         }
 
         let profile = body.profile?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = body.profileDisplayName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return Claimed(
             profileName: profile?.isEmpty == false ? profile : payload.profileName,
+            profileDisplayName: displayName?.isEmpty == false ? displayName : nil,
             gatewayURLText: gatewayURL.absoluteString,
             gatewayKey: body.gateway.key,
             dashboardURLText: dashboardURL,
@@ -180,8 +184,16 @@ struct PairingClient {
         }
 
         let profile: String?
+        let profileDisplayName: String?
         let gateway: Gateway
         let dashboard: Dashboard?
+
+        enum CodingKeys: String, CodingKey {
+            case profile
+            case profileDisplayName = "profile_display_name"
+            case gateway
+            case dashboard
+        }
     }
 
     /// Same mapping HermesClient uses for its own requests, so a claim that

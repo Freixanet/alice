@@ -6,7 +6,7 @@ import XCTest
 /// errors to, and that the request carries the one-time token.
 final class PairingClientTests: XCTestCase {
     private let payload = try! PairingPayload.parse(
-        "alice://pair?v=1&p=\(PairingClientTests.base64URL(#"{"c":"http://100.67.213.42:8643/claim","t":"tok","e":9999999999,"pr":"radar-ia"}"#))",
+        "alice://pair?v=1&p=\(PairingClientTests.base64URL(#"{"c":"http://100.67.213.42:8643/claim","t":"tok","e":9999999999,"pr":"default"}"#))",
         now: Date(timeIntervalSince1970: 1)
     )
 
@@ -32,7 +32,8 @@ final class PairingClientTests: XCTestCase {
     }
 
     private let okBody = """
-    {"profile":"radar-ia",
+    {"profile":"default",
+     "profile_display_name":"Alice",
      "gateway":{"url":"http://100.67.213.42:8642","key":"gk-123"},
      "dashboard":{"url":"http://100.67.213.42:9119","username":"alice","password":"pw-123"}}
     """
@@ -48,7 +49,8 @@ final class PairingClientTests: XCTestCase {
         XCTAssertTrue(body.contains("\"token\":\"tok\""), body)
         XCTAssertTrue(body.contains("\"device_name\":\"iPhone de prueba\""), body)
 
-        XCTAssertEqual(claimed.profileName, "radar-ia")
+        XCTAssertEqual(claimed.profileName, "default")
+        XCTAssertEqual(claimed.profileDisplayName, "Alice")
         XCTAssertEqual(claimed.gatewayURLText, "http://100.67.213.42:8642")
         XCTAssertEqual(claimed.gatewayKey, "gk-123")
         XCTAssertEqual(claimed.dashboardURLText, "http://100.67.213.42:9119")
@@ -59,15 +61,16 @@ final class PairingClientTests: XCTestCase {
     func testClaimWithoutDashboardLeavesItNil() async throws {
         let claimed = try await client { _ in
             (200, Data("""
-            {"profile":null,"gateway":{"url":"http://100.67.213.42:8642","key":"k"},"dashboard":null}
+            {"profile":null,"profile_display_name":"  ","gateway":{"url":"http://100.67.213.42:8642","key":"k"},"dashboard":null}
             """.utf8))
         }.claim(payload, deviceName: "iPhone")
 
         XCTAssertNil(claimed.dashboardURLText)
         XCTAssertNil(claimed.dashboardUsername)
         XCTAssertNil(claimed.dashboardPassword)
+        XCTAssertNil(claimed.profileDisplayName)
         // A null profile falls back to what the QR itself advertised.
-        XCTAssertEqual(claimed.profileName, "radar-ia")
+        XCTAssertEqual(claimed.profileName, "default")
     }
 
     func testUsedOrExpiredQRReadsAsStale() async {

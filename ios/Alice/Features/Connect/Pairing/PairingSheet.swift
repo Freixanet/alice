@@ -145,7 +145,7 @@ struct PairingForm: View {
             Text(
                 retryable
                     ? "Check the connection and try again."
-                    : "This QR cannot be retried. Run the pairing command on your Hermes again for a fresh code."
+                    : "This QR cannot be retried. Open the Hermes dashboard and generate a fresh code (Pairing → Connect Alice)."
             )
         }
     }
