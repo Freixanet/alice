@@ -22,6 +22,7 @@ struct ConnectView: View {
             Form {
                 if store.isConnected {
                     connectionSummary
+                    pairing
                     extraServices
                     technicalDetails
                     disconnect
@@ -46,8 +47,10 @@ struct ConnectView: View {
         }
     }
 
-    /// The normal path. A reader only needs to know that the Mac has a QR;
-    /// addresses, ports and secrets are implementation detail.
+    /// The normal path. Keep it available even when Alice is already connected:
+    /// a QR is also the clean way to re-pair or switch Hermes without first
+    /// destroying a working connection. The pairing confirmation owns the
+    /// replacement decision; merely opening the scanner changes nothing.
     private var pairing: some View {
         Section {
             Button {
@@ -56,9 +59,13 @@ struct ConnectView: View {
                 Label("Scan pairing QR", systemImage: "qrcode.viewfinder")
             }
         } header: {
-            Text("Connect to Hermes")
+            Text(store.isConnected ? "Pair or change Hermes" : "Connect to Hermes")
         } footer: {
-            Text("Show the pairing QR on the Mac running Hermes, then scan it here. Alice configures the connection automatically.")
+            Text(
+                store.isConnected
+                    ? "Scan a pairing QR to re-pair or switch Hermes. Your current connection stays in place unless you confirm the new pairing."
+                    : "Show the pairing QR on the Mac running Hermes, then scan it here. Alice configures the connection automatically."
+            )
         }
     }
 
