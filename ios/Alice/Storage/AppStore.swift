@@ -78,7 +78,25 @@ final class AppStore {
     var draftAttachments: [Attachment] = []
     private(set) var isSending = false
 
+    /// Temporary. Keeps this build to loading state and importing recovered
+    /// history: no bot-chat sync, no socket, no sends. It exists so a recovery
+    /// on the phone cannot be confused by the unvalidated WebSocket path, and
+    /// comes out once that path is proven.
+    #if DEBUG
+    nonisolated static let recoverySafeMode = true
+    #else
+    nonisolated static let recoverySafeMode = false
+    #endif
+
     private let client = HermesClient()
+    /// One socket for the whole app, built lazily once the dashboard is
+    /// connected. The protocol addresses a session per call, so this is a
+    /// transport, not a single global conversation — per-chat streaming can
+    /// be layered on it without another transport rewrite.
+    private var rpcClient: HermesRPCClient?
+    /// Why a bot chat's transcript could not be re-read, keyed by conversation.
+    /// Present means the list on screen may be behind the agent's.
+    var botChatFailure: [String: String] = [:]
     private let dashboard = DashboardClient()
     private let defaults = UserDefaults.standard
     private var streamTask: Task<Void, Never>?
@@ -205,6 +223,7 @@ final class AppStore {
         selectedProvider = defaults.string(forKey: Keys.provider)
         recentModels = defaults.stringArray(forKey: Keys.recentModels) ?? []
         loadConversations()
+        restoreSalvagedConversationsIfPossible()
         activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
     }
 
@@ -859,10 +878,31 @@ final class AppStore {
 
     // MARK: - Conversations
 
+    /// Recovered threads filed under one bot, newest first.
+    ///
+    /// They have no routing identity, so `openBotConversation` — which looks a
+    /// bot up by the profile it sends to — will never find them. Without a
+    /// list like this they are filed correctly and reachable from nowhere.
+    func recoveredHistory(for profile: String) -> [Conversation] {
+        conversations
+            .filter { $0.isRecoveredHistory && $0.legacyBotName == profile }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Opens a conversation that already exists, by id.
+    func openConversation(_ id: String) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        conversations[index].openedAt = Date()
+        activeID = id
+        persistConversations()
+    }
+
     /// The bot conversation most recently opened, if there is one.
+    /// Deliberately the live one: coming back to "the bot you were talking
+    /// to" means the chat you can talk in, never a recovered transcript.
     var lastBotConversation: Conversation? {
         conversations
-            .filter { $0.isBotChat }
+            .filter { $0.isCanonicalBotChat || $0.isChannel == true }
             .max { ($0.openedAt ?? $0.updatedAt) < ($1.openedAt ?? $1.updatedAt) }
     }
 
@@ -979,27 +1019,224 @@ final class AppStore {
     /// settled a frame before the page is dismissed.
     var botsExitLeading = false
 
+    /// Opens a bot's chat, then reconciles it with the agent's own.
+    ///
+    /// The local conversation is a cache, so it opens at once from what is
+    /// already on the phone and the canonical transcript is folded in when it
+    /// arrives. Hermes owns the contents: a cron report delivered to the bot's
+    /// forever-chat while the app was closed shows up on this read, because
+    /// this reads that chat rather than a private copy Alice kept.
     @discardableResult
     func openBotConversation(for bot: BotRow) -> String {
+        let id: String
         if let existing = conversations.first(where: { $0.botName == bot.name }) {
             activeID = existing.id
-            return existing.id
+            id = existing.id
+        } else {
+            let now = Date()
+            let chat = Conversation(
+                id: UUID().uuidString,
+                title: bot.displayName,
+                createdAt: now,
+                updatedAt: now,
+                botName: bot.name
+            )
+            conversations.insert(chat, at: 0)
+            activeID = chat.id
+            persistConversations()
+            id = chat.id
         }
-        let now = Date()
-        let chat = Conversation(
-            id: UUID().uuidString,
-            title: bot.displayName,
-            createdAt: now,
-            updatedAt: now,
-            botName: bot.name
+        if !Self.recoverySafeMode {
+            Task { [weak self] in await self?.refreshBotChat(id) }
+        }
+        return id
+    }
+
+    /// Folds the bot's canonical Hermes transcript into the local cache.
+    ///
+    /// Safe to call repeatedly and on every open: the merge is keyed on the
+    /// agent's message ids, so a report already shown is not shown twice. A
+    /// failure leaves the cache exactly as it was and reports itself — an
+    /// unreachable agent is not a bot with nothing to say.
+    func refreshBotChat(_ conversationID: String) async {
+        if Self.recoverySafeMode { return }
+        // Only a canonical bot chat has a remote transcript to read. Recovered
+        // history is local by definition and has no session to refresh from.
+        guard let index = conversations.firstIndex(where: { $0.id == conversationID }),
+              let profile = conversations[index].routedBotName,
+              conversations[index].isCanonicalBotChat
+        else { return }
+        guard let source = await botChatSource() else {
+            botChatFailure[conversationID] =
+                "Connect the Hermes dashboard to see this bot's own chat."
+            return
+        }
+        let sync = BotChatSync(source: source)
+        do {
+            let updated = try await sync.refresh(
+                profile: profile, into: conversations[index]
+            )
+            guard let current = conversations.firstIndex(where: { $0.id == conversationID })
+            else { return }
+            conversations[current].hermesSessionID = updated.hermesSessionID
+            conversations[current].messages = BotChatSync.merge(
+                updated.messages.compactMap(Self.turn(from:)),
+                into: conversations[current].messages
+            )
+            botChatFailure[conversationID] = nil
+            persistConversations()
+        } catch {
+            // Keep what is on screen. The reason is recorded so the chat can
+            // say the transcript may be behind, rather than pretending it is
+            // complete or blanking it.
+            botChatFailure[conversationID] =
+                (error as? LocalizedError)?.errorDescription
+                ?? "Hermes did not answer."
+        }
+    }
+
+    /// Re-reads every bot chat the app is showing, once, on returning to the
+    /// foreground. Not a poll: a cron report lands while the phone is asleep,
+    /// and this is the moment it becomes worth asking for.
+    func refreshVisibleBotChats() async {
+        if Self.recoverySafeMode { return }
+        let ids = conversations.filter(\.isCanonicalBotChat).map(\.id)
+        for id in ids { await refreshBotChat(id) }
+    }
+
+    /// Sends one turn into a bot's canonical Hermes chat and streams the reply.
+    ///
+    /// The session is resolved before anything is sent, so the turn lands in
+    /// the same chat cron delivers to. Nothing here builds a persona: the
+    /// agent on the other end *is* the bot, with its own SOUL, memory, skills
+    /// and configuration.
+    private func sendToBotChat(
+        profile: String, conversationID: String, replyID: String, text: String
+    ) async {
+        guard let source = await botChatSource() else {
+            fail(replyID, conversationID: conversationID,
+                 message: "Connect the Hermes dashboard to talk to this bot.",
+                 limit: nil)
+            finish(replyID, conversationID: conversationID)
+            return
+        }
+        do {
+            let chat = try await BotChatSync(source: source).resolve(profile: profile)
+            if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+                conversations[index].hermesSessionID = chat.resolvedID
+            }
+            let events = source.rpc.events()
+            try await source.submit(
+                profile: profile, sessionID: chat.resolvedID, text: text
+            )
+            for await event in events {
+                guard event.sessionID.isEmpty || event.sessionID == chat.resolvedID
+                else { continue }
+                if let chatEvent = Self.chatEvent(from: event) {
+                    apply(chatEvent, to: replyID, conversationID: conversationID)
+                }
+                if event.type == "message.complete" { break }
+            }
+        } catch {
+            fail(replyID, conversationID: conversationID,
+                 message: (error as? LocalizedError)?.errorDescription
+                    ?? "Hermes did not answer.",
+                 limit: nil)
+        }
+        finish(replyID, conversationID: conversationID)
+        await refreshBotChat(conversationID)
+    }
+
+    /// One pushed frame as the event this app already knows how to draw.
+    ///
+    /// An adapter rather than a second renderer: deltas, tools and approvals
+    /// all reach `apply` the way the HTTP path's do.
+    nonisolated static func chatEvent(from event: HermesRPCEvent) -> ChatEvent? {
+        switch event.type {
+        case "message.delta", "message.interim":
+            guard let text = (event.payload["text"] as? String)
+                ?? (event.payload["delta"] as? String), !text.isEmpty
+            else { return nil }
+            return .delta(text)
+        case "message.complete":
+            // The stream already delivered the body as deltas; the completion
+            // frame only says the turn is over.
+            return .run(
+                id: (event.payload["id"] as? String) ?? event.sessionID,
+                status: .completed,
+                output: nil
+            )
+        case "tool.start":
+            guard let name = event.payload["name"] as? String else { return nil }
+            return .tool(
+                id: (event.payload["id"] as? String) ?? name,
+                name: name, status: .start,
+                detail: event.payload["context"] as? String
+            )
+        case "tool.complete":
+            guard let name = event.payload["name"] as? String else { return nil }
+            return .tool(
+                id: (event.payload["id"] as? String) ?? name,
+                name: name, status: .done,
+                detail: event.payload["context"] as? String
+            )
+        case "approval.request":
+            guard let title = event.payload["title"] as? String else { return nil }
+            return .approval(Message.Approval(
+                runID: (event.payload["request_id"] as? String) ?? event.sessionID,
+                title: title,
+                detail: event.payload["detail"] as? String,
+                command: event.payload["command"] as? String,
+                choices: Message.ApprovalChoice.allCases
+            ))
+        case "error":
+            let message = (event.payload["message"] as? String) ?? "Hermes reported an error."
+            return .failure(message: message, limit: nil)
+        default:
+            return nil
+        }
+    }
+
+    /// The bot-chat transport, or nil when no dashboard is connected.
+    ///
+    /// The socket is authenticated by a single-use ticket the dashboard mints
+    /// for its own signed-in session, so this reuses the login Alice already
+    /// has: no second credential store, no second login screen, and the
+    /// password never leaves `DashboardClient`.
+    private func botChatSource() async -> WebSocketBotChatSource? {
+        // One gate for the socket itself, so nothing opens it by accident.
+        guard !Self.recoverySafeMode, dashboardReady else { return nil }
+        if rpcClient == nil {
+            guard let base = await dashboard.baseURL else { return nil }
+            let dashboard = dashboard
+            rpcClient = HermesRPCClient(endpoint: base) {
+                try await dashboard.webSocketTicket()
+            }
+        }
+        guard let rpcClient else { return nil }
+        return WebSocketBotChatSource(rpc: rpcClient)
+    }
+
+    /// The re-merge above works on messages, so a refreshed message goes back
+    /// through the same door it came in by.
+    private static func turn(from message: Message) -> BotChatTurn? {
+        guard let remoteID = message.remoteID else { return nil }
+        return BotChatTurn(
+            id: remoteID, role: message.role,
+            content: message.content, createdAt: message.createdAt
         )
-        conversations.insert(chat, at: 0)
-        activeID = chat.id
-        persistConversations()
-        return chat.id
+    }
+
+    /// True when the active conversation is recovered history: readable, not
+    /// writable. Sending would resume a simulated default-profile session, or
+    /// be redirected into the bot's real one — two agents' conversations
+    /// spliced into one apparent history.
+    var activeIsRecoveredHistory: Bool {
+        conversations.first { $0.id == activeID }?.isRecoveredHistory == true
     }
 
     func send() {
+        guard !activeIsRecoveredHistory else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !draftAttachments.isEmpty, !isSending else { return }
 
@@ -1099,6 +1336,27 @@ final class AppStore {
             conversations[index].title = String(name.prefix(40))
         }
         conversations[index].updatedAt = Date()
+
+        // A direct bot chat is the bot's own canonical session, so the turn
+        // goes into it as that bot — not to the default profile wearing a
+        // "you are <bot>" directive, which is what made one assistant answer
+        // in another's voice and kept cron's reports somewhere Alice never
+        // looked. Mentions inside ordinary chats and channels are a different
+        // thing and keep the path below.
+        // `routedBotName`, never `botName` and never ownership: a recovered
+        // legacy thread is filed under a bot but has no session to send into.
+        if let directBot = conversations[index].routedBotName,
+           conversations[index].isChannel != true, !Self.recoverySafeMode {
+            streamTask = Task { [weak self] in
+                await self?.sendToBotChat(
+                    profile: directBot,
+                    conversationID: conversationID,
+                    replyID: replyID,
+                    text: text
+                )
+            }
+            return
+        }
 
         // Only the newest turn that has attachments sends them. Repeating
         // every image on every request is what turns a long conversation into
@@ -1205,6 +1463,16 @@ final class AppStore {
     }
 
     func stop() {
+        // A bot chat's run lives on the agent, not in this task: cancelling
+        // here would only stop listening. Tell the session to stop.
+        if let index = conversations.firstIndex(where: { $0.id == activeID }),
+           let sessionID = conversations[index].hermesSessionID,
+           conversations[index].isCanonicalBotChat {
+            Task { [weak self] in
+                guard let source = await self?.botChatSource() else { return }
+                try? await source.interrupt(sessionID: sessionID)
+            }
+        }
         streamTask?.cancel()
         streamTask = nil
         isSending = false
@@ -1423,16 +1691,172 @@ final class AppStore {
 
     // MARK: - Persistence
 
+    /// Saves the conversations, unless the archive on disk could not be read.
+    ///
+    /// This is the guard that was missing. When a load fails, the app has no
+    /// idea what the user actually had, and writing whatever is in memory —
+    /// an empty list, or the shells the bots screen just recreated — destroys
+    /// the real archive. Once a load has failed, nothing is written over it
+    /// until the failure is understood.
     private func persistConversations() {
+        if conversationsUnreadable != nil { return }
         guard let data = try? JSONEncoder().encode(conversations) else { return }
         defaults.set(data, forKey: Keys.conversations)
     }
 
+    /// Why the saved conversations could not be read, if they could not.
+    ///
+    /// Distinct from "there are none": an empty app and an unreadable archive
+    /// look identical on screen, and only one of them is safe to write over.
+    private(set) var conversationsUnreadable: String?
+
+    /// Where the unreadable bytes were set aside, so they are recoverable.
+    nonisolated static let salvageKey = "alice.conversations.salvage"
+
+    /// A description of a decode failure with nothing private in it.
+    ///
+    /// The coding path names fields and indexes, never contents, so this can
+    /// go in a diagnostic without carrying anyone's messages with it.
+    nonisolated static func describe(_ error: Error) -> String {
+        guard let decoding = error as? DecodingError else { return "\(type(of: error))" }
+        func path(_ context: DecodingError.Context) -> String {
+            context.codingPath
+                .map { $0.intValue.map(String.init) ?? $0.stringValue }
+                .joined(separator: " → ")
+        }
+        switch decoding {
+        case let .keyNotFound(key, context):
+            return "keyNotFound(\"\(key.stringValue)\") at [\(path(context))]"
+        case let .typeMismatch(type, context):
+            return "typeMismatch(\(type)) at [\(path(context))]"
+        case let .valueNotFound(type, context):
+            return "valueNotFound(\(type)) at [\(path(context))]"
+        case let .dataCorrupted(context):
+            return "dataCorrupted at [\(path(context))]"
+        @unknown default:
+            return "decodingError"
+        }
+    }
+
+    /// Reads the saved conversations, and refuses to guess when it cannot.
+    ///
+    /// The previous version was one `try?` and a `guard … else { return }`, so
+    /// an archive it could not decode looked exactly like a new install — and
+    /// the next save wrote the empty result over it. That is how a build that
+    /// merely added a field erased every conversation on the phone.
     private func loadConversations() {
-        guard let data = defaults.data(forKey: Keys.conversations),
-              let saved = try? JSONDecoder().decode([Conversation].self, from: data),
+        guard let data = defaults.data(forKey: Keys.conversations), !data.isEmpty
+        else { return }  // Genuinely nothing saved. Writing is safe.
+        do {
+            let saved = try JSONDecoder().decode([Conversation].self, from: data)
+            conversationsUnreadable = nil
+            if !saved.isEmpty { conversations = saved }
+        } catch {
+            // Keep the bytes before anything else touches this key, and stop
+            // writing. The user sees an app that cannot read its history —
+            // which is true — rather than one that has none.
+            if defaults.data(forKey: Self.salvageKey) == nil {
+                defaults.set(data, forKey: Self.salvageKey)
+            }
+            conversationsUnreadable = Self.describe(error)
+        }
+    }
+
+    /// Batches of recovered history already folded in, so a second import
+    /// adds nothing.
+    nonisolated static let appliedRecoveryKey = "alice.recovery.applied"
+
+    var appliedRecoveryBatches: Set<String> {
+        Set(defaults.stringArray(forKey: Self.appliedRecoveryKey) ?? [])
+    }
+
+    /// What importing a recovery archive would do. Changes nothing.
+    func planRecovery(_ data: Data) throws -> RecoveryPlan {
+        let archive = try RecoveryImporter.read(data)
+        var plan = RecoveryImporter.plan(
+            archive, into: conversations, appliedBatches: appliedRecoveryBatches
+        )
+        // A dry run that does not check the preconditions is a dry run of a
+        // different operation than the one Apply would perform.
+        let unmet = RecoveryImporter.unmetPreconditions(archive, against: conversations)
+        if !unmet.isEmpty { plan.refusal = unmet.joined(separator: "; ") }
+        return plan
+    }
+
+    /// Re-files already-imported history under the bot it belongs to.
+    ///
+    /// The first import set `botName` to nil to protect routing, which also
+    /// dropped the history into Home. This puts `legacyBotName` on those same
+    /// conversations — metadata only, the 67 recovered turns are not touched.
+    @discardableResult
+    func migrateRecoveryAssociations(_ data: Data) throws -> Int {
+        let archive = try RecoveryImporter.read(data)
+        let before = conversations.reduce(0) { $0 + $1.messages.count }
+        let migrated = RecoveryImporter.migrateAssociations(conversations, using: archive)
+        let after = migrated.reduce(0) { $0 + $1.messages.count }
+        // A metadata migration that changed a message count has done something
+        // it was not asked to.
+        guard before == after else { return 0 }
+        let changed = zip(conversations, migrated).filter {
+            $0.legacyBotName != $1.legacyBotName || $0.botName != $1.botName
+        }.count
+        conversations = migrated
+        persistConversations()
+        return changed
+    }
+
+    /// Folds a recovery archive in. Explicit: nothing calls this on launch.
+    @discardableResult
+    func importRecovery(_ data: Data) throws -> RecoveryPlan {
+        let archive = try RecoveryImporter.read(data)
+        var plan = RecoveryImporter.plan(
+            archive, into: conversations, appliedBatches: appliedRecoveryBatches
+        )
+        // Preconditions, checked before anything is written. A patch is built
+        // against a known state; applying it to a different one would put
+        // turns somewhere they do not belong.
+        let unmet = RecoveryImporter.unmetPreconditions(archive, against: conversations)
+        if !unmet.isEmpty {
+            plan.refusal = unmet.joined(separator: "; ")
+            return plan
+        }
+        let before = conversations.reduce(0) { $0 + $1.messages.count }
+        let updated = RecoveryImporter.apply(archive, to: conversations)
+        let after = updated.reduce(0) { $0 + $1.messages.count }
+        let expected = before + plan.messagesAdded - plan.removals.count
+        guard after == expected else {
+            plan.refusal = "count would be \(after), expected \(expected) — nothing written"
+            return plan
+        }
+        conversations = updated
+        defaults.set(
+            Array(appliedRecoveryBatches.union([archive.batchID])),
+            forKey: Self.appliedRecoveryKey
+        )
+        persistConversations()
+        return plan
+    }
+
+    /// Puts a salvaged archive back once it can be read again.
+    ///
+    /// Called on launch: a build that fixes the decoder finds the bytes the
+    /// broken one set aside and restores them, so recovery does not depend on
+    /// anyone noticing.
+    func restoreSalvagedConversationsIfPossible() {
+        guard let salvaged = defaults.data(forKey: Self.salvageKey),
+              let saved = try? JSONDecoder().decode([Conversation].self, from: salvaged),
               !saved.isEmpty
         else { return }
+        let live = (defaults.data(forKey: Keys.conversations))
+            .flatMap { try? JSONDecoder().decode([Conversation].self, from: $0) } ?? []
+        let liveMessages = live.reduce(0) { $0 + $1.messages.count }
+        let salvagedMessages = saved.reduce(0) { $0 + $1.messages.count }
+        // Only when the salvage actually holds more than what replaced it, so
+        // a later legitimate history is never rolled back over.
+        guard salvagedMessages > liveMessages else { return }
         conversations = saved
+        conversationsUnreadable = nil
+        persistConversations()
+        defaults.removeObject(forKey: Self.salvageKey)
     }
 }

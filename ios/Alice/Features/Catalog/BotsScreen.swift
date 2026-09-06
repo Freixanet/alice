@@ -1396,6 +1396,27 @@ struct BotDetail: View {
                 .listRowBackground(Palette.card(scheme))
             }
 
+            let recovered = store.recoveredHistory(for: bot.name)
+            if !recovered.isEmpty {
+                Section("Historial anterior") {
+                    ForEach(recovered) { chat in
+                        Button {
+                            store.openConversation(chat.id)
+                            dismiss()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(chat.title).lineLimit(1)
+                                Text("\(chat.messages.count) mensajes · sólo lectura")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Palette.card(scheme))
+                    }
+                }
+            }
+
             Section("Routines") {
                 switch routines {
                 case .loading:

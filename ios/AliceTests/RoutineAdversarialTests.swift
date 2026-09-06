@@ -181,10 +181,10 @@ private final class RecordingRows: DashboardRowReading, @unchecked Sendable {
 
     func rows(
         _ path: String, shape: DashboardClient.BodyShape
-    ) async throws -> DashboardRows {
+    ) async throws -> JSONRows {
         paths.append(path)
         switch answers[path] {
-        case let .success(rows): return DashboardRows(rows)
+        case let .success(rows): return JSONRows(rows)
         case let .failure(error): throw error
         case nil: throw DashboardClient.Failure.http(404)
         }
