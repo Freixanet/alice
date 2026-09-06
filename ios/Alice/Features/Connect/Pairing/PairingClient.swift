@@ -105,7 +105,7 @@ struct PairingClient {
 
         guard let gatewayURL = validatedServiceURL(
             body.gateway.url, relativeToClaim: payload.claimURL
-        ), !body.gateway.key.isEmpty else {
+        ), !body.gateway.key.isEmpty, body.gateway.key.utf8.count <= 8 * 1024 else {
             throw Failure.badResponse
         }
 
@@ -115,7 +115,10 @@ struct PairingClient {
         if let dashboard = body.dashboard {
             guard let validated = validatedServiceURL(
                 dashboard.url, relativeToClaim: payload.claimURL
-            ), !dashboard.username.isEmpty, !dashboard.password.isEmpty else {
+            ), !dashboard.username.isEmpty,
+               dashboard.username.utf8.count <= 4 * 1024,
+               !dashboard.password.isEmpty,
+               dashboard.password.utf8.count <= 8 * 1024 else {
                 throw Failure.badResponse
             }
             dashboardURL = validated.absoluteString
@@ -135,7 +138,8 @@ struct PairingClient {
     }
 
     /// Pairing v1 is one Mac. The claim endpoint may use a different port from
-    /// the gateway/dashboard, but it must not hand Alice off to another host.
+    /// the gateway/dashboard, but it must not hand Alice off to another host,
+    /// smuggle a path/query into the base URL, or downgrade an HTTPS claim.
     private func validatedServiceURL(_ text: String, relativeToClaim claim: URL) -> URL? {
         guard let url = URL(string: text),
               let scheme = url.scheme?.lowercased(),
@@ -143,8 +147,12 @@ struct PairingClient {
               let host = url.host?.lowercased(),
               host == claim.host?.lowercased(),
               url.user == nil,
-              url.password == nil
+              url.password == nil,
+              url.query == nil,
+              url.fragment == nil,
+              url.path.isEmpty || url.path == "/"
         else { return nil }
+        if claim.scheme?.lowercased() == "https", scheme != "https" { return nil }
         return url
     }
 
