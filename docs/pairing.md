@@ -66,7 +66,8 @@ Antes de guardar nada, Alice valida la respuesta: gateway y dashboard deben
 usar `http` o `https`, no pueden llevar credenciales embebidas en la URL y
 deben pertenecer al **mismo host** que el endpoint de canje (los puertos pueden
 ser distintos). La clave del gateway y, cuando existe dashboard, usuario y
-contraseña, no pueden estar vacíos.
+contraseña, no pueden estar vacíos. Un canje HTTPS tampoco puede degradar los
+servicios persistentes a HTTP.
 
 Después Alice usa los mismos caminos que la configuración manual:
 `AppStore.connect` verifica y guarda la clave del gateway en Keychain y
@@ -81,16 +82,20 @@ muestra como configuración parcial y permite reintentar solo esos servicios.
 
 ## 3. Modelo de seguridad (v1)
 
-- **TTL corto**: el token y la fecha anunciada usan el mismo reloj del almacén
-  en memoria; al llegar a la expiración deja de ser canjeable.
+- **TTL corto**: el token y la fecha anunciada usan exactamente el mismo límite
+  de segundo del almacén en memoria; al llegar a la expiración deja de ser
+  canjeable tanto para el cliente como para el servidor.
 - **Un solo uso**: después de un `200`, el mismo token no entrega las
   credenciales otra vez.
 - **QR local al Mac**: la página `GET /` que permite ver el QR grande solo
   responde a loopback. Otro equipo de la tailnet no puede visitar el helper y
   obtener una copia de la credencial bearer.
-- **Canje limitado por red**: por defecto `POST /claim` acepta loopback y
-  `100.64.0.0/10`. `--allow-lan` amplía esto solo a rangos de LAN privada; no
-  abre el canje a direcciones públicas arbitrarias.
+- **Canje solo en la tailnet**: `POST /claim` acepta loopback y direcciones
+  Tailscale IPv4 de `100.64.0.0/10`. Una LAN privada no se considera un canal
+  suficientemente fuerte para entregar credenciales de larga duración por
+  HTTP solo por ser “privada”.
+- **Comparación constante del bearer**: el helper compara el token recibido con
+  el emitido usando `timingSafeEqual` una vez comprobada su longitud.
 - **Sin persistencia del token**: el almacén vive en memoria. Reiniciar el
   helper invalida el QR anterior; al caducar, el helper cierra el servidor y
   termina.
@@ -128,7 +133,9 @@ seguir siendo el mismo.
 El QR de la app Cámara abre `alice://pair?…`; iOS arranca Alice y muestra la
 confirmación. Dentro de Alice, `Connect → Scan QR` usa VisionKit y ofrece pegar
 el enlace como alternativa para simulador, permisos denegados o códigos que
-llegaron como texto.
+llegaron como texto. Si Alice ya está conectada, un deep link nuevo no puede
+sustituir silenciosamente las credenciales actuales: primero hay que
+desconectar explícitamente desde Connect.
 
 ## 5. Port futuro al dashboard de Hermes
 
