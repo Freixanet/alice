@@ -115,13 +115,36 @@ final class PairingFlow {
     }
 
     private func connect(_ claimed: PairingClient.Claimed, store: AppStore) async {
+        // Re-pairing is allowed while Alice already has a working Hermes. Keep
+        // enough information to restore that connection if the newly claimed
+        // gateway turns out to be unreachable. A failed replacement therefore
+        // cannot force the reader to re-enter the old key just to get back to
+        // where they started.
+        let previous: (url: String, key: String)? = {
+            guard store.isConnected,
+                  !store.gatewayURL.isEmpty,
+                  let key = KeyStore.read()
+            else { return nil }
+            return (store.gatewayURL, key)
+        }()
+
         stage = .connecting
         await store.connect(urlText: claimed.gatewayURLText, key: claimed.gatewayKey)
         guard store.isConnected else {
-            stage = .failed(
-                message: store.connectionError ?? "Hermes did not answer.",
-                retryable: true
-            )
+            var message = store.connectionError ?? "Hermes did not answer."
+
+            if let previous {
+                await store.connect(
+                    urlText: previous.url,
+                    key: previous.key,
+                    persist: false
+                )
+                if !store.isConnected {
+                    message += " Your previous Hermes connection could not be restored."
+                }
+            }
+
+            stage = .failed(message: message, retryable: true)
             return
         }
 
