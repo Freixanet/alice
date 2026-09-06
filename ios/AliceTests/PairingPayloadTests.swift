@@ -6,14 +6,9 @@ import XCTest
 /// configuration — eventually the gateway key — to the wrong payload.
 final class PairingPayloadTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
-    private let signature = String(repeating: "0", count: 64)
 
-    private func link(
-        payloadJSON: String,
-        version: String = "1",
-        signature: String? = nil
-    ) -> String {
-        "alice://pair?v=\(version)&p=\(Self.base64URL(payloadJSON))&s=\(signature ?? self.signature)"
+    private func link(payloadJSON: String, version: String = "1") -> String {
+        "alice://pair?v=\(version)&p=\(Self.base64URL(payloadJSON))"
     }
 
     private static func base64URL(_ text: String) -> String {
@@ -71,22 +66,18 @@ final class PairingPayloadTests: XCTestCase {
     }
 
     func testRejectsForeignLinksAndVersions() {
-        XCTAssertThrowsError(
-            try assertParse("https://example.test/pair?v=1&p=AA&s=\(signature)")
-        ) { error in
+        XCTAssertThrowsError(try assertParse("https://example.test/pair?v=1&p=AA")) { error in
             XCTAssertEqual(error as? PairingPayload.ParseError, .notPairing)
         }
-        XCTAssertThrowsError(
-            try assertParse("alice://pair?v=2&p=AA&s=\(signature)")
-        ) { error in
+        XCTAssertThrowsError(try assertParse("alice://pair?v=2&p=AA")) { error in
             XCTAssertEqual(error as? PairingPayload.ParseError, .unsupportedVersion)
         }
     }
 
     func testRejectsDamagedPayloads() {
-        let noPayload = "alice://pair?v=1&s=\(signature)"
-        let badBase64 = "alice://pair?v=1&p=!!&s=\(signature)"
-        let padded = "alice://pair?v=1&p=\(Self.base64URL("{}"))=&s=\(signature)"
+        let noPayload = "alice://pair?v=1"
+        let badBase64 = "alice://pair?v=1&p=!!"
+        let padded = "alice://pair?v=1&p=\(Self.base64URL("{}"))="
         let notJSON = link(payloadJSON: "hi")
         let emptyToken = link(payloadJSON: """
         {"c":"http://h:1/claim","t":"","e":1700000300}
@@ -94,16 +85,8 @@ final class PairingPayloadTests: XCTestCase {
         let foreignClaim = link(payloadJSON: """
         {"c":"ftp://h:1/claim","t":"t","e":1700000300}
         """)
-        let missingSignature = "alice://pair?v=1&p=\(Self.base64URL(#"{"c":"http://h:1/claim","t":"t","e":1700000300}"#))"
-        let shortSignature = link(
-            payloadJSON: #"{"c":"http://h:1/claim","t":"t","e":1700000300}"#,
-            signature: "00"
-        )
 
-        for damaged in [
-            noPayload, badBase64, padded, notJSON, emptyToken,
-            foreignClaim, missingSignature, shortSignature,
-        ] {
+        for damaged in [noPayload, badBase64, padded, notJSON, emptyToken, foreignClaim] {
             XCTAssertThrowsError(try assertParse(damaged), damaged) { error in
                 XCTAssertEqual(error as? PairingPayload.ParseError, .malformed, damaged)
             }
@@ -125,14 +108,14 @@ final class PairingPayloadTests: XCTestCase {
     }
 
     func testPaddingStandardAlphabetAndLeftoverBitsAreNotCanonical() {
-        let standard = "alice://pair?v=1&p=\(Data("{}".utf8).base64EncodedString())&s=\(signature)"
+        let standard = "alice://pair?v=1&p=\(Data("{}".utf8).base64EncodedString())"
         XCTAssertThrowsError(try assertParse(standard)) { error in
             XCTAssertEqual(error as? PairingPayload.ParseError, .malformed)
         }
 
         // "AB" decodes to the same byte as canonical "AA" in lenient base64
         // decoders. The parser must reject that alternate spelling.
-        let leftover = "alice://pair?v=1&p=AB&s=\(signature)"
+        let leftover = "alice://pair?v=1&p=AB"
         XCTAssertThrowsError(try assertParse(leftover)) { error in
             XCTAssertEqual(error as? PairingPayload.ParseError, .malformed)
         }
