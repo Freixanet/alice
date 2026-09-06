@@ -6,7 +6,7 @@ import XCTest
 /// errors to, and that the request carries the one-time token.
 final class PairingClientTests: XCTestCase {
     private let payload = try! PairingPayload.parse(
-        "alice://pair?v=1&p=\(PairingClientTests.base64URL(#"{"c":"http://100.67.213.42:8643/claim","t":"tok","e":9999999999,"pr":"radar-ia"}"#))&s=\(String(repeating: "0", count: 64))",
+        "alice://pair?v=1&p=\(PairingClientTests.base64URL(#"{"c":"http://100.67.213.42:8643/claim","t":"tok","e":9999999999,"pr":"radar-ia"}"#))",
         now: Date(timeIntervalSince1970: 1)
     )
 
