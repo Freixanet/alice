@@ -11,16 +11,21 @@ struct PairingForm: View {
     let onDone: () -> Void
 
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     @State private var flow: PairingFlow?
 
     var body: some View {
         Form {
             if let flow {
                 switch flow.stage {
-                case .confirming: confirmation(flow)
-                case .claiming, .connecting: progress(flow)
-                case let .connected(profile): connected(profile)
-                case let .failed(message): failure(flow, message)
+                case .confirming:
+                    confirmation(flow)
+                case .claiming, .connecting:
+                    progress(flow)
+                case let .connected(profile, dashboardWarning):
+                    connected(flow, profile: profile, dashboardWarning: dashboardWarning)
+                case let .failed(message, retryable):
+                    failure(flow, message: message, retryable: retryable)
                 }
             } else {
                 Text("This pairing code is incomplete or damaged.")
@@ -33,8 +38,6 @@ struct PairingForm: View {
             if flow == nil { flow = PairingFlow(link: link) }
         }
     }
-
-    @Environment(\.colorScheme) private var scheme
 
     // MARK: - Stages
 
@@ -69,7 +72,11 @@ struct PairingForm: View {
         }
     }
 
-    private func connected(_ profile: String?) -> some View {
+    private func connected(
+        _ flow: PairingFlow,
+        profile: String?,
+        dashboardWarning: String?
+    ) -> some View {
         Section {
             LabeledContent {
                 Image(systemName: "checkmark.circle.fill")
@@ -80,24 +87,50 @@ struct PairingForm: View {
             if let profile, !profile.isEmpty {
                 LabeledContent("Profile", value: profile)
             }
-            LabeledContent("Device", value: flow?.deviceName ?? "")
+            LabeledContent("Device", value: flow.deviceName)
+
+            if let dashboardWarning {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Hermes is connected, but its extra services did not finish connecting.")
+                        .font(.subheadline.weight(.medium))
+                    Text(dashboardWarning)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Button("Try extra services again") {
+                        Task { await flow.retryDashboard(store: store) }
+                    }
+                }
+            }
+
             Button("Done") { onDone() }
         } footer: {
-            Text("The key and the dashboard login are held in the Keychain on this iPhone only.")
+            Text(
+                dashboardWarning == nil
+                    ? "Connection secrets are held in the Keychain on this iPhone only."
+                    : "Your main Hermes connection is ready. You can retry the remaining services now or later from Connect."
+            )
         }
     }
 
-    private func failure(_ flow: PairingFlow, _ message: String) -> some View {
+    private func failure(
+        _ flow: PairingFlow,
+        message: String,
+        retryable: Bool
+    ) -> some View {
         Section {
             Text(message).foregroundStyle(.red)
-            if flow.payload != nil {
+            if retryable {
                 Button("Try again") {
                     Task { await flow.run(store: store) }
                 }
             }
             Button("Close") { onDone() }
         } footer: {
-            Text("A QR works once and for five minutes. If it will not take, run the pairing command on your Hermes again.")
+            Text(
+                retryable
+                    ? "Check the connection and try again."
+                    : "This QR cannot be retried. Run the pairing command on your Hermes again for a fresh code."
+            )
         }
     }
 
