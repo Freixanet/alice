@@ -10,8 +10,8 @@
  */
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createServer } from "node:http";
 import { existsSync } from "node:fs";
+import { createServer } from "node:http";
 import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -19,10 +19,7 @@ import process from "node:process";
 import QRCode from "qrcode";
 
 import { createClaimStore } from "./pairing-claims.mjs";
-import {
-  buildPairingLink,
-  verifyPairingLink,
-} from "./pairing-protocol.mjs";
+import { buildPairingLink } from "./pairing-protocol.mjs";
 import {
   configActiveProfile,
   launchdGatewayProfiles,
@@ -130,7 +127,7 @@ function advertisedHost(raw) {
   }
   try {
     const url = new URL(`http://${value}/`);
-    return url.hostname === value ? value : null;
+    return url.hostname.toLowerCase() === value.toLowerCase() ? value : null;
   } catch {
     return null;
   }
@@ -206,6 +203,51 @@ function noStoreHeaders(contentType) {
 function json(res, status, body) {
   res.writeHead(status, noStoreHeaders("application/json; charset=utf-8"));
   res.end(JSON.stringify(body));
+}
+
+/**
+ * Alice cannot use a QR whose advertised gateway is not reachable through
+ * the advertised address. Probe the same two endpoints AppStore.connect uses
+ * before minting a token, so a loopback-only/dead gateway fails on the Mac
+ * with one useful message instead of after the iPhone has consumed its QR.
+ */
+async function probeGateway(baseURL, key) {
+  const headers = {
+    Accept: "application/json",
+    Authorization: `Bearer ${key}`,
+    "X-Hermes-Session-Token": key,
+  };
+  const statuses = [];
+  let transportError = null;
+
+  for (const route of ["v1/capabilities", "v1/models"]) {
+    try {
+      const response = await fetch(new URL(route, `${baseURL}/`), {
+        headers,
+        redirect: "manual",
+        cache: "no-store",
+        signal: AbortSignal.timeout(6_000),
+      });
+      statuses.push(`${route}: ${response.status}`);
+      if (response.status >= 200 && response.status < 300) return;
+      if (response.status === 401 || response.status === 403) {
+        fail(
+          "El gateway de Hermes responde, pero ha rechazado su propia clave. " +
+            "Revisa API_SERVER_KEY antes de emparejar Alice.",
+        );
+      }
+    } catch (error) {
+      transportError = error;
+    }
+  }
+
+  const detail = statuses.length > 0 ? ` (${statuses.join(", ")})` : "";
+  const cause = transportError?.message ? `\n${transportError.message}` : "";
+  fail(
+    `El gateway de Hermes no está utilizable en ${baseURL}${detail}.\n` +
+      "Alice necesita que ese gateway sea alcanzable desde la dirección anunciada." +
+      cause,
+  );
 }
 
 function pairPage(link, expiresAtMs) {
@@ -323,10 +365,11 @@ async function main() {
   const claimPort = options.port;
   const claimUrl = `http://${address}:${claimPort}/claim`;
 
+  await probeGateway(gatewayUrl, gateway.key);
+
   // One token, one claim, one in-memory lifetime. The store's expiry is the
   // expiry written into the QR so client and server are on the same boundary.
   const store = createClaimStore();
-  const secret = randomBytes(32);
   const token = randomBytes(24).toString("base64url");
   const expiresAtMs = store.issue(token);
   const offer = {
@@ -335,10 +378,7 @@ async function main() {
     e: Math.floor(expiresAtMs / 1000),
     pr: profile,
   };
-  const link = buildPairingLink(offer, secret);
-  if (!verifyPairingLink(link, secret).ok) {
-    fail("El enlace generado no verifica; hay un error en el protocolo.");
-  }
+  const link = buildPairingLink(offer);
 
   const config = {
     profile,
