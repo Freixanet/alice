@@ -34,7 +34,12 @@ struct PairingScanSheet: View {
                         Button("Done") { dismiss() }
                     }
                 }
-                .safeAreaInset(edge: .bottom) { pasteField }
+                .safeAreaInset(edge: .bottom) {
+                    // Once a code is chosen the sheet has become the pairing
+                    // form. Keeping a second link field under that form made it
+                    // look as though another code was still required.
+                    if scannedLink == nil { pasteField }
+                }
         }
         .task { await resolveCamera() }
     }
@@ -87,12 +92,20 @@ struct PairingScanSheet: View {
             camera = .unsupported
             return
         }
-        let granted = await withCheckedContinuation { continuation in
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                continuation.resume(returning: granted)
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            camera = .ready
+        case .notDetermined:
+            let granted = await withCheckedContinuation { continuation in
+                AVCaptureDevice.requestAccess(for: .video) { granted in
+                    continuation.resume(returning: granted)
+                }
             }
+            camera = granted ? .ready : .denied
+        default:
+            camera = .denied
         }
-        camera = granted ? .ready : .denied
     }
 }
 
@@ -116,11 +129,17 @@ private struct QRScannerView: UIViewControllerRepresentable {
             isHighlightingEnabled: true
         )
         scanner.delegate = context.coordinator
-        let container = ScannerContainer(scanner: scanner)
-        return container
+        return ScannerContainer(scanner: scanner)
     }
 
     func updateUIViewController(_ container: UIViewController, context: Context) {}
+
+    static func dismantleUIViewController(
+        _ uiViewController: UIViewController,
+        coordinator: Coordinator
+    ) {
+        (uiViewController as? ScannerContainer)?.stop()
+    }
 
     /// Starts on screen instead of waiting for a caller to remember to.
     private final class ScannerContainer: UIViewController {
@@ -145,6 +164,10 @@ private struct QRScannerView: UIViewControllerRepresentable {
             super.viewDidAppear(animated)
             try? scanner.startScanning()
         }
+
+        func stop() {
+            scanner.stopScanning()
+        }
     }
 
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
@@ -158,12 +181,13 @@ private struct QRScannerView: UIViewControllerRepresentable {
         func dataScanner(
             _ dataScanner: DataScannerViewController,
             didAdd addedItems: [RecognizedItem],
-            updatedItems: [RecognizedItem]
+            allItems: [RecognizedItem]
         ) {
             guard !reported else { return }
             for case let .barcode(barcode) in addedItems {
                 guard let text = barcode.payloadStringValue else { continue }
                 reported = true
+                dataScanner.stopScanning()
                 onFound(text)
                 return
             }
