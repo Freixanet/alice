@@ -9,7 +9,7 @@
  * fresh QR.
  */
 import { spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
@@ -19,13 +19,18 @@ import process from "node:process";
 import QRCode from "qrcode";
 
 import { createClaimStore } from "./pairing-claims.mjs";
-import { buildPairingLink } from "./pairing-protocol.mjs";
 import {
   configActiveProfile,
   launchdGatewayProfiles,
   readDashboardAuth,
   readProfileGateway,
 } from "./pairing-hermes-config.mjs";
+import {
+  advertisedHost,
+  claimOriginAllowed,
+  isLoopback,
+} from "./pairing-network.mjs";
+import { buildPairingLink } from "./pairing-protocol.mjs";
 
 const CLAIM_PORT_DEFAULT = 8643;
 const DASHBOARD_PORT_DEFAULT = 9119;
@@ -44,7 +49,6 @@ function usage() {
   --port <puerto>      Puerto del canje (por defecto ${CLAIM_PORT_DEFAULT})
   --dashboard-port <p> Puerto del dashboard (por defecto ${DASHBOARD_PORT_DEFAULT})
   --hermes-home <ruta> Carpeta de Hermes (por defecto ~/.hermes)
-  --allow-lan          Permitir el canje también desde una LAN privada
   --help`);
 }
 
@@ -59,7 +63,6 @@ function parseArgs(argv) {
     port: CLAIM_PORT_DEFAULT,
     dashboardPort: DASHBOARD_PORT_DEFAULT,
     hermesHome: path.join(homedir(), ".hermes"),
-    allowLan: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -83,9 +86,6 @@ function parseArgs(argv) {
         break;
       case "--hermes-home":
         options.hermesHome = path.resolve(value("--hermes-home"));
-        break;
-      case "--allow-lan":
-        options.allowLan = true;
         break;
       case "--help":
         options.help = true;
@@ -120,59 +120,6 @@ function tailscaleIPv4() {
   return ips.find((ip) => /^\d+\.\d+\.\d+\.\d+$/.test(ip)) ?? null;
 }
 
-function advertisedHost(raw) {
-  const value = String(raw ?? "").trim();
-  if (!value || value.includes("/") || value.includes(":") || /\s/.test(value)) {
-    return null;
-  }
-  try {
-    const url = new URL(`http://${value}/`);
-    return url.hostname.toLowerCase() === value.toLowerCase() ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-function normalizedRemote(rawAddress) {
-  return rawAddress.replace(/^::ffff:/, "").toLowerCase();
-}
-
-function isLoopback(rawAddress) {
-  const address = normalizedRemote(rawAddress);
-  return address === "::1" || address === "127.0.0.1";
-}
-
-function isTailnet(rawAddress) {
-  const address = normalizedRemote(rawAddress);
-  const match = /^(\d+)\.(\d+)\./.exec(address);
-  return Boolean(
-    match &&
-      match[1] === "100" &&
-      Number(match[2]) >= 64 &&
-      Number(match[2]) <= 127,
-  );
-}
-
-function isPrivateLAN(rawAddress) {
-  const address = normalizedRemote(rawAddress);
-  const octets = address.split(".").map(Number);
-  if (octets.length === 4 && octets.every((n) => Number.isInteger(n))) {
-    if (octets[0] === 10) return true;
-    if (octets[0] === 192 && octets[1] === 168) return true;
-    if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return true;
-    if (octets[0] === 169 && octets[1] === 254) return true;
-  }
-  return address.startsWith("fc") || address.startsWith("fd") || address.startsWith("fe80:");
-}
-
-function claimOriginAllowed(rawAddress, allowLan) {
-  return (
-    isLoopback(rawAddress) ||
-    isTailnet(rawAddress) ||
-    (allowLan && isPrivateLAN(rawAddress))
-  );
-}
-
 function readBody(req, limit = 8 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -203,6 +150,13 @@ function noStoreHeaders(contentType) {
 function json(res, status, body) {
   res.writeHead(status, noStoreHeaders("application/json; charset=utf-8"));
   res.end(JSON.stringify(body));
+}
+
+function tokenMatches(candidate, expected) {
+  if (typeof candidate !== "string") return false;
+  const left = Buffer.from(candidate, "utf8");
+  const right = Buffer.from(expected, "utf8");
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 /**
@@ -418,9 +372,9 @@ async function main() {
     }
 
     if (req.method === "POST" && url.pathname === "/claim") {
-      if (!claimOriginAllowed(req.socket.remoteAddress ?? "", options.allowLan)) {
+      if (!claimOriginAllowed(req.socket.remoteAddress ?? "")) {
         console.log(
-          `Petición de canje rechazada desde ${req.socket.remoteAddress} (red no permitida).`,
+          `Petición de canje rechazada desde ${req.socket.remoteAddress} (fuera de la tailnet).`,
         );
         json(res, 403, { error: "forbidden" });
         return;
@@ -438,7 +392,7 @@ async function main() {
             .join("")
             .slice(0, 64);
         }
-        if (body.token !== offer.t) throw new Error("token");
+        if (!tokenMatches(body.token, offer.t)) throw new Error("token");
       } catch {
         json(res, 404, { error: "unknown" });
         return;
