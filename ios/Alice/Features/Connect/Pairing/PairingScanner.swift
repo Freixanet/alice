@@ -110,7 +110,11 @@ struct PairingScanSheet: View {
                     continuation.resume(returning: granted)
                 }
             }
-            camera = granted && DataScannerViewController.isAvailable ? .ready : .denied
+            if granted {
+                camera = DataScannerViewController.isAvailable ? .ready : .unavailable
+            } else {
+                camera = .denied
+            }
         case .denied, .restricted:
             camera = .denied
         @unknown default:
