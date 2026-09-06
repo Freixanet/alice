@@ -17,6 +17,13 @@ final class PairingClientTests: XCTestCase {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    private static func payload(claim: String) -> PairingPayload {
+        try! PairingPayload.parse(
+            "alice://pair?v=1&p=\(base64URL("{\"c\":\"\(claim)\",\"t\":\"tok\",\"e\":9999999999}"))",
+            now: Date(timeIntervalSince1970: 1)
+        )
+    }
+
     private func client(_ handler: @escaping StubPairingURLProtocol.Handler) -> PairingClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubPairingURLProtocol.self]
@@ -122,13 +129,19 @@ final class PairingClientTests: XCTestCase {
         catch { XCTFail("cross-host config threw \(error)") }
     }
 
-    func testClaimRejectsBlankSecretsAndUnsafeSchemes() async {
+    func testClaimRejectsBlankSecretsAndUnsafeServiceURLs() async {
         let bodies = [
             """
             {"gateway":{"url":"http://100.67.213.42:8642","key":""},"dashboard":null}
             """,
             """
             {"gateway":{"url":"ftp://100.67.213.42:8642","key":"gk"},"dashboard":null}
+            """,
+            """
+            {"gateway":{"url":"http://100.67.213.42:8642/nested","key":"gk"},"dashboard":null}
+            """,
+            """
+            {"gateway":{"url":"http://100.67.213.42:8642?x=1","key":"gk"},"dashboard":null}
             """,
             """
             {"gateway":{"url":"http://100.67.213.42:8642","key":"gk"},
@@ -144,6 +157,20 @@ final class PairingClientTests: XCTestCase {
             } catch PairingClient.Failure.badResponse {}
             catch { XCTFail("unsafe config threw \(error)") }
         }
+    }
+
+    func testHTTPSClaimCannotDowngradeLongLivedServicesToHTTP() async {
+        let securePayload = Self.payload(claim: "https://100.67.213.42:8643/claim")
+        let body = Data("""
+        {"gateway":{"url":"http://100.67.213.42:8642","key":"gk"},"dashboard":null}
+        """.utf8)
+
+        do {
+            _ = try await client { _ in (200, body) }
+                .claim(securePayload, deviceName: "iPhone")
+            XCTFail("HTTPS downgrade should have thrown")
+        } catch PairingClient.Failure.badResponse {}
+        catch { XCTFail("HTTPS downgrade threw \(error)") }
     }
 }
 
