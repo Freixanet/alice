@@ -22,6 +22,7 @@ struct PairingScanSheet: View {
         case ready
         case denied
         case unsupported
+        case unavailable
     }
 
     var body: some View {
@@ -56,15 +57,22 @@ struct PairingScanSheet: View {
             case .resolving:
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             case .ready:
-                QRScannerView { text in scannedLink = text }
-                    .ignoresSafeArea()
+                QRScannerView(
+                    onFound: { text in scannedLink = text },
+                    onUnavailable: { camera = .unavailable }
+                )
+                .ignoresSafeArea()
             case .denied:
                 MessageView(
-                    "Alice needs the camera to scan the pairing QR. Allow it in Settings, or paste the pairing link below."
+                    "Alice needs camera access to scan the pairing QR. Allow it in Settings, or paste the pairing link below."
                 )
             case .unsupported:
                 MessageView(
-                    "This device cannot scan here. Paste the pairing link below, or scan it with the Camera app."
+                    "This device does not support the built-in scanner. Paste the pairing link below, or scan it with the Camera app."
+                )
+            case .unavailable:
+                MessageView(
+                    "The camera scanner is unavailable right now. Paste the pairing link below or try again later."
                 )
             }
         }
@@ -88,23 +96,25 @@ struct PairingScanSheet: View {
     }
 
     private func resolveCamera() async {
-        guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
+        guard DataScannerViewController.isSupported else {
             camera = .unsupported
             return
         }
 
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            camera = .ready
+            camera = DataScannerViewController.isAvailable ? .ready : .unavailable
         case .notDetermined:
             let granted = await withCheckedContinuation { continuation in
                 AVCaptureDevice.requestAccess(for: .video) { granted in
                     continuation.resume(returning: granted)
                 }
             }
-            camera = granted ? .ready : .denied
-        default:
+            camera = granted && DataScannerViewController.isAvailable ? .ready : .denied
+        case .denied, .restricted:
             camera = .denied
+        @unknown default:
+            camera = .unavailable
         }
     }
 }
@@ -112,9 +122,10 @@ struct PairingScanSheet: View {
 /// The live camera view. Kept private: pairing is its only user.
 private struct QRScannerView: UIViewControllerRepresentable {
     let onFound: (String) -> Void
+    let onUnavailable: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onFound: onFound)
+        Coordinator(onFound: onFound, onUnavailable: onUnavailable)
     }
 
     func makeUIViewController(context: Context) -> UIViewController {
@@ -129,7 +140,10 @@ private struct QRScannerView: UIViewControllerRepresentable {
             isHighlightingEnabled: true
         )
         scanner.delegate = context.coordinator
-        return ScannerContainer(scanner: scanner)
+        return ScannerContainer(
+            scanner: scanner,
+            onStartFailure: context.coordinator.reportUnavailable
+        )
     }
 
     func updateUIViewController(_ container: UIViewController, context: Context) {}
@@ -144,9 +158,11 @@ private struct QRScannerView: UIViewControllerRepresentable {
     /// Starts on screen instead of waiting for a caller to remember to.
     private final class ScannerContainer: UIViewController {
         private let scanner: DataScannerViewController
+        private let onStartFailure: () -> Void
 
-        init(scanner: DataScannerViewController) {
+        init(scanner: DataScannerViewController, onStartFailure: @escaping () -> Void) {
             self.scanner = scanner
+            self.onStartFailure = onStartFailure
             super.init(nibName: nil, bundle: nil)
             addChild(scanner)
             view.addSubview(scanner.view)
@@ -162,7 +178,11 @@ private struct QRScannerView: UIViewControllerRepresentable {
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
-            try? scanner.startScanning()
+            do {
+                try scanner.startScanning()
+            } catch {
+                onStartFailure()
+            }
         }
 
         func stop() {
@@ -170,12 +190,15 @@ private struct QRScannerView: UIViewControllerRepresentable {
         }
     }
 
+    @MainActor
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
         private let onFound: (String) -> Void
+        private let onUnavailable: () -> Void
         private var reported = false
 
-        init(onFound: @escaping (String) -> Void) {
+        init(onFound: @escaping (String) -> Void, onUnavailable: @escaping () -> Void) {
             self.onFound = onFound
+            self.onUnavailable = onUnavailable
         }
 
         func dataScanner(
@@ -191,6 +214,19 @@ private struct QRScannerView: UIViewControllerRepresentable {
                 onFound(text)
                 return
             }
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController,
+            becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
+        ) {
+            reportUnavailable()
+        }
+
+        func reportUnavailable() {
+            guard !reported else { return }
+            reported = true
+            onUnavailable()
         }
     }
 }
