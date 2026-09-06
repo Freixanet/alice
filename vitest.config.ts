@@ -9,7 +9,12 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: [
+      "src/**/*.test.{ts,tsx}",
+      // The pairing helper's protocol logic ships as a script (docs/pairing.md),
+      // but it carries secrets, so it gets the same pinned-down tests.
+      "scripts/**/*.test.mjs",
+    ],
     // Six suites are property-based (fast-check). Their runtime varies with the
     // cases generated, and v8 coverage instrumentation on a loaded machine has
     // pushed one past the 5s default — a red CI run that says nothing about the

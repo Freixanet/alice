@@ -25,6 +25,12 @@ targets:
       path: Alice/Info.plist
       properties:
         CFBundleDisplayName: Alice
+        # The pairing QR is an alice:// deep link; the scheme is what lets the
+        # iPhone's own Camera app open Alice at the moment of pairing.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.freixanet.alice.pairing
+            CFBundleURLSchemes:
+              - alice
         UIAppFonts:
           - InstrumentSerif-Regular.ttf
           - InstrumentSerif-Italic.ttf
@@ -35,8 +41,8 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         # The key is read back only for the user who put it there.
         NSCameraUsageDescription: >-
-          Alice uses the camera when you attach a photo you take from the
-          composer.
+          Alice uses the camera to scan a Hermes pairing QR code and when you
+          attach a photo you take from the composer.
         NSMicrophoneUsageDescription: >-
           Alice uses the microphone when you dictate a message.
         NSSpeechRecognitionUsageDescription: >-

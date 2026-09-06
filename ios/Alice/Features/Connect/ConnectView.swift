@@ -11,10 +11,12 @@ struct ConnectView: View {
     @State private var panelPassword = ""
     @State private var panelBusy = false
     @State private var panelError: String?
+    @State private var showScanner = false
 
     var body: some View {
         NavigationStack {
             Form {
+                pairing
                 Section {
                     if store.isConnected {
                         LabeledContent("Status") {
@@ -86,6 +88,27 @@ struct ConnectView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .sheet(isPresented: $showScanner) {
+                PairingScanSheet()
+                    .environment(store)
+            }
+        }
+    }
+
+    /// The one-tap path: a QR your Hermes shows, scanned or opened, fills in
+    /// everything the two forms below ask for by hand.
+    @ViewBuilder
+    private var pairing: some View {
+        Section {
+            Button {
+                showScanner = true
+            } label: {
+                Label("Scan the QR your Hermes shows", systemImage: "qrcode.viewfinder")
+            }
+        } header: {
+            Text("Pair with your Hermes")
+        } footer: {
+            Text("Run the pairing command on the Mac running your Hermes and point the camera at the QR it shows. Addresses and keys fill themselves in.")
         }
     }
 
