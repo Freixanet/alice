@@ -43,9 +43,7 @@ function readEnvFile(filePath) {
 
 /**
  * Profiles launchd knows about, by the name baked into
- * `ai.hermes.gateway-<profile>.plist`. The machine's own word for what is
- * active, and the one that survives config.yaml rewrites. Disabled agents
- * (`.disabled-…` suffixes seen in the wild) do not count.
+ * `ai.hermes.gateway-<profile>.plist`. Disabled agents do not count.
  * @param {string} launchAgentsDir
  * @returns {string[]}
  */
@@ -61,12 +59,7 @@ export function launchdGatewayProfiles(launchAgentsDir) {
   }
 }
 
-/**
- * `active_profile:` from config.yaml — the one yaml key the helper needs,
- * read as a line match rather than pulling in a yaml parser.
- * @param {string} hermesHome
- * @returns {string | null}
- */
+/** `active_profile:` from config.yaml — the one yaml key the helper needs. */
 export function configActiveProfile(hermesHome) {
   try {
     const text = readFileSync(path.join(hermesHome, "config.yaml"), "utf8");
@@ -79,27 +72,38 @@ export function configActiveProfile(hermesHome) {
   }
 }
 
+function truthyEnv(value) {
+  if (value === undefined) return true; // older Hermes builds may omit it
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
 /**
  * @param {{ hermesHome: string, profile: string }} options
- * @returns {{ key: string, port: number } | null} Null when the profile has
- * no readable gateway key — the QR cannot be built without it.
+ * @returns {{ key: string, port: number, host: string | null } | null}
+ * Null when the profile cannot advertise a usable API server.
  */
 export function readProfileGateway({ hermesHome, profile }) {
   const env = readEnvFile(path.join(hermesHome, "profiles", profile, ".env"));
-  if (!env?.API_SERVER_KEY) return null;
-  const port = Number.parseInt(env.API_SERVER_PORT ?? "", 10);
+  if (!env?.API_SERVER_KEY || !truthyEnv(env.API_SERVER_ENABLED)) return null;
+
+  let port = 8642;
+  if (env.API_SERVER_PORT !== undefined && env.API_SERVER_PORT !== "") {
+    port = Number.parseInt(env.API_SERVER_PORT, 10);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  }
+
+  const host = env.API_SERVER_HOST?.trim() || null;
   return {
     key: env.API_SERVER_KEY,
-    port: Number.isInteger(port) ? port : 8642,
+    port,
+    host,
   };
 }
 
 /**
- * Dashboard basic-auth credentials from the Hermes home `.env`. Absent or
- * empty means the install runs its dashboard without them; Alice treats the
- * dashboard as optional and so does the pairing response.
- * @param {string} hermesHome
- * @returns {{ username: string, password: string } | null}
+ * Dashboard basic-auth credentials from the Hermes home `.env`. A password
+ * hash cannot be handed to Alice as a login password, so only the plaintext
+ * password variable makes the dashboard pairable; otherwise it is omitted.
  */
 export function readDashboardAuth(hermesHome) {
   const env = readEnvFile(path.join(hermesHome, ".env"));
