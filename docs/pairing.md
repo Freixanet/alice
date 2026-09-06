@@ -7,8 +7,9 @@ Alice lo escanea → configurada**.
 Implementación actual:
 
 - **Lado Mac**: `npm run pair` (helper de este repo, `scripts/pair.mjs`). Lee la
-  configuración de Hermes en modo solo lectura, emite un QR de un solo uso y
-  sirve el canje hasta que se usa o caduca. No modifica `hermes-agent`.
+  configuración de Hermes en modo solo lectura, comprueba que el gateway que
+  va a anunciar realmente responde, emite un QR de un solo uso y sirve el
+  canje hasta que se usa o caduca. No modifica `hermes-agent`.
 - **Lado iPhone**: app nativa (`ios/Alice/Features/Connect/Pairing/`), con deep
   link `alice://` y escáner propio.
 
@@ -19,7 +20,7 @@ v1 para que el cliente iOS no cambie.
 ## 1. El QR contiene una credencial de emparejamiento
 
 ```text
-alice://pair?v=1&p=<base64url(json)>&s=<64 hex>
+alice://pair?v=1&p=<base64url(json)>
 ```
 
 `p` es el JSON de la oferta, en base64url **sin padding** (RFC 4648 §5), con
@@ -32,12 +33,13 @@ las claves en este orden al emitirlo:
 | `e`   | expiración, época Unix en **segundos enteros**            |
 | `pr`  | nombre del perfil Hermes (opcional, solo informativo)     |
 
-`v` vale `1`. `s` es actualmente un HMAC-SHA256 en hex sobre los bytes exactos
-de `p`, pero está **reservado en v1**: el iPhone no posee una clave fuera de
-banda con la que autenticarlo y, por tanto, no debe tratar esa firma como una
-garantía de identidad. El helper la verifica contra sí mismo para detectar
-errores al emitir; un futuro servidor de pairing puede darle una función de
-autenticación sin cambiar el envelope.
+`v` vale `1`.
+
+V1 no añade una “firma” que el iPhone no pueda verificar. Un HMAC cuyo secreto
+solo conoce el Mac no demostraría nada al cliente y aumentaría el protocolo
+sin aportar seguridad. Si una versión futura necesita identidad criptográfica
+del emisor, debe introducir un mecanismo verificable (y versionado) con una
+historia real de distribución de claves.
 
 El QR **sí contiene un secreto**: `t` es una credencial bearer válida durante
 unos minutos y una sola vez. Lo que el QR no contiene son las credenciales de
@@ -94,6 +96,8 @@ muestra como configuración parcial y permite reintentar solo esos servicios.
   termina.
 - **Sin redirects en iOS**: el POST que lleva `t` no sigue redirecciones, por lo
   que un `30x` no puede mover la credencial bearer a otro host.
+- **Respuesta confinada al mismo Mac**: el canje no puede entregar credenciales
+  para otro hostname y hacer que Alice salte silenciosamente a un tercero.
 - **Respuestas no cacheables**: la página del QR y el canje llevan
   `Cache-Control: no-store`.
 - `device_name` no autentica nada. Se sanea y se usa únicamente como etiqueta
@@ -114,9 +118,12 @@ seguir siendo el mismo.
 1. resuelve el perfil de Hermes sin elegir silenciosamente entre varios;
 2. lee gateway/dashboard en modo solo lectura;
 3. obtiene la IPv4 de Tailscale (o usa `--address`);
-4. pinta el QR en Terminal;
-5. deja disponible `http://localhost:8643/` para verlo grande;
-6. termina al emparejar o al caducar.
+4. prueba `v1/capabilities` y `v1/models` por la misma dirección que recibirá
+   el iPhone, evitando emitir un QR para un gateway apagado o ligado solo a
+   loopback;
+5. pinta el QR en Terminal;
+6. deja disponible `http://localhost:8643/` para verlo grande;
+7. termina al emparejar o al caducar.
 
 El QR de la app Cámara abre `alice://pair?…`; iOS arranca Alice y muestra la
 confirmación. Dentro de Alice, `Connect → Scan QR` usa VisionKit y ofrece pegar
