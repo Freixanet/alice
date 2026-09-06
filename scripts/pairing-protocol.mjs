@@ -1,15 +1,17 @@
 /**
  * The `alice://pair` payload a Hermes shows as a QR code and Alice opens —
- * through the system camera or the in-app scanner. The HMAC field is reserved
- * in v1; Alice cannot authenticate it without an out-of-band key, so the real
- * trust bootstrap is the bearer QR plus the tailnet-only claim endpoint.
+ * through the system camera or the in-app scanner.
+ *
+ * V1 deliberately carries only what the iPhone can actually trust and use:
+ * a short-lived bearer token plus the tailnet claim endpoint. An HMAC whose
+ * secret exists only on the Mac would be unverifiable by Alice and therefore
+ * security theatre; if a future protocol needs cryptographic issuer identity,
+ * that belongs in a new version with a verifiable key distribution story.
  *
  * Pure logic, no I/O, so the helper that builds it and the tests that pin it
  * down stay honest. The wire contract lives in docs/pairing.md; the iOS side
  * parses the same shape in ios/Alice/Features/Connect/Pairing/.
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
-
 export const PAIR_VERSION = 1;
 export const PAIR_TTL_MS = 5 * 60 * 1000;
 
@@ -36,8 +38,7 @@ export function decodeBase64Url(text) {
 }
 
 /**
- * Fixed key order keeps signatures stable regardless of how the caller
- * spelled the offer object.
+ * Fixed key order gives the wire payload one stable spelling.
  * @param {PairingOffer} offer
  * @returns {Buffer}
  */
@@ -49,22 +50,17 @@ export function canonicalOfferBytes(offer) {
 
 /**
  * @param {PairingOffer} offer
- * @param {string | Buffer} secret
  * @returns {string} The full deep link, QR-ready.
  */
-export function buildPairingLink(offer, secret) {
+export function buildPairingLink(offer) {
   const bytes = canonicalOfferBytes(offer);
-  const signature = createHmac("sha256", secret).update(bytes).digest("hex");
-  return `alice://pair?v=${PAIR_VERSION}&p=${bytes.toString("base64url")}&s=${signature}`;
+  return `alice://pair?v=${PAIR_VERSION}&p=${bytes.toString("base64url")}`;
 }
 
 /**
- * Shape-only parse: one exact v1 envelope, canonical payload and field types.
- * It deliberately does not authenticate the signature — only the issuer has
- * the key — but it does require the canonical 64-hex spelling both parsers
- * agree on.
+ * One exact v1 envelope, canonical payload and field types.
  * @param {unknown} text
- * @returns {{ offer: PairingOffer, signature: string, payloadBytes: Buffer } | null}
+ * @returns {{ offer: PairingOffer, payloadBytes: Buffer } | null}
  */
 export function parsePairingLink(text) {
   if (typeof text !== "string") return null;
@@ -79,19 +75,16 @@ export function parsePairingLink(text) {
 
   const queryKeys = [...url.searchParams.keys()];
   if (
-    queryKeys.length !== 3 ||
-    new Set(queryKeys).size !== 3 ||
-    !queryKeys.every((key) => ["v", "p", "s"].includes(key))
+    queryKeys.length !== 2 ||
+    new Set(queryKeys).size !== 2 ||
+    !queryKeys.every((key) => ["v", "p"].includes(key))
   ) {
     return null;
   }
   if (url.searchParams.get("v") !== String(PAIR_VERSION)) return null;
 
   const encoded = url.searchParams.get("p");
-  const signature = url.searchParams.get("s");
-  if (!encoded || encoded.length > 4096 || !/^[0-9a-f]{64}$/.test(signature ?? "")) {
-    return null;
-  }
+  if (!encoded || encoded.length > 4096) return null;
   const payloadBytes = decodeBase64Url(encoded);
   if (!payloadBytes) return null;
 
@@ -129,28 +122,18 @@ export function parsePairingLink(text) {
   if (typeof raw.pr === "string" && raw.pr.trim().length > 0) {
     offer.pr = raw.pr.trim();
   }
-  return { offer, signature, payloadBytes };
+  return { offer, payloadBytes };
 }
 
 /**
- * Parse + signature + expiry. In v1 this is the issuer's own round-trip guard,
- * not a client authentication mechanism: Alice does not possess `secret`.
+ * Parse + expiry with the same boundary the claim store uses.
  * @param {string} text
- * @param {string | Buffer} secret
  * @param {number} [nowMs]
- * @returns {{ ok: true, offer: PairingOffer } | { ok: false, reason: "malformed" | "signature" | "expired" }}
+ * @returns {{ ok: true, offer: PairingOffer } | { ok: false, reason: "malformed" | "expired" }}
  */
-export function verifyPairingLink(text, secret, nowMs = Date.now()) {
+export function validatePairingLink(text, nowMs = Date.now()) {
   const parsed = parsePairingLink(text);
   if (!parsed) return { ok: false, reason: "malformed" };
-  const expected = Buffer.from(
-    createHmac("sha256", secret).update(parsed.payloadBytes).digest("hex"),
-    "hex",
-  );
-  const actual = Buffer.from(parsed.signature, "hex");
-  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-    return { ok: false, reason: "signature" };
-  }
   if (parsed.offer.e * 1000 <= nowMs) return { ok: false, reason: "expired" };
   return { ok: true, offer: parsed.offer };
 }
