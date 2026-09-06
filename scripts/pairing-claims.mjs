@@ -30,8 +30,10 @@ export function createClaimStore({
 
   return {
     /**
-     * Registers a fresh token and returns when it stops being claimable
-     * (epoch ms, same clock the offer's `e` field carries).
+     * Registers a fresh token and returns when it stops being claimable.
+     * The wire protocol carries whole Unix seconds, so expiry is quantized
+     * down to that same boundary here instead of letting phone and server
+     * disagree by the current millisecond remainder.
      * @param {string} token
      */
     issue(token) {
@@ -42,7 +44,7 @@ export function createClaimStore({
         const oldest = issued.keys().next().value;
         if (oldest !== undefined) issued.delete(oldest);
       }
-      const expiresAt = now() + ttlMs;
+      const expiresAt = Math.floor((now() + ttlMs) / 1000) * 1000;
       issued.set(token, { expiresAt, used: false });
       return expiresAt;
     },
