@@ -17,27 +17,19 @@ struct PairingForm: View {
     var body: some View {
         Form {
             if let flow {
-                // A system-camera deep link can arrive while Alice is already
-                // connected even though Connect hides the scanner then. Never
-                // let a QR silently replace long-lived credentials: replacing
-                // a Hermes starts with an explicit disconnect in Connect.
-                if store.isConnected, flow.stage == .confirming {
-                    alreadyConnected
-                } else {
-                    switch flow.stage {
-                    case .confirming:
-                        confirmation(flow)
-                    case .claiming, .connecting:
-                        progress(flow)
-                    case let .connected(profile, dashboardWarning):
-                        connected(
-                            flow,
-                            profile: profile,
-                            dashboardWarning: dashboardWarning
-                        )
-                    case let .failed(message, retryable):
-                        failure(flow, message: message, retryable: retryable)
-                    }
+                switch flow.stage {
+                case .confirming:
+                    confirmation(flow)
+                case .claiming, .connecting:
+                    progress(flow)
+                case let .connected(profile, dashboardWarning):
+                    connected(
+                        flow,
+                        profile: profile,
+                        dashboardWarning: dashboardWarning
+                    )
+                case let .failed(message, retryable):
+                    failure(flow, message: message, retryable: retryable)
                 }
             } else {
                 Text("This pairing code is incomplete or damaged.")
@@ -53,19 +45,16 @@ struct PairingForm: View {
 
     // MARK: - Stages
 
-    private var alreadyConnected: some View {
-        Section {
-            Label("Alice is already connected to Hermes.", systemImage: "checkmark.circle.fill")
-            Text("To pair a different Hermes, close this screen, disconnect the current one in Connect, then scan the new QR again.")
-                .foregroundStyle(.secondary)
-            Button("Done") { onDone() }
-        } header: {
-            Text("Already connected")
-        }
-    }
-
     private func confirmation(_ flow: PairingFlow) -> some View {
         Section {
+            if store.isConnected {
+                Label("Alice is already connected to Hermes.", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.secondary)
+                Text("Confirming this pairing replaces the current Hermes connection. If the new gateway cannot be reached, Alice restores the current connection automatically.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             if let profile = flow.payload?.profileName {
                 LabeledContent("Profile", value: profile)
             }
@@ -74,12 +63,16 @@ struct PairingForm: View {
             Button {
                 Task { await flow.run(store: store) }
             } label: {
-                Text("Connect")
+                Text(store.isConnected ? "Replace connection" : "Connect")
             }
         } header: {
-            Text("Pair with your Hermes")
+            Text(store.isConnected ? "Pair or change Hermes" : "Pair with your Hermes")
         } footer: {
-            Text("Your Hermes will hand over its address and key once you confirm. The name says which device paired.")
+            Text(
+                store.isConnected
+                    ? "Scanning alone changes nothing. The existing connection is kept until you confirm this pairing."
+                    : "Your Hermes will hand over its address and key once you confirm. The name says which device paired."
+            )
         }
     }
 
