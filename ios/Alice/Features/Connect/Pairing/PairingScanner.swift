@@ -61,7 +61,13 @@ struct PairingScanSheet: View {
                     onFound: { text in scannedLink = text },
                     onUnavailable: { camera = .unavailable }
                 )
-                .ignoresSafeArea()
+                // UIViewControllerRepresentable has no intrinsic size. Give
+                // the scanner the whole sheet explicitly; otherwise SwiftUI
+                // may lay the controller out at effectively zero height while
+                // leaving the navigation chrome visible.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
+                .ignoresSafeArea(edges: .bottom)
             case .denied:
                 MessageView(
                     "Alice needs camera access to scan the pairing QR. Allow it in Settings, or paste the pairing link below."
@@ -159,7 +165,10 @@ private struct QRScannerView: UIViewControllerRepresentable {
         (uiViewController as? ScannerContainer)?.stop()
     }
 
-    /// Starts on screen instead of waiting for a caller to remember to.
+    /// Hosts the VisionKit scanner as a real child controller and pins its
+    /// preview to every edge. The old 1×1 bootstrap frame relied on autoresizing
+    /// to expand later, which can leave the camera running inside an invisible
+    /// one-pixel view when SwiftUI presents this controller in a sheet.
     private final class ScannerContainer: UIViewController {
         private let scanner: DataScannerViewController
         private let onStartFailure: () -> Void
@@ -168,10 +177,17 @@ private struct QRScannerView: UIViewControllerRepresentable {
             self.scanner = scanner
             self.onStartFailure = onStartFailure
             super.init(nibName: nil, bundle: nil)
+
+            view.backgroundColor = .black
             addChild(scanner)
+            scanner.view.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(scanner.view)
-            scanner.view.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
-            scanner.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            NSLayoutConstraint.activate([
+                scanner.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                scanner.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                scanner.view.topAnchor.constraint(equalTo: view.topAnchor),
+                scanner.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
             scanner.didMove(toParent: self)
         }
 
