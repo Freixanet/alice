@@ -58,10 +58,10 @@ struct PairingPayload: Equatable {
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { throw ParseError.malformed }
         let queryItems = components.queryItems ?? []
-        guard queryItems.count == 3 else { throw ParseError.malformed }
+        guard queryItems.count == 2 else { throw ParseError.malformed }
         var values: [String: String] = [:]
         for item in queryItems {
-            guard ["v", "p", "s"].contains(item.name),
+            guard ["v", "p"].contains(item.name),
                   values[item.name] == nil,
                   let value = item.value
             else { throw ParseError.malformed }
@@ -70,16 +70,8 @@ struct PairingPayload: Equatable {
 
         guard let version = values["v"] else { throw ParseError.malformed }
         guard version == "1" else { throw ParseError.unsupportedVersion }
-
         guard let encoded = values["p"], encoded.count <= 4096,
               let payload = decodeBase64URL(encoded)
-        else { throw ParseError.malformed }
-        // `s` is reserved in v1 (the phone has no out-of-band key with which
-        // to authenticate it), but its canonical shape remains part of the
-        // versioned envelope so future implementations cannot disagree on it.
-        guard let signature = values["s"],
-              signature.count == 64,
-              signature.allSatisfy({ $0.isASCIIHexLowercase })
         else { throw ParseError.malformed }
 
         let offer: Offer
@@ -143,10 +135,5 @@ struct PairingPayload: Equatable {
 private extension Character {
     var isBase64URLCharacter: Bool {
         isASCII && (isLetter || isNumber || self == "-" || self == "_")
-    }
-
-    var isASCIIHexLowercase: Bool {
-        guard isASCII else { return false }
-        return isNumber || ("a"..."f").contains(self)
     }
 }
