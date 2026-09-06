@@ -6,7 +6,7 @@ import XCTest
 /// errors to, and that the request carries the one-time token.
 final class PairingClientTests: XCTestCase {
     private let payload = try! PairingPayload.parse(
-        "alice://pair?v=1&p=\(PairingClientTests.base64URL(#"{"c":"http://100.67.213.42:8643/claim","t":"tok","e":9999999999,"pr":"radar-ia"}"#))&s=00",
+        "alice://pair?v=1&p=\(PairingClientTests.base64URL(#"{"c":"http://100.67.213.42:8643/claim","t":"tok","e":9999999999,"pr":"radar-ia"}"#))&s=\(String(repeating: "0", count: 64))",
         now: Date(timeIntervalSince1970: 1)
     )
 
@@ -52,7 +52,7 @@ final class PairingClientTests: XCTestCase {
     func testClaimWithoutDashboardLeavesItNil() async throws {
         let claimed = try await client { _ in
             (200, Data("""
-            {"profile":null,"gateway":{"url":"http://h:8642","key":"k"},"dashboard":null}
+            {"profile":null,"gateway":{"url":"http://100.67.213.42:8642","key":"k"},"dashboard":null}
             """.utf8))
         }.claim(payload, deviceName: "iPhone")
 
@@ -106,6 +106,44 @@ final class PairingClientTests: XCTestCase {
             XCTFail("garbage body should have thrown")
         } catch PairingClient.Failure.badResponse {}
         catch { XCTFail("garbage body threw \(error)") }
+    }
+
+    func testClaimCannotHandCredentialsToAnotherHost() async {
+        let body = Data("""
+        {"profile":"radar-ia",
+         "gateway":{"url":"https://evil.example:8642","key":"gk"},
+         "dashboard":null}
+        """.utf8)
+        do {
+            _ = try await client { _ in (200, body) }
+                .claim(payload, deviceName: "iPhone")
+            XCTFail("cross-host config should have thrown")
+        } catch PairingClient.Failure.badResponse {}
+        catch { XCTFail("cross-host config threw \(error)") }
+    }
+
+    func testClaimRejectsBlankSecretsAndUnsafeSchemes() async {
+        let bodies = [
+            """
+            {"gateway":{"url":"http://100.67.213.42:8642","key":""},"dashboard":null}
+            """,
+            """
+            {"gateway":{"url":"ftp://100.67.213.42:8642","key":"gk"},"dashboard":null}
+            """,
+            """
+            {"gateway":{"url":"http://100.67.213.42:8642","key":"gk"},
+             "dashboard":{"url":"http://100.67.213.42:9119","username":"","password":"pw"}}
+            """,
+        ]
+
+        for json in bodies {
+            do {
+                _ = try await client { _ in (200, Data(json.utf8)) }
+                    .claim(payload, deviceName: "iPhone")
+                XCTFail("unsafe config should have thrown: \(json)")
+            } catch PairingClient.Failure.badResponse {}
+            catch { XCTFail("unsafe config threw \(error)") }
+        }
     }
 }
 
