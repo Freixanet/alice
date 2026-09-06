@@ -29,21 +29,36 @@ enum KeyStore {
         }
     }
 
+    /// Replaces an existing secret in place. Delete-then-add is deliberately
+    /// avoided: if an add ever fails (locked keychain, entitlement change,
+    /// storage error), the previous working credential must still be there.
     static func save(_ key: String, account: String = gatewayAccount) throws {
         let data = Data(key.utf8)
-        var query: [String: Any] = [
+        let lookup: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(query as CFDictionary)
 
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] =
+        let update: [String: Any] = [
+            kSecValueData as String: data,
+        ]
+        let updateStatus = SecItemUpdate(
+            lookup as CFDictionary,
+            update as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw Failure.keychain(updateStatus)
+        }
+
+        var add = lookup
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] =
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly
 
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else { throw Failure.keychain(status) }
+        let addStatus = SecItemAdd(add as CFDictionary, nil)
+        guard addStatus == errSecSuccess else { throw Failure.keychain(addStatus) }
     }
 
     static func read(account: String = gatewayAccount) -> String? {
@@ -68,6 +83,7 @@ enum KeyStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        return SecItemDelete(query as CFDictionary) == errSecSuccess
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 }

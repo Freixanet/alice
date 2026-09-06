@@ -5,6 +5,7 @@ struct AliceApp: App {
     @State private var store = AppStore()
     @State private var speech = ReadAloud()
     @State private var showRadarBotInstaller = false
+    @State private var pairingLink: PendingPairingLink?
 
     var body: some Scene {
         WindowGroup {
@@ -16,6 +17,20 @@ struct AliceApp: App {
                     RadarIABotInstaller()
                         .environment(store)
                         .preferredColorScheme(store.theme.colorScheme)
+                }
+                .sheet(item: $pairingLink) { pending in
+                    PairingSheet(link: pending.link, onDismiss: { pairingLink = nil })
+                        .environment(store)
+                        .preferredColorScheme(store.theme.colorScheme)
+                }
+                // The pairing QR is an alice:// deep link, so the iPhone's
+                // own Camera app can open Alice at the moment of pairing —
+                // no in-app scanner needed, least of all on a first install.
+                .onOpenURL { url in
+                    guard url.scheme?.lowercased() == "alice",
+                          url.host?.lowercased() == "pair"
+                    else { return }
+                    pairingLink = PendingPairingLink(link: url.absoluteString)
                 }
                 .task {
                     await store.restoreConnection()
@@ -67,4 +82,11 @@ struct AliceApp: App {
             // create or repair a Hermes bot. Leave the existing app usable.
         }
     }
+}
+
+/// A deep link waiting for its sheet. Identifiable so SwiftUI presents one
+/// at a time; a second scan while the sheet is up replaces the first.
+private struct PendingPairingLink: Identifiable {
+    let id = UUID()
+    let link: String
 }
