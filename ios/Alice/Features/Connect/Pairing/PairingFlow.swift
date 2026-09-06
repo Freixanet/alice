@@ -6,8 +6,10 @@ import Observation
 /// manual form uses — so a paired install is stored, restored on launch and
 /// forgettable exactly like a hand-typed one.
 ///
-/// The stages mirror what the person on the other side of the screen is
-/// watching for: confirm, "connecting to your Hermes…", connected.
+/// The one-time claim and the long-lived connections are deliberately two
+/// stages. Once the claim succeeds its token is burned, so a later gateway or
+/// dashboard retry must reuse the claimed configuration rather than claiming
+/// the QR again.
 @MainActor
 @Observable
 final class PairingFlow {
@@ -16,8 +18,8 @@ final class PairingFlow {
         case confirming
         case claiming
         case connecting
-        case connected(profile: String?)
-        case failed(String)
+        case connected(profile: String?, dashboardWarning: String?)
+        case failed(message: String, retryable: Bool)
     }
 
     /// Declared to the Hermes at claim time. The system's real device name
@@ -32,64 +34,132 @@ final class PairingFlow {
     /// Nil when the link did not parse; the stage then carries the reason.
     let payload: PairingPayload?
 
-    private let client = PairingClient()
+    private let client: PairingClient
     private let defaults: UserDefaults
+    private var claimed: PairingClient.Claimed?
 
     static let deviceNameKey = "alice.device.name"
 
-    init(link: String, defaults: UserDefaults = .standard) {
+    init(
+        link: String,
+        defaults: UserDefaults = .standard,
+        client: PairingClient = PairingClient()
+    ) {
         self.defaults = defaults
+        self.client = client
         do {
             payload = try PairingPayload.parse(link)
             stage = .confirming
         } catch {
             payload = nil
-            stage = .failed((error as? PairingPayload.ParseError)?.errorDescription
-                ?? "This pairing code is incomplete or damaged.")
+            stage = .failed(
+                message: (error as? PairingPayload.ParseError)?.errorDescription
+                    ?? "This pairing code is incomplete or damaged.",
+                retryable: false
+            )
         }
         let saved = defaults.string(forKey: Self.deviceNameKey) ?? ""
         deviceName = saved.isEmpty ? "iPhone" : saved
     }
 
     func run(store: AppStore) async {
-        guard let payload, stage == .confirming || stage.isRetryable else { return }
-        stage = .claiming
-        let claimed: PairingClient.Claimed
-        do {
-            claimed = try await client.claim(payload, deviceName: deviceName)
-        } catch {
-            stage = .failed((error as? PairingClient.Failure)?.errorDescription
-                ?? HermesClient.describe(error).localizedDescription)
+        guard payload != nil else { return }
+
+        // A previous claim may already have succeeded. Reuse it: asking the
+        // helper for it again can only return "used" and turns a recoverable
+        // network hiccup into a dead-end QR.
+        if let claimed {
+            await connect(claimed, store: store)
             return
         }
 
+        guard stage == .confirming || stage.canRetry else { return }
+        stage = .claiming
+
+        let name = deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty { deviceName = "iPhone" }
+
+        do {
+            let result = try await client.claim(
+                payload!,
+                deviceName: deviceName
+            )
+            claimed = result
+            await connect(result, store: store)
+        } catch {
+            let failure = error as? PairingClient.Failure
+            stage = .failed(
+                message: failure?.errorDescription
+                    ?? HermesClient.describe(error).localizedDescription,
+                retryable: Self.claimCanRetry(failure)
+            )
+        }
+    }
+
+    /// Retries only the optional dashboard half after the gateway is already
+    /// connected. The claim stays consumed and the gateway connection stays
+    /// untouched.
+    func retryDashboard(store: AppStore) async {
+        guard let claimed,
+              let dashboardURL = claimed.dashboardURLText,
+              store.isConnected
+        else { return }
+
+        stage = .connecting
+        let warning = await store.connectDashboard(
+            urlText: dashboardURL,
+            username: claimed.dashboardUsername ?? "",
+            password: claimed.dashboardPassword ?? ""
+        )
+        stage = .connected(
+            profile: claimed.profileName,
+            dashboardWarning: warning
+        )
+    }
+
+    private func connect(_ claimed: PairingClient.Claimed, store: AppStore) async {
         stage = .connecting
         await store.connect(urlText: claimed.gatewayURLText, key: claimed.gatewayKey)
-        if store.isConnected, let dashboardURL = claimed.dashboardURLText {
-            // The dashboard is optional on both ends; a claim without one
-            // leaves the gateway alone, exactly like the manual form.
-            _ = await store.connectDashboard(
+        guard store.isConnected else {
+            stage = .failed(
+                message: store.connectionError ?? "Hermes did not answer.",
+                retryable: true
+            )
+            return
+        }
+
+        var dashboardWarning: String?
+        if let dashboardURL = claimed.dashboardURLText {
+            // The dashboard is optional in the protocol, but when the helper
+            // actually supplied one, failure is shown instead of silently
+            // pretending every part of the pairing completed.
+            dashboardWarning = await store.connectDashboard(
                 urlText: dashboardURL,
                 username: claimed.dashboardUsername ?? "",
                 password: claimed.dashboardPassword ?? ""
             )
         }
 
-        if store.isConnected {
-            stage = .connected(profile: claimed.profileName)
-        } else {
-            // The gateway key was verified against the claim, so a failure
-            // here is transport, not typing — say what the store saw.
-            stage = .failed(store.connectionError ?? "Hermes did not answer.")
+        stage = .connected(
+            profile: claimed.profileName,
+            dashboardWarning: dashboardWarning
+        )
+    }
+
+    private static func claimCanRetry(_ failure: PairingClient.Failure?) -> Bool {
+        guard let failure else { return true }
+        switch failure {
+        case .stale, .badResponse:
+            return false
+        case .forbidden, .http, .unreachable, .timedOut, .offline:
+            return true
         }
     }
 }
 
 extension PairingFlow.Stage {
-    /// Only a failure may run again; a used token must not be silently
-    /// re-claimed into a loop.
-    var isRetryable: Bool {
-        if case .failed = self { return true }
+    var canRetry: Bool {
+        if case let .failed(_, retryable) = self { return retryable }
         return false
     }
 }
