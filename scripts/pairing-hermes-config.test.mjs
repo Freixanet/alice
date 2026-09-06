@@ -81,28 +81,51 @@ describe("configActiveProfile", () => {
 });
 
 describe("readProfileGateway", () => {
-  it("reads the key and port from the profile env", () => {
+  it("reads the key, host and port from the profile env", () => {
     const home = tempHome();
     mkdirSync(path.join(home, "profiles", "radar-ia"), { recursive: true });
     writeFileSync(
       path.join(home, "profiles", "radar-ia", ".env"),
-      "API_SERVER_PORT=8642\nAPI_SERVER_KEY=0123456789abcdef\n",
+      [
+        "API_SERVER_ENABLED=true",
+        "API_SERVER_HOST=100.67.213.42",
+        "API_SERVER_PORT=8642",
+        "API_SERVER_KEY=0123456789abcdef",
+        "",
+      ].join("\n"),
     );
     expect(
       readProfileGateway({ hermesHome: home, profile: "radar-ia" }),
     ).toEqual({
       key: "0123456789abcdef",
       port: 8642,
+      host: "100.67.213.42",
     });
   });
 
-  it("defaults the port and refuses a profile without a key", () => {
+  it("defaults the port on older configs that omit it", () => {
     const home = tempHome();
-    mkdirSync(path.join(home, "profiles", "empty"), { recursive: true });
-    writeFileSync(path.join(home, "profiles", "empty", ".env"), "OTHER=1\n");
+    mkdirSync(path.join(home, "profiles", "legacy"), { recursive: true });
+    writeFileSync(
+      path.join(home, "profiles", "legacy", ".env"),
+      "API_SERVER_KEY=0123456789abcdef\n",
+    );
     expect(
-      readProfileGateway({ hermesHome: home, profile: "empty" }),
-    ).toBeNull();
+      readProfileGateway({ hermesHome: home, profile: "legacy" }),
+    ).toEqual({ key: "0123456789abcdef", port: 8642, host: null });
+  });
+
+  it("refuses missing keys, disabled servers and invalid ports", () => {
+    const home = tempHome();
+    for (const [name, body] of [
+      ["empty", "OTHER=1\n"],
+      ["disabled", "API_SERVER_ENABLED=false\nAPI_SERVER_KEY=k\n"],
+      ["bad-port", "API_SERVER_KEY=k\nAPI_SERVER_PORT=99999\n"],
+    ]) {
+      mkdirSync(path.join(home, "profiles", name), { recursive: true });
+      writeFileSync(path.join(home, "profiles", name, ".env"), body);
+      expect(readProfileGateway({ hermesHome: home, profile: name })).toBeNull();
+    }
     expect(
       readProfileGateway({ hermesHome: home, profile: "missing" }),
     ).toBeNull();
@@ -110,7 +133,7 @@ describe("readProfileGateway", () => {
 });
 
 describe("readDashboardAuth", () => {
-  it("reads username and password from the home env", () => {
+  it("reads username and plaintext password from the home env", () => {
     const home = tempHome();
     writeFileSync(
       path.join(home, ".env"),
@@ -122,11 +145,11 @@ describe("readDashboardAuth", () => {
     });
   });
 
-  it("treats a half-configured dashboard as absent", () => {
+  it("treats a half-configured or hash-only dashboard as absent", () => {
     const home = tempHome();
     writeFileSync(
       path.join(home, ".env"),
-      "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=alice\n",
+      "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=alice\nHERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH=hash\n",
     );
     expect(readDashboardAuth(home)).toBeNull();
     expect(readDashboardAuth(path.join(tempHome(), "nope"))).toBeNull();
