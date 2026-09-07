@@ -1618,6 +1618,48 @@ final class AppStore {
     }
     func memoryProviders() async throws -> [MemoryProvider] { try await dashboard.memory() }
 
+    func memoryProviderStatus() async throws -> MemoryProviderStatusSnapshot {
+        try await dashboard.memoryProviderStatus()
+    }
+
+    func memoryProviderConfiguration(
+        _ name: String, profile: String = "default"
+    ) async throws -> MemoryProviderConfiguration {
+        try await dashboard.memoryProviderConfiguration(name, profile: profile)
+    }
+
+    func saveMemoryProviderConfiguration(
+        _ name: String, profile: String = "default", surface: String, values: [String: String]
+    ) async throws {
+        try await dashboard.saveMemoryProviderConfiguration(
+            name, profile: profile, surface: surface, values: values
+        )
+    }
+
+    func activateMemoryProvider(_ name: String, profile: String = "default") async throws {
+        try await dashboard.activateMemoryProvider(name, profile: profile)
+    }
+
+    func useBuiltinMemoryProvider(profile: String = "default") async throws {
+        try await dashboard.useBuiltinMemoryProvider(profile: profile)
+    }
+
+    func setupMemoryProvider(_ name: String) async throws -> MemoryProviderSetupResponse {
+        try await dashboard.setupMemoryProvider(name)
+    }
+
+    func memoryProviderOAuthStatus(
+        _ name: String, profile: String = "default"
+    ) async throws -> MemoryProviderOAuthStatus? {
+        try await dashboard.memoryProviderOAuthStatus(name, profile: profile)
+    }
+
+    func startMemoryProviderOAuth(
+        _ name: String, profile: String = "default"
+    ) async throws -> MemoryProviderOAuthStatus {
+        try await dashboard.startMemoryProviderOAuth(name, profile: profile)
+    }
+
     // MARK: - Hermes managed files
 
     func hermesFiles(path: String? = nil) async throws -> ManagedFilesListing {

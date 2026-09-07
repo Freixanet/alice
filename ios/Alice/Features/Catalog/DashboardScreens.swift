@@ -680,8 +680,15 @@ struct MemoryScreen: View {
                             "Configured provider",
                             value: snapshot.provider.isEmpty ? "Built-in only" : snapshot.provider
                         )
+                        NavigationLink {
+                            MemoryProvidersScreen(profile: selectedProfile) {
+                                Task { await load() }
+                            }
+                        } label: {
+                            Label("Memory Providers", systemImage: "externaldrive.badge.icloud")
+                        }
                     } footer: {
-                        Text("Edits above write Hermes' own USER.md and MEMORY.md. New sessions load the updated memory; an already-running session keeps the snapshot it started with.")
+                        Text("Edits above write Hermes' own USER.md and MEMORY.md. Provider management is profile-aware; new sessions load the updated memory configuration.")
                     }
                 }
             }

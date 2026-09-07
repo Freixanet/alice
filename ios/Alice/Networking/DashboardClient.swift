@@ -379,6 +379,91 @@ struct MemoryProvider: Identifiable, Hashable, Sendable {
     var active: Bool
 }
 
+struct MemoryProviderExternalDependency: Identifiable, Hashable, Sendable {
+    var id: String { name + "|" + install + "|" + check }
+    var name: String
+    var install: String
+    var check: String
+}
+
+struct MemoryProviderSetupInfo: Hashable, Sendable {
+    var pipDependencies: [String]
+    var externalDependencies: [MemoryProviderExternalDependency]
+    var requiredEnvironment: [String]
+    var dependenciesInstalled: Bool
+}
+
+struct MemoryProviderStatusSnapshot: Hashable, Sendable {
+    var active: String
+    var providers: [MemoryProvider]
+    var setup: [String: MemoryProviderSetupInfo]
+    var builtinMemoryBytes: Int64
+    var builtinUserBytes: Int64
+}
+
+struct MemoryProviderFieldOption: Identifiable, Hashable, Sendable {
+    var id: String { value }
+    var value: String
+    var label: String
+    var detail: String
+}
+
+struct MemoryProviderField: Identifiable, Hashable, Sendable {
+    var id: String { key }
+    var key: String
+    var label: String
+    var kind: String
+    var detail: String
+    var info: String
+    var placeholder: String
+    var required: Bool
+    var value: String
+    var isSet: Bool
+    var options: [MemoryProviderFieldOption]
+    var url: String
+    var minimum: Double?
+    var maximum: Double?
+    var step: Double?
+    var when: [String: String]
+    var inline: Bool
+    var group: String
+
+    var isSecret: Bool { kind == "secret" }
+}
+
+struct MemoryProviderConfiguration: Hashable, Sendable {
+    var name: String
+    var label: String
+    var docsURL: String
+    var surface: String
+    var fields: [MemoryProviderField]
+    var setup: MemoryProviderSetupInfo?
+}
+
+struct MemoryProviderSetupResult: Identifiable, Hashable, Sendable {
+    var id: String { kind + "|" + name + "|" + command }
+    var kind: String
+    var name: String
+    var status: String
+    var command: String
+    var returnCode: Int?
+    var stdout: String
+    var stderr: String
+}
+
+struct MemoryProviderSetupResponse: Hashable, Sendable {
+    var ok: Bool
+    var provider: String
+    var results: [MemoryProviderSetupResult]
+}
+
+struct MemoryProviderOAuthStatus: Hashable, Sendable {
+    var state: String
+    var detail: String
+    var connected: Bool
+    var auth: String?
+}
+
 /// The curated built-in memory actually injected by Hermes into future
 /// sessions. `user` maps to USER.md and `memory` maps to MEMORY.md.
 struct MemoryTarget: Identifiable, Hashable, Sendable {
@@ -1942,20 +2027,177 @@ extension DashboardClient {
     }
 
     func memory() async throws -> [MemoryProvider] {
-        let object = try await get("api/memory")
-        let active = (object["active"] as? String) ?? ""
-        let rows = (object["providers"] as? [[String: Any]]) ?? []
-        return rows.compactMap { row in
-            guard let name = row["name"] as? String else { return nil }
-            return MemoryProvider(
-                name: name,
-                detail: (row["description"] as? String) ?? "",
-                status: (row["status"] as? String) ?? "",
-                available: (row["available"] as? Bool) ?? false,
-                configured: (row["configured"] as? Bool) ?? false,
-                active: name == active
+        try await memoryProviderStatus().providers
+    }
+
+    func memoryProviderStatus() async throws -> MemoryProviderStatusSnapshot {
+        try Self.memoryProviderStatus(from: await get("api/memory"))
+    }
+
+    static func memoryProviderStatus(from object: [String: Any]) throws -> MemoryProviderStatusSnapshot {
+        guard let active = object["active"] as? String,
+              let rows = object["providers"] as? [[String: Any]],
+              let builtin = object["builtin_files"] as? [String: Any] else { throw Failure.unreadable }
+        var providers: [MemoryProvider] = []
+        var setup: [String: MemoryProviderSetupInfo] = [:]
+        for row in rows {
+            guard let name = nonEmpty(row["name"] as? String),
+                  let status = row["status"] as? String,
+                  let available = row["available"] as? Bool,
+                  let configured = row["configured"] as? Bool else { throw Failure.unreadable }
+            providers.append(MemoryProvider(
+                name: name, detail: row["description"] as? String ?? "", status: status,
+                available: available, configured: configured, active: name == active
+            ))
+            if let rawSetup = row["setup"] as? [String: Any] {
+                setup[name] = try memorySetupInfo(from: rawSetup)
+            }
+        }
+        return MemoryProviderStatusSnapshot(
+            active: active, providers: providers, setup: setup,
+            builtinMemoryBytes: Int64(int(builtin["memory"]) ?? 0),
+            builtinUserBytes: Int64(int(builtin["user"]) ?? 0)
+        )
+    }
+
+    func memoryProviderConfiguration(_ name: String, profile: String) async throws -> MemoryProviderConfiguration {
+        let path = "api/memory/providers/\(Self.pathSegment(name))/config?profile=\(Self.queryValue(profile))"
+        return try Self.memoryProviderConfiguration(from: await get(path), surface: "legacy")
+    }
+
+    static func memoryProviderConfiguration(
+        from object: [String: Any], surface: String
+    ) throws -> MemoryProviderConfiguration {
+        guard let name = object["name"] as? String, !name.isEmpty,
+              let label = object["label"] as? String,
+              let rows = object["fields"] as? [[String: Any]] else { throw Failure.unreadable }
+        let parsed = try rows.map { row -> MemoryProviderField in
+            guard let key = nonEmpty(row["key"] as? String),
+                  let fieldLabel = row["label"] as? String,
+                  let kind = row["kind"] as? String,
+                  let isSet = row["is_set"] as? Bool else { throw Failure.unreadable }
+            let options = (row["options"] as? [[String: Any]] ?? []).compactMap { option -> MemoryProviderFieldOption? in
+                guard let value = option["value"] as? String else { return nil }
+                return .init(value: value, label: option["label"] as? String ?? value, detail: option["description"] as? String ?? "")
+            }
+            let when = (row["when"] as? [String: Any] ?? [:]).mapValues(Self.memoryFieldString)
+            return MemoryProviderField(
+                key: key, label: fieldLabel, kind: kind == "bool" ? "boolean" : kind,
+                detail: row["description"] as? String ?? "", info: row["info"] as? String ?? "",
+                placeholder: row["placeholder"] as? String ?? "", required: row["required"] as? Bool ?? false,
+                value: memoryFieldString(row["value"]), isSet: isSet, options: options,
+                url: row["url"] as? String ?? "", minimum: double(row["minimum"]), maximum: double(row["maximum"]),
+                step: double(row["step"]), when: when, inline: row["inline"] as? Bool ?? false,
+                group: row["group"] as? String ?? ""
             )
         }
+        // Hermes 0.21.0 can emit the same legacy schema key twice (currently
+        // Hindsight repeats api_key/api_url). SwiftUI Identifiable rows and
+        // Dictionary(uniqueKeysWithValues:) both require uniqueness. Keep the
+        // original order and let the later server row win for that key.
+        var fields: [MemoryProviderField] = []
+        var fieldIndex: [String: Int] = [:]
+        for field in parsed {
+            if let index = fieldIndex[field.key] {
+                fields[index] = field
+            } else {
+                fieldIndex[field.key] = fields.count
+                fields.append(field)
+            }
+        }
+        let setup = try (object["setup"] as? [String: Any]).map(memorySetupInfo(from:))
+        return MemoryProviderConfiguration(
+            name: name, label: label, docsURL: object["docs_url"] as? String ?? "",
+            surface: surface, fields: fields, setup: setup
+        )
+    }
+
+    private static func memoryFieldString(_ value: Any?) -> String {
+        guard let value, !(value is NSNull) else { return "" }
+        if let string = value as? String { return string }
+        if let bool = value as? Bool { return bool ? "true" : "false" }
+        if let number = value as? NSNumber { return number.stringValue }
+        if JSONSerialization.isValidJSONObject(value),
+           let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+           let string = String(data: data, encoding: .utf8) { return string }
+        return String(describing: value)
+    }
+
+    static func memorySetupInfo(from object: [String: Any]) throws -> MemoryProviderSetupInfo {
+        guard let pip = object["pip_dependencies"] as? [String],
+              let externalRows = object["external_dependencies"] as? [[String: Any]],
+              let required = object["required_env"] as? [String],
+              let installed = object["dependencies_installed"] as? Bool else { throw Failure.unreadable }
+        let external = try externalRows.map { row -> MemoryProviderExternalDependency in
+            guard let name = row["name"] as? String, let install = row["install"] as? String,
+                  let check = row["check"] as? String else { throw Failure.unreadable }
+            return .init(name: name, install: install, check: check)
+        }
+        return .init(pipDependencies: pip, externalDependencies: external, requiredEnvironment: required, dependenciesInstalled: installed)
+    }
+
+    func saveMemoryProviderConfiguration(
+        _ name: String, profile: String, surface: String, values: [String: String]
+    ) async throws {
+        var path = "api/memory/providers/\(Self.pathSegment(name))/config?profile=\(Self.queryValue(profile))"
+        if surface == "declared" { path += "&surface=declared" }
+        _ = try await send("PUT", path, ["values": values])
+    }
+
+    func activateMemoryProvider(_ name: String, profile: String) async throws {
+        _ = try await send(
+            "PUT", "api/memory/providers/\(Self.pathSegment(name))/config?profile=\(Self.queryValue(profile))",
+            ["values": [String: String]()]
+        )
+    }
+
+    func useBuiltinMemoryProvider(profile: String) async throws {
+        _ = try await send("PUT", "api/config?profile=\(Self.queryValue(profile))", [
+            "config": ["memory": ["provider": ""]]
+        ])
+    }
+
+    func setupMemoryProvider(_ name: String) async throws -> MemoryProviderSetupResponse {
+        let object = try await send(
+            "POST", "api/memory/providers/\(Self.pathSegment(name))/setup", ["values": [String: String]()]
+        )
+        return try Self.memoryProviderSetupResponse(from: object)
+    }
+
+    static func memoryProviderSetupResponse(from object: [String: Any]) throws -> MemoryProviderSetupResponse {
+        guard let ok = object["ok"] as? Bool, let provider = object["provider"] as? String,
+              let rows = object["results"] as? [[String: Any]] else { throw Failure.unreadable }
+        let results = try rows.map { row -> MemoryProviderSetupResult in
+            guard let kind = row["kind"] as? String, let name = row["name"] as? String,
+                  let status = row["status"] as? String, let command = row["command"] as? String,
+                  let stdout = row["stdout"] as? String, let stderr = row["stderr"] as? String else { throw Failure.unreadable }
+            return .init(
+                kind: kind, name: name, status: status, command: command, returnCode: int(row["returncode"]),
+                stdout: stdout, stderr: stderr
+            )
+        }
+        return .init(ok: ok, provider: provider, results: results)
+    }
+
+    func memoryProviderOAuthStatus(_ name: String, profile: String) async throws -> MemoryProviderOAuthStatus? {
+        do {
+            return try Self.memoryProviderOAuthStatus(from: await get(
+                "api/memory/providers/\(Self.pathSegment(name))/oauth/status?profile=\(Self.queryValue(profile))"
+            ))
+        } catch Failure.http(404, _) {
+            return nil
+        }
+    }
+
+    func startMemoryProviderOAuth(_ name: String, profile: String) async throws -> MemoryProviderOAuthStatus {
+        try Self.memoryProviderOAuthStatus(from: await send(
+            "POST", "api/memory/providers/\(Self.pathSegment(name))/oauth/start?profile=\(Self.queryValue(profile))", [:]
+        ))
+    }
+
+    static func memoryProviderOAuthStatus(from object: [String: Any]) throws -> MemoryProviderOAuthStatus {
+        guard let state = object["state"] as? String, let connected = object["connected"] as? Bool else { throw Failure.unreadable }
+        return .init(state: state, detail: object["detail"] as? String ?? "", connected: connected, auth: object["auth"] as? String)
     }
 
     // MARK: Managed files
