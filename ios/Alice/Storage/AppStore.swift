@@ -1642,6 +1642,75 @@ final class AppStore {
         try await dashboard.deleteManagedFile(path: path, recursive: recursive)
     }
 
+    // MARK: - Messaging channels
+
+    func messagingPlatforms(profile: String = "default") async throws -> MessagingPlatformsSnapshot {
+        try await dashboard.messagingPlatforms(profile: profile)
+    }
+
+    func updateMessagingPlatform(
+        _ id: String, profile: String = "default", enabled: Bool? = nil,
+        env: [String: String] = [:], clearEnv: [String] = []
+    ) async throws {
+        try await dashboard.updateMessagingPlatform(
+            id, profile: profile, enabled: enabled, env: env, clearEnv: clearEnv
+        )
+    }
+
+    func testMessagingPlatform(
+        _ id: String, profile: String = "default"
+    ) async throws -> MessagingPlatformTestResult {
+        try await dashboard.testMessagingPlatform(id, profile: profile)
+    }
+
+    func startTelegramOnboarding(botName: String = "Hermes Agent") async throws -> TelegramOnboardingStart {
+        try await dashboard.startTelegramOnboarding(botName: botName)
+    }
+
+    func telegramOnboardingStatus(_ pairingID: String) async throws -> TelegramOnboardingStatus {
+        try await dashboard.telegramOnboardingStatus(pairingID)
+    }
+
+    func applyTelegramOnboarding(
+        _ pairingID: String, allowedUserIDs: [String], profile: String = "default"
+    ) async throws -> ChannelApplyResult {
+        try await dashboard.applyTelegramOnboarding(
+            pairingID, allowedUserIDs: allowedUserIDs, profile: profile
+        )
+    }
+
+    func cancelTelegramOnboarding(_ pairingID: String) async throws {
+        try await dashboard.cancelTelegramOnboarding(pairingID)
+    }
+
+    func startWhatsAppOnboarding(
+        mode: String, allowedUsers: String, profile: String = "default"
+    ) async throws -> WhatsAppOnboardingSession {
+        try await dashboard.startWhatsAppOnboarding(
+            mode: mode, allowedUsers: allowedUsers, profile: profile
+        )
+    }
+
+    func whatsAppOnboardingStatus(_ pairingID: String) async throws -> WhatsAppOnboardingSession {
+        try await dashboard.whatsAppOnboardingStatus(pairingID)
+    }
+
+    func applyWhatsAppOnboarding(
+        _ pairingID: String, mode: String, allowedUsers: String, profile: String = "default"
+    ) async throws -> ChannelApplyResult {
+        try await dashboard.applyWhatsAppOnboarding(
+            pairingID, mode: mode, allowedUsers: allowedUsers, profile: profile
+        )
+    }
+
+    func cancelWhatsAppOnboarding(_ pairingID: String) async throws {
+        try await dashboard.cancelWhatsAppOnboarding(pairingID)
+    }
+
+    func restartHermesGateway(profile: String = "default") async throws -> GatewayActionResult {
+        try await dashboard.restartGateway(profile: profile)
+    }
+
     // MARK: - Models, providers, usage & configuration
 
     func profileModelInfo(profile: String = "default") async throws -> ProfileModelInfo {

@@ -540,6 +540,108 @@ struct ManagedFileContents: Hashable, Sendable {
     var data: Data
 }
 
+/// One configurable credential exposed by Hermes for a messaging channel.
+struct MessagingEnvField: Identifiable, Hashable, Sendable {
+    var id: String { key }
+    var key: String
+    var required: Bool
+    var isSet: Bool
+    var redactedValue: String?
+    var detail: String
+    var prompt: String
+    var help: String
+    var docsURL: String?
+    var isPassword: Bool
+    var advanced: Bool
+}
+
+struct MessagingHomeChannel: Hashable, Sendable {
+    var platform: String
+    var chatID: String
+    var name: String
+    var threadID: String?
+}
+
+/// A gateway messaging adapter exactly as Hermes reports it. The list is
+/// dynamic so new upstream adapters appear in Alice without an app update.
+struct MessagingPlatform: Identifiable, Hashable, Sendable {
+    struct WhatsAppSetup: Hashable, Sendable {
+        var mode: String
+        var allowedUsersSet: Bool
+        var homeChannelSet: Bool
+    }
+
+    var id: String
+    var name: String
+    var detail: String
+    var docsURL: String
+    var enabled: Bool
+    var configured: Bool
+    var gatewayRunning: Bool
+    var state: String
+    var errorCode: String?
+    var errorMessage: String?
+    var updatedAt: String?
+    var homeChannel: MessagingHomeChannel?
+    var whatsappSetup: WhatsAppSetup?
+    var envVars: [MessagingEnvField]
+}
+
+struct MessagingPlatformsSnapshot: Hashable, Sendable {
+    var envPath: String
+    var gatewayStartCommand: String
+    var platforms: [MessagingPlatform]
+}
+
+struct MessagingPlatformTestResult: Hashable, Sendable {
+    var ok: Bool
+    var state: String
+    var message: String
+}
+
+struct TelegramOnboardingStart: Hashable, Sendable {
+    var pairingID: String
+    var suggestedUsername: String
+    var deepLink: String
+    var qrPayload: String
+    var expiresAt: String
+}
+
+struct TelegramOnboardingStatus: Hashable, Sendable {
+    var status: String
+    var expiresAt: String
+    var botUsername: String?
+    var ownerUserID: String?
+}
+
+struct ChannelApplyResult: Hashable, Sendable {
+    var ok: Bool
+    var platform: String
+    var needsRestart: Bool
+    var restartStarted: Bool
+    var restartError: String?
+    var botUsername: String?
+}
+
+struct WhatsAppOnboardingSession: Hashable, Sendable {
+    var pairingID: String
+    var status: String
+    var qrPayload: String?
+    var expiresAt: String
+    var mode: String
+    var allowedUsers: String
+    var accountID: String?
+    var accountName: String?
+    var accountPhone: String?
+    var error: String?
+}
+
+struct GatewayActionResult: Hashable, Sendable {
+    var ok: Bool
+    var pid: Int?
+    var name: String
+}
+
 struct BillingUsage: Hashable, Sendable {
     struct Bar: Hashable, Sendable {
         var kind = ""
@@ -1477,6 +1579,216 @@ extension DashboardClient {
         return ManagedFileContents(
             name: name, path: path, size: int(object["size"]) ?? data.count,
             mimeType: mimeType, data: data
+        )
+    }
+
+    // MARK: Messaging channels
+
+    func messagingPlatforms(profile: String = "default") async throws -> MessagingPlatformsSnapshot {
+        let object = try await get("api/messaging/platforms?profile=\(Self.queryValue(profile))")
+        return try Self.messagingPlatforms(from: object)
+    }
+
+    func updateMessagingPlatform(
+        _ id: String, profile: String = "default", enabled: Bool? = nil,
+        env: [String: String] = [:], clearEnv: [String] = []
+    ) async throws {
+        var body: [String: Any] = ["profile": profile, "env": env, "clear_env": clearEnv]
+        if let enabled { body["enabled"] = enabled }
+        _ = try await send(
+            "PUT",
+            "api/messaging/platforms/\(Self.pathSegment(id))?profile=\(Self.queryValue(profile))",
+            body
+        )
+    }
+
+    func testMessagingPlatform(
+        _ id: String, profile: String = "default"
+    ) async throws -> MessagingPlatformTestResult {
+        let object = try await send(
+            "POST",
+            "api/messaging/platforms/\(Self.pathSegment(id))/test?profile=\(Self.queryValue(profile))"
+        )
+        guard let ok = object["ok"] as? Bool,
+              let state = object["state"] as? String,
+              let message = object["message"] as? String else { throw Failure.unreadable }
+        return MessagingPlatformTestResult(ok: ok, state: state, message: message)
+    }
+
+    func startTelegramOnboarding(botName: String = "Hermes Agent") async throws -> TelegramOnboardingStart {
+        let object = try await send(
+            "POST", "api/messaging/telegram/onboarding/start", ["bot_name": botName]
+        )
+        return try Self.telegramOnboardingStart(from: object)
+    }
+
+    func telegramOnboardingStatus(_ pairingID: String) async throws -> TelegramOnboardingStatus {
+        try Self.telegramOnboardingStatus(
+            from: await get("api/messaging/telegram/onboarding/\(Self.pathSegment(pairingID))")
+        )
+    }
+
+    func applyTelegramOnboarding(
+        _ pairingID: String, allowedUserIDs: [String], profile: String = "default"
+    ) async throws -> ChannelApplyResult {
+        let object = try await send(
+            "POST",
+            "api/messaging/telegram/onboarding/\(Self.pathSegment(pairingID))/apply",
+            ["allowed_user_ids": allowedUserIDs, "profile": profile]
+        )
+        return try Self.channelApplyResult(from: object)
+    }
+
+    func cancelTelegramOnboarding(_ pairingID: String) async throws {
+        _ = try await send(
+            "DELETE", "api/messaging/telegram/onboarding/\(Self.pathSegment(pairingID))"
+        )
+    }
+
+    func startWhatsAppOnboarding(
+        mode: String, allowedUsers: String, profile: String = "default"
+    ) async throws -> WhatsAppOnboardingSession {
+        let object = try await send(
+            "POST", "api/messaging/whatsapp/onboarding/start",
+            ["mode": mode, "allowed_users": allowedUsers, "profile": profile]
+        )
+        return try Self.whatsAppOnboardingSession(from: object)
+    }
+
+    func whatsAppOnboardingStatus(_ pairingID: String) async throws -> WhatsAppOnboardingSession {
+        try Self.whatsAppOnboardingSession(
+            from: await get("api/messaging/whatsapp/onboarding/\(Self.pathSegment(pairingID))")
+        )
+    }
+
+    func applyWhatsAppOnboarding(
+        _ pairingID: String, mode: String, allowedUsers: String, profile: String = "default"
+    ) async throws -> ChannelApplyResult {
+        let object = try await send(
+            "POST",
+            "api/messaging/whatsapp/onboarding/\(Self.pathSegment(pairingID))/apply",
+            ["mode": mode, "allowed_users": allowedUsers, "profile": profile]
+        )
+        return try Self.channelApplyResult(from: object)
+    }
+
+    func cancelWhatsAppOnboarding(_ pairingID: String) async throws {
+        _ = try await send(
+            "DELETE", "api/messaging/whatsapp/onboarding/\(Self.pathSegment(pairingID))"
+        )
+    }
+
+    func restartGateway(profile: String = "default") async throws -> GatewayActionResult {
+        let object = try await send(
+            "POST", "api/gateway/restart?profile=\(Self.queryValue(profile))"
+        )
+        guard let ok = object["ok"] as? Bool else { throw Failure.unreadable }
+        return GatewayActionResult(
+            ok: ok, pid: Self.int(object["pid"]), name: object["name"] as? String ?? "gateway-restart"
+        )
+    }
+
+    static func messagingPlatforms(from object: [String: Any]) throws -> MessagingPlatformsSnapshot {
+        guard let rows = object["platforms"] as? [[String: Any]] else { throw Failure.unreadable }
+        let platforms = rows.compactMap(messagingPlatform(from:))
+        if !rows.isEmpty && platforms.count != rows.count { throw Failure.unreadable }
+        return MessagingPlatformsSnapshot(
+            envPath: object["env_path"] as? String ?? "",
+            gatewayStartCommand: object["gateway_start_command"] as? String ?? "",
+            platforms: platforms
+        )
+    }
+
+    static func messagingPlatform(from row: [String: Any]) -> MessagingPlatform? {
+        guard let id = row["id"] as? String, !id.isEmpty,
+              let name = row["name"] as? String, !name.isEmpty,
+              let enabled = row["enabled"] as? Bool,
+              let configured = row["configured"] as? Bool,
+              let gatewayRunning = row["gateway_running"] as? Bool,
+              let state = row["state"] as? String,
+              let envRows = row["env_vars"] as? [[String: Any]] else { return nil }
+        let envVars = envRows.compactMap(messagingEnvField(from:))
+        if envVars.count != envRows.count { return nil }
+        var home: MessagingHomeChannel?
+        if let raw = row["home_channel"] as? [String: Any],
+           let platform = raw["platform"] as? String {
+            let chat = (raw["chat_id"] as? String) ?? raw["chat_id"].map(String.init(describing:)) ?? ""
+            home = MessagingHomeChannel(
+                platform: platform, chatID: chat, name: raw["name"] as? String ?? chat,
+                threadID: (raw["thread_id"] as? String) ?? raw["thread_id"].map(String.init(describing:))
+            )
+        }
+        var whatsapp: MessagingPlatform.WhatsAppSetup?
+        if let raw = row["whatsapp_setup"] as? [String: Any] {
+            whatsapp = .init(
+                mode: raw["mode"] as? String ?? "",
+                allowedUsersSet: raw["allowed_users_set"] as? Bool ?? false,
+                homeChannelSet: raw["home_channel_set"] as? Bool ?? false
+            )
+        }
+        return MessagingPlatform(
+            id: id, name: name, detail: row["description"] as? String ?? "",
+            docsURL: row["docs_url"] as? String ?? "", enabled: enabled, configured: configured,
+            gatewayRunning: gatewayRunning, state: state, errorCode: row["error_code"] as? String,
+            errorMessage: row["error_message"] as? String, updatedAt: row["updated_at"] as? String,
+            homeChannel: home, whatsappSetup: whatsapp, envVars: envVars
+        )
+    }
+
+    static func messagingEnvField(from row: [String: Any]) -> MessagingEnvField? {
+        guard let key = row["key"] as? String, !key.isEmpty,
+              let required = row["required"] as? Bool,
+              let isSet = row["is_set"] as? Bool else { return nil }
+        return MessagingEnvField(
+            key: key, required: required, isSet: isSet, redactedValue: row["redacted_value"] as? String,
+            detail: row["description"] as? String ?? "", prompt: row["prompt"] as? String ?? key,
+            help: row["help"] as? String ?? "", docsURL: row["url"] as? String,
+            isPassword: row["is_password"] as? Bool ?? false, advanced: row["advanced"] as? Bool ?? false
+        )
+    }
+
+    static func telegramOnboardingStart(from object: [String: Any]) throws -> TelegramOnboardingStart {
+        guard let pairingID = object["pairing_id"] as? String, !pairingID.isEmpty,
+              let deepLink = object["deep_link"] as? String, !deepLink.isEmpty,
+              let qrPayload = object["qr_payload"] as? String, !qrPayload.isEmpty,
+              let expiresAt = object["expires_at"] as? String, !expiresAt.isEmpty else { throw Failure.unreadable }
+        return TelegramOnboardingStart(
+            pairingID: pairingID, suggestedUsername: object["suggested_username"] as? String ?? "",
+            deepLink: deepLink, qrPayload: qrPayload, expiresAt: expiresAt
+        )
+    }
+
+    static func telegramOnboardingStatus(from object: [String: Any]) throws -> TelegramOnboardingStatus {
+        guard let status = object["status"] as? String, ["waiting", "ready"].contains(status),
+              let expiresAt = object["expires_at"] as? String else { throw Failure.unreadable }
+        return TelegramOnboardingStatus(
+            status: status, expiresAt: expiresAt, botUsername: object["bot_username"] as? String,
+            ownerUserID: object["owner_user_id"] as? String
+        )
+    }
+
+    static func whatsAppOnboardingSession(from object: [String: Any]) throws -> WhatsAppOnboardingSession {
+        guard let pairingID = object["pairing_id"] as? String, !pairingID.isEmpty,
+              let status = object["status"] as? String, !status.isEmpty,
+              let expiresAt = object["expires_at"] as? String, !expiresAt.isEmpty,
+              let mode = object["mode"] as? String, !mode.isEmpty,
+              let allowedUsers = object["allowed_users"] as? String else { throw Failure.unreadable }
+        return WhatsAppOnboardingSession(
+            pairingID: pairingID, status: status, qrPayload: object["qr_payload"] as? String,
+            expiresAt: expiresAt, mode: mode, allowedUsers: allowedUsers,
+            accountID: object["account_id"] as? String, accountName: object["account_name"] as? String,
+            accountPhone: object["account_phone"] as? String, error: object["error"] as? String
+        )
+    }
+
+    static func channelApplyResult(from object: [String: Any]) throws -> ChannelApplyResult {
+        guard let ok = object["ok"] as? Bool, let platform = object["platform"] as? String else {
+            throw Failure.unreadable
+        }
+        return ChannelApplyResult(
+            ok: ok, platform: platform, needsRestart: object["needs_restart"] as? Bool ?? false,
+            restartStarted: object["restart_started"] as? Bool ?? false,
+            restartError: object["restart_error"] as? String, botUsername: object["bot_username"] as? String
         )
     }
 
