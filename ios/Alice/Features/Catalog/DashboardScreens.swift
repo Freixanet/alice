@@ -264,9 +264,11 @@ struct ProjectsScreen: View {
         loading = true
         defer { loading = false }
         do {
-            async let listing = store.projectListing(profile: selectedProfile)
-            async let tree = store.projects(profile: selectedProfile)
-            let (resolvedListing, resolvedTree) = try await (listing, tree)
+            // Keep the initial page load deterministic. The RPC transport now
+            // serializes first-connect too, but Projects does not need two
+            // simultaneous round trips for a few kilobytes of metadata.
+            let resolvedListing = try await store.projectListing(profile: selectedProfile)
+            let resolvedTree = try await store.projects(profile: selectedProfile)
             mine = resolvedListing.projects
             activeProjectID = resolvedListing.activeID
             rows = resolvedTree

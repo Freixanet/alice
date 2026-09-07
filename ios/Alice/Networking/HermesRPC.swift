@@ -58,6 +58,12 @@ actor HermesRPCClient: HermesRPCTransport {
     private var listeners: [UUID: AsyncStream<HermesRPCEvent>.Continuation] = [:]
     private var nextID = 1
     private var pump: Task<Void, Never>?
+    // `actor` methods are re-entrant across `await`: two first calls can both
+    // enter connectIfNeeded while the ticket request is suspended. Serialize
+    // that first connection so they share one ticket/socket instead of one
+    // replacing the other and stranding a pending RPC.
+    private var connecting = false
+    private var connectWaiters: [CheckedContinuation<Void, Error>] = []
 
     init(
         endpoint: URL,
@@ -141,14 +147,36 @@ actor HermesRPCClient: HermesRPCTransport {
 
     private func connectIfNeeded() async throws {
         if socket != nil { return }
-        let value = try await ticket()
-        guard let url = Self.socketURL(dashboard: endpoint, ticket: value) else {
-            throw Failure(reason: "The dashboard address is not usable for a socket.")
+
+        if connecting {
+            try await withCheckedThrowingContinuation { continuation in
+                connectWaiters.append(continuation)
+            }
+            return
         }
-        let task = session.webSocketTask(with: url)
-        task.resume()
-        socket = task
-        pump = Task { [weak self] in await self?.receive(on: task) }
+
+        connecting = true
+        do {
+            let value = try await ticket()
+            guard let url = Self.socketURL(dashboard: endpoint, ticket: value) else {
+                throw Failure(reason: "The dashboard address is not usable for a socket.")
+            }
+            let task = session.webSocketTask(with: url)
+            task.resume()
+            socket = task
+            pump = Task { [weak self] in await self?.receive(on: task) }
+            finishConnection(with: .success(()))
+        } catch {
+            finishConnection(with: .failure(error))
+            throw error
+        }
+    }
+
+    private func finishConnection(with result: Result<Void, Error>) {
+        connecting = false
+        let waiters = connectWaiters
+        connectWaiters.removeAll()
+        for continuation in waiters { continuation.resume(with: result) }
     }
 
     private func receive(on task: URLSessionWebSocketTask) async {
