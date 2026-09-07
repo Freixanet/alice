@@ -185,6 +185,13 @@ struct ProjectsScreen: View {
             await load()
         }
         .onChange(of: selectedProfile) { _, _ in Task { await load() } }
+        .onChange(of: store.dashboardReady) { _, ready in
+            guard ready else { return }
+            Task {
+                await loadProfiles()
+                await load()
+            }
+        }
         .refreshable { await load() }
     }
 
@@ -261,21 +268,36 @@ struct ProjectsScreen: View {
     }
 
     private func load() async {
+        guard store.dashboardReady else {
+            // App startup restores the Dashboard asynchronously. Do not flash a
+            // false connection error while that restore is still in flight;
+            // `onChange` below performs the real load as soon as it is ready.
+            failure = nil
+            return
+        }
         loading = true
         defer { loading = false }
+
+        let resolvedListing: (projects: [NamedProject], activeID: String?)
         do {
-            // Keep the initial page load deterministic. The RPC transport now
-            // serializes first-connect too, but Projects does not need two
-            // simultaneous round trips for a few kilobytes of metadata.
-            let resolvedListing = try await store.projectListing(profile: selectedProfile)
-            let resolvedTree = try await store.projects(profile: selectedProfile)
-            mine = resolvedListing.projects
-            activeProjectID = resolvedListing.activeID
-            rows = resolvedTree
-            failure = nil
+            resolvedListing = try await store.projectListing(profile: selectedProfile)
         } catch {
-            failure = message(error)
+            failure = "Could not load Projects: \(diagnosticMessage(error))"
+            return
         }
+
+        let resolvedTree: [ProjectRow]
+        do {
+            resolvedTree = try await store.projects(profile: selectedProfile)
+        } catch {
+            failure = "Could not load Project workspaces: \(diagnosticMessage(error))"
+            return
+        }
+
+        mine = resolvedListing.projects
+        activeProjectID = resolvedListing.activeID
+        rows = resolvedTree
+        failure = nil
     }
 
     private func act(_ work: @escaping () async throws -> Void) {
@@ -950,6 +972,14 @@ private struct DashboardList<Content: View>: View {
     }
 }
 
+func diagnosticMessage(_ error: Error) -> String {
+    if let description = (error as? LocalizedError)?.errorDescription, !description.isEmpty {
+        return description
+    }
+    let ns = error as NSError
+    return "\(ns.localizedDescription) [\(ns.domain) \(ns.code)]"
+}
+
 func message(_ error: Error) -> String {
-    (error as? LocalizedError)?.errorDescription ?? "The dashboard did not answer."
+    diagnosticMessage(error)
 }

@@ -163,6 +163,14 @@ actor HermesRPCClient: HermesRPCTransport {
             }
             let task = session.webSocketTask(with: url)
             task.resume()
+
+            // `resume()` only starts the WebSocket handshake. On a physical
+            // iPhone, calling `receive()` or `send()` in the same run-loop turn
+            // can race that handshake and Foundation answers ENOTCONN (57).
+            // Prove that the peer is open with a ping before publishing the
+            // socket or starting the receive pump. A short ENOTCONN retry is
+            // specifically the handshake window; any other error is real.
+            try await waitUntilOpen(task)
             socket = task
             pump = Task { [weak self] in await self?.receive(on: task) }
             finishConnection(with: .success(()))
@@ -177,6 +185,32 @@ actor HermesRPCClient: HermesRPCTransport {
         let waiters = connectWaiters
         connectWaiters.removeAll()
         for continuation in waiters { continuation.resume(with: result) }
+    }
+
+    private func waitUntilOpen(_ task: URLSessionWebSocketTask) async throws {
+        var retries = 0
+        while true {
+            do {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    task.sendPing { error in
+                        if let error {
+                            continuation.resume(throwing: error)
+                        } else {
+                            continuation.resume(returning: ())
+                        }
+                    }
+                }
+                return
+            } catch {
+                let ns = error as NSError
+                guard ns.domain == NSPOSIXErrorDomain, ns.code == 57, retries < 40 else {
+                    task.cancel(with: .goingAway, reason: nil)
+                    throw error
+                }
+                retries += 1
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        }
     }
 
     private func receive(on task: URLSessionWebSocketTask) async {
