@@ -31,11 +31,17 @@ struct SettingsView: View {
                     Label("Insights", systemImage: "chart.line.uptrend.xyaxis")
                 }
                 if store.dashboardReady {
+                    NavigationLink { ModelsProvidersScreen() } label: {
+                        Label("Models & Providers", systemImage: "cpu")
+                    }
                     NavigationLink { UsageScreen() } label: {
                         Label("Usage", systemImage: "chart.bar")
                     }
                     NavigationLink { MemoryScreen() } label: {
                         Label("Memory", systemImage: "brain")
+                    }
+                    NavigationLink { ConfigurationScreen() } label: {
+                        Label("Hermes Configuration", systemImage: "slider.horizontal.3")
                     }
                 }
                 NavigationLink { CatalogScreen(source: .addons) } label: {
@@ -78,18 +84,6 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Model") {
-                if store.models.isEmpty {
-                    Text("Connect your Hermes to choose a model.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Picker("Model", selection: $store.selectedModel) {
-                        ForEach(store.models) { model in
-                            Text(model.label).tag(Optional(model.id))
-                        }
-                    }
-                }
-            }
 
             #if DEBUG
             // Recovery, debug-only and explicit.

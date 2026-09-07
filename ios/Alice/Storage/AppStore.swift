@@ -1617,7 +1617,86 @@ final class AppStore {
         try await dashboard.deleteSkill(name)
     }
     func memoryProviders() async throws -> [MemoryProvider] { try await dashboard.memory() }
-    func usage() async throws -> UsageReport { try await dashboard.usage() }
+
+    // MARK: - Models, providers, usage & configuration
+
+    func profileModelInfo(profile: String = "default") async throws -> ProfileModelInfo {
+        try await dashboard.profileModelInfo(profile: profile)
+    }
+
+    func inferenceProviders(
+        profile: String = "default", refreshing: Bool = false
+    ) async throws -> [InferenceProvider] {
+        try await dashboard.inferenceProviders(profile: profile, refreshing: refreshing)
+    }
+
+    func oauthProviderStates(profile: String = "default") async throws -> [OAuthProviderState] {
+        try await dashboard.oauthProviderStates(profile: profile)
+    }
+
+    func providerCredentials(profile: String = "default") async throws -> [ProviderCredential] {
+        try await dashboard.providerCredentials(profile: profile)
+    }
+
+    func setProfileDefaultModel(
+        profile: String = "default", provider: String, model: String,
+        confirmExpensive: Bool = false
+    ) async throws -> ModelAssignmentResult {
+        try await dashboard.setMainModel(
+            profile: profile, provider: provider, model: model,
+            confirmExpensive: confirmExpensive
+        )
+    }
+
+    func validateProviderCredential(key: String, value: String) async throws -> CredentialValidation {
+        try await dashboard.validateProviderCredential(key: key, value: value)
+    }
+
+    func saveProviderCredential(profile: String, key: String, value: String) async throws {
+        try await dashboard.saveProviderCredential(profile: profile, key: key, value: value)
+    }
+
+    func removeProviderCredential(profile: String, key: String) async throws {
+        try await dashboard.removeProviderCredential(profile: profile, key: key)
+    }
+
+    func startOAuthLogin(provider: String, profile: String) async throws -> OAuthLogin {
+        try await dashboard.startOAuthLogin(provider: provider, profile: profile)
+    }
+
+    func pollOAuth(provider: String, sessionID: String, profile: String) async throws -> OAuthPoll {
+        try await dashboard.pollOAuth(provider: provider, sessionID: sessionID, profile: profile)
+    }
+
+    func cancelOAuth(sessionID: String, profile: String) async throws {
+        try await dashboard.cancelOAuth(sessionID: sessionID, profile: profile)
+    }
+
+    func disconnectOAuth(provider: String, profile: String) async throws {
+        try await dashboard.disconnectOAuth(provider: provider, profile: profile)
+    }
+
+    func hermesConfiguration(profile: String = "default") async throws -> HermesConfiguration {
+        try await dashboard.hermesConfiguration(profile: profile)
+    }
+
+    func saveHermesConfiguration(
+        _ configuration: HermesConfiguration, profile: String = "default"
+    ) async throws {
+        try await dashboard.saveHermesConfiguration(configuration, profile: profile)
+    }
+
+    func usage(profile: String = "default", days: Int = 30) async throws -> UsageReport {
+        try await dashboard.usage(profile: profile, days: days)
+    }
+
+    func billingUsage() async throws -> BillingUsage {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        let result = try await rpc.call("usage.bars", JSONObject([:]))
+        return DashboardClient.billingUsage(from: result.fields)
+    }
 
     func supports(_ capability: String) -> Bool {
         manifest?.supports(capability) ?? false

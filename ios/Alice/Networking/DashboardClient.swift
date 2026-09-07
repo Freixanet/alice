@@ -369,9 +369,14 @@ struct UsageReport: Sendable {
         var provider: String?
         var inputTokens: Int
         var outputTokens: Int
+        var cacheReadTokens: Int = 0
+        var reasoningTokens: Int = 0
+        var estimatedCost: Double = 0
+        var actualCost: Double = 0
         var sessions: Int
         var calls: Int
         var tokens: Int { inputTokens + outputTokens }
+        var cost: Double { actualCost > 0 ? actualCost : estimatedCost }
     }
 
     struct Tool: Identifiable, Hashable, Sendable {
@@ -386,10 +391,144 @@ struct UsageReport: Sendable {
     var calls: Int
     var inputTokens: Int
     var outputTokens: Int
+    var cacheReadTokens: Int = 0
+    var reasoningTokens: Int = 0
     var cost: Double
     var models: [Model]
     var tools: [Tool]
     var tokens: Int { inputTokens + outputTokens }
+}
+
+
+/// The configured model Hermes will use for new sessions in one profile.
+struct ProfileModelInfo: Hashable, Sendable {
+    struct Capabilities: Hashable, Sendable {
+        var tools = false
+        var vision = false
+        var reasoning = false
+        var contextWindow = 0
+        var maxOutputTokens = 0
+        var family = ""
+    }
+
+    var model = ""
+    var provider = ""
+    var autoContextLength = 0
+    var configuredContextLength = 0
+    var effectiveContextLength = 0
+    var capabilities = Capabilities()
+}
+
+/// One provider row from Hermes' own model inventory. Unconfigured providers
+/// stay present so Alice can explain how to connect them instead of hiding
+/// them and pretending the model does not exist.
+struct InferenceProvider: Identifiable, Hashable, Sendable {
+    var id: String { slug }
+    var slug: String
+    var name: String
+    var models: [String]
+    var totalModels: Int
+    var authenticated: Bool
+    var isCurrent: Bool
+    var isUserDefined: Bool
+    var source: String
+    var warning: String
+}
+
+struct OAuthProviderState: Identifiable, Hashable, Sendable {
+    var id: String
+    var name: String
+    var flow: String
+    var loggedIn: Bool
+    var source: String
+    var expiresAt: String
+    var error: String
+    var cliCommand: String
+    var docsURL: String
+    var disconnectable: Bool
+    var disconnectHint: String
+}
+
+struct ProviderCredential: Identifiable, Hashable, Sendable {
+    var id: String { key }
+    var key: String
+    var provider: String
+    var providerLabel: String
+    var detail: String
+    var url: String
+    var isSet: Bool
+    var redactedValue: String
+    var isPassword: Bool
+    var advanced: Bool
+}
+
+struct CredentialValidation: Hashable, Sendable {
+    var ok: Bool
+    var reachable: Bool
+    var message: String
+}
+
+struct OAuthLogin: Hashable, Sendable {
+    var provider: String
+    var sessionID: String
+    var flow: String
+    var userCode: String
+    var verificationURL: String
+    var expiresIn: Int
+    var pollInterval: Int
+}
+
+struct OAuthPoll: Hashable, Sendable {
+    var status: String
+    var error: String
+}
+
+struct ModelAssignmentResult: Hashable, Sendable {
+    struct StaleAux: Hashable, Sendable {
+        var task: String
+        var provider: String
+        var model: String
+    }
+    var ok: Bool
+    var confirmRequired: Bool
+    var confirmMessage: String
+    var provider: String
+    var model: String
+    var staleAux: [StaleAux]
+}
+
+/// Small, deliberately curated subset of config.yaml. Alice writes only these
+/// keys back; every other Hermes setting survives untouched.
+struct HermesConfiguration: Hashable, Sendable {
+    var timezone = ""
+    var approvalsMode = "smart"
+    var serviceTier = ""
+    var memoryEnabled = true
+    var userProfileEnabled = true
+    var compressionEnabled = true
+    var compressionThreshold = 0.5
+    var verifyGuidance = true
+    var environmentProbe = true
+}
+
+struct BillingUsage: Hashable, Sendable {
+    struct Bar: Hashable, Sendable {
+        var kind = ""
+        var remaining = ""
+        var total = ""
+        var spent = ""
+        var percentUsed = 0.0
+        var fillFraction = 0.0
+    }
+    var available = false
+    var status = ""
+    var planName = ""
+    var renews = ""
+    var subscriptionRemaining = ""
+    var topupRemaining = ""
+    var totalSpendable = ""
+    var planBar: Bar?
+    var topupBar: Bar?
 }
 
 extension DashboardClient {
@@ -952,6 +1091,254 @@ extension DashboardClient {
         _ = try await send("POST", "api/skills/delete", ["name": name])
     }
 
+
+    func profileModelInfo(profile: String) async throws -> ProfileModelInfo {
+        let object = try await get("api/model/info?profile=\(Self.queryValue(profile))")
+        return Self.profileModelInfo(from: object)
+    }
+
+    static func profileModelInfo(from object: [String: Any]) -> ProfileModelInfo {
+        let caps = object["capabilities"] as? [String: Any] ?? [:]
+        return ProfileModelInfo(
+            model: object["model"] as? String ?? "",
+            provider: object["provider"] as? String ?? "",
+            autoContextLength: int(object["auto_context_length"]) ?? 0,
+            configuredContextLength: int(object["config_context_length"]) ?? 0,
+            effectiveContextLength: int(object["effective_context_length"]) ?? 0,
+            capabilities: .init(
+                tools: (caps["supports_tools"] as? Bool) ?? false,
+                vision: (caps["supports_vision"] as? Bool) ?? false,
+                reasoning: (caps["supports_reasoning"] as? Bool) ?? false,
+                contextWindow: int(caps["context_window"]) ?? 0,
+                maxOutputTokens: int(caps["max_output_tokens"]) ?? 0,
+                family: caps["model_family"] as? String ?? ""
+            )
+        )
+    }
+
+    func inferenceProviders(profile: String, refreshing: Bool = false) async throws -> [InferenceProvider] {
+        var path = "api/model/options?profile=\(Self.queryValue(profile))&include_unconfigured=1"
+        if refreshing { path += "&refresh=1" }
+        return Self.inferenceProviders(from: try await get(path))
+    }
+
+    static func inferenceProviders(from object: [String: Any]) -> [InferenceProvider] {
+        let rows = object["providers"] as? [[String: Any]] ?? []
+        return rows.compactMap { row in
+            guard let slug = nonEmpty(row["slug"] as? String) else { return nil }
+            let unavailable = Set(row["unavailable_models"] as? [String] ?? [])
+            let models = (row["models"] as? [Any] ?? []).compactMap { item -> String? in
+                if let value = item as? String { return value }
+                if let map = item as? [String: Any] {
+                    return nonEmpty((map["id"] as? String) ?? (map["name"] as? String))
+                }
+                return nil
+            }.filter { !unavailable.contains($0) }
+            return InferenceProvider(
+                slug: slug,
+                name: nonEmpty(row["name"] as? String) ?? HermesClient.prettify(slug),
+                models: models,
+                totalModels: int(row["total_models"]) ?? models.count,
+                authenticated: (row["authenticated"] as? Bool) ?? false,
+                isCurrent: (row["is_current"] as? Bool) ?? false,
+                isUserDefined: (row["is_user_defined"] as? Bool) ?? false,
+                source: row["source"] as? String ?? "",
+                warning: row["warning"] as? String ?? ""
+            )
+        }
+    }
+
+    func oauthProviderStates(profile: String) async throws -> [OAuthProviderState] {
+        let object = try await get("api/providers/oauth?profile=\(Self.queryValue(profile))")
+        return Self.oauthProviderStates(from: object)
+    }
+
+    static func oauthProviderStates(from object: [String: Any]) -> [OAuthProviderState] {
+        (object["providers"] as? [[String: Any]] ?? []).compactMap { row in
+            guard let id = nonEmpty(row["id"] as? String) else { return nil }
+            let status = row["status"] as? [String: Any] ?? [:]
+            return OAuthProviderState(
+                id: id,
+                name: nonEmpty(row["name"] as? String) ?? HermesClient.prettify(id),
+                flow: row["flow"] as? String ?? "external",
+                loggedIn: (status["logged_in"] as? Bool) ?? false,
+                source: (status["source_label"] as? String) ?? (status["source"] as? String) ?? "",
+                expiresAt: status["expires_at"] as? String ?? "",
+                error: status["error"] as? String ?? "",
+                cliCommand: row["cli_command"] as? String ?? "",
+                docsURL: row["docs_url"] as? String ?? "",
+                disconnectable: (row["disconnectable"] as? Bool) ?? false,
+                disconnectHint: row["disconnect_hint"] as? String ?? ""
+            )
+        }
+    }
+
+    func providerCredentials(profile: String) async throws -> [ProviderCredential] {
+        Self.providerCredentials(from: try await get("api/env?profile=\(Self.queryValue(profile))"))
+    }
+
+    static func providerCredentials(from object: [String: Any]) -> [ProviderCredential] {
+        object.compactMap { key, raw -> ProviderCredential? in
+            guard let row = raw as? [String: Any],
+                  (row["category"] as? String) == "provider",
+                  (row["channel_managed"] as? Bool) != true
+            else { return nil }
+            let provider = row["provider"] as? String ?? ""
+            guard !provider.isEmpty else { return nil }
+            return ProviderCredential(
+                key: key,
+                provider: provider,
+                providerLabel: row["provider_label"] as? String ?? HermesClient.prettify(provider),
+                detail: row["description"] as? String ?? "",
+                url: row["url"] as? String ?? "",
+                isSet: (row["is_set"] as? Bool) ?? false,
+                redactedValue: row["redacted_value"] as? String ?? "",
+                isPassword: (row["is_password"] as? Bool) ?? true,
+                advanced: (row["advanced"] as? Bool) ?? false
+            )
+        }.sorted {
+            if $0.provider == $1.provider { return $0.key < $1.key }
+            return $0.provider < $1.provider
+        }
+    }
+
+    func setMainModel(
+        profile: String, provider: String, model: String, confirmExpensive: Bool = false
+    ) async throws -> ModelAssignmentResult {
+        let object = try await send(
+            "POST", "api/model/set?profile=\(Self.queryValue(profile))",
+            [
+                "scope": "main", "provider": provider, "model": model,
+                "confirm_expensive_model": confirmExpensive,
+            ]
+        )
+        return Self.modelAssignmentResult(from: object)
+    }
+
+    static func modelAssignmentResult(from object: [String: Any]) -> ModelAssignmentResult {
+        let stale = (object["stale_aux"] as? [[String: Any]] ?? []).map {
+            ModelAssignmentResult.StaleAux(
+                task: $0["task"] as? String ?? "",
+                provider: $0["provider"] as? String ?? "",
+                model: $0["model"] as? String ?? ""
+            )
+        }
+        return ModelAssignmentResult(
+            ok: (object["ok"] as? Bool) ?? false,
+            confirmRequired: (object["confirm_required"] as? Bool) ?? false,
+            confirmMessage: object["confirm_message"] as? String ?? "",
+            provider: object["provider"] as? String ?? "",
+            model: object["model"] as? String ?? "",
+            staleAux: stale
+        )
+    }
+
+    func validateProviderCredential(key: String, value: String) async throws -> CredentialValidation {
+        let object = try await send("POST", "api/providers/validate", ["key": key, "value": value])
+        return CredentialValidation(
+            ok: (object["ok"] as? Bool) ?? false,
+            reachable: (object["reachable"] as? Bool) ?? false,
+            message: object["message"] as? String ?? ""
+        )
+    }
+
+    func saveProviderCredential(profile: String, key: String, value: String) async throws {
+        _ = try await send(
+            "PUT", "api/env?profile=\(Self.queryValue(profile))",
+            ["key": key, "value": value, "profile": profile]
+        )
+    }
+
+    func removeProviderCredential(profile: String, key: String) async throws {
+        _ = try await send(
+            "DELETE", "api/env?profile=\(Self.queryValue(profile))",
+            ["key": key, "profile": profile]
+        )
+    }
+
+    func startOAuthLogin(provider: String, profile: String) async throws -> OAuthLogin {
+        let object = try await send(
+            "POST", "api/providers/oauth/\(Self.pathSegment(provider))/start?profile=\(Self.queryValue(profile))",
+            [:]
+        )
+        return OAuthLogin(
+            provider: provider,
+            sessionID: object["session_id"] as? String ?? "",
+            flow: object["flow"] as? String ?? "",
+            userCode: object["user_code"] as? String ?? "",
+            verificationURL: object["verification_url"] as? String ?? "",
+            expiresIn: Self.int(object["expires_in"]) ?? 900,
+            pollInterval: max(1, Self.int(object["poll_interval"]) ?? 5)
+        )
+    }
+
+    func pollOAuth(provider: String, sessionID: String, profile: String) async throws -> OAuthPoll {
+        let object = try await get(
+            "api/providers/oauth/\(Self.pathSegment(provider))/poll/\(Self.pathSegment(sessionID))?profile=\(Self.queryValue(profile))"
+        )
+        return OAuthPoll(
+            status: object["status"] as? String ?? "error",
+            error: object["error_message"] as? String ?? ""
+        )
+    }
+
+    func cancelOAuth(sessionID: String, profile: String) async throws {
+        _ = try await send(
+            "DELETE", "api/providers/oauth/sessions/\(Self.pathSegment(sessionID))?profile=\(Self.queryValue(profile))"
+        )
+    }
+
+    func disconnectOAuth(provider: String, profile: String) async throws {
+        _ = try await send(
+            "DELETE", "api/providers/oauth/\(Self.pathSegment(provider))?profile=\(Self.queryValue(profile))"
+        )
+    }
+
+    func hermesConfiguration(profile: String) async throws -> HermesConfiguration {
+        Self.hermesConfiguration(from: try await get("api/config?profile=\(Self.queryValue(profile))"))
+    }
+
+    static func hermesConfiguration(from object: [String: Any]) -> HermesConfiguration {
+        let approvals = object["approvals"] as? [String: Any] ?? [:]
+        let agent = object["agent"] as? [String: Any] ?? [:]
+        let memory = object["memory"] as? [String: Any] ?? [:]
+        let compression = object["compression"] as? [String: Any] ?? [:]
+        return HermesConfiguration(
+            timezone: object["timezone"] as? String ?? "",
+            approvalsMode: approvals["mode"] as? String ?? "smart",
+            serviceTier: agent["service_tier"] as? String ?? "",
+            memoryEnabled: (memory["memory_enabled"] as? Bool) ?? true,
+            userProfileEnabled: (memory["user_profile_enabled"] as? Bool) ?? true,
+            compressionEnabled: (compression["enabled"] as? Bool) ?? true,
+            compressionThreshold: double(compression["threshold"]) ?? 0.5,
+            verifyGuidance: (agent["verify_guidance"] as? Bool) ?? true,
+            environmentProbe: (agent["environment_probe"] as? Bool) ?? true
+        )
+    }
+
+    func saveHermesConfiguration(_ config: HermesConfiguration, profile: String) async throws {
+        let body: [String: Any] = [
+            "config": [
+                "timezone": config.timezone,
+                "approvals": ["mode": config.approvalsMode],
+                "agent": [
+                    "service_tier": config.serviceTier,
+                    "verify_guidance": config.verifyGuidance,
+                    "environment_probe": config.environmentProbe,
+                ],
+                "memory": [
+                    "memory_enabled": config.memoryEnabled,
+                    "user_profile_enabled": config.userProfileEnabled,
+                ],
+                "compression": [
+                    "enabled": config.compressionEnabled,
+                    "threshold": config.compressionThreshold,
+                ],
+            ]
+        ]
+        _ = try await send("PUT", "api/config?profile=\(Self.queryValue(profile))", body)
+    }
+
     func memory() async throws -> [MemoryProvider] {
         let object = try await get("api/memory")
         let active = (object["active"] as? String) ?? ""
@@ -969,38 +1356,83 @@ extension DashboardClient {
         }
     }
 
-    func usage() async throws -> UsageReport {
-        let object = try await get("api/analytics/usage")
+    func usage(profile: String = "default", days: Int = 30) async throws -> UsageReport {
+        let safeDays = min(365, max(1, days))
+        let object = try await get(
+            "api/analytics/usage?days=\(safeDays)&profile=\(Self.queryValue(profile))"
+        )
+        let modelObject = try? await get(
+            "api/analytics/models?days=\(safeDays)&profile=\(Self.queryValue(profile))"
+        )
+        return Self.usageReport(from: object, modelObject: modelObject, days: safeDays)
+    }
+
+    static func usageReport(
+        from object: [String: Any], modelObject: [String: Any]? = nil, days: Int = 30
+    ) -> UsageReport {
         let totals = (object["totals"] as? [String: Any]) ?? [:]
-        let models = ((object["by_model"] as? [[String: Any]]) ?? []).compactMap { row -> UsageReport.Model? in
-            guard let name = row["model"] as? String else { return nil }
+        let modelRows = (modelObject?["models"] as? [[String: Any]])
+            ?? (object["by_model"] as? [[String: Any]]) ?? []
+        let models = modelRows.compactMap { row -> UsageReport.Model? in
+            guard let name = row["model"] as? String, !name.isEmpty else { return nil }
             return UsageReport.Model(
                 name: name,
-                provider: row["provider"] as? String,
-                inputTokens: (row["input_tokens"] as? Int) ?? 0,
-                outputTokens: (row["output_tokens"] as? Int) ?? 0,
-                sessions: (row["sessions"] as? Int) ?? 0,
-                calls: (row["api_calls"] as? Int) ?? 0
+                provider: (row["provider"] as? String) ?? (row["billing_provider"] as? String),
+                inputTokens: int(row["input_tokens"]) ?? 0,
+                outputTokens: int(row["output_tokens"]) ?? 0,
+                cacheReadTokens: int(row["cache_read_tokens"]) ?? 0,
+                reasoningTokens: int(row["reasoning_tokens"]) ?? 0,
+                estimatedCost: double(row["estimated_cost"]) ?? 0,
+                actualCost: double(row["actual_cost"]) ?? 0,
+                sessions: int(row["sessions"]) ?? 0,
+                calls: int(row["api_calls"]) ?? 0
             )
         }
         let tools = ((object["tools"] as? [[String: Any]]) ?? []).compactMap { row -> UsageReport.Tool? in
-            guard let name = row["tool"] as? String else { return nil }
-            return UsageReport.Tool(
-                name: name,
-                count: (row["count"] as? Int) ?? 0,
-                share: ((row["percentage"] as? Double) ?? 0) / 100
-            )
+            guard let name = (row["tool"] as? String) ?? (row["name"] as? String) else { return nil }
+            let count = int(row["count"]) ?? int(row["total_count"]) ?? 0
+            let percentage = double(row["percentage"]) ?? 0
+            return UsageReport.Tool(name: name, count: count, share: percentage / 100)
         }
         return UsageReport(
-            days: (object["period_days"] as? Int) ?? 30,
-            sessions: (totals["total_sessions"] as? Int) ?? 0,
-            calls: (totals["total_api_calls"] as? Int) ?? 0,
-            inputTokens: (totals["total_input"] as? Int) ?? 0,
-            outputTokens: (totals["total_output"] as? Int) ?? 0,
-            cost: (totals["total_actual_cost"] as? Double)
-                ?? (totals["total_estimated_cost"] as? Double) ?? 0,
+            days: int(object["period_days"]) ?? days,
+            sessions: int(totals["total_sessions"]) ?? 0,
+            calls: int(totals["total_api_calls"]) ?? 0,
+            inputTokens: int(totals["total_input"]) ?? 0,
+            outputTokens: int(totals["total_output"]) ?? 0,
+            cacheReadTokens: int(totals["total_cache_read"]) ?? 0,
+            reasoningTokens: int(totals["total_reasoning"]) ?? 0,
+            cost: {
+                let actual = double(totals["total_actual_cost"]) ?? 0
+                return actual > 0 ? actual : (double(totals["total_estimated_cost"]) ?? 0)
+            }(),
             models: models.sorted { $0.tokens > $1.tokens },
             tools: tools.sorted { $0.count > $1.count }
+        )
+    }
+
+    static func billingUsage(from object: [String: Any]) -> BillingUsage {
+        func bar(_ raw: Any?) -> BillingUsage.Bar? {
+            guard let row = raw as? [String: Any] else { return nil }
+            return BillingUsage.Bar(
+                kind: row["kind"] as? String ?? "",
+                remaining: row["remaining_display"] as? String ?? "",
+                total: row["total_display"] as? String ?? "",
+                spent: row["spent_display"] as? String ?? "",
+                percentUsed: double(row["pct_used"]) ?? 0,
+                fillFraction: double(row["fill_fraction"]) ?? 0
+            )
+        }
+        return BillingUsage(
+            available: (object["available"] as? Bool) ?? false,
+            status: object["status"] as? String ?? "",
+            planName: object["plan_name"] as? String ?? "",
+            renews: object["renews_display"] as? String ?? "",
+            subscriptionRemaining: object["subscription_remaining_display"] as? String ?? "",
+            topupRemaining: object["topup_remaining_display"] as? String ?? "",
+            totalSpendable: object["total_spendable_display"] as? String ?? "",
+            planBar: bar(object["plan_bar"]),
+            topupBar: bar(object["topup_bar"])
         )
     }
 }

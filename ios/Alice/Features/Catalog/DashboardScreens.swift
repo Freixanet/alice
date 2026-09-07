@@ -6,7 +6,7 @@ import SwiftUI
 /// which can be renamed and removed here, and the ones the session tree
 /// implies — a working directory the agent has been used in is a project
 /// whether anybody said so or not, and there is nothing to edit about it.
-private struct HermesProfileChoice: Identifiable, Hashable {
+struct HermesProfileChoice: Identifiable, Hashable {
     let id: String
     var label: String
 }
@@ -843,7 +843,12 @@ private struct MemoryEntrySheet: View {
 struct UsageScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+
+    @State private var profiles = [HermesProfileChoice(id: "default", label: "Alice")]
+    @State private var selectedProfile = "default"
+    @State private var days = 30
     @State private var report: UsageReport?
+    @State private var billing: BillingUsage?
     @State private var failure: String?
     @State private var loading = false
 
@@ -858,22 +863,78 @@ struct UsageScreen: View {
         ) {
             if let report {
                 List {
+                    if profiles.count > 1 {
+                        Section {
+                            Picker("Profile", selection: $selectedProfile) {
+                                ForEach(profiles) { Text($0.label).tag($0.id) }
+                            }
+                        }
+                    }
+
+                    Section {
+                        Picker("Period", selection: $days) {
+                            Text("7 days").tag(7)
+                            Text("30 days").tag(30)
+                            Text("90 days").tag(90)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    if let billing, billing.available {
+                        Section {
+                            if !billing.planName.isEmpty {
+                                row("Plan", billing.planName)
+                            }
+                            if !billing.status.isEmpty {
+                                row("Status", billing.status)
+                            }
+                            if !billing.totalSpendable.isEmpty {
+                                row("Spendable", billing.totalSpendable)
+                            }
+                            if !billing.subscriptionRemaining.isEmpty {
+                                row("Subscription left", billing.subscriptionRemaining)
+                            }
+                            if !billing.topupRemaining.isEmpty {
+                                row("Top-up left", billing.topupRemaining)
+                            }
+                            if let bar = billing.planBar {
+                                usageBar("Plan usage", bar)
+                            }
+                            if let bar = billing.topupBar {
+                                usageBar("Top-up usage", bar)
+                            }
+                            if !billing.renews.isEmpty {
+                                row("Renews", billing.renews)
+                            }
+                        } header: {
+                            Text("Account limit")
+                        } footer: {
+                            Text("Shown only when the active provider exposes a real subscription or spendable-balance view to Hermes.")
+                        }
+                    }
+
                     Section {
                         row("Sessions", "\(report.sessions)")
                         row("API calls", Insights.compact(report.calls))
                         row("Input tokens", Insights.compact(report.inputTokens))
                         row("Output tokens", Insights.compact(report.outputTokens))
+                        if report.cacheReadTokens > 0 {
+                            row("Cache-read tokens", Insights.compact(report.cacheReadTokens))
+                        }
+                        if report.reasoningTokens > 0 {
+                            row("Reasoning tokens", Insights.compact(report.reasoningTokens))
+                        }
                         if report.cost > 0 {
                             row("Cost", report.cost.formatted(.currency(code: "USD")))
                         }
                     } footer: {
-                        Text("The agent's own figures, over the last \(report.days) days.")
+                        Text("Hermes' own accounting for this profile over the last \(report.days) days.")
                     }
 
                     if !report.models.isEmpty {
                         Section("Models") {
                             ForEach(report.models) { model in
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: 3) {
                                     HStack {
                                         Text(model.name).font(.subheadline).lineLimit(1)
                                         Spacer(minLength: 8)
@@ -881,9 +942,18 @@ struct UsageScreen: View {
                                             .font(.caption.monospaced())
                                             .foregroundStyle(.secondary)
                                     }
-                                    Text("\(model.sessions) sessions · \(model.calls) calls")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 5) {
+                                        if let provider = model.provider, !provider.isEmpty {
+                                            Text(provider)
+                                        }
+                                        Text("\(model.sessions) sessions")
+                                        Text("· \(model.calls) calls")
+                                        if model.cost > 0 {
+                                            Text("· \(model.cost.formatted(.currency(code: "USD")))")
+                                        }
+                                    }
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                                 }
                                 .padding(.vertical, 2)
                                 .listRowBackground(Palette.card(scheme))
@@ -908,7 +978,16 @@ struct UsageScreen: View {
                 }
             }
         }
-        .task { await load() }
+        .task {
+            await loadProfiles()
+            await load()
+        }
+        .onChange(of: selectedProfile) { _, _ in Task { await load() } }
+        .onChange(of: days) { _, _ in Task { await load() } }
+        .onChange(of: store.dashboardReady) { _, ready in
+            guard ready else { return }
+            Task { await loadProfiles(); await load() }
+        }
         .refreshable { await load() }
     }
 
@@ -917,11 +996,44 @@ struct UsageScreen: View {
             .listRowBackground(Palette.card(scheme))
     }
 
+    private func usageBar(_ label: String, _ bar: BillingUsage.Bar) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                Spacer()
+                if !bar.remaining.isEmpty { Text(bar.remaining).foregroundStyle(.secondary) }
+            }
+            ProgressView(value: min(1, max(0, bar.fillFraction)))
+            if !bar.spent.isEmpty || !bar.total.isEmpty {
+                Text([bar.spent, bar.total].filter { !$0.isEmpty }.joined(separator: " / "))
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func loadProfiles() async {
+        guard store.dashboardReady else { return }
+        if let choices = try? await store.hermesProfiles() {
+            profiles = choices.map { HermesProfileChoice(id: $0.id, label: $0.label) }
+            if !profiles.contains(where: { $0.id == selectedProfile }) { selectedProfile = "default" }
+        }
+    }
+
     private func load() async {
+        guard store.dashboardReady else { failure = nil; return }
         loading = true
         defer { loading = false }
-        do { report = try await store.usage(); failure = nil }
-        catch { failure = message(error) }
+        do {
+            report = try await store.usage(profile: selectedProfile, days: days)
+            let modelInfo = try? await store.profileModelInfo(profile: selectedProfile)
+            billing = modelInfo?.provider.lowercased() == "nous"
+                ? (try? await store.billingUsage())
+                : nil
+            failure = nil
+        } catch {
+            failure = diagnosticMessage(error)
+        }
     }
 }
 
