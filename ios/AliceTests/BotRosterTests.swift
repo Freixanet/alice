@@ -61,4 +61,90 @@ final class BotRosterTests: XCTestCase {
         )
         XCTAssertEqual(bots.map(\.isDefault), [false])
     }
+    func testBotModeMetadataWinsPresentationAndCarriesRevision() throws {
+        let bots = try DashboardClient.bots(
+            from: profilesBody([[
+                "name": "radar-ia",
+                "display_name": "Old profile label",
+                "description": "Profile description",
+                "model": "grok-4.6",
+                "provider": "xai-oauth",
+                "skill_count": NSNumber(value: 60),
+                "ui_meta": [
+                    "hermes-bots": [
+                        "title": "Radar IA",
+                        "description": "Bot Mode description",
+                        "hidden": true,
+                        "pinned": false,
+                        "shape": "blobatar",
+                        "groups": ["news"],
+                        "created": NSNumber(value: 1_788_304_483_659 as Int64),
+                    ]
+                ],
+                "ui_meta_revisions": ["hermes-bots": NSNumber(value: 7)],
+            ]]),
+            active: nil
+        )
+        let bot = try XCTUnwrap(bots.first)
+        XCTAssertEqual(bot.displayName, "Radar IA")
+        XCTAssertEqual(bot.detail, "Bot Mode description")
+        XCTAssertEqual(bot.model, "grok-4.6")
+        XCTAssertEqual(bot.provider, "xai-oauth")
+        XCTAssertEqual(bot.skills, 60)
+        XCTAssertTrue(bot.hidden)
+        XCTAssertFalse(bot.pinned)
+        XCTAssertEqual(bot.metadata.shape, "blobatar")
+        XCTAssertEqual(bot.metadata.groups, ["news"])
+        XCTAssertEqual(bot.metadata.revision, 7)
+        XCTAssertTrue(bot.metadata.present)
+    }
+
+    func testLegacyNamedProfileRemainsABotWithoutMetadata() throws {
+        let rows = try DashboardClient.bots(
+            from: profilesBody([[
+                "name": "researcher",
+                "description": "Research work",
+                "is_default": false,
+            ]]),
+            active: nil
+        )
+        let roster = AppStore.botRoster(from: rows)
+        XCTAssertEqual(roster.map(\.name), ["researcher"])
+        XCTAssertFalse(try XCTUnwrap(roster.first).metadata.present)
+    }
+
+    func testDefaultNeverBecomesBotEvenWithHermesBotsMetadata() throws {
+        let rows = try DashboardClient.bots(
+            from: profilesBody([
+                [
+                    "name": "default", "display_name": "Alice", "is_default": true,
+                    "ui_meta": ["hermes-bots": ["pinned": true, "title": "Alice"]],
+                ],
+                ["name": "537", "is_default": false],
+            ]),
+            active: nil
+        )
+        XCTAssertEqual(AppStore.botRoster(from: rows).map(\.name), ["537"])
+    }
+
+    func testRestFallbackCarriesLastKnownBotModeMetadata() {
+        var cached = row("radar-ia")
+        cached.displayName = "Radar IA"
+        cached.metadata = BotMetadata(
+            title: "Radar IA", hidden: true, pinned: true, revision: 4, present: true
+        )
+        let carried = AppStore.carryCachedMetadata([row("radar-ia")], from: [cached])
+        XCTAssertEqual(carried.first?.displayName, "Radar IA")
+        XCTAssertTrue(carried.first?.hidden == true)
+        XCTAssertTrue(carried.first?.pinned == true)
+        XCTAssertEqual(carried.first?.metadata.revision, 4)
+    }
+
+    func testBotSlugMatchesHermesBotModeGrammar() {
+        XCTAssertEqual(AppStore.botSlug("My Research Bot!"), "my-research-bot")
+        XCTAssertEqual(AppStore.botSlug("  RADAR_IA  "), "radar_ia")
+        XCTAssertEqual(AppStore.botSlug("!!!"), "")
+        XCTAssertLessThanOrEqual(AppStore.botSlug(String(repeating: "A", count: 100)).count, 64)
+    }
+
 }

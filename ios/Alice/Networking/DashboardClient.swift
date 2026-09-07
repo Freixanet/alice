@@ -243,11 +243,37 @@ actor DashboardClient {
     }
 }
 
-/// A Hermes profile — what the desktop client calls a bot.
+/// The part of Hermes Bot Mode metadata Alice understands.
 ///
-/// A bot is not a separate kind of thing: it is a profile with its own SOUL,
-/// model, skills and sessions. Everything the desktop shows under Bot Mode is
-/// this, which is why it can be built here at all.
+/// Hermes persists this namespace in `profile.yaml` as
+/// `ui_meta["hermes-bots"]`.  Every field is optional on purpose: an old
+/// profile with no Bot Mode metadata is still a perfectly valid legacy bot,
+/// and `nil` is different from an explicit `false` when Alice migrates an old
+/// local preference onto the profile.
+struct BotMetadata: Hashable, Sendable, Codable {
+    var title: String? = nil
+    var description: String? = nil
+    var hidden: Bool? = nil
+    var pinned: Bool? = nil
+    var sectionID: String? = nil
+    var color: String? = nil
+    var custom: Bool? = nil
+    var groups: [String]? = nil
+    var group: String? = nil
+    var imageKind: String? = nil
+    var shape: String? = nil
+    var created: Double? = nil
+    var revision: Int = 0
+    var present: Bool = false
+}
+
+/// A Hermes profile as Alice's bot roster sees it.
+///
+/// Named profiles are the compatibility boundary used by Hermes Bot Mode: new
+/// profiles carry `hermes-bots` metadata, while profiles created before Bot
+/// Mode may not.  Alice deliberately keeps those legacy named profiles in the
+/// roster.  The one exception is the installation's `is_default` profile —
+/// that is Alice/Home and never a secondary bot.
 struct BotRow: Identifiable, Hashable, Sendable, Codable {
     var id: String { name }
     let name: String
@@ -259,6 +285,10 @@ struct BotRow: Identifiable, Hashable, Sendable, Codable {
     var isDefault: Bool
     var gatewayRunning: Bool
     var active: Bool
+    var metadata: BotMetadata = .init()
+
+    var hidden: Bool { metadata.hidden ?? false }
+    var pinned: Bool { metadata.pinned ?? false }
 }
 
 /// A named workspace, with how much of the agent's time it has taken.
@@ -345,24 +375,70 @@ extension DashboardClient {
         }
         let bots: [BotRow] = rows.compactMap { row in
             guard let name = row["name"] as? String, !name.isEmpty else { return nil }
+
+            let uiMeta = row["ui_meta"] as? [String: Any]
+            let rawMeta = uiMeta?["hermes-bots"] as? [String: Any]
+            let revisions = row["ui_meta_revisions"] as? [String: Any]
+            let revision = Self.int(revisions?["hermes-bots"]) ?? 0
+            let metaTitle = Self.nonEmpty(rawMeta?["title"] as? String)
+            let profileDisplayName = Self.nonEmpty(row["display_name"] as? String)
+            let rowTitle = Self.nonEmpty(row["title"] as? String)
+            let metaDescription = Self.nonEmpty(rawMeta?["description"] as? String)
+            let profileDescription = (row["description"] as? String) ?? ""
+
             return BotRow(
                 name: name,
-                displayName: (row["display_name"] as? String).flatMap {
-                    $0.isEmpty ? nil : $0
-                } ?? name,
-                detail: (row["description"] as? String) ?? "",
+                // Same identity order as Hermes Bot Mode: a Bot Mode title
+                // wins, then the profile's presentation name, then a row title
+                // from older gateways, finally the canonical profile id.
+                displayName: metaTitle ?? profileDisplayName ?? rowTitle ?? name,
+                detail: metaDescription ?? profileDescription,
                 model: row["model"] as? String,
                 provider: row["provider"] as? String,
-                skills: (row["skill_count"] as? Int) ?? 0,
+                skills: Self.int(row["skill_count"]) ?? 0,
                 isDefault: (row["is_default"] as? Bool) ?? false,
                 gatewayRunning: (row["gateway_running"] as? Bool) ?? false,
-                active: name == active
+                active: name == active,
+                metadata: BotMetadata(
+                    title: metaTitle,
+                    description: metaDescription,
+                    hidden: rawMeta?["hidden"] as? Bool,
+                    pinned: rawMeta?["pinned"] as? Bool,
+                    sectionID: Self.nonEmpty(rawMeta?["sectionId"] as? String),
+                    color: Self.nonEmpty(rawMeta?["color"] as? String),
+                    custom: rawMeta?["custom"] as? Bool,
+                    groups: rawMeta?["groups"] as? [String],
+                    group: Self.nonEmpty(rawMeta?["group"] as? String),
+                    imageKind: Self.nonEmpty(rawMeta?["imageKind"] as? String),
+                    shape: Self.nonEmpty(rawMeta?["shape"] as? String),
+                    created: Self.double(rawMeta?["created"]),
+                    revision: revision,
+                    present: rawMeta != nil
+                )
             )
         }
         // Rows arrived and none of them had a name: a shape problem, not an
         // agent without bots.
         if !rows.isEmpty && bots.isEmpty { throw Failure.unreadable }
         return bots
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else { return nil }
+        return value
+    }
+
+    private static func int(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber { return value.intValue }
+        return nil
+    }
+
+    private static func double(_ value: Any?) -> Double? {
+        if let value = value as? Double { return value }
+        if let value = value as? NSNumber { return value.doubleValue }
+        return nil
     }
 
     /// Where the dashboard lives, for callers that must build their own URL —
@@ -398,6 +474,13 @@ extension DashboardClient {
 
     func setDescription(_ name: String, _ text: String) async throws {
         try await send("PUT", "api/profiles/\(name)/description", ["description": text])
+    }
+
+    func setModel(_ name: String, provider: String, model: String) async throws {
+        try await send(
+            "PUT", "api/profiles/\(name)/model",
+            ["provider": provider, "model": model]
+        )
     }
 
     func activate(_ name: String) async throws {

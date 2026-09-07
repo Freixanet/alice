@@ -168,6 +168,12 @@ final class AppStore {
         }
     }
 
+    /// True when the current roster came from Hermes' `profiles.list` Bot Mode
+    /// protocol. In that mode presentation metadata belongs to the profile,
+    /// not to this phone. The old UserDefaults sets remain only as a fallback
+    /// for gateways that predate Bot Mode and as migration input.
+    private(set) var botMetadataIsRemote = false
+
     var knownBotNames: [String] {
         var names = Set(cachedBots.map(\.name))
         names.formUnion(botMarks.keys)
@@ -444,6 +450,7 @@ final class AppStore {
     func connectDashboard(urlText: String, username: String, password: String) async -> String? {
         let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = Self.normalize(trimmed) else { return "Check the address." }
+        await resetDashboardRPC()
         await dashboard.use(
             .init(url: url, username: username, password: password)
         )
@@ -467,6 +474,7 @@ final class AppStore {
               let password = KeyStore.read(account: Self.dashboardAccount),
               let url = Self.normalize(dashboardURL)
         else { return }
+        await resetDashboardRPC()
         await dashboard.use(
             .init(url: url, username: dashboardUser, password: password)
         )
@@ -474,6 +482,7 @@ final class AppStore {
     }
 
     func forgetDashboard() async {
+        await resetDashboardRPC()
         await dashboard.use(nil)
         _ = KeyStore.clear(account: Self.dashboardAccount)
         dashboardURL = ""
@@ -482,6 +491,15 @@ final class AppStore {
     }
 
     static let dashboardAccount = "dashboard-password"
+
+    /// A JSON-RPC client is bound to the dashboard URL it was created with.
+    /// Changing/forgetting that dashboard must therefore retire the socket;
+    /// otherwise a later Bot Mode action can be routed to the previous host.
+    private func resetDashboardRPC() async {
+        if let rpcClient { await rpcClient.disconnect() }
+        rpcClient = nil
+        botMetadataIsRemote = false
+    }
 
     /// Scans the most recent sessions for what the agent produced.
     ///
@@ -505,9 +523,11 @@ final class AppStore {
     }
 
     func botCurrentName(for name: String) -> String {
-        if let custom = botCustomNames[name], !custom.isEmpty {
-            return custom
+        if botMetadataIsRemote,
+           let found = cachedBots.first(where: { $0.name == name }), !found.displayName.isEmpty {
+            return found.displayName
         }
+        if let custom = botCustomNames[name], !custom.isEmpty { return custom }
         if let found = cachedBots.first(where: { $0.name == name }), !found.displayName.isEmpty {
             return found.displayName
         }
@@ -515,37 +535,237 @@ final class AppStore {
     }
 
     func botCurrentName(for bot: BotRow) -> String {
-        botCustomNames[bot.name] ?? (bot.displayName.isEmpty ? bot.name : bot.displayName)
+        if botMetadataIsRemote { return bot.displayName.isEmpty ? bot.name : bot.displayName }
+        return botCustomNames[bot.name] ?? (bot.displayName.isEmpty ? bot.name : bot.displayName)
     }
 
-    /// The bots, from the agent.
-    ///
-    /// Throws when the dashboard does not answer rather than quietly handing
-    /// back the cache: a caller that cannot tell a live list from a stale one
-    /// will show hours-old data as though it were current. `cachedBots` stays
-    /// available for callers that would rather show something than nothing —
-    /// but they have to choose that.
+    /// The bots, from Hermes' Bot Mode roster when the connected dashboard
+    /// supports it.  `profiles.list` is the authoritative surface because it
+    /// carries `ui_meta["hermes-bots"]` and its CAS revision; the older REST
+    /// endpoint is retained only for backwards compatibility.
     func bots() async throws -> [BotRow] {
-        var list = Self.botRoster(from: try await dashboard.bots())
-        for index in list.indices {
-            if let custom = botCustomNames[list[index].name] {
-                list[index].displayName = custom
+        var list: [BotRow]
+        var remoteMetadata = false
+
+        if let rpc = await dashboardRPC() {
+            do {
+                let result = try await rpc.call(
+                    "profiles.list", JSONObject(["include_sessions": false])
+                )
+                list = Self.botRoster(
+                    from: try DashboardClient.bots(from: result.fields, active: nil)
+                )
+                remoteMetadata = true
+            } catch {
+                // An older gateway may not implement profiles.list. The REST
+                // list is still a real profile list, just without Bot Mode
+                // presentation metadata. Preserve the last metadata snapshot
+                // instead of making hidden/pinned bots jump around during a
+                // transient WebSocket failure.
+                list = Self.botRoster(from: try await dashboard.bots())
+                list = Self.carryCachedMetadata(list, from: cachedBots)
+            }
+        } else {
+            list = Self.botRoster(from: try await dashboard.bots())
+            list = Self.carryCachedMetadata(list, from: cachedBots)
+        }
+
+        botMetadataIsRemote = remoteMetadata
+        if remoteMetadata, await migrateLegacyBotPreferences(in: list) {
+            // Migration writes the missing metadata to Hermes. Re-read once so
+            // the rows on screen contain the exact server result + revisions.
+            if let rpc = await dashboardRPC(),
+               let refreshed = try? await rpc.call(
+                    "profiles.list", JSONObject(["include_sessions": false])
+               ),
+               let parsed = try? DashboardClient.bots(from: refreshed.fields, active: nil) {
+                list = Self.botRoster(from: parsed)
             }
         }
-        // Only when it differs. Assigning unconditionally wrote UserDefaults
-        // and invalidated every observer on every call, including the ones
-        // that fire while somebody is typing a mention.
+
         if list != cachedBots { cachedBots = list }
         return list
     }
 
-    /// The bot roster is every NAMED Hermes profile. The main profile — the
-    /// one `is_default` marks, the one Home chat talks to — is not a bot and
-    /// must never appear as one: bots are secondary resources, discovered
-    /// here and addressed explicitly, never the Home connection's identity.
+    /// Alice owns `default` as Home. Every named profile remains in Bots, even
+    /// if it predates Bot Mode metadata: that is Hermes Desktop's legacy
+    /// compatibility rule, made explicit rather than treating metadata as a
+    /// type discriminator.
     nonisolated static func botRoster(from profiles: [BotRow]) -> [BotRow] {
         profiles.filter { !$0.isDefault }
     }
+
+    nonisolated static func carryCachedMetadata(
+        _ rows: [BotRow], from cache: [BotRow]
+    ) -> [BotRow] {
+        let old = Dictionary(uniqueKeysWithValues: cache.map { ($0.name, $0.metadata) })
+        return rows.map { row in
+            guard let metadata = old[row.name], metadata.present else { return row }
+            var copy = row
+            copy.metadata = metadata
+            if let title = metadata.title, !title.isEmpty { copy.displayName = title }
+            if let description = metadata.description, !description.isEmpty { copy.detail = description }
+            return copy
+        }
+    }
+
+    /// One authenticated JSON-RPC socket is shared by Bot Mode configuration
+    /// and Bot Chat. It is a transport to the machine dashboard, not a
+    /// conversation, so sharing it cannot mix bot sessions.
+    private func dashboardRPC() async -> HermesRPCClient? {
+        guard dashboardReady else { return nil }
+        if rpcClient == nil {
+            guard let base = await dashboard.baseURL else { return nil }
+            let dashboard = dashboard
+            rpcClient = HermesRPCClient(endpoint: base) {
+                try await dashboard.webSocketTicket()
+            }
+        }
+        return rpcClient
+    }
+
+    /// Merge ONE Bot Mode namespace without losing fields Alice does not know
+    /// about. The current raw object is fetched immediately before the write,
+    /// and Hermes' per-key compare-and-swap revision prevents Alice and Desktop
+    /// from silently overwriting each other. One conflict is retried against a
+    /// fresh snapshot.
+    private func mutateBotMetadata(
+        _ name: String,
+        mutation: ([String: Any]) -> [String: Any]
+    ) async throws {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+
+        for attempt in 0..<2 {
+            let roster = try await rpc.call(
+                "profiles.list", JSONObject(["include_sessions": false])
+            )
+            guard let rows = roster["profiles"] as? [[String: Any]],
+                  let row = rows.first(where: { ($0["name"] as? String) == name })
+            else {
+                throw HermesRPCClient.Failure(reason: "Hermes no longer has the bot ‘\(name)’.")
+            }
+
+            let uiMeta = row["ui_meta"] as? [String: Any]
+            let current = (uiMeta?["hermes-bots"] as? [String: Any]) ?? [:]
+            let next = mutation(current)
+            let revisions = row["ui_meta_revisions"] as? [String: Any]
+            let revision: Int = {
+                if let value = revisions?["hermes-bots"] as? Int { return value }
+                if let value = revisions?["hermes-bots"] as? NSNumber { return value.intValue }
+                return 0
+            }()
+            let namespace: Any = next.isEmpty ? NSNull() : next
+            let response = try await rpc.call(
+                "profiles.configure",
+                JSONObject([
+                    "name": name,
+                    "ui_meta": ["hermes-bots": namespace],
+                    "ui_meta_expected_revisions": ["hermes-bots": revision],
+                ])
+            )
+            let applied = response["applied"] as? [String: Any]
+            if applied?["ui_meta"] as? Bool == true { return }
+            if attempt == 0, applied?["ui_meta_conflicts"] != nil { continue }
+            throw HermesRPCClient.Failure(
+                reason: "Hermes did not save this bot setting. Refresh Bots and try again."
+            )
+        }
+    }
+
+    func isBotPinned(_ bot: BotRow) -> Bool {
+        botMetadataIsRemote ? (bot.metadata.pinned ?? false) : pinnedBots.contains(bot.name)
+    }
+
+    func isBotHidden(_ bot: BotRow) -> Bool {
+        botMetadataIsRemote ? (bot.metadata.hidden ?? false) : hiddenBots.contains(bot.name)
+    }
+
+    func setBotPinned(_ bot: BotRow, pinned: Bool) async throws {
+        if botMetadataIsRemote {
+            try await mutateBotMetadata(bot.name) { meta in
+                var meta = meta
+                meta["pinned"] = pinned
+                return meta
+            }
+        } else if pinned {
+            pinnedBots.insert(bot.name)
+        } else {
+            pinnedBots.remove(bot.name)
+        }
+    }
+
+    func setBotHidden(_ bot: BotRow, hidden: Bool) async throws {
+        if botMetadataIsRemote {
+            try await mutateBotMetadata(bot.name) { meta in
+                var meta = meta
+                meta["hidden"] = hidden
+                return meta
+            }
+        } else if hidden {
+            hiddenBots.insert(bot.name)
+        } else {
+            hiddenBots.remove(bot.name)
+        }
+    }
+
+    func setBotTitle(_ bot: BotRow, title: String) async throws {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if botMetadataIsRemote {
+            try await mutateBotMetadata(bot.name) { meta in
+                var meta = meta
+                if trimmed.isEmpty { meta.removeValue(forKey: "title") }
+                else { meta["title"] = trimmed }
+                return meta
+            }
+            botCustomNames.removeValue(forKey: bot.name)
+        } else if trimmed.isEmpty {
+            botCustomNames.removeValue(forKey: bot.name)
+        } else {
+            botCustomNames[bot.name] = trimmed
+        }
+    }
+
+    /// Move the old phone-only title/pin/hidden preferences into Hermes only
+    /// when the corresponding server field is absent. Existing Desktop state
+    /// always wins. Successful migrations delete the local mirror so another
+    /// device becomes the same source of truth rather than a second opinion.
+    private func migrateLegacyBotPreferences(in bots: [BotRow]) async -> Bool {
+        var changed = false
+        for bot in bots {
+            let localTitle = botCustomNames[bot.name]
+            let localPinned = pinnedBots.contains(bot.name)
+            let localHidden = hiddenBots.contains(bot.name)
+            let needsTitle = bot.metadata.title == nil && localTitle?.isEmpty == false
+            let needsPinned = bot.metadata.pinned == nil && localPinned
+            let needsHidden = bot.metadata.hidden == nil && localHidden
+
+            if needsTitle || needsPinned || needsHidden {
+                do {
+                    try await mutateBotMetadata(bot.name) { meta in
+                        var meta = meta
+                        if needsTitle, meta["title"] == nil, let localTitle {
+                            meta["title"] = localTitle
+                        }
+                        if needsPinned, meta["pinned"] == nil { meta["pinned"] = true }
+                        if needsHidden, meta["hidden"] == nil { meta["hidden"] = true }
+                        return meta
+                    }
+                    changed = true
+                } catch {
+                    continue
+                }
+            }
+
+            // A remote value, including explicit false, is authoritative.
+            if bot.metadata.title != nil || needsTitle { botCustomNames.removeValue(forKey: bot.name) }
+            if bot.metadata.pinned != nil || needsPinned { pinnedBots.remove(bot.name) }
+            if bot.metadata.hidden != nil || needsHidden { hiddenBots.remove(bot.name) }
+        }
+        return changed
+    }
+
     /// The bot's routines, as the agent has them.
     ///
     /// There is deliberately no local copy merged in. There used to be, keyed
@@ -771,17 +991,68 @@ final class AppStore {
     }
 
     func botModel(for bot: String) -> String? {
-        botModels[bot] ?? botModels[bot.lowercased()]
+        if botMetadataIsRemote,
+           let model = cachedBots.first(where: { $0.name == bot })?.model, !model.isEmpty {
+            return model
+        }
+        return botModels[bot] ?? botModels[bot.lowercased()]
     }
 
-    func setBotModel(_ bot: String, model: String?) {
-        if let model {
-            botModels[bot] = model
-            botModels[bot.lowercased()] = model
-        } else {
-            botModels.removeValue(forKey: bot)
-            botModels.removeValue(forKey: bot.lowercased())
+    /// The exact catalogue option backing a bot's real Hermes model pin.
+    /// Provider participates in the identity because the same model id may be
+    /// served by more than one provider.
+    func botModelOption(for bot: BotRow) -> HermesClient.ModelOption? {
+        guard let model = bot.model, !model.isEmpty else { return nil }
+        if let provider = bot.provider, !provider.isEmpty,
+           let exact = models.first(where: { $0.id == model && $0.provider == provider }) {
+            return exact
         }
+        return models.first(where: { $0.id == model })
+    }
+
+    /// Persist a model selection on the Hermes profile. Bot Mode's RPC has the
+    /// same expensive/data-policy confirmation handshake as the main model
+    /// picker; the returned string is the confirmation message, or nil after
+    /// a successful write.
+    func setBotModel(
+        _ bot: BotRow,
+        to option: HermesClient.ModelOption,
+        confirm: Bool = false
+    ) async throws -> String? {
+        guard let provider = option.provider, !provider.isEmpty else {
+            throw HermesRPCClient.Failure(
+                reason: "Hermes did not identify the provider for this model."
+            )
+        }
+
+        if let rpc = await dashboardRPC() {
+            var params: [String: Any] = [
+                "name": bot.name, "model": option.id, "provider": provider,
+            ]
+            if confirm { params["confirm_expensive_model"] = true }
+            let response = try await rpc.call("profiles.configure", JSONObject(params))
+            if response["confirm_required"] as? Bool == true {
+                return (response["confirm_message"] as? String)
+                    ?? "Hermes wants confirmation before using this model."
+            }
+            let applied = response["applied"] as? [String: Any]
+            guard applied?["model"] as? Bool == true else {
+                throw HermesRPCClient.Failure(reason: "Hermes did not save the bot model.")
+            }
+        } else {
+            // Compatibility with dashboards from before profiles.configure.
+            // This still changes the real profile; it is never a phone-only
+            // model override.
+            try await dashboard.setModel(bot.name, provider: provider, model: option.id)
+        }
+
+        botModels.removeValue(forKey: bot.name)
+        botModels.removeValue(forKey: bot.name.lowercased())
+        if let index = cachedBots.firstIndex(where: { $0.name == bot.name }) {
+            cachedBots[index].model = option.id
+            cachedBots[index].provider = provider
+        }
+        return nil
     }
 
     func botNotificationsEnabled(for bot: String) -> Bool {
@@ -847,10 +1118,130 @@ final class AppStore {
             cachedBots[index].detail = text
         }
     }
-    func activateBot(_ name: String) async throws { try await dashboard.activate(name) }
+    /// Kept for compatibility with code paths that already have a canonical
+    /// profile id (duplicate/import). New UI creation should use the
+    /// display-name overload below so a human name and the profile slug do not
+    /// become the same concept again.
     func createBot(name: String, description: String) async throws {
-        try await dashboard.createBot(name: name, description: description)
+        if let rpc = await dashboardRPC() {
+            _ = try await rpc.call(
+                "profiles.create",
+                JSONObject([
+                    "name": name,
+                    "description": description,
+                    "share_auth": true,
+                    "mirror_credentials": true,
+                ])
+            )
+        } else {
+            try await dashboard.createBot(name: name, description: description)
+        }
     }
+
+    /// Create a real Hermes bot with a stable canonical profile id and a
+    /// separate presentation title, matching Hermes Desktop Bot Mode.
+    @discardableResult
+    func createBot(
+        displayName: String,
+        description: String,
+        model: HermesClient.ModelOption? = nil
+    ) async throws -> String {
+        let title = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let slug = Self.botSlug(title)
+        guard !slug.isEmpty else {
+            throw HermesRPCClient.Failure(reason: "Give the bot a name with at least one letter or number.")
+        }
+
+        if let rpc = await dashboardRPC() {
+            var payload: [String: Any] = [
+                "name": slug,
+                "description": description.trimmingCharacters(in: .whitespacesAndNewlines),
+                "share_auth": true,
+                "mirror_credentials": true,
+            ]
+            if let model, let provider = model.provider, !provider.isEmpty {
+                payload["model"] = model.id
+                payload["provider"] = provider
+            }
+            _ = try await rpc.call("profiles.create", JSONObject(payload))
+
+            // Title + created are Bot Mode presentation metadata, not profile
+            // identity. Always write the title: `my-research-bot` and “My
+            // Research Bot” should remain distinct concepts on every device.
+            try await mutateBotMetadata(slug) { meta in
+                var meta = meta
+                meta["title"] = title
+                meta["created"] = Date().timeIntervalSince1970 * 1000
+                return meta
+            }
+        } else {
+            try await dashboard.createBot(name: slug, description: description)
+            if let model, let provider = model.provider, !provider.isEmpty {
+                try await dashboard.setModel(slug, provider: provider, model: model.id)
+            }
+            // Old Hermes has nowhere to persist Bot Mode presentation fields.
+            botCustomNames[slug] = title
+        }
+        return slug
+    }
+
+    nonisolated static func botSlug(_ value: String) -> String {
+        value.lowercased()
+            .replacingOccurrences(
+                of: "[^a-z0-9_-]+", with: "-", options: .regularExpression
+            )
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+            .prefix(64)
+            .description
+    }
+
+    /// Duplicate the actual Hermes profile, not Alice's cached idea of it.
+    /// Model, skills, SOUL and config therefore come across together. Bot Mode
+    /// presentation metadata is copied separately with a fresh creation time.
+    func duplicateBot(_ bot: BotRow, as newName: String) async throws {
+        if let rpc = await dashboardRPC() {
+            _ = try await rpc.call(
+                "profiles.create",
+                JSONObject([
+                    "name": newName,
+                    "clone_from": bot.name,
+                    "description": bot.detail,
+                    "share_auth": true,
+                ])
+            )
+
+            let roster = try await rpc.call(
+                "profiles.list", JSONObject(["include_sessions": false])
+            )
+            let source = (roster["profiles"] as? [[String: Any]])?
+                .first(where: { ($0["name"] as? String) == bot.name })
+            var meta = ((source?["ui_meta"] as? [String: Any])?["hermes-bots"]
+                        as? [String: Any]) ?? [:]
+            meta.removeValue(forKey: "created")
+            meta.removeValue(forKey: "groups")
+            meta.removeValue(forKey: "group")
+            meta["created"] = Date().timeIntervalSince1970 * 1000
+            let baseTitle = bot.displayName.isEmpty ? bot.name : bot.displayName
+            meta["title"] = "\(baseTitle) (copy)"
+            try await mutateBotMetadata(newName) { _ in meta }
+        } else {
+            // Older dashboard fallback: it cannot clone through Bot Mode RPC,
+            // but the profile itself is still real. Copy the user-editable
+            // pieces Alice can address through REST.
+            try await dashboard.createBot(name: newName, description: bot.detail)
+            if let option = botModelOption(for: bot), let provider = option.provider {
+                try await dashboard.setModel(newName, provider: provider, model: option.id)
+            }
+            let originalSoul = try await soul(bot.name).text
+            if !originalSoul.isEmpty { try await setSoul(newName, originalSoul) }
+            botCustomNames[newName] = "\(baseTitle(for: bot)) (copy)"
+        }
+    }
+
+    private func baseTitle(for bot: BotRow) -> String {
+        bot.displayName.isEmpty ? bot.name : bot.displayName
+    }
+
     func deleteBot(_ name: String) async throws { try await dashboard.deleteBot(name) }
 
     func projects() async throws -> [ProjectRow] { try await dashboard.projects() }
@@ -1212,16 +1603,9 @@ final class AppStore {
     /// has: no second credential store, no second login screen, and the
     /// password never leaves `DashboardClient`.
     private func botChatSource() async -> WebSocketBotChatSource? {
-        // One gate for the socket itself, so nothing opens it by accident.
-        guard !Self.recoverySafeMode, dashboardReady else { return nil }
-        if rpcClient == nil {
-            guard let base = await dashboard.baseURL else { return nil }
-            let dashboard = dashboard
-            rpcClient = HermesRPCClient(endpoint: base) {
-                try await dashboard.webSocketTicket()
-            }
-        }
-        guard let rpcClient else { return nil }
+        // Recovery safe mode blocks bot-session mutation, not harmless Bot Mode
+        // roster/config reads performed elsewhere through the same transport.
+        guard !Self.recoverySafeMode, let rpcClient = await dashboardRPC() else { return nil }
         return WebSocketBotChatSource(rpc: rpcClient)
     }
 
@@ -1383,15 +1767,24 @@ final class AppStore {
         }
 
         var model = selectedModel
+        let invokedBotInfo = invokedBot.flatMap { name in
+            cachedBots.first(where: { $0.name == name })
+        }
         if let invokedBot, let specificModel = botModel(for: invokedBot) {
             model = specificModel
         }
-        let provider = Self.provider(
-            for: model, among: models, chosen: selectedProvider
-        )
+        // The emergency direct-gateway bot fallback must use the bot profile's
+        // provider with its model. Reusing Alice's selectedProvider can route a
+        // perfectly valid bot model through the wrong account/provider.
+        let provider: String?
+        if botMetadataIsRemote, let botProvider = invokedBotInfo?.provider, !botProvider.isEmpty {
+            provider = botProvider
+        } else {
+            provider = Self.provider(for: model, among: models, chosen: selectedProvider)
+        }
 
         if let invokedBot {
-            let botInfo = cachedBots.first(where: { $0.name == invokedBot })
+            let botInfo = invokedBotInfo
             let botTitle = botCurrentName(for: invokedBot)
             let botDesc = botInfo?.detail ?? ""
             // Said this firmly because it is arguing with something. The

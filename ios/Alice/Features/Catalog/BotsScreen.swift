@@ -198,11 +198,11 @@ struct BotsScreen: View {
     // MARK: - Sections & List
 
     private var filteredRows: [BotRow] {
-        let visible = rows.filter { !store.hiddenBots.contains($0.name) }
+        let visible = rows.filter { !store.isBotHidden($0) }
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return visible }
         return visible.filter { bot in
-            let dName = store.botCustomNames[bot.name] ?? bot.displayName
+            let dName = store.botCurrentName(for: bot)
             let dDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
             return bot.name.lowercased().contains(query) ||
             dName.lowercased().contains(query) ||
@@ -213,13 +213,13 @@ struct BotsScreen: View {
     /// Pinned bots keep the order the list has, not the order they were
     /// pinned in — the shelf is a shortcut to the same list, not a second one.
     private var pinnedRows: [BotRow] {
-        filteredRows.filter { store.pinnedBots.contains($0.name) }
+        filteredRows.filter { store.isBotPinned($0) }
     }
 
     /// Everything the shelf above is not already showing. A pinned bot in
     /// both places is the same bot twice.
     private var unpinnedRows: [BotRow] {
-        filteredRows.filter { !store.pinnedBots.contains($0.name) }
+        filteredRows.filter { !store.isBotPinned($0) }
     }
 
     private func bots(in section: String) -> [BotRow] {
@@ -426,9 +426,17 @@ struct BotsScreen: View {
             }
 
             Button {
-                store.toggleBotPin(bot.name)
+                let next = !store.isBotPinned(bot)
+                Task {
+                    do {
+                        try await store.setBotPinned(bot, pinned: next)
+                        await load()
+                    } catch {
+                        failure = describeBotError(error)
+                    }
+                }
             } label: {
-                Label(store.pinnedBots.contains(bot.name) ? "Unpin" : "Pin", systemImage: "pin")
+                Label(store.isBotPinned(bot) ? "Unpin" : "Pin", systemImage: "pin")
             }
 
             Menu {
@@ -462,7 +470,14 @@ struct BotsScreen: View {
             }
 
             Button(role: .destructive) {
-                store.hideBot(bot.name)
+                Task {
+                    do {
+                        try await store.setBotHidden(bot, hidden: true)
+                        await load()
+                    } catch {
+                        failure = describeBotError(error)
+                    }
+                }
             } label: {
                 Label("Hide", systemImage: "eye.slash")
             }
@@ -597,7 +612,7 @@ struct BotsScreen: View {
     /// data.
     @ViewBuilder
     private var hiddenSection: some View {
-        let hidden = rows.filter { store.hiddenBots.contains($0.name) }
+        let hidden = rows.filter { store.isBotHidden($0) }
         if !hidden.isEmpty {
             Button {
                 showHidden.toggle()
@@ -626,7 +641,16 @@ struct BotsScreen: View {
                             .font(.subheadline)
                             .lineLimit(1)
                         Spacer(minLength: 0)
-                        Button("Unhide") { store.unhideBot(bot.name) }
+                        Button("Unhide") {
+                            Task {
+                                do {
+                                    try await store.setBotHidden(bot, hidden: false)
+                                    await load()
+                                } catch {
+                                    failure = describeBotError(error)
+                                }
+                            }
+                        }
                             .font(.subheadline)
                             .buttonStyle(.plain)
                             .foregroundStyle(store.accent.primary(scheme))
@@ -840,7 +864,7 @@ struct BotsScreen: View {
                             .background(Color.secondary.opacity(0.14), in: .rect(cornerRadius: 5))
                     }
                 }
-                Text(routine.prompt.isEmpty ? "Bot: \(store.botCustomNames[botName] ?? botName)" : routine.prompt)
+                Text(routine.prompt.isEmpty ? "Bot: \(store.botCurrentName(for: botName))" : routine.prompt)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -1140,7 +1164,7 @@ struct BotsScreen: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .center, spacing: 6) {
-                        Text(store.botCustomNames[bot.name] ?? bot.displayName)
+                        Text(store.botCurrentName(for: bot))
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
@@ -1156,7 +1180,7 @@ struct BotsScreen: View {
                                 .background(Color.secondary.opacity(0.16), in: .rect(cornerRadius: 5))
                         }
 
-                        if store.pinnedBots.contains(bot.name) {
+                        if store.isBotPinned(bot) {
                             Image(systemName: "pin.fill")
                                 .font(.caption2)
                                 .foregroundStyle(store.accent.primary(scheme))
@@ -1207,17 +1231,10 @@ struct BotsScreen: View {
         }
         Task {
             do {
-                try await store.createBot(name: newName, description: bot.detail)
+                try await store.duplicateBot(bot, as: newName)
                 store.botMarks[newName] = store.mark(for: bot.name)
-                if let model = store.botModel(for: bot.name) {
-                    store.setBotModel(newName, model: model)
-                }
                 if let section = store.section(for: bot.name) {
                     store.setBotSection(newName, section: section)
-                }
-                let originalSoul = try await store.soul(bot.name).text
-                if !originalSoul.isEmpty {
-                    try await store.setSoul(newName, originalSoul)
                 }
                 await load()
             } catch {
@@ -1338,9 +1355,12 @@ struct BotDetail: View {
     @State private var mark = BotMark(colour: 0, shape: 0)
     @State private var name = ""
     @State private var detail = ""
-    @State private var selectedModel: String?
+    @State private var selectedModel: HermesClient.ModelOption?
     @State private var selectedSection = ""
     @State private var notifications = false
+    @State private var pendingModel: HermesClient.ModelOption?
+    @State private var modelConfirmation: String?
+    @State private var applyingModel = false
     @State private var routines: RoutineState = .loading
     @State private var addingRoutine = false
     @State private var editingSoul = false
@@ -1468,14 +1488,19 @@ struct BotDetail: View {
 
             Section("Configuration") {
                 Picker("Model", selection: $selectedModel) {
-                    Text("Default (\(store.selectedModel ?? "Auto"))").tag(nil as String?)
+                    if selectedModel == nil {
+                        Text(bot.model ?? "Not configured")
+                            .tag(nil as HermesClient.ModelOption?)
+                    }
                     ForEach(store.models) { model in
-                        Text(model.label).tag(model.id as String?)
+                        Text(model.label).tag(model as HermesClient.ModelOption?)
                     }
                 }
                 .listRowBackground(Palette.card(scheme))
-                .onChange(of: selectedModel) { _, next in
-                    store.setBotModel(bot.name, model: next)
+                .disabled(applyingModel)
+                .onChange(of: selectedModel) { old, next in
+                    guard let next, next != old else { return }
+                    applyModel(next, previous: old)
                 }
 
                 Picker("Section", selection: $selectedSection) {
@@ -1489,12 +1514,18 @@ struct BotDetail: View {
                     store.setBotSection(bot.name, section: next.isEmpty ? nil : next)
                 }
 
+                LabeledContent("Profile", value: "@\(bot.name)")
+                    .listRowBackground(Palette.card(scheme))
                 if let provider = bot.provider {
                     LabeledContent("Provider", value: provider)
                         .listRowBackground(Palette.card(scheme))
                 }
                 LabeledContent("Skills", value: "\(bot.skills)")
                     .listRowBackground(Palette.card(scheme))
+                LabeledContent(
+                    "Gateway", value: bot.gatewayRunning ? "Running" : "Shared / idle"
+                )
+                .listRowBackground(Palette.card(scheme))
             }
 
             Section {
@@ -1513,12 +1544,6 @@ struct BotDetail: View {
                 }
                 .listRowBackground(Palette.card(scheme))
 
-                if !bot.active {
-                    Button("Make this the active bot") {
-                        act { try await store.activateBot(bot.name) }
-                    }
-                    .listRowBackground(Palette.card(scheme))
-                }
             } footer: {
                 if let failure {
                     Text(failure).foregroundStyle(.red)
@@ -1527,7 +1552,7 @@ struct BotDetail: View {
                 }
             }
         }
-        .navigationTitle(store.botCustomNames[bot.name] ?? bot.displayName)
+         .navigationTitle(store.botCurrentName(for: bot))
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
@@ -1587,6 +1612,27 @@ struct BotDetail: View {
                 }
             }
         }
+        .alert(
+            "Confirm model change",
+            isPresented: Binding(
+                get: { modelConfirmation != nil },
+                set: { if !$0 { modelConfirmation = nil; pendingModel = nil } }
+            )
+        ) {
+            Button("Cancel", role: .cancel) {
+                pendingModel = nil
+                modelConfirmation = nil
+                selectedModel = store.botModelOption(for: bot)
+            }
+            Button("Use Model") {
+                guard let pendingModel else { return }
+                modelConfirmation = nil
+                applyModel(pendingModel, previous: store.botModelOption(for: bot), confirm: true)
+                self.pendingModel = nil
+            }
+        } message: {
+            Text(modelConfirmation ?? "Hermes requires confirmation.")
+        }
         .onChange(of: mark) {
             guard mark != store.mark(for: bot.name) else { return }
             store.botMarks[bot.name] = mark
@@ -1597,9 +1643,9 @@ struct BotDetail: View {
         }
         .task {
             mark = store.mark(for: bot.name)
-            name = store.botCustomNames[bot.name] ?? bot.displayName
+            name = store.botCurrentName(for: bot)
             detail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
-            selectedModel = store.botModel(for: bot.name)
+            selectedModel = store.botModelOption(for: bot)
             selectedSection = store.section(for: bot.name) ?? ""
             notifications = store.botNotificationsEnabled(for: bot.name)
             routines = await .resolving(
@@ -1609,14 +1655,41 @@ struct BotDetail: View {
         }
     }
 
+    private func applyModel(
+        _ option: HermesClient.ModelOption,
+        previous: HermesClient.ModelOption?,
+        confirm: Bool = false
+    ) {
+        guard !applyingModel else { return }
+        applyingModel = true
+        Task {
+            defer { applyingModel = false }
+            do {
+                if let message = try await store.setBotModel(bot, to: option, confirm: confirm) {
+                    pendingModel = option
+                    modelConfirmation = message
+                    selectedModel = previous
+                } else {
+                    selectedModel = option
+                    failure = nil
+                    onChange()
+                }
+            } catch {
+                selectedModel = previous
+                failure = describeBotError(error)
+            }
+        }
+    }
+
     private func commitName() {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let current = store.botCustomNames[bot.name] ?? bot.displayName
+        let current = store.botCurrentName(for: bot)
         guard trimmed != current else { return }
-        act {
-            try await store.renameBot(bot.name, to: trimmed)
-        }
+        // A visible bot name is Bot Mode metadata. The canonical profile id is
+        // stable routing identity and must not change just because somebody
+        // edits the label shown in the app.
+        act { try await store.setBotTitle(bot, title: trimmed) }
     }
 
     private func commitDetail() {
@@ -1784,7 +1857,7 @@ private struct NewBotSheet: View {
 
     @State private var name = ""
     @State private var detail = ""
-    @State private var selectedModel: String?
+    @State private var selectedModel: HermesClient.ModelOption?
     @State private var selectedSection = ""
     @State private var mark = BotMark(colour: 0, shape: 0)
     @State private var busy = false
@@ -1822,9 +1895,10 @@ private struct NewBotSheet: View {
 
                 Section("Options") {
                     Picker("Model", selection: $selectedModel) {
-                        Text("Default model").tag(nil as String?)
+                        Text("Inherit Alice's model")
+                            .tag(nil as HermesClient.ModelOption?)
                         ForEach(store.models) { model in
-                            Text(model.label).tag(model.id as String?)
+                            Text(model.label).tag(model as HermesClient.ModelOption?)
                         }
                     }
                     .listRowBackground(Palette.card(scheme))
@@ -1879,13 +1953,12 @@ private struct NewBotSheet: View {
         Task {
             defer { busy = false }
             do {
-                try await store.createBot(name: trimmed, description: detail)
-                store.botMarks[trimmed] = mark
-                if let model = selectedModel {
-                    store.setBotModel(trimmed, model: model)
-                }
+                let slug = try await store.createBot(
+                    displayName: trimmed, description: detail, model: selectedModel
+                )
+                store.botMarks[slug] = mark
                 if !selectedSection.isEmpty {
-                    store.setBotSection(trimmed, section: selectedSection)
+                    store.setBotSection(slug, section: selectedSection)
                 }
                 await onCreated()
                 dismiss()
