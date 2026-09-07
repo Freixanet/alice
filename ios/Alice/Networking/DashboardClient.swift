@@ -511,6 +511,35 @@ struct HermesConfiguration: Hashable, Sendable {
     var environmentProbe = true
 }
 
+/// A file or directory exposed by Hermes' managed Files surface. The server
+/// applies its own root and sensitive-file policy; Alice never bypasses it.
+struct ManagedRemoteFile: Identifiable, Hashable, Sendable {
+    var id: String { path }
+    var name: String
+    var path: String
+    var isDirectory: Bool
+    var size: Int?
+    var modified: Date?
+    var mimeType: String?
+}
+
+struct ManagedFilesListing: Hashable, Sendable {
+    var root: String?
+    var path: String
+    var parent: String?
+    var lockedRoot: String?
+    var canChangePath: Bool
+    var entries: [ManagedRemoteFile]
+}
+
+struct ManagedFileContents: Hashable, Sendable {
+    var name: String
+    var path: String
+    var size: Int
+    var mimeType: String
+    var data: Data
+}
+
 struct BillingUsage: Hashable, Sendable {
     struct Bar: Hashable, Sendable {
         var kind = ""
@@ -1354,6 +1383,101 @@ extension DashboardClient {
                 active: name == active
             )
         }
+    }
+
+    // MARK: Managed files
+
+    func managedFiles(path: String? = nil) async throws -> ManagedFilesListing {
+        let route: String
+        if let path, !path.isEmpty {
+            route = "api/files?path=\(Self.fileQueryValue(path))"
+        } else {
+            route = "api/files"
+        }
+        return try Self.managedFilesListing(from: await get(route))
+    }
+
+    func managedFile(path: String) async throws -> ManagedFileContents {
+        let object = try await get("api/files/read?path=\(Self.fileQueryValue(path))")
+        return try Self.managedFileContents(from: object)
+    }
+
+    private static func fileQueryValue(_ text: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        // A file path is a single query value. Query separators that are legal
+        // in a URL are not legal unescaped inside that value.
+        allowed.remove(charactersIn: "&=+?#")
+        return text.addingPercentEncoding(withAllowedCharacters: allowed) ?? text
+    }
+
+    @discardableResult
+    func createManagedDirectory(path: String) async throws -> ManagedRemoteFile {
+        let object = try await send("POST", "api/files/mkdir", ["path": path])
+        guard let row = object["entry"] as? [String: Any],
+              let entry = Self.managedFileEntry(from: row) else { throw Failure.unreadable }
+        return entry
+    }
+
+    @discardableResult
+    func uploadManagedFile(
+        path: String, data: Data, mimeType: String = "application/octet-stream", overwrite: Bool = true
+    ) async throws -> ManagedRemoteFile {
+        // This is the managed API's JSON upload route. It is intentionally used
+        // for the Files picker here because iOS already hands Alice the bytes;
+        // Hermes still enforces its configured managed-file size/root policy.
+        let dataURL = "data:\(mimeType);base64,\(data.base64EncodedString())"
+        let object = try await send("POST", "api/files/upload", [
+            "path": path, "data_url": dataURL, "overwrite": overwrite,
+        ])
+        guard let row = object["entry"] as? [String: Any],
+              let entry = Self.managedFileEntry(from: row) else { throw Failure.unreadable }
+        return entry
+    }
+
+    func deleteManagedFile(path: String, recursive: Bool = false) async throws {
+        _ = try await send("DELETE", "api/files", ["path": path, "recursive": recursive])
+    }
+
+    static func managedFilesListing(from object: [String: Any]) throws -> ManagedFilesListing {
+        guard let path = object["path"] as? String,
+              let rows = object["entries"] as? [[String: Any]] else { throw Failure.unreadable }
+        let entries = rows.compactMap(managedFileEntry(from:))
+        if !rows.isEmpty && entries.count != rows.count { throw Failure.unreadable }
+        return ManagedFilesListing(
+            root: object["root"] as? String,
+            path: path,
+            parent: object["parent"] as? String,
+            lockedRoot: object["locked_root"] as? String,
+            canChangePath: object["can_change_path"] as? Bool ?? false,
+            entries: entries
+        )
+    }
+
+    static func managedFileEntry(from row: [String: Any]) -> ManagedRemoteFile? {
+        guard let name = row["name"] as? String, !name.isEmpty,
+              let path = row["path"] as? String, !path.isEmpty,
+              let isDirectory = row["is_directory"] as? Bool else { return nil }
+        let rawSize = int(row["size"])
+        let modified = double(row["mtime"]).map { Date(timeIntervalSince1970: $0) }
+        return ManagedRemoteFile(
+            name: name, path: path, isDirectory: isDirectory,
+            size: rawSize, modified: modified, mimeType: row["mime_type"] as? String
+        )
+    }
+
+    static func managedFileContents(from object: [String: Any]) throws -> ManagedFileContents {
+        guard let name = object["name"] as? String,
+              let path = object["path"] as? String,
+              let mimeType = object["mime_type"] as? String,
+              let dataURL = object["data_url"] as? String,
+              let comma = dataURL.firstIndex(of: ","),
+              dataURL[..<comma].lowercased().contains(";base64"),
+              let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...]))
+        else { throw Failure.unreadable }
+        return ManagedFileContents(
+            name: name, path: path, size: int(object["size"]) ?? data.count,
+            mimeType: mimeType, data: data
+        )
     }
 
     func usage(profile: String = "default", days: Int = 30) async throws -> UsageReport {

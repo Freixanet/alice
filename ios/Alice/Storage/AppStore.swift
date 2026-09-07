@@ -1618,6 +1618,30 @@ final class AppStore {
     }
     func memoryProviders() async throws -> [MemoryProvider] { try await dashboard.memory() }
 
+    // MARK: - Hermes managed files
+
+    func hermesFiles(path: String? = nil) async throws -> ManagedFilesListing {
+        try await dashboard.managedFiles(path: path)
+    }
+
+    func hermesFile(path: String) async throws -> ManagedFileContents {
+        try await dashboard.managedFile(path: path)
+    }
+
+    func createHermesDirectory(path: String) async throws {
+        _ = try await dashboard.createManagedDirectory(path: path)
+    }
+
+    func uploadHermesFile(
+        path: String, data: Data, mimeType: String = "application/octet-stream"
+    ) async throws {
+        _ = try await dashboard.uploadManagedFile(path: path, data: data, mimeType: mimeType)
+    }
+
+    func deleteHermesFile(path: String, recursive: Bool = false) async throws {
+        try await dashboard.deleteManagedFile(path: path, recursive: recursive)
+    }
+
     // MARK: - Models, providers, usage & configuration
 
     func profileModelInfo(profile: String = "default") async throws -> ProfileModelInfo {
