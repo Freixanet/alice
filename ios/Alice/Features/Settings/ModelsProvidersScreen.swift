@@ -89,6 +89,11 @@ struct ModelsProvidersScreen: View {
                 } label: {
                     Label("Auxiliary models, MoA & custom endpoints", systemImage: "brain.head.profile")
                 }
+                NavigationLink {
+                    LocalModelsScreen()
+                } label: {
+                    Label("Local models on this Hermes host", systemImage: "desktopcomputer")
+                }
             }
 
             Section {

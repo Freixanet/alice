@@ -1967,6 +1967,72 @@ final class AppStore {
         try await dashboard.saveMoAConfiguration(configuration, profile: profile)
     }
 
+    // MARK: - Local models
+
+    func localModelsStatus() async throws -> LocalModelsStatus {
+        try await dashboard.localModelsStatus()
+    }
+
+    func localModelHardware() async throws -> LocalModelHardware {
+        try await dashboard.localModelHardware()
+    }
+
+    func localModelCatalog() async throws -> [LocalModelCatalogItem] {
+        try await dashboard.localModelCatalog()
+    }
+
+    func localModelJobs() async throws -> [LocalModelJob] {
+        try await dashboard.localModelJobs()
+    }
+
+    func localModelJob(_ id: String) async throws -> LocalModelJob {
+        try await dashboard.localModelJob(id)
+    }
+
+    func installLocalRuntime(backend: String? = nil) async throws -> LocalRuntimeInstallStart {
+        try await dashboard.installLocalRuntime(backend: backend)
+    }
+
+    func quickstartLocalModel(_ modelID: String? = nil) async throws -> LocalModelQuickstartStart {
+        try await dashboard.quickstartLocalModel(modelID)
+    }
+
+    func downloadLocalModel(_ modelID: String) async throws -> LocalModelDownloadStart {
+        try await dashboard.downloadLocalModel(modelID)
+    }
+
+    func deleteLocalModel(_ modelID: String) async throws {
+        try await dashboard.deleteLocalModel(modelID)
+    }
+
+    func setLocalModelServer(_ action: String) async throws {
+        try await dashboard.setLocalServer(action)
+    }
+
+    func ejectLocalModel(_ modelID: String) async throws {
+        try await dashboard.ejectLocalModel(modelID)
+    }
+
+    func activateLocalModel(_ modelID: String) async throws -> LocalModelJob {
+        try await dashboard.activateLocalModel(modelID)
+    }
+
+    func searchLocalModels(_ query: String, limit: Int = 20) async throws -> [LocalModelHFHit] {
+        try await dashboard.searchLocalModels(query, limit: limit)
+    }
+
+    func localModelRepoFiles(_ repo: String) async throws -> [LocalModelHFFileGroup] {
+        try await dashboard.localModelRepoFiles(repo)
+    }
+
+    func downloadBrowsedLocalModel(repo: String, paths: [String]) async throws -> LocalModelDownloadStart {
+        try await dashboard.downloadBrowsedLocalModel(repo: repo, paths: paths)
+    }
+
+    func sideloadLocalModel(path: String) async throws -> LocalModelSideloadResult {
+        try await dashboard.sideloadLocalModel(path: path)
+    }
+
     func validateProviderCredential(key: String, value: String) async throws -> CredentialValidation {
         try await dashboard.validateProviderCredential(key: key, value: value)
     }
