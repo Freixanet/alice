@@ -19,7 +19,7 @@ struct Sidebar: View {
     /// conversations, where they are reached without scrolling; the rest are
     /// in Settings, which is where things you set once belong.
     private enum Destination: String, Identifiable {
-        case routines, projects, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
+        case routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
         var id: String { rawValue }
     }
 
@@ -52,6 +52,7 @@ struct Sidebar: View {
                 switch destination {
                 case .routines: closable { RoutinesScreen() }
                 case .projects: closable { ProjectsScreen() }
+                case .git: closable { GitDevelopmentScreen() }
                 case .skills: closable { CatalogScreen(source: .skills) }
                 case .tools: closable { CatalogScreen(source: .toolsets) }
                 case .mcp: closable { MCPScreen() }
@@ -145,6 +146,7 @@ struct Sidebar: View {
             }
             row("Routines", systemImage: "clock", weight: .medium) { going = .routines }
             row("Projects", systemImage: "folder", weight: .medium) { going = .projects }
+            row("Git", systemImage: "arrow.triangle.branch", weight: .medium) { going = .git }
             row("Skills", systemImage: "sparkles", weight: .medium) { going = .skills }
             row("Tools", systemImage: "wrench.adjustable", weight: .medium) { going = .tools }
             row("MCP", systemImage: "shippingbox", weight: .medium) { going = .mcp }

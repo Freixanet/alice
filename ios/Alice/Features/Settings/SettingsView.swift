@@ -34,6 +34,9 @@ struct SettingsView: View {
                     NavigationLink { ModelsProvidersScreen() } label: {
                         Label("Models & Providers", systemImage: "cpu")
                     }
+                    NavigationLink { GitDevelopmentScreen() } label: {
+                        Label("Git & Remote Development", systemImage: "arrow.triangle.branch")
+                    }
                     NavigationLink { UsageScreen() } label: {
                         Label("Usage", systemImage: "chart.bar")
                     }

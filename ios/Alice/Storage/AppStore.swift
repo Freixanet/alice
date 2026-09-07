@@ -2033,6 +2033,99 @@ final class AppStore {
         try await dashboard.sideloadLocalModel(path: path)
     }
 
+    // MARK: - Git / remote development
+
+    func gitRepoStatus(path: String) async throws -> GitRepoStatus? {
+        try await dashboard.gitRepoStatus(path: path)
+    }
+
+    func gitHubAuthStatus(refresh: Bool = false) async throws -> GitHubAuthStatus {
+        try await dashboard.gitHubAuthStatus(refresh: refresh)
+    }
+
+    func gitWorktrees(path: String) async throws -> [GitWorktree] {
+        try await dashboard.gitWorktrees(path: path)
+    }
+
+    func gitBranches(path: String) async throws -> [GitBranch] {
+        try await dashboard.gitBranches(path: path)
+    }
+
+    func gitBaseBranches(path: String) async throws -> [GitBaseBranch] {
+        try await dashboard.gitBaseBranches(path: path)
+    }
+
+    func gitReviewList(path: String, scope: String, base: String? = nil) async throws -> GitReviewListing {
+        try await dashboard.gitReviewList(path: path, scope: scope, base: base)
+    }
+
+    func gitReviewDiff(
+        path: String, file: String, scope: String, base: String? = nil, staged: Bool = false
+    ) async throws -> String {
+        try await dashboard.gitReviewDiff(path: path, file: file, scope: scope, base: base, staged: staged)
+    }
+
+    func gitFileDiff(path: String, file: String) async throws -> String {
+        try await dashboard.gitFileDiff(path: path, file: file)
+    }
+
+    func gitCommitContext(path: String) async throws -> GitCommitContext {
+        try await dashboard.gitCommitContext(path: path)
+    }
+
+    func gitRevParse(path: String, ref: String? = nil) async throws -> String? {
+        try await dashboard.gitRevParse(path: path, ref: ref)
+    }
+
+    func gitShipInfo(path: String) async throws -> GitShipInfo {
+        try await dashboard.gitShipInfo(path: path)
+    }
+
+    func gitPullRequests(path: String, branches: [String], numbers: [Int] = []) async throws -> GitPullRequests {
+        try await dashboard.gitPullRequests(path: path, branches: branches, numbers: numbers)
+    }
+
+    func gitStage(path: String, file: String? = nil) async throws {
+        try await dashboard.gitStage(path: path, file: file)
+    }
+
+    func gitUnstage(path: String, file: String? = nil) async throws {
+        try await dashboard.gitUnstage(path: path, file: file)
+    }
+
+    func gitRevert(path: String, file: String? = nil) async throws {
+        try await dashboard.gitRevert(path: path, file: file)
+    }
+
+    func gitCommit(path: String, message: String, push: Bool) async throws {
+        try await dashboard.gitCommit(path: path, message: message, push: push)
+    }
+
+    func gitPush(path: String) async throws {
+        try await dashboard.gitPush(path: path)
+    }
+
+    func gitCreatePullRequest(path: String) async throws -> String {
+        try await dashboard.gitCreatePullRequest(path: path)
+    }
+
+    func gitAddWorktree(
+        path: String, name: String? = nil, branch: String? = nil,
+        base: String? = nil, existingBranch: String? = nil
+    ) async throws -> GitWorktreeCreation {
+        try await dashboard.gitAddWorktree(
+            path: path, name: name, branch: branch, base: base, existingBranch: existingBranch
+        )
+    }
+
+    func gitRemoveWorktree(path: String, worktreePath: String, force: Bool) async throws -> String {
+        try await dashboard.gitRemoveWorktree(path: path, worktreePath: worktreePath, force: force)
+    }
+
+    func gitSwitchBranch(path: String, branch: String) async throws -> String {
+        try await dashboard.gitSwitchBranch(path: path, branch: branch)
+    }
+
     func validateProviderCredential(key: String, value: String) async throws -> CredentialValidation {
         try await dashboard.validateProviderCredential(key: key, value: value)
     }
