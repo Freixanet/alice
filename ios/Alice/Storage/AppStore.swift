@@ -1701,6 +1701,50 @@ final class AppStore {
         try await dashboard.installMCPCatalogEntry(name, env: env, profile: profile, enable: enable)
     }
 
+    // MARK: - Webhooks
+
+    func webhooks() async throws -> WebhooksSnapshot {
+        try await dashboard.webhooks()
+    }
+
+    func enableWebhooks() async throws -> WebhookEnableResult {
+        try await dashboard.enableWebhooks()
+    }
+
+    func createWebhook(
+        name: String,
+        description: String = "",
+        events: [String] = [],
+        prompt: String = "",
+        script: String = "",
+        skills: [String] = [],
+        deliver: String = "log",
+        deliverOnly: Bool = false,
+        deliverChatID: String = "",
+        secret: String? = nil
+    ) async throws -> WebhookCreation {
+        try await dashboard.createWebhook(
+            name: name,
+            description: description,
+            events: events,
+            prompt: prompt,
+            script: script,
+            skills: skills,
+            deliver: deliver,
+            deliverOnly: deliverOnly,
+            deliverChatID: deliverChatID,
+            secret: secret
+        )
+    }
+
+    func setWebhookEnabled(_ name: String, enabled: Bool) async throws {
+        try await dashboard.setWebhookEnabled(name, enabled: enabled)
+    }
+
+    func deleteWebhook(_ name: String) async throws {
+        try await dashboard.deleteWebhook(name)
+    }
+
     // MARK: - System / health / operations
 
     func hermesHealth() async throws -> HermesHealthStatus {

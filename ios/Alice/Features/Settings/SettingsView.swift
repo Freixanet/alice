@@ -48,6 +48,9 @@ struct SettingsView: View {
                     NavigationLink { MCPScreen() } label: {
                         Label("MCP", systemImage: "shippingbox")
                     }
+                    NavigationLink { WebhooksScreen() } label: {
+                        Label("Webhooks", systemImage: "link")
+                    }
                 }
             }
 

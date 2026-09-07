@@ -764,6 +764,48 @@ struct MCPCatalogInstallResult: Hashable, Sendable {
     var action: String?
 }
 
+/// One machine-global webhook subscription. Hermes never returns its HMAC
+/// secret from list calls; `secretSet` only says whether one exists.
+struct WebhookSubscription: Identifiable, Hashable, Sendable {
+    var id: String { name }
+    var name: String
+    var detail: String
+    var events: [String]
+    var deliver: String
+    var deliverOnly: Bool
+    var deliverChatID: String?
+    var prompt: String
+    var script: String
+    var skills: [String]
+    var createdAt: String?
+    var url: String
+    var secretSet: Bool
+    var enabled: Bool
+}
+
+struct WebhooksSnapshot: Hashable, Sendable {
+    var enabled: Bool
+    var baseURL: String
+    var subscriptions: [WebhookSubscription]
+}
+
+struct WebhookEnableResult: Hashable, Sendable {
+    var ok: Bool
+    var enabled: Bool
+    var needsRestart: Bool
+    var restartStarted: Bool
+    var restartAction: String?
+    var restartPID: Int?
+    var restartError: String?
+}
+
+/// Create is the only response that contains the route secret. Alice keeps it
+/// only in the presenting sheet so it can be copied once, never in app state.
+struct WebhookCreation: Hashable, Sendable {
+    var subscription: WebhookSubscription
+    var secret: String
+}
+
 struct HermesHealthStatus: Hashable, Sendable {
     var ok: Bool
     var version: String
@@ -2006,6 +2048,145 @@ extension DashboardClient {
               let kind = row["kind"] as? String,
               let message = row["message"] as? String else { return nil }
         return MCPCatalogDiagnostic(name: name, kind: kind, message: message)
+    }
+
+    // MARK: Webhooks
+
+    func webhooks() async throws -> WebhooksSnapshot {
+        try Self.webhooks(from: await get("api/webhooks"))
+    }
+
+    func enableWebhooks() async throws -> WebhookEnableResult {
+        let object = try await send("POST", "api/webhooks/enable")
+        guard let ok = object["ok"] as? Bool,
+              let enabled = object["enabled"] as? Bool,
+              let needsRestart = object["needs_restart"] as? Bool else {
+            throw Failure.unreadable
+        }
+        return WebhookEnableResult(
+            ok: ok,
+            enabled: enabled,
+            needsRestart: needsRestart,
+            restartStarted: object["restart_started"] as? Bool ?? false,
+            restartAction: object["restart_action"] as? String,
+            restartPID: Self.int(object["restart_pid"]),
+            restartError: object["restart_error"] as? String
+        )
+    }
+
+    func createWebhook(
+        name: String,
+        description: String = "",
+        events: [String] = [],
+        prompt: String = "",
+        script: String = "",
+        skills: [String] = [],
+        deliver: String = "log",
+        deliverOnly: Bool = false,
+        deliverChatID: String = "",
+        secret: String? = nil
+    ) async throws -> WebhookCreation {
+        let body = Self.webhookCreateBody(
+            name: name,
+            description: description,
+            events: events,
+            prompt: prompt,
+            script: script,
+            skills: skills,
+            deliver: deliver,
+            deliverOnly: deliverOnly,
+            deliverChatID: deliverChatID,
+            secret: secret
+        )
+        let object = try await send("POST", "api/webhooks", body)
+        guard let returnedSecret = object["secret"] as? String, !returnedSecret.isEmpty else {
+            throw Failure.unreadable
+        }
+        return WebhookCreation(
+            subscription: try Self.webhookSubscription(from: object),
+            secret: returnedSecret
+        )
+    }
+
+    func setWebhookEnabled(_ name: String, enabled: Bool) async throws {
+        let object = try await send(
+            "PUT", "api/webhooks/\(Self.pathSegment(name))/enabled", ["enabled": enabled]
+        )
+        guard object["ok"] as? Bool == true,
+              object["enabled"] as? Bool == enabled else { throw Failure.unreadable }
+    }
+
+    func deleteWebhook(_ name: String) async throws {
+        let object = try await send("DELETE", "api/webhooks/\(Self.pathSegment(name))")
+        guard object["ok"] as? Bool == true else { throw Failure.unreadable }
+    }
+
+    static func webhookCreateBody(
+        name: String,
+        description: String = "",
+        events: [String] = [],
+        prompt: String = "",
+        script: String = "",
+        skills: [String] = [],
+        deliver: String = "log",
+        deliverOnly: Bool = false,
+        deliverChatID: String = "",
+        secret: String? = nil
+    ) -> [String: Any] {
+        var body: [String: Any] = [
+            "name": name,
+            "events": events,
+            "skills": skills,
+            "deliver": deliver,
+            "deliver_only": deliverOnly,
+        ]
+        if !description.isEmpty { body["description"] = description }
+        if !prompt.isEmpty { body["prompt"] = prompt }
+        if !script.isEmpty { body["script"] = script }
+        if !deliverChatID.isEmpty { body["deliver_chat_id"] = deliverChatID }
+        if let secret, !secret.isEmpty { body["secret"] = secret }
+        return body
+    }
+
+    static func webhooks(from object: [String: Any]) throws -> WebhooksSnapshot {
+        guard let enabled = object["enabled"] as? Bool,
+              let baseURL = object["base_url"] as? String,
+              let rawSubscriptions = object["subscriptions"] as? [[String: Any]] else {
+            throw Failure.unreadable
+        }
+        let subscriptions = try rawSubscriptions.map(webhookSubscription(from:))
+        return WebhooksSnapshot(enabled: enabled, baseURL: baseURL, subscriptions: subscriptions)
+    }
+
+    static func webhookSubscription(from row: [String: Any]) throws -> WebhookSubscription {
+        guard let name = row["name"] as? String, !name.isEmpty,
+              let detail = row["description"] as? String,
+              let events = row["events"] as? [String],
+              let deliver = row["deliver"] as? String,
+              let deliverOnly = row["deliver_only"] as? Bool,
+              let prompt = row["prompt"] as? String,
+              let script = row["script"] as? String,
+              let skills = row["skills"] as? [String],
+              let url = row["url"] as? String,
+              let secretSet = row["secret_set"] as? Bool,
+              let enabled = row["enabled"] as? Bool else {
+            throw Failure.unreadable
+        }
+        return WebhookSubscription(
+            name: name,
+            detail: detail,
+            events: events,
+            deliver: deliver,
+            deliverOnly: deliverOnly,
+            deliverChatID: nil,
+            prompt: prompt,
+            script: script,
+            skills: skills,
+            createdAt: row["created_at"] as? String,
+            url: url,
+            secretSet: secretSet,
+            enabled: enabled
+        )
     }
 
     // MARK: System / health / operations
