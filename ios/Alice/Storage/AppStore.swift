@@ -2054,10 +2054,19 @@ final class AppStore {
         conversations.first { $0.id == activeID }?.isRecoveredHistory == true
     }
 
+    func setControlSending(_ value: Bool) {
+        isSending = value
+    }
+
     func send() {
         guard !activeIsRecoveredHistory else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !draftAttachments.isEmpty, !isSending else { return }
+
+        // Management commands and a deliberately small set of natural control
+        // intents stay on-device and use Hermes' authoritative management
+        // APIs. Everything else continues into the actual agent unchanged.
+        if handleChatControlIfNeeded(text) { return }
 
         // Dropped since the last message? Pick it back up rather than making
         // somebody go to Connect and press a button for a connection that is
@@ -2526,7 +2535,7 @@ final class AppStore {
     /// an empty list, or the shells the bots screen just recreated — destroys
     /// the real archive. Once a load has failed, nothing is written over it
     /// until the failure is understood.
-    private func persistConversations() {
+    func persistConversations() {
         if conversationsUnreadable != nil { return }
         guard let data = try? JSONEncoder().encode(conversations) else { return }
         defaults.set(data, forKey: Keys.conversations)

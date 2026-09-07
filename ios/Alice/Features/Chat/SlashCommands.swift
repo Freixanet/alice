@@ -21,6 +21,15 @@ struct SlashCommand: Identifiable, Hashable {
 enum Slash {
     static let all: [SlashCommand] = [
         SlashCommand("/new", "Start a new chat"),
+        SlashCommand("/control", "Manage Hermes from chat"),
+        SlashCommand("/bots", "Bots"),
+        SlashCommand("/bot", "Open or create a bot"),
+        SlashCommand("/routines", "Routines"),
+        SlashCommand("/routine", "Run, pause or resume a routine"),
+        SlashCommand("/providers", "Model providers"),
+        SlashCommand("/provider", "Connect or disconnect a provider"),
+        SlashCommand("/usage", "Usage and cost"),
+        SlashCommand("/project", "Use or create a Project"),
         SlashCommand("/model", "Switch model"),
         SlashCommand("/help", "List commands"),
         SlashCommand("/status", "Status of this session"),

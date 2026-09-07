@@ -5,6 +5,15 @@ export type SlashCommand = {
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: "/new", hint: "Start a new chat" },
+  { cmd: "/control", hint: "Manage Hermes from chat" },
+  { cmd: "/bots", hint: "Bots" },
+  { cmd: "/bot", hint: "Open or create a bot" },
+  { cmd: "/routines", hint: "Routines" },
+  { cmd: "/routine", hint: "Run, pause or resume a routine" },
+  { cmd: "/providers", hint: "Model providers" },
+  { cmd: "/provider", hint: "Connect or disconnect a provider" },
+  { cmd: "/usage", hint: "Usage and cost" },
+  { cmd: "/project", hint: "Use or create a Project" },
   { cmd: "/model", hint: "Switch model" },
   { cmd: "/help", hint: "List commands" },
   { cmd: "/status", hint: "Status of this session" },
