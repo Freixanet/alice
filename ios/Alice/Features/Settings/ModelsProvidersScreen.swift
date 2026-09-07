@@ -83,6 +83,14 @@ struct ModelsProvidersScreen: View {
                 }
             }
 
+            Section("Advanced models") {
+                NavigationLink {
+                    AdvancedModelsScreen(profile: selectedProfile)
+                } label: {
+                    Label("Auxiliary models, MoA & custom endpoints", systemImage: "brain.head.profile")
+                }
+            }
+
             Section {
                 if allProviderDestinations.isEmpty, !loading {
                     Text("Hermes did not report any inference providers.")

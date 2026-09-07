@@ -1885,12 +1885,44 @@ final class AppStore {
 
     func setProfileDefaultModel(
         profile: String = "default", provider: String, model: String,
-        confirmExpensive: Bool = false
+        baseURL: String = "", apiKey: String = "", confirmExpensive: Bool = false
     ) async throws -> ModelAssignmentResult {
         try await dashboard.setMainModel(
             profile: profile, provider: provider, model: model,
-            confirmExpensive: confirmExpensive
+            baseURL: baseURL, apiKey: apiKey, confirmExpensive: confirmExpensive
         )
+    }
+
+    func auxiliaryModels(profile: String = "default") async throws -> AuxiliaryModelsSnapshot {
+        try await dashboard.auxiliaryModels(profile: profile)
+    }
+
+    func setAuxiliaryModel(
+        profile: String = "default", task: String, provider: String, model: String,
+        baseURL: String = "", apiKey: String = "", confirmExpensive: Bool = false
+    ) async throws -> ModelAssignmentResult {
+        try await dashboard.setAuxiliaryModel(
+            profile: profile, task: task, provider: provider, model: model,
+            baseURL: baseURL, apiKey: apiKey, confirmExpensive: confirmExpensive
+        )
+    }
+
+    func resetAuxiliaryModels(profile: String = "default") async throws -> ModelAssignmentResult {
+        try await dashboard.resetAuxiliaryModels(profile: profile)
+    }
+
+    func recommendedModelDefault(provider: String) async throws -> RecommendedModelDefault {
+        try await dashboard.recommendedModelDefault(provider: provider)
+    }
+
+    func moaConfiguration(profile: String = "default") async throws -> MoAConfiguration {
+        try await dashboard.moaConfiguration(profile: profile)
+    }
+
+    func saveMoAConfiguration(
+        _ configuration: MoAConfiguration, profile: String = "default"
+    ) async throws -> MoAConfiguration {
+        try await dashboard.saveMoAConfiguration(configuration, profile: profile)
     }
 
     func validateProviderCredential(key: String, value: String) async throws -> CredentialValidation {

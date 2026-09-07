@@ -532,6 +532,54 @@ struct ModelAssignmentResult: Hashable, Sendable {
     var staleAux: [StaleAux]
 }
 
+struct AuxiliaryModelAssignment: Identifiable, Hashable, Sendable {
+    var id: String { task }
+    var task: String
+    var provider: String
+    var model: String
+    var baseURL: String
+
+    var isAutomatic: Bool { provider.isEmpty || provider.lowercased() == "auto" }
+}
+
+struct AuxiliaryModelsSnapshot: Hashable, Sendable {
+    var mainProvider: String
+    var mainModel: String
+    var tasks: [AuxiliaryModelAssignment]
+}
+
+struct RecommendedModelDefault: Hashable, Sendable {
+    var provider: String
+    var model: String
+    var freeTier: Bool?
+}
+
+struct MoAModelSlot: Hashable, Sendable {
+    var provider: String
+    var model: String
+    var reasoningEffort: String?
+    var enabled: Bool
+}
+
+struct MoAPreset: Hashable, Sendable {
+    var referenceModels: [MoAModelSlot]
+    var aggregator: MoAModelSlot
+    var referenceTemperature: Double?
+    var aggregatorTemperature: Double?
+    var referenceTimeout: Double?
+    var degradedReferencePolicy: String
+    var maxTokens: Int
+    var referenceMaxTokens: Int?
+    var fanout: String?
+    var enabled: Bool
+}
+
+struct MoAConfiguration: Sendable {
+    var defaultPreset: String
+    var activePreset: String
+    var presets: [String: MoAPreset]
+}
+
 /// Small, deliberately curated subset of config.yaml. Alice writes only these
 /// keys back; every other Hermes setting survives untouched.
 struct HermesConfiguration: Hashable, Sendable {
@@ -1591,14 +1639,15 @@ extension DashboardClient {
     }
 
     func setMainModel(
-        profile: String, provider: String, model: String, confirmExpensive: Bool = false
+        profile: String, provider: String, model: String,
+        baseURL: String = "", apiKey: String = "", confirmExpensive: Bool = false
     ) async throws -> ModelAssignmentResult {
         let object = try await send(
             "POST", "api/model/set?profile=\(Self.queryValue(profile))",
-            [
-                "scope": "main", "provider": provider, "model": model,
-                "confirm_expensive_model": confirmExpensive,
-            ]
+            Self.modelAssignmentBody(
+                scope: "main", provider: provider, model: model,
+                baseURL: baseURL, apiKey: apiKey, confirmExpensive: confirmExpensive
+            )
         )
         return Self.modelAssignmentResult(from: object)
     }
@@ -1619,6 +1668,171 @@ extension DashboardClient {
             model: object["model"] as? String ?? "",
             staleAux: stale
         )
+    }
+
+    static func modelAssignmentBody(
+        scope: String, provider: String, model: String, task: String = "",
+        baseURL: String = "", apiKey: String = "", confirmExpensive: Bool = false
+    ) -> [String: Any] {
+        var body: [String: Any] = [
+            "scope": scope, "provider": provider, "model": model,
+            "task": task, "confirm_expensive_model": confirmExpensive,
+        ]
+        if !baseURL.isEmpty { body["base_url"] = baseURL }
+        if !apiKey.isEmpty { body["api_key"] = apiKey }
+        return body
+    }
+
+    func auxiliaryModels(profile: String) async throws -> AuxiliaryModelsSnapshot {
+        try Self.auxiliaryModels(
+            from: await get("api/model/auxiliary?profile=\(Self.queryValue(profile))")
+        )
+    }
+
+    static func auxiliaryModels(from object: [String: Any]) throws -> AuxiliaryModelsSnapshot {
+        guard let rows = object["tasks"] as? [[String: Any]],
+              let main = object["main"] as? [String: Any]
+        else { throw Failure.unreadable }
+        let tasks = try rows.map { row -> AuxiliaryModelAssignment in
+            guard let task = nonEmpty(row["task"] as? String),
+                  let provider = row["provider"] as? String,
+                  let model = row["model"] as? String,
+                  let baseURL = row["base_url"] as? String
+            else { throw Failure.unreadable }
+            return .init(task: task, provider: provider, model: model, baseURL: baseURL)
+        }
+        return .init(
+            mainProvider: main["provider"] as? String ?? "",
+            mainModel: main["model"] as? String ?? "",
+            tasks: tasks
+        )
+    }
+
+    func setAuxiliaryModel(
+        profile: String, task: String, provider: String, model: String,
+        baseURL: String = "", apiKey: String = "", confirmExpensive: Bool = false
+    ) async throws -> ModelAssignmentResult {
+        let object = try await send(
+            "POST", "api/model/set?profile=\(Self.queryValue(profile))",
+            Self.modelAssignmentBody(
+                scope: "auxiliary", provider: provider, model: model, task: task,
+                baseURL: baseURL, apiKey: apiKey, confirmExpensive: confirmExpensive
+            )
+        )
+        return Self.modelAssignmentResult(from: object)
+    }
+
+    func resetAuxiliaryModels(profile: String) async throws -> ModelAssignmentResult {
+        try await setAuxiliaryModel(
+            profile: profile, task: "__reset__", provider: "auto", model: ""
+        )
+    }
+
+    func recommendedModelDefault(provider: String) async throws -> RecommendedModelDefault {
+        try Self.recommendedModelDefault(
+            from: await get("api/model/recommended-default?provider=\(Self.queryValue(provider))")
+        )
+    }
+
+    static func recommendedModelDefault(from object: [String: Any]) throws -> RecommendedModelDefault {
+        guard let provider = object["provider"] as? String,
+              let model = object["model"] as? String
+        else { throw Failure.unreadable }
+        return .init(provider: provider, model: model, freeTier: object["free_tier"] as? Bool)
+    }
+
+    func moaConfiguration(profile: String) async throws -> MoAConfiguration {
+        try Self.moaConfiguration(
+            from: await get("api/model/moa?profile=\(Self.queryValue(profile))")
+        )
+    }
+
+    static func moaConfiguration(from object: [String: Any]) throws -> MoAConfiguration {
+        guard let defaultPreset = object["default_preset"] as? String,
+              let activePreset = object["active_preset"] as? String,
+              let rawPresets = object["presets"] as? [String: Any]
+        else { throw Failure.unreadable }
+        var presets: [String: MoAPreset] = [:]
+        for (name, raw) in rawPresets {
+            guard let row = raw as? [String: Any] else { throw Failure.unreadable }
+            presets[name] = try Self.moaPreset(from: row)
+        }
+        guard !presets.isEmpty else { throw Failure.unreadable }
+        return .init(defaultPreset: defaultPreset, activePreset: activePreset, presets: presets)
+    }
+
+    private static func moaPreset(from row: [String: Any]) throws -> MoAPreset {
+        guard let refs = row["reference_models"] as? [[String: Any]],
+              let aggregator = row["aggregator"] as? [String: Any],
+              let policy = row["degraded_reference_policy"] as? String,
+              let maxTokens = int(row["max_tokens"]),
+              let enabled = row["enabled"] as? Bool
+        else { throw Failure.unreadable }
+        return .init(
+            referenceModels: try refs.map(Self.moaSlot(from:)),
+            aggregator: try Self.moaSlot(from: aggregator),
+            referenceTemperature: double(row["reference_temperature"]),
+            aggregatorTemperature: double(row["aggregator_temperature"]),
+            referenceTimeout: double(row["reference_timeout"]),
+            degradedReferencePolicy: policy,
+            maxTokens: maxTokens,
+            referenceMaxTokens: int(row["reference_max_tokens"]),
+            fanout: nonEmpty(row["fanout"] as? String),
+            enabled: enabled
+        )
+    }
+
+    private static func moaSlot(from row: [String: Any]) throws -> MoAModelSlot {
+        guard let provider = row["provider"] as? String,
+              let model = row["model"] as? String
+        else { throw Failure.unreadable }
+        return .init(
+            provider: provider, model: model,
+            reasoningEffort: nonEmpty(row["reasoning_effort"] as? String),
+            enabled: (row["enabled"] as? Bool) ?? true
+        )
+    }
+
+    static func moaBody(_ config: MoAConfiguration, profile: String) -> [String: Any] {
+        var presets: [String: Any] = [:]
+        for (name, preset) in config.presets { presets[name] = moaPresetBody(preset) }
+        return [
+            "default_preset": config.defaultPreset,
+            "active_preset": config.activePreset,
+            "presets": presets,
+            "profile": profile,
+        ]
+    }
+
+    private static func moaPresetBody(_ preset: MoAPreset) -> [String: Any] {
+        [
+            "reference_models": preset.referenceModels.map(moaSlotBody),
+            "aggregator": moaSlotBody(preset.aggregator),
+            "reference_temperature": preset.referenceTemperature ?? NSNull(),
+            "aggregator_temperature": preset.aggregatorTemperature ?? NSNull(),
+            "reference_timeout": preset.referenceTimeout ?? NSNull(),
+            "degraded_reference_policy": preset.degradedReferencePolicy,
+            "max_tokens": preset.maxTokens,
+            "reference_max_tokens": preset.referenceMaxTokens ?? NSNull(),
+            "fanout": preset.fanout ?? NSNull(),
+            "enabled": preset.enabled,
+        ]
+    }
+
+    private static func moaSlotBody(_ slot: MoAModelSlot) -> [String: Any] {
+        var body: [String: Any] = [
+            "provider": slot.provider, "model": slot.model, "enabled": slot.enabled,
+        ]
+        if let effort = nonEmpty(slot.reasoningEffort) { body["reasoning_effort"] = effort }
+        return body
+    }
+
+    func saveMoAConfiguration(_ config: MoAConfiguration, profile: String) async throws -> MoAConfiguration {
+        let object = try await send(
+            "PUT", "api/model/moa?profile=\(Self.queryValue(profile))",
+            Self.moaBody(config, profile: profile)
+        )
+        return try Self.moaConfiguration(from: object)
     }
 
     func validateProviderCredential(key: String, value: String) async throws -> CredentialValidation {
