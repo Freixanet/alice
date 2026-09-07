@@ -11,7 +11,8 @@ struct Sidebar: View {
     @State private var renaming: Conversation?
     @State private var newTitle = ""
     @State private var deletingConversation: Conversation?
-    @State private var projects: [ProjectRow] = []
+    @State private var projects: [NamedProject] = []
+    @State private var projectMoveFailure: String?
     @State private var going: Destination?
 
     /// Where the drawer can take you. The frequent ones sit above the
@@ -43,7 +44,10 @@ struct Sidebar: View {
         }
         .frame(maxHeight: .infinity)
         .background(Palette.card(scheme).ignoresSafeArea())
-        .sheet(item: $going) { destination in
+        .sheet(
+            item: $going,
+            onDismiss: { Task { await loadProjects() } }
+        ) { destination in
             Group {
                 switch destination {
                 case .routines: closable { RoutinesScreen() }
@@ -64,6 +68,17 @@ struct Sidebar: View {
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchScreen(onOpen: onDismiss)
+        }
+        .alert(
+            "Couldn’t move chat",
+            isPresented: Binding(
+                get: { projectMoveFailure != nil },
+                set: { if !$0 { projectMoveFailure = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { projectMoveFailure = nil }
+        } message: {
+            Text(projectMoveFailure ?? "Hermes did not move the session.")
         }
     }
 
@@ -304,22 +319,25 @@ struct Sidebar: View {
             Label("Rename", systemImage: "pencil")
         }
 
-        // Only where there are projects to file it under. The grouping is
-        // local: the agent's projects hold its own sessions, and a chat
-        // started on this phone is not one of those.
+        // A Hermes Project owns workspace folders. Moving a chat therefore
+        // moves the real Hermes session cwd to that Project's primary folder;
+        // there is no iPhone-only filing layer and no fake "None" project.
         if !projects.isEmpty {
             Menu {
                 ForEach(projects) { project in
-                    Button(project.label) {
-                        store.file(conversation.id, under: project.label)
+                    Button(project.name) {
+                        Task {
+                            do {
+                                try await store.moveConversation(conversation.id, to: project)
+                            } catch {
+                                projectMoveFailure = (error as? LocalizedError)?.errorDescription
+                                    ?? "Hermes did not move the session."
+                            }
+                        }
                     }
                 }
-                if conversation.project != nil {
-                    Divider()
-                    Button("None") { store.file(conversation.id, under: nil) }
-                }
             } label: {
-                Label("Add to Project", systemImage: "folder")
+                Label("Move to Project", systemImage: "folder")
             }
         }
 
@@ -329,8 +347,12 @@ struct Sidebar: View {
     }
 
     private func loadProjects() async {
-        guard store.dashboardReady else { return }
-        projects = (try? await store.projects()) ?? []
+        guard store.dashboardReady else {
+            projects = []
+            return
+        }
+        projects = ((try? await store.namedProjects(profile: "default")) ?? [])
+            .filter { !$0.archived && $0.primaryPath != nil }
     }
 
     /// The initial to show on the settings button, or nil when there is

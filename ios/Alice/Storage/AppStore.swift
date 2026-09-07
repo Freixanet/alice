@@ -418,11 +418,6 @@ final class AppStore {
         conversations[index].pinned.toggle()
     }
 
-    func file(_ id: String, under project: String?) {
-        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        conversations[index].project = project
-    }
-
     /// Every routine on the agent, and how much of it the answer covers.
     ///
     /// The dashboard is the only source that sees across profiles, so it is
@@ -1377,19 +1372,239 @@ final class AppStore {
         botOrder.removeAll { $0 == name || $0 == name.lowercased() }
     }
 
-    func projects() async throws -> [ProjectRow] { try await dashboard.projects() }
+    /// Profiles are the ownership boundary for Projects and Memory. Alice/Home
+    /// is the default profile; every named profile is one of its bots.
+    func hermesProfiles() async throws -> [(id: String, label: String)] {
+        let bots = try await bots()
+        return [("default", "Alice")]
+            + bots.map { ($0.name, botCurrentName(for: $0)) }
+    }
 
-    func namedProjects() async throws -> [NamedProject] {
-        try await dashboard.namedProjects()
+    /// The authoritative project tree for one profile. This is Hermes' own cwd
+    /// grouping, including inferred workspaces and the synthetic Home bucket.
+    func projects(profile: String = "default") async throws -> [ProjectRow] {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        let result = try await rpc.call(
+            "projects.tree",
+            JSONObject(["profile": profile, "preview_limit": 3, "session_limit": 2000])
+        )
+        return try DashboardClient.projectRows(from: result.fields, profile: profile)
     }
-    func createProject(name: String, colour: String?) async throws {
-        try await dashboard.createProject(name: name, colour: colour)
+
+    /// First-class projects from this profile's projects.db. Archived projects
+    /// stay in the response so the UI can restore them instead of losing them.
+    func projectListing(
+        profile: String = "default"
+    ) async throws -> (projects: [NamedProject], activeID: String?) {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        let result = try await rpc.call(
+            "projects.list", JSONObject(["profile": profile])
+        )
+        return (
+            try DashboardClient.namedProjects(from: result.fields),
+            result["active_id"] as? String
+        )
     }
-    func renameProject(_ id: String, to name: String, colour: String?) async throws {
-        try await dashboard.renameProject(id, to: name, colour: colour)
+
+    func namedProjects(profile: String = "default") async throws -> [NamedProject] {
+        try await projectListing(profile: profile).projects
     }
-    func deleteProject(_ id: String) async throws {
-        try await dashboard.deleteProject(id)
+
+    func createProject(
+        profile: String = "default", name: String, folder: String? = nil,
+        description: String? = nil, colour: String? = nil
+    ) async throws {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        var params: [String: Any] = ["profile": profile, "name": name]
+        if let folder = Self.nonEmptyPath(folder) {
+            params["folders"] = [folder]
+            params["primary_path"] = folder
+        }
+        if let description { params["description"] = description }
+        if let colour { params["color"] = colour }
+        _ = try await rpc.call("projects.create", JSONObject(params))
+    }
+
+    func updateProject(
+        _ id: String, profile: String = "default", name: String? = nil,
+        description: String? = nil, colour: String? = nil
+    ) async throws {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        var params: [String: Any] = ["profile": profile, "id": id]
+        if let name { params["name"] = name }
+        if let description { params["description"] = description }
+        if let colour { params["color"] = colour }
+        _ = try await rpc.call("projects.update", JSONObject(params))
+    }
+
+    func renameProject(
+        _ id: String, to name: String, colour: String?, profile: String = "default"
+    ) async throws {
+        try await updateProject(id, profile: profile, name: name, colour: colour)
+    }
+
+    func addProjectFolder(
+        _ id: String, path: String, profile: String = "default", primary: Bool = false
+    ) async throws {
+        guard let path = Self.nonEmptyPath(path) else {
+            throw HermesRPCClient.Failure(reason: "Enter a workspace folder path.")
+        }
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        _ = try await rpc.call(
+            "projects.add_folder",
+            JSONObject([
+                "profile": profile, "id": id, "path": path, "is_primary": primary,
+            ])
+        )
+    }
+
+    func removeProjectFolder(
+        _ id: String, path: String, profile: String = "default"
+    ) async throws {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        _ = try await rpc.call(
+            "projects.remove_folder",
+            JSONObject(["profile": profile, "id": id, "path": path])
+        )
+    }
+
+    func setProjectPrimaryFolder(
+        _ id: String, path: String, profile: String = "default"
+    ) async throws {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        _ = try await rpc.call(
+            "projects.set_primary",
+            JSONObject(["profile": profile, "id": id, "path": path])
+        )
+    }
+
+    func setProjectArchived(
+        _ id: String, archived: Bool, profile: String = "default"
+    ) async throws {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        _ = try await rpc.call(
+            "projects.archive",
+            JSONObject(["profile": profile, "id": id, "restore": !archived])
+        )
+    }
+
+    func setActiveProject(_ id: String?, profile: String = "default") async throws {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        var params: [String: Any] = ["profile": profile]
+        if let id { params["id"] = id }
+        _ = try await rpc.call("projects.set_active", JSONObject(params))
+    }
+
+    func deleteProject(_ id: String, profile: String = "default") async throws {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        _ = try await rpc.call(
+            "projects.delete", JSONObject(["profile": profile, "id": id])
+        )
+    }
+
+    /// Promote an inferred workspace into a named first-class project without
+    /// changing the sessions: Hermes will immediately group their existing cwd
+    /// under the new folder.
+    func promoteProject(
+        _ row: ProjectRow, name: String? = nil, profile: String = "default"
+    ) async throws {
+        guard row.isAuto, let path = Self.nonEmptyPath(row.path) else {
+            throw HermesRPCClient.Failure(reason: "This workspace cannot be promoted.")
+        }
+        try await createProject(
+            profile: profile, name: name ?? row.label, folder: path
+        )
+    }
+
+    private nonisolated static func nonEmptyPath(_ path: String?) -> String? {
+        guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else { return nil }
+        return path
+    }
+
+    /// Move a persisted Hermes session into a Project by changing its real cwd
+    /// to that project's primary workspace. This is the same operation the
+    /// Hermes desktop uses; `Conversation.project` is only the last resolved
+    /// display label after a successful server mutation.
+    func moveConversation(_ conversationID: String, to project: NamedProject) async throws {
+        guard let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        guard let cwd = Self.nonEmptyPath(project.primaryPath) else {
+            throw HermesRPCClient.Failure(
+                reason: "Add a workspace folder to this project before moving a chat into it."
+            )
+        }
+        let conversation = conversations[index]
+        let profile = conversation.routedBotName ?? "default"
+        let sessionKey = conversation.hermesSessionID
+            ?? (conversation.isBotChat ? nil : conversation.id)
+        guard let sessionKey, !sessionKey.isEmpty else {
+            throw HermesRPCClient.Failure(
+                reason: "This chat does not have a Hermes session yet."
+            )
+        }
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        _ = try await rpc.call(
+            "session.workspace.move",
+            JSONObject([
+                "profile": profile, "session_key": sessionKey, "cwd": cwd,
+            ])
+        )
+        if let current = conversations.firstIndex(where: { $0.id == conversationID }) {
+            conversations[current].project = project.name
+            persistConversations()
+        }
+    }
+
+    /// Real curated MEMORY.md / USER.md for one profile. Third-party semantic
+    /// providers remain provider configuration; Alice never pretends they all
+    /// expose the same editable-entry API.
+    func memorySnapshot(profile: String = "default") async throws -> MemorySnapshot {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        let result = try await rpc.call(
+            "memory.list", JSONObject(["profile": profile])
+        )
+        return try DashboardClient.memorySnapshot(from: result.fields, profile: profile)
+    }
+
+    func mutateMemory(
+        profile: String = "default", target: String, action: String,
+        content: String = "", oldText: String = ""
+    ) async throws -> MemorySnapshot {
+        guard let rpc = await dashboardRPC() else {
+            throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
+        }
+        let result = try await rpc.call(
+            "memory.mutate",
+            JSONObject([
+                "profile": profile, "target": target, "action": action,
+                "content": content, "old_text": oldText,
+            ])
+        )
+        return try DashboardClient.memorySnapshot(from: result.fields, profile: profile)
     }
 
     func skillContent(_ name: String) async throws -> String {

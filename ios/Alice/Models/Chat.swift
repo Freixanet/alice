@@ -188,9 +188,9 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     var openedAt: Date?
     /// Kept at the top of the drawer, above everything else.
     var pinned: Bool = false
-    /// The project this chat is filed under. Local: the agent's projects group
-    /// its own sessions, and a conversation started on this phone is not one
-    /// of those — this borrows the names so both read the same way.
+    /// Last known Hermes Project display name. Kept for archive compatibility
+    /// and immediate UI feedback only: authoritative membership is derived by
+    /// Hermes from the session's cwd and the Project's workspace folders.
     var project: String?
     var messages: [Message] = []
     var botName: String? = nil

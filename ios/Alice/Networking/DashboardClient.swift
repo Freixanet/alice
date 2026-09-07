@@ -291,15 +291,35 @@ struct BotRow: Identifiable, Hashable, Sendable, Codable {
     var pinned: Bool { metadata.pinned ?? false }
 }
 
-/// A named workspace, with how much of the agent's time it has taken.
-/// A project somebody made and named, which can be renamed and removed.
-struct NamedProject: Identifiable, Hashable, Sendable {
-    let id: String
-    var name: String
-    var colour: String?
-    var created: Date?
+/// One folder that belongs to a first-class Hermes project.
+struct ProjectFolder: Identifiable, Hashable, Sendable {
+    var id: String { path }
+    var path: String
+    var label: String?
+    var isPrimary: Bool
+    var added: Date?
 }
 
+/// A first-class Hermes project. Projects are per-profile workspaces, not
+/// arbitrary chat folders: sessions belong to one when their cwd sits under
+/// one of these folders.
+struct NamedProject: Identifiable, Hashable, Sendable {
+    let id: String
+    var slug: String
+    var name: String
+    var detail: String
+    var icon: String?
+    var colour: String?
+    var board: String?
+    var primaryPath: String?
+    var created: Date?
+    var archived: Bool
+    var folders: [ProjectFolder]
+}
+
+/// One project node from Hermes' authoritative session tree. `isAuto` means
+/// the workspace was inferred from session cwd/repository data rather than
+/// created as a named Project.
 struct ProjectRow: Identifiable, Hashable, Sendable {
     let id: String
     var label: String
@@ -307,6 +327,10 @@ struct ProjectRow: Identifiable, Hashable, Sendable {
     var sessions: Int
     var tokens: Int
     var lastActive: Date?
+    var isAuto: Bool = false
+    var isHome: Bool = false
+    var colour: String? = nil
+    var profile: String? = nil
 }
 
 /// One of the places the agent can keep what it remembers.
@@ -318,6 +342,23 @@ struct MemoryProvider: Identifiable, Hashable, Sendable {
     var available: Bool
     var configured: Bool
     var active: Bool
+}
+
+/// The curated built-in memory actually injected by Hermes into future
+/// sessions. `user` maps to USER.md and `memory` maps to MEMORY.md.
+struct MemoryTarget: Identifiable, Hashable, Sendable {
+    let id: String
+    var label: String
+    var enabled: Bool
+    var entries: [String]
+    var used: Int
+    var limit: Int
+}
+
+struct MemorySnapshot: Hashable, Sendable {
+    var profile: String
+    var provider: String
+    var targets: [MemoryTarget]
 }
 
 /// What the agent has spent, as the dashboard totals it.
@@ -768,37 +809,109 @@ extension DashboardClient {
         try await send("PATCH", "api/profiles/\(name)", ["new_name": newName])
     }
 
-    func projects() async throws -> [ProjectRow] {
-        let object = try await get("api/profiles/projects/tree")
-        let rows = (object["projects"] as? [[String: Any]]) ?? []
-        return rows.compactMap { row in
-            guard let id = row["id"] as? String else { return nil }
+    static func projectRows(
+        from object: [String: Any], profile: String? = nil
+    ) throws -> [ProjectRow] {
+        guard let rows = object["projects"] as? [[String: Any]] else {
+            throw Failure.unreadable
+        }
+        let parsed = rows.compactMap { row -> ProjectRow? in
+            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
             return ProjectRow(
                 id: id,
-                label: (row["label"] as? String) ?? id,
+                label: (row["label"] as? String) ?? (row["name"] as? String) ?? id,
                 path: row["path"] as? String,
-                sessions: (row["sessionCount"] as? Int) ?? 0,
-                tokens: (row["totalTokens"] as? Int) ?? 0,
-                lastActive: (row["lastActive"] as? Double).map(Date.init(timeIntervalSince1970:))
+                sessions: Self.int(row["sessionCount"]) ?? 0,
+                tokens: Self.int(row["totalTokens"]) ?? 0,
+                lastActive: Self.double(row["lastActive"])
+                    .map(Date.init(timeIntervalSince1970:)),
+                isAuto: (row["isAuto"] as? Bool) ?? false,
+                isHome: (row["isNoProject"] as? Bool) ?? false,
+                colour: row["color"] as? String,
+                profile: profile
             )
         }
+        if !rows.isEmpty && parsed.isEmpty { throw Failure.unreadable }
+        return parsed
     }
 
-    /// The projects somebody made, as opposed to the ones the session tree
-    /// implies. These are the only ones that can be created or renamed.
-    func namedProjects() async throws -> [NamedProject] {
-        let object = try await get("api/projects")
-        let rows = (object["projects"] as? [[String: Any]]) ?? []
-        return rows.compactMap { row in
-            guard let id = row["project_id"] as? String else { return nil }
+    static func namedProjects(from object: [String: Any]) throws -> [NamedProject] {
+        guard let rows = object["projects"] as? [[String: Any]] else {
+            throw Failure.unreadable
+        }
+        let parsed = rows.compactMap { row -> NamedProject? in
+            guard let id = (row["id"] as? String) ?? (row["project_id"] as? String),
+                  !id.isEmpty else { return nil }
+            let folders = (row["folders"] as? [[String: Any]] ?? []).compactMap { folder -> ProjectFolder? in
+                guard let path = folder["path"] as? String, !path.isEmpty else { return nil }
+                return ProjectFolder(
+                    path: path,
+                    label: Self.nonEmpty(folder["label"] as? String),
+                    isPrimary: (folder["is_primary"] as? Bool)
+                        ?? ((folder["is_primary"] as? NSNumber)?.boolValue ?? false),
+                    added: Self.double(folder["added_at"])
+                        .map(Date.init(timeIntervalSince1970:))
+                )
+            }
+            let name = (row["name"] as? String) ?? id
             return NamedProject(
                 id: id,
-                name: (row["name"] as? String) ?? id,
-                colour: row["color"] as? String,
-                created: (row["created_at"] as? Double)
-                    .map(Date.init(timeIntervalSince1970:))
+                slug: (row["slug"] as? String) ?? id,
+                name: name,
+                detail: (row["description"] as? String) ?? "",
+                icon: Self.nonEmpty(row["icon"] as? String),
+                colour: Self.nonEmpty(row["color"] as? String),
+                board: Self.nonEmpty(row["board_slug"] as? String),
+                primaryPath: Self.nonEmpty(row["primary_path"] as? String)
+                    ?? folders.first(where: { $0.isPrimary })?.path
+                    ?? folders.first?.path,
+                created: Self.double(row["created_at"])
+                    .map(Date.init(timeIntervalSince1970:)),
+                archived: (row["archived"] as? Bool)
+                    ?? ((row["archived"] as? NSNumber)?.boolValue ?? false),
+                folders: folders
             )
         }
+        if !rows.isEmpty && parsed.isEmpty { throw Failure.unreadable }
+        return parsed
+    }
+
+    static func memorySnapshot(
+        from object: [String: Any], profile: String
+    ) throws -> MemorySnapshot {
+        guard let rawTargets = object["targets"] as? [[String: Any]] else {
+            throw Failure.unreadable
+        }
+        let targets = rawTargets.compactMap { row -> MemoryTarget? in
+            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+            return MemoryTarget(
+                id: id,
+                label: (row["label"] as? String) ?? id.capitalized,
+                enabled: (row["enabled"] as? Bool) ?? true,
+                entries: (row["entries"] as? [String]) ?? [],
+                used: Self.int(row["used"]) ?? 0,
+                limit: Self.int(row["limit"]) ?? 0
+            )
+        }
+        if !rawTargets.isEmpty && targets.isEmpty { throw Failure.unreadable }
+        return MemorySnapshot(
+            profile: profile,
+            provider: (object["provider"] as? String) ?? "",
+            targets: targets
+        )
+    }
+
+    /// Cross-profile session-tree overview. Mutating first-class Projects uses
+    /// the profile-scoped JSON-RPC surface in AppStore; the old REST mutation
+    /// endpoints no longer exist in current Hermes.
+    func projects() async throws -> [ProjectRow] {
+        try Self.projectRows(from: try await get("api/profiles/projects/tree"))
+    }
+
+    /// Legacy read retained for older dashboards. Current Alice uses
+    /// `projects.list` over the authenticated dashboard WebSocket instead.
+    func namedProjects() async throws -> [NamedProject] {
+        try Self.namedProjects(from: try await get("api/projects"))
     }
 
     func createProject(name: String, colour: String?) async throws {
