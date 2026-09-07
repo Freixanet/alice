@@ -18,7 +18,7 @@ struct Sidebar: View {
     /// conversations, where they are reached without scrolling; the rest are
     /// in Settings, which is where things you set once belong.
     private enum Destination: String, Identifiable {
-        case jobs, projects, skills, tools, library, settings, connect
+        case routines, projects, skills, tools, library, settings, connect
         var id: String { rawValue }
     }
 
@@ -34,7 +34,7 @@ struct Sidebar: View {
             // them and, at the very bottom, fades out instead of being cut off.
             //
             // The same at the top, where the list passes under the fixed rows —
-            // Bots, Jobs, Library — so a conversation scrolling up dissolves
+            // Bots, Routines, Library — so a conversation scrolling up dissolves
             // rather than vanishing at a hard line.
             ZStack(alignment: .bottom) {
                 list.mask(edgeFade)
@@ -46,7 +46,7 @@ struct Sidebar: View {
         .sheet(item: $going) { destination in
             Group {
                 switch destination {
-                case .jobs: closable { JobsScreen() }
+                case .routines: closable { RoutinesScreen() }
                 case .projects: closable { ProjectsScreen() }
                 case .skills: closable { CatalogScreen(source: .skills) }
                 case .tools: closable { CatalogScreen(source: .toolsets) }
@@ -123,7 +123,7 @@ struct Sidebar: View {
                 store.botsFromLeading = false
                 store.showingBots = true
             }
-            row("Jobs", systemImage: "clock", weight: .medium) { going = .jobs }
+            row("Routines", systemImage: "clock", weight: .medium) { going = .routines }
             row("Projects", systemImage: "folder", weight: .medium) { going = .projects }
             row("Skills", systemImage: "sparkles", weight: .medium) { going = .skills }
             row("Tools", systemImage: "wrench.adjustable", weight: .medium) { going = .tools }

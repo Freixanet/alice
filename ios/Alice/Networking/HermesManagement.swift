@@ -38,8 +38,57 @@ struct JobRow: Identifiable, Hashable, Sendable, Codable {
     /// the pair is the identity, and the id alone is not.
     var profile: String?
 
+    // Scheduler/runtime state. These are all server-owned; Alice never invents
+    // optimistic values for them. Older gateways simply leave them nil.
+    var state: String? = nil
+    var deliver: String? = nil
+    var lastDeliveryError: String? = nil
+    var pausedReason: String? = nil
+    var lastFireError: String? = nil
+    var lastFireAt: Date? = nil
+    var createdAt: Date? = nil
+    var model: String? = nil
+    var provider: String? = nil
+    var skills: [String] = []
+    var repeatTimes: Int? = nil
+    var repeatCompleted: Int? = nil
+
     /// Stable identity for a list drawn from more than one profile.
     var listIdentity: String { profile.map { "\($0)/\(id)" } ?? id }
+
+    var isPaused: Bool { state == "paused" || (state == nil && !enabled) }
+    var isCompleted: Bool { state == "completed" }
+    var effectiveState: String {
+        if let state, !state.isEmpty { return state }
+        return enabled ? "scheduled" : "paused"
+    }
+}
+
+/// One execution session created by a routine. Hermes stores these in the same
+/// session database as chats; this compact shape is all the Routines UI needs.
+struct RoutineRun: Identifiable, Hashable, Sendable {
+    let id: String
+    var title: String
+    var preview: String
+    var startedAt: Date?
+    var endedAt: Date?
+    var endReason: String?
+    var model: String?
+    var inputTokens: Int
+    var outputTokens: Int
+    var cost: Double?
+    var isActive: Bool
+
+    var tokens: Int { inputTokens + outputTokens }
+}
+
+/// A destination Hermes can actually deliver scheduled output to. A configured
+/// platform can be listed before it has a home target; Alice shows that state
+/// instead of offering a destination that will silently fail.
+struct RoutineDeliveryTarget: Identifiable, Hashable, Sendable {
+    let id: String
+    var name: String
+    var homeTargetSet: Bool
 }
 
 /// A run of the agent as the server recorded it — from the phone, the web,
@@ -206,6 +255,8 @@ extension HermesClient {
             ?? (scheduleObject?["display"] as? String)
             ?? (scheduleObject?["expr"] as? String)
             ?? ""
+        let fireError = row["last_fire_error"] as? [String: Any]
+        let repeatInfo = row["repeat"] as? [String: Any]
         return JobRow(
             id: id,
             name: (row["name"] as? String) ?? id,
@@ -215,8 +266,27 @@ extension HermesClient {
             lastStatus: row["last_status"] as? String,
             lastError: (row["last_error"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             lastRun: HermesClient.date(row["last_run_at"]),
-            nextRun: HermesClient.date(row["next_run_at"])
+            nextRun: HermesClient.date(row["next_run_at"]),
+            state: row["state"] as? String,
+            deliver: (row["deliver"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            lastDeliveryError: (row["last_delivery_error"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            pausedReason: (row["paused_reason"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            lastFireError: (fireError?["detail"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            lastFireAt: HermesClient.date(fireError?["at"]),
+            createdAt: HermesClient.date(row["created_at"]),
+            model: (row["model"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            provider: (row["provider"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            skills: row["skills"] as? [String] ?? [],
+            repeatTimes: HermesClient.int(repeatInfo?["times"]),
+            repeatCompleted: HermesClient.int(repeatInfo?["completed"])
         )
+    }
+
+    static func int(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber { return value.intValue }
+        if let value = value as? String { return Int(value) }
+        return nil
     }
 
     /// Hermes sends times as ISO-8601 on some surfaces and Unix timestamps on

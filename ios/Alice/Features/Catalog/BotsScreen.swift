@@ -1363,6 +1363,7 @@ struct BotDetail: View {
     @State private var applyingModel = false
     @State private var routines: RoutineState = .loading
     @State private var addingRoutine = false
+    @State private var selectedRoutine: JobRow?
     @State private var editingSoul = false
     @State private var busy = false
     @State private var failure: String?
@@ -1459,21 +1460,31 @@ struct BotDetail: View {
                         .listRowBackground(Palette.card(scheme))
                 case let .loaded(rows):
                     ForEach(rows) { routine in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(routine.enabled
-                                          ? (routine.lastStatus == "error" ? .red : .green)
-                                          : .secondary.opacity(0.5))
-                                    .frame(width: 6, height: 6)
-                                Text(routine.name).font(.subheadline).lineLimit(1)
+                        Button { selectedRoutine = routine } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 8) {
+                                    Circle()
+                                        .fill(RoutinePresentation.colour(routine))
+                                        .frame(width: 6, height: 6)
+                                    Text(routine.name).font(.subheadline).lineLimit(1)
+                                    Spacer(minLength: 8)
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                if !routine.schedule.isEmpty {
+                                    Text(routine.schedule)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let next = routine.nextRun, routine.enabled {
+                                    Text("Next \(next.formatted(.relative(presentation: .named)))")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
                             }
-                            if !routine.schedule.isEmpty {
-                                Text(routine.schedule)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
+                            .contentShape(.rect)
                         }
+                        .buttonStyle(.plain)
                         .listRowBackground(Palette.card(scheme))
                     }
                 }
@@ -1592,25 +1603,29 @@ struct BotDetail: View {
             SoulEditor(bot: bot.name)
         }
         .sheet(isPresented: $addingRoutine) {
-            AddRoutineSheet { rName, rSchedule, rPrompt in
-                Task {
-                    do {
-                        try await store.addRoutine(
-                            for: bot.name, name: rName, prompt: rPrompt,
-                            schedule: rSchedule
-                        )
-                        failure = nil
-                    } catch {
-                        // Without this the routine simply never appeared, and
-                        // the reason the agent gave went nowhere.
-                        failure = describeBotError(error)
-                    }
-                    routines = await .resolving(
-                        { try await store.routines(for: bot.name) },
-                        describe: describeBotError
-                    )
-                }
+            RoutineEditorSheet(
+                profiles: [(bot.name, store.botCurrentName(for: bot))]
+            ) { _, rName, rPrompt, rSchedule, deliver in
+                try await store.addRoutine(
+                    for: bot.name, name: rName, prompt: rPrompt,
+                    schedule: rSchedule, deliver: deliver
+                )
+                failure = nil
+                routines = await .resolving(
+                    { try await store.routines(for: bot.name) },
+                    describe: describeBotError
+                )
             }
+            .preferredColorScheme(store.theme.colorScheme)
+        }
+        .sheet(item: $selectedRoutine) { routine in
+            RoutineDetailSheet(routine: routine) {
+                routines = await .resolving(
+                    { try await store.routines(for: bot.name) },
+                    describe: describeBotError
+                )
+            }
+            .preferredColorScheme(store.theme.colorScheme)
         }
         .alert(
             "Confirm model change",
@@ -1792,55 +1807,6 @@ private struct SoulEditor: View {
                     // false, so Save cannot replace a perfectly good SOUL with
                     // the blank left by a read that failed.
                     unreadable = describeBotError(error)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - AddRoutineSheet
-
-private struct AddRoutineSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var scheme
-    let onSave: (String, String, String) -> Void
-
-    @State private var name = ""
-    @State private var schedule = "Every morning at 9:00 AM"
-    @State private var prompt = ""
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Routine Details") {
-                    TextField("Name (e.g. Daily Briefing)", text: $name)
-                    TextField("Schedule (e.g. Every day at 9am)", text: $schedule)
-                }
-                .listRowBackground(Palette.card(scheme))
-
-                Section("Instructions / Prompt") {
-                    TextField("What should this routine do?", text: $prompt, axis: .vertical)
-                        .lineLimit(3...6)
-                }
-                .listRowBackground(Palette.card(scheme))
-            }
-            .scrollContentBackground(.hidden)
-            .background(Palette.background(scheme))
-            .navigationTitle("New Routine")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmedName.isEmpty {
-                            onSave(trimmedName, schedule, prompt)
-                            dismiss()
-                        }
-                    }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }

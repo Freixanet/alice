@@ -634,17 +634,128 @@ extension DashboardClient {
     /// body has no field for it. That keeps the routine in the selected
     /// profile's isolated cron store.
     func createRoutine(
-        for profile: String, name: String, prompt: String, schedule: String
+        for profile: String, name: String, prompt: String, schedule: String,
+        deliver: String = "local"
     ) async throws {
-        let scoped = profile.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) ?? profile
+        let scoped = Self.queryValue(profile)
         try await send("POST", "api/cron/jobs?profile=\(scoped)", [
             "name": name,
             "prompt": prompt,
             "schedule": schedule,
+            "deliver": deliver,
             "enabled": true,
         ])
+    }
+
+    /// Edit only the routine fields Alice owns. Hermes merges these into the
+    /// stored job, so advanced fields (skills, toolsets, model, scripts, etc.)
+    /// survive an edit made on the phone.
+    func updateRoutine(
+        _ id: String, profile: String, name: String, prompt: String,
+        schedule: String, deliver: String
+    ) async throws {
+        let scoped = Self.queryValue(profile)
+        let job = Self.pathSegment(id)
+        try await send("PUT", "api/cron/jobs/\(job)?profile=\(scoped)", [
+            "updates": [
+                "name": name, "prompt": prompt, "schedule": schedule, "deliver": deliver,
+            ],
+        ])
+    }
+
+    func pauseRoutine(_ id: String, profile: String) async throws {
+        try await routineAction("pause", id: id, profile: profile)
+    }
+
+    func resumeRoutine(_ id: String, profile: String) async throws {
+        try await routineAction("resume", id: id, profile: profile)
+    }
+
+    func triggerRoutine(_ id: String, profile: String) async throws {
+        try await routineAction("trigger", id: id, profile: profile)
+    }
+
+    func deleteRoutine(_ id: String, profile: String) async throws {
+        let scoped = Self.queryValue(profile)
+        let job = Self.pathSegment(id)
+        try await send("DELETE", "api/cron/jobs/\(job)?profile=\(scoped)")
+    }
+
+    private func routineAction(_ action: String, id: String, profile: String) async throws {
+        let scoped = Self.queryValue(profile)
+        let job = Self.pathSegment(id)
+        try await send("POST", "api/cron/jobs/\(job)/\(action)?profile=\(scoped)")
+    }
+
+    func routineRuns(_ id: String, profile: String, limit: Int = 20) async throws -> [RoutineRun] {
+        let scoped = Self.queryValue(profile)
+        let job = Self.pathSegment(id)
+        let object = try await get(
+            "api/cron/jobs/\(job)/runs?profile=\(scoped)&limit=\(max(1, min(limit, 100)))"
+        )
+        return try Self.routineRuns(from: object)
+    }
+
+    static func routineRuns(from object: [String: Any]) throws -> [RoutineRun] {
+        guard let rows = object["runs"] as? [[String: Any]] else { throw Failure.unreadable }
+        let parsed = rows.compactMap { row -> RoutineRun? in
+            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+            let cost = (row["actual_cost_usd"] as? NSNumber)?.doubleValue
+                ?? (row["estimated_cost_usd"] as? NSNumber)?.doubleValue
+                ?? row["actual_cost_usd"] as? Double
+                ?? row["estimated_cost_usd"] as? Double
+            return RoutineRun(
+                id: id,
+                title: (row["title"] as? String) ?? id,
+                preview: (row["preview"] as? String) ?? "",
+                startedAt: HermesClient.date(row["started_at"]),
+                endedAt: HermesClient.date(row["ended_at"]),
+                endReason: (row["end_reason"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                model: (row["model"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                inputTokens: HermesClient.int(row["input_tokens"]) ?? 0,
+                outputTokens: HermesClient.int(row["output_tokens"]) ?? 0,
+                cost: cost,
+                isActive: (row["is_active"] as? Bool) ?? false
+            )
+        }
+        if !rows.isEmpty && parsed.isEmpty { throw Failure.unreadable }
+        return parsed
+    }
+
+    func routineDeliveryTargets() async throws -> [RoutineDeliveryTarget] {
+        try Self.deliveryTargets(from: await get("api/cron/delivery-targets"))
+    }
+
+    /// The scheduler interprets wall-clock expressions in the owning profile's
+    /// Hermes timezone. Empty means the Hermes host's local timezone.
+    func routineTimezone(for profile: String) async throws -> String {
+        let config = try await get("api/config?profile=\(Self.queryValue(profile))")
+        return (config["timezone"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    static func deliveryTargets(from object: [String: Any]) throws -> [RoutineDeliveryTarget] {
+        guard let rows = object["targets"] as? [[String: Any]] else { throw Failure.unreadable }
+        let parsed = rows.compactMap { row -> RoutineDeliveryTarget? in
+            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+            return RoutineDeliveryTarget(
+                id: id,
+                name: (row["name"] as? String) ?? id,
+                homeTargetSet: (row["home_target_set"] as? Bool) ?? (id == "local")
+            )
+        }
+        if !rows.isEmpty && parsed.isEmpty { throw Failure.unreadable }
+        return parsed
+    }
+
+    private static func queryValue(_ text: String) -> String {
+        text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+    }
+
+    private static func pathSegment(_ text: String) -> String {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/?#")
+        return text.addingPercentEncoding(withAllowedCharacters: allowed) ?? text
     }
 
     /// Writes the bot out as a shareable template and reports where it landed.

@@ -168,6 +168,89 @@ final class RoutineAdversarialTests: XCTestCase {
         XCTAssertEqual(rows.count, 2, "a real routine was deduplicated away")
         XCTAssertEqual(Set(rows.map(\.name)), ["radar", "chollo"])
     }
+
+    // MARK: - Scheduler state and history
+
+    func testRichSchedulerStateSurvivesParsing() throws {
+        var row = Self.radarIA()
+        row["enabled"] = false
+        row["state"] = "paused"
+        row["deliver"] = "telegram"
+        row["last_status"] = "delivery_failed"
+        row["last_delivery_error"] = "No home target configured"
+        row["paused_reason"] = "manual"
+        row["last_fire_error"] = [
+            "detail": "scheduler was busy",
+            "at": "2026-09-05T10:01:00+02:00",
+        ]
+        row["model"] = "grok-4.6"
+        row["provider"] = "xai-oauth"
+        row["skills"] = ["web-search", "news"]
+        row["repeat"] = ["times": 3, "completed": 1]
+
+        let job = try XCTUnwrap(HermesClient.jobRow(from: row))
+        XCTAssertTrue(job.isPaused)
+        XCTAssertEqual(job.effectiveState, "paused")
+        XCTAssertEqual(job.deliver, "telegram")
+        XCTAssertEqual(job.lastStatus, "delivery_failed")
+        XCTAssertEqual(job.lastDeliveryError, "No home target configured")
+        XCTAssertEqual(job.pausedReason, "manual")
+        XCTAssertEqual(job.lastFireError, "scheduler was busy")
+        XCTAssertNotNil(job.lastFireAt)
+        XCTAssertEqual(job.model, "grok-4.6")
+        XCTAssertEqual(job.provider, "xai-oauth")
+        XCTAssertEqual(job.skills, ["web-search", "news"])
+        XCTAssertEqual(job.repeatTimes, 3)
+        XCTAssertEqual(job.repeatCompleted, 1)
+    }
+
+    func testCompletedRoutineIsNotMisreportedAsPaused() throws {
+        var row = Self.radarIA()
+        row["enabled"] = false
+        row["state"] = "completed"
+        let job = try XCTUnwrap(HermesClient.jobRow(from: row))
+        XCTAssertTrue(job.isCompleted)
+        XCTAssertFalse(job.isPaused)
+        XCTAssertEqual(job.effectiveState, "completed")
+    }
+
+    func testRoutineRunHistoryKeepsExecutionFacts() throws {
+        let runs = try DashboardClient.routineRuns(from: ["runs": [[
+            "id": "session-1",
+            "title": "Radar IA daily",
+            "preview": "Three important updates",
+            "started_at": "2026-09-05T10:00:00+02:00",
+            "ended_at": "2026-09-05T10:00:11+02:00",
+            "end_reason": "completed",
+            "model": "grok-4.6",
+            "input_tokens": 120,
+            "output_tokens": 80,
+            "actual_cost_usd": 0.012,
+            "is_active": false,
+        ]]])
+        let run = try XCTUnwrap(runs.first)
+        XCTAssertEqual(run.id, "session-1")
+        XCTAssertEqual(run.preview, "Three important updates")
+        XCTAssertEqual(run.tokens, 200)
+        XCTAssertEqual(try XCTUnwrap(run.cost), 0.012, accuracy: 0.000001)
+        XCTAssertEqual(run.endReason, "completed")
+        XCTAssertFalse(run.isActive)
+    }
+
+    func testDeliveryTargetsExposeMissingHomeChannel() throws {
+        let targets = try DashboardClient.deliveryTargets(from: ["targets": [
+            ["id": "local", "name": "Local", "home_target_set": true],
+            ["id": "telegram", "name": "Telegram", "home_target_set": false],
+        ]])
+        XCTAssertEqual(targets.map(\.id), ["local", "telegram"])
+        XCTAssertTrue(targets[0].homeTargetSet)
+        XCTAssertFalse(targets[1].homeTargetSet)
+    }
+
+    func testMalformedNonemptyRunAndTargetBodiesDoNotReadAsEmpty() {
+        XCTAssertThrowsError(try DashboardClient.routineRuns(from: ["runs": [["no_id": true]]]))
+        XCTAssertThrowsError(try DashboardClient.deliveryTargets(from: ["targets": [["name": "Telegram"]]]))
+    }
 }
 
 /// A body reader that records which paths were asked for.

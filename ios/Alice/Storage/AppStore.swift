@@ -787,10 +787,72 @@ final class AppStore {
     /// client-side id and `lastStatus: "ok"`, so a routine that had never run
     /// — and, because the request was malformed, had never been created —
     /// showed a green tick.
-    func addRoutine(for bot: String, name: String, prompt: String, schedule: String) async throws {
+    func addRoutine(
+        for bot: String, name: String, prompt: String, schedule: String,
+        deliver: String = "local"
+    ) async throws {
         try await dashboard.createRoutine(
-            for: bot, name: name, prompt: prompt, schedule: schedule
+            for: bot, name: name, prompt: prompt, schedule: schedule, deliver: deliver
         )
+    }
+
+    func updateRoutine(
+        _ routine: JobRow, name: String, prompt: String, schedule: String, deliver: String
+    ) async throws {
+        guard let profile = routine.profile, !profile.isEmpty else {
+            throw DashboardClient.Failure.unreadable
+        }
+        try await dashboard.updateRoutine(
+            routine.id, profile: profile, name: name, prompt: prompt,
+            schedule: schedule, deliver: deliver
+        )
+    }
+
+    func setRoutinePaused(_ routine: JobRow, paused: Bool) async throws {
+        guard let profile = routine.profile, !profile.isEmpty else {
+            throw DashboardClient.Failure.unreadable
+        }
+        if paused { try await dashboard.pauseRoutine(routine.id, profile: profile) }
+        else { try await dashboard.resumeRoutine(routine.id, profile: profile) }
+    }
+
+    func triggerRoutine(_ routine: JobRow) async throws {
+        guard let profile = routine.profile, !profile.isEmpty else {
+            throw DashboardClient.Failure.unreadable
+        }
+        try await dashboard.triggerRoutine(routine.id, profile: profile)
+    }
+
+    func deleteRoutine(_ routine: JobRow) async throws {
+        guard let profile = routine.profile, !profile.isEmpty else {
+            throw DashboardClient.Failure.unreadable
+        }
+        try await dashboard.deleteRoutine(routine.id, profile: profile)
+    }
+
+    func routineRuns(_ routine: JobRow, limit: Int = 20) async throws -> [RoutineRun] {
+        guard let profile = routine.profile, !profile.isEmpty else {
+            throw DashboardClient.Failure.unreadable
+        }
+        return try await dashboard.routineRuns(routine.id, profile: profile, limit: limit)
+    }
+
+    func routineDeliveryTargets() async throws -> [RoutineDeliveryTarget] {
+        try await dashboard.routineDeliveryTargets()
+    }
+
+    func routineTimezone(for profile: String) async throws -> String {
+        try await dashboard.routineTimezone(for: profile)
+    }
+
+    /// Profiles available as routine owners. `default` is Alice/Home; named
+    /// profiles are bots. Display names remain presentation only — mutations
+    /// always route by the canonical profile slug.
+    func routineProfiles() async throws -> [(id: String, label: String)] {
+        let bots = try await bots()
+        var rows: [(String, String)] = [("default", "Alice")]
+        rows.append(contentsOf: bots.map { ($0.name, botCurrentName(for: $0)) })
+        return rows
     }
 
     func exportBot(_ name: String) async throws -> String? {
