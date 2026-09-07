@@ -123,6 +123,7 @@ final class AppStore {
         static let botRoutines = "alice.bot.routines"
         static let botCustomNames = "alice.bot.customNames"
         static let botSectionOrder = "alice.bot.sectionOrder"
+        static let botOrder = "alice.bot.order"
         static let cachedBots = "alice.cached.bots"
     }
 
@@ -134,6 +135,12 @@ final class AppStore {
 
     var botSectionOrder: [String] = [] {
         didSet { defaults.set(botSectionOrder, forKey: Keys.botSectionOrder) }
+    }
+
+    /// Presentation order for named bots. Hermes has no equivalent ordering
+    /// field, so this remains an Alice UI preference just like sections.
+    var botOrder: [String] = [] {
+        didSet { defaults.set(botOrder, forKey: Keys.botOrder) }
     }
 
     var botSections: [String: String] = [:] {
@@ -192,6 +199,7 @@ final class AppStore {
             .flatMap { try? JSONDecoder().decode([String: BotMark].self, from: $0) } ?? [:]
         botCustomSections = defaults.stringArray(forKey: Keys.botCustomSections) ?? []
         botSectionOrder = defaults.stringArray(forKey: Keys.botSectionOrder) ?? []
+        botOrder = defaults.stringArray(forKey: Keys.botOrder) ?? []
         botSections = (defaults.dictionary(forKey: Keys.botSections) as? [String: String]) ?? [:]
         if let savedCollapsed = defaults.stringArray(forKey: Keys.collapsedSections) {
             collapsedSections = Set(savedCollapsed)
@@ -893,6 +901,8 @@ final class AppStore {
         move(&botSections, from: name, to: trimmed)
         move(&botModels, from: name, to: trimmed)
         move(&botNotifications, from: name, to: trimmed)
+        if let index = botOrder.firstIndex(of: name) { botOrder[index] = trimmed }
+        botOrder.removeAll { $0 == name.lowercased() && $0 != trimmed }
         botCustomNames.removeValue(forKey: name)
 
         if let index = cachedBots.firstIndex(where: { $0.name == name }) {
@@ -933,6 +943,64 @@ final class AppStore {
             botSections.removeValue(forKey: bot)
             botSections.removeValue(forKey: bot.lowercased())
         }
+    }
+
+    /// Applies Alice's saved presentation order without mutating state during
+    /// a SwiftUI render. Unknown/new bots stay at the end in Hermes' order.
+    func orderedBots(_ bots: [BotRow]) -> [BotRow] {
+        Self.orderedBots(bots, using: botOrder)
+    }
+
+    nonisolated static func orderedBots(_ bots: [BotRow], using order: [String]) -> [BotRow] {
+        let rank = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($0.element, $0.offset) })
+        return bots.enumerated().sorted { lhs, rhs in
+            let left = rank[lhs.element.name]
+            let right = rank[rhs.element.name]
+            switch (left, right) {
+            case let (l?, r?): return l == r ? lhs.offset < rhs.offset : l < r
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return lhs.offset < rhs.offset
+            }
+        }.map(\.element)
+    }
+
+    /// Reorders only the peers visible in one section. Other sections keep
+    /// their relative slots in the master order, so dragging inside Work can
+    /// never reshuffle Personal. Moving down lands after the row crossed;
+    /// moving up lands before it, matching native list reordering.
+    func reorderBot(_ source: String, relativeTo target: String, within peers: [String]) {
+        let moved = Self.movingBot(source, relativeTo: target, within: peers)
+        guard moved != peers else { return }
+        botOrder = Self.mergingBotOrder(
+            botOrder, allNames: cachedBots.map(\.name), orderedPeers: moved
+        )
+    }
+
+    nonisolated static func movingBot(
+        _ source: String, relativeTo target: String, within peers: [String]
+    ) -> [String] {
+        guard let from = peers.firstIndex(of: source),
+              let to = peers.firstIndex(of: target), from != to
+        else { return peers }
+        var result = peers
+        let item = result.remove(at: from)
+        result.insert(item, at: min(to, result.count))
+        return result
+    }
+
+    nonisolated static func mergingBotOrder(
+        _ master: [String], allNames: [String], orderedPeers: [String]
+    ) -> [String] {
+        var result: [String] = []
+        var seen = Set<String>()
+        for name in master + allNames where seen.insert(name).inserted { result.append(name) }
+
+        let peers = Set(orderedPeers)
+        let slots = result.indices.filter { peers.contains(result[$0]) }
+        guard slots.count == orderedPeers.count else { return result }
+        for (slot, name) in zip(slots, orderedPeers) { result[slot] = name }
+        return result
     }
 
     /// The order the sections are shown in, derived and never stored from
@@ -1304,7 +1372,10 @@ final class AppStore {
         bot.displayName.isEmpty ? bot.name : bot.displayName
     }
 
-    func deleteBot(_ name: String) async throws { try await dashboard.deleteBot(name) }
+    func deleteBot(_ name: String) async throws {
+        try await dashboard.deleteBot(name)
+        botOrder.removeAll { $0 == name || $0 == name.lowercased() }
+    }
 
     func projects() async throws -> [ProjectRow] { try await dashboard.projects() }
 

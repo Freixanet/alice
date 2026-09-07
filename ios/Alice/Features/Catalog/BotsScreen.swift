@@ -198,7 +198,7 @@ struct BotsScreen: View {
     // MARK: - Sections & List
 
     private var filteredRows: [BotRow] {
-        let visible = rows.filter { !store.isBotHidden($0) }
+        let visible = store.orderedBots(rows.filter { !store.isBotHidden($0) })
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return visible }
         return visible.filter { bot in
@@ -400,7 +400,7 @@ struct BotsScreen: View {
                 ForEach(Array(stride(from: 0, to: pinned.count, by: 3)), id: \.self) { start in
                     HStack(spacing: 22) {
                         ForEach(pinned[start..<min(start + 3, pinned.count)]) { bot in
-                            pinnedTile(bot)
+                            pinnedTile(bot, reorderPeers: pinned)
                         }
                     }
                 }
@@ -531,7 +531,20 @@ struct BotsScreen: View {
             : 0.60 + 0.38 * lightness
     }
 
-    private func pinnedTile(_ bot: BotRow) -> some View {
+    @ViewBuilder
+    private func pinnedTile(_ bot: BotRow, reorderPeers: [BotRow]? = nil) -> some View {
+        if let reorderPeers {
+            pinnedTileBase(bot)
+                .draggable(bot.name) { pinnedTilePreview(bot) }
+                .dropDestination(for: String.self) { items, _ in
+                    return reorder(bot: bot, draggedNames: items, peers: reorderPeers)
+                }
+        } else {
+            pinnedTileBase(bot)
+        }
+    }
+
+    private func pinnedTileBase(_ bot: BotRow) -> some View {
         Button {
             store.openBotConversation(for: bot)
             store.botsExitLeading = true
@@ -547,24 +560,28 @@ struct BotsScreen: View {
                     .truncationMode(.tail)
             }
             .frame(width: 100)
+            .contentShape(.interaction, .rect)
+            .contentShape(.contextMenuPreview, .rect(cornerRadius: 18))
         }
         .buttonStyle(.plain)
-        // Touch-down, not the button's own pressed state. With a context menu
-        // attached SwiftUI holds that back until it knows whether the press is
-        // a tap or a hold, so a quick tap animated nothing at all — the very
-        // thing the system's highlight was doing for us.
-        // The menu lifts the face alone. Given no preview of our own it
-        // raises a card sized to the whole tile, name included, which is the
-        // square that kept appearing however its corners were rounded.
         .contextMenu {
             botMenu(bot)
         } preview: {
-            // The flat mark, not the glass one. Two glass surfaces morphing
-            // into one another is what left the bot pale and smeared after
-            // the menu closed: the source kept the preview's residue. A solid
-            // face has nothing to leave behind.
-            BotMarkView(mark: mark(bot), size: 96).padding(10)
+            pinnedTilePreview(bot)
         }
+    }
+
+    private func pinnedTilePreview(_ bot: BotRow) -> some View {
+        VStack(spacing: 8) {
+            BotMarkView(mark: mark(bot), size: 76)
+            Text(store.botCurrentName(for: bot.name))
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+        }
+        .frame(width: 112)
+        .padding(.vertical, 10)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
     }
 
     /// The bot's mark as a glass surface.
@@ -668,7 +685,7 @@ struct BotsScreen: View {
     private var normalBotSections: some View {
         if store.botCustomSections.isEmpty {
             ForEach(unpinnedRows) { bot in
-                botRowView(bot)
+                botRowView(bot, reorderPeers: unpinnedRows)
             }
         } else {
             ForEach(store.sectionOrder, id: \.self) { sectionKey in
@@ -677,7 +694,7 @@ struct BotsScreen: View {
                         unassignedSectionHeader
                         if showUnassigned {
                             ForEach(unassignedBots) { bot in
-                                botRowView(bot)
+                                botRowView(bot, reorderPeers: unassignedBots)
                             }
                         }
                     }
@@ -687,7 +704,7 @@ struct BotsScreen: View {
 
                     if !store.collapsedSections.contains(sectionKey) {
                         ForEach(sectionBots) { bot in
-                            botRowView(bot)
+                            botRowView(bot, reorderPeers: sectionBots)
                         }
                     }
                 }
@@ -1145,80 +1162,106 @@ struct BotsScreen: View {
     }
 
     @ViewBuilder
-    private func botRowView(_ bot: BotRow) -> some View {
-        // Opens the bot's conversation on the app's own chat screen rather
-        // than pushing a second one inside this sheet. A bot chat is a
-        // conversation like any other; giving it its own screen inside a
-        // sheet bought a duplicate transcript and a keyboard that a sheet
-        // handles differently from a screen.
+    private func botRowView(_ bot: BotRow, reorderPeers: [BotRow]? = nil) -> some View {
+        if let reorderPeers {
+            botRowBase(bot)
+                .draggable(bot.name) { botRowPreview(bot) }
+                .dropDestination(for: String.self) { items, _ in
+                    return reorder(bot: bot, draggedNames: items, peers: reorderPeers)
+                }
+        } else {
+            botRowBase(bot)
+        }
+    }
+
+    private func botRowBase(_ bot: BotRow) -> some View {
         Button {
             store.openBotConversation(for: bot)
             store.botsExitLeading = true
             onClose()
         } label: {
-            HStack(alignment: .center, spacing: 14) {
-                // The same face the pinned shelf shows, at a row's size, and
-                // answering a press the same way. A bot should not be made of
-                // different stuff depending on where it happens to be listed.
-                glassMark(bot, size: 44)
-
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(alignment: .center, spacing: 6) {
-                        Text(store.botCurrentName(for: bot))
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-
-                        let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
-                        if !liveDetail.isEmpty {
-                            Text(liveDetail)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2.5)
-                                .background(Color.secondary.opacity(0.16), in: .rect(cornerRadius: 5))
-                        }
-
-                        if store.isBotPinned(bot) {
-                            Image(systemName: "pin.fill")
-                                .font(.caption2)
-                                .foregroundStyle(store.accent.primary(scheme))
-                        }
-
-                        if store.unreadBots.contains(bot.name) {
-                            Circle()
-                                .fill(Color.blue)
-                                .frame(width: 7, height: 7)
-                        }
-
-                        Spacer(minLength: 4)
-
-                        Text(timestamp(for: bot))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Text(snippet(for: bot))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .contentShape(.rect)
+            botRowContents(bot)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .contentShape(.interaction, .rect)
+                .contentShape(.contextMenuPreview, .rect(cornerRadius: 16))
         }
         .buttonStyle(.plain)
         .contextMenu {
             botMenu(bot)
         } preview: {
-            // The flat mark, not the glass one. Two glass surfaces morphing
-            // into one another is what left the bot pale and smeared after
-            // the menu closed: the source kept the preview's residue. A solid
-            // face has nothing to leave behind.
-            BotMarkView(mark: mark(bot), size: 96).padding(10)
+            botRowPreview(bot)
         }
+    }
+
+    private func botRowContents(_ bot: BotRow, glassFace: Bool = true) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            Group {
+                if glassFace { glassMark(bot, size: 44) }
+                else { BotMarkView(mark: mark(bot), size: 44) }
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .center, spacing: 6) {
+                    Text(store.botCurrentName(for: bot))
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
+                    if !liveDetail.isEmpty {
+                        Text(liveDetail)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2.5)
+                            .background(Color.secondary.opacity(0.16), in: .rect(cornerRadius: 5))
+                    }
+
+                    if store.isBotPinned(bot) {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(store.accent.primary(scheme))
+                    }
+
+                    if store.unreadBots.contains(bot.name) {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 7, height: 7)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Text(timestamp(for: bot))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(snippet(for: bot))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func botRowPreview(_ bot: BotRow) -> some View {
+        botRowContents(bot, glassFace: false)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(width: 340)
+            .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
+    }
+
+    private func reorder(bot target: BotRow, draggedNames: [String], peers: [BotRow]) -> Bool {
+        guard let source = draggedNames.first, source != target.name else { return false }
+        let names = peers.map(\.name)
+        guard names.contains(source), names.contains(target.name) else { return false }
+        withAnimation(.snappy(duration: 0.22)) {
+            store.reorderBot(source, relativeTo: target.name, within: names)
+        }
+        return true
     }
 
     private func duplicateBot(_ bot: BotRow) {

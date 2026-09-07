@@ -147,4 +147,37 @@ final class BotRosterTests: XCTestCase {
         XCTAssertLessThanOrEqual(AppStore.botSlug(String(repeating: "A", count: 100)).count, 64)
     }
 
+    func testSavedBotOrderWinsWhileUnknownBotsStayStableAtTheEnd() {
+        let rows = [row("a"), row("b"), row("c"), row("new-1"), row("new-2")]
+        let ordered = AppStore.orderedBots(rows, using: ["c", "a", "b"])
+        XCTAssertEqual(ordered.map(\.name), ["c", "a", "b", "new-1", "new-2"])
+    }
+
+    func testMovingBotDownLandsAfterTargetAndMovingUpBeforeTarget() {
+        XCTAssertEqual(
+            AppStore.movingBot("a", relativeTo: "c", within: ["a", "b", "c", "d"]),
+            ["b", "c", "a", "d"]
+        )
+        XCTAssertEqual(
+            AppStore.movingBot("d", relativeTo: "b", within: ["a", "b", "c", "d"]),
+            ["a", "d", "b", "c"]
+        )
+    }
+
+    func testMergingSectionOrderDoesNotReshuffleOtherSections() {
+        let merged = AppStore.mergingBotOrder(
+            ["work-a", "personal-a", "work-b", "personal-b"],
+            allNames: ["work-a", "personal-a", "work-b", "personal-b"],
+            orderedPeers: ["work-b", "work-a"]
+        )
+        XCTAssertEqual(merged, ["work-b", "personal-a", "work-a", "personal-b"])
+    }
+
+    func testMergingOrderAddsNewBotsOnce() {
+        let merged = AppStore.mergingBotOrder(
+            ["a", "a"], allNames: ["a", "b", "c"], orderedPeers: ["c", "b"]
+        )
+        XCTAssertEqual(merged, ["a", "c", "b"])
+    }
+
 }
