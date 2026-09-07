@@ -677,6 +677,93 @@ struct GatewayActionResult: Hashable, Sendable {
     var name: String
 }
 
+
+struct MCPServerConfiguration: Identifiable, Hashable, Sendable {
+    var id: String { name }
+    var name: String
+    var transport: String
+    var url: String?
+    var command: String?
+    var args: [String]
+    /// Values are intentionally redacted by Hermes. Alice never treats them
+    /// as reusable secrets or writes them back implicitly.
+    var env: [String: String]
+    var auth: String?
+    var enabled: Bool
+    var tools: [String]?
+}
+
+struct MCPToolInfo: Identifiable, Hashable, Sendable {
+    var id: String { name }
+    var name: String
+    var detail: String
+    var schemaCharacters: Int?
+}
+
+struct MCPServerTestResult: Hashable, Sendable {
+    var ok: Bool
+    var error: String?
+    var tools: [MCPToolInfo]
+    var prompts: Int
+    var resources: Int
+}
+
+struct MCPCatalogEnvField: Identifiable, Hashable, Sendable {
+    var id: String { name }
+    var name: String
+    var prompt: String
+    var required: Bool
+}
+
+struct MCPCatalogEntry: Identifiable, Hashable, Sendable {
+    var id: String { name }
+    var name: String
+    var detail: String
+    var source: String
+    var transport: String
+    var authType: String
+    var requiredEnv: [MCPCatalogEnvField]
+    var command: String?
+    var args: [String]
+    var url: String?
+    var installURL: String?
+    var installRef: String?
+    var bootstrap: [String]
+    var defaultEnabledTools: [String]?
+    var postInstall: String
+    var needsInstall: Bool
+    var installed: Bool
+    var enabled: Bool
+}
+
+struct MCPCatalogDiagnostic: Identifiable, Hashable, Sendable {
+    var id: String { "\(name)|\(kind)|\(message)" }
+    var name: String
+    var kind: String
+    var message: String
+}
+
+struct MCPCatalogSnapshot: Hashable, Sendable {
+    var entries: [MCPCatalogEntry]
+    var diagnostics: [MCPCatalogDiagnostic]
+}
+
+struct MCPOAuthFlow: Hashable, Sendable {
+    var flowID: String
+    var serverName: String
+    var status: String
+    var authorizationURL: String?
+    var error: String?
+    var tools: [MCPToolInfo]
+}
+
+struct MCPCatalogInstallResult: Hashable, Sendable {
+    var ok: Bool
+    var name: String
+    var background: Bool
+    var action: String?
+}
+
 struct HermesHealthStatus: Hashable, Sendable {
     var ok: Bool
     var version: String
@@ -1708,6 +1795,217 @@ extension DashboardClient {
             name: name, path: path, size: int(object["size"]) ?? data.count,
             mimeType: mimeType, data: data
         )
+    }
+
+    // MARK: MCP administration
+
+    func mcpServers(profile: String = "default") async throws -> [MCPServerConfiguration] {
+        let object = try await get("api/mcp/servers?profile=\(Self.queryValue(profile))")
+        return try Self.mcpServers(from: object)
+    }
+
+    func mcpCatalog(profile: String = "default") async throws -> MCPCatalogSnapshot {
+        let object = try await get("api/mcp/catalog?profile=\(Self.queryValue(profile))")
+        return try Self.mcpCatalog(from: object)
+    }
+
+    func addMCPServer(
+        name: String, profile: String = "default", url: String? = nil,
+        command: String? = nil, args: [String] = [], env: [String: String] = [:],
+        auth: String? = nil, bearerToken: String? = nil
+    ) async throws -> MCPServerConfiguration {
+        var body: [String: Any] = ["name": name, "profile": profile]
+        if let url { body["url"] = url }
+        if let command { body["command"] = command }
+        if !args.isEmpty { body["args"] = args }
+        if !env.isEmpty { body["env"] = env }
+        if let auth, auth != "none" { body["auth"] = auth }
+        if let bearerToken { body["bearer_token"] = bearerToken }
+        let object = try await send(
+            "POST", "api/mcp/servers?profile=\(Self.queryValue(profile))", body
+        )
+        guard let server = Self.mcpServer(from: object) else { throw Failure.unreadable }
+        return server
+    }
+
+    func setMCPServerEnabled(
+        _ name: String, enabled: Bool, profile: String = "default"
+    ) async throws {
+        _ = try await send(
+            "PUT",
+            "api/mcp/servers/\(Self.pathSegment(name))/enabled?profile=\(Self.queryValue(profile))",
+            ["enabled": enabled, "profile": profile]
+        )
+    }
+
+    func deleteMCPServer(_ name: String, profile: String = "default") async throws {
+        _ = try await send(
+            "DELETE", "api/mcp/servers/\(Self.pathSegment(name))?profile=\(Self.queryValue(profile))"
+        )
+    }
+
+    func testMCPServer(
+        _ name: String, profile: String = "default"
+    ) async throws -> MCPServerTestResult {
+        let object = try await send(
+            "POST", "api/mcp/servers/\(Self.pathSegment(name))/test?profile=\(Self.queryValue(profile))"
+        )
+        return try Self.mcpTestResult(from: object)
+    }
+
+    func startMCPOAuth(
+        _ name: String, profile: String = "default"
+    ) async throws -> MCPOAuthFlow {
+        let object = try await send(
+            "POST", "api/mcp/servers/\(Self.pathSegment(name))/auth?profile=\(Self.queryValue(profile))"
+        )
+        return try Self.mcpOAuthFlow(from: object)
+    }
+
+    func mcpOAuthStatus(
+        _ flowID: String, profile: String = "default"
+    ) async throws -> MCPOAuthFlow {
+        let object = try await get(
+            "api/mcp/oauth/flows/\(Self.pathSegment(flowID))?profile=\(Self.queryValue(profile))"
+        )
+        return try Self.mcpOAuthFlow(from: object)
+    }
+
+    func cancelMCPOAuth(_ flowID: String, profile: String = "default") async throws {
+        _ = try await send(
+            "DELETE", "api/mcp/oauth/flows/\(Self.pathSegment(flowID))?profile=\(Self.queryValue(profile))"
+        )
+    }
+
+    func installMCPCatalogEntry(
+        _ name: String, env: [String: String], profile: String = "default", enable: Bool = true
+    ) async throws -> MCPCatalogInstallResult {
+        let object = try await send(
+            "POST", "api/mcp/catalog/install?profile=\(Self.queryValue(profile))",
+            ["name": name, "env": env, "enable": enable, "profile": profile]
+        )
+        guard let ok = object["ok"] as? Bool,
+              let installedName = object["name"] as? String,
+              let background = object["background"] as? Bool else { throw Failure.unreadable }
+        return MCPCatalogInstallResult(
+            ok: ok, name: installedName, background: background, action: object["action"] as? String
+        )
+    }
+
+    static func mcpServers(from object: [String: Any]) throws -> [MCPServerConfiguration] {
+        guard let rows = object["servers"] as? [[String: Any]] else { throw Failure.unreadable }
+        let parsed = rows.compactMap(mcpServer(from:))
+        if parsed.count != rows.count { throw Failure.unreadable }
+        return parsed
+    }
+
+    static func mcpServer(from row: [String: Any]) -> MCPServerConfiguration? {
+        guard let name = row["name"] as? String, !name.isEmpty,
+              let transport = row["transport"] as? String, !transport.isEmpty,
+              let args = row["args"] as? [String],
+              let env = row["env"] as? [String: String],
+              let enabled = row["enabled"] as? Bool else { return nil }
+        let tools: [String]?
+        if row.keys.contains("tools") {
+            if row["tools"] is NSNull { tools = nil }
+            else if let value = row["tools"] as? [String] { tools = value }
+            else { return nil }
+        } else {
+            tools = nil
+        }
+        return MCPServerConfiguration(
+            name: name, transport: transport, url: row["url"] as? String,
+            command: row["command"] as? String, args: args, env: env,
+            auth: row["auth"] as? String, enabled: enabled, tools: tools
+        )
+    }
+
+    static func mcpTestResult(from object: [String: Any]) throws -> MCPServerTestResult {
+        guard let ok = object["ok"] as? Bool,
+              let rows = object["tools"] as? [[String: Any]] else { throw Failure.unreadable }
+        let tools = rows.compactMap(mcpTool(from:))
+        if tools.count != rows.count { throw Failure.unreadable }
+        return MCPServerTestResult(
+            ok: ok, error: object["error"] as? String, tools: tools,
+            prompts: int(object["prompts"]) ?? 0, resources: int(object["resources"]) ?? 0
+        )
+    }
+
+    static func mcpOAuthFlow(from object: [String: Any]) throws -> MCPOAuthFlow {
+        guard let flowID = object["flow_id"] as? String, !flowID.isEmpty,
+              let serverName = object["server_name"] as? String, !serverName.isEmpty,
+              let status = object["status"] as? String, !status.isEmpty else { throw Failure.unreadable }
+        let rows = (object["tools"] as? [[String: Any]]) ?? []
+        let tools = rows.compactMap(mcpTool(from:))
+        if tools.count != rows.count { throw Failure.unreadable }
+        return MCPOAuthFlow(
+            flowID: flowID, serverName: serverName, status: status,
+            authorizationURL: object["authorization_url"] as? String,
+            error: object["error"] as? String, tools: tools
+        )
+    }
+
+    private static func mcpTool(from row: [String: Any]) -> MCPToolInfo? {
+        guard let name = row["name"] as? String, !name.isEmpty else { return nil }
+        return MCPToolInfo(
+            name: name, detail: row["description"] as? String ?? "",
+            schemaCharacters: int(row["schema_chars"])
+        )
+    }
+
+    static func mcpCatalog(from object: [String: Any]) throws -> MCPCatalogSnapshot {
+        guard let rows = object["entries"] as? [[String: Any]],
+              let diagnosticRows = object["diagnostics"] as? [[String: Any]] else {
+            throw Failure.unreadable
+        }
+        let entries = rows.compactMap(mcpCatalogEntry(from:))
+        let diagnostics = diagnosticRows.compactMap(mcpCatalogDiagnostic(from:))
+        if entries.count != rows.count || diagnostics.count != diagnosticRows.count {
+            throw Failure.unreadable
+        }
+        return MCPCatalogSnapshot(entries: entries, diagnostics: diagnostics)
+    }
+
+    static func mcpCatalogEntry(from row: [String: Any]) -> MCPCatalogEntry? {
+        guard let name = row["name"] as? String, !name.isEmpty,
+              let transport = row["transport"] as? String,
+              let authType = row["auth_type"] as? String,
+              let envRows = row["required_env"] as? [[String: Any]],
+              let args = row["args"] as? [String],
+              let bootstrap = row["bootstrap"] as? [String],
+              let postInstall = row["post_install"] as? String,
+              let needsInstall = row["needs_install"] as? Bool,
+              let installed = row["installed"] as? Bool,
+              let enabled = row["enabled"] as? Bool else { return nil }
+        let requiredEnv = envRows.compactMap { raw -> MCPCatalogEnvField? in
+            guard let envName = raw["name"] as? String, !envName.isEmpty,
+                  let prompt = raw["prompt"] as? String,
+                  let required = raw["required"] as? Bool else { return nil }
+            return MCPCatalogEnvField(name: envName, prompt: prompt, required: required)
+        }
+        if requiredEnv.count != envRows.count { return nil }
+        let defaultTools: [String]?
+        if row.keys.contains("default_enabled") {
+            if row["default_enabled"] is NSNull { defaultTools = nil }
+            else if let value = row["default_enabled"] as? [String] { defaultTools = value }
+            else { return nil }
+        } else { defaultTools = nil }
+        return MCPCatalogEntry(
+            name: name, detail: row["description"] as? String ?? "",
+            source: row["source"] as? String ?? "", transport: transport, authType: authType,
+            requiredEnv: requiredEnv, command: row["command"] as? String, args: args,
+            url: row["url"] as? String, installURL: row["install_url"] as? String,
+            installRef: row["install_ref"] as? String, bootstrap: bootstrap,
+            defaultEnabledTools: defaultTools, postInstall: postInstall,
+            needsInstall: needsInstall, installed: installed, enabled: enabled
+        )
+    }
+
+    private static func mcpCatalogDiagnostic(from row: [String: Any]) -> MCPCatalogDiagnostic? {
+        guard let name = row["name"] as? String,
+              let kind = row["kind"] as? String,
+              let message = row["message"] as? String else { return nil }
+        return MCPCatalogDiagnostic(name: name, kind: kind, message: message)
     }
 
     // MARK: System / health / operations

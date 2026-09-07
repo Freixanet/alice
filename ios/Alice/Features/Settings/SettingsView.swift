@@ -44,8 +44,10 @@ struct SettingsView: View {
                         Label("Hermes Configuration", systemImage: "slider.horizontal.3")
                     }
                 }
-                NavigationLink { CatalogScreen(source: .addons) } label: {
-                    Label("Add-ons", systemImage: "puzzlepiece.extension")
+                if store.dashboardReady {
+                    NavigationLink { MCPScreen() } label: {
+                        Label("MCP", systemImage: "shippingbox")
+                    }
                 }
             }
 

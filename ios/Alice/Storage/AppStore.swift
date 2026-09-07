@@ -1642,6 +1642,65 @@ final class AppStore {
         try await dashboard.deleteManagedFile(path: path, recursive: recursive)
     }
 
+    // MARK: - MCP administration
+
+    func mcpServers(profile: String = "default") async throws -> [MCPServerConfiguration] {
+        try await dashboard.mcpServers(profile: profile)
+    }
+
+    func mcpCatalog(profile: String = "default") async throws -> MCPCatalogSnapshot {
+        try await dashboard.mcpCatalog(profile: profile)
+    }
+
+    func addMCPServer(
+        name: String, profile: String = "default", url: String? = nil,
+        command: String? = nil, args: [String] = [], env: [String: String] = [:],
+        auth: String? = nil, bearerToken: String? = nil
+    ) async throws -> MCPServerConfiguration {
+        try await dashboard.addMCPServer(
+            name: name, profile: profile, url: url, command: command,
+            args: args, env: env, auth: auth, bearerToken: bearerToken
+        )
+    }
+
+    func setMCPServerEnabled(
+        _ name: String, enabled: Bool, profile: String = "default"
+    ) async throws {
+        try await dashboard.setMCPServerEnabled(name, enabled: enabled, profile: profile)
+    }
+
+    func deleteMCPServer(_ name: String, profile: String = "default") async throws {
+        try await dashboard.deleteMCPServer(name, profile: profile)
+    }
+
+    func testMCPServer(
+        _ name: String, profile: String = "default"
+    ) async throws -> MCPServerTestResult {
+        try await dashboard.testMCPServer(name, profile: profile)
+    }
+
+    func startMCPOAuth(
+        _ name: String, profile: String = "default"
+    ) async throws -> MCPOAuthFlow {
+        try await dashboard.startMCPOAuth(name, profile: profile)
+    }
+
+    func mcpOAuthStatus(
+        _ flowID: String, profile: String = "default"
+    ) async throws -> MCPOAuthFlow {
+        try await dashboard.mcpOAuthStatus(flowID, profile: profile)
+    }
+
+    func cancelMCPOAuth(_ flowID: String, profile: String = "default") async throws {
+        try await dashboard.cancelMCPOAuth(flowID, profile: profile)
+    }
+
+    func installMCPCatalogEntry(
+        _ name: String, env: [String: String], profile: String = "default", enable: Bool = true
+    ) async throws -> MCPCatalogInstallResult {
+        try await dashboard.installMCPCatalogEntry(name, env: env, profile: profile, enable: enable)
+    }
+
     // MARK: - System / health / operations
 
     func hermesHealth() async throws -> HermesHealthStatus {

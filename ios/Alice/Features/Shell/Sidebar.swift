@@ -19,7 +19,7 @@ struct Sidebar: View {
     /// conversations, where they are reached without scrolling; the rest are
     /// in Settings, which is where things you set once belong.
     private enum Destination: String, Identifiable {
-        case routines, projects, skills, tools, channels, system, files, library, settings, connect
+        case routines, projects, skills, tools, mcp, channels, system, files, library, settings, connect
         var id: String { rawValue }
     }
 
@@ -54,6 +54,7 @@ struct Sidebar: View {
                 case .projects: closable { ProjectsScreen() }
                 case .skills: closable { CatalogScreen(source: .skills) }
                 case .tools: closable { CatalogScreen(source: .toolsets) }
+                case .mcp: closable { MCPScreen() }
                 case .channels: closable { ChannelsScreen() }
                 case .system: closable { SystemScreen() }
                 case .files: closable { HermesFilesScreen() }
@@ -145,6 +146,7 @@ struct Sidebar: View {
             row("Projects", systemImage: "folder", weight: .medium) { going = .projects }
             row("Skills", systemImage: "sparkles", weight: .medium) { going = .skills }
             row("Tools", systemImage: "wrench.adjustable", weight: .medium) { going = .tools }
+            row("MCP", systemImage: "shippingbox", weight: .medium) { going = .mcp }
             row("Channels", systemImage: "bubble.left.and.bubble.right", weight: .medium) { going = .channels }
             row("System", systemImage: "server.rack", weight: .medium) { going = .system }
             row("Files", systemImage: "folder.badge.gearshape", weight: .medium) { going = .files }
