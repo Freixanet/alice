@@ -241,6 +241,41 @@ actor DashboardClient {
             throw Failure.unreachable
         }
     }
+
+    /// Authenticated raw transport for binary downloads and multipart uploads.
+    /// JSON routes continue through `get`/`send`; this exists only where the
+    /// dashboard response is intentionally not a JSON object.
+    private func raw(
+        _ method: String, _ path: String, body: Data? = nil, contentType: String? = nil
+    ) async throws -> (Data, HTTPURLResponse) {
+        guard credentials != nil else { throw Failure.notConfigured }
+        if !signedIn { try await signIn() }
+        do {
+            return try await fetchRaw(method, path, body: body, contentType: contentType)
+        } catch Failure.http(401, _) {
+            signedIn = false
+            try await signIn()
+            return try await fetchRaw(method, path, body: body, contentType: contentType)
+        }
+    }
+
+    private func fetchRaw(
+        _ method: String, _ path: String, body: Data?, contentType: String?
+    ) async throws -> (Data, HTTPURLResponse) {
+        guard let credentials, let url = Self.url(credentials.url, path) else {
+            throw Failure.notConfigured
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.httpBody = body
+        if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+        let (data, response) = try await send(request)
+        guard let http = response as? HTTPURLResponse else { throw Failure.unreachable }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Failure.http(http.statusCode, detail: Self.detail(from: data))
+        }
+        return (data, http)
+    }
 }
 
 /// The part of Hermes Bot Mode metadata Alice understands.
@@ -640,6 +675,99 @@ struct GatewayActionResult: Hashable, Sendable {
     var ok: Bool
     var pid: Int?
     var name: String
+}
+
+struct HermesHealthStatus: Hashable, Sendable {
+    var ok: Bool
+    var version: String
+    var authRequired: Bool
+}
+
+struct HermesSystemComponent: Identifiable, Hashable, Sendable {
+    var id: String { name }
+    var name: String
+    var status: String
+    var state: String?
+    var configured: Int?
+    var connected: Int?
+}
+
+struct HermesSystemStatus: Hashable, Sendable {
+    var version: String
+    var releaseDate: String
+    var overall: String
+    var gatewayRunning: Bool
+    var gatewayState: String
+    var gatewayExitReason: String?
+    var gatewayUpdatedAt: String?
+    var activeSessions: Int
+    var activeAgents: Int
+    var gatewayBusy: Bool
+    var gatewayDrainable: Bool
+    var authRequired: Bool
+    var canUpdateHermes: Bool
+    var profiles: [String]
+    var gatewayMode: String
+    var memoryPressure: String
+    var diskPressure: String
+    var diskUsedPercent: Double?
+    var components: [HermesSystemComponent]
+}
+
+struct HermesSystemStats: Hashable, Sendable {
+    struct Resource: Hashable, Sendable {
+        var total: Int64
+        var used: Int64
+        var free: Int64
+        var percent: Double
+    }
+    var os: String
+    var osRelease: String
+    var platform: String
+    var arch: String
+    var hostname: String
+    var pythonVersion: String
+    var pythonImplementation: String
+    var hermesVersion: String
+    var cpuCount: Int?
+    var cpuPercent: Double?
+    var loadAverage: [Double]
+    var uptimeSeconds: Int?
+    var memory: Resource?
+    var disk: Resource?
+    var psutil: Bool
+}
+
+struct HermesActionStart: Hashable, Sendable {
+    var ok: Bool
+    var pid: Int?
+    var name: String
+    var archive: String?
+}
+
+struct HermesActionStatus: Hashable, Sendable {
+    var name: String
+    var running: Bool
+    var exitCode: Int?
+    var pid: Int?
+    var lines: [String]
+}
+
+struct HermesCheckpointSession: Identifiable, Hashable, Sendable {
+    var id: String { session }
+    var session: String
+    var files: Int
+    var bytes: Int64
+}
+
+struct HermesCheckpoints: Hashable, Sendable {
+    var sessions: [HermesCheckpointSession]
+    var totalBytes: Int64
+}
+
+struct HermesLogSnapshot: Hashable, Sendable {
+    var file: String
+    var lines: [String]
 }
 
 struct BillingUsage: Hashable, Sendable {
@@ -1580,6 +1708,249 @@ extension DashboardClient {
             name: name, path: path, size: int(object["size"]) ?? data.count,
             mimeType: mimeType, data: data
         )
+    }
+
+    // MARK: System / health / operations
+
+    func health() async throws -> HermesHealthStatus {
+        let object = try await get("api/health")
+        guard let ok = object["ok"] as? Bool,
+              let version = object["version"] as? String else { throw Failure.unreadable }
+        return HermesHealthStatus(
+            ok: ok, version: version, authRequired: object["auth_required"] as? Bool ?? false
+        )
+    }
+
+    func systemStatus(profile: String = "default") async throws -> HermesSystemStatus {
+        let object = try await get("api/status?profile=\(Self.queryValue(profile))")
+        return try Self.systemStatus(from: object)
+    }
+
+    func systemStats() async throws -> HermesSystemStats {
+        try Self.systemStats(from: await get("api/system/stats"))
+    }
+
+    func gatewayAction(_ verb: String, profile: String = "default") async throws -> HermesActionStart {
+        guard ["start", "stop", "restart"].contains(verb) else { throw Failure.unreadable }
+        let object = try await send(
+            "POST", "api/gateway/\(verb)?profile=\(Self.queryValue(profile))"
+        )
+        return try Self.actionStart(from: object, fallbackName: "gateway-\(verb)")
+    }
+
+    func runDoctor() async throws -> HermesActionStart {
+        try Self.actionStart(from: await send("POST", "api/ops/doctor"), fallbackName: "doctor")
+    }
+
+    func runSecurityAudit() async throws -> HermesActionStart {
+        try Self.actionStart(
+            from: await send("POST", "api/ops/security-audit"), fallbackName: "security-audit"
+        )
+    }
+
+    func runPromptSize() async throws -> HermesActionStart {
+        try Self.actionStart(
+            from: await send("POST", "api/ops/prompt-size"), fallbackName: "prompt-size"
+        )
+    }
+
+    func runDump() async throws -> HermesActionStart {
+        try Self.actionStart(from: await send("POST", "api/ops/dump"), fallbackName: "dump")
+    }
+
+    func runBackup() async throws -> HermesActionStart {
+        try Self.actionStart(
+            from: await send("POST", "api/ops/backup", [:]), fallbackName: "backup"
+        )
+    }
+
+    func restoreBackup(path: String, force: Bool = true) async throws -> HermesActionStart {
+        try Self.actionStart(
+            from: await send("POST", "api/ops/import", ["archive": path, "force": force]),
+            fallbackName: "import"
+        )
+    }
+
+    func restoreBackup(
+        data: Data, filename: String, force: Bool = true
+    ) async throws -> HermesActionStart {
+        let boundary = "AliceHermesBackup-\(UUID().uuidString)"
+        var body = Data()
+        func append(_ string: String) { body.append(Data(string.utf8)) }
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"force\"\r\n\r\n")
+        append(force ? "true\r\n" : "false\r\n")
+        append("--\(boundary)\r\n")
+        let safeName = URL(fileURLWithPath: filename).lastPathComponent
+            .replacingOccurrences(of: "\"", with: "-")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(safeName)\"\r\n")
+        append("Content-Type: application/zip\r\n\r\n")
+        body.append(data)
+        append("\r\n--\(boundary)--\r\n")
+        let (responseData, _) = try await raw(
+            "POST", "api/ops/import-upload", body: body,
+            contentType: "multipart/form-data; boundary=\(boundary)"
+        )
+        guard let object = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] else {
+            throw Failure.unreadable
+        }
+        return try Self.actionStart(from: object, fallbackName: "import")
+    }
+
+    func downloadBackup(_ archive: String) async throws -> Data {
+        let (data, _) = try await raw(
+            "GET", "api/ops/backup/download?archive=\(Self.fileQueryValue(archive))"
+        )
+        return data
+    }
+
+    func actionStatus(_ name: String, lines: Int = 400) async throws -> HermesActionStatus {
+        let safeLines = max(1, min(lines, 2000))
+        let object = try await get(
+            "api/actions/\(Self.pathSegment(name))/status?lines=\(safeLines)"
+        )
+        return try Self.actionStatus(from: object)
+    }
+
+    func logs(
+        file: String = "agent", lines: Int = 200, search: String = ""
+    ) async throws -> HermesLogSnapshot {
+        let safeLines = max(1, min(lines, 500))
+        var route = "api/logs?file=\(Self.fileQueryValue(file))&lines=\(safeLines)"
+        if !search.isEmpty { route += "&search=\(Self.fileQueryValue(search))" }
+        return try Self.logSnapshot(from: await get(route))
+    }
+
+    func checkpoints() async throws -> HermesCheckpoints {
+        try Self.checkpoints(from: await get("api/ops/checkpoints"))
+    }
+
+    func pruneCheckpoints() async throws -> HermesActionStart {
+        try Self.actionStart(
+            from: await send("POST", "api/ops/checkpoints/prune"),
+            fallbackName: "checkpoints-prune"
+        )
+    }
+
+    static func systemStatus(from object: [String: Any]) throws -> HermesSystemStatus {
+        guard let version = object["version"] as? String,
+              let gatewayRunning = object["gateway_running"] as? Bool else {
+            throw Failure.unreadable
+        }
+        let rawComponents = object["components"] as? [String: Any] ?? [:]
+        var components: [HermesSystemComponent] = []
+        for name in rawComponents.keys.sorted() {
+            guard let row = rawComponents[name] as? [String: Any],
+                  let status = row["status"] as? String else { throw Failure.unreadable }
+            components.append(HermesSystemComponent(
+                name: name, status: status, state: row["state"] as? String,
+                configured: int(row["configured"]), connected: int(row["connected"])
+            ))
+        }
+        let memory = object["memory"] as? [String: Any]
+        let disk = object["disk"] as? [String: Any]
+        return HermesSystemStatus(
+            version: version,
+            releaseDate: object["release_date"] as? String ?? "",
+            overall: object["overall"] as? String ?? (gatewayRunning ? "ok" : "degraded"),
+            gatewayRunning: gatewayRunning,
+            gatewayState: object["gateway_state"] as? String ?? (gatewayRunning ? "running" : "stopped"),
+            gatewayExitReason: object["gateway_exit_reason"] as? String,
+            gatewayUpdatedAt: object["gateway_updated_at"] as? String,
+            activeSessions: int(object["active_sessions"]) ?? 0,
+            activeAgents: int(object["active_agents"]) ?? 0,
+            gatewayBusy: object["gateway_busy"] as? Bool ?? false,
+            gatewayDrainable: object["gateway_drainable"] as? Bool ?? false,
+            authRequired: object["auth_required"] as? Bool ?? false,
+            canUpdateHermes: object["can_update_hermes"] as? Bool ?? true,
+            profiles: object["profiles"] as? [String] ?? [],
+            gatewayMode: object["gateway_mode"] as? String ?? "",
+            memoryPressure: memory?["pressure"] as? String ?? "unknown",
+            diskPressure: disk?["pressure"] as? String ?? "unknown",
+            diskUsedPercent: double(disk?["used_percent"]),
+            components: components
+        )
+    }
+
+    static func systemStats(from object: [String: Any]) throws -> HermesSystemStats {
+        guard let os = object["os"] as? String,
+              let arch = object["arch"] as? String,
+              let hostname = object["hostname"] as? String,
+              let hermesVersion = object["hermes_version"] as? String else {
+            throw Failure.unreadable
+        }
+        func resource(_ raw: Any?) -> HermesSystemStats.Resource? {
+            guard let row = raw as? [String: Any] else { return nil }
+            func i64(_ key: String) -> Int64 {
+                if let value = row[key] as? Int { return Int64(value) }
+                if let value = row[key] as? NSNumber { return value.int64Value }
+                return 0
+            }
+            return .init(
+                total: i64("total"), used: i64("used"),
+                free: row["free"] != nil ? i64("free") : i64("available"),
+                percent: double(row["percent"]) ?? 0
+            )
+        }
+        return HermesSystemStats(
+            os: os, osRelease: object["os_release"] as? String ?? "",
+            platform: object["platform"] as? String ?? "", arch: arch, hostname: hostname,
+            pythonVersion: object["python_version"] as? String ?? "",
+            pythonImplementation: object["python_impl"] as? String ?? "",
+            hermesVersion: hermesVersion, cpuCount: int(object["cpu_count"]),
+            cpuPercent: double(object["cpu_percent"]),
+            loadAverage: (object["load_avg"] as? [NSNumber])?.map(\.doubleValue)
+                ?? (object["load_avg"] as? [Double]) ?? [],
+            uptimeSeconds: int(object["uptime_seconds"]),
+            memory: resource(object["memory"]), disk: resource(object["disk"]),
+            psutil: object["psutil"] as? Bool ?? false
+        )
+    }
+
+    static func actionStart(
+        from object: [String: Any], fallbackName: String
+    ) throws -> HermesActionStart {
+        guard let ok = object["ok"] as? Bool else { throw Failure.unreadable }
+        return HermesActionStart(
+            ok: ok, pid: int(object["pid"]), name: object["name"] as? String ?? fallbackName,
+            archive: object["archive"] as? String
+        )
+    }
+
+    static func actionStatus(from object: [String: Any]) throws -> HermesActionStatus {
+        guard let name = object["name"] as? String,
+              let running = object["running"] as? Bool,
+              let lines = object["lines"] as? [String] else { throw Failure.unreadable }
+        return HermesActionStatus(
+            name: name, running: running, exitCode: int(object["exit_code"]),
+            pid: int(object["pid"]), lines: lines
+        )
+    }
+
+    static func checkpoints(from object: [String: Any]) throws -> HermesCheckpoints {
+        guard let rows = object["sessions"] as? [[String: Any]] else { throw Failure.unreadable }
+        let sessions = rows.compactMap { row -> HermesCheckpointSession? in
+            guard let session = row["session"] as? String, !session.isEmpty else { return nil }
+            let bytes: Int64
+            if let value = row["bytes"] as? Int { bytes = Int64(value) }
+            else if let value = row["bytes"] as? NSNumber { bytes = value.int64Value }
+            else { bytes = 0 }
+            return HermesCheckpointSession(
+                session: session, files: int(row["files"]) ?? 0, bytes: bytes
+            )
+        }
+        if !rows.isEmpty && sessions.count != rows.count { throw Failure.unreadable }
+        let totalBytes: Int64
+        if let value = object["total_bytes"] as? Int { totalBytes = Int64(value) }
+        else if let value = object["total_bytes"] as? NSNumber { totalBytes = value.int64Value }
+        else { totalBytes = sessions.reduce(0) { $0 + $1.bytes } }
+        return HermesCheckpoints(sessions: sessions, totalBytes: totalBytes)
+    }
+
+    static func logSnapshot(from object: [String: Any]) throws -> HermesLogSnapshot {
+        guard let file = object["file"] as? String,
+              let lines = object["lines"] as? [String] else { throw Failure.unreadable }
+        return HermesLogSnapshot(file: file, lines: lines)
     }
 
     // MARK: Messaging channels

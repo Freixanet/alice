@@ -1642,6 +1642,55 @@ final class AppStore {
         try await dashboard.deleteManagedFile(path: path, recursive: recursive)
     }
 
+    // MARK: - System / health / operations
+
+    func hermesHealth() async throws -> HermesHealthStatus {
+        try await dashboard.health()
+    }
+
+    func hermesSystemStatus(profile: String = "default") async throws -> HermesSystemStatus {
+        try await dashboard.systemStatus(profile: profile)
+    }
+
+    func hermesSystemStats() async throws -> HermesSystemStats {
+        try await dashboard.systemStats()
+    }
+
+    func hermesGatewayAction(
+        _ verb: String, profile: String = "default"
+    ) async throws -> HermesActionStart {
+        try await dashboard.gatewayAction(verb, profile: profile)
+    }
+
+    func runHermesDoctor() async throws -> HermesActionStart { try await dashboard.runDoctor() }
+    func runHermesSecurityAudit() async throws -> HermesActionStart { try await dashboard.runSecurityAudit() }
+    func runHermesPromptSize() async throws -> HermesActionStart { try await dashboard.runPromptSize() }
+    func runHermesDump() async throws -> HermesActionStart { try await dashboard.runDump() }
+    func runHermesBackup() async throws -> HermesActionStart { try await dashboard.runBackup() }
+
+    func restoreHermesBackup(path: String) async throws -> HermesActionStart {
+        try await dashboard.restoreBackup(path: path)
+    }
+
+    func restoreHermesBackup(data: Data, filename: String) async throws -> HermesActionStart {
+        try await dashboard.restoreBackup(data: data, filename: filename)
+    }
+
+    func downloadHermesBackup(_ archive: String) async throws -> Data {
+        try await dashboard.downloadBackup(archive)
+    }
+
+    func hermesActionStatus(_ name: String, lines: Int = 400) async throws -> HermesActionStatus {
+        try await dashboard.actionStatus(name, lines: lines)
+    }
+
+    func hermesLogs(file: String, lines: Int = 200, search: String = "") async throws -> HermesLogSnapshot {
+        try await dashboard.logs(file: file, lines: lines, search: search)
+    }
+
+    func hermesCheckpoints() async throws -> HermesCheckpoints { try await dashboard.checkpoints() }
+    func pruneHermesCheckpoints() async throws -> HermesActionStart { try await dashboard.pruneCheckpoints() }
+
     // MARK: - Messaging channels
 
     func messagingPlatforms(profile: String = "default") async throws -> MessagingPlatformsSnapshot {
