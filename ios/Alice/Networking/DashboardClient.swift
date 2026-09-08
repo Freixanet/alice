@@ -244,8 +244,9 @@ actor DashboardClient {
 
     /// Authenticated raw transport for binary downloads and multipart uploads.
     /// JSON routes continue through `get`/`send`; this exists only where the
-    /// dashboard response is intentionally not a JSON object.
-    private func raw(
+    /// dashboard response is intentionally not a JSON object. Internal so
+    /// feature-specific extensions can reuse the exact dashboard auth/session.
+    func raw(
         _ method: String, _ path: String, body: Data? = nil, contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         guard credentials != nil else { throw Failure.notConfigured }
@@ -257,6 +258,83 @@ actor DashboardClient {
             try await signIn()
             return try await fetchRaw(method, path, body: body, contentType: contentType)
         }
+    }
+
+    /// Authenticated upload from a file-backed request body. This keeps large
+    /// multipart transfers off the heap and reuses the same session cookies as
+    /// every other dashboard request.
+    func rawUpload(
+        _ method: String, _ path: String, bodyFile: URL, contentType: String
+    ) async throws -> (Data, HTTPURLResponse) {
+        guard credentials != nil else { throw Failure.notConfigured }
+        if !signedIn { try await signIn() }
+        do {
+            return try await fetchRawUpload(method, path, bodyFile: bodyFile, contentType: contentType)
+        } catch Failure.http(401, _) {
+            signedIn = false
+            try await signIn()
+            return try await fetchRawUpload(method, path, bodyFile: bodyFile, contentType: contentType)
+        }
+    }
+
+    private func fetchRawUpload(
+        _ method: String, _ path: String, bodyFile: URL, contentType: String
+    ) async throws -> (Data, HTTPURLResponse) {
+        guard let credentials, let url = Self.url(credentials.url, path) else {
+            throw Failure.notConfigured
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.upload(for: request, fromFile: bodyFile)
+        } catch {
+            throw Failure.unreachable
+        }
+        guard let http = response as? HTTPURLResponse else { throw Failure.unreachable }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Failure.http(http.statusCode, detail: Self.detail(from: data))
+        }
+        return (data, http)
+    }
+
+    /// Authenticated file download. URLSession writes the response to disk so
+    /// downloading a large remote file does not first allocate its full size
+    /// in Alice's process.
+    func rawDownload(_ path: String) async throws -> (URL, HTTPURLResponse) {
+        guard credentials != nil else { throw Failure.notConfigured }
+        if !signedIn { try await signIn() }
+        do {
+            return try await fetchRawDownload(path)
+        } catch Failure.http(401, _) {
+            signedIn = false
+            try await signIn()
+            return try await fetchRawDownload(path)
+        }
+    }
+
+    private func fetchRawDownload(_ path: String) async throws -> (URL, HTTPURLResponse) {
+        guard let credentials, let url = Self.url(credentials.url, path) else {
+            throw Failure.notConfigured
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        let temporaryURL: URL
+        let response: URLResponse
+        do {
+            (temporaryURL, response) = try await session.download(for: request)
+        } catch {
+            throw Failure.unreachable
+        }
+        guard let http = response as? HTTPURLResponse else { throw Failure.unreachable }
+        guard (200..<300).contains(http.statusCode) else {
+            let data = (try? Data(contentsOf: temporaryURL)) ?? Data()
+            try? FileManager.default.removeItem(at: temporaryURL)
+            throw Failure.http(http.statusCode, detail: Self.detail(from: data))
+        }
+        return (temporaryURL, http)
     }
 
     private func fetchRaw(

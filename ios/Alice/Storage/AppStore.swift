@@ -1680,8 +1680,51 @@ final class AppStore {
         _ = try await dashboard.uploadManagedFile(path: path, data: data, mimeType: mimeType)
     }
 
+    func uploadHermesFileStream(
+        path: String, fileURL: URL, mimeType: String = "application/octet-stream",
+        overwrite: Bool = true
+    ) async throws {
+        _ = try await dashboard.uploadManagedFileStream(
+            path: path, fileURL: fileURL, mimeType: mimeType, overwrite: overwrite
+        )
+    }
+
+    func downloadHermesFile(path: String) async throws -> HermesDownloadedFile {
+        try await dashboard.downloadManagedFile(path: path)
+    }
+
     func deleteHermesFile(path: String, recursive: Bool = false) async throws {
         try await dashboard.deleteManagedFile(path: path, recursive: recursive)
+    }
+
+    // MARK: - Hermes remote filesystem
+
+    func hermesFilesystemDirectory(path: String) async throws -> HermesFSDirectoryListing {
+        try await dashboard.filesystemDirectory(path: path)
+    }
+
+    func hermesFilesystemText(path: String) async throws -> HermesFSTextSnapshot {
+        try await dashboard.filesystemText(path: path)
+    }
+
+    func writeHermesFilesystemText(path: String, content: String) async throws -> HermesFSWriteResult {
+        try await dashboard.writeFilesystemText(path: path, content: content)
+    }
+
+    func hermesFilesystemData(path: String) async throws -> HermesFSBinaryPreview {
+        try await dashboard.filesystemData(path: path)
+    }
+
+    func downloadHermesFilesystemFile(path: String) async throws -> HermesDownloadedFile {
+        try await dashboard.downloadFilesystemFile(path: path)
+    }
+
+    func hermesFilesystemGitRoot(path: String) async throws -> String? {
+        try await dashboard.filesystemGitRoot(path: path)
+    }
+
+    func hermesFilesystemDefaultLocation() async throws -> HermesFSDefaultLocation {
+        try await dashboard.filesystemDefaultLocation()
     }
 
     // MARK: - MCP administration

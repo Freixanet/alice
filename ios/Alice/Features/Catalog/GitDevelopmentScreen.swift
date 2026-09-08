@@ -47,6 +47,12 @@ struct GitDevelopmentScreen: View {
     @Environment(\.colorScheme) private var scheme
     @AppStorage("alice.git.repoPath") private var savedRepoPath = ""
 
+    private let initialRepoPath: String?
+
+    init(initialRepoPath: String? = nil) {
+        self.initialRepoPath = initialRepoPath
+    }
+
     @State private var repoPath = ""
     @State private var pathDraft = ""
     @State private var candidates: [GitRepoCandidate] = []
@@ -112,7 +118,10 @@ struct GitDevelopmentScreen: View {
         .task {
             await loadCandidates()
             if repoPath.isEmpty {
-                repoPath = savedRepoPath.isEmpty ? (candidates.first?.path ?? "") : savedRepoPath
+                let requested = initialRepoPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                repoPath = !requested.isEmpty
+                    ? requested
+                    : (savedRepoPath.isEmpty ? (candidates.first?.path ?? "") : savedRepoPath)
                 pathDraft = repoPath
             }
             if !repoPath.isEmpty { await refreshAll() }
