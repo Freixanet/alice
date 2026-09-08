@@ -1727,6 +1727,59 @@ final class AppStore {
         try await dashboard.filesystemDefaultLocation()
     }
 
+    // MARK: - Hermes parity extras
+
+    func terminalBackends(profile: String = "default") async throws -> HermesTerminalBackends { try await dashboard.terminalBackends(profile: profile) }
+    func setTerminalBackend(_ backend: String, profile: String = "default") async throws { try await dashboard.setTerminalBackend(backend, profile: profile) }
+    func learningGraph(profile: String = "default") async throws -> HermesLearningGraph { try await dashboard.learningGraph(profile: profile) }
+    func learningNode(_ id: String, profile: String = "default") async throws -> HermesLearningNodeDetail { try await dashboard.learningNode(id, profile: profile) }
+    func saveLearningNode(_ id: String, content: String, profile: String = "default") async throws { try await dashboard.saveLearningNode(id, content: content, profile: profile) }
+    func deleteLearningNode(_ id: String, profile: String = "default") async throws { try await dashboard.deleteLearningNode(id, profile: profile) }
+
+    func pairing(profile: String = "default") async throws -> PairingSnapshot { try await dashboard.pairing(profile: profile) }
+    func approvePairing(platform: String, requestID: String? = nil, code: String? = nil, profile: String = "default") async throws { try await dashboard.approvePairing(platform: platform, requestID: requestID, code: code, profile: profile) }
+    func revokePairing(platform: String, userID: String, profile: String = "default") async throws { try await dashboard.revokePairing(platform: platform, userID: userID, profile: profile) }
+    func clearPendingPairing(profile: String = "default") async throws -> Int { try await dashboard.clearPendingPairing(profile: profile) }
+
+    func pluginHub() async throws -> HermesPluginHub { try await dashboard.pluginHub() }
+    func rescanPlugins() async throws -> Int { try await dashboard.rescanPlugins() }
+    func installAgentPlugin(identifier: String, force: Bool = false, enable: Bool = true) async throws -> [String] { try await dashboard.installAgentPlugin(identifier: identifier, force: force, enable: enable) }
+    func setAgentPlugin(_ name: String, enabled: Bool) async throws { try await dashboard.setAgentPlugin(name, enabled: enabled) }
+    func updateAgentPlugin(_ name: String) async throws -> String? { try await dashboard.updateAgentPlugin(name) }
+    func removeAgentPlugin(_ name: String) async throws { try await dashboard.removeAgentPlugin(name) }
+    func setPluginHidden(_ name: String, hidden: Bool) async throws { try await dashboard.setPluginHidden(name, hidden: hidden) }
+    func setContextEngine(_ name: String) async throws { try await dashboard.setContextEngine(name) }
+
+    func credentialPool() async throws -> [CredentialPoolProvider] { try await dashboard.credentialPool() }
+    func addCredentialPool(provider: String, apiKey: String, label: String?) async throws { try await dashboard.addCredentialPool(provider: provider, apiKey: apiKey, label: label) }
+    func removeCredentialPool(provider: String, index: Int) async throws { try await dashboard.removeCredentialPool(provider: provider, index: index) }
+    func hooks() async throws -> HermesHooksSnapshot { try await dashboard.hooks() }
+    func createHook(event: String, command: String, matcher: String?, timeout: Int?, approve: Bool) async throws { try await dashboard.createHook(event: event, command: command, matcher: matcher, timeout: timeout, approve: approve) }
+    func deleteHook(event: String, command: String) async throws { try await dashboard.deleteHook(event: event, command: command) }
+
+    func curatorStatus() async throws -> HermesCuratorStatus { try await dashboard.curatorStatus() }
+    func setCuratorPaused(_ paused: Bool) async throws { try await dashboard.setCuratorPaused(paused) }
+    func runCurator() async throws -> HermesActionStart { try await dashboard.runCurator() }
+    func portalStatus() async throws -> HermesPortalStatus { try await dashboard.portalStatus() }
+    func computerUseStatus(profile: String = "default") async throws -> HermesComputerUseStatus { try await dashboard.computerUseStatus(profile: profile) }
+    func grantComputerUsePermissions(profile: String = "default") async throws -> HermesActionStart { try await dashboard.grantComputerUsePermissions(profile: profile) }
+
+    func cronBlueprints() async throws -> [CronBlueprint] { try await dashboard.cronBlueprints() }
+    func instantiateCronBlueprint(_ key: String, values: [String: String], profile: String = "default") async throws { try await dashboard.instantiateCronBlueprint(key, values: values, profile: profile) }
+
+    func savedCustomEndpoints(profile: String = "default") async throws -> SavedCustomEndpointsSnapshot { try await dashboard.savedCustomEndpoints(profile: profile) }
+    func saveCustomEndpoint(id: String, name: String, baseURL: String, model: String, apiKey: String?, contextLength: Int?, discoverModels: Bool, makeDefault: Bool, profile: String = "default") async throws -> SavedCustomEndpointsSnapshot { try await dashboard.saveCustomEndpoint(id: id, name: name, baseURL: baseURL, model: model, apiKey: apiKey, contextLength: contextLength, discoverModels: discoverModels, makeDefault: makeDefault, profile: profile) }
+    func validateCustomEndpoint(name: String, baseURL: String, model: String, apiKey: String?, contextLength: Int?, discoverModels: Bool) async throws -> CustomEndpointValidation { try await dashboard.validateCustomEndpoint(name: name, baseURL: baseURL, model: model, apiKey: apiKey, contextLength: contextLength, discoverModels: discoverModels) }
+    func activateCustomEndpoint(_ id: String, profile: String = "default") async throws { try await dashboard.activateCustomEndpoint(id, profile: profile) }
+    func deleteCustomEndpoint(_ id: String, profile: String = "default") async throws { try await dashboard.deleteCustomEndpoint(id, profile: profile) }
+
+    func importProfileArchive(path: String, name: String? = nil) async throws -> String { try await dashboard.importProfileArchive(path: path, name: name) }
+    func profileSetupCommand(_ name: String) async throws -> String { try await dashboard.profileSetupCommand(name) }
+    func describeProfileAutomatically(_ name: String, overwrite: Bool = true) async throws -> ProfileAutoDescription { try await dashboard.describeProfileAutomatically(name, overwrite: overwrite) }
+    func runConfigMigration() async throws -> HermesActionStart { try await dashboard.runConfigMigration() }
+    func debugShare(lines: Int = 500, redact: Bool = true) async throws -> HermesDebugShare { try await dashboard.debugShare(lines: lines, redact: redact) }
+    func resetBuiltinMemory(target: String) async throws -> [String] { try await dashboard.resetBuiltinMemory(target: target) }
+
     // MARK: - MCP administration
 
     func mcpServers(profile: String = "default") async throws -> [MCPServerConfiguration] {

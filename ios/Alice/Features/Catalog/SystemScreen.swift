@@ -45,6 +45,15 @@ struct SystemScreen: View {
             overviewSection
             gatewaySection
             hostSection
+            Section("Administration") {
+                NavigationLink { SystemExtrasScreen() } label: {
+                    Label("Advanced operations", systemImage: "gearshape.2")
+                }
+                .listRowBackground(Palette.card(scheme))
+                Text("Credential pools, shell hooks, Curator, Nous Portal, Computer Use permissions and additional diagnostics.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .listRowBackground(Palette.card(scheme))
+            }
             if activeAction != nil || actionStatus != nil || actionFailure != nil {
                 actionSection
             }

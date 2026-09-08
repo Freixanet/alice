@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The agent's other selves.
 ///
@@ -31,6 +32,8 @@ struct BotsScreen: View {
     @State private var loading = false
     @State private var creatingBot = false
     @State private var creatingChannel = false
+    @State private var importingBot = false
+    @State private var importBusy = false
     @State private var editingBot: BotRow?
     @State private var deletingBot: BotRow?
     enum SearchFilter: String, CaseIterable, Identifiable {
@@ -91,6 +94,10 @@ struct BotsScreen: View {
         }
         .sheet(isPresented: $creatingChannel) {
             NewChannelSheet(bots: rows)
+        }
+        .fileImporter(isPresented: $importingBot, allowedContentTypes: [.archive, .data], allowsMultipleSelection: false) { result in
+            guard case let .success(urls) = result, let url = urls.first else { return }
+            Task { await importBotArchive(url) }
         }
         .sheet(item: $editingBot) { bot in
             // No Done here: the page has one of its own, and unlike this it
@@ -193,6 +200,31 @@ struct BotsScreen: View {
             seeded = true
         }
         .refreshable { await load() }
+    }
+
+    private func importBotArchive(_ url: URL) async {
+        importBusy = true
+        defer { importBusy = false }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        var stagedPath: String?
+        do {
+            let listing = try await store.hermesFiles()
+            let safeBase = URL(fileURLWithPath: url.lastPathComponent).lastPathComponent
+                .replacingOccurrences(of: "/", with: "_")
+            let stagedName = "alice-profile-import-\(UUID().uuidString)-\(safeBase)"
+            let remote = RemoteFilePath.join(listing.path, stagedName)
+            stagedPath = remote
+            try await store.uploadHermesFileStream(path: remote, fileURL: url)
+            _ = try await store.importProfileArchive(path: remote)
+            try? await store.deleteHermesFile(path: remote)
+            stagedPath = nil
+            await load()
+            failure = nil
+        } catch {
+            if let stagedPath { try? await store.deleteHermesFile(path: stagedPath) }
+            failure = describeBotError(error)
+        }
     }
 
     // MARK: - Sections & List
@@ -341,6 +373,12 @@ struct BotsScreen: View {
                         } label: {
                             Label("New Channel", systemImage: "bubble.left.and.bubble.right")
                         }
+                        Button {
+                            importingBot = true
+                        } label: {
+                            Label("Import Bot Template", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(importBusy)
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 20, weight: .medium))
@@ -1411,6 +1449,9 @@ struct BotDetail: View {
     @State private var busy = false
     @State private var failure: String?
     @State private var exported: String?
+    @State private var exportedURL: URL?
+    @State private var setupCommand: String?
+    @State private var autoDescribing = false
 
     var body: some View {
         Form {
@@ -1458,6 +1499,28 @@ struct BotDetail: View {
                 }
                 .buttonStyle(.plain)
                 .listRowBackground(Palette.card(scheme))
+            }
+            Section("Profile tools") {
+                Button {
+                    autoDescribe()
+                } label: {
+                    Label(autoDescribing ? "Generating description…" : "Generate description automatically", systemImage: "wand.and.stars")
+                }
+                .disabled(autoDescribing || busy)
+                .listRowBackground(Palette.card(scheme))
+
+                if let setupCommand {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("CLI setup command").font(.caption).foregroundStyle(.secondary)
+                            Text(setupCommand).font(.caption.monospaced()).textSelection(.enabled)
+                        }
+                        Spacer()
+                        Button { UIPasteboard.general.string = setupCommand } label: { Image(systemName: "doc.on.doc") }
+                            .accessibilityLabel("Copy setup command")
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                }
             }
 
             let recovered = store.recoveredHistory(for: bot.name)
@@ -1593,16 +1656,21 @@ struct BotDetail: View {
             }
 
             Section {
-                Button("Share as template", systemImage: "square.and.arrow.up") {
-                    act { exported = try await store.exportBot(bot.name) }
+                Button("Export template", systemImage: "square.and.arrow.up") {
+                    exportTemplate()
                 }
                 .listRowBackground(Palette.card(scheme))
 
+                if let exportedURL {
+                    ShareLink("Share exported template", item: exportedURL)
+                }
             } footer: {
                 if let failure {
                     Text(failure).foregroundStyle(.red)
+                } else if exportedURL != nil {
+                    Text("The template was downloaded from Hermes and is ready to share from this iPhone.").foregroundStyle(.secondary)
                 } else if let exported {
-                    Text("Written to \(exported)").foregroundStyle(.secondary)
+                    Text("Hermes wrote the archive to \(exported)").foregroundStyle(.secondary)
                 }
             }
         }
@@ -1624,8 +1692,8 @@ struct BotDetail: View {
                     ProgressView()
                 } else {
                     Menu {
-                        Button("Share as template", systemImage: "square.and.arrow.up") {
-                            act { exported = try await store.exportBot(bot.name) }
+                        Button("Export template", systemImage: "square.and.arrow.up") {
+                            exportTemplate()
                         }
                         Button("Copy name", systemImage: "doc.on.doc") {
                             UIPasteboard.general.string = bot.name
@@ -1706,10 +1774,50 @@ struct BotDetail: View {
             selectedModel = store.botModelOption(for: bot)
             selectedSection = store.section(for: bot.name) ?? ""
             notifications = store.botNotificationsEnabled(for: bot.name)
+            setupCommand = try? await store.profileSetupCommand(bot.name)
             routines = await .resolving(
                 { try await store.routines(for: bot.name) },
                 describe: describeBotError
             )
+        }
+    }
+
+    private func autoDescribe() {
+        guard !autoDescribing else { return }
+        autoDescribing = true
+        Task {
+            defer { autoDescribing = false }
+            do {
+                let result = try await store.describeProfileAutomatically(bot.name, overwrite: true)
+                if result.ok {
+                    detail = result.description
+                    failure = nil
+                    onChange()
+                } else {
+                    failure = result.reason ?? "Hermes could not generate a profile description."
+                }
+            } catch { failure = describeBotError(error) }
+        }
+    }
+
+    private func exportTemplate() {
+        guard !busy else { return }
+        busy = true
+        exportedURL = nil
+        Task {
+            defer { busy = false }
+            do {
+                guard let remote = try await store.exportBot(bot.name), !remote.isEmpty else {
+                    throw DashboardClient.Failure.unreadable
+                }
+                exported = remote
+                let downloaded = try await store.downloadHermesFilesystemFile(path: remote)
+                exportedURL = downloaded.url
+                // Profile exports are staging archives. Keeping the iPhone copy is enough;
+                // clean the server-side staging artifact when its path is managed/readable.
+                try? await store.deleteHermesFile(path: remote)
+                failure = nil
+            } catch { failure = describeBotError(error) }
         }
     }
 

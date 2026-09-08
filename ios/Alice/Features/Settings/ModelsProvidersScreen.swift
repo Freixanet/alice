@@ -94,6 +94,11 @@ struct ModelsProvidersScreen: View {
                 } label: {
                     Label("Local models on this Hermes host", systemImage: "desktopcomputer")
                 }
+                NavigationLink {
+                    SavedEndpointsScreen(profile: selectedProfile)
+                } label: {
+                    Label("Saved custom endpoints", systemImage: "network.badge.shield.half.filled")
+                }
             }
 
             Section {

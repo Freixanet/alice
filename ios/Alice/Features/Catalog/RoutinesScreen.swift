@@ -55,6 +55,14 @@ struct RoutinesScreen: View {
             }
 
             if !partial && failure == nil {
+                Section("Templates") {
+                    NavigationLink { CronBlueprintsScreen() } label: {
+                        Label("Routine blueprints", systemImage: "square.grid.2x2")
+                    }
+                    Text("Hermes blueprints are server-defined templates with validated fields and live delivery targets.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section {
                     Text("You can also schedule in chat: mention a bot, then ask naturally — for example, \(chatExample). The request runs as that bot, so Hermes creates the routine in the correct profile.")
                         .font(.footnote)

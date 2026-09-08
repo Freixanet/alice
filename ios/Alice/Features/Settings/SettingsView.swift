@@ -54,6 +54,12 @@ struct SettingsView: View {
                     NavigationLink { WebhooksScreen() } label: {
                         Label("Webhooks", systemImage: "link")
                     }
+                    NavigationLink { PairingAdminScreen() } label: {
+                        Label("Pairing", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    NavigationLink { PluginsAdminScreen() } label: {
+                        Label("Plugins", systemImage: "puzzlepiece.extension")
+                    }
                 }
             }
 

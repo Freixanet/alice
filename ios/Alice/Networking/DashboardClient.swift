@@ -1539,8 +1539,9 @@ extension DashboardClient {
 
     /// Writes the bot out as a shareable template and reports where it landed.
     func exportBot(_ name: String) async throws -> String? {
-        let object = try await send("POST", "api/profiles/\(name)/export")
-        return (object["path"] as? String) ?? (object["file"] as? String)
+        let object = try await send("POST", "api/profiles/\(Self.pathSegment(name))/export", [:])
+        guard object["ok"] as? Bool == true else { throw Failure.unreadable }
+        return (object["archive"] as? String) ?? (object["path"] as? String) ?? (object["file"] as? String)
     }
 
     func rename(_ name: String, to newName: String) async throws {
