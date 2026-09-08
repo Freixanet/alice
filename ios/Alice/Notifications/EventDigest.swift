@@ -52,6 +52,42 @@ enum EventDigest {
         return Result(events: events.sorted { $0.occurred > $1.occurred }, watermarks: marks)
     }
 
+    /// What is wrong *right now*, as opposed to what changed.
+    ///
+    /// Activity is a record of things that happened; this is current state
+    /// that can still be acted on, which is what a status line should count.
+    /// Both are derived from the same reading, so they cannot disagree.
+    static func attention(
+        routines: [JobRow], components: [HermesSystemComponent], now: Date = Date()
+    ) -> [AliceEvent] {
+        var items: [AliceEvent] = []
+
+        for component in components where !Self.healthy(component.status) {
+            let label = Self.label(for: component.name)
+            items.append(AliceEvent(
+                id: "attention:component:\(component.name)",
+                kind: .attention, severity: .needsAttention,
+                title: label, summary: "\(label) needs attention.",
+                detail: [component.status, component.state]
+                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
+                occurred: now
+            ))
+        }
+
+        for row in routines where Self.failed(row) == true {
+            items.append(AliceEvent(
+                id: "attention:routine:\(Self.key(for: row))",
+                kind: .automationFailed, severity: .failure, profile: row.profile,
+                title: row.name.isEmpty ? "An automation" : row.name,
+                summary: "This automation did not finish.",
+                detail: Self.failureDetail(row),
+                occurred: row.lastRun ?? now
+            ))
+        }
+
+        return items.sorted { $0.severity > $1.severity }
+    }
+
     /// A routine's identity is the pair, not the id: ids are `uuid4().hex[:12]`
     /// minted per profile store with no cross-profile uniqueness.
     static func key(for row: JobRow) -> String {
@@ -88,7 +124,7 @@ enum EventDigest {
         return nil
     }
 
-    private static func failureDetail(_ row: JobRow) -> String? {
+    static func failureDetail(_ row: JobRow) -> String? {
         for candidate in [row.lastError, row.lastDeliveryError, row.lastFireError, row.lastStatus] {
             if let candidate, !candidate.isEmpty { return candidate }
         }

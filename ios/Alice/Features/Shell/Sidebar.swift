@@ -19,7 +19,7 @@ struct Sidebar: View {
     /// conversations, where they are reached without scrolling; the rest are
     /// in Settings, which is where things you set once belong.
     private enum Destination: String, Identifiable {
-        case routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
+        case activity, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
         var id: String { rawValue }
     }
 
@@ -50,6 +50,7 @@ struct Sidebar: View {
         ) { destination in
             Group {
                 switch destination {
+                case .activity: closable { ActivityScreen() }
                 case .routines: closable { RoutinesScreen() }
                 case .projects: closable { ProjectsScreen() }
                 case .git: closable { GitDevelopmentScreen() }
@@ -73,7 +74,10 @@ struct Sidebar: View {
             .preferredColorScheme(store.theme.colorScheme)
         }
         .fullScreenCover(isPresented: $showSearch) {
-            SearchScreen(onOpen: onDismiss)
+            SearchScreen(
+                onOpen: onDismiss,
+                onOpenDestination: { open($0) }
+            )
         }
         .alert(
             "Couldn’t move chat",
@@ -131,8 +135,16 @@ struct Sidebar: View {
         }
     }
 
-    /// The handful worth reaching in one tap. Bots and Projects come from the
-    /// dashboard, so they appear only once there is one to ask.
+    /// Twelve destinations used to sit here as equal peers, in no stated
+    /// order, mixing what you do with the agent against what you set up
+    /// underneath it. Nothing has been taken away — they are grouped, so the
+    /// list reads as two short ones rather than one long one, and so a person
+    /// looking for their work never has to rule out nine pieces of plumbing
+    /// first.
+    ///
+    /// The plumbing keeps Hermes' own names alongside the human ones. A person
+    /// who does not know what MCP is is not helped by hiding it, and a person
+    /// who does needs to find it.
     private var destinations: some View {
         VStack(spacing: 2) {
             // Always listed, connected or not. A row that disappears when the
@@ -144,17 +156,24 @@ struct Sidebar: View {
                 store.botsFromLeading = false
                 store.showingBots = true
             }
+            row(
+                "Activity", systemImage: "bell", weight: .medium,
+                badge: store.unreadActivity
+            ) { going = .activity }
             row("Routines", systemImage: "clock", weight: .medium) { going = .routines }
             row("Projects", systemImage: "folder", weight: .medium) { going = .projects }
-            row("Git", systemImage: "arrow.triangle.branch", weight: .medium) { going = .git }
-            row("Skills", systemImage: "sparkles", weight: .medium) { going = .skills }
-            row("Tools", systemImage: "wrench.adjustable", weight: .medium) { going = .tools }
-            row("MCP", systemImage: "shippingbox", weight: .medium) { going = .mcp }
-            row("Webhooks", systemImage: "link", weight: .medium) { going = .webhooks }
-            row("Channels", systemImage: "bubble.left.and.bubble.right", weight: .medium) { going = .channels }
-            row("System", systemImage: "server.rack", weight: .medium) { going = .system }
             row("Files", systemImage: "folder.badge.gearshape", weight: .medium) { going = .files }
             row("Library", systemImage: "photo.on.rectangle", weight: .medium) { going = .library }
+
+            groupLabel("Set up")
+
+            row("Channels", systemImage: "bubble.left.and.bubble.right", weight: .medium) { going = .channels }
+            row("Integrations (MCP)", systemImage: "shippingbox", weight: .medium) { going = .mcp }
+            row("Skills", systemImage: "sparkles", weight: .medium) { going = .skills }
+            row("Tools", systemImage: "wrench.adjustable", weight: .medium) { going = .tools }
+            row("Webhooks", systemImage: "link", weight: .medium) { going = .webhooks }
+            row("Git", systemImage: "arrow.triangle.branch", weight: .medium) { going = .git }
+            row("System", systemImage: "server.rack", weight: .medium) { going = .system }
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 22)
@@ -409,7 +428,7 @@ struct Sidebar: View {
                 Button {
                     going = .connect
                 } label: {
-                    Label(store.isConnected ? "Hermes Connected" : "Connect Hermes", systemImage: "antenna.radiowaves.left.and.right")
+                    Label(store.wellbeingSummary, systemImage: "antenna.radiowaves.left.and.right")
                 }
             }
 
@@ -455,9 +474,55 @@ struct Sidebar: View {
 
     /// `Label` gives each symbol only the width its own glyph needs, so a
     /// clock and a wrench push their words to different places. The icon gets
+    /// Sends the drawer to one of its own destinations. Bots is a page rather
+    /// than a sheet, and Memory and the rest live inside Settings, so a couple
+    /// of these land on the nearest screen that contains the thing rather than
+    /// on a sheet of their own.
+    private func open(_ target: AliceDestination.Target) {
+        switch target {
+        case .bots:
+            onDismiss()
+            store.botsFromLeading = false
+            store.showingBots = true
+        case .activity: going = .activity
+        case .routines: going = .routines
+        case .projects: going = .projects
+        case .files: going = .files
+        case .library: going = .library
+        case .channels: going = .channels
+        case .mcp: going = .mcp
+        case .skills: going = .skills
+        case .tools: going = .tools
+        case .webhooks: going = .webhooks
+        case .git: going = .git
+        case .system: going = .system
+        case .connect: going = .connect
+        // Reached inside Settings. Landing there is one tap short of the
+        // destination and still far better than not finding it at all.
+        case .settings, .memory, .models, .usage, .sessions, .insights,
+             .configuration, .pairing, .plugins:
+            going = .settings
+        }
+    }
+
+    /// Names the second half without shouting: the rows below it are reached
+    /// far less often than the ones above, and the label is what says so.
+    private func groupLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.top, 14)
+            .padding(.bottom, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     /// a column of its own instead, and every word starts on one line.
     private func row(
-        _ title: String, systemImage: String, weight: Font.Weight = .regular, action: @escaping () -> Void
+        _ title: String, systemImage: String, weight: Font.Weight = .regular,
+        badge: Int = 0, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
@@ -466,6 +531,15 @@ struct Sidebar: View {
                     .frame(width: 22, alignment: .center)
                 Text(title)
                 Spacer(minLength: 0)
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Palette.card(scheme), in: .capsule)
+                        .accessibilityLabel("\(badge) unread")
+                }
             }
             .font(.subheadline.weight(weight))
             .padding(.horizontal, 12)

@@ -34,9 +34,6 @@ struct SettingsView: View {
                     NavigationLink { ModelsProvidersScreen() } label: {
                         Label("Models & Providers", systemImage: "cpu")
                     }
-                    NavigationLink { GitDevelopmentScreen() } label: {
-                        Label("Git & Remote Development", systemImage: "arrow.triangle.branch")
-                    }
                     NavigationLink { UsageScreen() } label: {
                         Label("Usage", systemImage: "chart.bar")
                     }
@@ -45,14 +42,6 @@ struct SettingsView: View {
                     }
                     NavigationLink { ConfigurationScreen() } label: {
                         Label("Hermes Configuration", systemImage: "slider.horizontal.3")
-                    }
-                }
-                if store.dashboardReady {
-                    NavigationLink { MCPScreen() } label: {
-                        Label("MCP", systemImage: "shippingbox")
-                    }
-                    NavigationLink { WebhooksScreen() } label: {
-                        Label("Webhooks", systemImage: "link")
                     }
                     NavigationLink { PairingAdminScreen() } label: {
                         Label("Pairing", systemImage: "person.crop.circle.badge.checkmark")

@@ -126,6 +126,8 @@ final class AppStore {
         static let botOrder = "alice.bot.order"
         static let cachedBots = "alice.cached.bots"
         static let eventWatermarks = "alice.events.watermarks"
+        static let activity = "alice.events.activity"
+        static let activitySeen = "alice.events.activitySeen"
     }
 
     static let unassignedSectionKey = "__unassigned__"
@@ -238,6 +240,7 @@ final class AppStore {
         selectedProvider = defaults.string(forKey: Keys.provider)
         recentModels = defaults.stringArray(forKey: Keys.recentModels) ?? []
         loadConversations()
+        loadActivity()
         restoreSalvagedConversationsIfPossible()
         activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
     }
@@ -1205,6 +1208,66 @@ final class AppStore {
 
     // MARK: - Events
 
+    /// What Alice has observed, newest first.
+    ///
+    /// Only events Alice actually saw. Hermes keeps no durable event history —
+    /// the replay ring is in memory and resets with the gateway — so there is
+    /// nothing to backfill from, and inventing entries for work that happened
+    /// before Alice was watching would be fabricating a record. It starts
+    /// empty and fills as Alice runs, which is the truth about what it knows.
+    private(set) var activity: [AliceEvent] = []
+
+    /// Bounded on purpose: this is a phone, and the useful window is recent.
+    static let activityLimit = 200
+
+    /// When the person last opened Activity, for the unread count.
+    var activitySeen: Date {
+        get { defaults.object(forKey: Keys.activitySeen) as? Date ?? .distantPast }
+        set { defaults.set(newValue, forKey: Keys.activitySeen) }
+    }
+
+    var unreadActivity: Int {
+        activity.filter { $0.occurred > activitySeen }.count
+    }
+
+    /// Components and automations that want attention right now.
+    ///
+    /// Distinct from `activity`, which is a record of things that happened.
+    /// This is current state: something is wrong *now* and can be acted on.
+    private(set) var attention: [AliceEvent] = []
+
+    /// Reachability and health are different questions, and one green dot
+    /// cannot answer both.
+    enum Wellbeing: Equatable, Sendable {
+        /// No Hermes configured yet.
+        case notConfigured
+        /// Configured, but the last attempt to reach it failed.
+        case unreachable
+        /// Reachable, and nothing is asking for attention.
+        case well
+        /// Reachable, but something inside wants attention.
+        case needsAttention(Int)
+    }
+
+    var wellbeing: Wellbeing {
+        guard isConnected || dashboardReady else {
+            return gatewayURL.isEmpty && dashboardURL.isEmpty ? .notConfigured : .unreachable
+        }
+        return attention.isEmpty ? .well : .needsAttention(attention.count)
+    }
+
+    /// One sentence for the connection row. Says what is true, and when
+    /// something is wrong says how much rather than only that.
+    var wellbeingSummary: String {
+        switch wellbeing {
+        case .notConfigured: "Connect your Hermes"
+        case .unreachable: "Can’t reach Hermes"
+        case .well: "Everything is working"
+        case let .needsAttention(count):
+            count == 1 ? "1 thing needs attention" : "\(count) things need attention"
+        }
+    }
+
     /// What Alice last saw, so a fact already reported is not reported twice.
     private var eventWatermarks: EventWatermarks {
         get {
@@ -1245,11 +1308,77 @@ final class AppStore {
             routines: routines, components: components, since: eventWatermarks
         )
         eventWatermarks = result.watermarks
+        attention = EventDigest.attention(routines: routines, components: components)
+        record(result.events)
         return result.events.filter { event in
             // A bot's events follow that bot's switch. Everything else is
             // about the installation, which has no per-bot switch to consult.
             guard let profile = event.profile else { return true }
             return botNotificationsEnabled(for: profile)
+        }
+    }
+
+    /// Keeps the newest events and drops the rest. Re-recording an event
+    /// already held replaces it rather than duplicating it, so a fact polled
+    /// twice stays one line.
+    private func record(_ events: [AliceEvent]) {
+        guard !events.isEmpty else { return }
+        var merged = activity
+        for event in events where !merged.contains(where: { $0.id == event.id }) {
+            merged.append(event)
+        }
+        activity = Array(
+            merged.sorted { $0.occurred > $1.occurred }.prefix(Self.activityLimit)
+        )
+        persistActivity()
+    }
+
+    func markActivitySeen() { activitySeen = Date() }
+
+    private func persistActivity() {
+        guard let data = try? JSONEncoder().encode(activity.map(StoredEvent.init)) else { return }
+        defaults.set(data, forKey: Keys.activity)
+    }
+
+    private func loadActivity() {
+        guard let data = defaults.data(forKey: Keys.activity),
+              let stored = try? JSONDecoder().decode([StoredEvent].self, from: data)
+        else { return }
+        activity = stored.map(\.event)
+    }
+
+    /// `AliceEvent` is the app's vocabulary; this is only its disk shape, kept
+    /// separate so a future field cannot silently change what is already
+    /// stored on somebody's phone.
+    private struct StoredEvent: Codable {
+        var id: String
+        var kind: String
+        var severity: Int
+        var profile: String?
+        var title: String
+        var summary: String
+        var detail: String?
+        var occurred: Date
+
+        init(_ event: AliceEvent) {
+            id = event.id
+            kind = event.kind.rawValue
+            severity = event.severity.rawValue
+            profile = event.profile
+            title = event.title
+            summary = event.summary
+            detail = event.detail
+            occurred = event.occurred
+        }
+
+        var event: AliceEvent {
+            AliceEvent(
+                id: id,
+                kind: AliceEvent.Kind(rawValue: kind) ?? .finished,
+                severity: AliceEvent.Severity(rawValue: severity) ?? .informational,
+                profile: profile, title: title, summary: summary,
+                detail: detail, occurred: occurred
+            )
         }
     }
 
