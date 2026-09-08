@@ -86,6 +86,11 @@ struct AliceApp: App {
                 // work can finish while it is backgrounded. Both are worth
                 // re-reading the moment it comes back.
                 .onChange(of: scenePhase) { _, phase in
+                    #if DEBUG
+                    if physicalE2EMode != nil {
+                        print("ALICE_PHYSICAL_E2E scene=\(phase)")
+                    }
+                    #endif
                     guard phase == .active else {
                         store.isForeground = false
                         if phase == .background {
@@ -129,6 +134,8 @@ struct AliceApp: App {
     @MainActor
     private func runPhysicalE2EIfRequested() async {
         guard let mode = physicalE2EMode else { return }
+        UIApplication.shared.isIdleTimerDisabled = true
+        defer { UIApplication.shared.isIdleTimerDisabled = false }
         guard store.isConnected, store.dashboardReady else {
             print("ALICE_PHYSICAL_E2E", mode, "FAIL:not-connected")
             return
@@ -179,8 +186,8 @@ struct AliceApp: App {
             }
             print("ALICE_PHYSICAL_E2E task idle=\(idle) exactChat=\(exactChat) activityFinished=\(activityFinished) session=\(store.activeConversation?.hermesSessionID != nil)")
 
-        case "approval":
-            send("Integration check only. Use the terminal tool to run exactly `rm -rf /tmp/alice-e2e-approval-nonexistent`. Do not simulate it and do not do anything else before the tool. Wait for the real approval. After the approved tool completes, reply with exactly ALICE_E2E_APPROVAL_DONE.")
+        case "permit":
+            send("Integration check only. Use the terminal tool to run exactly `hermes update --help`. The `--help` flag makes this non-mutating, while Hermes' current approval rules classify the command as an update/restart operation that requires a real approval. Do not simulate it and do not use another tool. Wait for the real approval. After the approved command returns its help text, reply with exactly ALICE_E2E_APPROVAL_DONE.")
             guard let event = await waitForEvent({
                 !baseline.contains($0.id) && $0.profile == "radar-ia" &&
                 $0.standing == .waiting && !$0.approvalChoices.isEmpty

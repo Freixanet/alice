@@ -220,6 +220,10 @@ actor HermesRPCClient: HermesRPCTransport {
     /// Drops the socket so the next call reconnects with a fresh ticket.
     /// Pending calls fail rather than hang; the caller keeps its cache.
     func disconnect(_ reason: Error? = nil) {
+        #if DEBUG
+        if let reason { print("ALICE_E2E_RPC disconnect", reason.localizedDescription) }
+        else { print("ALICE_E2E_RPC disconnect requested") }
+        #endif
         pump?.cancel()
         pump = nil
         socket?.cancel(with: .goingAway, reason: nil)
