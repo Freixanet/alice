@@ -1293,6 +1293,96 @@ final class AppStore {
     ///
     /// Returns an empty list rather than throwing when the installation cannot
     /// be reached: not knowing is not an event.
+    /// The single live observer of the dashboard socket.
+    ///
+    /// One, for the whole app. `sendToBotChat` opens its own short-lived
+    /// listener for the turn it is drawing, and the client fans every frame out
+    /// to all listeners, so the two coexist — but a second *long-lived* one
+    /// would record every completion twice.
+    private var liveObserver: Task<Void, Never>?
+
+    /// Which installation the stored activity and cursors belong to.
+    ///
+    /// Not the URL itself: that would put the address of a private machine into
+    /// UserDefaults for no benefit. Only the question "is this still the same
+    /// one" ever needs answering.
+    nonisolated static func installationFingerprint(_ dashboard: String) -> String {
+        String(format: "%016llx", UInt64(bitPattern: Int64(dashboard.hashValue)))
+    }
+
+    /// Starts watching for work finishing and for anything that needs a person.
+    ///
+    /// Idempotent: called on launch and on every return to the foreground,
+    /// because the socket does not survive suspension.
+    func startWatchingLiveEvents() {
+        guard dashboardReady, liveObserver == nil else { return }
+        liveObserver = Task { [weak self] in
+            guard let self, let rpc = await self.dashboardRPC() else { return }
+            for await frame in rpc.events() {
+                if Task.isCancelled { return }
+                await self.absorb(frame)
+            }
+        }
+    }
+
+    func stopWatchingLiveEvents() {
+        liveObserver?.cancel()
+        liveObserver = nil
+    }
+
+    /// One pushed frame, if it is something a person should know about.
+    private func absorb(_ frame: HermesRPCEvent) async {
+        guard let identity = sessionIdentity(for: frame.sessionID) else { return }
+        guard let event = LiveEvents.event(from: frame, session: identity) else { return }
+        record([event])
+        if event.standing == .waiting { refreshAttention() }
+        await deliver([event])
+    }
+
+    /// Resolves a session id to who it belongs to.
+    ///
+    /// Only sessions Alice mirrors as a bot chat: a frame for a session this
+    /// phone knows nothing about cannot be opened from a notification, and
+    /// telling someone about work they cannot reach is worse than silence.
+    private func sessionIdentity(for sessionID: String) -> LiveEvents.SessionIdentity? {
+        guard !sessionID.isEmpty else { return nil }
+        guard let conversation = conversations.first(where: {
+            $0.hermesSessionID == sessionID && $0.isCanonicalBotChat
+        }), let profile = conversation.routedBotName else { return nil }
+        return LiveEvents.SessionIdentity(
+            profile: profile,
+            sessionID: sessionID,
+            sessionKey: conversation.hermesSessionID,
+            conversationID: conversation.id,
+            label: botCurrentName(for: profile)
+        )
+    }
+
+    /// Posts events that deserve a notification.
+    ///
+    /// Nothing is posted for a conversation the person is looking at: they can
+    /// already see it happen, and a banner over the thing it describes is
+    /// noise. Set by the caller, since only the interface knows what is on
+    /// screen.
+    private func deliver(_ events: [AliceEvent]) async {
+        let worth = events.filter { event in
+            if let profile = event.profile, !botNotificationsEnabled(for: profile) {
+                return false
+            }
+            if event.kind == .finished,
+               event.reference.conversationID == activeID,
+               isForeground { return false }
+            return true
+        }
+        guard !worth.isEmpty else { return }
+        await notify?(worth)
+    }
+
+    /// Set by the app so the store can post without owning the notifier.
+    var notify: (@MainActor ([AliceEvent]) async -> Void)?
+    /// Whether the interface is on screen, for the "already watching" rule.
+    var isForeground = true
+
     @discardableResult
     func syncEvents() async -> [AliceEvent] {
         guard dashboardReady else { return [] }
@@ -1304,18 +1394,167 @@ final class AppStore {
         }
         let components = (try? await hermesSystemStatus(profile: "default"))?.components ?? []
 
+        var marks = eventWatermarks
+        // A different Hermes has different cursors. Carrying these across would
+        // suppress the new server's real events as "already seen" and file its
+        // activity under the old one's name.
+        let fingerprint = Self.installationFingerprint(dashboardURL)
+        if marks.installation != fingerprint {
+            marks = EventWatermarks(installation: fingerprint)
+            activity = []
+            attention = []
+            persistActivity()
+        }
+
         let result = EventDigest.digest(
-            routines: routines, components: components, since: eventWatermarks
+            routines: routines, components: components, since: marks
         )
         eventWatermarks = result.watermarks
-        attention = EventDigest.attention(routines: routines, components: components)
-        record(result.events)
-        return result.events.filter { event in
+        // Requests still waiting are read from current server state, not from
+        // the event history — which is why a first sync can stay silent about
+        // finished runs and still surface an approval that is live right now.
+        let pending = await pendingRequests()
+        reconcilePending(against: pending)
+        record(result.events + pending.events)
+        refreshAttention(routines: routines, components: components)
+        return (result.events + pending.events.filter { $0.standing == .waiting })
+            .filter { event in
             // A bot's events follow that bot's switch. Everything else is
             // about the installation, which has no per-bot switch to consult.
             guard let profile = event.profile else { return true }
             return botNotificationsEnabled(for: profile)
         }
+    }
+
+    /// What every mirrored bot chat is currently waiting on.
+    ///
+    /// One `session.resume` per canonical bot chat, once per sync — not once
+    /// per row drawn. `session.resume` is the call that returns
+    /// `pending_approval` and `pending_clarify` alongside the transcript, so
+    /// this costs nothing beyond what refreshing a chat already does.
+    private func pendingRequests() async -> (events: [AliceEvent], checked: Set<String>) {
+        guard let source = await botChatSource() else { return ([], []) }
+        var events: [AliceEvent] = []
+        var checked: Set<String> = []
+
+        for conversation in conversations where conversation.isCanonicalBotChat {
+            guard let profile = conversation.routedBotName,
+                  let sessionID = conversation.hermesSessionID else { continue }
+            guard let resumed = try? await source.resume(
+                profile: profile, target: sessionID
+            ) else { continue }
+            checked.insert(sessionID)
+
+            let identity = LiveEvents.SessionIdentity(
+                profile: profile, sessionID: sessionID,
+                sessionKey: (resumed["session_key"] as? String) ?? sessionID,
+                conversationID: conversation.id,
+                label: botCurrentName(for: profile)
+            )
+            if let approval = resumed["pending_approval"] as? [String: Any],
+               let event = LiveEvents.pendingApproval(approval, session: identity) {
+                events.append(event)
+            }
+            if let clarify = resumed["pending_clarify"] as? [String: Any],
+               let event = LiveEvents.pendingClarify(clarify, session: identity) {
+                events.append(event)
+            }
+        }
+        return (events, checked)
+    }
+
+    /// Marks anything Alice still shows as waiting that the server no longer
+    /// has — answered on another device, timed out, or its session deleted.
+    private func reconcilePending(against pending: (events: [AliceEvent], checked: Set<String>)) {
+        let stillPending = Set(pending.events.compactMap(\.reference.requestID))
+        activity = LiveEvents.reconcile(
+            held: activity, stillPending: stillPending, checked: pending.checked
+        )
+        persistActivity()
+    }
+
+    /// Current state, from whatever was last read plus anything still waiting.
+    private func refreshAttention(
+        routines: [JobRow]? = nil, components: [HermesSystemComponent]? = nil
+    ) {
+        var items = activity.filter(\.isActionable)
+        if let routines, let components {
+            items += EventDigest.attention(routines: routines, components: components)
+        } else {
+            items += attention.filter { $0.kind != .needsInput }
+        }
+        attention = items.sorted { $0.severity > $1.severity }
+    }
+
+    /// Answers a request Hermes is holding, then makes the record agree.
+    ///
+    /// The decision goes over the same socket the request arrived on, keyed by
+    /// the `request_id` Hermes resolves against rather than by anything a
+    /// person can see or rename. Afterwards the row stops being actionable and
+    /// the notification that announced it is withdrawn: leaving a banner for a
+    /// question already answered is the same lie as the switch that promised
+    /// notifications and sent none.
+    @discardableResult
+    func resolvePendingRequest(
+        _ event: AliceEvent, choice: Message.ApprovalChoice
+    ) async -> Bool {
+        guard event.standing == .waiting,
+              let requestID = event.reference.requestID,
+              let sessionID = event.reference.sessionID,
+              let source = await botChatSource()
+        else { return false }
+        do {
+            try await source.respondToApproval(
+                sessionID: sessionID, requestID: requestID, choice: choice.rawValue
+            )
+            settle(event.id, as: .resolved, summary: "You answered this.")
+            return true
+        } catch {
+            // Hermes refusing usually means it is no longer holding it.
+            settle(event.id, as: .gone, summary: "This is no longer waiting for an answer.")
+            return false
+        }
+    }
+
+    private func settle(_ id: String, as standing: AliceEvent.Standing, summary: String) {
+        guard let index = activity.firstIndex(where: { $0.id == id }) else { return }
+        activity[index].standing = standing
+        activity[index].severity = .informational
+        activity[index].summary = summary
+        persistActivity()
+        refreshAttention()
+        withdraw?(id)
+    }
+
+    /// Retracts a delivered notification. Owned by the app, like `notify`.
+    var withdraw: (@MainActor (String) -> Void)?
+
+    /// Opens what a tapped notification was about.
+    ///
+    /// The conversation is addressed by Alice's own id, carried on the
+    /// notification, so this survives a cold start with nothing in memory. When
+    /// that conversation is gone — deleted here, or its bot removed on the
+    /// server — the row stays reachable in Activity and says so, rather than
+    /// opening an empty screen or silently doing nothing.
+    @discardableResult
+    func open(_ route: Notifier.Route) -> Bool {
+        if let id = route.conversationID,
+           conversations.contains(where: { $0.id == id }) {
+            showingBots = false
+            activeID = id
+            return true
+        }
+        // The conversation is gone; the record of what happened is not.
+        if let index = activity.firstIndex(where: { $0.id == route.eventID }),
+           activity[index].standing == .waiting {
+            activity[index].standing = .gone
+            activity[index].severity = .informational
+            activity[index].summary =
+                "The conversation this belonged to is no longer on this phone."
+            persistActivity()
+            refreshAttention()
+        }
+        return false
     }
 
     /// Keeps the newest events and drops the rest. Re-recording an event

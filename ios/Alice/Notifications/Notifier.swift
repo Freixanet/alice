@@ -80,13 +80,53 @@ final class Notifier {
         content.sound = event.severity == .informational ? nil : .default
         content.interruptionLevel = event.kind == .needsInput ? .timeSensitive : .active
         content.threadIdentifier = event.profile ?? event.kind.rawValue
-        content.userInfo = ["event": event.id]
+        // Enough to reopen the exact thing after a cold start, when nothing of
+        // the session that produced it is left in memory.
+        var route: [String: String] = ["event": event.id]
+        route["conversation"] = event.reference.conversationID
+        route["profile"] = event.reference.profile
+        route["session"] = event.reference.sessionID
+        route["request"] = event.reference.requestID
+        content.userInfo = route.compactMapValues { $0 }
         await center.add(identifier: event.id, content: content)
     }
 
     func post(_ events: [AliceEvent]) async {
         for event in events { await post(event) }
     }
+
+    /// Takes back a notification whose subject is over.
+    ///
+    /// A banner still offering to answer a question that has been answered is
+    /// the same kind of lie as a switch that promises delivery and sends none.
+    func withdraw(_ eventID: String) {
+        center.withdraw([eventID])
+    }
+
+    /// Where a tapped notification should land.
+    struct Route: Equatable, Sendable {
+        var eventID: String
+        var conversationID: String?
+        var profile: String?
+        var sessionID: String?
+        var requestID: String?
+
+        init?(userInfo: [AnyHashable: Any]) {
+            guard let eventID = userInfo["event"] as? String else { return nil }
+            self.eventID = eventID
+            conversationID = userInfo["conversation"] as? String
+            profile = userInfo["profile"] as? String
+            sessionID = userInfo["session"] as? String
+            requestID = userInfo["request"] as? String
+        }
+    }
+
+    /// The tap the app has not handled yet.
+    ///
+    /// Set from the notification delegate, which on a cold start fires before
+    /// anything is on screen — so it is held here until the interface exists to
+    /// act on it, rather than dropped.
+    var pendingRoute: Route?
 }
 
 /// The slice of `UNUserNotificationCenter` Alice uses, so the permission
@@ -96,6 +136,7 @@ protocol NotificationScheduling: Sendable {
     func currentPermission() async -> Notifier.Permission
     func requestAuthorization() async throws -> Bool
     func add(identifier: String, content: UNNotificationContent) async
+    func withdraw(_ identifiers: [String])
 }
 
 extension UNUserNotificationCenter: NotificationScheduling {
@@ -126,5 +167,10 @@ extension UNUserNotificationCenter: NotificationScheduling {
             identifier: identifier, content: content, trigger: nil
         )
         try? await add(request)
+    }
+
+    func withdraw(_ identifiers: [String]) {
+        removeDeliveredNotifications(withIdentifiers: identifiers)
+        removePendingNotificationRequests(withIdentifiers: identifiers)
     }
 }

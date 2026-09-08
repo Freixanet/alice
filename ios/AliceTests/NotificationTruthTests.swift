@@ -173,8 +173,25 @@ final class FakeNotificationCenter: NotificationScheduling, @unchecked Sendable 
     }
 
     func add(identifier: String, content: UNNotificationContent) async {
-        lock.withLock { posted.append(identifier) }
+        lock.withLock {
+            posted.append(identifier)
+            bodies[identifier] = content.body
+            routes[identifier] = content.userInfo
+        }
     }
+
+    func withdraw(_ identifiers: [String]) {
+        lock.withLock {
+            withdrawn.append(contentsOf: identifiers)
+            posted.removeAll { identifiers.contains($0) }
+        }
+    }
+
+    private(set) var withdrawn: [String] = []
+    private var bodies: [String: String] = [:]
+    private var routes: [String: [AnyHashable: Any]] = [:]
+    func body(_ identifier: String) -> String? { lock.withLock { bodies[identifier] } }
+    func route(_ identifier: String) -> [AnyHashable: Any]? { lock.withLock { routes[identifier] } }
 }
 
 @MainActor
@@ -246,6 +263,80 @@ final class NotifierTests: XCTestCase {
         let second = Notifier(center: revoked)
         await second.refreshPermission()
         XCTAssertFalse(second.permission.canDeliver)
+    }
+
+    /// A tap has to reach the thing it is about even after a cold start, when
+    /// nothing of the session that produced it is left in memory. Everything
+    /// needed to reopen it therefore travels on the notification itself.
+    func testNotificationCarriesEnoughToReopenTheThing() async throws {
+        let center = FakeNotificationCenter(permission: .allowed)
+        let notifier = Notifier(center: center)
+        await notifier.refreshPermission()
+
+        let event = AliceEvent(
+            id: "approval:req-9", kind: .needsInput, severity: .needsAttention,
+            profile: "radar-ia", title: "Needs your approval",
+            summary: "Radar IA is waiting for permission to continue.",
+            occurred: Date(),
+            reference: .init(
+                profile: "radar-ia", sessionID: "sess-1", sessionKey: "key-1",
+                requestID: "req-9", conversationID: "conv-1"
+            ),
+            standing: .waiting
+        )
+        await notifier.post(event)
+
+        let info = try XCTUnwrap(center.route("approval:req-9"))
+        let route = try XCTUnwrap(Notifier.Route(userInfo: info))
+        XCTAssertEqual(route.eventID, "approval:req-9")
+        XCTAssertEqual(route.conversationID, "conv-1")
+        XCTAssertEqual(route.requestID, "req-9")
+    }
+
+    /// Answering a question must take back the banner that asked it. Leaving it
+    /// there is the same lie as the switch that promised delivery and sent none.
+    func testAnsweredRequestWithdrawsItsNotification() async {
+        let center = FakeNotificationCenter(permission: .allowed)
+        let notifier = Notifier(center: center)
+        await notifier.refreshPermission()
+
+        await notifier.post(AliceEvent(
+            id: "approval:req-9", kind: .needsInput, severity: .needsAttention,
+            title: "Needs your approval", summary: "waiting", occurred: Date(),
+            standing: .waiting
+        ))
+        XCTAssertEqual(center.posted, ["approval:req-9"])
+
+        notifier.withdraw("approval:req-9")
+
+        XCTAssertEqual(center.withdrawn, ["approval:req-9"])
+        XCTAssertTrue(center.posted.isEmpty)
+    }
+
+    /// A finished research task can contain anything, and a lock screen is a
+    /// public surface.
+    func testAgentOutputNeverReachesTheNotificationBody() async throws {
+        let center = FakeNotificationCenter(permission: .allowed)
+        let notifier = Notifier(center: center)
+        await notifier.refreshPermission()
+
+        let secret = "Bank transfer approved for 12,400 EUR"
+        let session = LiveEvents.SessionIdentity(
+            profile: "radar-ia", sessionID: "s", sessionKey: "k",
+            conversationID: "c", label: "Radar IA"
+        )
+        let event = try XCTUnwrap(LiveEvents.event(
+            from: HermesRPCEvent(
+                type: "message.complete", sessionID: "s",
+                payload: ["text": secret, "status": "complete"]
+            ),
+            session: session
+        ))
+        await notifier.post(event)
+
+        let body = try XCTUnwrap(center.body(event.id))
+        XCTAssertFalse(body.contains(secret))
+        XCTAssertFalse(body.contains("12,400"))
     }
 
     /// Allowed-but-silent still delivers to Notification Centre, so it counts

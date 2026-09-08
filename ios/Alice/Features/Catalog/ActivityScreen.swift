@@ -16,6 +16,8 @@ struct ActivityScreen: View {
 
     @State private var refreshing = false
     @State private var expanded: Set<String> = []
+    @State private var resolving: Set<String> = []
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
@@ -79,6 +81,33 @@ struct ActivityScreen: View {
                     .foregroundStyle(.secondary)
             }
 
+            if event.isActionable {
+                // The same choices Hermes offered, answered over the same
+                // socket the request arrived on. Nothing here invents an option
+                // the server did not list.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { choices(for: event) }
+                    VStack(alignment: .leading, spacing: 8) { choices(for: event) }
+                }
+                .padding(.top, 2)
+            } else if event.standing == .gone || event.standing == .resolved {
+                Label(
+                    event.standing == .resolved ? "Answered" : "No longer waiting",
+                    systemImage: event.standing == .resolved
+                        ? "checkmark.circle" : "clock.badge.xmark"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            if event.reference.conversationID != nil {
+                Button("Open conversation") { store.open(route(for: event)) }
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                    .accessibilityIdentifier("activity.open.\(event.id)")
+            }
+
             if let detail = event.detail, !detail.isEmpty {
                 // Hermes' exact words, one tap away. The human sentence never
                 // replaces them; support and expert users need the original.
@@ -103,6 +132,43 @@ struct ActivityScreen: View {
         .padding(.vertical, 2)
         .listRowBackground(Palette.card(scheme))
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func choices(for event: AliceEvent) -> some View {
+        ForEach(Message.ApprovalChoice.allCases, id: \.self) { choice in
+            Button(label(choice)) {
+                Task {
+                    resolving.insert(event.id)
+                    defer { resolving.remove(event.id) }
+                    await store.resolvePendingRequest(event, choice: choice)
+                }
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            .disabled(resolving.contains(event.id))
+            .tint(choice == .deny ? .secondary : .primary)
+            .accessibilityIdentifier("activity.choice.\(choice.rawValue)")
+        }
+    }
+
+    private func label(_ choice: Message.ApprovalChoice) -> String {
+        switch choice {
+        case .once: "Once"
+        case .session: "This session"
+        case .always: "Always"
+        case .deny: "Deny"
+        }
+    }
+
+    private func route(for event: AliceEvent) -> Notifier.Route {
+        var info: [AnyHashable: Any] = ["event": event.id]
+        info["conversation"] = event.reference.conversationID
+        info["profile"] = event.reference.profile
+        info["session"] = event.reference.sessionID
+        info["request"] = event.reference.requestID
+        return Notifier.Route(userInfo: info) ?? Notifier.Route(userInfo: ["event": event.id])!
     }
 
     private func icon(_ event: AliceEvent) -> String {

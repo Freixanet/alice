@@ -19,6 +19,19 @@ final class NavigationJourneyTests: XCTestCase {
         app.launch()
     }
 
+    /// Relaunches at the largest accessibility text size and the smallest
+    /// screen this app supports, which is where a list of destinations stops
+    /// fitting and starts hiding things.
+    private func relaunchWithLargestText() {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+        ]
+        app.launch()
+    }
+
     /// Chat is the app. It has to be what you land on, with no dashboard to
     /// cross first — a person opening Alice to say something should be able to.
     func testLaunchLandsInChat() {
@@ -53,6 +66,50 @@ final class NavigationJourneyTests: XCTestCase {
             "Git", "System",
         ] {
             assertDrawerRow(title)
+        }
+    }
+
+    /// Two actions, not one. The drawer has to be opened first, so calling
+    /// Activity "one tap from the conversation" would be wrong — it is two, and
+    /// this measures it rather than asserting a number someone hoped for.
+    func testActivityIsTwoActionsFromTheConversation() {
+        var actions = 0
+        let leading = app.buttons["chat.leading"]
+        XCTAssertTrue(leading.waitForExistence(timeout: 20))
+        leading.tap(); actions += 1
+
+        let activity = app.buttons["sidebar.row.Activity"]
+        XCTAssertTrue(activity.waitForExistence(timeout: 10))
+        activity.tap(); actions += 1
+
+        XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 10))
+        XCTAssertEqual(actions, 2, "opening the drawer is an action too")
+    }
+
+    /// A drawer that scrolls is fine; a destination that cannot be reached at
+    /// the largest text size is not.
+    func testEveryDestinationSurvivesTheLargestText() {
+        relaunchWithLargestText()
+        let leading = app.buttons["chat.leading"]
+        XCTAssertTrue(leading.waitForExistence(timeout: 25))
+        leading.tap()
+
+        for title in [
+            "Bots", "Activity", "Routines", "Projects", "Files", "Library",
+            "Channels", "Integrations (MCP)", "Skills", "Tools", "Webhooks",
+            "Git", "System",
+        ] {
+            let row = app.buttons["sidebar.row.\(title)"]
+            XCTAssertTrue(
+                row.waitForExistence(timeout: 10),
+                "“\(title)” is unreachable at accessibility text sizes"
+            )
+        }
+        // And the controls stay hittable rather than being squeezed out.
+        for identifier in ["sidebar.search", "sidebar.settings", "sidebar.newChat"] {
+            let control = app.buttons[identifier]
+            XCTAssertTrue(control.waitForExistence(timeout: 10), identifier)
+            XCTAssertGreaterThanOrEqual(control.frame.height, 44, identifier)
         }
     }
 

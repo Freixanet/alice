@@ -36,6 +36,51 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
         }
     }
 
+    /// Everything needed to reopen what an event is about.
+    ///
+    /// Identity, never a visible name. A bot can be renamed and a routine's
+    /// title is whatever someone typed; `session_key` is Hermes' durable
+    /// handle for a conversation and survives the compression lineage moving
+    /// it onto a fresh row, and `request_id` is what `approval.respond`
+    /// resolves against — the server's own answer to "which one".
+    struct Reference: Hashable, Sendable, Codable {
+        /// The Hermes profile, which is a bot's id and not its display name.
+        var profile: String?
+        /// The live session row.
+        var sessionID: String?
+        /// The durable session handle. Preferred over `sessionID`, which a
+        /// compression rotation can retire.
+        var sessionKey: String?
+        /// Identifies a pending approval or clarify request.
+        var requestID: String?
+        /// Alice's own conversation, when one mirrors this session.
+        var conversationID: String?
+        /// `<profile>/<job id>` for a routine.
+        var routineKey: String?
+
+        var isEmpty: Bool {
+            profile == nil && sessionID == nil && sessionKey == nil
+                && requestID == nil && conversationID == nil && routineKey == nil
+        }
+    }
+
+    /// Where a pending request stands.
+    ///
+    /// A request Alice is holding can be answered somewhere else, time out, or
+    /// belong to a session that no longer exists. Showing it as still waiting
+    /// in any of those cases would be asking someone to act on something that
+    /// is already over.
+    enum Standing: String, Sendable, Codable {
+        /// Not a request; nothing to answer.
+        case none
+        /// Still waiting on this person.
+        case waiting
+        /// Answered — here or elsewhere.
+        case resolved
+        /// Hermes no longer has it: expired, or its session is gone.
+        case gone
+    }
+
     /// Stable across re-derivations of the same underlying fact, so an event
     /// polled twice is one event and is notified once.
     let id: String
@@ -51,10 +96,16 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     /// not every event has a technical statement worth keeping.
     var detail: String?
     var occurred: Date
+    var reference = Reference()
+    var standing: Standing = .none
+
+    /// Whether this still wants an answer.
+    var isActionable: Bool { standing == .waiting }
 
     init(
         id: String, kind: Kind, severity: Severity, profile: String? = nil,
-        title: String, summary: String, detail: String? = nil, occurred: Date
+        title: String, summary: String, detail: String? = nil, occurred: Date,
+        reference: Reference = Reference(), standing: Standing = .none
     ) {
         self.id = id
         self.kind = kind
@@ -64,6 +115,8 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
         self.summary = summary
         self.detail = detail
         self.occurred = occurred
+        self.reference = reference
+        self.standing = standing
     }
 }
 
@@ -82,4 +135,11 @@ struct EventWatermarks: Codable, Equatable, Sendable {
     /// Set once Alice has seen the installation at all, so a first sync does
     /// not announce the entire existing state as news.
     var primed = false
+    /// Which installation these were taken from.
+    ///
+    /// Cursors from one Hermes say nothing about another. Pointing Alice at a
+    /// different server with these still in place would suppress that
+    /// server's real events as "already seen" and let one installation's
+    /// activity appear under another's name.
+    var installation: String?
 }

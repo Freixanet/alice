@@ -1,5 +1,6 @@
 import BackgroundTasks
 import SwiftUI
+import UserNotifications
 
 @main
 struct AliceApp: App {
@@ -11,6 +12,7 @@ struct AliceApp: App {
     @State private var store = AppStore()
     @State private var speech = ReadAloud()
     @State private var notifier = Notifier()
+    @State private var router: NotificationRouter?
     @State private var showRadarBotInstaller = false
     @State private var pairingLink: PendingPairingLink?
 
@@ -41,9 +43,11 @@ struct AliceApp: App {
                     pairingLink = PendingPairingLink(link: url.absoluteString)
                 }
                 .task {
+                    installRouter()
                     await store.restoreConnection()
                     await store.restoreDashboard()
                     await notifier.refreshPermission()
+                    store.startWatchingLiveEvents()
                     // Prime the watermarks without announcing the installation's
                     // existing state as news; the first digest only records.
                     await notifier.post(store.syncEvents())
@@ -54,18 +58,49 @@ struct AliceApp: App {
                 // re-reading the moment it comes back.
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else {
-                        if phase == .background { scheduleRefresh() }
+                        store.isForeground = false
+                        if phase == .background {
+                            store.stopWatchingLiveEvents()
+                            scheduleRefresh()
+                        }
                         return
                     }
                     Task {
+                        store.isForeground = true
                         await notifier.refreshPermission()
+                        // The socket does not survive suspension; this is where
+                        // it comes back, and it is idempotent.
+                        store.startWatchingLiveEvents()
                         await notifier.post(store.syncEvents())
+                        drainPendingRoute()
                     }
                 }
         }
         .backgroundTask(.appRefresh(Self.refreshTaskID)) {
             await handleRefresh()
         }
+    }
+
+    /// Connects the store to the notifier, and taps to the store.
+    private func installRouter() {
+        guard router == nil else { return }
+        store.notify = { events in await notifier.post(events) }
+        store.withdraw = { id in notifier.withdraw(id) }
+        let router = NotificationRouter { route in
+            // Held rather than acted on immediately: on a cold start this
+            // arrives before the interface exists.
+            notifier.pendingRoute = route
+        }
+        UNUserNotificationCenter.current().delegate = router
+        self.router = router
+        drainPendingRoute()
+    }
+
+    /// Acts on a tap once there is something on screen to act with.
+    private func drainPendingRoute() {
+        guard let route = notifier.pendingRoute else { return }
+        notifier.pendingRoute = nil
+        store.open(route)
     }
 
     /// Asks iOS to wake Alice at some point. iOS decides whether and when,
