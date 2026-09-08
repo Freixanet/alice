@@ -1439,6 +1439,7 @@ struct BotDetail: View {
     @State private var selectedModel: HermesClient.ModelOption?
     @State private var selectedSection = ""
     @State private var notifications = false
+    @Environment(Notifier.self) private var notifier
     @State private var pendingModel: HermesClient.ModelOption?
     @State private var modelConfirmation: String?
     @State private var applyingModel = false
@@ -1646,13 +1647,38 @@ struct BotDetail: View {
             }
 
             Section {
-                Toggle("Notifications", isOn: $notifications)
+                Toggle("Notify me about this assistant", isOn: $notifications)
                     .listRowBackground(Palette.card(scheme))
+                    .disabled(notifier.permission == .refused)
                     .onChange(of: notifications) { _, next in
-                        store.setBotNotifications(bot.name, enabled: next)
+                        Task { await setNotifications(next) }
                     }
+
+                if notifier.permission == .refused {
+                    // The switch cannot be honoured, and iOS only presents its
+                    // prompt once — so the way back is Settings, and saying so
+                    // is more use than a switch that flips and does nothing.
+                    Button("Open iOS Settings") {
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                            return
+                        }
+                        UIApplication.shared.open(url)
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                }
             } footer: {
-                Text("Get notified when this Bot finishes or needs input")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(notificationExplanation)
+                    if notifier.permission != .refused {
+                        Text(
+                            "Alice tells you while it is open, and when iOS next "
+                            + "wakes it in the background. It cannot be reached "
+                            + "while it is closed, so for alerts that always "
+                            + "arrive, have an automation deliver to a channel."
+                        )
+                        .font(.caption2)
+                    }
+                }
             }
 
             Section {
@@ -1774,6 +1800,13 @@ struct BotDetail: View {
             selectedModel = store.botModelOption(for: bot)
             selectedSection = store.section(for: bot.name) ?? ""
             notifications = store.botNotificationsEnabled(for: bot.name)
+            await notifier.refreshPermission()
+            // A permission revoked in iOS Settings must switch the row off
+            // rather than leave it looking armed.
+            if !notifier.permission.canDeliver, notifications, notifier.permission == .refused {
+                notifications = false
+                store.setBotNotifications(bot.name, enabled: false)
+            }
             setupCommand = try? await store.profileSetupCommand(bot.name)
             routines = await .resolving(
                 { try await store.routines(for: bot.name) },
@@ -1798,6 +1831,33 @@ struct BotDetail: View {
                 }
             } catch { failure = describeBotError(error) }
         }
+    }
+
+    private var notificationExplanation: String {
+        switch notifier.permission {
+        case .refused:
+            "iOS is not allowing Alice to send notifications, so this cannot be turned on."
+        case .allowedQuietly:
+            "Notifications are allowed but set to deliver quietly, so they will not appear as banners."
+        case .notAsked, .allowed:
+            "Tells you when one of this assistant’s automations finishes or fails."
+        }
+    }
+
+    /// Asks for permission at the moment the person opts in — not at first
+    /// launch, where there is nothing yet to explain.
+    private func setNotifications(_ enabled: Bool) async {
+        guard enabled else {
+            store.setBotNotifications(bot.name, enabled: false)
+            return
+        }
+        let granted = await notifier.requestPermission()
+        guard granted else {
+            notifications = false
+            store.setBotNotifications(bot.name, enabled: false)
+            return
+        }
+        store.setBotNotifications(bot.name, enabled: true)
     }
 
     private func exportTemplate() {

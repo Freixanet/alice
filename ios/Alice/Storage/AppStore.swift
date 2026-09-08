@@ -125,6 +125,7 @@ final class AppStore {
         static let botSectionOrder = "alice.bot.sectionOrder"
         static let botOrder = "alice.bot.order"
         static let cachedBots = "alice.cached.bots"
+        static let eventWatermarks = "alice.events.watermarks"
     }
 
     static let unassignedSectionKey = "__unassigned__"
@@ -1200,6 +1201,56 @@ final class AppStore {
             cachedBots[index].provider = provider
         }
         return nil
+    }
+
+    // MARK: - Events
+
+    /// What Alice last saw, so a fact already reported is not reported twice.
+    private var eventWatermarks: EventWatermarks {
+        get {
+            guard let data = defaults.data(forKey: Keys.eventWatermarks),
+                  let marks = try? JSONDecoder().decode(EventWatermarks.self, from: data)
+            else { return EventWatermarks() }
+            return marks
+        }
+        set {
+            guard let data = try? JSONEncoder().encode(newValue) else { return }
+            defaults.set(data, forKey: Keys.eventWatermarks)
+        }
+    }
+
+    /// Reads the durable state Alice can compare — routine run records and
+    /// component health — and returns what changed since it last looked.
+    ///
+    /// Durable is the operative word. Hermes' event ring is in memory, 512
+    /// entries per session, and resets with the gateway, so it cannot answer
+    /// "what happened while I was away". These two can: a cron run record and
+    /// a component's status are both current server state, and comparing them
+    /// against a stored watermark is a statement Alice can defend.
+    ///
+    /// Returns an empty list rather than throwing when the installation cannot
+    /// be reached: not knowing is not an event.
+    @discardableResult
+    func syncEvents() async -> [AliceEvent] {
+        guard dashboardReady else { return [] }
+        let routines: [JobRow]
+        do {
+            routines = try await allRoutines().values.flatMap { $0 }
+        } catch {
+            return []
+        }
+        let components = (try? await hermesSystemStatus(profile: "default"))?.components ?? []
+
+        let result = EventDigest.digest(
+            routines: routines, components: components, since: eventWatermarks
+        )
+        eventWatermarks = result.watermarks
+        return result.events.filter { event in
+            // A bot's events follow that bot's switch. Everything else is
+            // about the installation, which has no per-bot switch to consult.
+            guard let profile = event.profile else { return true }
+            return botNotificationsEnabled(for: profile)
+        }
     }
 
     func botNotificationsEnabled(for bot: String) -> Bool {

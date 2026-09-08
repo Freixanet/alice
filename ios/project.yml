@@ -35,6 +35,13 @@ targets:
           - InstrumentSerif-Regular.ttf
           - InstrumentSerif-Italic.ttf
         UILaunchScreen: {}
+        # Opportunistic background catch-up. iOS decides whether and when this
+        # runs; Alice's notification copy is written to match that, and never
+        # promises delivery while the app is closed.
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.freixanet.alice.refresh
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

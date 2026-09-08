@@ -1,9 +1,16 @@
+import BackgroundTasks
 import SwiftUI
 
 @main
 struct AliceApp: App {
+    /// iOS runs this when it feels like it — which is the honest limit of
+    /// background delivery here, and what the notification copy says.
+    static let refreshTaskID = "com.freixanet.alice.refresh"
+
+    @Environment(\.scenePhase) private var scenePhase
     @State private var store = AppStore()
     @State private var speech = ReadAloud()
+    @State private var notifier = Notifier()
     @State private var showRadarBotInstaller = false
     @State private var pairingLink: PendingPairingLink?
 
@@ -12,6 +19,7 @@ struct AliceApp: App {
             RootView()
                 .environment(store)
                 .environment(speech)
+                .environment(notifier)
                 .preferredColorScheme(store.theme.colorScheme)
                 .sheet(isPresented: $showRadarBotInstaller) {
                     RadarIABotInstaller()
@@ -35,9 +43,49 @@ struct AliceApp: App {
                 .task {
                     await store.restoreConnection()
                     await store.restoreDashboard()
+                    await notifier.refreshPermission()
+                    // Prime the watermarks without announcing the installation's
+                    // existing state as news; the first digest only records.
+                    await notifier.post(store.syncEvents())
                     await offerRadarBotIfNeeded()
                 }
+                // Permission can be revoked in Settings while Alice is away, and
+                // work can finish while it is backgrounded. Both are worth
+                // re-reading the moment it comes back.
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active else {
+                        if phase == .background { scheduleRefresh() }
+                        return
+                    }
+                    Task {
+                        await notifier.refreshPermission()
+                        await notifier.post(store.syncEvents())
+                    }
+                }
         }
+        .backgroundTask(.appRefresh(Self.refreshTaskID)) {
+            await handleRefresh()
+        }
+    }
+
+    /// Asks iOS to wake Alice at some point. iOS decides whether and when,
+    /// and never does if the app was force-quit — which is exactly why the
+    /// notification copy promises "when Alice next checks" and not "instantly".
+    private func scheduleRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: Self.refreshTaskID)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
+        try? BGTaskScheduler.shared.submit(request)
+    }
+
+    /// One opportunistic catch-up: read the durable server state, report what
+    /// changed, and ask for the next window.
+    @MainActor
+    private func handleRefresh() async {
+        scheduleRefresh()
+        await notifier.refreshPermission()
+        guard notifier.permission.canDeliver else { return }
+        await store.restoreDashboard()
+        await notifier.post(store.syncEvents())
     }
 
     /// Radar IA was briefly shipped as a special Jobs setup card. The corrected
