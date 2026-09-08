@@ -83,6 +83,7 @@ final class Notifier {
         // Enough to reopen the exact thing after a cold start, when nothing of
         // the session that produced it is left in memory.
         var route: [String: String] = ["event": event.id]
+        route["installation"] = event.reference.installation
         route["conversation"] = event.reference.conversationID
         route["profile"] = event.reference.profile
         route["session"] = event.reference.sessionID
@@ -106,6 +107,7 @@ final class Notifier {
     /// Where a tapped notification should land.
     struct Route: Equatable, Sendable {
         var eventID: String
+        var installation: String?
         var conversationID: String?
         var profile: String?
         var sessionID: String?
@@ -114,6 +116,7 @@ final class Notifier {
         init?(userInfo: [AnyHashable: Any]) {
             guard let eventID = userInfo["event"] as? String else { return nil }
             self.eventID = eventID
+            installation = userInfo["installation"] as? String
             conversationID = userInfo["conversation"] as? String
             profile = userInfo["profile"] as? String
             sessionID = userInfo["session"] as? String

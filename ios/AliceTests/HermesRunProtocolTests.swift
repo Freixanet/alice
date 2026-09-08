@@ -8,6 +8,7 @@ final class HermesRunProtocolTests: XCTestCase {
         {
           "event": "approval.request",
           "run_id": "run-123",
+          "request_id": "approval-456",
           "tool": "terminal",
           "description": "Hermes wants to update itself.",
           "command": "hermes update",
@@ -29,6 +30,7 @@ final class HermesRunProtocolTests: XCTestCase {
             return XCTFail("Expected approval second")
         }
         XCTAssertEqual(approval.runID, "run-123")
+        XCTAssertEqual(approval.requestID, "approval-456")
         XCTAssertEqual(approval.title, "terminal")
         XCTAssertEqual(approval.detail, "Hermes wants to update itself.")
         XCTAssertEqual(approval.command, "hermes update")
@@ -53,6 +55,7 @@ final class HermesRunProtocolTests: XCTestCase {
               "run_id":"run-7",
               "status":"waiting_for_approval",
               "pending_approval": {
+                "request_id":"req-room-7",
                 "title":"Run command",
                 "command":"hermes update",
                 "choices":["once","deny"]
@@ -64,6 +67,7 @@ final class HermesRunProtocolTests: XCTestCase {
         let snapshot = try XCTUnwrap(HermesRunProtocol.parseSnapshot(data))
         XCTAssertEqual(snapshot.runID, "run-7")
         XCTAssertEqual(snapshot.status, .waitingForApproval)
+        XCTAssertEqual(snapshot.approval?.requestID, "req-room-7")
         XCTAssertEqual(snapshot.approval?.command, "hermes update")
         XCTAssertEqual(snapshot.approval?.choices, [.once, .deny])
     }
@@ -200,5 +204,105 @@ final class HermesRunProtocolTests: XCTestCase {
             endpoints: [:]
         )
         XCTAssertTrue(manifest.supportsRunApprovals)
+    }
+}
+
+
+final class RunApprovalStub: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) private static var responseBody = Data(#"{"resolved":1}"#.utf8)
+    nonisolated(unsafe) private static var capturedBody: Data?
+    private static let lock = NSLock()
+
+    static func install(response: String) {
+        lock.withLock {
+            responseBody = Data(response.utf8)
+            capturedBody = nil
+        }
+    }
+
+    static var body: Data? { lock.withLock { capturedBody } }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let requestBody = Self.readBody(from: request)
+        let responseBody = Self.lock.withLock { () -> Data in
+            Self.capturedBody = requestBody
+            return Self.responseBody
+        }
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: responseBody)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+
+    private static func readBody(from request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count > 0 {
+                result.append(contentsOf: buffer.prefix(count))
+            } else if count == 0 {
+                return result
+            } else {
+                return nil
+            }
+        }
+    }
+}
+
+final class HermesRunApprovalTransportTests: XCTestCase {
+    private func client() async -> HermesClient {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [RunApprovalStub.self]
+        let client = HermesClient(session: URLSession(configuration: config))
+        await client.connect(to: .init(
+            url: URL(string: "http://gateway.invalid/")!, key: "test-only"
+        ))
+        return client
+    }
+
+    func testRunApprovalSendsExactRequestIDAndRequiresPositiveResolution() async throws {
+        RunApprovalStub.install(response: #"{"resolved":1}"#)
+        let client = await client()
+
+        let resolved = try await client.respondToRunApproval(
+            runID: "run-1", requestID: "req-room-9", choice: .once, profile: "radar-ia"
+        )
+        XCTAssertEqual(resolved, 1)
+
+        let data = try XCTUnwrap(RunApprovalStub.body)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])
+        XCTAssertEqual(body["choice"], "once")
+        XCTAssertEqual(body["request_id"], "req-room-9")
+    }
+
+    func testRunApprovalResolvedZeroIsNotSuccess() async {
+        RunApprovalStub.install(response: #"{"resolved":0}"#)
+        let client = await client()
+
+        do {
+            _ = try await client.respondToRunApproval(
+                runID: "run-1", requestID: "req-room-9", choice: .deny
+            )
+            XCTFail("resolved:0 must not clear an approval")
+        } catch let failure as HermesClient.Failure {
+            guard case .badResponse = failure else {
+                return XCTFail("expected badResponse, got \(failure)")
+            }
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
     }
 }

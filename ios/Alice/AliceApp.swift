@@ -46,6 +46,15 @@ struct AliceApp: App {
                     installRouter()
                     await store.restoreConnection()
                     await store.restoreDashboard()
+                    // Hydrate canonical Bot Chat session ids before the watcher
+                    // starts. Existing installs may predate remote Bot Chat and
+                    // therefore have cached bot conversations with no server id;
+                    // without this, a real pushed event cannot be attributed to
+                    // its conversation until that bot is opened manually.
+                    await store.refreshVisibleBotChats()
+                    #if DEBUG
+                    if !store.botChatFailure.isEmpty { print("ALICE_E2E_BOT_REFRESH", store.botChatFailure) }
+                    #endif
                     await notifier.refreshPermission()
                     store.startWatchingLiveEvents()
                     // Prime the watermarks without announcing the installation's
@@ -68,6 +77,10 @@ struct AliceApp: App {
                     Task {
                         store.isForeground = true
                         await notifier.refreshPermission()
+                        // Re-resolve the canonical tips before listening again:
+                        // compression can advance a bot to a new session while
+                        // Alice is suspended, and events must route by that live id.
+                        await store.refreshVisibleBotChats()
                         // The socket does not survive suspension; this is where
                         // it comes back, and it is idempotent.
                         store.startWatchingLiveEvents()

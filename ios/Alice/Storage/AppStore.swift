@@ -78,16 +78,6 @@ final class AppStore {
     var draftAttachments: [Attachment] = []
     private(set) var isSending = false
 
-    /// Temporary. Keeps this build to loading state and importing recovered
-    /// history: no bot-chat sync, no socket, no sends. It exists so a recovery
-    /// on the phone cannot be confused by the unvalidated WebSocket path, and
-    /// comes out once that path is proven.
-    #if DEBUG
-    nonisolated static let recoverySafeMode = true
-    #else
-    nonisolated static let recoverySafeMode = false
-    #endif
-
     private let client = HermesClient()
     /// One socket for the whole app, built lazily once the dashboard is
     /// connected. The protocol addresses a session per call, so this is a
@@ -1306,8 +1296,49 @@ final class AppStore {
     /// Not the URL itself: that would put the address of a private machine into
     /// UserDefaults for no benefit. Only the question "is this still the same
     /// one" ever needs answering.
-    nonisolated static func installationFingerprint(_ dashboard: String) -> String {
-        String(format: "%016llx", UInt64(bitPattern: Int64(dashboard.hashValue)))
+    nonisolated static func installationFingerprint(_ endpoint: String) -> String {
+        // Swift's `hashValue` is deliberately randomised for every process. It
+        // therefore cannot be persisted as installation identity: after a
+        // relaunch the same Hermes looked like a different server and Alice
+        // discarded its watermarks/activity. FNV-1a is not cryptographic — it
+        // does not need to be — but is deterministic and stores no address.
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in endpoint.trimmingCharacters(in: .whitespacesAndNewlines).utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 0x100000001b3
+        }
+        return String(format: "%016llx", hash)
+    }
+
+    /// One conservative installation identity for whichever transport an
+    /// event used. Prefer the dashboard because socket events require it; a
+    /// gateway-only install still gets a stable identity for durable runs.
+    private var currentInstallationFingerprint: String? {
+        let endpoint = dashboardURL.isEmpty ? gatewayURL : dashboardURL
+        guard !endpoint.isEmpty else { return nil }
+        return Self.installationFingerprint(endpoint)
+    }
+
+    private func tagged(_ event: AliceEvent) -> AliceEvent {
+        var tagged = event
+        if tagged.reference.installation == nil {
+            tagged.reference.installation = currentInstallationFingerprint
+        }
+        return tagged
+    }
+
+    private func tagged(_ events: [AliceEvent]) -> [AliceEvent] {
+        events.map(tagged)
+    }
+
+    private func observe(_ raw: AliceEvent) {
+        let event = tagged(raw)
+        let wasKnown = activity.contains { $0.id == event.id }
+        record([event])
+        if event.standing == .waiting { refreshAttention() }
+        if !wasKnown {
+            Task { [weak self] in await self?.deliver([event]) }
+        }
     }
 
     /// Starts watching for work finishing and for anything that needs a person.
@@ -1333,10 +1364,15 @@ final class AppStore {
     /// One pushed frame, if it is something a person should know about.
     private func absorb(_ frame: HermesRPCEvent) async {
         guard let identity = sessionIdentity(for: frame.sessionID) else { return }
-        guard let event = LiveEvents.event(from: frame, session: identity) else { return }
+        guard let raw = LiveEvents.event(from: frame, session: identity) else { return }
+        let event = tagged(raw)
+        let wasKnown = activity.contains { $0.id == event.id }
         record([event])
         if event.standing == .waiting { refreshAttention() }
-        await deliver([event])
+        // The replay/snapshot path may show the same request immediately after
+        // the live frame. Notification identifiers dedupe in iOS, but posting
+        // twice can still alert twice; only a newly observed fact is delivered.
+        if !wasKnown { await deliver([event]) }
     }
 
     /// Resolves a session id to who it belongs to.
@@ -1398,7 +1434,8 @@ final class AppStore {
         // A different Hermes has different cursors. Carrying these across would
         // suppress the new server's real events as "already seen" and file its
         // activity under the old one's name.
-        let fingerprint = Self.installationFingerprint(dashboardURL)
+        let fingerprint = currentInstallationFingerprint
+            ?? Self.installationFingerprint(dashboardURL)
         if marks.installation != fingerprint {
             marks = EventWatermarks(installation: fingerprint)
             activity = []
@@ -1414,10 +1451,17 @@ final class AppStore {
         // the event history — which is why a first sync can stay silent about
         // finished runs and still surface an approval that is live right now.
         let pending = await pendingRequests()
+        let knownWaiting = Set(activity.filter(\.isActionable).map(\.id))
         reconcilePending(against: pending)
-        record(result.events + pending.events)
+        let changed = tagged(result.events)
+        let currentPending = tagged(pending.events)
+        let newlyPending = currentPending.filter { !knownWaiting.contains($0.id) }
+        // Record every current snapshot so partially answered clarify batches
+        // restore their locked qids, but notify only requests Alice had not
+        // already seen live or on an earlier sync.
+        record(changed + currentPending)
         refreshAttention(routines: routines, components: components)
-        return (result.events + pending.events.filter { $0.standing == .waiting })
+        return (changed + newlyPending.filter { $0.standing == .waiting })
             .filter { event in
             // A bot's events follow that bot's switch. Everything else is
             // about the installation, which has no per-bot switch to consult.
@@ -1510,9 +1554,7 @@ final class AppStore {
         _ event: AliceEvent, choice: Message.ApprovalChoice
     ) async -> Bool {
         guard event.standing == .waiting, !resolving.contains(event.id) else { return false }
-        // A notification kept from before Alice was repointed must not answer
-        // on the server it is aimed at now.
-        guard event.reference.belongs(to: Self.installationFingerprint(dashboardURL)) else {
+        guard event.reference.belongs(to: currentInstallationFingerprint) else {
             settle(event.id, as: .gone,
                    summary: "This belongs to a different Hermes than the one Alice is connected to.")
             return false
@@ -1524,13 +1566,25 @@ final class AppStore {
         case .gatewayRun:
             guard let runID = event.reference.runID else { return false }
             do {
-                try await client.respondToRunApproval(
-                    runID: runID, choice: choice, profile: event.reference.profile
+                _ = try await client.respondToRunApproval(
+                    runID: runID, requestID: event.reference.requestID,
+                    choice: choice, profile: event.reference.profile
                 )
                 settle(event.id, as: .resolved, summary: "You answered this.")
+                mirrorGatewayApprovalIntoChat(event, resolved: true)
                 return true
+            } catch let failure as HermesClient.Failure {
+                // 404/409 are authoritative evidence that this exact run or
+                // approval is no longer pending. Transport failures are not.
+                if case let .http(status, _, _) = failure, [404, 409].contains(status) {
+                    settle(event.id, as: .gone, summary: Self.noLongerWaiting)
+                    mirrorGatewayApprovalIntoChat(event, resolved: false)
+                } else {
+                    markResolutionFailed(event.id, failure)
+                }
+                return false
             } catch {
-                settle(event.id, as: .gone, summary: Self.noLongerWaiting)
+                markResolutionFailed(event.id, error)
                 return false
             }
         case .socket:
@@ -1544,40 +1598,49 @@ final class AppStore {
                     "request_id": requestID,
                     "choice": choice.rawValue,
                 ]))
-                // `{"resolved": 0}` comes back as a *success*: nothing was
-                // holding that request any more. Marking it answered on the
-                // strength of "the call did not throw" would claim a decision
-                // Hermes never applied.
                 guard LiveEvents.didResolve(result) else {
                     settle(event.id, as: .gone, summary: Self.noLongerWaiting)
+                    mirrorApprovalIntoChat(event, resolved: false)
                     return false
                 }
                 settle(event.id, as: .resolved, summary: "You answered this.")
                 mirrorApprovalIntoChat(event, resolved: true)
                 return true
             } catch {
-                // The send failed. The request is very likely still waiting, so
-                // it stays actionable rather than being marked answered.
                 markResolutionFailed(event.id, error)
                 return false
             }
         }
     }
 
-    /// Answers a clarify question Hermes is blocked on.
+    /// Answers one clarify question Hermes is blocked on.
     ///
-    /// `clarify.respond` takes `{request_id, answer}` and replies
-    /// `{"status": "ok"}` or `{"status": "expired"}` — the second also as a
-    /// success, which is the server's evidence that somebody else answered it
-    /// or that it timed out.
+    /// A batch is not one answer: Hermes locks each member by `question_id`
+    /// and reports the qids still remaining. Alice keeps the Activity row
+    /// actionable until that list is empty. Sending a batch without a qid is
+    /// refused locally because Hermes would treat it as a cancel/whole-request
+    /// answer and the first question would falsely resolve the rest.
     @discardableResult
-    func answerClarification(_ event: AliceEvent, answer: String) async -> Bool {
+    func answerClarification(
+        _ event: AliceEvent, questionID: String? = nil, answer: String
+    ) async -> Bool {
         let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
         guard event.standing == .waiting, !text.isEmpty,
               !resolving.contains(event.id),
               let requestID = event.reference.requestID
         else { return false }
-        guard event.reference.belongs(to: Self.installationFingerprint(dashboardURL)) else {
+        if event.questions.count > 1 && questionID == nil {
+            markResolutionFailed(
+                event.id, HermesRPCClient.Failure(
+                    reason: "Hermes is waiting on several questions; choose which one this answer belongs to."
+                )
+            )
+            return false
+        }
+        if let questionID, !event.questions.contains(where: { $0.id == questionID }) {
+            return false
+        }
+        guard event.reference.belongs(to: currentInstallationFingerprint) else {
             settle(event.id, as: .gone,
                    summary: "This belongs to a different Hermes than the one Alice is connected to.")
             return false
@@ -1588,20 +1651,50 @@ final class AppStore {
 
         do {
             var params: [String: Any] = ["request_id": requestID, "answer": text]
-            if let sessionID = event.reference.sessionID {
-                params["session_id"] = sessionID
-            }
+            if let sessionID = event.reference.sessionID { params["session_id"] = sessionID }
+            if let questionID { params["question_id"] = questionID }
             let result = try await rpc.call("clarify.respond", JSONObject(params))
-            guard LiveEvents.didResolve(result) else {
+
+            switch LiveEvents.clarifyReply(result, questionID: questionID) {
+            case .resolved:
+                if let questionID {
+                    lockClarificationAnswer(event.id, questionID: questionID, answer: text)
+                    settle(event.id, as: .resolved, summary: "You answered all questions.")
+                } else {
+                    settle(event.id, as: .resolved, summary: "You answered: \(text)")
+                }
+                return true
+            case .partial:
+                guard let questionID else { return false }
+                lockClarificationAnswer(event.id, questionID: questionID, answer: text)
+                return true
+            case .expired:
                 settle(event.id, as: .gone, summary: Self.noLongerWaiting)
                 return false
+            case .invalid:
+                markResolutionFailed(
+                    event.id, HermesRPCClient.Failure(
+                        reason: "Hermes accepted the call but did not prove which clarification questions remain."
+                    )
+                )
+                return false
             }
-            settle(event.id, as: .resolved, summary: "You answered: \(text)")
-            return true
         } catch {
             markResolutionFailed(event.id, error)
             return false
         }
+    }
+
+    private func lockClarificationAnswer(_ id: String, questionID: String, answer: String) {
+        guard let eventIndex = activity.firstIndex(where: { $0.id == id }),
+              let questionIndex = activity[eventIndex].questions.firstIndex(where: { $0.id == questionID })
+        else { return }
+        activity[eventIndex].questions[questionIndex].answer = answer
+        let answered = activity[eventIndex].questions.filter { $0.answer != nil }.count
+        let total = activity[eventIndex].questions.count
+        activity[eventIndex].summary = "\(answered) of \(total) questions answered. \(total - answered) still waiting."
+        persistActivity()
+        refreshAttention()
     }
 
     /// Settles whatever Activity row corresponds to a request answered
@@ -1611,6 +1704,20 @@ final class AppStore {
             $0.reference.requestID == requestID && $0.standing == .waiting
         }) else { return }
         settle(event.id, as: .resolved, summary: summary)
+    }
+
+    private func settleGatewayRun(matching runID: String, summary: String) {
+        guard let event = activity.first(where: {
+            $0.reference.runID == runID && $0.standing == .waiting
+        }) else { return }
+        settle(event.id, as: .resolved, summary: summary)
+    }
+
+    private func markRequestGone(matching requestID: String) {
+        guard let event = activity.first(where: {
+            $0.reference.requestID == requestID && $0.standing == .waiting
+        }) else { return }
+        settle(event.id, as: .gone, summary: Self.noLongerWaiting)
     }
 
     static let noLongerWaiting =
@@ -1643,6 +1750,19 @@ final class AppStore {
         persistConversations()
     }
 
+    private func mirrorGatewayApprovalIntoChat(_ event: AliceEvent, resolved: Bool) {
+        guard let runID = event.reference.runID,
+              let conversationID = event.reference.conversationID,
+              let chat = conversations.firstIndex(where: { $0.id == conversationID })
+        else { return }
+        for index in conversations[chat].messages.indices
+        where conversations[chat].messages[index].approval?.runID == runID {
+            conversations[chat].messages[index].approval = nil
+            if resolved { conversations[chat].messages[index].runStatus = .running }
+        }
+        persistConversations()
+    }
+
     private func settle(_ id: String, as standing: AliceEvent.Standing, summary: String) {
         guard let index = activity.firstIndex(where: { $0.id == id }) else { return }
         activity[index].standing = standing
@@ -1655,22 +1775,22 @@ final class AppStore {
 
     /// The event a tap arrived for, so the destination can highlight it.
     private(set) var routedEvent: String?
+    /// A notification tap that cannot safely navigate gets an explicit reason
+    /// instead of silently doing nothing or acting on the wrong installation.
+    var routeNotice: String?
 
     /// Retracts a delivered notification. Owned by the app, like `notify`.
     var withdraw: (@MainActor (String) -> Void)?
 
     /// Opens what a tapped notification was about.
-    ///
-    /// The conversation is addressed by Alice's own id, carried on the
-    /// notification, so this survives a cold start with nothing in memory. When
-    /// that conversation is gone — deleted here, or its bot removed on the
-    /// server — the row stays reachable in Activity and says so, rather than
-    /// opening an empty screen or silently doing nothing.
     @discardableResult
     func open(_ route: Notifier.Route) -> Bool {
-        // Activity is where every event is reachable, including one whose
-        // conversation is gone, so a tap always lands somewhere it can be
-        // acted on rather than nowhere.
+        if let installation = route.installation,
+           installation != currentInstallationFingerprint {
+            routeNotice = "This notification belongs to a different Hermes installation. Nothing was changed."
+            return false
+        }
+
         routedEvent = route.eventID
         if let id = route.conversationID,
            conversations.contains(where: { $0.id == id }) {
@@ -1678,27 +1798,32 @@ final class AppStore {
             activeID = id
             return true
         }
-        // The conversation is gone; the record of what happened is not.
-        if let index = activity.firstIndex(where: { $0.id == route.eventID }),
-           activity[index].standing == .waiting {
-            activity[index].standing = .gone
-            activity[index].severity = .informational
-            activity[index].summary =
-                "The conversation this belonged to is no longer on this phone."
-            persistActivity()
-            refreshAttention()
-        }
+
+        // Missing local navigation is not evidence that the server-side request
+        // expired. Keep an actionable Activity row actionable; it may still be
+        // answerable from its saved session/request identity.
+        routeNotice = route.conversationID == nil
+            ? "This notification has no conversation to open. You can review it in Activity."
+            : "That conversation is no longer on this phone. You can review the event in Activity."
         return false
     }
 
-    /// Keeps the newest events and drops the rest. Re-recording an event
-    /// already held replaces it rather than duplicating it, so a fact polled
-    /// twice stays one line.
+    /// Keeps the newest events and drops the rest. A current server snapshot
+    /// replaces an older copy of the same id so batch answers/standing survive
+    /// reconnects without creating duplicate rows. Preserve the original time
+    /// so a refresh does not turn an old request into new unread activity.
     private func record(_ events: [AliceEvent]) {
         guard !events.isEmpty else { return }
         var merged = activity
-        for event in events where !merged.contains(where: { $0.id == event.id }) {
-            merged.append(event)
+        for raw in events {
+            let event = tagged(raw)
+            if let index = merged.firstIndex(where: { $0.id == event.id }) {
+                var replacement = event
+                replacement.occurred = merged[index].occurred
+                merged[index] = replacement
+            } else {
+                merged.append(event)
+            }
         }
         activity = Array(
             merged.sorted { $0.occurred > $1.occurred }.prefix(Self.activityLimit)
@@ -1723,7 +1848,7 @@ final class AppStore {
     /// `AliceEvent` is the app's vocabulary; this is only its disk shape, kept
     /// separate so a future field cannot silently change what is already
     /// stored on somebody's phone.
-    private struct StoredEvent: Codable {
+    struct StoredEvent: Codable {
         var id: String
         var kind: String
         var severity: Int
@@ -1732,6 +1857,12 @@ final class AppStore {
         var summary: String
         var detail: String?
         var occurred: Date
+        // Optional on disk for compatibility with activity written before
+        // actionable requests were persisted completely.
+        var reference: AliceEvent.Reference?
+        var standing: AliceEvent.Standing?
+        var questions: [AliceEvent.Question]?
+        var approvalChoices: [Message.ApprovalChoice]?
 
         init(_ event: AliceEvent) {
             id = event.id
@@ -1742,6 +1873,10 @@ final class AppStore {
             summary = event.summary
             detail = event.detail
             occurred = event.occurred
+            reference = event.reference
+            standing = event.standing
+            questions = event.questions
+            approvalChoices = event.approvalChoices
         }
 
         var event: AliceEvent {
@@ -1750,7 +1885,11 @@ final class AppStore {
                 kind: AliceEvent.Kind(rawValue: kind) ?? .finished,
                 severity: AliceEvent.Severity(rawValue: severity) ?? .informational,
                 profile: profile, title: title, summary: summary,
-                detail: detail, occurred: occurred
+                detail: detail, occurred: occurred,
+                reference: reference ?? .init(),
+                standing: standing ?? .none,
+                questions: questions ?? [],
+                approvalChoices: approvalChoices ?? []
             )
         }
     }
@@ -3022,9 +3161,7 @@ final class AppStore {
             persistConversations()
             id = chat.id
         }
-        if !Self.recoverySafeMode {
-            Task { [weak self] in await self?.refreshBotChat(id) }
-        }
+        Task { [weak self] in await self?.refreshBotChat(id) }
         return id
     }
 
@@ -3035,7 +3172,6 @@ final class AppStore {
     /// failure leaves the cache exactly as it was and reports itself — an
     /// unreachable agent is not a bot with nothing to say.
     func refreshBotChat(_ conversationID: String) async {
-        if Self.recoverySafeMode { return }
         // Only a canonical bot chat has a remote transcript to read. Recovered
         // history is local by definition and has no session to refresh from.
         guard let index = conversations.firstIndex(where: { $0.id == conversationID }),
@@ -3075,7 +3211,6 @@ final class AppStore {
     /// foreground. Not a poll: a cron report lands while the phone is asleep,
     /// and this is the moment it becomes worth asking for.
     func refreshVisibleBotChats() async {
-        if Self.recoverySafeMode { return }
         let ids = conversations.filter(\.isCanonicalBotChat).map(\.id)
         for id in ids { await refreshBotChat(id) }
     }
@@ -3142,13 +3277,19 @@ final class AppStore {
         case "message.complete":
             // Only when this is the turn ending. A child's completion is not
             // the parent's, and Hermes says which by carrying `status`.
-            guard let status = event.payload["status"] as? String else { return nil }
+            guard let raw = event.payload["status"] as? String else { return nil }
+            let status: Message.RunStatus
+            switch raw {
+            case "complete": status = .completed
+            case "error": status = .failed
+            case "interrupted": status = .interrupted
+            default: return nil
+            }
             // The stream already delivered the body as deltas; the completion
             // frame only says how the turn ended.
             return .run(
                 id: (event.payload["id"] as? String) ?? event.sessionID,
-                status: status == "error" ? .failed : .completed,
-                output: nil
+                status: status, output: nil
             )
         case "tool.start":
             guard let name = event.payload["name"] as? String else { return nil }
@@ -3173,7 +3314,7 @@ final class AppStore {
             guard let requestID = LiveEvents.requestID(event.payload) else { return nil }
             let description = (event.payload["description"] as? String) ?? ""
             return .approval(Message.Approval(
-                runID: requestID,
+                runID: requestID, requestID: requestID,
                 title: description.isEmpty ? "Approval needed" : description,
                 detail: event.payload["detail"] as? String,
                 command: event.payload["command"] as? String,
@@ -3197,9 +3338,7 @@ final class AppStore {
     /// has: no second credential store, no second login screen, and the
     /// password never leaves `DashboardClient`.
     private func botChatSource() async -> WebSocketBotChatSource? {
-        // Recovery safe mode blocks bot-session mutation, not harmless Bot Mode
-        // roster/config reads performed elsewhere through the same transport.
-        guard !Self.recoverySafeMode, let rpcClient = await dashboardRPC() else { return nil }
+        guard let rpcClient = await dashboardRPC() else { return nil }
         return WebSocketBotChatSource(rpc: rpcClient)
     }
 
@@ -3341,7 +3480,7 @@ final class AppStore {
         // `routedBotName`, never `botName` and never ownership: a recovered
         // legacy thread is filed under a bot but has no session to send into.
         if let directBot = conversations[index].routedBotName,
-           conversations[index].isChannel != true, !Self.recoverySafeMode {
+           conversations[index].isChannel != true {
             streamTask = Task { [weak self] in
                 await self?.sendToBotChat(
                     profile: directBot,
@@ -3494,22 +3633,54 @@ final class AppStore {
         conversations[location.chat].messages[location.message].approval?.error = nil
         persistConversations()
 
+        let conversationID = conversations[location.chat].id
         let profile = conversations[location.chat].messages[location.message].botName
+            ?? conversations[location.chat].routedBotName
+
+        // Canonical Bot Chats receive approvals over the dashboard socket.
+        // Their `runID` field historically held the request id; do not send it
+        // to `/v1/runs`, which is a different server and identity domain.
+        if conversations[location.chat].isCanonicalBotChat {
+            let requestID = approval.requestID ?? approval.runID
+            guard let sessionID = conversations[location.chat].hermesSessionID,
+                  let source = await botChatSource()
+            else {
+                setApprovalFailure(messageID, "The Hermes dashboard is not connected.")
+                return
+            }
+            do {
+                let result = try await source.respondToApproval(
+                    sessionID: sessionID,
+                    requestID: requestID,
+                    choice: choice.rawValue
+                )
+                guard LiveEvents.didResolve(result) else {
+                    clearApproval(messageID, continueRunning: true)
+                    markRequestGone(matching: requestID)
+                    await refreshBotChat(conversationID)
+                    return
+                }
+                clearApproval(messageID, continueRunning: true)
+                settleRequest(matching: requestID, summary: "You answered this.")
+                return
+            } catch {
+                setApprovalFailure(messageID, error.localizedDescription)
+                return
+            }
+        }
+
+        // Ordinary chat runs use the gateway HTTP run protocol. Hermes' 2xx
+        // body must report a positive resolution count; the client validates
+        // that before this branch is allowed to clear the card.
         do {
-            try await client.respondToRunApproval(
+            _ = try await client.respondToRunApproval(
                 runID: approval.runID,
+                requestID: approval.requestID,
                 choice: choice,
                 profile: profile
             )
-            guard let refreshed = messageLocation(messageID) else { return }
-            conversations[refreshed.chat].messages[refreshed.message].approval = nil
-            conversations[refreshed.chat].messages[refreshed.message].runStatus = .running
-            conversations[refreshed.chat].messages[refreshed.message].pending = true
-            persistConversations()
-            // Answering here settles the same request in Activity and takes
-            // back the banner that asked it; otherwise the two disagree about
-            // whether anything is still waiting.
-            settleRequest(matching: approval.runID, summary: "You answered this.")
+            clearApproval(messageID, continueRunning: true)
+            settleGatewayRun(matching: approval.runID, summary: "You answered this.")
 
             // A normal live run already has a stream waiting for this response.
             // If the app was relaunched or SSE had died, reattach explicitly.
@@ -3517,17 +3688,30 @@ final class AppStore {
                 resumeRun(
                     runID: approval.runID,
                     replyID: messageID,
-                    conversationID: conversations[refreshed.chat].id,
+                    conversationID: conversationID,
                     profile: profile
                 )
             }
         } catch {
-            guard let refreshed = messageLocation(messageID) else { return }
-            conversations[refreshed.chat].messages[refreshed.message].approval?.resolving = false
-            conversations[refreshed.chat].messages[refreshed.message].approval?.error =
-                error.localizedDescription
-            persistConversations()
+            setApprovalFailure(messageID, error.localizedDescription)
         }
+    }
+
+    private func clearApproval(_ messageID: String, continueRunning: Bool) {
+        guard let refreshed = messageLocation(messageID) else { return }
+        conversations[refreshed.chat].messages[refreshed.message].approval = nil
+        if continueRunning {
+            conversations[refreshed.chat].messages[refreshed.message].runStatus = .running
+            conversations[refreshed.chat].messages[refreshed.message].pending = true
+        }
+        persistConversations()
+    }
+
+    private func setApprovalFailure(_ messageID: String, _ message: String) {
+        guard let refreshed = messageLocation(messageID) else { return }
+        conversations[refreshed.chat].messages[refreshed.message].approval?.resolving = false
+        conversations[refreshed.chat].messages[refreshed.message].approval?.error = message
+        persistConversations()
     }
 
     private func resumeRun(
@@ -3565,6 +3749,9 @@ final class AppStore {
         guard let location = messageLocation(id, conversationID: conversationID) else { return }
         let chat = location.chat
         let index = location.message
+        let eventProfile = conversations[chat].messages[index].botName
+            ?? conversations[chat].routedBotName
+        let eventLabel = eventProfile.map { botCurrentName(for: $0) } ?? "Alice"
 
         switch event {
         case let .delta(text):
@@ -3593,6 +3780,17 @@ final class AppStore {
             if status == .waitingForApproval || status.isTerminal || output != nil {
                 persistConversations()
             }
+            if status == .completed {
+                observe(AliceEvent(
+                    id: "run:\(runID)", kind: .finished, severity: .informational,
+                    profile: eventProfile, title: eventLabel,
+                    summary: "This task finished.", occurred: Date(),
+                    reference: AliceEvent.Reference(
+                        transport: .gatewayRun, runID: runID,
+                        profile: eventProfile, conversationID: conversationID
+                    )
+                ))
+            }
 
         case let .approval(approval):
             conversations[chat].messages[index].runID = approval.runID
@@ -3600,14 +3798,42 @@ final class AppStore {
             conversations[chat].messages[index].approval = approval
             conversations[chat].messages[index].pending = true
             persistConversations()
+            let suffix = approval.requestID ?? approval.runID
+            observe(AliceEvent(
+                id: "run-approval:\(approval.runID):\(suffix)",
+                kind: .needsInput, severity: .needsAttention,
+                profile: eventProfile, title: "Needs your approval",
+                summary: "\(eventLabel) is waiting for permission to continue.",
+                detail: approval.command ?? approval.detail, occurred: Date(),
+                reference: AliceEvent.Reference(
+                    transport: .gatewayRun, runID: approval.runID,
+                    profile: eventProfile, requestID: approval.requestID,
+                    conversationID: conversationID
+                ),
+                standing: .waiting,
+                approvalChoices: approval.choices
+            ))
 
         case let .failure(message, limit):
+            let runID = conversations[chat].messages[index].runID
             fail(
                 id,
                 conversationID: conversationID,
                 message: message,
                 limit: limit
             )
+            if let runID {
+                observe(AliceEvent(
+                    id: "run:\(runID)", kind: .finished, severity: .failure,
+                    profile: eventProfile, title: eventLabel,
+                    summary: "This task stopped before it finished.",
+                    detail: message, occurred: Date(),
+                    reference: AliceEvent.Reference(
+                        transport: .gatewayRun, runID: runID,
+                        profile: eventProfile, conversationID: conversationID
+                    )
+                ))
+            }
         }
     }
 

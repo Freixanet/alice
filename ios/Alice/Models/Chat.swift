@@ -79,6 +79,9 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
 
     struct Approval: Hashable, Sendable, Codable {
         var runID: String
+        /// Exact approval request identity when Hermes supplies one. Required
+        /// by room-scoped `/v1/runs/{id}/approval`; optional for older runs.
+        var requestID: String? = nil
         var title: String
         var detail: String?
         var command: String?

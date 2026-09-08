@@ -468,11 +468,18 @@ extension HermesClient {
         return HermesRunProtocol.parseSnapshot(data)
     }
 
+    /// Resolve the exact approval Hermes exposed for a durable run.
+    ///
+    /// A room-scoped run *requires* `request_id`; ordinary runs accept it and
+    /// use it to avoid resolving a sibling request. A 2xx is still not enough
+    /// evidence: the response must say that at least one approval resolved.
+    @discardableResult
     func respondToRunApproval(
         runID: String,
+        requestID: String? = nil,
         choice: Message.ApprovalChoice,
         profile: String? = nil
-    ) async throws {
+    ) async throws -> Int {
         var request = try self.request(
             "v1/runs/\(Self.pathSegment(runID))/approval",
             method: "POST",
@@ -480,15 +487,21 @@ extension HermesClient {
             timeout: Self.replyTimeout
         )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(
-            withJSONObject: ["choice": choice.rawValue]
-        )
+        var body: [String: Any] = ["choice": choice.rawValue]
+        if let requestID, !requestID.isEmpty { body["request_id"] = requestID }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
         guard http.isSuccess else {
             let detail = Self.detail(from: data) ?? "Hermes returned \(http.statusCode)."
             throw Failure.http(status: http.statusCode, detail: detail, limit: nil)
         }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let resolved = (object["resolved"] as? Int)
+                ?? (object["resolved"] as? NSNumber)?.intValue,
+              resolved > 0
+        else { throw Failure.badResponse }
+        return resolved
     }
 
     func stopRun(runID: String, profile: String? = nil) async throws {

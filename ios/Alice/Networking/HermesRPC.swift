@@ -32,6 +32,82 @@ struct HermesRPCEvent: @unchecked Sendable {
     let payload: [String: Any]
 }
 
+private final class HermesWebSocketOpenDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiters: [Int: CheckedContinuation<Void, Error>] = [:]
+    private var early: [Int: Result<Void, Error>] = [:]
+    private var opened: Set<Int> = []
+
+    struct Failure: Error, LocalizedError {
+        let reason: String
+        var errorDescription: String? { reason }
+    }
+
+    func waitForOpen(_ task: URLSessionWebSocketTask) async throws {
+        let id = task.taskIdentifier
+        try await withCheckedThrowingContinuation { continuation in
+            let ready: Result<Void, Error>? = lock.withLock {
+                if let result = early.removeValue(forKey: id) { return result }
+                waiters[id] = continuation
+                return nil
+            }
+            if let ready { continuation.resume(with: ready) }
+
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(10))
+                self?.timeOut(id)
+            }
+        }
+    }
+
+    private func timeOut(_ id: Int) {
+        let continuation = lock.withLock { waiters.removeValue(forKey: id) }
+        continuation?.resume(throwing: Failure(reason: "The Hermes WebSocket handshake timed out."))
+    }
+
+    private func settle(_ id: Int, _ result: Result<Void, Error>, remember: Bool) {
+        let continuation: CheckedContinuation<Void, Error>? = lock.withLock {
+            if case .success = result { opened.insert(id) }
+            if let continuation = waiters.removeValue(forKey: id) { return continuation }
+            if remember { early[id] = result }
+            return nil
+        }
+        continuation?.resume(with: result)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        settle(webSocketTask.taskIdentifier, .success(()), remember: true)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        let id = webSocketTask.taskIdentifier
+        let wasOpen = lock.withLock { opened.remove(id) != nil }
+        guard !wasOpen else { return }
+        settle(
+            id,
+            .failure(Failure(reason: "Hermes closed the WebSocket during its handshake (code \(closeCode.rawValue)).")),
+            remember: true
+        )
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let error else { return }
+        let id = task.taskIdentifier
+        let wasOpen = lock.withLock { opened.contains(id) }
+        guard !wasOpen else { return }
+        settle(id, .failure(error), remember: true)
+    }
+}
+
 /// The dashboard's JSON-RPC WebSocket.
 ///
 /// Authentication reuses the dashboard login Alice already has. A browser
@@ -51,6 +127,7 @@ actor HermesRPCClient: HermesRPCTransport {
     /// and hands over only a value that expires in thirty seconds.
     private let ticket: @Sendable () async throws -> String
     private let endpoint: URL
+    private let openDelegate: HermesWebSocketOpenDelegate
     private let session: URLSession
 
     private var socket: URLSessionWebSocketTask?
@@ -67,12 +144,17 @@ actor HermesRPCClient: HermesRPCTransport {
 
     init(
         endpoint: URL,
-        session: URLSession = .shared,
         ticket: @escaping @Sendable () async throws -> String
     ) {
         self.endpoint = endpoint
-        self.session = session
         self.ticket = ticket
+        let delegate = HermesWebSocketOpenDelegate()
+        self.openDelegate = delegate
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 15
+        self.session = URLSession(
+            configuration: configuration, delegate: delegate, delegateQueue: nil
+        )
     }
 
     /// The socket URL for one connection attempt.
@@ -86,24 +168,43 @@ actor HermesRPCClient: HermesRPCTransport {
     }
 
     func call(_ method: String, _ params: JSONObject) async throws -> JSONObject {
+        #if DEBUG
+        print("ALICE_E2E_RPC call", method)
+        #endif
         try await connectIfNeeded()
+        #if DEBUG
+        print("ALICE_E2E_RPC connected", method)
+        #endif
         let id = nextID
         nextID += 1
-        let frame: [String: Any] = [
-            "jsonrpc": "2.0", "id": id, "method": method, "params": params.fields,
-        ]
-        let data = try JSONSerialization.data(withJSONObject: frame)
+        let message = try Self.requestMessage(id: id, method: method, params: params)
         guard let socket else { throw Failure(reason: "Not connected to Hermes.") }
         return try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
+            #if DEBUG
+            print("ALICE_E2E_RPC sending", method, id)
+            #endif
             Task { [weak self] in
                 do {
-                    try await socket.send(.data(data))
+                    try await socket.send(message)
                 } catch {
                     await self?.settle(id, with: .failure(error))
                 }
             }
         }
+    }
+
+    /// Hermes' `/api/ws` transport reads text frames (`receive_text`).
+    /// Keep the framing decision in one testable place: sending the same JSON
+    /// as a binary frame leaves the server waiting without dispatching it.
+    static func requestMessage(
+        id: Int, method: String, params: JSONObject
+    ) throws -> URLSessionWebSocketTask.Message {
+        let frame: [String: Any] = [
+            "jsonrpc": "2.0", "id": id, "method": method, "params": params.fields,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: frame)
+        return .string(String(decoding: data, as: UTF8.self))
     }
 
     nonisolated func events() -> AsyncStream<HermesRPCEvent> {
@@ -164,13 +265,12 @@ actor HermesRPCClient: HermesRPCTransport {
             let task = session.webSocketTask(with: url)
             task.resume()
 
-            // `resume()` only starts the WebSocket handshake. On a physical
-            // iPhone, calling `receive()` or `send()` in the same run-loop turn
-            // can race that handshake and Foundation answers ENOTCONN (57).
-            // Prove that the peer is open with a ping before publishing the
-            // socket or starting the receive pump. A short ENOTCONN retry is
-            // specifically the handshake window; any other error is real.
-            try await waitUntilOpen(task)
+            // `resume()` only starts the WebSocket handshake. Publishing the
+            // task before Foundation reports `didOpen` races both send/receive;
+            // probing it with `sendPing` is not a handshake either and can wait
+            // forever on a physical device. The URLSession delegate is the
+            // authority for when this task is actually open.
+            try await openDelegate.waitForOpen(task)
             socket = task
             pump = Task { [weak self] in await self?.receive(on: task) }
             finishConnection(with: .success(()))
@@ -185,32 +285,6 @@ actor HermesRPCClient: HermesRPCTransport {
         let waiters = connectWaiters
         connectWaiters.removeAll()
         for continuation in waiters { continuation.resume(with: result) }
-    }
-
-    private func waitUntilOpen(_ task: URLSessionWebSocketTask) async throws {
-        var retries = 0
-        while true {
-            do {
-                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                    task.sendPing { error in
-                        if let error {
-                            continuation.resume(throwing: error)
-                        } else {
-                            continuation.resume(returning: ())
-                        }
-                    }
-                }
-                return
-            } catch {
-                let ns = error as NSError
-                guard ns.domain == NSPOSIXErrorDomain, ns.code == 57, retries < 40 else {
-                    task.cancel(with: .goingAway, reason: nil)
-                    throw error
-                }
-                retries += 1
-                try await Task.sleep(for: .milliseconds(50))
-            }
-        }
     }
 
     private func receive(on task: URLSessionWebSocketTask) async {
@@ -239,6 +313,9 @@ actor HermesRPCClient: HermesRPCTransport {
 
     private func deliver(_ frame: [String: Any]) {
         if let id = frame["id"] as? Int {
+            #if DEBUG
+            print("ALICE_E2E_RPC reply", id, frame["error"] == nil ? "result" : "error")
+            #endif
             if let error = frame["error"] as? [String: Any] {
                 let message = (error["message"] as? String) ?? "Hermes refused that."
                 settle(id, with: .failure(Failure(reason: message)))

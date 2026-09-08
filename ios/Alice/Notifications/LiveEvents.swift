@@ -133,7 +133,8 @@ enum LiveEvents {
                 ?? (frame.payload["prompt"] as? String),
             occurred: now,
             reference: reference,
-            standing: .waiting
+            standing: .waiting,
+            approvalChoices: choices(frame.payload)
         )
     }
 
@@ -141,31 +142,59 @@ enum LiveEvents {
     ///
     /// Hermes calls `clarify` two ways. A single question is
     /// `{question, choices, multi_select?}`; a batch is
-    /// `{questions: [{qid, question, choices, multi_select}]}`. Both carry the
-    /// `request_id` `_block` minted, and `choices` may be empty — the tool is
-    /// used for open questions too, so an answer box has to exist as well as
-    /// buttons.
-    ///
-    /// A batch is surfaced as its first question with its options; answering a
-    /// multi-question batch one `qid` at a time is a conversation, and the
-    /// chat is where that belongs.
+    /// `{questions: [{qid, question, choices, multi_select}]}`. Batch snapshots
+    /// may also carry `answers: {qid: answer}` for questions already locked
+    /// before a reconnect. Alice preserves every qid and those answers so the
+    /// batch can resume in Activity without accidentally resolving the whole
+    /// request after the first question.
     static func clarify(
         _ payload: [String: Any], session: SessionIdentity, now: Date = Date()
     ) -> AliceEvent? {
         guard let requestID = Self.requestID(payload) else { return nil }
-        let first = (payload["questions"] as? [[String: Any]])?.first
-        let source = first ?? payload
-        let text = (source["question"] as? String) ?? ""
-        guard !text.isEmpty else { return nil }
 
+        let questions: [AliceEvent.Question]
+        if let batch = payload["questions"] as? [[String: Any]], !batch.isEmpty {
+            let locked = payload["answers"] as? [String: Any] ?? [:]
+            questions = batch.compactMap { row in
+                guard let qid = row["qid"] as? String, !qid.isEmpty,
+                      let text = row["question"] as? String, !text.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                      ).isEmpty
+                else { return nil }
+                let answer = locked[qid] as? String
+                return AliceEvent.Question(
+                    id: qid,
+                    text: text,
+                    choices: (row["choices"] as? [String]) ?? [],
+                    allowsMultiple: (row["multi_select"] as? Bool) ?? false,
+                    answer: answer
+                )
+            }
+        } else {
+            guard let text = payload["question"] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            questions = [AliceEvent.Question(
+                text: text,
+                choices: (payload["choices"] as? [String]) ?? [],
+                allowsMultiple: (payload["multi_select"] as? Bool) ?? false
+            )]
+        }
+        guard !questions.isEmpty else { return nil }
+
+        let answered = questions.filter { $0.answer != nil }.count
+        let summary = questions.count == 1
+            ? "\(session.label) asked you a question."
+            : "\(session.label) asked \(questions.count) questions"
+                + (answered > 0 ? " (\(answered) answered)." : ".")
         return AliceEvent(
             id: "clarify:\(requestID)",
             kind: .needsInput,
             severity: .needsAttention,
             profile: session.profile,
             title: "Needs an answer",
-            summary: "\(session.label) asked you a question.",
-            detail: text,
+            summary: summary,
+            detail: questions.count == 1 ? questions[0].text : nil,
             occurred: now,
             reference: AliceEvent.Reference(
                 profile: session.profile, sessionID: session.sessionID,
@@ -173,11 +202,7 @@ enum LiveEvents {
                 conversationID: session.conversationID
             ),
             standing: .waiting,
-            question: AliceEvent.Question(
-                text: text,
-                choices: (source["choices"] as? [String]) ?? [],
-                allowsMultiple: (source["multi_select"] as? Bool) ?? false
-            )
+            questions: questions
         )
     }
 
@@ -193,6 +218,34 @@ enum LiveEvents {
         if let resolved = result["resolved"] as? NSNumber { return resolved.intValue > 0 }
         if let status = result["status"] as? String { return status == "ok" }
         return false
+    }
+
+    enum ClarifyReply: Equatable {
+        case resolved
+        case partial(remaining: [String])
+        case expired
+        case invalid
+    }
+
+    /// Interprets the success envelope of `clarify.respond`. For a batch, an
+    /// `ok` without `remaining` is deliberately invalid: transport success
+    /// cannot be upgraded into "the whole request is resolved".
+    static func clarifyReply(_ result: JSONObject, questionID: String?) -> ClarifyReply {
+        guard let status = result["status"] as? String else { return .invalid }
+        if status == "expired" { return .expired }
+        guard status == "ok" else { return .invalid }
+        guard questionID != nil else { return .resolved }
+        guard let remaining = stringList(result["remaining"]) else { return .invalid }
+        return remaining.isEmpty ? .resolved : .partial(remaining: remaining)
+    }
+
+    private static func stringList(_ value: Any?) -> [String]? {
+        if let strings = value as? [String] { return strings }
+        if let values = value as? [Any] {
+            let strings = values.compactMap { $0 as? String }
+            return strings.count == values.count ? strings : nil
+        }
+        return nil
     }
 
     /// Hermes has used more than one spelling for this across its surfaces.
@@ -235,7 +288,8 @@ enum LiveEvents {
                 sessionKey: session.sessionKey, requestID: requestID,
                 conversationID: session.conversationID
             ),
-            standing: .waiting
+            standing: .waiting,
+            approvalChoices: choices(payload)
         )
     }
 

@@ -197,6 +197,11 @@ enum HermesRunProtocol {
 
         return Message.Approval(
             runID: runID,
+            requestID: bounded(
+                nested["request_id"] ?? nested["requestId"]
+                    ?? object["request_id"] ?? object["requestId"],
+                max: 256
+            ),
             title: bounded(nested["tool"] ?? nested["title"], max: 256)
                 ?? "Hermes needs approval",
             detail: bounded(

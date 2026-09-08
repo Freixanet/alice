@@ -224,6 +224,17 @@ struct RootView: View {
                 }
             }
         }
+        .alert(
+            "Couldn’t open notification",
+            isPresented: Binding(
+                get: { store.routeNotice != nil },
+                set: { if !$0 { store.routeNotice = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { store.routeNotice = nil }
+        } message: {
+            Text(store.routeNotice ?? "Alice could not open that notification.")
+        }
     }
 
     /// Whether the conversation on screen belongs to a bot.

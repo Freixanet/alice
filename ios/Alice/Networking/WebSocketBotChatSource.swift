@@ -141,10 +141,11 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     }
 
     /// Answers an approval in that session.
+    @discardableResult
     func respondToApproval(
         sessionID: String, requestID: String, choice: String
-    ) async throws {
-        _ = try await rpc.call("approval.respond", JSONObject([
+    ) async throws -> JSONObject {
+        try await rpc.call("approval.respond", JSONObject([
             "session_id": sessionID,
             "request_id": requestID,
             "choice": choice,

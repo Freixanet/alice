@@ -125,8 +125,14 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     var occurred: Date
     var reference = Reference()
     var standing: Standing = .none
-    /// What a clarify request is asking, when that is what this is.
-    var question: Question?
+    /// What a clarify request is asking, when that is what this is. A batch
+    /// keeps every question because Hermes locks them one-by-one by `qid`;
+    /// reducing it to the first question would let one answer resolve the
+    /// whole tool call accidentally.
+    var questions: [Question] = []
+
+    /// Compatibility/readability for the common one-question case.
+    var question: Question? { questions.first }
 
     /// One question Hermes is blocked on.
     ///
@@ -134,10 +140,21 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     /// ways, and offering only buttons for an open question would leave no way
     /// to answer it.
     struct Question: Hashable, Sendable, Codable {
+        /// Present for a member of a batch; nil for the historical single
+        /// question shape. Sent back as `question_id`, never invented locally.
+        var id: String? = nil
         var text: String
         var choices: [String] = []
         var allowsMultiple = false
+        /// A server-confirmed answer already locked for this qid. Pending
+        /// snapshots carry these on reconnect, so Alice can resume mid-batch.
+        var answer: String? = nil
     }
+
+    /// What an approval actually allows. Empty for non-approval events.
+    /// Keeping this on the event prevents Activity from offering `always`
+    /// when Hermes deliberately exposed only `once`/`deny`.
+    var approvalChoices: [Message.ApprovalChoice] = []
 
     /// Whether this still wants an answer.
     var isActionable: Bool { standing == .waiting }
@@ -146,9 +163,11 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
         id: String, kind: Kind, severity: Severity, profile: String? = nil,
         title: String, summary: String, detail: String? = nil, occurred: Date,
         reference: Reference = Reference(), standing: Standing = .none,
-        question: Question? = nil
+        question: Question? = nil, questions: [Question] = [],
+        approvalChoices: [Message.ApprovalChoice] = []
     ) {
-        self.question = question
+        self.questions = questions.isEmpty ? question.map { [$0] } ?? [] : questions
+        self.approvalChoices = approvalChoices
         self.id = id
         self.kind = kind
         self.severity = severity

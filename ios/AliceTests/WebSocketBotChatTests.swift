@@ -284,6 +284,32 @@ final class WebSocketBotChatTests: XCTestCase {
         XCTAssertEqual(request.choices, [.once, .deny])
     }
 
+    func testInterruptedCompletionIsNotACompletedRun() {
+        let event = AppStore.chatEvent(from: HermesRPCEvent(
+            type: "message.complete", sessionID: "s1",
+            payload: ["status": "interrupted"]
+        ))
+        guard case let .run(_, status, _)? = event else {
+            return XCTFail("interrupted must close the run")
+        }
+        XCTAssertEqual(status, .interrupted)
+    }
+
+    func testSocketApprovalReturnsResolutionEvidenceAndExactIdentity() async throws {
+        let rpc = FakeRPC(results: ["approval.respond": ["resolved": 0]])
+        let source = WebSocketBotChatSource(rpc: rpc)
+
+        let result = try await source.respondToApproval(
+            sessionID: "sess-1", requestID: "req-9", choice: "deny"
+        )
+
+        XCTAssertFalse(LiveEvents.didResolve(result))
+        let params = await rpc.params(of: "approval.respond")
+        XCTAssertEqual(params?["session_id"], "sess-1")
+        XCTAssertEqual(params?["request_id"], "req-9")
+        XCTAssertEqual(params?["choice"], "deny")
+    }
+
     // MARK: - G. Out of band
 
     func testACronDeliveryArrivesOnRefreshExactlyOnce() async throws {
@@ -362,6 +388,20 @@ final class WebSocketBotChatTests: XCTestCase {
     }
 
     // MARK: - A. The ticket
+
+    func testJSONRPCRequestsUseTextWebSocketFrames() throws {
+        let message = try HermesRPCClient.requestMessage(
+            id: 17, method: "profiles.list", params: JSONObject(["include_sessions": true])
+        )
+        guard case let .string(text) = message else {
+            return XCTFail("Hermes /api/ws reads text frames; binary JSON is never dispatched")
+        }
+        let data = try XCTUnwrap(text.data(using: .utf8))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["id"] as? Int, 17)
+        XCTAssertEqual(object["method"] as? String, "profiles.list")
+        XCTAssertEqual((object["params"] as? [String: Any])?["include_sessions"] as? Bool, true)
+    }
 
     func testTheSocketURLCarriesAFreshTicketAndNoCredential() throws {
         let dashboard = try XCTUnwrap(URL(string: "http://100.67.213.42:9119"))

@@ -279,7 +279,8 @@ final class NotifierTests: XCTestCase {
             summary: "Radar IA is waiting for permission to continue.",
             occurred: Date(),
             reference: .init(
-                profile: "radar-ia", sessionID: "sess-1", sessionKey: "key-1",
+                installation: "install-a", profile: "radar-ia",
+                sessionID: "sess-1", sessionKey: "key-1",
                 requestID: "req-9", conversationID: "conv-1"
             ),
             standing: .waiting
@@ -289,6 +290,7 @@ final class NotifierTests: XCTestCase {
         let info = try XCTUnwrap(center.route("approval:req-9"))
         let route = try XCTUnwrap(Notifier.Route(userInfo: info))
         XCTAssertEqual(route.eventID, "approval:req-9")
+        XCTAssertEqual(route.installation, "install-a")
         XCTAssertEqual(route.conversationID, "conv-1")
         XCTAssertEqual(route.requestID, "req-9")
     }

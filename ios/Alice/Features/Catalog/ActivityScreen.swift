@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// What has been happening, and what is waiting on you.
@@ -18,6 +19,7 @@ struct ActivityScreen: View {
     @State private var expanded: Set<String> = []
     @State private var resolving: Set<String> = []
     @State private var answers: [String: String] = [:]
+    @State private var selectedOptions: [String: Set<String>] = [:]
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -82,42 +84,20 @@ struct ActivityScreen: View {
                     .foregroundStyle(.secondary)
             }
 
-            if event.isActionable, let question = event.question {
-                // A clarify request. Hermes calls `clarify` both with options
-                // and without, so both have to be answerable: the buttons when
-                // it offered any, and a box either way for the open case.
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(question.text).font(.footnote)
-                    if !question.choices.isEmpty {
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 8) { options(question, for: event) }
-                            VStack(alignment: .leading, spacing: 8) { options(question, for: event) }
-                        }
-                    }
-                    HStack(spacing: 8) {
-                        TextField("Your answer", text: answerBinding(event.id), axis: .vertical)
-                            .textFieldStyle(.roundedBorder)
-                            .lineLimit(1...4)
-                            .accessibilityIdentifier("activity.answer.field")
-                        Button("Send") {
-                            Task { await send(answers[event.id] ?? "", for: event) }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .disabled(
-                            resolving.contains(event.id)
-                                || (answers[event.id] ?? "").trimmingCharacters(
-                                    in: .whitespacesAndNewlines
-                                ).isEmpty
+            if event.isActionable, !event.questions.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(event.questions.enumerated()), id: \.offset) { offset, question in
+                        questionView(
+                            question,
+                            number: event.questions.count > 1 ? offset + 1 : nil,
+                            event: event
                         )
-                        .accessibilityIdentifier("activity.answer.send")
                     }
                 }
                 .padding(.top, 2)
             } else if event.isActionable {
-                // The same choices Hermes offered, answered over the same
-                // socket the request arrived on. Nothing here invents an option
-                // the server did not list.
+                // Exactly what Hermes offered. A room-scoped approval may only
+                // allow once/deny, so Activity must not invent session/always.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { choices(for: event) }
                     VStack(alignment: .leading, spacing: 8) { choices(for: event) }
@@ -168,31 +148,139 @@ struct ActivityScreen: View {
     }
 
     @ViewBuilder
-    private func options(_ question: AliceEvent.Question, for event: AliceEvent) -> some View {
+    private func questionView(
+        _ question: AliceEvent.Question, number: Int?, event: AliceEvent
+    ) -> some View {
+        let key = questionKey(event, question)
+        VStack(alignment: .leading, spacing: 8) {
+            if let number {
+                Text("Question \(number) of \(event.questions.count)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Text(question.text).font(.footnote)
+
+            if let answer = question.answer {
+                Label("Answered: \(answer)", systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                if !question.choices.isEmpty {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) { options(question, key: key, for: event) }
+                        VStack(alignment: .leading, spacing: 8) {
+                            options(question, key: key, for: event)
+                        }
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    TextField(
+                        question.allowsMultiple ? "Other answer (optional)" : "Your answer",
+                        text: answerBinding(key), axis: .vertical
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+                    .accessibilityIdentifier("activity.answer.field.\(question.id ?? "single")")
+
+                    Button("Send") {
+                        Task { await sendQuestion(question, key: key, event: event) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(resolving.contains(event.id) || !hasAnswer(question, key: key))
+                    .accessibilityIdentifier("activity.answer.send.\(question.id ?? "single")")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func options(
+        _ question: AliceEvent.Question, key: String, for event: AliceEvent
+    ) -> some View {
         ForEach(question.choices, id: \.self) { option in
-            Button(option) { Task { await send(option, for: event) } }
+            if question.allowsMultiple {
+                Button {
+                    var selected = selectedOptions[key] ?? []
+                    if selected.contains(option) { selected.remove(option) } else { selected.insert(option) }
+                    selectedOptions[key] = selected
+                } label: {
+                    Label(
+                        option,
+                        systemImage: (selectedOptions[key] ?? []).contains(option)
+                            ? "checkmark.circle.fill" : "circle"
+                    )
+                }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
                 .controlSize(.small)
                 .disabled(resolving.contains(event.id))
+            } else {
+                Button(option) {
+                    Task { await send(option, questionID: question.id, key: key, for: event) }
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+                .disabled(resolving.contains(event.id))
+            }
         }
     }
 
-    private func answerBinding(_ id: String) -> Binding<String> {
-        Binding(get: { answers[id] ?? "" }, set: { answers[id] = $0 })
+    private func questionKey(_ event: AliceEvent, _ question: AliceEvent.Question) -> String {
+        "\(event.id)|\(question.id ?? "single")"
     }
 
-    private func send(_ answer: String, for event: AliceEvent) async {
+    private func answerBinding(_ key: String) -> Binding<String> {
+        Binding(get: { answers[key] ?? "" }, set: { answers[key] = $0 })
+    }
+
+    private func hasAnswer(_ question: AliceEvent.Question, key: String) -> Bool {
+        let typed = (answers[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty { return true }
+        return question.allowsMultiple && !(selectedOptions[key] ?? []).isEmpty
+    }
+
+    private func sendQuestion(
+        _ question: AliceEvent.Question, key: String, event: AliceEvent
+    ) async {
+        let typed = (answers[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let answer: String
+        if question.allowsMultiple {
+            var values = question.choices.filter { (selectedOptions[key] ?? []).contains($0) }
+            if !typed.isEmpty { values.append(typed) }
+            guard !values.isEmpty,
+                  let data = try? JSONSerialization.data(withJSONObject: values),
+                  let encoded = String(data: data, encoding: .utf8)
+            else { return }
+            // Hermes explicitly accepts JSON arrays for multi-select replies;
+            // this preserves labels containing commas unlike a comma join.
+            answer = encoded
+        } else {
+            guard !typed.isEmpty else { return }
+            answer = typed
+        }
+        await send(answer, questionID: question.id, key: key, for: event)
+    }
+
+    private func send(
+        _ answer: String, questionID: String?, key: String, for event: AliceEvent
+    ) async {
         resolving.insert(event.id)
         defer { resolving.remove(event.id) }
-        if await store.answerClarification(event, answer: answer) {
-            answers[event.id] = nil
+        if await store.answerClarification(event, questionID: questionID, answer: answer) {
+            answers[key] = nil
+            selectedOptions[key] = nil
         }
     }
 
     @ViewBuilder
     private func choices(for event: AliceEvent) -> some View {
-        ForEach(Message.ApprovalChoice.allCases, id: \.self) { choice in
+        let allowed = event.approvalChoices.isEmpty
+            ? [Message.ApprovalChoice.once, .deny]
+            : event.approvalChoices
+        ForEach(allowed, id: \.self) { choice in
             Button(label(choice)) {
                 Task {
                     resolving.insert(event.id)
@@ -220,6 +308,7 @@ struct ActivityScreen: View {
 
     private func route(for event: AliceEvent) -> Notifier.Route {
         var info: [AnyHashable: Any] = ["event": event.id]
+        info["installation"] = event.reference.installation
         info["conversation"] = event.reference.conversationID
         info["profile"] = event.reference.profile
         info["session"] = event.reference.sessionID

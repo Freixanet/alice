@@ -96,6 +96,7 @@ final class LiveEventTranslationTests: XCTestCase {
         XCTAssertEqual(event.standing, .waiting)
         XCTAssertTrue(event.isActionable)
         XCTAssertEqual(event.reference.requestID, "req-9")
+        XCTAssertEqual(event.approvalChoices, [.once, .session, .always, .deny])
         XCTAssertEqual(event.id, "approval:req-9")
     }
 
