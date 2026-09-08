@@ -517,6 +517,7 @@ final class AppStore {
     private func resetDashboardRPC() async {
         if let rpcClient { await rpcClient.disconnect() }
         rpcClient = nil
+        liveBotSessions.removeAll()
         botMetadataIsRemote = false
     }
 
@@ -1290,6 +1291,11 @@ final class AppStore {
     /// to all listeners, so the two coexist — but a second *long-lived* one
     /// would record every completion twice.
     private var liveObserver: Task<Void, Never>?
+    /// Runtime ids minted by `session.resume` on this dashboard socket. Hermes
+    /// emits pushed frames under these ids, while Alice persists the durable
+    /// session row. Mapping the runtime id back to the conversation keeps Chat
+    /// and Activity on the same canonical Bot Chat.
+    private var liveBotSessions: [String: String] = [:]
 
     /// Which installation the stored activity and cursors belong to.
     ///
@@ -1382,13 +1388,26 @@ final class AppStore {
     /// telling someone about work they cannot reach is worse than silence.
     private func sessionIdentity(for sessionID: String) -> LiveEvents.SessionIdentity? {
         guard !sessionID.isEmpty else { return nil }
-        guard let conversation = conversations.first(where: {
+        let conversation: Conversation?
+        if let direct = conversations.first(where: {
             $0.hermesSessionID == sessionID && $0.isCanonicalBotChat
-        }), let profile = conversation.routedBotName else { return nil }
+        }) {
+            conversation = direct
+        } else if let conversationID = liveBotSessions[sessionID] {
+            conversation = conversations.first(where: {
+                $0.id == conversationID && $0.isCanonicalBotChat
+            })
+        } else {
+            conversation = nil
+        }
+        guard let conversation, let profile = conversation.routedBotName else { return nil }
+        let durableID = conversation.hermesSessionID ?? sessionID
         return LiveEvents.SessionIdentity(
             profile: profile,
-            sessionID: sessionID,
-            sessionKey: conversation.hermesSessionID,
+            // Persist/action by durable identity. The runtime id is only a
+            // transport address and dies with this websocket.
+            sessionID: durableID,
+            sessionKey: durableID,
             conversationID: conversation.id,
             label: botCurrentName(for: profile)
         )
@@ -3237,11 +3256,12 @@ final class AppStore {
                 conversations[index].hermesSessionID = chat.resolvedID
             }
             let events = source.rpc.events()
-            try await source.submit(
+            let liveSessionID = try await source.submit(
                 profile: profile, sessionID: chat.resolvedID, text: text
             )
+            liveBotSessions[liveSessionID] = conversationID
             for await event in events {
-                guard event.sessionID.isEmpty || event.sessionID == chat.resolvedID
+                guard event.sessionID.isEmpty || event.sessionID == liveSessionID
                 else { continue }
                 if let chatEvent = Self.chatEvent(from: event) {
                     apply(chatEvent, to: replyID, conversationID: conversationID)

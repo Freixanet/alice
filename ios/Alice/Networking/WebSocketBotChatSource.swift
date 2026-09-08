@@ -127,7 +127,8 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// No system directive is added. The agent answering is the bot, so
     /// telling it who to pretend to be is both unnecessary and the thing that
     /// used to make one assistant impersonate another.
-    func submit(profile: String, sessionID: String, text: String) async throws {
+    @discardableResult
+    func submit(profile: String, sessionID: String, text: String) async throws -> String {
         let resumed = try await resume(profile: profile, target: sessionID)
         // Alice persists the durable SQLite row id. `session.resume` binds that
         // row to this socket and returns the live id `_sess_nowait` requires
@@ -141,6 +142,7 @@ struct WebSocketBotChatSource: BotChatSessionSource {
             "session_id": liveID,
             "text": text,
         ]))
+        return liveID
     }
 
     /// Stops the run in that session.

@@ -169,10 +169,15 @@ struct AliceApp: App {
             send("Integration check only. Reply with exactly ALICE_E2E_TASK_OK and do not call any tools.")
             let idle = await waitForIdle()
             await store.refreshBotChat(conversationID)
-            let marker = store.activeConversation?.messages.contains {
-                $0.role == .assistant && $0.content.contains("ALICE_E2E_TASK_OK")
+            let exactChat = store.activeConversation?.messages.contains {
+                $0.role == .assistant &&
+                $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == "ALICE_E2E_TASK_OK"
             } == true
-            print("ALICE_PHYSICAL_E2E task idle=\(idle) marker=\(marker) session=\(store.activeConversation?.hermesSessionID != nil)")
+            let activityFinished = store.activity.contains {
+                !baseline.contains($0.id) && $0.profile == "radar-ia" &&
+                $0.kind == .finished && $0.reference.conversationID == conversationID
+            }
+            print("ALICE_PHYSICAL_E2E task idle=\(idle) exactChat=\(exactChat) activityFinished=\(activityFinished) session=\(store.activeConversation?.hermesSessionID != nil)")
 
         case "approval":
             send("Integration check only. Use the terminal tool to run exactly `rm -rf /tmp/alice-e2e-approval-nonexistent`. Do not simulate it and do not do anything else before the tool. Wait for the real approval. After the approved tool completes, reply with exactly ALICE_E2E_APPROVAL_DONE.")
@@ -193,10 +198,11 @@ struct AliceApp: App {
             let chatCardGone = store.activeConversation?.messages.allSatisfy {
                 $0.approval?.requestID != request && $0.approval?.runID != request
             } == true
-            let marker = store.activeConversation?.messages.contains {
-                $0.role == .assistant && $0.content.contains("ALICE_E2E_APPROVAL_DONE")
+            let exactChat = store.activeConversation?.messages.contains {
+                $0.role == .assistant &&
+                $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == "ALICE_E2E_APPROVAL_DONE"
             } == true
-            print("ALICE_PHYSICAL_E2E approval accepted=\(accepted) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") chatCardGone=\(chatCardGone) marker=\(marker)")
+            print("ALICE_PHYSICAL_E2E approval accepted=\(accepted) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") chatCardGone=\(chatCardGone) exactChat=\(exactChat)")
 
         case "clarify":
             send("Integration check only. You MUST call the clarify tool exactly once using ONE batch with exactly two independent questions. First question: `E2E color?` with choices `Blue` and `Green`, single-select. Second question: `E2E note?` with no choices, free text. Do not answer either question yourself. Wait for both real user answers. After both answers are received, reply with exactly ALICE_E2E_CLARIFY_DONE.")
@@ -222,10 +228,11 @@ struct AliceApp: App {
             await store.refreshBotChat(conversationID)
             _ = await store.syncEvents()
             let final = store.activity.first(where: { $0.id == event.id })
-            let marker = store.activeConversation?.messages.contains {
-                $0.role == .assistant && $0.content.contains("ALICE_E2E_CLARIFY_DONE")
+            let exactChat = store.activeConversation?.messages.contains {
+                $0.role == .assistant &&
+                $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == "ALICE_E2E_CLARIFY_DONE"
             } == true
-            print("ALICE_PHYSICAL_E2E clarify first=\(first) partial=\(partialOK) second=\(second) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") answers=\(final?.questions.filter { $0.answer != nil }.count ?? -1)/2 marker=\(marker)")
+            print("ALICE_PHYSICAL_E2E clarify first=\(first) partial=\(partialOK) second=\(second) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") answers=\(final?.questions.filter { $0.answer != nil }.count ?? -1)/2 exactChat=\(exactChat)")
 
         default:
             print("ALICE_PHYSICAL_E2E", mode, "FAIL:unknown-mode")
