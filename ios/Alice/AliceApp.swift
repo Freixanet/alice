@@ -20,7 +20,7 @@ struct AliceApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if physicalE2EMode != nil {
+                if let mode = physicalE2EMode, !mode.hasPrefix("notify-") {
                     Color.clear
                 } else {
                     RootView()
@@ -316,7 +316,7 @@ struct AliceApp: App {
             let request = UNNotificationRequest(
                 identifier: event.id,
                 content: content,
-                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 20, repeats: false)
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 120, repeats: false)
             )
             try? await UNUserNotificationCenter.current().add(request)
             physicalE2ERecord("ALICE_PHYSICAL_E2E notification scheduled mode=\(mode)")

@@ -37,12 +37,24 @@ final class NotificationApplicationDelegate: NSObject, UIApplicationDelegate, UN
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+    ) {
         guard let route = Notifier.Route(
             userInfo: response.notification.request.content.userInfo
-        ) else { return }
-        await accept(route)
+        ) else {
+            completionHandler()
+            return
+        }
+
+        // Let UIKit finish the notification-response transaction before any
+        // SwiftUI navigation mutates scene state. On a cold start, navigating
+        // from inside the callback can collide with UIKit's snapshot/state
+        // restoration work and abort the process.
+        completionHandler()
+        DispatchQueue.main.async { [weak self] in
+            self?.accept(route)
+        }
     }
 
     /// While Alice is open, a banner would cover the very screen showing the
