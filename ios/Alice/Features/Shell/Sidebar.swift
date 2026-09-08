@@ -106,10 +106,13 @@ struct Sidebar: View {
                     .font(.system(size: 16, weight: .medium))
                     .imageScale(.large)
                     .frame(width: 44, height: 44)
+                    // Same as the footer discs: measured at 20 x 20pt.
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
             .accessibilityLabel("Search")
+            .accessibilityIdentifier("sidebar.search")
         }
         .padding(.leading, 24)
         .padding(.trailing, 12)
@@ -415,10 +418,16 @@ struct Sidebar: View {
                 }
                 .foregroundStyle(.primary)
                 .frame(width: 44, height: 44)
+                // The frame alone sizes the layout but leaves the button's hit
+                // region and its accessibility frame on the glyph — measured at
+                // 11.7 x 20.3pt, a quarter of the 44pt minimum, so the target
+                // was the symbol rather than the disc drawn around it.
+                .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
             .accessibilityLabel("Settings")
+            .accessibilityIdentifier("sidebar.settings")
             .contextMenu {
                 Button {
                     going = .settings
@@ -460,10 +469,13 @@ struct Sidebar: View {
                     .foregroundStyle(scheme == .dark ? Color.white : .black)
                     .frame(width: 24, height: 24)
                     .frame(width: 44, height: 44)
+                    // Same as the settings disc: measured at 18 x 18pt.
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
             .accessibilityLabel("New chat")
+            .accessibilityIdentifier("sidebar.newChat")
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -547,5 +559,6 @@ struct Sidebar: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar.row.\(title)")
     }
 }

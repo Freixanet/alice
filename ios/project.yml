@@ -95,3 +95,19 @@ targets:
         # written against it and neither had ever run.
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.tests
+
+  # Unit tests cover contracts; they cannot tell you whether a destination is
+  # still reachable. The navigation these exercise was rearranged, so it needs
+  # a check that actually drives the app.
+  AliceUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AliceUITests
+    dependencies:
+      - target: Alice
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.uitests
+        TEST_TARGET_NAME: Alice

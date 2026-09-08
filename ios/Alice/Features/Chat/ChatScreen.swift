@@ -134,6 +134,7 @@ struct ChatScreen: View {
             }
             .glassEffect(.regular.interactive(), in: .circle)
             .accessibilityLabel(bot == nil ? "Chats" : "Bots")
+            .accessibilityIdentifier("chat.leading")
 
             Spacer(minLength: 0)
 
