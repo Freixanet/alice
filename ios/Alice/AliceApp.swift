@@ -18,7 +18,17 @@ struct AliceApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            Group {
+                #if DEBUG
+                if physicalE2EMode != nil {
+                    Color.clear
+                } else {
+                    RootView()
+                }
+                #else
+                RootView()
+                #endif
+            }
                 .environment(store)
                 .environment(speech)
                 .environment(notifier)
@@ -44,6 +54,16 @@ struct AliceApp: App {
                 }
                 .task {
                     installRouter()
+                    #if DEBUG
+                    if physicalE2EMode != nil {
+                        await store.restoreDashboard()
+                        store.enableDashboardOnlyPhysicalE2E()
+                        await notifier.refreshPermission()
+                        store.startWatchingLiveEvents()
+                        await runPhysicalE2EIfRequested()
+                        return
+                    }
+                    #endif
                     await store.restoreConnection()
                     await store.restoreDashboard()
                     // Hydrate canonical Bot Chat session ids before the watcher
@@ -93,6 +113,125 @@ struct AliceApp: App {
             await handleRefresh()
         }
     }
+
+
+
+    #if DEBUG
+    private var physicalE2EMode: String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-alicePhysicalE2E"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
+    /// Temporary physical-device harness used only to close the real Hermes
+    /// delivery E2E. It calls the same AppStore methods as the UI and is
+    /// removed before final validation/release.
+    @MainActor
+    private func runPhysicalE2EIfRequested() async {
+        guard let mode = physicalE2EMode else { return }
+        guard store.isConnected, store.dashboardReady else {
+            print("ALICE_PHYSICAL_E2E", mode, "FAIL:not-connected")
+            return
+        }
+        guard let conversation = store.conversations.first(where: {
+            $0.routedBotName == "radar-ia" && $0.isCanonicalBotChat
+        }) else {
+            print("ALICE_PHYSICAL_E2E", mode, "FAIL:no-radar-chat")
+            return
+        }
+        let conversationID = conversation.id
+        store.activeID = conversationID
+        let baseline = Set(store.activity.map(\.id))
+
+        func waitForIdle(_ seconds: Int = 90) async -> Bool {
+            for _ in 0..<(seconds * 4) {
+                if !store.isSending { return true }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            return false
+        }
+        func waitForEvent(
+            _ predicate: @escaping (AliceEvent) -> Bool, seconds: Int = 90
+        ) async -> AliceEvent? {
+            for _ in 0..<(seconds * 4) {
+                if let event = store.activity.first(where: predicate) { return event }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            return nil
+        }
+        func send(_ text: String) {
+            store.draft = text
+            store.send()
+        }
+
+        switch mode {
+        case "task":
+            send("Integration check only. Reply with exactly ALICE_E2E_TASK_OK and do not call any tools.")
+            let idle = await waitForIdle()
+            await store.refreshBotChat(conversationID)
+            let marker = store.activeConversation?.messages.contains {
+                $0.role == .assistant && $0.content.contains("ALICE_E2E_TASK_OK")
+            } == true
+            print("ALICE_PHYSICAL_E2E task idle=\(idle) marker=\(marker) session=\(store.activeConversation?.hermesSessionID != nil)")
+
+        case "approval":
+            send("Integration check only. Use the terminal tool to run exactly `rm -rf /tmp/alice-e2e-approval-nonexistent`. Do not simulate it and do not do anything else before the tool. Wait for the real approval. After the approved tool completes, reply with exactly ALICE_E2E_APPROVAL_DONE.")
+            guard let event = await waitForEvent({
+                !baseline.contains($0.id) && $0.profile == "radar-ia" &&
+                $0.standing == .waiting && !$0.approvalChoices.isEmpty
+            }) else {
+                print("ALICE_PHYSICAL_E2E approval FAIL:no-request")
+                return
+            }
+            let request = event.reference.requestID ?? ""
+            print("ALICE_PHYSICAL_E2E approval request=\(!request.isEmpty) choices=\(event.approvalChoices.map(\.rawValue).joined(separator: ","))")
+            let accepted = await store.resolvePendingRequest(event, choice: .once)
+            let idle = await waitForIdle()
+            await store.refreshBotChat(conversationID)
+            _ = await store.syncEvents()
+            let final = store.activity.first(where: { $0.id == event.id })
+            let chatCardGone = store.activeConversation?.messages.allSatisfy {
+                $0.approval?.requestID != request && $0.approval?.runID != request
+            } == true
+            let marker = store.activeConversation?.messages.contains {
+                $0.role == .assistant && $0.content.contains("ALICE_E2E_APPROVAL_DONE")
+            } == true
+            print("ALICE_PHYSICAL_E2E approval accepted=\(accepted) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") chatCardGone=\(chatCardGone) marker=\(marker)")
+
+        case "clarify":
+            send("Integration check only. You MUST call the clarify tool exactly once using ONE batch with exactly two independent questions. First question: `E2E color?` with choices `Blue` and `Green`, single-select. Second question: `E2E note?` with no choices, free text. Do not answer either question yourself. Wait for both real user answers. After both answers are received, reply with exactly ALICE_E2E_CLARIFY_DONE.")
+            guard let event = await waitForEvent({
+                !baseline.contains($0.id) && $0.profile == "radar-ia" &&
+                $0.standing == .waiting && $0.questions.count == 2
+            }) else {
+                print("ALICE_PHYSICAL_E2E clarify FAIL:no-batch")
+                return
+            }
+            let q0 = event.questions[0].id
+            let q1 = event.questions[1].id
+            print("ALICE_PHYSICAL_E2E clarify request=\(event.reference.requestID != nil) q0=\(q0 ?? "nil") q1=\(q1 ?? "nil")")
+            let first = await store.answerClarification(event, questionID: q0, answer: "Blue")
+            let partial = store.activity.first(where: { $0.id == event.id })
+            let partialOK = partial?.standing == .waiting && partial?.questions.first?.answer == "Blue" && partial?.questions.dropFirst().first?.answer == nil
+            guard let refreshed = partial else {
+                print("ALICE_PHYSICAL_E2E clarify FAIL:missing-after-first")
+                return
+            }
+            let second = await store.answerClarification(refreshed, questionID: q1, answer: "E2E note")
+            let idle = await waitForIdle()
+            await store.refreshBotChat(conversationID)
+            _ = await store.syncEvents()
+            let final = store.activity.first(where: { $0.id == event.id })
+            let marker = store.activeConversation?.messages.contains {
+                $0.role == .assistant && $0.content.contains("ALICE_E2E_CLARIFY_DONE")
+            } == true
+            print("ALICE_PHYSICAL_E2E clarify first=\(first) partial=\(partialOK) second=\(second) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") answers=\(final?.questions.filter { $0.answer != nil }.count ?? -1)/2 marker=\(marker)")
+
+        default:
+            print("ALICE_PHYSICAL_E2E", mode, "FAIL:unknown-mode")
+        }
+    }
+    #endif
 
     /// A tap injected by the UI suite, so the cold-start path can be driven
     /// without a real notification — which needs a granted permission and a

@@ -128,9 +128,17 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// telling it who to pretend to be is both unnecessary and the thing that
     /// used to make one assistant impersonate another.
     func submit(profile: String, sessionID: String, text: String) async throws {
-        try await resume(profile: profile, target: sessionID)
+        let resumed = try await resume(profile: profile, target: sessionID)
+        // Alice persists the durable SQLite row id. `session.resume` binds that
+        // row to this socket and returns the live id `_sess_nowait` requires
+        // for prompt.submit. The durable id itself is not a live RPC session.
+        guard let liveID = resumed["session_id"] as? String, !liveID.isEmpty else {
+            throw HermesRPCClient.Failure(
+                reason: "Hermes resumed the chat without a live session id."
+            )
+        }
         _ = try await rpc.call("prompt.submit", JSONObject([
-            "session_id": sessionID,
+            "session_id": liveID,
             "text": text,
         ]))
     }

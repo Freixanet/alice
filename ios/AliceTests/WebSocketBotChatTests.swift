@@ -168,7 +168,7 @@ final class WebSocketBotChatTests: XCTestCase {
     func testSendingGoesToTheCanonicalSessionUnderTheBotsProfile() async throws {
         let rpc = FakeRPC(results: [
             "profiles.list": Self.roster("radar-ia", id: "20260905_104136_281747"),
-            "session.resume": Self.history([]),
+            "session.resume": ["session_id": "live-ws-session", "messages": []],
         ])
         let source = WebSocketBotChatSource(rpc: rpc)
         let aliceLocalUUID = UUID().uuidString
@@ -180,7 +180,10 @@ final class WebSocketBotChatTests: XCTestCase {
         )
 
         let submit = await rpc.params(of: "prompt.submit")
-        XCTAssertEqual(submit?["session_id"], "20260905_104136_281747")
+        XCTAssertEqual(submit?["session_id"], "live-ws-session",
+                       "prompt.submit must use the live id returned by session.resume")
+        XCTAssertNotEqual(submit?["session_id"], "20260905_104136_281747",
+                          "the durable stored id is only the resume target")
         XCTAssertNotEqual(submit?["session_id"], aliceLocalUUID,
                           "a local UUID must never be the session")
         XCTAssertEqual(submit?["text"], "¿algo nuevo?")
