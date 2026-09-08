@@ -81,9 +81,29 @@ struct AliceApp: App {
         }
     }
 
+    /// A tap injected by the UI suite, so the cold-start path can be driven
+    /// without a real notification — which needs a granted permission and a
+    /// server, neither of which a test can arrange on its own.
+    ///
+    /// Debug only: it exists in the build the tests run and in no shipped one.
+    private var launchRoute: Notifier.Route? {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-notificationRoute"),
+              index + 1 < arguments.count,
+              let data = arguments[index + 1].data(using: .utf8),
+              let info = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return Notifier.Route(userInfo: info)
+        #else
+        return nil
+        #endif
+    }
+
     /// Connects the store to the notifier, and taps to the store.
     private func installRouter() {
         guard router == nil else { return }
+        if let launchRoute { notifier.pendingRoute = launchRoute }
         store.notify = { events in await notifier.post(events) }
         store.withdraw = { id in notifier.withdraw(id) }
         let router = NotificationRouter { route in

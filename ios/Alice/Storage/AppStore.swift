@@ -1494,26 +1494,153 @@ final class AppStore {
     /// the notification that announced it is withdrawn: leaving a banner for a
     /// question already answered is the same lie as the switch that promised
     /// notifications and sent none.
+    /// Requests currently being answered, so a second tap on the same row —
+    /// or a sync landing mid-flight — cannot send the decision twice.
+    private var resolving: Set<String> = []
+
+    /// Answers an approval Hermes is holding.
+    ///
+    /// Routed by the transport the request arrived on. A bot chat's approval is
+    /// resolved by `approval.respond` over the dashboard socket keyed by
+    /// `request_id`; a gateway run's is a POST to `/v1/runs/{id}/approval`
+    /// keyed by the run. Sending one to the other resolves nothing while
+    /// looking like it worked, so the reference decides.
     @discardableResult
     func resolvePendingRequest(
         _ event: AliceEvent, choice: Message.ApprovalChoice
     ) async -> Bool {
-        guard event.standing == .waiting,
-              let requestID = event.reference.requestID,
-              let sessionID = event.reference.sessionID,
-              let source = await botChatSource()
-        else { return false }
-        do {
-            try await source.respondToApproval(
-                sessionID: sessionID, requestID: requestID, choice: choice.rawValue
-            )
-            settle(event.id, as: .resolved, summary: "You answered this.")
-            return true
-        } catch {
-            // Hermes refusing usually means it is no longer holding it.
-            settle(event.id, as: .gone, summary: "This is no longer waiting for an answer.")
+        guard event.standing == .waiting, !resolving.contains(event.id) else { return false }
+        // A notification kept from before Alice was repointed must not answer
+        // on the server it is aimed at now.
+        guard event.reference.belongs(to: Self.installationFingerprint(dashboardURL)) else {
+            settle(event.id, as: .gone,
+                   summary: "This belongs to a different Hermes than the one Alice is connected to.")
             return false
         }
+        resolving.insert(event.id)
+        defer { resolving.remove(event.id) }
+
+        switch event.reference.transport {
+        case .gatewayRun:
+            guard let runID = event.reference.runID else { return false }
+            do {
+                try await client.respondToRunApproval(
+                    runID: runID, choice: choice, profile: event.reference.profile
+                )
+                settle(event.id, as: .resolved, summary: "You answered this.")
+                return true
+            } catch {
+                settle(event.id, as: .gone, summary: Self.noLongerWaiting)
+                return false
+            }
+        case .socket:
+            guard let requestID = event.reference.requestID,
+                  let sessionID = event.reference.sessionID,
+                  let rpc = await dashboardRPC()
+            else { return false }
+            do {
+                let result = try await rpc.call("approval.respond", JSONObject([
+                    "session_id": sessionID,
+                    "request_id": requestID,
+                    "choice": choice.rawValue,
+                ]))
+                // `{"resolved": 0}` comes back as a *success*: nothing was
+                // holding that request any more. Marking it answered on the
+                // strength of "the call did not throw" would claim a decision
+                // Hermes never applied.
+                guard LiveEvents.didResolve(result) else {
+                    settle(event.id, as: .gone, summary: Self.noLongerWaiting)
+                    return false
+                }
+                settle(event.id, as: .resolved, summary: "You answered this.")
+                mirrorApprovalIntoChat(event, resolved: true)
+                return true
+            } catch {
+                // The send failed. The request is very likely still waiting, so
+                // it stays actionable rather than being marked answered.
+                markResolutionFailed(event.id, error)
+                return false
+            }
+        }
+    }
+
+    /// Answers a clarify question Hermes is blocked on.
+    ///
+    /// `clarify.respond` takes `{request_id, answer}` and replies
+    /// `{"status": "ok"}` or `{"status": "expired"}` — the second also as a
+    /// success, which is the server's evidence that somebody else answered it
+    /// or that it timed out.
+    @discardableResult
+    func answerClarification(_ event: AliceEvent, answer: String) async -> Bool {
+        let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard event.standing == .waiting, !text.isEmpty,
+              !resolving.contains(event.id),
+              let requestID = event.reference.requestID
+        else { return false }
+        guard event.reference.belongs(to: Self.installationFingerprint(dashboardURL)) else {
+            settle(event.id, as: .gone,
+                   summary: "This belongs to a different Hermes than the one Alice is connected to.")
+            return false
+        }
+        guard let rpc = await dashboardRPC() else { return false }
+        resolving.insert(event.id)
+        defer { resolving.remove(event.id) }
+
+        do {
+            var params: [String: Any] = ["request_id": requestID, "answer": text]
+            if let sessionID = event.reference.sessionID {
+                params["session_id"] = sessionID
+            }
+            let result = try await rpc.call("clarify.respond", JSONObject(params))
+            guard LiveEvents.didResolve(result) else {
+                settle(event.id, as: .gone, summary: Self.noLongerWaiting)
+                return false
+            }
+            settle(event.id, as: .resolved, summary: "You answered: \(text)")
+            return true
+        } catch {
+            markResolutionFailed(event.id, error)
+            return false
+        }
+    }
+
+    /// Settles whatever Activity row corresponds to a request answered
+    /// elsewhere in the app. Keyed by the request id, which both surfaces use.
+    func settleRequest(matching requestID: String, summary: String) {
+        guard let event = activity.first(where: {
+            $0.reference.requestID == requestID && $0.standing == .waiting
+        }) else { return }
+        settle(event.id, as: .resolved, summary: summary)
+    }
+
+    static let noLongerWaiting =
+        "This was already answered elsewhere, or it expired."
+
+    /// The send did not reach Hermes. The request stays actionable, because it
+    /// is probably still blocking the agent.
+    private func markResolutionFailed(_ id: String, _ error: Error) {
+        guard let index = activity.firstIndex(where: { $0.id == id }) else { return }
+        activity[index].detail = (error as? LocalizedError)?.errorDescription
+            ?? error.localizedDescription
+        activity[index].summary = "Alice could not send that answer. It is still waiting."
+        persistActivity()
+    }
+
+    /// Clears the matching approval card in the conversation, so answering in
+    /// Activity does not leave the chat still asking.
+    private func mirrorApprovalIntoChat(_ event: AliceEvent, resolved: Bool) {
+        guard let requestID = event.reference.requestID,
+              let conversationID = event.reference.conversationID,
+              let chat = conversations.firstIndex(where: { $0.id == conversationID })
+        else { return }
+        for index in conversations[chat].messages.indices
+        where conversations[chat].messages[index].approval?.runID == requestID {
+            conversations[chat].messages[index].approval = nil
+            if resolved {
+                conversations[chat].messages[index].runStatus = .running
+            }
+        }
+        persistConversations()
     }
 
     private func settle(_ id: String, as standing: AliceEvent.Standing, summary: String) {
@@ -1525,6 +1652,9 @@ final class AppStore {
         refreshAttention()
         withdraw?(id)
     }
+
+    /// The event a tap arrived for, so the destination can highlight it.
+    private(set) var routedEvent: String?
 
     /// Retracts a delivered notification. Owned by the app, like `notify`.
     var withdraw: (@MainActor (String) -> Void)?
@@ -1538,6 +1668,10 @@ final class AppStore {
     /// opening an empty screen or silently doing nothing.
     @discardableResult
     func open(_ route: Notifier.Route) -> Bool {
+        // Activity is where every event is reachable, including one whose
+        // conversation is gone, so a tap always lands somewhere it can be
+        // acted on rather than nowhere.
+        routedEvent = route.eventID
         if let id = route.conversationID,
            conversations.contains(where: { $0.id == id }) {
             showingBots = false
@@ -2977,7 +3111,12 @@ final class AppStore {
                 if let chatEvent = Self.chatEvent(from: event) {
                     apply(chatEvent, to: replyID, conversationID: conversationID)
                 }
-                if event.type == "message.complete" { break }
+                // Only a real turn outcome ends the stream. The subagent
+                // mirror in `agent_callbacks` emits `message.complete` with no
+                // `status`, on the PARENT's session id, when a child finishes
+                // — breaking on that abandoned the parent mid-run and threw
+                // away the reply it was still writing.
+                if LiveEvents.isTurnOutcome(event) { break }
             }
         } catch {
             fail(replyID, conversationID: conversationID,
@@ -3001,11 +3140,14 @@ final class AppStore {
             else { return nil }
             return .delta(text)
         case "message.complete":
+            // Only when this is the turn ending. A child's completion is not
+            // the parent's, and Hermes says which by carrying `status`.
+            guard let status = event.payload["status"] as? String else { return nil }
             // The stream already delivered the body as deltas; the completion
-            // frame only says the turn is over.
+            // frame only says how the turn ended.
             return .run(
                 id: (event.payload["id"] as? String) ?? event.sessionID,
-                status: .completed,
+                status: status == "error" ? .failed : .completed,
                 output: nil
             )
         case "tool.start":
@@ -3023,13 +3165,22 @@ final class AppStore {
                 detail: event.payload["context"] as? String
             )
         case "approval.request":
-            guard let title = event.payload["title"] as? String else { return nil }
+            // Hermes' approval payload has no `title`: it carries `command`,
+            // `description`, `pattern_key(s)`, `allow_session`,
+            // `allow_permanent` and a computed `choices`. Requiring a title
+            // meant this returned nil for every real approval, so the card
+            // never appeared in a bot chat at all.
+            guard let requestID = LiveEvents.requestID(event.payload) else { return nil }
+            let description = (event.payload["description"] as? String) ?? ""
             return .approval(Message.Approval(
-                runID: (event.payload["request_id"] as? String) ?? event.sessionID,
-                title: title,
+                runID: requestID,
+                title: description.isEmpty ? "Approval needed" : description,
                 detail: event.payload["detail"] as? String,
                 command: event.payload["command"] as? String,
-                choices: Message.ApprovalChoice.allCases
+                // The options Hermes listed. Offering "always" on a
+                // smart-denied request proposes a permanent grant the server
+                // will refuse.
+                choices: LiveEvents.choices(event.payload)
             ))
         case "error":
             let message = (event.payload["message"] as? String) ?? "Hermes reported an error."
@@ -3355,6 +3506,10 @@ final class AppStore {
             conversations[refreshed.chat].messages[refreshed.message].runStatus = .running
             conversations[refreshed.chat].messages[refreshed.message].pending = true
             persistConversations()
+            // Answering here settles the same request in Activity and takes
+            // back the banner that asked it; otherwise the two disagree about
+            // whether anything is still waiting.
+            settleRequest(matching: approval.runID, summary: "You answered this.")
 
             // A normal live run already has a stream waiting for this response.
             // If the app was relaunched or SSE had died, reattach explicitly.

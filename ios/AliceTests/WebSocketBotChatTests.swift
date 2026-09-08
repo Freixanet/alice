@@ -229,13 +229,26 @@ final class WebSocketBotChatTests: XCTestCase {
         }
         XCTAssertEqual(text, "**Radar IA — 6 de septiembre de 2026**")
 
-        let done = AppStore.chatEvent(
-            from: HermesRPCEvent(type: "message.complete", sessionID: "s1", payload: [:])
-        )
+        // Corrected against the Hermes source: `_complete_turn_payload` always
+        // carries `status`, and a payload without one is the subagent mirror
+        // from `agent_callbacks` — emitted on the PARENT's session id when a
+        // child finishes. This case previously asserted that the mirror shape
+        // closes the turn, which is what cut parents short and lost their
+        // final reply. See SubagentSequenceTests.
+        let done = AppStore.chatEvent(from: HermesRPCEvent(
+            type: "message.complete", sessionID: "s1", payload: ["status": "complete"]
+        ))
         guard case let .run(_, status, _)? = done else {
-            return XCTFail("a completion must close the turn")
+            return XCTFail("a real turn outcome must close the turn")
         }
         XCTAssertEqual(status, .completed)
+
+        XCTAssertNil(
+            AppStore.chatEvent(
+                from: HermesRPCEvent(type: "message.complete", sessionID: "s1", payload: [:])
+            ),
+            "a child's mirror must not close the parent's turn"
+        )
     }
 
     func testToolAndApprovalEventsReachTheExistingRenderer() {
@@ -251,13 +264,24 @@ final class WebSocketBotChatTests: XCTestCase {
 
         let approval = AppStore.chatEvent(from: HermesRPCEvent(
             type: "approval.request", sessionID: "s1",
-            payload: ["request_id": "r1", "title": "Run a command?", "command": "ls"]
+            // The real payload: Hermes sends no `title`. It carries `command`,
+            // `description`, `pattern_key(s)`, `allow_*` and a computed
+            // `choices`. Requiring a title made this return nil for every
+            // genuine approval, so the card never appeared in a bot chat.
+            payload: [
+                "request_id": "r1", "description": "Run a shell command",
+                "command": "ls", "choices": ["once", "deny"],
+            ]
         ))
         guard case let .approval(request)? = approval else {
             return XCTFail("approval requests must map")
         }
         XCTAssertEqual(request.runID, "r1")
         XCTAssertEqual(request.command, "ls")
+        XCTAssertEqual(request.title, "Run a shell command")
+        // Only what Hermes offered: "always" here would propose a permanent
+        // grant the server refuses.
+        XCTAssertEqual(request.choices, [.once, .deny])
     }
 
     // MARK: - G. Out of band

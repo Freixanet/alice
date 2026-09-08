@@ -113,6 +113,36 @@ final class NavigationJourneyTests: XCTestCase {
         }
     }
 
+    /// A tap on a notification with the app closed.
+    ///
+    /// Driven by an injected route rather than a real banner: delivering one
+    /// needs a granted permission and a live server, and neither belongs in a
+    /// navigation test. What this proves is the half that was missing — the
+    /// route survives a cold start and lands somewhere it can be acted on,
+    /// with nothing of the session left in memory. It is not evidence of
+    /// remote push, which Alice does not have.
+    func testTapOnANotificationLandsSomewhereActionableFromCold() throws {
+        app.terminate()
+        app = XCUIApplication()
+        let route = """
+        {"event":"approval:req-cold","conversation":"missing-conv",        "profile":"radar-ia","session":"sess-1","request":"req-cold"}
+        """
+        app.launchArguments += ["-notificationRoute", route]
+        app.launch()
+
+        // The conversation named on the notification is not on this phone, so
+        // the tap must still reach the record rather than opening nothing.
+        XCTAssertTrue(
+            app.buttons["chat.leading"].waitForExistence(timeout: 25),
+            "a tap whose destination is gone must still land in a usable app"
+        )
+        app.buttons["chat.leading"].tap()
+        let activity = app.buttons["sidebar.row.Activity"]
+        XCTAssertTrue(activity.waitForExistence(timeout: 10))
+        activity.tap()
+        XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 10))
+    }
+
     func testActivityOpensFromTheDrawer() {
         openDrawer()
         app.buttons["sidebar.row.Activity"].tap()

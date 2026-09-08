@@ -40,11 +40,7 @@ enum LiveEvents {
                 summary: "\(session.label) is waiting for permission to continue."
             )
         case "clarify.request":
-            return intervention(
-                frame, session: session, now: now, kind: "clarify",
-                title: "Needs an answer",
-                summary: "\(session.label) asked you a question."
-            )
+            return clarify(frame.payload, session: session, now: now)
         default:
             return nil
         }
@@ -59,6 +55,17 @@ enum LiveEvents {
         /// The bot's display name, for the sentence a person reads. Never used
         /// as identity.
         var label: String
+    }
+
+    /// Whether a frame is this turn ending, as opposed to a child's.
+    ///
+    /// `_complete_turn_payload` always sets `status`; the subagent mirror in
+    /// `agent_callbacks` emits `{"text": summary}` without one, on the parent's
+    /// session id. This is the whole difference, and every consumer needs it.
+    static func isTurnOutcome(_ frame: HermesRPCEvent) -> Bool {
+        guard frame.type == "message.complete" else { return false }
+        guard let status = frame.payload["status"] as? String else { return false }
+        return !status.isEmpty
     }
 
     private static func completion(
@@ -130,6 +137,64 @@ enum LiveEvents {
         )
     }
 
+    /// A clarify request, from a live frame or from a pending snapshot.
+    ///
+    /// Hermes calls `clarify` two ways. A single question is
+    /// `{question, choices, multi_select?}`; a batch is
+    /// `{questions: [{qid, question, choices, multi_select}]}`. Both carry the
+    /// `request_id` `_block` minted, and `choices` may be empty — the tool is
+    /// used for open questions too, so an answer box has to exist as well as
+    /// buttons.
+    ///
+    /// A batch is surfaced as its first question with its options; answering a
+    /// multi-question batch one `qid` at a time is a conversation, and the
+    /// chat is where that belongs.
+    static func clarify(
+        _ payload: [String: Any], session: SessionIdentity, now: Date = Date()
+    ) -> AliceEvent? {
+        guard let requestID = Self.requestID(payload) else { return nil }
+        let first = (payload["questions"] as? [[String: Any]])?.first
+        let source = first ?? payload
+        let text = (source["question"] as? String) ?? ""
+        guard !text.isEmpty else { return nil }
+
+        return AliceEvent(
+            id: "clarify:\(requestID)",
+            kind: .needsInput,
+            severity: .needsAttention,
+            profile: session.profile,
+            title: "Needs an answer",
+            summary: "\(session.label) asked you a question.",
+            detail: text,
+            occurred: now,
+            reference: AliceEvent.Reference(
+                profile: session.profile, sessionID: session.sessionID,
+                sessionKey: session.sessionKey, requestID: requestID,
+                conversationID: session.conversationID
+            ),
+            standing: .waiting,
+            question: AliceEvent.Question(
+                text: text,
+                choices: (source["choices"] as? [String]) ?? [],
+                allowsMultiple: (source["multi_select"] as? Bool) ?? false
+            )
+        )
+    }
+
+    /// Whether Hermes actually resolved what it was asked to.
+    ///
+    /// `approval.respond` answers `{"resolved": <count>}` and `clarify.respond`
+    /// answers `{"status": "ok"｜"expired"}` — both as *successful* replies. A
+    /// call that did not throw is therefore not evidence that anything was
+    /// answered, and treating it as such would mark a request settled that is
+    /// still blocking the agent, or that somebody else already handled.
+    static func didResolve(_ result: JSONObject) -> Bool {
+        if let resolved = result["resolved"] as? Int { return resolved > 0 }
+        if let resolved = result["resolved"] as? NSNumber { return resolved.intValue > 0 }
+        if let status = result["status"] as? String { return status == "ok" }
+        return false
+    }
+
     /// Hermes has used more than one spelling for this across its surfaces.
     static func requestID(_ payload: [String: Any]) -> String? {
         for key in ["request_id", "requestId", "id"] {
@@ -174,27 +239,12 @@ enum LiveEvents {
         )
     }
 
-    /// A pending clarify question, from the same snapshot.
+    /// A pending clarify question, from the same snapshot. Identical shape to
+    /// the live frame, so it goes through the same reader.
     static func pendingClarify(
         _ payload: [String: Any], session: SessionIdentity, now: Date = Date()
     ) -> AliceEvent? {
-        guard let requestID = Self.requestID(payload) else { return nil }
-        return AliceEvent(
-            id: "clarify:\(requestID)",
-            kind: .needsInput,
-            severity: .needsAttention,
-            profile: session.profile,
-            title: "Needs an answer",
-            summary: "\(session.label) asked you a question.",
-            detail: (payload["question"] as? String) ?? (payload["prompt"] as? String),
-            occurred: now,
-            reference: AliceEvent.Reference(
-                profile: session.profile, sessionID: session.sessionID,
-                sessionKey: session.sessionKey, requestID: requestID,
-                conversationID: session.conversationID
-            ),
-            standing: .waiting
-        )
+        clarify(payload, session: session, now: now)
     }
 
     /// Reconciles what Alice is holding against what the server still has

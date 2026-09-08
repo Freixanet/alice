@@ -17,6 +17,7 @@ struct ActivityScreen: View {
     @State private var refreshing = false
     @State private var expanded: Set<String> = []
     @State private var resolving: Set<String> = []
+    @State private var answers: [String: String] = [:]
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -81,7 +82,39 @@ struct ActivityScreen: View {
                     .foregroundStyle(.secondary)
             }
 
-            if event.isActionable {
+            if event.isActionable, let question = event.question {
+                // A clarify request. Hermes calls `clarify` both with options
+                // and without, so both have to be answerable: the buttons when
+                // it offered any, and a box either way for the open case.
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(question.text).font(.footnote)
+                    if !question.choices.isEmpty {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 8) { options(question, for: event) }
+                            VStack(alignment: .leading, spacing: 8) { options(question, for: event) }
+                        }
+                    }
+                    HStack(spacing: 8) {
+                        TextField("Your answer", text: answerBinding(event.id), axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(1...4)
+                            .accessibilityIdentifier("activity.answer.field")
+                        Button("Send") {
+                            Task { await send(answers[event.id] ?? "", for: event) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(
+                            resolving.contains(event.id)
+                                || (answers[event.id] ?? "").trimmingCharacters(
+                                    in: .whitespacesAndNewlines
+                                ).isEmpty
+                        )
+                        .accessibilityIdentifier("activity.answer.send")
+                    }
+                }
+                .padding(.top, 2)
+            } else if event.isActionable {
                 // The same choices Hermes offered, answered over the same
                 // socket the request arrived on. Nothing here invents an option
                 // the server did not list.
@@ -132,6 +165,29 @@ struct ActivityScreen: View {
         .padding(.vertical, 2)
         .listRowBackground(Palette.card(scheme))
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func options(_ question: AliceEvent.Question, for event: AliceEvent) -> some View {
+        ForEach(question.choices, id: \.self) { option in
+            Button(option) { Task { await send(option, for: event) } }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+                .disabled(resolving.contains(event.id))
+        }
+    }
+
+    private func answerBinding(_ id: String) -> Binding<String> {
+        Binding(get: { answers[id] ?? "" }, set: { answers[id] = $0 })
+    }
+
+    private func send(_ answer: String, for event: AliceEvent) async {
+        resolving.insert(event.id)
+        defer { resolving.remove(event.id) }
+        if await store.answerClarification(event, answer: answer) {
+            answers[event.id] = nil
+        }
     }
 
     @ViewBuilder

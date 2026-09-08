@@ -43,7 +43,25 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     /// handle for a conversation and survives the compression lineage moving
     /// it onto a fresh row, and `request_id` is what `approval.respond`
     /// resolves against — the server's own answer to "which one".
+    /// Which half of Hermes answers this request.
+    ///
+    /// Not cosmetic: a bot chat's approval is resolved by `approval.respond`
+    /// over the dashboard socket, keyed by `request_id`; a gateway run's is a
+    /// POST to `/v1/runs/{id}/approval`, keyed by the run. Different protocols
+    /// on different ports — sending one to the other resolves nothing while
+    /// looking like it worked.
+    enum Transport: String, Sendable, Codable {
+        case socket
+        case gatewayRun
+    }
+
     struct Reference: Hashable, Sendable, Codable {
+        /// Which installation this came from. An old notification must never
+        /// answer on a Hermes the phone has since been repointed at.
+        var installation: String?
+        var transport: Transport = .socket
+        /// The gateway run, when that is what is waiting.
+        var runID: String?
         /// The Hermes profile, which is a bot's id and not its display name.
         var profile: String?
         /// The live session row.
@@ -61,6 +79,15 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
         var isEmpty: Bool {
             profile == nil && sessionID == nil && sessionKey == nil
                 && requestID == nil && conversationID == nil && routineKey == nil
+        }
+
+        /// Whether this may be acted on against the installation Alice is
+        /// currently pointed at. A reference from before Alice knew which
+        /// installation it was talking to is allowed through; one that names a
+        /// different server is not.
+        func belongs(to current: String?) -> Bool {
+            guard let installation else { return true }
+            return installation == current
         }
     }
 
@@ -98,6 +125,19 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     var occurred: Date
     var reference = Reference()
     var standing: Standing = .none
+    /// What a clarify request is asking, when that is what this is.
+    var question: Question?
+
+    /// One question Hermes is blocked on.
+    ///
+    /// `choices` empty means it wants free text — `clarify` is called both
+    /// ways, and offering only buttons for an open question would leave no way
+    /// to answer it.
+    struct Question: Hashable, Sendable, Codable {
+        var text: String
+        var choices: [String] = []
+        var allowsMultiple = false
+    }
 
     /// Whether this still wants an answer.
     var isActionable: Bool { standing == .waiting }
@@ -105,8 +145,10 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     init(
         id: String, kind: Kind, severity: Severity, profile: String? = nil,
         title: String, summary: String, detail: String? = nil, occurred: Date,
-        reference: Reference = Reference(), standing: Standing = .none
+        reference: Reference = Reference(), standing: Standing = .none,
+        question: Question? = nil
     ) {
+        self.question = question
         self.id = id
         self.kind = kind
         self.severity = severity
