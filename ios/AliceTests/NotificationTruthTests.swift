@@ -353,3 +353,34 @@ final class NotifierTests: XCTestCase {
         XCTAssertEqual(center.posted.count, 1)
     }
 }
+
+@MainActor
+final class NotificationApplicationDelegateTests: XCTestCase {
+    @MainActor
+    private final class RouteSink {
+        var routes: [Notifier.Route] = []
+    }
+
+    /// A real notification response can arrive before SwiftUI's `.task` runs.
+    /// The application delegate must retain it and deliver it exactly once when
+    /// the shell installs its navigation handler.
+    func testColdStartRouteWaitsForSwiftUIHandler() throws {
+        let delegate = NotificationApplicationDelegate()
+        let route = try XCTUnwrap(Notifier.Route(userInfo: [
+            "event": "cold-start-event",
+            "installation": "install-a",
+            "conversation": "conversation-a",
+        ]))
+        let sink = RouteSink()
+
+        delegate.accept(route)
+        XCTAssertTrue(sink.routes.isEmpty)
+
+        delegate.deliver = { sink.routes.append($0) }
+        XCTAssertEqual(sink.routes, [route])
+
+        // Replacing the handler must not replay an already-consumed tap.
+        delegate.deliver = { sink.routes.append($0) }
+        XCTAssertEqual(sink.routes, [route])
+    }
+}

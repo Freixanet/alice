@@ -1,18 +1,38 @@
-import Foundation
+import UIKit
 import UserNotifications
 
-/// Receives taps on Alice's notifications.
+/// Owns notification responses from the earliest application lifecycle point.
 ///
-/// On a cold start this fires before there is any interface to act on, so the
-/// tap is parked on the notifier and picked up once the app is on screen.
-/// Dropping it would make the one thing a notification is for — getting you to
-/// the thing it is about — work only when the app happened to be running.
-final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
-    private let deliver: @MainActor @Sendable (Notifier.Route) -> Void
+/// `UNUserNotificationCenter` can deliver the response that launched the app
+/// before SwiftUI runs a view `.task`. The previous router was installed from
+/// that task, so a genuine cold-start tap could launch Alice and still lose the
+/// route. This delegate is registered during `didFinishLaunching` and buffers
+/// one response until the SwiftUI shell is ready to navigate.
+final class NotificationApplicationDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
+    @MainActor private var pendingRoute: Notifier.Route?
+    @MainActor var deliver: (@MainActor @Sendable (Notifier.Route) -> Void)? {
+        didSet {
+            guard let deliver, let pendingRoute else { return }
+            self.pendingRoute = nil
+            deliver(pendingRoute)
+        }
+    }
 
-    init(deliver: @escaping @MainActor @Sendable (Notifier.Route) -> Void) {
-        self.deliver = deliver
-        super.init()
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    @MainActor
+    func accept(_ route: Notifier.Route) {
+        if let deliver {
+            deliver(route)
+        } else {
+            pendingRoute = route
+        }
     }
 
     nonisolated func userNotificationCenter(
@@ -22,13 +42,11 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate, @unc
         guard let route = Notifier.Route(
             userInfo: response.notification.request.content.userInfo
         ) else { return }
-        let handler = deliver
-        await MainActor.run { handler(route) }
+        await accept(route)
     }
 
     /// While Alice is open, a banner would cover the very screen showing the
-    /// thing it describes. The event is already in Activity, and the list is
-    /// where it belongs.
+    /// event. Keep it in Notification Center instead.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification

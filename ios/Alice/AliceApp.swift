@@ -9,10 +9,10 @@ struct AliceApp: App {
     static let refreshTaskID = "com.freixanet.alice.refresh"
 
     @Environment(\.scenePhase) private var scenePhase
+    @UIApplicationDelegateAdaptor(NotificationApplicationDelegate.self) private var notificationDelegate
     @State private var store = AppStore()
     @State private var speech = ReadAloud()
     @State private var notifier = Notifier()
-    @State private var router: NotificationRouter?
     @State private var showRadarBotInstaller = false
     @State private var pairingLink: PendingPairingLink?
 
@@ -262,6 +262,65 @@ struct AliceApp: App {
             } == true
             physicalE2ERecord("ALICE_PHYSICAL_E2E clarify first=\(first) partial=\(partialOK) second=\(second) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") answers=\(final?.questions.filter { $0.answer != nil }.count ?? -1)/2 exactChat=\(exactChat)")
 
+        case "notify-valid", "notify-missing", "notify-foreign":
+            if notifier.permission == .notAsked {
+                let granted = await notifier.requestPermission()
+                physicalE2ERecord("ALICE_PHYSICAL_E2E notification permissionRequested=\(granted)")
+            }
+            guard notifier.permission.canDeliver else {
+                physicalE2ERecord("ALICE_PHYSICAL_E2E notification FAIL:permission=\(notifier.permission)")
+                return
+            }
+            let fingerprint = AppStore.installationFingerprint(
+                store.dashboardURL.isEmpty ? store.gatewayURL : store.dashboardURL
+            )
+            let eventID = "alice-e2e-notification-" + mode.replacingOccurrences(of: "notify-", with: "")
+            let conversationID: String?
+            let installation: String
+            let title: String
+            switch mode {
+            case "notify-valid":
+                conversationID = conversation.id
+                installation = fingerprint
+                title = "Alice E2E — open chat"
+            case "notify-missing":
+                conversationID = "alice-e2e-missing-conversation"
+                installation = fingerprint
+                title = "Alice E2E — missing destination"
+            default:
+                conversationID = conversation.id
+                installation = AppStore.installationFingerprint("http://alice-e2e-foreign.invalid")
+                title = "Alice E2E — other installation"
+            }
+            let event = AliceEvent(
+                id: eventID, kind: .needsInput, severity: .needsAttention,
+                profile: "radar-ia", title: title,
+                summary: "Tap this notification to complete the Alice routing check.",
+                occurred: Date(),
+                reference: .init(
+                    installation: installation, profile: "radar-ia",
+                    conversationID: conversationID
+                ), standing: .waiting
+            )
+            notifier.withdraw(event.id)
+            let content = UNMutableNotificationContent()
+            content.title = event.title
+            content.body = event.summary
+            content.sound = .default
+            content.interruptionLevel = .timeSensitive
+            var route: [String: String] = ["event": event.id]
+            route["installation"] = event.reference.installation
+            route["conversation"] = event.reference.conversationID
+            route["profile"] = event.reference.profile
+            content.userInfo = route.compactMapValues { $0 }
+            let request = UNNotificationRequest(
+                identifier: event.id,
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 20, repeats: false)
+            )
+            try? await UNUserNotificationCenter.current().add(request)
+            physicalE2ERecord("ALICE_PHYSICAL_E2E notification scheduled mode=\(mode)")
+
         default:
             physicalE2ERecord("ALICE_PHYSICAL_E2E \(mode) FAIL:unknown-mode")
         }
@@ -288,18 +347,18 @@ struct AliceApp: App {
     }
 
     /// Connects the store to the notifier, and taps to the store.
+    @MainActor
     private func installRouter() {
-        guard router == nil else { return }
         if let launchRoute { notifier.pendingRoute = launchRoute }
         store.notify = { events in await notifier.post(events) }
         store.withdraw = { id in notifier.withdraw(id) }
-        let router = NotificationRouter { route in
-            // Held rather than acted on immediately: on a cold start this
-            // arrives before the interface exists.
+        notificationDelegate.deliver = { route in
+            // A genuine cold-start response may have been buffered by the app
+            // delegate before SwiftUI existed. Once installed, later taps are
+            // delivered through the same path immediately.
             notifier.pendingRoute = route
+            drainPendingRoute()
         }
-        UNUserNotificationCenter.current().delegate = router
-        self.router = router
         drainPendingRoute()
     }
 
@@ -307,7 +366,15 @@ struct AliceApp: App {
     private func drainPendingRoute() {
         guard let route = notifier.pendingRoute else { return }
         notifier.pendingRoute = nil
-        store.open(route)
+        let opened = store.open(route)
+        #if DEBUG
+        if route.eventID.hasPrefix("alice-e2e-notification-") {
+            let selected = route.conversationID != nil && store.activeID == route.conversationID
+            physicalE2ERecord(
+                "ALICE_PHYSICAL_E2E notification tapped kind=\(route.eventID.replacingOccurrences(of: "alice-e2e-notification-", with: "")) opened=\(opened) selected=\(selected) notice=\(store.routeNotice != nil)"
+            )
+        }
+        #endif
     }
 
     /// Asks iOS to wake Alice at some point. iOS decides whether and when,
