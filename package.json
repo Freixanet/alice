@@ -36,7 +36,9 @@
     "release:verify": "node scripts/verify-release.mjs",
     "check:static": "npm run format:check && npm run lint && npm run typecheck && npm run typecheck:contracts && npm test && npm run test:coverage && npm run cycles:check && npm run duplicates:check && npm run design:check && npm run slash:check && npm run build:ci && npm run bundle:smoke && npm run bundles:check",
     "check": "npm run check:static && npm run test:e2e",
-    "slash:check": "node scripts/check-slash-parity.mjs"
+    "slash:check": "node scripts/check-slash-parity.mjs",
+    "ci:local": "bash scripts/ci-local.sh",
+    "ci:local:verify": "bash scripts/ci-local.sh verify"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# The Quality workflow cannot start while the account's Actions billing is
+# unsettled, so the gate runs here instead. This is the `verify` job — the one
+# that was actually catching things — because a hook that takes ten minutes is
+# a hook people learn to skip.
+#
+# Everything, including the simulator tests:  npm run ci:local
+# Push without the gate, deliberately:        SKIP_CI=1 git push
+#
+set -uo pipefail
+[[ -n ${SKIP_CI:-} ]] && { echo "pre-push: skipped (SKIP_CI)"; exit 0; }
+
+root=$(git rev-parse --show-toplevel)
+"$root/scripts/ci-local.sh" verify || {
+  echo
+  echo "pre-push: the Quality checks failed. Fix them, or push with SKIP_CI=1."
+  exit 1
+}

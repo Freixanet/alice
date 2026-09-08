@@ -1,0 +1,19 @@
+# Secret scanning, with one verified exception.
+#
+# `useDefault` keeps every rule gitleaks ships; this file only adds to them.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Verified non-secrets"
+
+# scripts/pairing-hermes-config.test.mjs — deleted in eaca12a, still in the
+# history gitleaks scans. It wrote a synthetic .env into a temporary HOME and
+# asserted the parser read it back, so the 16-character API_SERVER_KEY in it is
+# a fixture. Checked rather than assumed: its SHA-256 does not match the
+# API_SERVER_KEY on this machine, so nothing here needs rotating. The realistic
+# tailnet address beside it is what made this worth verifying.
+#
+# Scoped to that one path so a real leak anywhere else still fails the scan.
+paths = ['''scripts/pairing-hermes-config\.test\.mjs''']
