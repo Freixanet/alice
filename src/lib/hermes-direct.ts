@@ -53,12 +53,15 @@ async function* streamHermesSelfUpdateDirect(opts: {
   });
 
   try {
-    const check = await fetch(`${opts.base}/api/hermes/update/check?force=true`, {
-      headers: requestHeaders,
-      signal: opts.signal,
-      cache: "no-store",
-      redirect: "manual",
-    });
+    const check = await fetch(
+      `${opts.base}/api/hermes/update/check?force=true`,
+      {
+        headers: requestHeaders,
+        signal: opts.signal,
+        cache: "no-store",
+        redirect: "manual",
+      },
+    );
     if (check.ok) {
       const body = (await check.json()) as Record<string, unknown>;
       if (body.can_apply === false) {

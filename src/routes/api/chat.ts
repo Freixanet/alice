@@ -195,7 +195,8 @@ async function startHermesSelfUpdate(opts: {
     const command = stringField(check, "update_command");
     return reply(
       [
-        message || "Esta instalación de Hermes no admite actualizaciones desde Alice.",
+        message ||
+          "Esta instalación de Hermes no admite actualizaciones desde Alice.",
         command && command !== "managed outside dashboard"
           ? `Actualízala con: ${command}`
           : "",
