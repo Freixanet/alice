@@ -168,22 +168,13 @@ actor HermesRPCClient: HermesRPCTransport {
     }
 
     func call(_ method: String, _ params: JSONObject) async throws -> JSONObject {
-        #if DEBUG
-        print("ALICE_E2E_RPC call", method)
-        #endif
         try await connectIfNeeded()
-        #if DEBUG
-        print("ALICE_E2E_RPC connected", method)
-        #endif
         let id = nextID
         nextID += 1
         let message = try Self.requestMessage(id: id, method: method, params: params)
         guard let socket else { throw Failure(reason: "Not connected to Hermes.") }
         return try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
-            #if DEBUG
-            print("ALICE_E2E_RPC sending", method, id)
-            #endif
             Task { [weak self] in
                 do {
                     try await socket.send(message)
@@ -220,10 +211,6 @@ actor HermesRPCClient: HermesRPCTransport {
     /// Drops the socket so the next call reconnects with a fresh ticket.
     /// Pending calls fail rather than hang; the caller keeps its cache.
     func disconnect(_ reason: Error? = nil) {
-        #if DEBUG
-        if let reason { print("ALICE_E2E_RPC disconnect", reason.localizedDescription) }
-        else { print("ALICE_E2E_RPC disconnect requested") }
-        #endif
         pump?.cancel()
         pump = nil
         socket?.cancel(with: .goingAway, reason: nil)
@@ -317,9 +304,6 @@ actor HermesRPCClient: HermesRPCTransport {
 
     private func deliver(_ frame: [String: Any]) {
         if let id = frame["id"] as? Int {
-            #if DEBUG
-            print("ALICE_E2E_RPC reply", id, frame["error"] == nil ? "result" : "error")
-            #endif
             if let error = frame["error"] as? [String: Any] {
                 let message = (error["message"] as? String) ?? "Hermes refused that."
                 settle(id, with: .failure(Failure(reason: message)))

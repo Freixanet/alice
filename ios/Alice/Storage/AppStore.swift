@@ -3389,13 +3389,6 @@ final class AppStore {
         isSending = value
     }
 
-    #if DEBUG
-    /// Physical E2E only: Bot Chat is dashboard-routed and does not use the
-    /// gateway after `send()` chooses the canonical bot path. This bypasses a
-    /// presently slow model-catalogue read without replacing any Bot Chat code.
-    func enableDashboardOnlyPhysicalE2E() { isConnected = true }
-    #endif
-
     func send() {
         guard !activeIsRecoveredHistory else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)

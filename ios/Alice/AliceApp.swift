@@ -18,17 +18,7 @@ struct AliceApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                #if DEBUG
-                if let mode = physicalE2EMode, !mode.hasPrefix("notify-") {
-                    Color.clear
-                } else {
-                    RootView()
-                }
-                #else
-                RootView()
-                #endif
-            }
+            RootView()
                 .environment(store)
                 .environment(speech)
                 .environment(notifier)
@@ -54,16 +44,6 @@ struct AliceApp: App {
                 }
                 .task {
                     installRouter()
-                    #if DEBUG
-                    if physicalE2EMode != nil {
-                        await store.restoreDashboard()
-                        store.enableDashboardOnlyPhysicalE2E()
-                        await notifier.refreshPermission()
-                        store.startWatchingLiveEvents()
-                        await runPhysicalE2EIfRequested()
-                        return
-                    }
-                    #endif
                     await store.restoreConnection()
                     await store.restoreDashboard()
                     // Hydrate canonical Bot Chat session ids before the watcher
@@ -72,9 +52,6 @@ struct AliceApp: App {
                     // without this, a real pushed event cannot be attributed to
                     // its conversation until that bot is opened manually.
                     await store.refreshVisibleBotChats()
-                    #if DEBUG
-                    if !store.botChatFailure.isEmpty { print("ALICE_E2E_BOT_REFRESH", store.botChatFailure) }
-                    #endif
                     await notifier.refreshPermission()
                     store.startWatchingLiveEvents()
                     // Prime the watermarks without announcing the installation's
@@ -86,11 +63,6 @@ struct AliceApp: App {
                 // work can finish while it is backgrounded. Both are worth
                 // re-reading the moment it comes back.
                 .onChange(of: scenePhase) { _, phase in
-                    #if DEBUG
-                    if physicalE2EMode != nil {
-                        physicalE2ERecord("ALICE_PHYSICAL_E2E scene=\(phase)")
-                    }
-                    #endif
                     guard phase == .active else {
                         store.isForeground = false
                         if phase == .background {
@@ -120,212 +92,6 @@ struct AliceApp: App {
     }
 
 
-
-    #if DEBUG
-    private var physicalE2EMode: String? {
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-alicePhysicalE2E"), i + 1 < args.count else { return nil }
-        return args[i + 1]
-    }
-
-    /// Temporary physical-device harness used only to close the real Hermes
-    /// delivery E2E. It calls the same AppStore methods as the UI and is
-    /// removed before final validation/release.
-    private func physicalE2ERecord(_ line: String) {
-        print(line)
-        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let url = directory.appendingPathComponent("alice-physical-e2e.log")
-        let data = Data((line + "\n").utf8)
-        if !FileManager.default.fileExists(atPath: url.path) {
-            FileManager.default.createFile(atPath: url.path, contents: nil)
-        }
-        if let handle = try? FileHandle(forWritingTo: url) {
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: data)
-            try? handle.close()
-        }
-    }
-
-    @MainActor
-    private func runPhysicalE2EIfRequested() async {
-        guard let mode = physicalE2EMode else { return }
-        if let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent("alice-physical-e2e.log"))
-        }
-        physicalE2ERecord("ALICE_PHYSICAL_E2E start=\(mode)")
-        UIApplication.shared.isIdleTimerDisabled = true
-        defer { UIApplication.shared.isIdleTimerDisabled = false }
-        guard store.isConnected, store.dashboardReady else {
-            physicalE2ERecord("ALICE_PHYSICAL_E2E \(mode) FAIL:not-connected")
-            return
-        }
-        guard let conversation = store.conversations.first(where: {
-            $0.routedBotName == "radar-ia" && $0.isCanonicalBotChat
-        }) else {
-            physicalE2ERecord("ALICE_PHYSICAL_E2E \(mode) FAIL:no-radar-chat")
-            return
-        }
-        let conversationID = conversation.id
-        store.activeID = conversationID
-        let baseline = Set(store.activity.map(\.id))
-
-        func waitForIdle(_ seconds: Int = 90) async -> Bool {
-            for _ in 0..<(seconds * 4) {
-                if !store.isSending { return true }
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-            return false
-        }
-        func waitForEvent(
-            _ predicate: @escaping (AliceEvent) -> Bool, seconds: Int = 90
-        ) async -> AliceEvent? {
-            for _ in 0..<(seconds * 4) {
-                if let event = store.activity.first(where: predicate) { return event }
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-            return nil
-        }
-        func send(_ text: String) {
-            store.draft = text
-            store.send()
-        }
-
-        switch mode {
-        case "task":
-            send("Integration check only. Reply with exactly ALICE_E2E_TASK_OK and do not call any tools.")
-            let idle = await waitForIdle()
-            await store.refreshBotChat(conversationID)
-            let exactChat = store.activeConversation?.messages.contains {
-                $0.role == .assistant &&
-                $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == "ALICE_E2E_TASK_OK"
-            } == true
-            let activityFinished = store.activity.contains {
-                !baseline.contains($0.id) && $0.profile == "radar-ia" &&
-                $0.kind == .finished && $0.reference.conversationID == conversationID
-            }
-            physicalE2ERecord("ALICE_PHYSICAL_E2E task idle=\(idle) exactChat=\(exactChat) activityFinished=\(activityFinished) session=\(store.activeConversation?.hermesSessionID != nil)")
-
-        case "permit":
-            send("Integration check only. Use the terminal tool to run exactly `systemctl restart sshd`. On this macOS test host `systemctl` is absent, so after approval the command can only fail with command-not-found and cannot mutate the system; Hermes nevertheless classifies the operation as a real system-service restart requiring approval. Do not simulate it and do not use another tool. Wait for the real approval. After the approved tool returns, regardless of exit status, reply with exactly ALICE_E2E_APPROVAL_DONE.")
-            guard let event = await waitForEvent({
-                !baseline.contains($0.id) && $0.profile == "radar-ia" &&
-                $0.standing == .waiting && !$0.approvalChoices.isEmpty
-            }) else {
-                physicalE2ERecord("ALICE_PHYSICAL_E2E approval FAIL:no-request")
-                return
-            }
-            let request = event.reference.requestID ?? ""
-            physicalE2ERecord("ALICE_PHYSICAL_E2E approval request=\(!request.isEmpty) choices=\(event.approvalChoices.map(\.rawValue).joined(separator: ",")) transport=\(event.reference.transport.rawValue) session=\(event.reference.sessionID != nil) installation=\(event.reference.installation != nil)")
-            physicalE2ERecord("ALICE_PHYSICAL_E2E approval resolving=true")
-            let accepted = await store.resolvePendingRequest(event, choice: .once)
-            physicalE2ERecord("ALICE_PHYSICAL_E2E approval resolveReturned=\(accepted)")
-            let idle = await waitForIdle()
-            await store.refreshBotChat(conversationID)
-            _ = await store.syncEvents()
-            let final = store.activity.first(where: { $0.id == event.id })
-            let chatCardGone = store.activeConversation?.messages.allSatisfy {
-                $0.approval?.requestID != request && $0.approval?.runID != request
-            } == true
-            let exactChat = store.activeConversation?.messages.contains {
-                $0.role == .assistant &&
-                $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == "ALICE_E2E_APPROVAL_DONE"
-            } == true
-            physicalE2ERecord("ALICE_PHYSICAL_E2E approval accepted=\(accepted) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") chatCardGone=\(chatCardGone) exactChat=\(exactChat)")
-
-        case "clarify":
-            send("Integration check only. You MUST call the clarify tool exactly once using ONE batch with exactly two independent questions. First question: `E2E color?` with choices `Blue` and `Green`, single-select. Second question: `E2E note?` with no choices, free text. Do not answer either question yourself. Wait for both real user answers. After both answers are received, reply with exactly ALICE_E2E_CLARIFY_DONE.")
-            guard let event = await waitForEvent({
-                !baseline.contains($0.id) && $0.profile == "radar-ia" &&
-                $0.standing == .waiting && $0.questions.count == 2
-            }) else {
-                physicalE2ERecord("ALICE_PHYSICAL_E2E clarify FAIL:no-batch")
-                return
-            }
-            let q0 = event.questions[0].id
-            let q1 = event.questions[1].id
-            physicalE2ERecord("ALICE_PHYSICAL_E2E clarify request=\(event.reference.requestID != nil) q0=\(q0 ?? "nil") q1=\(q1 ?? "nil")")
-            let first = await store.answerClarification(event, questionID: q0, answer: "Blue")
-            let partial = store.activity.first(where: { $0.id == event.id })
-            let partialOK = partial?.standing == .waiting && partial?.questions.first?.answer == "Blue" && partial?.questions.dropFirst().first?.answer == nil
-            guard let refreshed = partial else {
-                physicalE2ERecord("ALICE_PHYSICAL_E2E clarify FAIL:missing-after-first")
-                return
-            }
-            let second = await store.answerClarification(refreshed, questionID: q1, answer: "E2E note")
-            let idle = await waitForIdle()
-            await store.refreshBotChat(conversationID)
-            _ = await store.syncEvents()
-            let final = store.activity.first(where: { $0.id == event.id })
-            let exactChat = store.activeConversation?.messages.contains {
-                $0.role == .assistant &&
-                $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == "ALICE_E2E_CLARIFY_DONE"
-            } == true
-            physicalE2ERecord("ALICE_PHYSICAL_E2E clarify first=\(first) partial=\(partialOK) second=\(second) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") answers=\(final?.questions.filter { $0.answer != nil }.count ?? -1)/2 exactChat=\(exactChat)")
-
-        case "notify-valid", "notify-missing", "notify-foreign":
-            if notifier.permission == .notAsked {
-                let granted = await notifier.requestPermission()
-                physicalE2ERecord("ALICE_PHYSICAL_E2E notification permissionRequested=\(granted)")
-            }
-            guard notifier.permission.canDeliver else {
-                physicalE2ERecord("ALICE_PHYSICAL_E2E notification FAIL:permission=\(notifier.permission)")
-                return
-            }
-            let fingerprint = AppStore.installationFingerprint(
-                store.dashboardURL.isEmpty ? store.gatewayURL : store.dashboardURL
-            )
-            let eventID = "alice-e2e-notification-" + mode.replacingOccurrences(of: "notify-", with: "")
-            let conversationID: String?
-            let installation: String
-            let title: String
-            switch mode {
-            case "notify-valid":
-                conversationID = conversation.id
-                installation = fingerprint
-                title = "Alice E2E — open chat"
-            case "notify-missing":
-                conversationID = "alice-e2e-missing-conversation"
-                installation = fingerprint
-                title = "Alice E2E — missing destination"
-            default:
-                conversationID = conversation.id
-                installation = AppStore.installationFingerprint("http://alice-e2e-foreign.invalid")
-                title = "Alice E2E — other installation"
-            }
-            let event = AliceEvent(
-                id: eventID, kind: .needsInput, severity: .needsAttention,
-                profile: "radar-ia", title: title,
-                summary: "Tap this notification to complete the Alice routing check.",
-                occurred: Date(),
-                reference: .init(
-                    installation: installation, profile: "radar-ia",
-                    conversationID: conversationID
-                ), standing: .waiting
-            )
-            notifier.withdraw(event.id)
-            let content = UNMutableNotificationContent()
-            content.title = event.title
-            content.body = event.summary
-            content.sound = .default
-            content.interruptionLevel = .timeSensitive
-            var route: [String: String] = ["event": event.id]
-            route["installation"] = event.reference.installation
-            route["conversation"] = event.reference.conversationID
-            route["profile"] = event.reference.profile
-            content.userInfo = route.compactMapValues { $0 }
-            let request = UNNotificationRequest(
-                identifier: event.id,
-                content: content,
-                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 120, repeats: false)
-            )
-            try? await UNUserNotificationCenter.current().add(request)
-            physicalE2ERecord("ALICE_PHYSICAL_E2E notification scheduled mode=\(mode)")
-
-        default:
-            physicalE2ERecord("ALICE_PHYSICAL_E2E \(mode) FAIL:unknown-mode")
-        }
-    }
-    #endif
 
     /// A tap injected by the UI suite, so the cold-start path can be driven
     /// without a real notification — which needs a granted permission and a
@@ -366,15 +132,7 @@ struct AliceApp: App {
     private func drainPendingRoute() {
         guard let route = notifier.pendingRoute else { return }
         notifier.pendingRoute = nil
-        let opened = store.open(route)
-        #if DEBUG
-        if route.eventID.hasPrefix("alice-e2e-notification-") {
-            let selected = route.conversationID != nil && store.activeID == route.conversationID
-            physicalE2ERecord(
-                "ALICE_PHYSICAL_E2E notification tapped kind=\(route.eventID.replacingOccurrences(of: "alice-e2e-notification-", with: "")) opened=\(opened) selected=\(selected) notice=\(store.routeNotice != nil)"
-            )
-        }
-        #endif
+        _ = store.open(route)
     }
 
     /// Asks iOS to wake Alice at some point. iOS decides whether and when,
