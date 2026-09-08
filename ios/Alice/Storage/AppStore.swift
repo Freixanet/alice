@@ -3264,7 +3264,12 @@ final class AppStore {
                 guard event.sessionID.isEmpty || event.sessionID == liveSessionID
                 else { continue }
                 if let chatEvent = Self.chatEvent(from: event) {
-                    apply(chatEvent, to: replyID, conversationID: conversationID)
+                    apply(
+                        chatEvent, to: replyID, conversationID: conversationID,
+                        approvalTransport: .socket,
+                        approvalSessionID: liveSessionID,
+                        approvalSessionKey: chat.resolvedID
+                    )
                 }
                 // Only a real turn outcome ends the stream. The subagent
                 // mirror in `agent_callbacks` emits `message.complete` with no
@@ -3772,7 +3777,14 @@ final class AppStore {
         }
     }
 
-    private func apply(_ event: ChatEvent, to id: String, conversationID: String) {
+    private func apply(
+        _ event: ChatEvent,
+        to id: String,
+        conversationID: String,
+        approvalTransport: AliceEvent.Transport = .gatewayRun,
+        approvalSessionID: String? = nil,
+        approvalSessionKey: String? = nil
+    ) {
         guard let location = messageLocation(id, conversationID: conversationID) else { return }
         let chat = location.chat
         let index = location.message
@@ -3825,20 +3837,14 @@ final class AppStore {
             conversations[chat].messages[index].approval = approval
             conversations[chat].messages[index].pending = true
             persistConversations()
-            let suffix = approval.requestID ?? approval.runID
-            observe(AliceEvent(
-                id: "run-approval:\(approval.runID):\(suffix)",
-                kind: .needsInput, severity: .needsAttention,
-                profile: eventProfile, title: "Needs your approval",
-                summary: "\(eventLabel) is waiting for permission to continue.",
-                detail: approval.command ?? approval.detail, occurred: Date(),
-                reference: AliceEvent.Reference(
-                    transport: .gatewayRun, runID: approval.runID,
-                    profile: eventProfile, requestID: approval.requestID,
-                    conversationID: conversationID
-                ),
-                standing: .waiting,
-                approvalChoices: approval.choices
+            observe(Self.approvalActivityEvent(
+                approval,
+                profile: eventProfile,
+                label: eventLabel,
+                conversationID: conversationID,
+                transport: approvalTransport,
+                sessionID: approvalSessionID,
+                sessionKey: approvalSessionKey
             ))
 
         case let .failure(message, limit):
@@ -3862,6 +3868,56 @@ final class AppStore {
                 ))
             }
         }
+    }
+
+    /// Builds the Activity representation of a Chat approval without
+    /// changing its transport. Bot Chat approvals come from `/api/ws`; run
+    /// approvals come from `/v1/runs`. Their visible card is the same, but the
+    /// response route is not.
+    nonisolated static func approvalActivityEvent(
+        _ approval: Message.Approval,
+        profile: String?,
+        label: String,
+        conversationID: String,
+        transport: AliceEvent.Transport,
+        sessionID: String? = nil,
+        sessionKey: String? = nil,
+        now: Date = Date()
+    ) -> AliceEvent {
+        let requestID = approval.requestID ?? approval.runID
+        let reference: AliceEvent.Reference
+        let activityID: String
+        switch transport {
+        case .socket:
+            reference = AliceEvent.Reference(
+                transport: .socket,
+                profile: profile,
+                sessionID: sessionID,
+                sessionKey: sessionKey,
+                requestID: requestID,
+                conversationID: conversationID
+            )
+            activityID = "approval:\(requestID)"
+        case .gatewayRun:
+            reference = AliceEvent.Reference(
+                transport: .gatewayRun,
+                runID: approval.runID,
+                profile: profile,
+                requestID: approval.requestID,
+                conversationID: conversationID
+            )
+            activityID = "run-approval:\(approval.runID):\(requestID)"
+        }
+        return AliceEvent(
+            id: activityID,
+            kind: .needsInput, severity: .needsAttention,
+            profile: profile, title: "Needs your approval",
+            summary: "\(label) is waiting for permission to continue.",
+            detail: approval.command ?? approval.detail, occurred: now,
+            reference: reference,
+            standing: .waiting,
+            approvalChoices: approval.choices
+        )
     }
 
     private func fail(

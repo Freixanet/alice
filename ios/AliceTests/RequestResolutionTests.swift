@@ -194,6 +194,46 @@ final class TransportRoutingTests: XCTestCase {
         XCTAssertTrue(restored.isActionable)
     }
 
+    func testSocketChatApprovalKeepsSocketIdentity() {
+        let approval = Message.Approval(
+            runID: "req-9", requestID: "req-9", title: "Approval needed",
+            detail: nil, command: "safe command", choices: [.once, .deny],
+            resolving: nil, error: nil
+        )
+        let event = AppStore.approvalActivityEvent(
+            approval, profile: "radar-ia", label: "Radar IA",
+            conversationID: "conv-1", transport: .socket,
+            sessionID: "live-1", sessionKey: "durable-1",
+            now: Date(timeIntervalSinceReferenceDate: 1)
+        )
+
+        XCTAssertEqual(event.id, "approval:req-9")
+        XCTAssertEqual(event.reference.transport, .socket)
+        XCTAssertNil(event.reference.runID)
+        XCTAssertEqual(event.reference.requestID, "req-9")
+        XCTAssertEqual(event.reference.sessionID, "live-1")
+        XCTAssertEqual(event.reference.sessionKey, "durable-1")
+    }
+
+    func testGatewayApprovalKeepsGatewayRunIdentity() {
+        let approval = Message.Approval(
+            runID: "run-7", requestID: "req-7", title: "Approval needed",
+            detail: nil, command: "safe command", choices: [.once, .deny],
+            resolving: nil, error: nil
+        )
+        let event = AppStore.approvalActivityEvent(
+            approval, profile: "radar-ia", label: "Radar IA",
+            conversationID: "conv-1", transport: .gatewayRun,
+            now: Date(timeIntervalSinceReferenceDate: 1)
+        )
+
+        XCTAssertEqual(event.id, "run-approval:run-7:req-7")
+        XCTAssertEqual(event.reference.transport, .gatewayRun)
+        XCTAssertEqual(event.reference.runID, "run-7")
+        XCTAssertEqual(event.reference.requestID, "req-7")
+        XCTAssertNil(event.reference.sessionID)
+    }
+
     func testReferenceRefusesAForeignInstallation() {
         let home = AppStore.installationFingerprint("http://100.67.213.42:9119")
         let other = AppStore.installationFingerprint("http://192.168.1.10:9119")

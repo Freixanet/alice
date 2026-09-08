@@ -88,7 +88,7 @@ struct AliceApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     #if DEBUG
                     if physicalE2EMode != nil {
-                        print("ALICE_PHYSICAL_E2E scene=\(phase)")
+                        physicalE2ERecord("ALICE_PHYSICAL_E2E scene=\(phase)")
                     }
                     #endif
                     guard phase == .active else {
@@ -131,19 +131,38 @@ struct AliceApp: App {
     /// Temporary physical-device harness used only to close the real Hermes
     /// delivery E2E. It calls the same AppStore methods as the UI and is
     /// removed before final validation/release.
+    private func physicalE2ERecord(_ line: String) {
+        print(line)
+        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let url = directory.appendingPathComponent("alice-physical-e2e.log")
+        let data = Data((line + "\n").utf8)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+            try? handle.close()
+        }
+    }
+
     @MainActor
     private func runPhysicalE2EIfRequested() async {
         guard let mode = physicalE2EMode else { return }
+        if let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("alice-physical-e2e.log"))
+        }
+        physicalE2ERecord("ALICE_PHYSICAL_E2E start=\(mode)")
         UIApplication.shared.isIdleTimerDisabled = true
         defer { UIApplication.shared.isIdleTimerDisabled = false }
         guard store.isConnected, store.dashboardReady else {
-            print("ALICE_PHYSICAL_E2E", mode, "FAIL:not-connected")
+            physicalE2ERecord("ALICE_PHYSICAL_E2E \(mode) FAIL:not-connected")
             return
         }
         guard let conversation = store.conversations.first(where: {
             $0.routedBotName == "radar-ia" && $0.isCanonicalBotChat
         }) else {
-            print("ALICE_PHYSICAL_E2E", mode, "FAIL:no-radar-chat")
+            physicalE2ERecord("ALICE_PHYSICAL_E2E \(mode) FAIL:no-radar-chat")
             return
         }
         let conversationID = conversation.id
@@ -184,20 +203,22 @@ struct AliceApp: App {
                 !baseline.contains($0.id) && $0.profile == "radar-ia" &&
                 $0.kind == .finished && $0.reference.conversationID == conversationID
             }
-            print("ALICE_PHYSICAL_E2E task idle=\(idle) exactChat=\(exactChat) activityFinished=\(activityFinished) session=\(store.activeConversation?.hermesSessionID != nil)")
+            physicalE2ERecord("ALICE_PHYSICAL_E2E task idle=\(idle) exactChat=\(exactChat) activityFinished=\(activityFinished) session=\(store.activeConversation?.hermesSessionID != nil)")
 
         case "permit":
-            send("Integration check only. Use the terminal tool to run exactly `hermes update --help`. The `--help` flag makes this non-mutating, while Hermes' current approval rules classify the command as an update/restart operation that requires a real approval. Do not simulate it and do not use another tool. Wait for the real approval. After the approved command returns its help text, reply with exactly ALICE_E2E_APPROVAL_DONE.")
+            send("Integration check only. Use the terminal tool to run exactly `systemctl restart sshd`. On this macOS test host `systemctl` is absent, so after approval the command can only fail with command-not-found and cannot mutate the system; Hermes nevertheless classifies the operation as a real system-service restart requiring approval. Do not simulate it and do not use another tool. Wait for the real approval. After the approved tool returns, regardless of exit status, reply with exactly ALICE_E2E_APPROVAL_DONE.")
             guard let event = await waitForEvent({
                 !baseline.contains($0.id) && $0.profile == "radar-ia" &&
                 $0.standing == .waiting && !$0.approvalChoices.isEmpty
             }) else {
-                print("ALICE_PHYSICAL_E2E approval FAIL:no-request")
+                physicalE2ERecord("ALICE_PHYSICAL_E2E approval FAIL:no-request")
                 return
             }
             let request = event.reference.requestID ?? ""
-            print("ALICE_PHYSICAL_E2E approval request=\(!request.isEmpty) choices=\(event.approvalChoices.map(\.rawValue).joined(separator: ","))")
+            physicalE2ERecord("ALICE_PHYSICAL_E2E approval request=\(!request.isEmpty) choices=\(event.approvalChoices.map(\.rawValue).joined(separator: ",")) transport=\(event.reference.transport.rawValue) session=\(event.reference.sessionID != nil) installation=\(event.reference.installation != nil)")
+            physicalE2ERecord("ALICE_PHYSICAL_E2E approval resolving=true")
             let accepted = await store.resolvePendingRequest(event, choice: .once)
+            physicalE2ERecord("ALICE_PHYSICAL_E2E approval resolveReturned=\(accepted)")
             let idle = await waitForIdle()
             await store.refreshBotChat(conversationID)
             _ = await store.syncEvents()
@@ -209,7 +230,7 @@ struct AliceApp: App {
                 $0.role == .assistant &&
                 $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == "ALICE_E2E_APPROVAL_DONE"
             } == true
-            print("ALICE_PHYSICAL_E2E approval accepted=\(accepted) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") chatCardGone=\(chatCardGone) exactChat=\(exactChat)")
+            physicalE2ERecord("ALICE_PHYSICAL_E2E approval accepted=\(accepted) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") chatCardGone=\(chatCardGone) exactChat=\(exactChat)")
 
         case "clarify":
             send("Integration check only. You MUST call the clarify tool exactly once using ONE batch with exactly two independent questions. First question: `E2E color?` with choices `Blue` and `Green`, single-select. Second question: `E2E note?` with no choices, free text. Do not answer either question yourself. Wait for both real user answers. After both answers are received, reply with exactly ALICE_E2E_CLARIFY_DONE.")
@@ -217,17 +238,17 @@ struct AliceApp: App {
                 !baseline.contains($0.id) && $0.profile == "radar-ia" &&
                 $0.standing == .waiting && $0.questions.count == 2
             }) else {
-                print("ALICE_PHYSICAL_E2E clarify FAIL:no-batch")
+                physicalE2ERecord("ALICE_PHYSICAL_E2E clarify FAIL:no-batch")
                 return
             }
             let q0 = event.questions[0].id
             let q1 = event.questions[1].id
-            print("ALICE_PHYSICAL_E2E clarify request=\(event.reference.requestID != nil) q0=\(q0 ?? "nil") q1=\(q1 ?? "nil")")
+            physicalE2ERecord("ALICE_PHYSICAL_E2E clarify request=\(event.reference.requestID != nil) q0=\(q0 ?? "nil") q1=\(q1 ?? "nil")")
             let first = await store.answerClarification(event, questionID: q0, answer: "Blue")
             let partial = store.activity.first(where: { $0.id == event.id })
             let partialOK = partial?.standing == .waiting && partial?.questions.first?.answer == "Blue" && partial?.questions.dropFirst().first?.answer == nil
             guard let refreshed = partial else {
-                print("ALICE_PHYSICAL_E2E clarify FAIL:missing-after-first")
+                physicalE2ERecord("ALICE_PHYSICAL_E2E clarify FAIL:missing-after-first")
                 return
             }
             let second = await store.answerClarification(refreshed, questionID: q1, answer: "E2E note")
@@ -239,10 +260,10 @@ struct AliceApp: App {
                 $0.role == .assistant &&
                 $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == "ALICE_E2E_CLARIFY_DONE"
             } == true
-            print("ALICE_PHYSICAL_E2E clarify first=\(first) partial=\(partialOK) second=\(second) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") answers=\(final?.questions.filter { $0.answer != nil }.count ?? -1)/2 exactChat=\(exactChat)")
+            physicalE2ERecord("ALICE_PHYSICAL_E2E clarify first=\(first) partial=\(partialOK) second=\(second) idle=\(idle) standing=\(final?.standing.rawValue ?? "missing") answers=\(final?.questions.filter { $0.answer != nil }.count ?? -1)/2 exactChat=\(exactChat)")
 
         default:
-            print("ALICE_PHYSICAL_E2E", mode, "FAIL:unknown-mode")
+            physicalE2ERecord("ALICE_PHYSICAL_E2E \(mode) FAIL:unknown-mode")
         }
     }
     #endif
