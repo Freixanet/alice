@@ -398,7 +398,10 @@ extension AppStore {
         case let .providers(candidate):
             let profile = try await controlProfile(candidate, conversationID: conversationID)
             let providers = try await inferenceProviders(profile: profile)
-            let oauth = (try? await oauthProviderStates(profile: profile)) ?? []
+            // A provider connected only through OAuth is marked from this
+            // list; dropping it on failure printed a connected provider as
+            // disconnected, which is worse than saying the read failed.
+            let oauth = try await oauthProviderStates(profile: profile)
             let oauthMap = Dictionary(uniqueKeysWithValues: oauth.map { ($0.id, $0) })
             let body = providers.map { provider in
                 let connected = provider.authenticated || provider.isUserDefined || oauthMap[provider.slug]?.loggedIn == true

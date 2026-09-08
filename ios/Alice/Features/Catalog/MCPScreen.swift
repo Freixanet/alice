@@ -25,6 +25,11 @@ struct MCPScreen: View {
     @State private var deleting: MCPServerConfiguration?
     @State private var installing: Set<String> = []
     @State private var installActions: [String: HermesActionStatus] = [:]
+    /// Install polls, so leaving the screen stops them. An unstructured Task
+    /// outlives the view that started it: the poll kept asking the agent for
+    /// an action status every 1.2s, and wrote it back into state nobody was
+    /// looking at, until the install happened to finish.
+    @State private var installPolls: [String: Task<Void, Never>] = [:]
 
     var body: some View {
         List {
@@ -79,6 +84,7 @@ struct MCPScreen: View {
         }
         .onChange(of: selectedProfile) { _, _ in resetAndReload() }
         .onChange(of: pane) { _, _ in query = "" }
+        .onDisappear { stopInstallPolls() }
         .refreshable { await load() }
         .toolbar {
             if pane == .servers {
@@ -499,11 +505,22 @@ struct MCPScreen: View {
             Task { await load() }
             return
         }
-        Task { await trackInstall(name: result.name, action: action) }
+        installPolls[result.name]?.cancel()
+        installPolls[result.name] = Task {
+            await trackInstall(name: result.name, action: action)
+        }
+    }
+
+    private func stopInstallPolls() {
+        for (_, poll) in installPolls { poll.cancel() }
+        installPolls = [:]
     }
 
     private func trackInstall(name: String, action: String) async {
-        defer { installing.remove(name) }
+        defer {
+            installing.remove(name)
+            installPolls[name] = nil
+        }
         while !Task.isCancelled {
             do {
                 let status = try await store.hermesActionStatus(action, lines: 80)

@@ -395,14 +395,36 @@ final class AppStore {
     /// list the user is not looking at is never kept in memory or refreshed.
     func catalog(_ source: CatalogScreen.Source) async throws -> [CatalogRow] {
         switch source {
-        case .skills: try await client.skills(manifest)
+        case .skills: try await skillCatalog()
         case .toolsets: try await client.toolsets(manifest)
         case .addons: try await client.mcpServers(manifest)
         }
     }
 
+    /// Skills, preferring the half of Hermes that knows whether one is on.
+    ///
+    /// The gateway lists skills but not their state, and serves no way to
+    /// change it. The dashboard does both. When there is no dashboard
+    /// configured the gateway listing is still worth showing — the switches
+    /// simply stay out of it, which is what `CatalogRow.enabled == nil` means.
+    /// The catalogue is not scoped to a bot on this screen, so neither is the
+    /// request: with no profile Hermes answers for the home profile, which is
+    /// the set the gateway listing showed before.
+    private func skillCatalog() async throws -> [CatalogRow] {
+        guard await dashboard.isConfigured else {
+            return try await client.skills(manifest)
+        }
+        do {
+            return try await dashboard.skills(profile: nil)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return try await client.skills(manifest)
+        }
+    }
+
     func setSkill(_ name: String, enabled: Bool) async throws {
-        try await client.toggleSkill(name: name, enabled: enabled)
+        try await dashboard.setSkillEnabled(name, enabled: enabled, profile: nil)
     }
 
     func rename(_ id: String, to title: String) {
@@ -1607,14 +1629,15 @@ final class AppStore {
         return try DashboardClient.memorySnapshot(from: result.fields, profile: profile)
     }
 
-    func skillContent(_ name: String) async throws -> String {
-        try await dashboard.skillContent(name)
+    func skillContent(_ name: String, profile: String? = nil) async throws -> String {
+        try await dashboard.skillContent(name, profile: profile)
     }
-    func saveSkill(name: String, content: String) async throws {
-        try await dashboard.saveSkill(name: name, content: content)
-    }
-    func deleteSkill(_ name: String) async throws {
-        try await dashboard.deleteSkill(name)
+    func saveSkill(
+        name: String, content: String, isNew: Bool, profile: String? = nil
+    ) async throws {
+        try await dashboard.saveSkill(
+            name: name, content: content, isNew: isNew, profile: profile
+        )
     }
     func memoryProviders() async throws -> [MemoryProvider] { try await dashboard.memory() }
 

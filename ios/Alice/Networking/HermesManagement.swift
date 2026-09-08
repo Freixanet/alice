@@ -154,14 +154,25 @@ extension HermesClient {
                 limit: ModelLimitClassifier.classify(status: http.statusCode, message: detail)
             )
         }
-        let object = try? JSONSerialization.jsonObject(with: data)
-        if let rows = object as? [[String: Any]] { return rows }
-        if let map = object as? [String: Any] {
-            for key in ["skills", "toolsets", "jobs", "items", "data", "results"] {
-                if let rows = map[key] as? [[String: Any]] { return rows }
-            }
+        return try HermesClient.catalogRows(from: data)
+    }
+
+    /// The rows in a management listing, whatever envelope this build wraps
+    /// them in.
+    ///
+    /// Returning an empty array for a body this could not read made a broken
+    /// answer indistinguishable from "the agent has none of these" — the
+    /// screen then said so, in a full sentence, on the strength of nothing.
+    static func catalogRows(from data: Data) throws -> [[String: Any]] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) else {
+            throw Failure.badResponse
         }
-        return []
+        if let rows = object as? [[String: Any]] { return rows }
+        guard let map = object as? [String: Any] else { throw Failure.badResponse }
+        for key in ["skills", "toolsets", "jobs", "items", "data", "results"] {
+            if let rows = map[key] as? [[String: Any]] { return rows }
+        }
+        throw Failure.badResponse
     }
 
     func skills(_ manifest: Manifest?) async throws -> [CatalogRow] {
@@ -198,25 +209,6 @@ extension HermesClient {
             paths.append(fallback)
         }
         return paths
-    }
-
-    /// Flips a skill on or off. Hermes owns the state; the row is refreshed
-    /// from the response rather than assumed, so a rejected toggle does not
-    /// leave the interface lying about what is enabled.
-    func toggleSkill(name: String, enabled: Bool) async throws {
-        var request = try self.request("api/skills/toggle", method: "POST")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(
-            withJSONObject: ["name": name, "enabled": enabled]
-        )
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode)
-        else {
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let detail = HermesClient.detail(from: data) ?? "Hermes refused the change."
-            throw Failure.http(status: status, detail: detail, limit: nil)
-        }
     }
 
     /// The scheduled jobs.

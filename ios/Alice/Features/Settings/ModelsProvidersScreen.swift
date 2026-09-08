@@ -208,8 +208,13 @@ struct ModelsProvidersScreen: View {
         do {
             info = try await store.profileModelInfo(profile: selectedProfile)
             providers = try await store.inferenceProviders(profile: selectedProfile, refreshing: refreshing)
-            oauth = (try? await store.oauthProviderStates(profile: selectedProfile)) ?? []
-            credentials = (try? await store.providerCredentials(profile: selectedProfile)) ?? []
+            // Not `try?`: an empty list here is not "nothing is connected".
+            // `providerConnected` reads both, so swallowing a failed load
+            // showed a provider that has a stored key — or a completed OAuth —
+            // as "Not configured", and offered to set up what was already set
+            // up. A reload that did not happen has to say so.
+            oauth = try await store.oauthProviderStates(profile: selectedProfile)
+            credentials = try await store.providerCredentials(profile: selectedProfile)
             failure = nil
         } catch {
             failure = diagnosticMessage(error)

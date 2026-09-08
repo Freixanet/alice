@@ -48,19 +48,33 @@ actor DashboardClient {
 
     private var credentials: Credentials?
     private var signedIn = false
+    /// Bumped every time a login succeeds. A caller that met a 401 hands back
+    /// the age of the session it used; if the session has already been
+    /// replaced since, there is nothing left to re-establish.
+    private var sessionAge = 0
+    /// The login in flight, if any, so concurrent callers wait on one attempt
+    /// instead of each starting their own.
+    private var signInTask: Task<Int, Error>?
 
     /// Its own session so the login cookie is kept here and nowhere else.
-    private let session: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.httpCookieAcceptPolicy = .always
-        config.httpShouldSetCookies = true
-        config.timeoutIntervalForRequest = 15
-        return URLSession(configuration: config)
-    }()
+    private let session: URLSession
+
+    init(session: URLSession? = nil) {
+        self.session = session ?? {
+            let config = URLSessionConfiguration.ephemeral
+            config.httpCookieAcceptPolicy = .always
+            config.httpShouldSetCookies = true
+            config.timeoutIntervalForRequest = 15
+            return URLSession(configuration: config)
+        }()
+    }
 
     func use(_ credentials: Credentials?) {
         self.credentials = credentials
         signedIn = false
+        signInTask?.cancel()
+        signInTask = nil
+        sessionAge += 1
     }
 
     var isConfigured: Bool { credentials != nil }
@@ -69,12 +83,11 @@ actor DashboardClient {
     /// lapsed — they are stateless and do not survive the agent restarting.
     func get(_ path: String) async throws -> [String: Any] {
         guard credentials != nil else { throw Failure.notConfigured }
-        if !signedIn { try await signIn() }
+        let age = try await authenticate()
         do {
             return try await fetch(path)
         } catch Failure.http(401, _) {
-            signedIn = false
-            try await signIn()
+            _ = try await authenticate(replacing: age)
             return try await fetch(path)
         }
     }
@@ -84,17 +97,55 @@ actor DashboardClient {
     /// coercing it to an empty dictionary and making the UI say "no routines".
     func rows(_ path: String, shape: BodyShape) async throws -> JSONRows {
         guard credentials != nil else { throw Failure.notConfigured }
-        if !signedIn { try await signIn() }
+        let age = try await authenticate()
         do {
             return JSONRows(try await fetchRows(path, shape: shape))
         } catch Failure.http(401, _) {
-            signedIn = false
-            try await signIn()
+            _ = try await authenticate(replacing: age)
             return JSONRows(try await fetchRows(path, shape: shape))
         }
     }
 
-    private func signIn() async throws {
+    /// Establishes a dashboard session, at most one attempt at a time, and
+    /// reports the age of the session the caller may now use.
+    ///
+    /// Hermes throttles `auth/password-login` to ten attempts a minute per
+    /// address and counts the successful ones too. Every entry point here
+    /// used to test `signedIn` and then await the login, and an actor lets
+    /// the next call in at that await — so one screen fanning six requests
+    /// out in parallel sent six logins, and a lapsed session sent six more on
+    /// the way back. Two such screens inside a minute spent the whole budget
+    /// and locked the phone out of its own dashboard with a 429.
+    ///
+    /// Pass `replacing:` after a 401 to force a fresh login — unless someone
+    /// else has already replaced that session, in which case the caller
+    /// should simply retry against theirs.
+    @discardableResult
+    private func authenticate(replacing stale: Int? = nil) async throws -> Int {
+        if let stale {
+            if stale != sessionAge { return sessionAge }
+            signedIn = false
+        } else if signedIn {
+            return sessionAge
+        }
+        if let inFlight = signInTask { return try await inFlight.value }
+
+        let task = Task<Int, Error> {
+            try await performSignIn()
+            return markSignedIn()
+        }
+        signInTask = task
+        defer { if signInTask == task { signInTask = nil } }
+        return try await task.value
+    }
+
+    private func markSignedIn() -> Int {
+        signedIn = true
+        sessionAge += 1
+        return sessionAge
+    }
+
+    private func performSignIn() async throws {
         guard let credentials else { throw Failure.notConfigured }
         var request = URLRequest(url: credentials.url.appending(path: "auth/password-login"))
         request.httpMethod = "POST"
@@ -109,8 +160,11 @@ actor DashboardClient {
         let (_, response) = try await send(request)
         guard let http = response as? HTTPURLResponse else { throw Failure.unreachable }
         switch http.statusCode {
-        case 200..<300: signedIn = true
+        case 200..<300: return
         case 401, 403, 422: throw Failure.rejected
+        // The throttle Hermes puts on the login route. Say so, because the
+        // remedy is to wait rather than to check the password again.
+        case 429: throw Failure.http(429, detail: "Too many sign-ins. Try again in a minute.")
         default: throw Failure.http(http.statusCode)
         }
     }
@@ -121,12 +175,11 @@ actor DashboardClient {
         _ method: String, _ path: String, _ body: [String: Any]? = nil
     ) async throws -> [String: Any] {
         guard credentials != nil else { throw Failure.notConfigured }
-        if !signedIn { try await signIn() }
+        let age = try await authenticate()
         do {
             return try await fetch(path, method: method, body: body)
         } catch Failure.http(401, _) {
-            signedIn = false
-            try await signIn()
+            _ = try await authenticate(replacing: age)
             return try await fetch(path, method: method, body: body)
         }
     }
@@ -152,7 +205,17 @@ actor DashboardClient {
             // most of what you need to know.
             throw Failure.http(http.statusCode, detail: Self.detail(from: data))
         }
-        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        // An empty body is a real answer from a route that returns nothing.
+        // Anything else must be the object it claims to be: reading a JSON
+        // array — or an HTML error page a proxy answered 200 with — as an
+        // empty dictionary made every listing built from it report that the
+        // agent has nothing, which is a different statement entirely.
+        if data.isEmpty { return [:] }
+        guard let object = try? JSONSerialization.jsonObject(with: data) else {
+            throw Failure.unreadable
+        }
+        guard let fields = object as? [String: Any] else { throw Failure.unreadable }
+        return fields
     }
 
     private func fetchRows(
@@ -237,6 +300,13 @@ actor DashboardClient {
     private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await session.data(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            // A screen went away mid-request. That is not the dashboard
+            // failing to answer, and a dismissed view must not leave an error
+            // behind saying it was.
+            throw CancellationError()
         } catch {
             throw Failure.unreachable
         }
@@ -250,12 +320,11 @@ actor DashboardClient {
         _ method: String, _ path: String, body: Data? = nil, contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         guard credentials != nil else { throw Failure.notConfigured }
-        if !signedIn { try await signIn() }
+        let age = try await authenticate()
         do {
             return try await fetchRaw(method, path, body: body, contentType: contentType)
         } catch Failure.http(401, _) {
-            signedIn = false
-            try await signIn()
+            _ = try await authenticate(replacing: age)
             return try await fetchRaw(method, path, body: body, contentType: contentType)
         }
     }
@@ -267,12 +336,11 @@ actor DashboardClient {
         _ method: String, _ path: String, bodyFile: URL, contentType: String
     ) async throws -> (Data, HTTPURLResponse) {
         guard credentials != nil else { throw Failure.notConfigured }
-        if !signedIn { try await signIn() }
+        let age = try await authenticate()
         do {
             return try await fetchRawUpload(method, path, bodyFile: bodyFile, contentType: contentType)
         } catch Failure.http(401, _) {
-            signedIn = false
-            try await signIn()
+            _ = try await authenticate(replacing: age)
             return try await fetchRawUpload(method, path, bodyFile: bodyFile, contentType: contentType)
         }
     }
@@ -290,6 +358,10 @@ actor DashboardClient {
         let response: URLResponse
         do {
             (data, response) = try await session.upload(for: request, fromFile: bodyFile)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch {
             throw Failure.unreachable
         }
@@ -305,12 +377,11 @@ actor DashboardClient {
     /// in Alice's process.
     func rawDownload(_ path: String) async throws -> (URL, HTTPURLResponse) {
         guard credentials != nil else { throw Failure.notConfigured }
-        if !signedIn { try await signIn() }
+        let age = try await authenticate()
         do {
             return try await fetchRawDownload(path)
         } catch Failure.http(401, _) {
-            signedIn = false
-            try await signIn()
+            _ = try await authenticate(replacing: age)
             return try await fetchRawDownload(path)
         }
     }
@@ -325,6 +396,10 @@ actor DashboardClient {
         let response: URLResponse
         do {
             (temporaryURL, response) = try await session.download(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch {
             throw Failure.unreachable
         }
@@ -1243,21 +1318,21 @@ extension DashboardClient {
     /// The bot's standing instructions. `exists` is false for a profile that
     /// has never been given one, which is different from an empty one.
     func soul(_ name: String) async throws -> (text: String, exists: Bool) {
-        let object = try await get("api/profiles/\(name)/soul")
+        let object = try await get("api/profiles/\(Self.pathSegment(name))/soul")
         return ((object["content"] as? String) ?? "", (object["exists"] as? Bool) ?? false)
     }
 
     func setSoul(_ name: String, _ content: String) async throws {
-        try await send("PUT", "api/profiles/\(name)/soul", ["content": content])
+        try await send("PUT", "api/profiles/\(Self.pathSegment(name))/soul", ["content": content])
     }
 
     func setDescription(_ name: String, _ text: String) async throws {
-        try await send("PUT", "api/profiles/\(name)/description", ["description": text])
+        try await send("PUT", "api/profiles/\(Self.pathSegment(name))/description", ["description": text])
     }
 
     func setModel(_ name: String, provider: String, model: String) async throws {
         try await send(
-            "PUT", "api/profiles/\(name)/model",
+            "PUT", "api/profiles/\(Self.pathSegment(name))/model",
             ["provider": provider, "model": model]
         )
     }
@@ -1273,7 +1348,7 @@ extension DashboardClient {
     }
 
     func deleteBot(_ name: String) async throws {
-        try await send("DELETE", "api/profiles/\(name)")
+        try await send("DELETE", "api/profiles/\(Self.pathSegment(name))")
     }
 
     /// The scheduled jobs belonging to one bot.
@@ -1528,7 +1603,11 @@ extension DashboardClient {
     }
 
     private static func queryValue(_ text: String) -> String {
-        text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+        // `.urlQueryAllowed` permits the separators, so a value carrying one
+        // would arrive as a second parameter — or, for "+", as a space.
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+?#")
+        return text.addingPercentEncoding(withAllowedCharacters: allowed) ?? text
     }
 
     private static func pathSegment(_ text: String) -> String {
@@ -1545,7 +1624,7 @@ extension DashboardClient {
     }
 
     func rename(_ name: String, to newName: String) async throws {
-        try await send("PATCH", "api/profiles/\(name)", ["new_name": newName])
+        try await send("PATCH", "api/profiles/\(Self.pathSegment(name))", ["new_name": newName])
     }
 
     static func projectRows(
@@ -1647,48 +1726,64 @@ extension DashboardClient {
         try Self.projectRows(from: try await get("api/profiles/projects/tree"))
     }
 
-    /// Legacy read retained for older dashboards. Current Alice uses
-    /// `projects.list` over the authenticated dashboard WebSocket instead.
-    func namedProjects() async throws -> [NamedProject] {
-        try Self.namedProjects(from: try await get("api/projects"))
+    /// Every skill in a profile, with the state the agent actually holds.
+    ///
+    /// The gateway's `/v1/skills` is a name-and-description listing: it does
+    /// not say which skills are switched off, so a catalogue built from it can
+    /// only leave the switches out. The dashboard's listing carries `enabled`,
+    /// and is scoped to a profile, which is what this screen is about.
+    ///
+    /// The route answers with a bare JSON array, so it is read as rows rather
+    /// than through `get`.
+    func skills(profile: String?) async throws -> [CatalogRow] {
+        var path = "api/skills"
+        if let profile, !profile.isEmpty {
+            path += "?profile=\(Self.queryValue(profile))"
+        }
+        return HermesClient.parseCatalog(
+            try await rows(path, shape: .array).rows, kind: .skill
+        )
     }
 
-    func createProject(name: String, colour: String?) async throws {
-        var body: [String: Any] = ["name": name]
-        if let colour { body["color"] = colour }
-        _ = try await send("POST", "api/projects/create", body)
-    }
-
-    func renameProject(_ id: String, to name: String, colour: String?) async throws {
-        var body: [String: Any] = ["project_id": id, "name": name]
-        if let colour { body["color"] = colour }
-        _ = try await send("POST", "api/projects/rename", body)
-    }
-
-    func deleteProject(_ id: String) async throws {
-        _ = try await send("POST", "api/projects/delete", ["project_id": id])
+    /// Switches a skill on or off for a profile.
+    func setSkillEnabled(_ name: String, enabled: Bool, profile: String?) async throws {
+        var body: [String: Any] = ["name": name, "enabled": enabled]
+        if let profile, !profile.isEmpty { body["profile"] = profile }
+        _ = try await send("PUT", "api/skills/toggle", body)
     }
 
     /// A skill is its `SKILL.md`, frontmatter and all — so that is what is
     /// read and what is written back. Anything cleverer would be this app
     /// deciding what a skill may say.
-    func skillContent(_ name: String) async throws -> String {
-        let escaped = name.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) ?? name
-        let object = try await get("api/skills/content?name=\(escaped)")
+    func skillContent(_ name: String, profile: String? = nil) async throws -> String {
+        var path = "api/skills/content?name=\(Self.queryValue(name))"
+        if let profile, !profile.isEmpty {
+            path += "&profile=\(Self.queryValue(profile))"
+        }
+        let object = try await get(path)
         guard let content = object["content"] as? String else {
             throw Failure.http(404)
         }
         return content
     }
 
-    func saveSkill(name: String, content: String) async throws {
-        _ = try await send("POST", "api/skills/save", ["name": name, "content": content])
-    }
-
-    func deleteSkill(_ name: String) async throws {
-        _ = try await send("POST", "api/skills/delete", ["name": name])
+    /// Writes a skill back.
+    ///
+    /// Hermes separates the two writes: creating a skill goes through the
+    /// agent's own `skill_manage` path, which builds the directory, while
+    /// editing one replaces the `SKILL.md` of a skill that already exists.
+    /// Sending an edit to the create route makes a second skill; sending a
+    /// creation to the edit route is a 404. So the caller says which it is.
+    func saveSkill(
+        name: String, content: String, isNew: Bool, profile: String? = nil
+    ) async throws {
+        var body: [String: Any] = ["name": name, "content": content]
+        if let profile, !profile.isEmpty { body["profile"] = profile }
+        if isNew {
+            _ = try await send("POST", "api/skills", body)
+        } else {
+            _ = try await send("PUT", "api/skills/content", body)
+        }
     }
 
 

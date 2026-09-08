@@ -39,7 +39,6 @@ struct SkillEditor: View {
     @State private var loading = false
     @State private var saving = false
     @State private var failure: String?
-    @State private var confirmingDelete = false
 
     var body: some View {
         NavigationStack {
@@ -77,16 +76,6 @@ struct SkillEditor: View {
             } message: {
                 Text(failure ?? "")
             }
-            .confirmationDialog(
-                "Delete \(subject.title)?",
-                isPresented: $confirmingDelete,
-                titleVisibility: .visible
-            ) {
-                Button("Delete", role: .destructive) { delete() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("The skill is removed from the agent.")
-            }
         }
         .task { await load() }
     }
@@ -119,21 +108,6 @@ struct SkillEditor: View {
                 .scrollContentBackground(.hidden)
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
-
-            if case .existing = subject {
-                Button(role: .destructive) {
-                    confirmingDelete = true
-                } label: {
-                    Label("Delete Skill", systemImage: "trash")
-                        .font(.subheadline)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.red)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-            }
         }
     }
 
@@ -170,30 +144,22 @@ struct SkillEditor: View {
 
     private func save() {
         let identifier: String
+        let isNew: Bool
         switch subject {
         case .new:
             identifier = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            isNew = true
         case let .existing(existing, _):
             identifier = existing
+            isNew = false
         }
         saving = true
         Task {
             defer { saving = false }
             do {
-                try await store.saveSkill(name: identifier, content: text)
-                onChange()
-                dismiss()
-            } catch {
-                failure = message(error)
-            }
-        }
-    }
-
-    private func delete() {
-        guard case let .existing(name, _) = subject else { return }
-        Task {
-            do {
-                try await store.deleteSkill(name)
+                try await store.saveSkill(
+                    name: identifier, content: text, isNew: isNew
+                )
                 onChange()
                 dismiss()
             } catch {
