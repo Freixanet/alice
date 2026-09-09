@@ -8,9 +8,10 @@
 # code. This runs the same checks locally so pushing is still gated by
 # something.
 #
-# It mirrors the workflow job for job. Where it cannot check something it says
-# so and fails, rather than passing quietly: a gate that skips in silence is
-# worse than no gate, because it is trusted.
+# It mirrors the workflow's checks while reusing the dependencies already
+# installed in this checkout so the pre-push gate stays fast. GitHub remains
+# the clean-install authority (`npm ci` + fresh Playwright browsers). Where a
+# local prerequisite is missing, this fails rather than pretending it ran.
 #
 #   scripts/ci-local.sh            verify + browser + ios   (everything)
 #   scripts/ci-local.sh verify     the job that was failing (fast)
@@ -36,18 +37,55 @@ run() { # run <name> <command...>
   fi
 }
 
-# The workflow pins Node 24. A pass on a different major is weaker evidence,
-# so say which one this was.
-node_note() {
-  local have; have=$(node --version 2>/dev/null || echo "none")
-  if [[ $have != v24* ]]; then
-    printf "%s  ! Node %s here, the workflow pins 24 — a pass here is not a pass there.%s\n" \
+node_supported() {
+  local version major minor
+  version=$(node -p 'process.versions.node' 2>/dev/null) || return 1
+  IFS=. read -r major minor _ <<<"$version"
+  (( major >= 24 || (major == 22 && minor >= 13) ))
+}
+
+# The shell used to push Alice currently exposes Node 23, which the project
+# explicitly does not support. Prefer an already-installed NVM Node when the
+# ambient one is outside package.json's engine range; never download from a
+# hook or silently bless an unsupported runtime.
+prepare_node() {
+  if ! node_supported; then
+    local nvm_dir=${NVM_DIR:-"$HOME/.nvm"}
+    if [[ -s "$nvm_dir/nvm.sh" ]]; then
+      export NVM_DIR="$nvm_dir"
+      # `--no-use` avoids NVM's default (which may itself be unsupported).
+      # shellcheck disable=SC1090
+      . "$NVM_DIR/nvm.sh" --no-use
+      local candidate resolved
+      for candidate in 24 22; do
+        resolved=$(nvm version "$candidate" 2>/dev/null || true)
+        if [[ -n $resolved && $resolved != N/A ]]; then
+          nvm use --silent "$resolved" >/dev/null 2>&1 || true
+          node_supported && break
+        fi
+      done
+    fi
+  fi
+
+  if ! node_supported; then
+    local have; have=$(node --version 2>/dev/null || echo "none")
+    printf "%s  ✗ Unsupported Node %s. Alice requires ^22.13.0 or >=24.0.0.%s\n" \
+      "$RED" "$have" "$OFF"
+    FAILED+=("supported Node runtime")
+    return 1
+  fi
+
+  local have; have=$(node --version)
+  if [[ $have == v24* ]]; then
+    printf "  Node %s (matches CI)\n" "$have"
+  else
+    printf "%s  Node %s (supported locally; CI still verifies Node 24).%s\n" \
       "$YELLOW" "$have" "$OFF"
   fi
 }
 
 job_verify() {
-  node_note
+  prepare_node || return
   # gitleaks: native binary first, then the image the workflow uses. Neither
   # available is a failure, not a skip — this is the secret scan.
   step "gitleaks (secret scan)"
@@ -76,8 +114,9 @@ job_verify() {
 }
 
 job_browser() {
-  if [[ ! -d node_modules/@playwright ]] && ! npx --no playwright --version >/dev/null 2>&1; then
-    printf "%s  ✗ Playwright is not installed — run: npx playwright install%s\n" "$RED" "$OFF"
+  prepare_node || return
+  if [[ ! -x node_modules/.bin/playwright ]]; then
+    printf "%s  ✗ Playwright package is not installed — run: npm ci%s\n" "$RED" "$OFF"
     FAILED+=("test:e2e (not run)")
     return
   fi

@@ -14,6 +14,9 @@ concurrency:
 
 jobs:
   verify:
+    # A self-hosted runner can read the host it runs on. Never execute a PR
+    # authored by another account on this personal Mac.
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
     runs-on: [self-hosted, macOS]
     timeout-minutes: 20
     steps:
@@ -38,6 +41,7 @@ jobs:
       - run: npm run deps:check
 
   browser:
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
     runs-on: [self-hosted, macOS]
     timeout-minutes: 25
     steps:
@@ -59,6 +63,7 @@ jobs:
           retention-days: 14
 
   ios:
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
     # This was pull-requests-only because GitHub bills macOS at ten times the
     # Linux rate: one run cost more than the rest of the workflow together, and
     # thirteen pushes in a night emptied a month's allowance. A self-hosted
