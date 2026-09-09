@@ -10,6 +10,7 @@ struct ChatScreen: View {
 
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
+    @State private var homeComposerHeight: CGFloat = 120
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -58,24 +59,13 @@ struct ChatScreen: View {
 
     var body: some View {
         NavigationStack {
-            transcript
+            chatContent
                 // A plain tap anywhere off the composer dismisses the
                 // keyboard; `simultaneousGesture` leaves scrolling and text
                 // selection working underneath it.
                 .simultaneousGesture(
                     TapGesture().onEnded { composerFocused = false }
                 )
-                // `safeAreaInset` rather than a layer in a `ZStack`. Overlaid,
-                // the composer had to be compensated for with a fixed 120pt
-                // of empty space under the transcript — a guess that is wrong
-                // the moment the composer grows for an attachment, a second
-                // line, or the command list, and wrong again when the keyboard
-                // pushes it up. The inset reserves whatever height it actually
-                // has. Content still scrolls underneath it; it just no longer
-                // comes to rest there.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Composer(focused: $composerFocused, placeholder: placeholder)
-                }
             .background(Palette.background(scheme))
             .contentShape(.rect)
             .navigationBarTitleDisplayMode(.inline)
@@ -105,6 +95,37 @@ struct ChatScreen: View {
         // The list is where these are normally read, and a conversation can
         // be opened without ever going through it.
         .task(id: bot) { await refreshBots() }
+    }
+
+    @ViewBuilder
+    private var chatContent: some View {
+        if let conversation = store.activeConversation, !conversation.messages.isEmpty {
+            transcript
+                // A real conversation reserves the live composer height so the
+                // last message still follows attachments, extra lines, and the
+                // keyboard.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    Composer(focused: $composerFocused, placeholder: placeholder)
+                }
+        } else {
+            // The empty home should not reflow when the keyboard appears.
+            // Reserve the unfocused composer height in the static layer, then
+            // let the real composer follow the keyboard as a separate sibling.
+            ZStack(alignment: .bottom) {
+                EmptyChatView()
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        Color.clear.frame(height: homeComposerHeight)
+                    }
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
+
+                Composer(focused: $composerFocused, placeholder: placeholder)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        guard !composerFocused, height > 0,
+                              abs(homeComposerHeight - height) > 0.5 else { return }
+                        homeComposerHeight = height
+                    }
+            }
+        }
     }
 
     /// Keeps `cachedBots` good enough for the settings page to open from here.
