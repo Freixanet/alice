@@ -34,7 +34,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
       - run: npm ci
       - run: npm run check:static
       - run: npm run security:check
@@ -49,7 +48,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
       - run: npm ci
       # `--with-deps` installs apt packages and this is macOS; the browsers
       # themselves install the same way.
