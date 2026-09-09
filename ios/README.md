@@ -26,10 +26,11 @@ source of truth and merge conflicts in a `.pbxproj` never happen.
 
 ## Shape
 
-Chat is the app. A tab bar would put four peers at the bottom of a screen that
-is really one thing, so history, settings and the connection live behind a
-drawer that slides in from the left — the shape every model client has settled
-on, and the one that leaves the conversation the whole display.
+Chat is the app. A tab bar would put peers at the bottom of a screen that is
+really one thing, so everyday navigation and conversation history live behind a
+drawer that slides in from the left. The drawer intentionally stays short:
+Bots, Activity, Routines, Projects and Library. Configuration lives in Settings,
+with technical administration progressively disclosed under Advanced.
 
 ## What Liquid Glass is doing here
 
@@ -42,15 +43,15 @@ on, and the one that leaves the conversation the whole display.
 
 ## Status
 
-| Screen                      | State                                                 |
-| --------------------------- | ----------------------------------------------------- |
-| Chat                        | Streaming replies, tool calls, Markdown, model picker |
-| Connect                     | Address and key, Keychain storage, capability listing |
-| Settings                    | Theme, accent, model                                  |
-| Skills                      | List, search, filter, enable/disable against Hermes   |
-| Tools, Add-ons              | List, search, filter (read-only)                      |
-| Projects, Artifacts, Memory | Listed with the capability each needs                 |
-| Jobs, Insights              | Listed with the capability each needs                 |
+| Screen                    | State                                                   |
+| ------------------------- | ------------------------------------------------------- |
+| Chat                      | Streaming replies, tool calls, Markdown, model picker   |
+| Connect                   | Pairing-first connection; manual details under Advanced |
+| Settings                  | General, connection, agent options, Advanced            |
+| Skills                    | List, search, filter, enable/disable against Hermes     |
+| Tools, Plugins, MCP       | Preserved under Settings → Advanced                     |
+| Projects, Library, Memory | User-facing work and curated memory                     |
+| Activity, Sessions, Usage | Current attention plus history and usage                |
 
 Skills, Tools and Add-ons share one screen: they differ in where the rows come
 from and whether a row can be switched, not in how they read.

@@ -107,12 +107,12 @@ struct PairingForm: View {
 
             if let dashboardWarning {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Hermes is connected, but its extra services did not finish connecting.")
+                    Text("Hermes is connected, but some features did not finish connecting.")
                         .font(.subheadline.weight(.medium))
                     Text(dashboardWarning)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Button("Try extra services again") {
+                    Button("Try connection repair again") {
                         Task { await flow.retryDashboard(store: store) }
                     }
                 }
@@ -123,7 +123,7 @@ struct PairingForm: View {
             Text(
                 dashboardWarning == nil
                     ? "Connection secrets are held in the Keychain on this iPhone only."
-                    : "Your main Hermes connection is ready. You can retry the remaining services now or later from Connect."
+                    : "Your main Hermes connection is ready. You can repair the remaining features now or later from Connect."
             )
         }
     }

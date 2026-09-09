@@ -1,10 +1,9 @@
 import XCTest
 @testable import Alice
 
-/// Search could only find conversations. In an app whose drawer holds thirteen
-/// destinations, several named after Hermes internals, that left someone who
-/// does not already know that "MCP" means integrations with no way to get
-/// there except opening screens until one was right.
+/// Search reaches both everyday destinations and the technical surfaces that
+/// are intentionally hidden from the simplified drawer. A person does not need
+/// to know where a setting lives before searching for a human or Hermes term.
 final class DestinationSearchTests: XCTestCase {
 
     private func target(_ query: String) -> [AliceDestination.Target] {
@@ -91,8 +90,8 @@ final class DestinationSearchTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 
-    /// Every destination the drawer can open must exist in the searchable list,
-    /// or it is reachable only by knowing where it already is.
+    /// Every destination, including advanced ones removed from the drawer, must
+    /// remain searchable so progressive disclosure never means lost capability.
     func testEverySearchableTargetIsCovered() {
         let covered = Set(AliceDestination.all.map(\.target))
         for target in [

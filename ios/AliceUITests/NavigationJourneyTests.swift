@@ -56,16 +56,22 @@ final class NavigationJourneyTests: XCTestCase {
         )
     }
 
-    /// Grouping the drawer must not have cost a destination. Every one of them
-    /// is still one tap from the conversation.
-    func testEveryDrawerDestinationSurvivedGrouping() {
+    /// The drawer is everyday navigation, not an administration console.
+    /// Technical destinations remain available from Settings → Advanced and
+    /// from search without competing with chats for vertical space.
+    func testDrawerKeepsOnlyEverydayDestinations() {
         openDrawer()
-        for title in [
-            "Bots", "Activity", "Routines", "Projects", "Files", "Library",
-            "Channels", "Integrations (MCP)", "Skills", "Tools", "Webhooks",
-            "Git", "System",
-        ] {
+        for title in ["Bots", "Activity", "Routines", "Projects", "Library"] {
             assertDrawerRow(title)
+        }
+        for title in [
+            "Files", "Channels", "Integrations (MCP)", "Skills", "Tools",
+            "Webhooks", "Git", "System",
+        ] {
+            XCTAssertFalse(
+                app.buttons["sidebar.row.\(title)"].exists,
+                "\(title) should live outside the everyday drawer"
+            )
         }
     }
 
@@ -94,11 +100,7 @@ final class NavigationJourneyTests: XCTestCase {
         XCTAssertTrue(leading.waitForExistence(timeout: 25))
         leading.tap()
 
-        for title in [
-            "Bots", "Activity", "Routines", "Projects", "Files", "Library",
-            "Channels", "Integrations (MCP)", "Skills", "Tools", "Webhooks",
-            "Git", "System",
-        ] {
+        for title in ["Bots", "Activity", "Routines", "Projects", "Library"] {
             let row = app.buttons["sidebar.row.\(title)"]
             XCTAssertTrue(
                 row.waitForExistence(timeout: 10),
@@ -163,9 +165,24 @@ final class NavigationJourneyTests: XCTestCase {
             app.navigationBars["Settings"].waitForExistence(timeout: 20),
             "Settings should open"
         )
-        // The three rows that used to be duplicated here are gone; they are one
-        // tap away in the drawer instead. Settings keeps what it is for.
+        let general = app.staticTexts["General"]
+        let connection = app.staticTexts["Connection"]
+        XCTAssertTrue(general.waitForExistence(timeout: 10))
+        XCTAssertTrue(connection.waitForExistence(timeout: 10))
+        XCTAssertLessThan(
+            general.frame.minY, connection.frame.minY,
+            "General should be the first settings section"
+        )
+        XCTAssertTrue(app.buttons["Advanced"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Sessions"].exists, "history is not a setting")
+    }
+
+    func testActivityOwnsHistoryAndUsage() {
+        openDrawer()
+        app.buttons["sidebar.row.Activity"].tap()
+        XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Sessions"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Insights"].waitForExistence(timeout: 10))
     }
 
     /// Apple's minimum target is 44 x 44. These three are glyphs inside glass

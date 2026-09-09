@@ -49,6 +49,20 @@ struct ActivityScreen: View {
                     ForEach(store.activity) { row($0) }
                 }
             }
+
+            Section("History & usage") {
+                NavigationLink { SessionsScreen() } label: {
+                    Label("Sessions", systemImage: "clock.arrow.circlepath")
+                }
+                NavigationLink { InsightsScreen() } label: {
+                    Label("Insights", systemImage: "chart.line.uptrend.xyaxis")
+                }
+                if store.dashboardReady {
+                    NavigationLink { UsageScreen() } label: {
+                        Label("Usage", systemImage: "chart.bar")
+                    }
+                }
+            }
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Activity")

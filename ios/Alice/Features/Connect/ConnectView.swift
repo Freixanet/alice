@@ -13,22 +13,25 @@ struct ConnectView: View {
     @State private var panelBusy = false
     @State private var panelError: String?
     @State private var showScanner = false
-    @State private var manualExpanded = false
-    @State private var dashboardExpanded = false
-    @State private var technicalExpanded = false
+    @State private var advancedExpanded = false
 
     var body: some View {
         NavigationStack {
             Form {
                 if store.isConnected {
                     connectionSummary
-                    pairing
-                    extraServices
-                    technicalDetails
+                }
+
+                pairing
+
+                if store.isConnected && !store.dashboardReady {
+                    limitedFeatures
+                }
+
+                advancedConnection
+
+                if store.isConnected {
                     disconnect
-                } else {
-                    pairing
-                    manualSetup
                 }
             }
             .navigationTitle("Connect")
@@ -47,10 +50,9 @@ struct ConnectView: View {
         }
     }
 
-    /// The normal path. Keep it available even when Alice is already connected:
-    /// a QR is also the clean way to re-pair or switch Hermes without first
-    /// destroying a working connection. The pairing confirmation owns the
-    /// replacement decision; merely opening the scanner changes nothing.
+    /// The pairing QR is the normal path. Alice configures every connection it
+    /// can from one scan, so people don't need to learn the gateway/dashboard
+    /// split just to get started.
     private var pairing: some View {
         Section {
             Button {
@@ -66,38 +68,6 @@ struct ConnectView: View {
                     ? "Scan a pairing QR to re-pair or switch Hermes. Your current connection stays in place unless you confirm the new pairing."
                     : "Show the pairing QR on the Mac running Hermes, then scan it here. Alice configures the connection automatically."
             )
-        }
-    }
-
-    /// The old form remains available for unusual deployments, but it no
-    /// longer makes every new reader understand a gateway before they can use
-    /// the one-tap path above.
-    private var manualSetup: some View {
-        Section {
-            DisclosureGroup("Set up manually", isExpanded: $manualExpanded) {
-                TextField("Address", text: $address)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                SecureField("Connection key", text: $key)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                if let error = store.connectionError {
-                    Text(error).foregroundStyle(.red)
-                }
-
-                Button {
-                    Task { await store.connect(urlText: address, key: key) }
-                } label: {
-                    if store.isConnecting { ProgressView() } else { Text("Connect") }
-                }
-                .disabled(address.isEmpty || key.isEmpty || store.isConnecting)
-            }
-        } header: {
-            Text("Advanced")
-        } footer: {
-            Text("Manual setup is for Hermes installations that cannot use the pairing QR.")
         }
     }
 
@@ -123,31 +93,50 @@ struct ConnectView: View {
         }
     }
 
-    /// Dashboard is an implementation detail behind the user-facing idea of
-    /// extra Hermes services. Pairing fills this in automatically when the
-    /// Mac has credentials; the form is only a recovery/advanced path.
-    @ViewBuilder
-    private var extraServices: some View {
+    /// A partial dashboard connection is expressed as a feature problem, not
+    /// as a second service the person is expected to understand. The repair
+    /// controls themselves stay under Advanced.
+    private var limitedFeatures: some View {
         Section {
-            if store.dashboardReady {
-                LabeledContent("Extra services") {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                        Text("Connected")
+            Label("Some features are unavailable", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text("Projects, Memory and Usage need the full Hermes connection.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button("Repair connection") {
+                advancedExpanded = true
+            }
+        }
+    }
+
+    /// One disclosure point for every uncommon connection detail. Apple
+    /// recommends keeping the common path visible and advanced functionality
+    /// hidden until it becomes relevant.
+    private var advancedConnection: some View {
+        Section {
+            DisclosureGroup("Advanced connection settings", isExpanded: $advancedExpanded) {
+                if !store.isConnected {
+                    TextField("Address", text: $address)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    SecureField("Connection key", text: $key)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    if let error = store.connectionError {
+                        Text(error).foregroundStyle(.red)
                     }
-                    .foregroundStyle(.green)
+
+                    Button {
+                        Task { await store.connect(urlText: address, key: key) }
+                    } label: {
+                        if store.isConnecting { ProgressView() } else { Text("Connect manually") }
+                    }
+                    .disabled(address.isEmpty || key.isEmpty || store.isConnecting)
                 }
-                Text("Projects, Memory and Usage are available.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Button("Disconnect extra services", role: .destructive) {
-                    Task { await store.forgetDashboard() }
-                }
-            } else {
-                DisclosureGroup(
-                    "Set up extra services manually",
-                    isExpanded: $dashboardExpanded
-                ) {
+
+                if store.isConnected && !store.dashboardReady {
                     TextField("Dashboard address", text: $panelAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -170,7 +159,7 @@ struct ConnectView: View {
                             panelBusy = false
                         }
                     } label: {
-                        if panelBusy { ProgressView() } else { Text("Connect") }
+                        if panelBusy { ProgressView() } else { Text("Repair full connection") }
                     }
                     .disabled(
                         panelAddress.isEmpty || panelUser.isEmpty
@@ -180,40 +169,31 @@ struct ConnectView: View {
                         Text(panelError).foregroundStyle(.red)
                     }
                 }
-            }
-        } header: {
-            Text("Extra services")
-        } footer: {
-            if !store.dashboardReady {
-                Text("Optional. Pairing configures this automatically when Hermes exposes Projects, Memory and Usage.")
-            }
-        }
-    }
 
-    /// Addresses and raw capability names are useful when debugging, not when
-    /// deciding whether Alice is connected. Keep them available without
-    /// making the server's vocabulary part of the normal product surface.
-    private var technicalDetails: some View {
-        Section {
-            DisclosureGroup("Technical details", isExpanded: $technicalExpanded) {
-                LabeledContent("Gateway", value: store.gatewayURL)
-                if store.dashboardReady {
-                    LabeledContent("Dashboard", value: store.dashboardURL)
-                    LabeledContent("Dashboard user", value: store.dashboardUser)
-                }
+                if store.isConnected {
+                    LabeledContent("Gateway", value: store.gatewayURL)
+                    if store.dashboardReady {
+                        LabeledContent("Dashboard", value: store.dashboardURL)
+                        LabeledContent("Dashboard user", value: store.dashboardUser)
+                    }
 
-                let advertised = store.manifest?.advertised.sorted() ?? []
-                if !advertised.isEmpty {
-                    Text("Capabilities")
-                        .font(.footnote.weight(.semibold))
-                        .padding(.top, 4)
-                    ForEach(advertised, id: \.self) { name in
-                        Text(name)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                    let advertised = store.manifest?.advertised.sorted() ?? []
+                    if !advertised.isEmpty {
+                        Text("Capabilities")
+                            .font(.footnote.weight(.semibold))
+                            .padding(.top, 4)
+                        ForEach(advertised, id: \.self) { name in
+                            Text(name)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
+        } header: {
+            Text("Advanced")
+        } footer: {
+            Text("Manual addresses and technical details are only needed for unusual or troubleshooting setups.")
         }
     }
 

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// History, and the way into everything that is not the conversation.
+/// Everyday navigation and conversation history. Configuration lives in Settings.
 struct Sidebar: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -15,9 +15,9 @@ struct Sidebar: View {
     @State private var projectMoveFailure: String?
     @State private var going: Destination?
 
-    /// Where the drawer can take you. The frequent ones sit above the
-    /// conversations, where they are reached without scrolling; the rest are
-    /// in Settings, which is where things you set once belong.
+    /// Every surface Search can route to from the drawer. Only the everyday
+    /// destinations are listed visibly; configuration is progressively disclosed
+    /// through Settings while remaining searchable for expert users.
     private enum Destination: String, Identifiable {
         case activity, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
         var id: String { rawValue }
@@ -138,22 +138,11 @@ struct Sidebar: View {
         }
     }
 
-    /// Twelve destinations used to sit here as equal peers, in no stated
-    /// order, mixing what you do with the agent against what you set up
-    /// underneath it. Nothing has been taken away — they are grouped, so the
-    /// list reads as two short ones rather than one long one, and so a person
-    /// looking for their work never has to rule out nine pieces of plumbing
-    /// first.
-    ///
-    /// The plumbing keeps Hermes' own names alongside the human ones. A person
-    /// who does not know what MCP is is not helped by hiding it, and a person
-    /// who does needs to find it.
+    /// The drawer is for places people use while working with Alice, not for
+    /// configuring Hermes. Technical administration remains searchable and is
+    /// grouped under Settings → Advanced instead of competing with recents.
     private var destinations: some View {
         VStack(spacing: 2) {
-            // Always listed, connected or not. A row that disappears when the
-            // agent is unreachable teaches the reader that the app is broken
-            // rather than that the connection is: the destination still knows
-            // what it last saw, and says so when it cannot refresh.
             row("Bots", systemImage: "person.2", weight: .medium) {
                 onDismiss()
                 store.botsFromLeading = false
@@ -165,18 +154,7 @@ struct Sidebar: View {
             ) { going = .activity }
             row("Routines", systemImage: "clock", weight: .medium) { going = .routines }
             row("Projects", systemImage: "folder", weight: .medium) { going = .projects }
-            row("Files", systemImage: "folder.badge.gearshape", weight: .medium) { going = .files }
             row("Library", systemImage: "photo.on.rectangle", weight: .medium) { going = .library }
-
-            groupLabel("Set up")
-
-            row("Channels", systemImage: "bubble.left.and.bubble.right", weight: .medium) { going = .channels }
-            row("Integrations (MCP)", systemImage: "shippingbox", weight: .medium) { going = .mcp }
-            row("Skills", systemImage: "sparkles", weight: .medium) { going = .skills }
-            row("Tools", systemImage: "wrench.adjustable", weight: .medium) { going = .tools }
-            row("Webhooks", systemImage: "link", weight: .medium) { going = .webhooks }
-            row("Git", systemImage: "arrow.triangle.branch", weight: .medium) { going = .git }
-            row("System", systemImage: "server.rack", weight: .medium) { going = .system }
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 22)
@@ -517,21 +495,8 @@ struct Sidebar: View {
         }
     }
 
-    /// Names the second half without shouting: the rows below it are reached
-    /// far less often than the ones above, and the label is what says so.
-    private func groupLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.top, 14)
-            .padding(.bottom, 4)
-            .accessibilityAddTraits(.isHeader)
-    }
 
-    /// a column of its own instead, and every word starts on one line.
+    /// Each symbol gets a fixed column so every label starts on the same line.
     private func row(
         _ title: String, systemImage: String, weight: Font.Weight = .regular,
         badge: Int = 0, action: @escaping () -> Void
@@ -555,7 +520,8 @@ struct Sidebar: View {
             }
             .font(.subheadline.weight(weight))
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
+            .frame(minHeight: 44)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
