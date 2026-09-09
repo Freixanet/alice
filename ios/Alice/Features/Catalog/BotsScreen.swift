@@ -59,6 +59,10 @@ struct BotsScreen: View {
     @State private var renamingSection: String?
     @State private var renameSectionName = ""
     @State private var showRenameSectionAlert = false
+    /// The bot currently being reordered. Keeping the identity in view state lets
+    /// DropDelegate advertise a real move operation instead of SwiftUI's default
+    /// copy-style drop (the misleading “+” badge).
+    @State private var draggedBotName: String?
 
     var body: some View {
         Group {
@@ -573,10 +577,21 @@ struct BotsScreen: View {
     private func pinnedTile(_ bot: BotRow, reorderPeers: [BotRow]? = nil) -> some View {
         if let reorderPeers {
             pinnedTileBase(bot)
-                .draggable(bot.name) { pinnedTilePreview(bot) }
-                .dropDestination(for: String.self) { items, _ in
-                    return reorder(bot: bot, draggedNames: items, peers: reorderPeers)
+                .onDrag {
+                    draggedBotName = bot.name
+                    return NSItemProvider(object: bot.name as NSString)
+                } preview: {
+                    pinnedTilePreview(bot)
                 }
+                .onDrop(
+                    of: [UTType.text],
+                    delegate: BotReorderDropDelegate(
+                        target: bot.name,
+                        peers: reorderPeers.map(\.name),
+                        draggedName: $draggedBotName,
+                        move: moveBot
+                    )
+                )
         } else {
             pinnedTileBase(bot)
         }
@@ -1203,10 +1218,21 @@ struct BotsScreen: View {
     private func botRowView(_ bot: BotRow, reorderPeers: [BotRow]? = nil) -> some View {
         if let reorderPeers {
             botRowBase(bot)
-                .draggable(bot.name) { botRowPreview(bot) }
-                .dropDestination(for: String.self) { items, _ in
-                    return reorder(bot: bot, draggedNames: items, peers: reorderPeers)
+                .onDrag {
+                    draggedBotName = bot.name
+                    return NSItemProvider(object: bot.name as NSString)
+                } preview: {
+                    botRowPreview(bot)
                 }
+                .onDrop(
+                    of: [UTType.text],
+                    delegate: BotReorderDropDelegate(
+                        target: bot.name,
+                        peers: reorderPeers.map(\.name),
+                        draggedName: $draggedBotName,
+                        move: moveBot
+                    )
+                )
         } else {
             botRowBase(bot)
         }
@@ -1292,14 +1318,11 @@ struct BotsScreen: View {
             .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
     }
 
-    private func reorder(bot target: BotRow, draggedNames: [String], peers: [BotRow]) -> Bool {
-        guard let source = draggedNames.first, source != target.name else { return false }
-        let names = peers.map(\.name)
-        guard names.contains(source), names.contains(target.name) else { return false }
+    private func moveBot(_ source: String, _ target: String, _ peers: [String]) {
+        guard source != target, peers.contains(source), peers.contains(target) else { return }
         withAnimation(.snappy(duration: 0.22)) {
-            store.reorderBot(source, relativeTo: target.name, within: names)
+            store.reorderBot(source, relativeTo: target, within: peers)
         }
-        return true
     }
 
     private func duplicateBot(_ bot: BotRow) {
@@ -2270,5 +2293,31 @@ private struct GlassTile: ButtonStyle {
             .opacity(configuration.isPressed ? 0.82 : 1)
             .animation(.snappy(duration: 0.18, extraBounce: 0.1),
                        value: configuration.isPressed)
+    }
+}
+
+
+/// Native in-place reordering for bot rows and pinned tiles. Reordering happens
+/// as the dragged item crosses a peer, while the proposal explicitly advertises
+/// `.move`; this gives the same displacement behavior as system lists and avoids
+/// the copy-style plus badge produced by a generic drop destination.
+private struct BotReorderDropDelegate: DropDelegate {
+    let target: String
+    let peers: [String]
+    @Binding var draggedName: String?
+    let move: (String, String, [String]) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let source = draggedName, source != target else { return }
+        move(source, target, peers)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedName = nil
+        return true
     }
 }

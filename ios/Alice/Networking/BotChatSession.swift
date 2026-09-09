@@ -92,7 +92,7 @@ struct BotChatSync: Sendable {
         )
         var updated = conversation
         updated.hermesSessionID = chat.resolvedID
-        updated.messages = Self.merge(turns, into: conversation.messages)
+        updated.messages = Self.merge(turns, into: conversation.messages, botName: profile)
         return updated
     }
 
@@ -114,7 +114,9 @@ struct BotChatSync: Sendable {
     ///   visible and stay flagged; nothing replays them into Hermes.
     /// - **Order is by time**, with remote turns settling ties, so the list
     ///   does not reshuffle between reads.
-    static func merge(_ remote: [BotChatTurn], into local: [Message]) -> [Message] {
+    static func merge(
+        _ remote: [BotChatTurn], into local: [Message], botName: String? = nil
+    ) -> [Message] {
         // What the agent has now. A local copy of one of these is replaced by
         // the agent's version rather than kept alongside it.
         var byRemoteID: [String: Message] = [:]
@@ -126,6 +128,7 @@ struct BotChatSync: Sendable {
                 role: turn.role,
                 content: turn.content,
                 createdAt: turn.createdAt,
+                botName: turn.role == .assistant ? botName : nil,
                 remoteID: turn.id
             )
         }
@@ -137,6 +140,9 @@ struct BotChatSync: Sendable {
         for message in local {
             if let remoteID = message.remoteID, byRemoteID[remoteID] != nil { continue }
             var kept = message
+            if kept.role == .assistant, kept.botName == nil {
+                kept.botName = botName
+            }
             if !message.isInFlight && message.remoteID == nil {
                 kept.localOnly = true
             }

@@ -99,6 +99,7 @@ final class BotChatSessionTests: XCTestCase {
 
         XCTAssertEqual(chat.hermesSessionID, "20260905_104136_281747")
         XCTAssertEqual(chat.messages.map(\.remoteID), ["m-cron-1"])
+        XCTAssertEqual(chat.messages[0].botName, "radar-ia")
         XCTAssertTrue(chat.messages[0].content.hasPrefix("**Radar IA"))
         let created = await source.creates
         XCTAssertTrue(created.isEmpty, "an existing canonical chat must be reused")
@@ -116,6 +117,8 @@ final class BotChatSessionTests: XCTestCase {
         let sync = BotChatSync(source: source)
         var chat = try await sync.refresh(profile: "radar-ia", into: Self.conversation("radar-ia"))
         XCTAssertEqual(chat.messages.count, 2)
+        XCTAssertNil(chat.messages[0].botName, "a real user turn must stay attributed to the user")
+        XCTAssertEqual(chat.messages[1].botName, "radar-ia")
 
         await source.append(Self.report, to: "radar-ia")
 
@@ -231,6 +234,9 @@ final class BotChatSessionTests: XCTestCase {
         XCTAssertEqual(chat.messages.map(\.content),
                        ["pregunta vieja", "respuesta vieja", Self.report.content])
         XCTAssertEqual(chat.messages.filter(\.localOnly).map(\.id), ["local-1", "local-2"])
+        XCTAssertNil(chat.messages[0].botName)
+        XCTAssertEqual(chat.messages[1].botName, "radar-ia")
+        XCTAssertEqual(chat.messages[2].botName, "radar-ia")
         let created = await source.creates
         XCTAssertTrue(created.isEmpty)
     }

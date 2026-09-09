@@ -3212,7 +3212,8 @@ final class AppStore {
             conversations[current].hermesSessionID = updated.hermesSessionID
             conversations[current].messages = BotChatSync.merge(
                 updated.messages.compactMap(Self.turn(from:)),
-                into: conversations[current].messages
+                into: conversations[current].messages,
+                botName: profile
             )
             botChatFailure[conversationID] = nil
             persistConversations()
