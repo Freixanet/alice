@@ -30,5 +30,5 @@ describe("deterministic sync convergence", () => {
       }),
       { numRuns: 10_000 },
     );
-  }, 15_000);
+  });
 });

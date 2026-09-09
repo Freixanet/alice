@@ -534,7 +534,7 @@ describe("Hermes cron contract parsing", () => {
       }),
       { numRuns: 10_000 },
     );
-  }, 15_000);
+  });
 
   it("bounds and normalizes official session messages as inert text", () => {
     const messages = sessionMessagesFromApi({

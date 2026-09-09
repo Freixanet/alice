@@ -123,17 +123,25 @@ describe("assistant Markdown", () => {
 });
 
 describe("math", () => {
-  // KaTeX is fetched the first time a reply looks like it has a formula, so
-  // these wait for that layer instead of asserting on first paint.
+  // KaTeX is a lazy chunk. Under the full coverage suite the first dynamic
+  // import can legitimately take longer than Testing Library's 1 s default,
+  // especially on the self-hosted runner. The product has no 1 s deadline, so
+  // give the test a bounded window that measures the actual contract instead
+  // of scheduler/load noise.
+  const mathReady = (container: HTMLElement, count = 1) =>
+    waitFor(
+      () =>
+        expect(
+          container.querySelectorAll(".katex").length,
+        ).toBeGreaterThanOrEqual(count),
+      { timeout: 5_000 },
+    );
+
   it("renders inline and display formulas", async () => {
     const { container } = render(
       <Markdown text={"Given $E = mc^2$, then:\n\n$$\\int_0^1 x^2 dx$$"} />,
     );
-    await waitFor(() =>
-      expect(
-        container.querySelectorAll(".katex").length,
-      ).toBeGreaterThanOrEqual(2),
-    );
+    await mathReady(container, 2);
     expect(container.textContent).toContain("Given");
   });
 
@@ -141,11 +149,7 @@ describe("math", () => {
     const { container } = render(
       <Markdown text={"area is \\(\\pi r^2\\) and \\[a^2 + b^2 = c^2\\]"} />,
     );
-    await waitFor(() =>
-      expect(
-        container.querySelectorAll(".katex").length,
-      ).toBeGreaterThanOrEqual(2),
-    );
+    await mathReady(container, 2);
   });
 
   it("leaves shell code alone even though it is full of dollars", () => {
@@ -170,9 +174,7 @@ describe("math", () => {
     const { container } = render(
       <Markdown text={"$\\href{javascript:alert(1)}{click}$"} />,
     );
-    await waitFor(() =>
-      expect(container.querySelector(".katex")).not.toBeNull(),
-    );
+    await mathReady(container);
     expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
   });
 });

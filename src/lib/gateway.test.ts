@@ -104,7 +104,7 @@ describe("Hermes model parsing", () => {
       }),
       { numRuns: 10_000 },
     );
-  }, 15_000);
+  });
 });
 
 describe("Hermes capability negotiation", () => {
@@ -250,7 +250,7 @@ describe("Hermes capability negotiation", () => {
       }),
       { numRuns: 10_000 },
     );
-  }, 15_000);
+  });
 });
 
 describe("version reporting", () => {
