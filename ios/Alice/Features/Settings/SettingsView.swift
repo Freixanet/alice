@@ -4,9 +4,6 @@ struct SettingsView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
-    #if DEBUG
-    @State private var recoveryStatus: String?
-    #endif
 
     var body: some View {
         @Bindable var store = store
@@ -88,26 +85,6 @@ struct SettingsView: View {
             }
 
 
-            #if DEBUG
-            // Recovery, debug-only and explicit.
-            //
-            // Reads a file placed at Documents/alice-recovery.json with
-            // `devicectl device copy to`. Never runs on launch: history is
-            // restored because someone asked for it, at a moment they chose.
-            // Delete this section once the recovery is done.
-            Section("Recovery (debug)") {
-                Text(recoveryStatus ?? "Place alice-recovery.json in Documents, then dry-run.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Button("Dry run") { runRecovery(apply: false) }
-                Button("Import") { runRecovery(apply: true) }
-                    .disabled(recoveryStatus == nil)
-                Button("Re-file under bots") { runMigration() }
-                Button("User-turn patch → Dry run") { runPatch(apply: false) }
-                Button("User-turn patch → Apply") { runPatch(apply: true) }
-                    .disabled(recoveryStatus == nil)
-            }
-            #endif
         }
         .navigationTitle("Settings")
         // A sheet with nothing but a swipe to close it is a sheet the
@@ -121,65 +98,4 @@ struct SettingsView: View {
         .background(Palette.background(scheme))
     }
 
-    #if DEBUG
-    private func runRecovery(apply: Bool) {
-        let url = URL.documentsDirectory.appending(path: "alice-recovery.json")
-        do {
-            let data = try Data(contentsOf: url)
-            let plan = apply
-                ? try store.importRecovery(data)
-                : try store.planRecovery(data)
-            recoveryStatus = (apply ? "Imported: " : "Would import: ")
-                + "\(plan.created.count) new, \(plan.merged.count) merged, "
-                + "\(plan.messagesAdded) messages"
-                + (plan.conflicts.isEmpty ? "" : ", \(plan.conflicts.count) conflicts")
-                + (plan.alreadyApplied ? " (batch already applied)" : "")
-        } catch {
-            recoveryStatus = "Failed: "
-                + ((error as? LocalizedError)?.errorDescription ?? "\(error)")
-        }
-    }
-
-    /// The user-turn patch lives in its own file, so it can be dry-run and
-    /// applied without going near the first archive again.
-    private func runPatch(apply: Bool) {
-        let url = URL.documentsDirectory.appending(path: "alice-userturns-patch.json")
-        do {
-            let data = try Data(contentsOf: url)
-            let plan = apply
-                ? try store.importRecovery(data)
-                : try store.planRecovery(data)
-            let total = store.conversations.reduce(0) { $0 + $1.messages.count }
-            if let refusal = plan.refusal {
-                recoveryStatus = "Refused: \(refusal)"
-                return
-            }
-            recoveryStatus = (apply ? "Applied. " : "Dry run. ")
-                + "conversations affected: \(plan.created.count + plan.merged.count), "
-                + "messages to add: \(plan.messagesAdded), "
-                + "historical inactive preserved: \(plan.preserved.count), "
-                + "visible duplicates to remove: \(plan.removals.count), "
-                + "conflicts: \(plan.conflicts.count), "
-                + "final recovered messages: "
-                + "\(apply ? total : total + plan.messagesAdded - plan.removals.count)"
-                + (plan.alreadyApplied ? " (batch already applied)" : "")
-        } catch {
-            recoveryStatus = "Failed: "
-                + ((error as? LocalizedError)?.errorDescription ?? "\(error)")
-        }
-    }
-
-    private func runMigration() {
-        let url = URL.documentsDirectory.appending(path: "alice-recovery.json")
-        do {
-            let data = try Data(contentsOf: url)
-            let changed = try store.migrateRecoveryAssociations(data)
-            let messages = store.conversations.reduce(0) { $0 + $1.messages.count }
-            recoveryStatus = "Re-filed \(changed) conversation(s); \(messages) messages intact"
-        } catch {
-            recoveryStatus = "Failed: "
-                + ((error as? LocalizedError)?.errorDescription ?? "\(error)")
-        }
-    }
-    #endif
 }
