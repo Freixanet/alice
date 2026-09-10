@@ -169,9 +169,10 @@ struct AlertAdvice: Hashable, Sendable {
                             "connection refused", "timed out", "timeout"]) {
             return AlertAdvice(
                 headline: "Couldn't reach the AI service",
-                explanation: "When this automation started, the service that runs its AI model "
-                    + "didn't answer. That is usually temporary. If it keeps happening, the "
-                    + "service may be down or the account behind it may need attention.",
+                explanation: "Partway through, Hermes lost its connection to the AI service it "
+                    + "was using, tried again a few times, and gave up. Nothing is wrong with the "
+                    + "automation itself — it's usually a network hiccup or the service having a "
+                    + "bad moment, and running it again normally works.",
                 fixes: [.runAgain]
             )
         }
@@ -219,6 +220,31 @@ struct AlertAdvice: Hashable, Sendable {
             explanation: explanation,
             fixes: [.useCurrentModel, .keepOriginalModel(name: from)]
         )
+    }
+
+    /// A failed automation that is running again. Offering "Try again now"
+    /// while it runs would start a second copy.
+    static let runningAgain = AlertAdvice(
+        headline: "Running again now",
+        explanation: "Hermes is running this automation again. Automations can take a few "
+            + "minutes; this updates when it finishes.",
+        fixes: []
+    )
+
+    /// Whether a run asked for at `askedAt` got going.
+    ///
+    /// Hermes answers "run now" only once the run is over, which takes minutes,
+    /// and the phone stops waiting long before — so the request timing out says
+    /// nothing either way. The automation itself does: Hermes records the
+    /// request before starting, holds a claim while it runs, and stamps the run
+    /// when it ends.
+    static func runStarted(_ row: JobRow?, askedAt: Date, now: Date = Date()) -> Bool {
+        guard let row else { return false }
+        let slack: TimeInterval = 60
+        if row.isRunning(now: now) { return true }
+        if let asked = row.manualRunAt, asked >= askedAt.addingTimeInterval(-slack) { return true }
+        if let ran = row.lastRun, ran >= askedAt.addingTimeInterval(-slack) { return true }
+        return false
     }
 
     // MARK: - Messaging apps

@@ -54,6 +54,12 @@ struct JobRow: Identifiable, Hashable, Sendable, Codable {
     /// onto a different model, and they are what "keep the original" restores.
     var modelSnapshot: String? = nil
     var providerSnapshot: String? = nil
+    /// When the run in progress was claimed. Hermes refreshes the claim every
+    /// minute while a run is alive and treats one older than five minutes as
+    /// dead (`FIRE_CLAIM_TTL_SECONDS`).
+    var runningSince: Date? = nil
+    /// When a run was last asked for by hand.
+    var manualRunAt: Date? = nil
     var skills: [String] = []
     var repeatTimes: Int? = nil
     var repeatCompleted: Int? = nil
@@ -63,6 +69,14 @@ struct JobRow: Identifiable, Hashable, Sendable, Codable {
 
     var isPaused: Bool { state == "paused" || (state == nil && !enabled) }
     var isCompleted: Bool { state == "completed" }
+
+    /// A run is in progress now, by Hermes' own rule. A little negative age is
+    /// allowed for the phone's clock running behind the computer's.
+    func isRunning(now: Date = Date()) -> Bool {
+        guard let runningSince else { return false }
+        let age = now.timeIntervalSince(runningSince)
+        return age > -60 && age < 300
+    }
     var effectiveState: String {
         if let state, !state.isEmpty { return state }
         return enabled ? "scheduled" : "paused"
@@ -275,6 +289,8 @@ extension HermesClient {
             provider: (row["provider"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             modelSnapshot: (row["model_snapshot"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             providerSnapshot: (row["provider_snapshot"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            runningSince: HermesClient.date((row["fire_claim"] as? [String: Any])?["at"]),
+            manualRunAt: HermesClient.date(row["manual_run_at"]),
             skills: row["skills"] as? [String] ?? [],
             repeatTimes: HermesClient.int(repeatInfo?["times"]),
             repeatCompleted: HermesClient.int(repeatInfo?["completed"])

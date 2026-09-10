@@ -103,10 +103,14 @@ enum EventDigest {
 
         for row in routines where Self.failed(row) == true && !AlertAdvice.driftIsSettled(row) {
             let detail = Self.failureDetail(row)
-            let advice = AlertAdvice.routineFailure(detail)
+            // Its last error stays on record while a new run is under way;
+            // showing that run beats offering to start another one.
+            let running = row.isRunning(now: now)
+            let advice = running ? AlertAdvice.runningAgain : AlertAdvice.routineFailure(detail)
             var event = AliceEvent(
                 id: "attention:routine:\(Self.key(for: row))",
-                kind: .automationFailed, severity: .failure, profile: row.profile,
+                kind: .automationFailed, severity: running ? .needsAttention : .failure,
+                profile: row.profile,
                 title: row.name.isEmpty ? "An automation" : row.name,
                 summary: advice.headline,
                 detail: detail,

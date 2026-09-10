@@ -22,6 +22,9 @@ actor DashboardClient {
         case rejected
         case http(Int, detail: String? = nil)
         case unreachable
+        /// Reached, but it did not answer in time. Not the same as unreachable:
+        /// some requests are answered only when the work is done.
+        case timedOut
         /// A 200 whose body could not be read as the listing it should be.
         /// Distinct from an empty listing, which is a real answer.
         case unreadable
@@ -40,6 +43,8 @@ actor DashboardClient {
                 }
             case .unreachable:
                 "The dashboard did not answer. It only listens on your own network."
+            case .timedOut:
+                "The dashboard took too long to answer."
             case .unreadable:
                 "The dashboard sent something this app could not read."
             }
@@ -307,6 +312,11 @@ actor DashboardClient {
             // failing to answer, and a dismissed view must not leave an error
             // behind saying it was.
             throw CancellationError()
+        } catch let error as URLError where error.code == .timedOut {
+            // "Did not answer — it only listens on your own network" was said
+            // to someone on their own network whose request had simply outlasted
+            // the wait: Hermes answers "run now" only once the run is over.
+            throw Failure.timedOut
         } catch {
             throw Failure.unreachable
         }

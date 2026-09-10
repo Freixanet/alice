@@ -1595,7 +1595,21 @@ final class AppStore {
                 requestedDestination = target
                 return .done
             case .runAgain:
-                try await triggerRoutine(routine(for: event))
+                let routine = try await routine(for: event)
+                let askedAt = Date()
+                do {
+                    try await triggerRoutine(routine)
+                } catch DashboardClient.Failure.timedOut {
+                    // Hermes replies to "run now" only when the run is over,
+                    // minutes later. The wait running out is not a failure, and
+                    // saying it was sent someone to press the button again for
+                    // a run already under way. The automation says whether it
+                    // started.
+                    let latest = try? await self.routine(for: event)
+                    guard AlertAdvice.runStarted(latest, askedAt: askedAt) else {
+                        return .failed("Hermes didn't confirm it started. Pull down in a minute to check.")
+                    }
+                }
                 outcome = .started
             case .useCurrentModel:
                 let routine = try await routine(for: event)

@@ -341,7 +341,7 @@ struct ActivityScreen: View {
         case .done:
             fixNotes[event.id] = nil
         case .started:
-            fixNotes[event.id] = "Started. This updates when the run finishes."
+            fixNotes[event.id] = "It's running now. Automations can take a few minutes — pull down to see when it's done."
         case .failed(let message):
             fixNotes[event.id] = message
         }
