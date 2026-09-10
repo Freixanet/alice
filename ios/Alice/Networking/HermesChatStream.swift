@@ -468,6 +468,23 @@ extension HermesClient {
         return HermesRunProtocol.parseSnapshot(data)
     }
 
+    /// Whether a run is still waiting on an approval, by Hermes' account now.
+    ///
+    /// `false` when Hermes has moved the run past waiting, or no longer knows it
+    /// at all (`404 run_not_found`: finished and forgotten). Throws when Hermes
+    /// could not be asked, which says nothing either way.
+    func runIsWaitingForApproval(runID: String, profile: String?) async throws -> Bool {
+        do {
+            guard let snapshot = try await runSnapshot(
+                runID: runID, profile: profile, conversationID: nil
+            ) else { throw Failure.badResponse }
+            return snapshot.status == .waitingForApproval
+        } catch let failure as Failure {
+            if case let .http(status, _, _) = failure, status == 404 { return false }
+            throw failure
+        }
+    }
+
     /// Resolve the exact approval Hermes exposed for a durable run.
     ///
     /// A room-scoped run *requires* `request_id`; ordinary runs accept it and

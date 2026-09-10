@@ -432,11 +432,8 @@ private struct RunApprovalCard: View {
     let approval: Message.Approval
 
     var body: some View {
-        // The title is Hermes' class name when it sent one ("Approval needed"
-        // when it did not), which is what the explanation is read from.
         let explanation = ApprovalExplainer.explain(
-            description: approval.title == "Approval needed" ? nil : approval.title,
-            command: approval.command
+            description: approval.hermesDescription, command: approval.command
         )
         VStack(alignment: .leading, spacing: 10) {
             Label("Wants to \(explanation.action)", systemImage: "checkmark.shield")
@@ -453,12 +450,6 @@ private struct RunApprovalCard: View {
                     .foregroundStyle(.orange)
             }
 
-            if let detail = approval.detail {
-                Text(detail)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) { choiceButtons }
                 VStack(alignment: .leading, spacing: 8) { choiceButtons }
@@ -469,15 +460,25 @@ private struct RunApprovalCard: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Kept for anyone who wants it, out of the way of everyone else.
-            if let command = approval.command {
+            // Hermes' own words and the command, for anyone who wants them, out
+            // of the way of everyone else.
+            if approval.command != nil || approval.hermesDescription != nil {
                 DisclosureGroup {
-                    Text(command)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(Palette.background(scheme), in: .rect(cornerRadius: 10))
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let said = approval.hermesDescription {
+                            Text("Hermes says: \(said)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let command = approval.command {
+                            Text(command)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background(Palette.background(scheme), in: .rect(cornerRadius: 10))
+                        }
+                    }
                 } label: {
                     Text("Show exact command").font(.caption)
                 }

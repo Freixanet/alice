@@ -1500,6 +1500,7 @@ final class AppStore {
         let pending = await pendingRequests()
         let knownWaiting = Set(activity.filter(\.isActionable).map(\.id))
         reconcilePending(against: pending)
+        await reconcileRunApprovals()
         let changed = tagged(result.events)
         let currentPending = tagged(pending.events)
         let newlyPending = currentPending.filter { !knownWaiting.contains($0.id) }
@@ -1880,6 +1881,51 @@ final class AppStore {
         settle(event.id, as: .gone, summary: Self.noLongerWaiting)
     }
 
+    /// Run approvals Alice still shows as waiting, checked with Hermes.
+    ///
+    /// These were only ever settled by answering them. Hermes gives up on an
+    /// approval after its timeout — five minutes unless configured — and
+    /// refuses it, so a request from hours earlier sat in Activity asking for
+    /// an OK long after there was anything to answer. Only Hermes' own word
+    /// expires one; a check that cannot reach it changes nothing.
+    private func reconcileRunApprovals() async {
+        let waiting = activity.filter {
+            $0.standing == .waiting && $0.reference.transport == .gatewayRun
+        }
+        for event in waiting {
+            guard let runID = event.reference.runID,
+                  let stillWaiting = try? await client.runIsWaitingForApproval(
+                      runID: runID, profile: event.reference.profile
+                  ),
+                  !stillWaiting
+            else { continue }
+            settle(event.id, as: .gone, summary: Self.stoppedWaiting)
+            mirrorGatewayApprovalIntoChat(event, resolved: false)
+        }
+    }
+
+    static let stoppedWaiting =
+        "Hermes stopped waiting for an answer, so this wasn't allowed. There's nothing left to do."
+
+    /// Rows written before a failed reply was kept in `note` carry the network
+    /// error where the command should be, so "Show exact command" read
+    /// "Couldn't reach that address from this iPhone". The command is not
+    /// recoverable; the error is at least no longer passed off as it.
+    nonisolated static func withoutMisplacedError(_ event: AliceEvent) -> AliceEvent {
+        guard event.kind == .needsInput, event.questions.isEmpty, let detail = event.detail
+        else { return event }
+        let errors: [String] = [
+            HermesClient.Failure.unreachable, .timedOut, .offline, .badResponse, .blockedByPolicy,
+        ].compactMap(\.errorDescription) + [
+            DashboardClient.Failure.unreachable, .timedOut, .notConfigured,
+        ].compactMap(\.errorDescription)
+        guard errors.contains(detail) || detail.hasPrefix("That reply didn't reach Hermes")
+        else { return event }
+        var repaired = event
+        repaired.detail = nil
+        return repaired
+    }
+
     static let noLongerWaiting =
         "This was already answered elsewhere, or it expired."
 
@@ -2039,7 +2085,7 @@ final class AppStore {
         guard let data = defaults.data(forKey: Keys.activity),
               let stored = try? JSONDecoder().decode([StoredEvent].self, from: data)
         else { return }
-        activity = stored.map(\.event)
+        activity = stored.map(\.event).map(Self.withoutMisplacedError)
     }
 
     /// `AliceEvent` is the app's vocabulary; this is only its disk shape, kept
@@ -4094,16 +4140,25 @@ final class AppStore {
             )
             activityID = "run-approval:\(approval.runID):\(requestID)"
         }
-        return AliceEvent(
+        // Hermes' statement goes where the explanation reads it, and the
+        // command stays the command. `command ?? detail` put the statement in
+        // the command's place and dropped it as the reason.
+        let explanation = ApprovalExplainer.explain(
+            description: approval.hermesDescription, command: approval.command
+        )
+        var event = AliceEvent(
             id: activityID,
             kind: .needsInput, severity: .needsAttention,
-            profile: profile, title: "Needs your approval",
-            summary: "\(label) is waiting for permission to continue.",
-            detail: approval.command ?? approval.detail, occurred: now,
+            profile: profile, title: "\(label) needs your OK",
+            summary: "Wants to \(explanation.action)",
+            detail: approval.command, occurred: now,
             reference: reference,
             standing: .waiting,
             approvalChoices: approval.choices
         )
+        event.approvalDescription = approval.hermesDescription
+        event.smartDenied = approval.smartDenied == true
+        return event
     }
 
     private func fail(
