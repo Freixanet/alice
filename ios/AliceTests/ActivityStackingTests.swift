@@ -89,6 +89,37 @@ final class ActivityStackingTests: XCTestCase {
         XCTAssertEqual(groups[1].count, 2)
     }
 
+    /// Six chats with the same assistant are six sessions, and by the strict
+    /// reading six subjects — which is how the screen ended up showing six
+    /// identical "Alice — This task finished" rows. Read as words that is one
+    /// thing that happened six times.
+    func testFinishedTurnsGroupByAssistantNotBySession() {
+        let turns = (1...6).map { index in
+            AliceEvent(
+                id: "turn:session-\(index):\(Int(Date().timeIntervalSince1970) - index)",
+                kind: .finished, severity: .informational, profile: "default",
+                title: "Alice", summary: "This task finished.",
+                occurred: Date().addingTimeInterval(-Double(index))
+            )
+        }
+        let groups = ActivityGroup.stack(turns)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].count, 6)
+    }
+
+    /// Two different assistants stay two rows.
+    func testFinishedTurnsFromDifferentAssistantsStaySeparate() {
+        let mine = AliceEvent(
+            id: "turn:a:1", kind: .finished, severity: .informational,
+            profile: "default", title: "Alice", summary: "…", occurred: Date()
+        )
+        let radar = AliceEvent(
+            id: "turn:b:2", kind: .finished, severity: .informational,
+            profile: "radar-ia", title: "Radar IA", summary: "…", occurred: Date()
+        )
+        XCTAssertEqual(ActivityGroup.stack([mine, radar]).count, 2)
+    }
+
     /// A failed send is a passing problem, not a new description of the
     /// request: it used to overwrite `detail`, so an approval card offered
     /// Once/Always over the text of a network error.

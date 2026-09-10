@@ -181,6 +181,18 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
         if reference.requestID != nil { return id }
         if let routine = reference.routineKey { return "routine:\(routine)" }
 
+        // A finished turn groups by the assistant, not by the conversation it
+        // happened in. Six chats with Alice are six sessions and therefore six
+        // subjects by the strict reading — but nobody thinks in sessions, and
+        // the screen showed six identical "Alice — This task finished" rows.
+        // Read as words, that is one thing that happened six times.
+        if kind == .finished {
+            if let profile, !profile.isEmpty { return "finished:\(profile)" }
+            if let session = reference.sessionKey ?? reference.sessionID {
+                return "finished:\(session)"
+            }
+        }
+
         // Everything below reads the id, because rows already written to disk
         // predate the reference carrying that identity — and those are exactly
         // the rows that had piled up. An id is `<kind>:<what>:<when>`, so the

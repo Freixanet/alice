@@ -243,6 +243,10 @@ struct ActivityScreen: View {
                 } label: {
                     Label("Dismiss", systemImage: "xmark")
                 }
+                // Stated, not inherited: the app tints its whole environment
+                // with the chosen accent, and that was painting a destructive
+                // swipe action in it.
+                .tint(.red)
             }
         }
     }
