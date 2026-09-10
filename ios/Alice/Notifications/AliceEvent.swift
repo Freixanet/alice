@@ -163,6 +163,11 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     /// when Hermes deliberately exposed only `once`/`deny`.
     var approvalChoices: [Message.ApprovalChoice] = []
 
+    /// Why this alert exists and what can be done, when Alice knows. Set for
+    /// current problems as they are read; a stored failure gets the same advice
+    /// from its text through `AlertAdvice.advice(for:)`.
+    var advice: AlertAdvice?
+
     /// Whether this still wants an answer.
     var isActionable: Bool { standing == .waiting }
 

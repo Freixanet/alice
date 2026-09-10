@@ -1107,6 +1107,24 @@ struct HermesSystemComponent: Identifiable, Hashable, Sendable {
     var connected: Int?
 }
 
+/// One messaging channel as Hermes' gateway last recorded it.
+///
+/// `/api/status` rolls these up into a single "platforms: degraded", which
+/// cannot say which channel is broken. The per-channel map beside it can, and
+/// the machine-wide reading folds in assistants that run their own gateway
+/// under `<profile>:<platform>`.
+struct HermesPlatformHealth: Hashable, Sendable {
+    var key: String
+    var profile: String
+    var platform: String
+    var state: String
+    var errorCode: String?
+    var errorMessage: String?
+
+    /// Hermes' own list of healthy platform states (`_HEALTHY_PLATFORM_STATES`).
+    var isHealthy: Bool { ["connected", "running", "ok"].contains(state) }
+}
+
 struct HermesSystemStatus: Hashable, Sendable {
     var version: String
     var releaseDate: String
@@ -1127,6 +1145,7 @@ struct HermesSystemStatus: Hashable, Sendable {
     var diskPressure: String
     var diskUsedPercent: Double?
     var components: [HermesSystemComponent]
+    var platforms: [HermesPlatformHealth] = []
 }
 
 struct HermesSystemStats: Hashable, Sendable {
@@ -1515,6 +1534,24 @@ extension DashboardClient {
                 "name": name, "prompt": prompt, "schedule": schedule, "deliver": deliver,
             ],
         ])
+    }
+
+    /// Gives an automation a model of its own.
+    ///
+    /// One without follows the assistant's default, and Hermes refuses to run
+    /// it once that default has changed — `[drift_skip]` — until the parts that
+    /// changed are fixed. Only the parts given are sent; Hermes merges them
+    /// into the stored job.
+    func pinRoutineModel(
+        _ id: String, profile: String, provider: String?, model: String?
+    ) async throws {
+        var updates: [String: Any] = [:]
+        if let provider, !provider.isEmpty { updates["provider"] = provider }
+        if let model, !model.isEmpty { updates["model"] = model }
+        guard !updates.isEmpty else { throw Failure.unreadable }
+        let scoped = Self.queryValue(profile)
+        let job = Self.pathSegment(id)
+        try await send("PUT", "api/cron/jobs/\(job)?profile=\(scoped)", ["updates": updates])
     }
 
     func pauseRoutine(_ id: String, profile: String) async throws {
@@ -2830,9 +2867,32 @@ extension DashboardClient {
         )
     }
 
-    func systemStatus(profile: String = "default") async throws -> HermesSystemStatus {
-        let object = try await get("api/status?profile=\(Self.queryValue(profile))")
-        return try Self.systemStatus(from: object)
+    /// `nil` asks for the machine-wide reading, which is the only one that
+    /// includes the channels of assistants running their own gateway.
+    func systemStatus(profile: String? = "default") async throws -> HermesSystemStatus {
+        let path = profile.map { "api/status?profile=\(Self.queryValue($0))" } ?? "api/status"
+        let object = try await get(path)
+        var status = try Self.systemStatus(from: object)
+        status.platforms = Self.platformHealth(from: object)
+        return status
+    }
+
+    static func platformHealth(from object: [String: Any]) -> [HermesPlatformHealth] {
+        guard let rows = object["gateway_platforms"] as? [String: Any] else { return [] }
+        return rows.keys.sorted().compactMap { key -> HermesPlatformHealth? in
+            guard let row = rows[key] as? [String: Any],
+                  let state = (row["state"] as? String)?.lowercased(), !state.isEmpty
+            else { return nil }
+            let parts = key.split(separator: ":", maxSplits: 1).map(String.init)
+            return HermesPlatformHealth(
+                key: key,
+                profile: parts.count == 2 ? parts[0] : "default",
+                platform: parts.count == 2 ? parts[1] : key,
+                state: state,
+                errorCode: (row["error_code"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                errorMessage: (row["error_message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            )
+        }
     }
 
     func systemStats() async throws -> HermesSystemStats {

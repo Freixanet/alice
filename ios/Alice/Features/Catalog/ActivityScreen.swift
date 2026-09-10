@@ -20,6 +20,15 @@ struct ActivityScreen: View {
     @State private var resolving: Set<String> = []
     @State private var answers: [String: String] = [:]
     @State private var selectedOptions: [String: Set<String>] = [:]
+    @State private var fixing: Set<String> = []
+    @State private var fixNotes: [String: String] = [:]
+    @State private var confirming: PendingFix?
+
+    private struct PendingFix: Identifiable {
+        let id = UUID()
+        let fix: AlertAdvice.Fix
+        let event: AliceEvent
+    }
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -76,6 +85,25 @@ struct ActivityScreen: View {
             await refresh()
             store.markActivitySeen()
         }
+        .confirmationDialog(
+            confirming?.fix.confirmation?.title ?? "",
+            isPresented: Binding(
+                get: { confirming != nil },
+                set: { if !$0 { confirming = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: confirming
+        ) { pending in
+            Button(
+                pending.fix.label,
+                role: pending.fix.confirmation?.destructive == true ? .destructive : nil
+            ) {
+                Task { await perform(pending.fix, for: pending.event) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { pending in
+            Text(pending.fix.confirmation?.message ?? "")
+        }
         .accessibilityIdentifier("activity.list")
     }
 
@@ -99,7 +127,7 @@ struct ActivityScreen: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayTitle(event)).font(.body)
-                    Text(event.summary)
+                    Text(AlertAdvice.advice(for: event)?.headline ?? event.summary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -131,6 +159,27 @@ struct ActivityScreen: View {
 
             // Everything below lines up with the title, not with the icon.
             VStack(alignment: .leading, spacing: 4) {
+
+            // Why it is here and what to do. The status alone used to be all a
+            // row said, with the reason under More details in Hermes' words.
+            if let advice = AlertAdvice.advice(for: event), !event.isActionable {
+                Text(advice.explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !advice.fixes.isEmpty {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) { fixButtons(advice.fixes, for: event) }
+                        VStack(alignment: .leading, spacing: 8) { fixButtons(advice.fixes, for: event) }
+                    }
+                    .padding(.top, 2)
+                }
+                if let note = fixNotes[event.id] {
+                    Label(note, systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             if event.isActionable, !event.questions.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
@@ -264,6 +313,38 @@ struct ActivityScreen: View {
         }
         guard let first = event.title.first else { return event.title }
         return first.uppercased() + event.title.dropFirst()
+    }
+
+    @ViewBuilder
+    private func fixButtons(_ fixes: [AlertAdvice.Fix], for event: AliceEvent) -> some View {
+        ForEach(Array(fixes.enumerated()), id: \.offset) { index, fix in
+            Button(fix.label) {
+                if fix.confirmation != nil {
+                    confirming = PendingFix(fix: fix, event: event)
+                } else {
+                    Task { await perform(fix, for: event) }
+                }
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            .tint(index == 0 ? .primary : .secondary)
+            .disabled(fixing.contains(event.id))
+            .accessibilityIdentifier("activity.fix.\(index).\(event.id)")
+        }
+    }
+
+    private func perform(_ fix: AlertAdvice.Fix, for event: AliceEvent) async {
+        fixing.insert(event.id)
+        defer { fixing.remove(event.id) }
+        switch await store.apply(fix, for: event) {
+        case .done:
+            fixNotes[event.id] = nil
+        case .started:
+            fixNotes[event.id] = "Started. This updates when the run finishes."
+        case .failed(let message):
+            fixNotes[event.id] = message
+        }
     }
 
     @ViewBuilder

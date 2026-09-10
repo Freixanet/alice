@@ -58,11 +58,18 @@ enum EventDigest {
     /// that can still be acted on, which is what a status line should count.
     /// Both are derived from the same reading, so they cannot disagree.
     static func attention(
-        routines: [JobRow], components: [HermesSystemComponent], now: Date = Date()
+        routines: [JobRow], components: [HermesSystemComponent],
+        platforms: [HermesPlatformHealth]? = nil,
+        assistants: [String: String] = [:],
+        now: Date = Date()
     ) -> [AliceEvent] {
         var items: [AliceEvent] = []
 
         for component in components where !Self.healthy(component.status) {
+            // "platforms: degraded" counts the channels below. With the channels
+            // themselves in hand it is the same problem said worse — it cannot
+            // say which one — so it gives way to them.
+            if platforms != nil, Self.isChannelRollup(component.name) { continue }
             let label = Self.label(for: component.name)
             items.append(AliceEvent(
                 id: "attention:component:\(component.name)",
@@ -74,21 +81,57 @@ enum EventDigest {
             ))
         }
 
-        for row in routines where Self.failed(row) == true {
-            items.append(AliceEvent(
+        for platform in platforms ?? [] where Self.isChannelProblem(platform) {
+            let name = Self.label(for: platform.platform)
+            let owner = platform.profile == "default" ? nil : platform.profile
+            let assistant = owner.map { assistants[$0] ?? $0 }
+            let advice = AlertAdvice.channel(
+                platform: platform.platform, name: name, profile: platform.profile,
+                state: platform.state, code: platform.errorCode, assistant: assistant
+            )
+            var event = AliceEvent(
+                id: "attention:channel:\(platform.key)",
+                kind: .attention, severity: .needsAttention, profile: owner,
+                title: assistant.map { "\(name) · \($0)" } ?? name,
+                summary: advice.headline,
+                detail: platform.errorMessage ?? platform.state,
+                occurred: now
+            )
+            event.advice = advice
+            items.append(event)
+        }
+
+        for row in routines where Self.failed(row) == true && !AlertAdvice.driftIsSettled(row) {
+            let detail = Self.failureDetail(row)
+            let advice = AlertAdvice.routineFailure(detail)
+            var event = AliceEvent(
                 id: "attention:routine:\(Self.key(for: row))",
                 kind: .automationFailed, severity: .failure, profile: row.profile,
                 title: row.name.isEmpty ? "An automation" : row.name,
-                summary: "This automation did not finish.",
-                detail: Self.failureDetail(row),
+                summary: advice.headline,
+                detail: detail,
                 occurred: row.lastRun ?? now,
                 reference: AliceEvent.Reference(
                     profile: row.profile, routineKey: Self.key(for: row)
                 )
-            ))
+            )
+            event.advice = advice
+            items.append(event)
         }
 
         return items.sorted { $0.severity > $1.severity }
+    }
+
+    static func isChannelRollup(_ name: String) -> Bool {
+        ["platforms", "messaging", "channels"].contains(name.lowercased())
+    }
+
+    /// Broken and worth someone's attention. `api_server` is the connection
+    /// Alice itself talks over: if that is down, Alice is not reading this.
+    static func isChannelProblem(_ platform: HermesPlatformHealth) -> Bool {
+        !platform.isHealthy
+            && platform.platform != "api_server"
+            && !["disabled", "not_configured"].contains(platform.state)
     }
 
     /// A routine's identity is the pair, not the id: ids are `uuid4().hex[:12]`

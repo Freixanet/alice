@@ -44,6 +44,13 @@ struct Sidebar: View {
         }
         .frame(maxHeight: .infinity)
         .background(Palette.card(scheme).ignoresSafeArea())
+        // An alert in Activity offering "Open messaging apps" asks through the
+        // store; the drawer presents, so Activity is replaced by that screen.
+        .onChange(of: store.requestedDestination) { _, target in
+            guard let target else { return }
+            store.requestedDestination = nil
+            open(target)
+        }
         .sheet(
             item: $going,
             onDismiss: { Task { await loadProjects() } }

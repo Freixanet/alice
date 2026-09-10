@@ -49,6 +49,11 @@ struct JobRow: Identifiable, Hashable, Sendable, Codable {
     var createdAt: Date? = nil
     var model: String? = nil
     var provider: String? = nil
+    /// What the default was when the automation was created. Hermes compares
+    /// these with the current default to decide whether running would move it
+    /// onto a different model, and they are what "keep the original" restores.
+    var modelSnapshot: String? = nil
+    var providerSnapshot: String? = nil
     var skills: [String] = []
     var repeatTimes: Int? = nil
     var repeatCompleted: Int? = nil
@@ -268,6 +273,8 @@ extension HermesClient {
             createdAt: HermesClient.date(row["created_at"]),
             model: (row["model"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             provider: (row["provider"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            modelSnapshot: (row["model_snapshot"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            providerSnapshot: (row["provider_snapshot"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             skills: row["skills"] as? [String] ?? [],
             repeatTimes: HermesClient.int(repeatInfo?["times"]),
             repeatCompleted: HermesClient.int(repeatInfo?["completed"])

@@ -1242,6 +1242,9 @@ final class AppStore {
     /// Distinct from `activity`, which is a record of things that happened.
     /// This is current state: something is wrong *now* and can be acted on.
     private(set) var attention: [AliceEvent] = []
+    /// A screen something outside the drawer wants opened — an alert's "Open
+    /// messaging apps". The drawer owns presentation, so it is asked.
+    var requestedDestination: AliceDestination.Target?
 
     /// Reachability and health are different questions, and one green dot
     /// cannot answer both.
@@ -1463,7 +1466,14 @@ final class AppStore {
         } catch {
             return []
         }
-        let components = (try? await hermesSystemStatus(profile: "default"))?.components ?? []
+        // The machine-wide reading, not the default profile's. Only that one
+        // folds in assistants running their own gateway, and its channel map
+        // names the channel — the roll-up says "platforms: degraded" and
+        // nothing about which, which is how an alert called "Messaging apps"
+        // came to be about WhatsApp without ever saying so.
+        let status = try? await hermesSystemStatus(profile: nil)
+        let components = status?.components ?? []
+        let platforms = await channelProblems(status?.platforms)
 
         var marks = eventWatermarks
         // A different Hermes has different cursors. Carrying these across would
@@ -1495,7 +1505,7 @@ final class AppStore {
         // restore their locked qids, but notify only requests Alice had not
         // already seen live or on an earlier sync.
         record(changed + currentPending)
-        refreshAttention(routines: routines, components: components)
+        refreshAttention(routines: routines, components: components, platforms: platforms)
         return (changed + newlyPending.filter { $0.standing == .waiting })
             .filter { event in
             // A bot's events follow that bot's switch. Everything else is
@@ -1552,13 +1562,101 @@ final class AppStore {
         persistActivity()
     }
 
+    /// Channels Hermes reports as broken that are still switched on.
+    ///
+    /// The gateway's record of a channel is what it last saw, and switching a
+    /// channel off does not rewrite it until the gateway restarts — so a channel
+    /// somebody had just turned off would keep its alert. Its own settings are
+    /// asked, and one that is off is not a problem.
+    private func channelProblems(
+        _ platforms: [HermesPlatformHealth]?
+    ) async -> [HermesPlatformHealth]? {
+        guard let platforms else { return nil }
+        var settings: [String: MessagingPlatformsSnapshot] = [:]
+        var kept: [HermesPlatformHealth] = []
+        for problem in platforms where EventDigest.isChannelProblem(problem) {
+            if settings[problem.profile] == nil {
+                settings[problem.profile] = try? await messagingPlatforms(profile: problem.profile)
+            }
+            let enabled = settings[problem.profile]?.platforms
+                .first { $0.id == problem.platform }?.enabled
+            if enabled != false { kept.append(problem) }
+        }
+        return kept
+    }
+
+    /// Carries out what an alert offered, then reads again so the alert
+    /// reflects what happened.
+    func apply(_ fix: AlertAdvice.Fix, for event: AliceEvent) async -> AlertAdvice.Outcome {
+        var outcome = AlertAdvice.Outcome.done
+        do {
+            switch fix {
+            case .open(let target, _):
+                requestedDestination = target
+                return .done
+            case .runAgain:
+                try await triggerRoutine(routine(for: event))
+                outcome = .started
+            case .useCurrentModel:
+                let routine = try await routine(for: event)
+                let profile = routine.profile ?? "default"
+                // Read now: the default named in an old skip message may have
+                // changed again since.
+                let current = try await dashboard.profileModelInfo(profile: profile)
+                guard !current.model.isEmpty else {
+                    return .failed("Hermes didn't say which model is the default right now.")
+                }
+                try await dashboard.pinRoutineModel(
+                    routine.id, profile: profile,
+                    provider: current.provider, model: current.model
+                )
+            case .keepOriginalModel:
+                let routine = try await routine(for: event)
+                guard let drift = AlertAdvice.drift(in: EventDigest.failureDetail(routine) ?? "")
+                else { return .failed("This automation isn't waiting on a model choice any more.") }
+                // The stored snapshot, not the message: Hermes lower-cases the
+                // names it writes into the message, and a model id is not
+                // guaranteed to survive that.
+                try await dashboard.pinRoutineModel(
+                    routine.id, profile: routine.profile ?? "default",
+                    provider: drift.provider.map { routine.providerSnapshot ?? $0.from },
+                    model: drift.model.map { routine.modelSnapshot ?? $0.from }
+                )
+            case .turnOffChannel(let platform, let profile, _):
+                try await updateMessagingPlatform(platform, profile: profile, enabled: false)
+            }
+        } catch {
+            return .failed("That didn't work: \(error.localizedDescription)")
+        }
+        _ = await syncEvents()
+        return outcome
+    }
+
+    /// The automation an event is about, read fresh so a fix acts on its
+    /// current state.
+    private func routine(for event: AliceEvent) async throws -> JobRow {
+        guard let key = event.reference.routineKey,
+              let row = try await allRoutines().values.flatMap({ $0 })
+                .first(where: { EventDigest.key(for: $0) == key })
+        else { throw DashboardClient.Failure.unreadable }
+        return row
+    }
+
     /// Current state, from whatever was last read plus anything still waiting.
     private func refreshAttention(
-        routines: [JobRow]? = nil, components: [HermesSystemComponent]? = nil
+        routines: [JobRow]? = nil, components: [HermesSystemComponent]? = nil,
+        platforms: [HermesPlatformHealth]? = nil
     ) {
         var items = activity.filter(\.isActionable)
         if let routines, let components {
-            items += EventDigest.attention(routines: routines, components: components)
+            var assistants: [String: String] = [:]
+            for profile in Set((platforms ?? []).map(\.profile)) {
+                assistants[profile] = botCurrentName(for: profile)
+            }
+            items += EventDigest.attention(
+                routines: routines, components: components,
+                platforms: platforms, assistants: assistants
+            )
         } else {
             items += attention.filter { $0.kind != .needsInput }
         }
@@ -2668,7 +2766,7 @@ final class AppStore {
         try await dashboard.health()
     }
 
-    func hermesSystemStatus(profile: String = "default") async throws -> HermesSystemStatus {
+    func hermesSystemStatus(profile: String? = "default") async throws -> HermesSystemStatus {
         try await dashboard.systemStatus(profile: profile)
     }
 
