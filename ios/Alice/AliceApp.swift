@@ -1,5 +1,6 @@
 import BackgroundTasks
 import SwiftUI
+import UIKit
 import UserNotifications
 
 @main
@@ -19,6 +20,11 @@ struct AliceApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // SwiftUI can resize its hosting hierarchy around the software
+                // keyboard. Paint the actual UIWindow as well so the exposed /
+                // translucent region beneath the keyboard never falls back to
+                // UIKit's default white, especially in dark mode.
+                .background(WindowSurface())
                 .environment(store)
                 .environment(speech)
                 .environment(notifier)
@@ -204,4 +210,38 @@ struct AliceApp: App {
 private struct PendingPairingLink: Identifiable {
     let id = UUID()
     let link: String
+}
+
+
+/// Keeps the real window surface in lock-step with Alice's theme. A SwiftUI
+/// background only paints inside the hosting view's current bounds; those bounds
+/// can change while the software keyboard is presented.
+private struct WindowSurface: UIViewRepresentable {
+    @Environment(\.colorScheme) private var scheme
+
+    func makeUIView(context: Context) -> WindowSurfaceView {
+        let view = WindowSurfaceView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ view: WindowSurfaceView, context: Context) {
+        view.windowColor = UIColor(Palette.background(scheme))
+    }
+}
+
+private final class WindowSurfaceView: UIView {
+    var windowColor: UIColor = .clear {
+        didSet { paintWindow() }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        paintWindow()
+    }
+
+    private func paintWindow() {
+        window?.backgroundColor = windowColor
+    }
 }
