@@ -56,15 +56,6 @@ struct CatalogScreen: View {
 
     var body: some View {
         List {
-            if source == .toolsets {
-                Section {
-                    Text("Tools are abilities Alice can use while working — for example browsing, handling files, running commands, or talking to connected services. You normally do not need to configure them yourself.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .listRowBackground(Palette.card(scheme))
-                }
-            }
-
             if !groups.isEmpty {
                 Section {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -78,6 +69,14 @@ struct CatalogScreen: View {
                     }
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                 }
+            }
+
+            if source == .toolsets, !filtered.isEmpty {
+                Text("Tools are the things Alice can actually do besides talk — search the web, run code, read your files. Switching a group off takes those abilities away from every assistant.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+                    .padding(.vertical, 4)
             }
 
             ForEach(filtered) { row in
@@ -207,6 +206,19 @@ struct CatalogScreen: View {
         .tint(group == value ? store.accent.primary(scheme) : nil)
     }
 
+    /// What a toolset lets Alice do, in words.
+    ///
+    /// These are function names — `web_search`, `execute_code` — and printing
+    /// them in monospace made the screen look like a config file. The names
+    /// themselves are perfectly descriptive once they stop shouting that they
+    /// are identifiers.
+    private func capabilityLine(_ tools: [String]) -> String {
+        let named = tools.prefix(4).map { HermesClient.prettify($0) }
+        let rest = tools.count - named.count
+        let line = named.joined(separator: " · ")
+        return rest > 0 ? "\(line) · +\(rest) more" : line
+    }
+
     @ViewBuilder
     private func rowView(_ row: CatalogRow) -> some View {
         HStack(alignment: .top, spacing: 12) {
@@ -220,13 +232,14 @@ struct CatalogScreen: View {
                         .lineLimit(3)
                 }
                 if row.configured == false {
-                    Label("Setup required before Alice can use this", systemImage: "exclamationmark.circle")
+                    Text("Needs keys")
                         .font(.caption2)
                         .foregroundStyle(.orange)
-                } else if source == .toolsets, !row.tools.isEmpty {
-                    Text(row.tools.count == 1 ? "Includes 1 action" : "Includes \(row.tools.count) actions")
+                } else if !row.tools.isEmpty {
+                    Text(capabilityLine(row.tools))
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
             Spacer(minLength: 8)
@@ -240,7 +253,9 @@ struct CatalogScreen: View {
                 } else {
                     Toggle(row.label, isOn: enabledBinding(row, enabled))
                         .labelsHidden()
-                        .toggleStyle(CatalogContrastSwitchStyle(accent: store.accent.primary(scheme)))
+                        // Not the ambient accent: iOS draws the knob white, so
+                        // a near-white track leaves nothing to see.
+                        .tint(store.accent.control(scheme))
                 }
             }
         }
@@ -253,9 +268,9 @@ struct CatalogScreen: View {
     }
 
     nonisolated static func toolDescription(for row: CatalogRow) -> String {
-        // The toolset name/label is its identity. Action names such as
-        // `search_issues` are secondary evidence and must not turn a GitHub
-        // toolset into a web-browser description.
+        // Prefer the toolset's identity over action names. A GitHub integration
+        // that happens to expose `search_*` actions is still GitHub, not a web
+        // browser. Fall back to actions only when the toolset itself is unknown.
         let identity = "\(row.name) \(row.label)".lowercased()
         let actions = row.tools.joined(separator: " ").lowercased()
 
@@ -293,8 +308,6 @@ struct CatalogScreen: View {
             return "Lets Alice hand parts of a task to other agents when that is useful."
         }
 
-        // Unknown toolsets fall back to their actions, with specific local/code
-        // capabilities taking precedence over broad words like `search`.
         if contains(actions, any: ["github", "git"]) {
             return "Lets Alice work with code repositories, branches, commits, and related development tasks."
         }
@@ -361,39 +374,5 @@ struct CatalogScreen: View {
                 self.error = error.localizedDescription
             }
         }
-    }
-}
-
-private struct CatalogContrastSwitchStyle: ToggleStyle {
-    @Environment(\.colorScheme) private var scheme
-    let accent: Color
-
-    func makeBody(configuration: Configuration) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.18)) { configuration.isOn.toggle() }
-        } label: {
-            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
-                Capsule()
-                    .fill(configuration.isOn
-                        ? accent
-                        : Color.secondary.opacity(scheme == .dark ? 0.38 : 0.24))
-                    .overlay {
-                        Capsule().strokeBorder(
-                            Color.primary.opacity(scheme == .dark ? 0.22 : 0.16),
-                            lineWidth: 1
-                        )
-                    }
-
-                Circle()
-                    .fill(Color.white)
-                    .overlay { Circle().strokeBorder(Color.black.opacity(0.18), lineWidth: 0.6) }
-                    .shadow(color: Color.black.opacity(0.16), radius: 1.5, y: 1)
-                    .padding(2)
-            }
-            .frame(width: 51, height: 31)
-            .contentShape(.capsule)
-        }
-        .buttonStyle(.plain)
-        .accessibilityValue(configuration.isOn ? "On" : "Off")
     }
 }

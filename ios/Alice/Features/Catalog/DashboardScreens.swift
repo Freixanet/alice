@@ -98,14 +98,25 @@ struct ProjectsScreen: View {
                     Section {
                         ForEach(inferred) { row in
                             HStack(spacing: 12) {
-                                Image(systemName: "folder.badge.plus")
+                                Image(systemName: "folder.badge.questionmark")
                                     .foregroundStyle(.secondary)
-                                    .frame(width: 22)
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(workspaceName(row)).font(.subheadline.weight(.medium))
+                                    Text(row.label).font(.subheadline.weight(.medium))
                                     Text(projectDetail(row))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                    // The full path used to sit here in
+                                    // monospace, head-truncated, so what you
+                                    // actually saw was "…/a/b/c" — the least
+                                    // recognisable part of a folder you already
+                                    // know by name. Kept, quietly, for anyone
+                                    // who needs to be sure which folder it is.
+                                    if let path = row.path {
+                                        Text(shortPath(path))
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
+                                    }
                                 }
                                 Spacer(minLength: 8)
                                 Button("Make Project") {
@@ -119,30 +130,20 @@ struct ProjectsScreen: View {
                             .listRowBackground(Palette.card(scheme))
                         }
                     } header: {
-                        Text("Folders Alice found")
+                        Text("Folders Alice noticed")
                     } footer: {
-                        Text("Alice found these folders while working in past conversations. They are not Projects yet. Make one a Project if you want future work grouped under a clear name.")
+                        Text("Alice keeps seeing work happen in these folders, but they have no name yet. Make one a project to give it a name and keep its conversations together.")
                     }
                 }
 
                 if let home, home.sessions > 0 {
-                    Section("Not in a project") {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "tray")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 22)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Unsorted conversations")
-                                    .font(.subheadline.weight(.medium))
-                                Text(home.sessions == 1
-                                    ? "1 conversation is not assigned to a Project yet."
-                                    : "\(home.sessions) conversations are not assigned to a Project yet.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.vertical, 3)
+                    Section {
+                        LabeledContent(
+                            "Not in any project", value: "\(home.sessions)"
+                        )
                         .listRowBackground(Palette.card(scheme))
+                    } footer: {
+                        Text("Conversations that did not happen in one of the folders above. Nothing is wrong with them — they are simply unfiled.")
                     }
                 }
 
@@ -253,19 +254,19 @@ struct ProjectsScreen: View {
         )
     }
 
-    private func workspaceName(_ row: ProjectRow) -> String {
-        if let path = row.path, !path.isEmpty {
-            let name = URL(fileURLWithPath: path).lastPathComponent
-            if !name.isEmpty && name != "/" { return name }
-        }
-        let cleaned = row.label.trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "Folder found by Alice" : cleaned
+    /// The tail of a path, which is the part a person recognises. An absolute
+    /// path from `/Users/...` is mostly prefix everyone already knows.
+    private func shortPath(_ path: String) -> String {
+        let parts = path.split(separator: "/").map(String.init)
+        guard parts.count > 2 else { return path }
+        return "…/" + parts.suffix(2).joined(separator: "/")
     }
 
     private func projectDetail(_ row: ProjectRow) -> String {
-        var parts = [row.sessions == 1 ? "Used in 1 conversation" : "Used in \(row.sessions) conversations"]
+        var parts = [row.sessions == 1 ? "1 session" : "\(row.sessions) sessions"]
+        if row.tokens > 0 { parts.append("\(Insights.compact(row.tokens)) tokens") }
         if let when = row.lastActive {
-            parts.append("last used \(when.formatted(.relative(presentation: .named)))")
+            parts.append(when.formatted(.relative(presentation: .named)))
         }
         return parts.joined(separator: " · ")
     }

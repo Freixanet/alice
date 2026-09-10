@@ -58,35 +58,115 @@ enum EventDigest {
     /// that can still be acted on, which is what a status line should count.
     /// Both are derived from the same reading, so they cannot disagree.
     static func attention(
-        routines: [JobRow], components: [HermesSystemComponent], now: Date = Date()
+        routines: [JobRow], components: [HermesSystemComponent],
+        platforms: [HermesPlatformHealth]? = nil,
+        assistants: [String: String] = [:],
+        now: Date = Date()
     ) -> [AliceEvent] {
         var items: [AliceEvent] = []
 
         for component in components where !Self.healthy(component.status) {
+            // "platforms: degraded" counts the channels below. With the channels
+            // themselves in hand it is the same problem said worse — it cannot
+            // say which one — so it gives way to them.
+            if platforms != nil, Self.isChannelRollup(component.name) { continue }
             let label = Self.label(for: component.name)
             items.append(AliceEvent(
                 id: "attention:component:\(component.name)",
                 kind: .attention, severity: .needsAttention,
-                title: label, summary: Self.summary(for: component, healthy: false),
+                title: label, summary: Self.consequence(for: component.name),
                 detail: [component.status, component.state]
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
                 occurred: now
             ))
         }
 
-        for row in routines where Self.failed(row) == true {
-            items.append(AliceEvent(
+        for platform in platforms ?? [] where Self.isChannelProblem(platform) {
+            let name = Self.label(for: platform.platform)
+            let owner = platform.profile == "default" ? nil : platform.profile
+            let assistant = owner.map { assistants[$0] ?? $0 }
+            let advice = AlertAdvice.channel(
+                platform: platform.platform, name: name, profile: platform.profile,
+                state: platform.state, code: platform.errorCode, assistant: assistant
+            )
+            var event = AliceEvent(
+                id: "attention:channel:\(platform.key)",
+                kind: .attention, severity: .needsAttention, profile: owner,
+                title: assistant.map { "\(name) · \($0)" } ?? name,
+                summary: advice.headline,
+                detail: platform.errorMessage ?? platform.state,
+                occurred: now
+            )
+            event.advice = advice
+            items.append(event)
+        }
+
+        for row in routines where Self.failed(row) == true && !AlertAdvice.driftIsSettled(row) {
+            let detail = Self.failureDetail(row)
+            // Its last error stays on record while a new run is under way;
+            // showing that run beats offering to start another one.
+            let running = row.isRunning(now: now)
+            let advice = running ? AlertAdvice.runningAgain : AlertAdvice.routineFailure(detail)
+            var event = AliceEvent(
                 id: "attention:routine:\(Self.key(for: row))",
-                kind: .automationFailed, severity: .failure, profile: row.profile,
+                kind: .automationFailed, severity: running ? .needsAttention : .failure,
+                profile: row.profile,
                 title: row.name.isEmpty ? "An automation" : row.name,
-                summary: "This automation did not finish.",
-                detail: Self.failureDetail(row),
+                summary: advice.headline,
+                detail: detail,
                 occurred: row.lastRun ?? now,
-                reference: .init(profile: row.profile, routineKey: Self.key(for: row))
-            ))
+                reference: AliceEvent.Reference(
+                    profile: row.profile, routineKey: Self.key(for: row)
+                )
+            )
+            event.advice = advice
+            items.append(event)
         }
 
         return items.sorted { $0.severity > $1.severity }
+    }
+
+    static func isChannelRollup(_ name: String) -> Bool {
+        ["platforms", "messaging", "channels"].contains(name.lowercased())
+    }
+
+    /// Broken and worth someone's attention. `api_server` is the connection
+    /// Alice itself talks over: if that is down, Alice is not reading this.
+    static func isChannelProblem(_ platform: HermesPlatformHealth) -> Bool {
+        !platform.isHealthy
+            && platform.platform != "api_server"
+            && !["disabled", "not_configured"].contains(platform.state)
+    }
+
+    /// What an alert looked like when it was dismissed.
+    ///
+    /// Current problems are read afresh every sync, so removing one from the
+    /// list only lasted until the next read — a few seconds — and a dismissed
+    /// alert came straight back. Dismissing is remembered against this instead:
+    /// the alert stays hidden while the problem is the same, and returns when it
+    /// changes. An automation's includes the run, so failing again brings it
+    /// back; a channel's or component's includes its state and Hermes' words.
+    static func fingerprint(_ event: AliceEvent) -> String {
+        if event.kind == .automationFailed {
+            return "\(event.id)|\(Int(event.occurred.timeIntervalSince1970))|\(event.detail ?? "")"
+        }
+        return "\(event.id)|\(event.detail ?? "")"
+    }
+
+    /// The alerts to show, and the dismissals still worth keeping.
+    ///
+    /// Anything still waiting on an answer is never hidden. With a complete
+    /// reading, a dismissal whose alert is gone is dropped: the problem was
+    /// fixed, and if it happens again it should be seen again.
+    static func visible(
+        _ items: [AliceEvent], dismissed: [String: String], completeReading: Bool
+    ) -> (shown: [AliceEvent], dismissed: [String: String]) {
+        let shown = items.filter { item in
+            item.isActionable || dismissed[item.id] != fingerprint(item)
+        }
+        guard completeReading else { return (shown, dismissed) }
+        let present = Set(items.map(\.id))
+        return (shown, dismissed.filter { present.contains($0.key) })
     }
 
     /// A routine's identity is the pair, not the id: ids are `uuid4().hex[:12]`
@@ -112,7 +192,7 @@ enum EventDigest {
                 : "This automation finished.",
             detail: failed! ? Self.failureDetail(row) : row.lastStatus,
             occurred: run,
-            reference: .init(profile: row.profile, routineKey: key)
+            reference: AliceEvent.Reference(profile: row.profile, routineKey: key)
         )
     }
 
@@ -145,7 +225,9 @@ enum EventDigest {
             severity: healthy ? .informational : .needsAttention,
             profile: nil,
             title: label,
-            summary: Self.summary(for: component, healthy: healthy),
+            summary: healthy
+                ? "\(label) is working again."
+                : Self.consequence(for: component.name),
             detail: [component.status, component.state]
                 .compactMap { $0 }
                 .filter { !$0.isEmpty }
@@ -163,61 +245,61 @@ enum EventDigest {
             .contains(status.lowercased())
     }
 
-    /// Human labels for Hermes' internal component names. Unknown names are
-    /// still made readable instead of leaking snake_case into Activity.
+    /// Hermes' component names are its own vocabulary. Where Alice has a human
+    /// word for one it uses it, and where it does not it keeps Hermes' name
+    /// rather than inventing something that matches no documentation.
     static func label(for component: String) -> String {
         switch component.lowercased() {
-        case "gateway": return "Hermes service"
-        case "dashboard": return "Hermes dashboard"
-        case "storage": return "Saved data"
-        case "platforms": return "Messaging connections"
-        case "telegram": return "Telegram"
-        case "whatsapp": return "WhatsApp"
-        case "discord": return "Discord"
-        case "slack": return "Slack"
-        case "cron", "scheduler": return "Routines"
-        case "mcp": return "Integrations"
-        case "memory": return "Memory"
-        case "models", "providers": return "Models"
+        case "gateway": "Alice's connection"
+        case "telegram": "Telegram"
+        case "whatsapp": "WhatsApp"
+        case "discord": "Discord"
+        case "slack": "Slack"
+        case "signal": "Signal"
+        case "email", "mail": "Email"
+        case "cron", "scheduler": "Automations"
+        case "mcp": "Integrations"
+        case "memory": "Memory"
+        case "models", "providers": "Models"
+        case "platforms", "messaging", "channels": "Messaging apps"
+        case "tools", "toolsets": "Tools"
+        case "skills": "Skills"
+        case "storage", "disk": "Storage"
         default:
-            let words = component
+            // Hermes' internal name, made presentable rather than printed raw.
+            // "platforms" arriving verbatim, lower-cased, under the sentence
+            // "platforms needs attention" told a reader nothing at all.
+            component
                 .replacingOccurrences(of: "_", with: " ")
                 .replacingOccurrences(of: "-", with: " ")
-                .split(separator: " ")
-            guard !words.isEmpty else { return "System component" }
-            return words.map { String($0).capitalized }.joined(separator: " ")
+                .capitalized
         }
     }
 
-    static func summary(for component: HermesSystemComponent, healthy: Bool) -> String {
-        switch component.name.lowercased() {
+    /// What a component being unwell actually means for the person reading.
+    ///
+    /// "X needs attention" is the shape of a status, not an explanation. Where
+    /// Alice knows the consequence it says the consequence; where it does not,
+    /// it says plainly that it does not, rather than dressing up a shrug.
+    static func consequence(for component: String) -> String {
+        switch component.lowercased() {
         case "gateway":
-            return healthy
-                ? "Alice can reach the Hermes service again."
-                : "Alice is having trouble reaching the Hermes service."
-        case "dashboard":
-            return healthy
-                ? "The Hermes dashboard is responding normally again."
-                : "The Hermes dashboard is not responding normally."
-        case "storage":
-            return healthy
-                ? "Hermes can access its saved data again."
-                : "Hermes is having trouble accessing its saved data."
-        case "platforms":
-            if healthy { return "Your messaging connections are working normally again." }
-            if let configured = component.configured, let connected = component.connected,
-               configured > connected {
-                let affected = configured - connected
-                return affected == 1
-                    ? "1 of your \(configured) messaging connections is offline."
-                    : "\(affected) of your \(configured) messaging connections are offline."
-            }
-            return "One or more messaging connections are offline or not working normally."
+            "Alice can't reach the computer running Hermes, so nothing will run until it's back."
+        case "telegram", "whatsapp", "discord", "slack", "signal",
+             "platforms", "messaging", "channels":
+            "Messages sent through this app won't arrive, and automations that deliver there will fail."
+        case "cron", "scheduler":
+            "Scheduled automations aren't running right now."
+        case "mcp":
+            "An integration is disconnected, so the abilities it adds aren't available."
+        case "memory":
+            "Alice may not remember things it learned about you."
+        case "models", "providers":
+            "Alice can't reach the service that does the thinking — replies will fail."
+        case "storage", "disk":
+            "The computer is low on space, which can stop work from being saved."
         default:
-            let name = label(for: component.name)
-            return healthy
-                ? "\(name) is working normally again."
-                : "\(name) is not working normally."
+            "Hermes reported a problem here. The exact wording is under More details."
         }
     }
 }

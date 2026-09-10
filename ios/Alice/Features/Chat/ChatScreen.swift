@@ -11,7 +11,13 @@ struct ChatScreen: View {
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
     @State private var homeComposerHeight: CGFloat = 120
-    @State private var homeRestingHeight: CGFloat = 0
+    /// Extra room under the empty home while the keyboard is closed. The block
+    /// centres in what is left, so it sits half of this higher.
+    private static let restingLift: CGFloat = 56
+    /// Whether an on-screen keyboard is taking room. Not the composer's focus: a
+    /// hardware keyboard focuses it without taking any, and keying the lift on
+    /// focus dropped the block into the space the lift had left.
+    @State private var keyboardShown = false
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -82,6 +88,14 @@ struct ChatScreen: View {
             // message sat underneath the new-chat button.
             .safeAreaInset(edge: .top, spacing: 0) { topControls }
         }
+        // Paint the window, not just the keyboard-resized chat content. The
+        // software keyboard is translucent in places; without this full-screen
+        // layer the NavigationStack's default white showed through underneath.
+        // Only the colour ignores the keyboard — Home itself still reflows.
+        .background {
+            Palette.background(scheme)
+                .ignoresSafeArea()
+        }
         // The whole settings page, not a shortlist of it. A menu here made
         // the reader choose between the four things it offered and the
         // twenty the page has, having been given no way to tell which was
@@ -109,36 +123,45 @@ struct ChatScreen: View {
                     Composer(focused: $composerFocused, placeholder: placeholder)
                 }
         } else {
-            // The empty state is drawn in the height it had before focus. The
-            // GeometryReader itself may shrink for the keyboard, but its child
-            // is top-anchored at the captured resting height and is allowed to
-            // overflow. The composer remains a normal sibling, so iOS moves it
-            // with the keyboard without changing the home layer's geometry.
+            // The empty home should not reflow when the keyboard appears.
+            // Reserve the unfocused composer height in the static layer, then
+            // let the real composer follow the keyboard as a separate sibling.
             ZStack(alignment: .bottom) {
-                GeometryReader { proxy in
-                    let stableHeight = homeRestingHeight > 0
-                        ? homeRestingHeight
-                        : proxy.size.height
-
-                    EmptyChatView()
-                        .padding(.bottom, homeComposerHeight)
-                        .frame(
-                            width: proxy.size.width,
-                            height: stableHeight,
-                            alignment: .center
-                        )
-                        .position(
-                            x: proxy.size.width / 2,
-                            y: stableHeight / 2
-                        )
-                }
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.size.height
-                } action: { height in
-                    guard !composerFocused, height > 0,
-                          abs(homeRestingHeight - height) > 0.5 else { return }
-                    homeRestingHeight = height
-                }
+                // No keyboard-ignoring here, deliberately.
+                //
+                // The intent was that the home should not move at all. But
+                // `ignoresSafeArea(.keyboard, edges: .bottom)` extends the
+                // block *downwards* past the container while its top edge
+                // stays put, so its centre fell — the logo drifted down and
+                // the title ended up behind the composer. Three shapes of that
+                // fix all failed the same way.
+                //
+                // So it centres in whatever room it has, like every other iOS
+                // screen: the block rises a little when the keyboard opens and
+                // settles back when it closes. Slight motion that keeps every
+                // word visible beats stillness that hides the title.
+                EmptyChatView()
+                    // Resting a little higher with the keyboard closed. With an
+                    // on-screen keyboard up the extra goes away, so the block
+                    // ends exactly where it did — the lift only changes where it
+                    // starts.
+                    .padding(.bottom, homeComposerHeight + (keyboardShown ? 0 : Self.restingLift))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .animation(.smooth(duration: 0.3), value: keyboardShown)
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: UIResponder.keyboardWillShowNotification
+                    )) { note in
+                        let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
+                            .cgRectValue ?? .zero
+                        // A hardware keyboard reports only its shortcut bar,
+                        // which leaves the room as it was.
+                        keyboardShown = frame.height > 120
+                    }
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: UIResponder.keyboardWillHideNotification
+                    )) { _ in
+                        keyboardShown = false
+                    }
 
                 Composer(focused: $composerFocused, placeholder: placeholder)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
@@ -266,7 +289,9 @@ struct ChatScreen: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
-        .padding(.horizontal, 16)
+        // 20, up from 16: the discs sat a little tight against the screen's
+        // edges. The drawer's search button keeps the same 20 on its side.
+        .padding(.horizontal, 20)
         .padding(.top, 11)
         // Something for the conversation to disappear into. The edge effect
         // has nothing to work against when the bar behind these two discs is
@@ -304,7 +329,9 @@ struct ChatScreen: View {
             ScrollViewReader { proxy in
               GeometryReader { area in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 22) {
+                    // 34, up from 22: consecutive replies ran together, and
+                    // each now carries its time above it as well.
+                    LazyVStack(alignment: .leading, spacing: 34) {
                         ForEach(conversation.messages) { message in
                             MessageRow(message: message).id(message.id)
                         }
@@ -355,8 +382,17 @@ struct ChatScreen: View {
 
 private struct EmptyChatView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        // Deliberately neutral about the keyboard and about the composer.
+        //
+        // This used to ignore the keyboard here as well as at the call site.
+        // `safeAreaInset` contributes to the bottom safe area, so ignoring
+        // that area threw away the composer's reserved space along with the
+        // keyboard's — and the block re-centred into the taller box, moving
+        // *down* by about a composer's height and sliding the title behind it.
+        // Whoever places this view owns both decisions now.
         centred
     }
 
@@ -383,11 +419,12 @@ private struct EmptyChatView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 8) {
-                Image("AliceHomeLogo")
+                Image(colorScheme == .dark ? "AliceHomeLogoDark" : "AliceHomeLogo")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 88, height: 88)
                     .accessibilityHidden(true)
+                    .padding(.bottom, 8)
 
                 Text("What are we working on?")
                     .font(.aliceTitle(.title))
@@ -397,8 +434,9 @@ private struct EmptyChatView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 32)
-            .padding(.bottom, 140)
-            .offset(y: 6)
+            // No hardcoded composer offset either: the call site already
+            // reserves the real height, and 140 on top of it was a second
+            // guess at the same gap.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

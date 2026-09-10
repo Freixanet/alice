@@ -44,6 +44,13 @@ struct Sidebar: View {
         }
         .frame(maxHeight: .infinity)
         .background(Palette.card(scheme).ignoresSafeArea())
+        // An alert in Activity offering "Open messaging apps" asks through the
+        // store; the drawer presents, so Activity is replaced by that screen.
+        .onChange(of: store.requestedDestination) { _, target in
+            guard let target else { return }
+            store.requestedDestination = nil
+            open(target)
+        }
         .sheet(
             item: $going,
             onDismiss: { Task { await loadProjects() } }
@@ -115,7 +122,10 @@ struct Sidebar: View {
             .accessibilityIdentifier("sidebar.search")
         }
         .padding(.leading, 24)
-        .padding(.trailing, 12)
+        // The drawer is exactly as wide as the conversation slides, so this
+        // is also the search button's distance from the conversation's edge —
+        // matched to the drawer button's 20 from the screen's.
+        .padding(.trailing, 20)
         // The same 11pt the conversation's controls take, so the search button
         // and the drawer button line up while both are on screen.
         .padding(.top, 11)
@@ -157,7 +167,9 @@ struct Sidebar: View {
             row("Library", systemImage: "photo.on.rectangle", weight: .medium) { going = .library }
         }
         .padding(.horizontal, 12)
-        .padding(.bottom, 22)
+        // Most of the gap to Pinned is the list's own top inset, which has to
+        // clear the fade; this adds only a little on top of it.
+        .padding(.bottom, 6)
     }
 
     private func sectionLabel(_ title: String) -> some View {
@@ -181,6 +193,13 @@ struct Sidebar: View {
     /// itself. A hundred and thirty points is most of the way from the last
     /// legible row to the buttons, which is the distance a row actually has
     /// to disappear over.
+    /// Shared by the mask and by the list's top inset, so the heading and the
+    /// ramp cannot drift apart.
+    /// 22, down from 30 with the destinations' bottom padding down from 22 to
+    /// 6: the gap to Pinned was 52pt. The list still starts where the ramp
+    /// ends, because both read this one value.
+    static let topFadeHeight: CGFloat = 22
+
     private var edgeFade: some View {
         VStack(spacing: 0) {
             // Both ramps are long, and both hold near-opaque for their first
@@ -191,26 +210,35 @@ struct Sidebar: View {
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .black.opacity(0.45), location: 0.35),
-                    .init(color: .black.opacity(0.82), location: 0.68),
+                    .init(color: .black.opacity(0.18), location: 0.22),
+                    .init(color: .black.opacity(0.55), location: 0.48),
+                    .init(color: .black.opacity(0.85), location: 0.74),
                     .init(color: .black, location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 18)
+            .frame(height: Self.topFadeHeight)
 
             Color.black
 
+            // Taller than the old 180, and it holds. The previous ramp was
+            // already down to three-quarters opacity a third of the way in,
+            // so a row went from legible to gone across about a finger —
+            // which reads as a hard edge that happens to be soft. Eight stops
+            // over 240pt keep a row readable well past halfway and then let
+            // it lose itself slowly, so full transparency lands lower down
+            // the drawer than it used to.
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0),
-                    .init(color: .black, location: 0.18),
-                    .init(color: .black.opacity(0.96), location: 0.36),
-                    .init(color: .black.opacity(0.78), location: 0.56),
-                    .init(color: .black.opacity(0.52), location: 0.74),
-                    .init(color: .black.opacity(0.28), location: 0.86),
-                    .init(color: .black.opacity(0.10), location: 0.94),
+                    .init(color: .black.opacity(0.99), location: 0.18),
+                    .init(color: .black.opacity(0.95), location: 0.34),
+                    .init(color: .black.opacity(0.85), location: 0.48),
+                    .init(color: .black.opacity(0.68), location: 0.61),
+                    .init(color: .black.opacity(0.46), location: 0.73),
+                    .init(color: .black.opacity(0.24), location: 0.85),
+                    .init(color: .black.opacity(0.08), location: 0.94),
                     .init(color: .clear, location: 1),
                 ],
                 startPoint: .top,
@@ -239,9 +267,12 @@ struct Sidebar: View {
                 }
             }
             .padding(.horizontal, 12)
-            // Keep the first section heading below the top fade at rest.
-            // Rows still pass through that fade once the user scrolls.
-            .padding(.top, 18)
+            // Clears the top fade. The band exists so a row scrolling up
+            // dissolves rather than being cut off, but the first heading was
+            // starting inside it — "Pinned" was half gone before anything had
+            // moved. Content now begins below the ramp and only enters it on
+            // the way out.
+            .padding(.top, Self.topFadeHeight)
         }
         // Keyed on the connection: the drawer is built before the dashboard
         // has signed in, and a one-shot task would leave the project list

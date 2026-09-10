@@ -125,6 +125,13 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     var occurred: Date
     var reference = Reference()
     var standing: Standing = .none
+    /// A transient problem with *this* row — a reply that would not send.
+    ///
+    /// Separate from `summary` and `detail` on purpose: writing the error over
+    /// those replaced "what this approval is asking for" with "the send
+    /// failed", so a card offered Once/Always over the words "Couldn't reach
+    /// that address from this iPhone".
+    var note: String?
     /// What a clarify request is asking, when that is what this is. A batch
     /// keeps every question because Hermes locks them one-by-one by `qid`;
     /// reducing it to the first question would let one answer resolve the
@@ -156,16 +163,78 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     /// when Hermes deliberately exposed only `once`/`deny`.
     var approvalChoices: [Message.ApprovalChoice] = []
 
+    /// Why this alert exists and what can be done, when Alice knows. Set for
+    /// current problems as they are read; a stored failure gets the same advice
+    /// from its text through `AlertAdvice.advice(for:)`.
+    var advice: AlertAdvice?
+
+    /// Hermes' class for an approval — `recursive delete`, `execute_code script
+    /// execution…` — which `ApprovalExplainer` turns into words.
+    var approvalDescription: String?
+    /// Hermes' safety check recommended refusing this one.
+    var smartDenied = false
+
     /// Whether this still wants an answer.
     var isActionable: Bool { standing == .waiting }
+
+    /// The thing this event is *about*, as opposed to this particular
+    /// occurrence of it.
+    ///
+    /// Ids carry a timestamp so two runs of the same automation are two facts,
+    /// which is right for the record and wrong for the list: an automation
+    /// that fails every morning filled Activity with a week of identical rows.
+    /// Events sharing a subject stack into one row that keeps a count.
+    ///
+    /// Requests are deliberately never grouped — each approval is a separate
+    /// decision, and stacking two of them would hide one behind the other's
+    /// buttons.
+    var subject: String {
+        if reference.requestID != nil { return id }
+        if let routine = reference.routineKey { return "routine:\(routine)" }
+
+        // A finished turn groups by the assistant, not by the conversation it
+        // happened in. Six chats with Alice are six sessions and therefore six
+        // subjects by the strict reading — but nobody thinks in sessions, and
+        // the screen showed six identical "Alice — This task finished" rows.
+        // Read as words, that is one thing that happened six times.
+        if kind == .finished {
+            // Falling back to the session or the run id put every completion
+            // in a group of one, which is how six "Alice — This task
+            // finished" rows survived the first attempt at this: the main
+            // chat is not a bot, so these carry no profile at all.
+            return "finished:\(profile.flatMap { $0.isEmpty ? nil : $0 } ?? "alice")"
+        }
+
+        // Everything below reads the id, because rows already written to disk
+        // predate the reference carrying that identity — and those are exactly
+        // the rows that had piled up. An id is `<kind>:<what>:<when>`, so the
+        // subject is the id without its trailing occurrence.
+        for prefix in ["attention:routine:", "attention:component:"] where id.hasPrefix(prefix) {
+            _ = prefix
+            return String(id.dropFirst("attention:".count))
+        }
+        for prefix in ["routine:", "turn:", "component:"] where id.hasPrefix(prefix) {
+            _ = prefix
+            var parts = id.split(separator: ":").map(String.init)
+            // The last part is the occurrence, not the thing: an epoch for a
+            // run or a turn, a status word for a component.
+            if parts.count > 2 { parts.removeLast() }
+            return parts.joined(separator: ":")
+        }
+        if let session = reference.sessionKey ?? reference.sessionID {
+            return "session:\(session)"
+        }
+        return id
+    }
 
     init(
         id: String, kind: Kind, severity: Severity, profile: String? = nil,
         title: String, summary: String, detail: String? = nil, occurred: Date,
         reference: Reference = Reference(), standing: Standing = .none,
         question: Question? = nil, questions: [Question] = [],
-        approvalChoices: [Message.ApprovalChoice] = []
+        approvalChoices: [Message.ApprovalChoice] = [], note: String? = nil
     ) {
+        self.note = note
         self.questions = questions.isEmpty ? question.map { [$0] } ?? [] : questions
         self.approvalChoices = approvalChoices
         self.id = id
@@ -178,6 +247,35 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
         self.occurred = occurred
         self.reference = reference
         self.standing = standing
+    }
+}
+
+/// One row in Activity: the newest event about a thing, and how many times
+/// that thing has happened.
+struct ActivityGroup: Identifiable, Sendable {
+    var id: String { latest.subject }
+    /// The one that is drawn.
+    var latest: AliceEvent
+    /// Every event in the stack, newest first — what a dismiss has to clear.
+    var events: [AliceEvent]
+    var count: Int { events.count }
+
+    /// Stacks events by what they are about, keeping order by recency.
+    ///
+    /// Stable: the group takes the position of its newest member, so a row
+    /// does not jump around as older occurrences are folded into it.
+    static func stack(_ events: [AliceEvent]) -> [ActivityGroup] {
+        var order: [String] = []
+        var buckets: [String: [AliceEvent]] = [:]
+        for event in events.sorted(by: { $0.occurred > $1.occurred }) {
+            let key = event.subject
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(event)
+        }
+        return order.compactMap { key in
+            guard let bucket = buckets[key], let latest = bucket.first else { return nil }
+            return ActivityGroup(latest: latest, events: bucket)
+        }
     }
 }
 

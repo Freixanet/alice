@@ -62,6 +62,8 @@ final class AppStore {
     /// models" leaves you with nowhere to go.
     private(set) var modelsError: String?
     private(set) var isLoadingModels = false
+    /// Only `/v1/models` answered: one model, not the list.
+    private(set) var modelListIsPartial = false
 
     // Conversations
     var conversations: [Conversation] = [.blank()]
@@ -118,6 +120,7 @@ final class AppStore {
         static let eventWatermarks = "alice.events.watermarks"
         static let activity = "alice.events.activity"
         static let activitySeen = "alice.events.activitySeen"
+        static let dismissedAttention = "alice.events.dismissedAttention"
     }
 
     static let unassignedSectionKey = "__unassigned__"
@@ -260,6 +263,8 @@ final class AppStore {
         defer { isConnecting = false }
 
         await client.connect(to: .init(url: url, key: key))
+        modelList = .init()
+        modelListIsPartial = false
 
         // Neither call is required on its own. A build can serve models without
         // a capability manifest, or a manifest while the model list is slow, and
@@ -311,33 +316,41 @@ final class AppStore {
     /// not, and that should not cost you the connection.
     @discardableResult
     func loadModels(refreshing: Bool = false) async -> Bool {
+        // One read at a time. Connecting and opening the picker both ask, and
+        // on a cold gateway two catalogue builds at once slowed each other:
+        // the read that took 21s had a second one queued behind it. A read in
+        // flight is joined. A refresh asked for during a plain read waits for
+        // it and then runs, because it is asking for something else.
+        while let current = modelLoad {
+            let joined = await current.task.value
+            if !refreshing || current.refreshing { return joined }
+        }
+        let token = UUID()
+        let task = Task { () -> Bool in
+            let reached = await self.readModels(refreshing: refreshing)
+            // Cleared from inside the task, before its value is delivered, so
+            // a caller waiting on it never finds the finished read still
+            // registered and waits on it again.
+            if self.modelLoad?.token == token { self.modelLoad = nil }
+            return reached
+        }
+        modelLoad = (token, refreshing, task)
+        return await task.value
+    }
+
+    private func readModels(refreshing: Bool) async -> Bool {
         isLoadingModels = true
         defer { isLoadingModels = false }
         do {
             let found = try await client.models(refreshing: refreshing)
-
-            // The cheap answer comes from a computed cache that is wrong in
-            // one direction: it marks a provider's models unavailable and
-            // then keeps saying so, which is how Nous — thirty-eight models,
-            // all thirty-eight declared unavailable — vanished from the
-            // picker. Recomputing fixes it but does not write the correction
-            // back, so the cheap call keeps its wrong answer for ever.
-            //
-            // So the cheap answer is a first paint only, and once a real
-            // refresh has landed it is not allowed to overwrite it. Several
-            // things ask for the list — connecting, opening the picker — and
-            // any one of them arriving after the refresh used to put the
-            // truncated list back, which is why refreshing appeared to work
-            // and then undo itself.
-            if refreshing || !hasRefreshedModels {
-                models = found
-                modelsError = found.isEmpty
-                    ? "This Hermes did not return a model list at that address."
-                    : nil
-            }
-            if refreshing { hasRefreshedModels = true }
-            if !refreshing, !hasRefreshedModels, !found.isEmpty {
-                hasRefreshedModels = true
+            let outcome = ModelListPolicy.apply(found, refreshing: refreshing, to: modelList)
+            modelList = outcome.state
+            models = outcome.state.options
+            modelListIsPartial = outcome.state.source == .fallback
+            modelsError = models.isEmpty
+                ? "This Hermes did not return a model list at that address."
+                : nil
+            if outcome.shouldRefresh {
                 Task { [weak self] in _ = await self?.loadModels(refreshing: true) }
             }
             // A saved choice is kept even when the list does not currently
@@ -350,9 +363,11 @@ final class AppStore {
                 selectedModel = models.first?.id
                 selectedProvider = models.first?.provider
             }
-            return !found.isEmpty
+            return !found.options.isEmpty
         } catch {
+            modelList = .init()
             models = []
+            modelListIsPartial = false
             modelsError = HermesClient.describe(error).localizedDescription
             return false
         }
@@ -364,6 +379,8 @@ final class AppStore {
         isConnected = false
         manifest = nil
         models = []
+        modelList = .init()
+        modelListIsPartial = false
         gatewayURL = ""
     }
 
@@ -1226,6 +1243,9 @@ final class AppStore {
     /// Distinct from `activity`, which is a record of things that happened.
     /// This is current state: something is wrong *now* and can be acted on.
     private(set) var attention: [AliceEvent] = []
+    /// A screen something outside the drawer wants opened — an alert's "Open
+    /// messaging apps". The drawer owns presentation, so it is asked.
+    var requestedDestination: AliceDestination.Target?
 
     /// Reachability and health are different questions, and one green dot
     /// cannot answer both.
@@ -1247,15 +1267,16 @@ final class AppStore {
         return attention.isEmpty ? .well : .needsAttention(attention.count)
     }
 
-    /// One sentence for the connection row. Says what is true, and when
+    /// A few words for the drawer's menu, which truncates anything longer —
+    /// "Everything is working" was cut off. Says what is true, and when
     /// something is wrong says how much rather than only that.
     var wellbeingSummary: String {
         switch wellbeing {
-        case .notConfigured: "Connect your Hermes"
+        case .notConfigured: "Connect Hermes"
         case .unreachable: "Can’t reach Hermes"
-        case .well: "Everything is working"
+        case .well: "Hermes connected"
         case let .needsAttention(count):
-            count == 1 ? "1 thing needs attention" : "\(count) things need attention"
+            count == 1 ? "1 alert to check" : "\(count) alerts to check"
         }
     }
 
@@ -1447,7 +1468,14 @@ final class AppStore {
         } catch {
             return []
         }
-        let components = (try? await hermesSystemStatus(profile: "default"))?.components ?? []
+        // The machine-wide reading, not the default profile's. Only that one
+        // folds in assistants running their own gateway, and its channel map
+        // names the channel — the roll-up says "platforms: degraded" and
+        // nothing about which, which is how an alert called "Messaging apps"
+        // came to be about WhatsApp without ever saying so.
+        let status = try? await hermesSystemStatus(profile: nil)
+        let components = status?.components ?? []
+        let platforms = await channelProblems(status?.platforms)
 
         var marks = eventWatermarks
         // A different Hermes has different cursors. Carrying these across would
@@ -1459,6 +1487,7 @@ final class AppStore {
             marks = EventWatermarks(installation: fingerprint)
             activity = []
             attention = []
+            dismissedAttention = [:]
             persistActivity()
         }
 
@@ -1472,6 +1501,7 @@ final class AppStore {
         let pending = await pendingRequests()
         let knownWaiting = Set(activity.filter(\.isActionable).map(\.id))
         reconcilePending(against: pending)
+        await reconcileRunApprovals()
         let changed = tagged(result.events)
         let currentPending = tagged(pending.events)
         let newlyPending = currentPending.filter { !knownWaiting.contains($0.id) }
@@ -1479,7 +1509,7 @@ final class AppStore {
         // restore their locked qids, but notify only requests Alice had not
         // already seen live or on an earlier sync.
         record(changed + currentPending)
-        refreshAttention(routines: routines, components: components)
+        refreshAttention(routines: routines, components: components, platforms: platforms)
         return (changed + newlyPending.filter { $0.standing == .waiting })
             .filter { event in
             // A bot's events follow that bot's switch. Everything else is
@@ -1536,17 +1566,130 @@ final class AppStore {
         persistActivity()
     }
 
+    /// Channels Hermes reports as broken that are still switched on.
+    ///
+    /// The gateway's record of a channel is what it last saw, and switching a
+    /// channel off does not rewrite it until the gateway restarts — so a channel
+    /// somebody had just turned off would keep its alert. Its own settings are
+    /// asked, and one that is off is not a problem.
+    private func channelProblems(
+        _ platforms: [HermesPlatformHealth]?
+    ) async -> [HermesPlatformHealth]? {
+        guard let platforms else { return nil }
+        var settings: [String: MessagingPlatformsSnapshot] = [:]
+        var kept: [HermesPlatformHealth] = []
+        for problem in platforms where EventDigest.isChannelProblem(problem) {
+            if settings[problem.profile] == nil {
+                settings[problem.profile] = try? await messagingPlatforms(profile: problem.profile)
+            }
+            let enabled = settings[problem.profile]?.platforms
+                .first { $0.id == problem.platform }?.enabled
+            if enabled != false { kept.append(problem) }
+        }
+        return kept
+    }
+
+    /// Carries out what an alert offered, then reads again so the alert
+    /// reflects what happened.
+    func apply(_ fix: AlertAdvice.Fix, for event: AliceEvent) async -> AlertAdvice.Outcome {
+        var outcome = AlertAdvice.Outcome.done
+        do {
+            switch fix {
+            case .open(let target, _):
+                requestedDestination = target
+                return .done
+            case .runAgain:
+                let routine = try await routine(for: event)
+                let askedAt = Date()
+                do {
+                    try await triggerRoutine(routine)
+                } catch DashboardClient.Failure.timedOut {
+                    // Hermes replies to "run now" only when the run is over,
+                    // minutes later. The wait running out is not a failure, and
+                    // saying it was sent someone to press the button again for
+                    // a run already under way. The automation says whether it
+                    // started.
+                    let latest = try? await self.routine(for: event)
+                    guard AlertAdvice.runStarted(latest, askedAt: askedAt) else {
+                        return .failed("Hermes didn't confirm it started. Pull down in a minute to check.")
+                    }
+                }
+                outcome = .started
+            case .useCurrentModel:
+                let routine = try await routine(for: event)
+                let profile = routine.profile ?? "default"
+                // Read now: the default named in an old skip message may have
+                // changed again since.
+                let current = try await dashboard.profileModelInfo(profile: profile)
+                guard !current.model.isEmpty else {
+                    return .failed("Hermes didn't say which model is the default right now.")
+                }
+                try await dashboard.pinRoutineModel(
+                    routine.id, profile: profile,
+                    provider: current.provider, model: current.model
+                )
+            case .keepOriginalModel:
+                let routine = try await routine(for: event)
+                guard let drift = AlertAdvice.drift(in: EventDigest.failureDetail(routine) ?? "")
+                else { return .failed("This automation isn't waiting on a model choice any more.") }
+                // The stored snapshot, not the message: Hermes lower-cases the
+                // names it writes into the message, and a model id is not
+                // guaranteed to survive that.
+                try await dashboard.pinRoutineModel(
+                    routine.id, profile: routine.profile ?? "default",
+                    provider: drift.provider.map { routine.providerSnapshot ?? $0.from },
+                    model: drift.model.map { routine.modelSnapshot ?? $0.from }
+                )
+            case .turnOffChannel(let platform, let profile, _):
+                try await setMessagingPlatformEnabled(platform, profile: profile, enabled: false)
+            }
+        } catch {
+            return .failed("That didn't work: \(error.localizedDescription)")
+        }
+        _ = await syncEvents()
+        return outcome
+    }
+
+    /// The automation an event is about, read fresh so a fix acts on its
+    /// current state.
+    private func routine(for event: AliceEvent) async throws -> JobRow {
+        guard let key = event.reference.routineKey,
+              let row = try await allRoutines().values.flatMap({ $0 })
+                .first(where: { EventDigest.key(for: $0) == key })
+        else { throw DashboardClient.Failure.unreadable }
+        return row
+    }
+
     /// Current state, from whatever was last read plus anything still waiting.
     private func refreshAttention(
-        routines: [JobRow]? = nil, components: [HermesSystemComponent]? = nil
+        routines: [JobRow]? = nil, components: [HermesSystemComponent]? = nil,
+        platforms: [HermesPlatformHealth]? = nil
     ) {
         var items = activity.filter(\.isActionable)
         if let routines, let components {
-            items += EventDigest.attention(routines: routines, components: components)
+            var assistants: [String: String] = [:]
+            for profile in Set((platforms ?? []).map(\.profile)) {
+                assistants[profile] = botCurrentName(for: profile)
+            }
+            items += EventDigest.attention(
+                routines: routines, components: components,
+                platforms: platforms, assistants: assistants
+            )
         } else {
             items += attention.filter { $0.kind != .needsInput }
         }
-        attention = items.sorted { $0.severity > $1.severity }
+        let visible = EventDigest.visible(
+            items, dismissed: dismissedAttention,
+            completeReading: routines != nil && components != nil
+        )
+        dismissedAttention = visible.dismissed
+        attention = visible.shown.sorted { $0.severity > $1.severity }
+    }
+
+    /// Alert id → what it looked like when dismissed. See `EventDigest.fingerprint`.
+    private var dismissedAttention: [String: String] {
+        get { defaults.dictionary(forKey: Keys.dismissedAttention) as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: Keys.dismissedAttention) }
     }
 
     /// Answers a request Hermes is holding, then makes the record agree.
@@ -1739,6 +1882,69 @@ final class AppStore {
         settle(event.id, as: .gone, summary: Self.noLongerWaiting)
     }
 
+    /// Run approvals Alice still shows as waiting, checked with Hermes.
+    ///
+    /// These were only ever settled by answering them. Hermes gives up on an
+    /// approval after its timeout — five minutes unless configured — and
+    /// refuses it, so a request from hours earlier sat in Activity asking for
+    /// an OK long after there was anything to answer. Only Hermes' own word
+    /// expires one; a check that cannot reach it changes nothing.
+    private func reconcileRunApprovals() async {
+        let waiting = activity.filter {
+            $0.standing == .waiting && $0.reference.transport == .gatewayRun
+        }
+        for event in waiting {
+            guard let runID = event.reference.runID,
+                  let stillWaiting = try? await client.runIsWaitingForApproval(
+                      runID: runID, profile: event.reference.profile
+                  ),
+                  !stillWaiting
+            else { continue }
+            settle(event.id, as: .gone, summary: Self.stoppedWaiting)
+            mirrorGatewayApprovalIntoChat(event, resolved: false)
+        }
+    }
+
+    static let stoppedWaiting =
+        "Hermes stopped waiting for an answer, so this wasn't allowed. There's nothing left to do."
+
+    /// Rows written before a failed reply was kept in `note` carry the network
+    /// error where the command should be, so "Show exact command" read
+    /// "Couldn't reach that address from this iPhone". The command is not
+    /// recoverable; the error is at least no longer passed off as it.
+    nonisolated static func withoutMisplacedError(_ event: AliceEvent) -> AliceEvent {
+        guard event.kind == .needsInput, event.questions.isEmpty, let detail = event.detail
+        else { return event }
+        let errors: [String] = [
+            HermesClient.Failure.unreachable, .timedOut, .offline, .badResponse, .blockedByPolicy,
+        ].compactMap(\.errorDescription) + [
+            DashboardClient.Failure.unreachable, .timedOut, .notConfigured,
+        ].compactMap(\.errorDescription)
+        guard errors.contains(detail) || detail.hasPrefix("That reply didn't reach Hermes")
+        else { return event }
+        var repaired = event
+        repaired.detail = nil
+        return repaired
+    }
+
+    /// A component row written by an older build keeps that build's words:
+    /// Hermes' raw name and a bare status, "Platforms needs attention". The id
+    /// has kept its shape — `component:<name>:<status>` — so the wording is
+    /// derived again from it, the same way a new row gets it.
+    nonisolated static func withCurrentWording(_ event: AliceEvent) -> AliceEvent {
+        guard event.id.hasPrefix("component:") else { return event }
+        let parts = event.id.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 3, !parts[1].isEmpty else { return event }
+        let name = parts[1]
+        let status = parts[2...].joined(separator: ":")
+        var repaired = event
+        repaired.title = EventDigest.label(for: name)
+        repaired.summary = EventDigest.healthy(status)
+            ? "\(repaired.title) is working again."
+            : EventDigest.consequence(for: name)
+        return repaired
+    }
+
     static let noLongerWaiting =
         "This was already answered elsewhere, or it expired."
 
@@ -1746,9 +1952,14 @@ final class AppStore {
     /// is probably still blocking the agent.
     private func markResolutionFailed(_ id: String, _ error: Error) {
         guard let index = activity.firstIndex(where: { $0.id == id }) else { return }
-        activity[index].detail = (error as? LocalizedError)?.errorDescription
+        // Recorded beside the request, not over it. Writing this into `detail`
+        // replaced the command the card is asking about, so the buttons ended
+        // up offering Once/Always over the text of a network error.
+        let reason = (error as? LocalizedError)?.errorDescription
             ?? error.localizedDescription
-        activity[index].summary = "Alice couldn’t send your response to Hermes, so this request is still waiting. Check the connection and try again."
+        let who = activity[index].profile.map(botCurrentName(for:)) ?? "the assistant"
+        activity[index].note =
+            "That reply didn't reach Hermes (\(reason)), so \(who) is still waiting. Try again."
         persistActivity()
     }
 
@@ -1852,14 +2063,50 @@ final class AppStore {
 
     func markActivitySeen() { activitySeen = Date() }
 
-    /// Removes Activity history the person no longer wants to keep. Requests
-    /// that are still waiting cannot be hidden: dismissing a card must never
-    /// make an unresolved approval or question disappear.
-    func dismissActivity(_ ids: [String]) {
-        let removable = Set(ids)
-        activity.removeAll { removable.contains($0.id) && !$0.isActionable }
+    /// Removes a row the person is done with.
+    ///
+    /// Refuses anything still waiting on them: Activity accumulating forever
+    /// was a real complaint, but the fix cannot be a gesture that makes a live
+    /// approval disappear without answering it. Attention items are current
+    /// state, so they come back on the next sync if the thing is still wrong —
+    /// dismissing one clears the notice, not the problem.
+    func dismissActivity(_ event: AliceEvent) {
+        guard !event.isActionable else { return }
+        // A current problem is read again on the next sync; without this it
+        // was back within seconds of being swiped away.
+        if let current = attention.first(where: { $0.id == event.id }) {
+            dismissedAttention[current.id] = EventDigest.fingerprint(current)
+        }
+        activity.removeAll { $0.id == event.id }
+        attention.removeAll { $0.id == event.id }
         persistActivity()
-        refreshAttention()
+        withdraw?(event.id)
+    }
+
+    /// Clears the record under Recent.
+    ///
+    /// Not `dismissHandledActivity`, which also hides what is wrong now: Needs
+    /// attention lists the present, and clearing history is a different wish
+    /// from dismissing a problem. Anything still waiting on an answer stays.
+    func clearActivityHistory() {
+        let cleared = activity.filter { !$0.isActionable }
+        activity.removeAll { !$0.isActionable }
+        persistActivity()
+        for event in cleared { withdraw?(event.id) }
+    }
+
+    var hasActivityHistory: Bool { activity.contains { !$0.isActionable } }
+
+    /// Clears everything that is over, leaving anything still waiting.
+    func dismissHandledActivity() {
+        var dismissed = dismissedAttention
+        for current in attention where !current.isActionable {
+            dismissed[current.id] = EventDigest.fingerprint(current)
+        }
+        dismissedAttention = dismissed
+        activity.removeAll { !$0.isActionable }
+        attention.removeAll { !$0.isActionable }
+        persistActivity()
     }
 
     private func persistActivity() {
@@ -1872,6 +2119,8 @@ final class AppStore {
               let stored = try? JSONDecoder().decode([StoredEvent].self, from: data)
         else { return }
         activity = stored.map(\.event)
+            .map(Self.withoutMisplacedError)
+            .map(Self.withCurrentWording)
     }
 
     /// `AliceEvent` is the app's vocabulary; this is only its disk shape, kept
@@ -1892,6 +2141,9 @@ final class AppStore {
         var standing: AliceEvent.Standing?
         var questions: [AliceEvent.Question]?
         var approvalChoices: [Message.ApprovalChoice]?
+        var note: String?
+        var approvalDescription: String?
+        var smartDenied: Bool?
 
         init(_ event: AliceEvent) {
             id = event.id
@@ -1906,10 +2158,13 @@ final class AppStore {
             standing = event.standing
             questions = event.questions
             approvalChoices = event.approvalChoices
+            note = event.note
+            approvalDescription = event.approvalDescription
+            smartDenied = event.smartDenied ? true : nil
         }
 
         var event: AliceEvent {
-            AliceEvent(
+            var event = AliceEvent(
                 id: id,
                 kind: AliceEvent.Kind(rawValue: kind) ?? .finished,
                 severity: AliceEvent.Severity(rawValue: severity) ?? .informational,
@@ -1918,8 +2173,11 @@ final class AppStore {
                 reference: reference ?? .init(),
                 standing: standing ?? .none,
                 questions: questions ?? [],
-                approvalChoices: approvalChoices ?? []
+                approvalChoices: approvalChoices ?? [], note: note
             )
+            event.approvalDescription = approvalDescription
+            event.smartDenied = smartDenied ?? false
+            return event
         }
     }
 
@@ -2633,7 +2891,7 @@ final class AppStore {
         try await dashboard.health()
     }
 
-    func hermesSystemStatus(profile: String = "default") async throws -> HermesSystemStatus {
+    func hermesSystemStatus(profile: String? = "default") async throws -> HermesSystemStatus {
         try await dashboard.systemStatus(profile: profile)
     }
 
@@ -2689,6 +2947,28 @@ final class AppStore {
         try await dashboard.updateMessagingPlatform(
             id, profile: profile, enabled: enabled, env: env, clearEnv: clearEnv
         )
+    }
+
+    /// Switches a channel on or off so that it stays that way.
+    ///
+    /// Hermes reads whether a channel is on from two places, and for WhatsApp
+    /// the `.env` flag wins over config.yaml (`gateway/config_env.py`,
+    /// `_whatsapp`). The switch only wrote the config, so with
+    /// `WHATSAPP_ENABLED=true` in `.env` the channel came straight back on and
+    /// the toggle slid back as if nothing had happened. A set flag is cleared
+    /// through Hermes' own API — it is one of the channel's configurable keys —
+    /// leaving the config alone to decide, in either direction.
+    func setMessagingPlatformEnabled(_ id: String, profile: String, enabled: Bool) async throws {
+        let platform = try? await messagingPlatforms(profile: profile).platforms.first { $0.id == id }
+        try await updateMessagingPlatform(
+            id, profile: profile, enabled: enabled,
+            clearEnv: platform.map(Self.enablementFlags(in:)) ?? []
+        )
+    }
+
+    /// The flag-style keys that decide a channel's state ahead of its config.
+    nonisolated static func enablementFlags(in platform: MessagingPlatform) -> [String] {
+        platform.envVars.filter { $0.isSet && $0.key.hasSuffix("_ENABLED") }.map(\.key)
     }
 
     func testMessagingPlatform(
@@ -3142,8 +3422,12 @@ final class AppStore {
     /// or by backing out of a bot's conversation, and a screen that rises
     /// from the bottom in answer to a swipe to the right reads as the wrong
     /// screen appearing.
-    /// Whether the catalogue has been genuinely recomputed this launch.
-    @ObservationIgnored private var hasRefreshedModels = false
+    /// The model list shown and where it came from; see `ModelListPolicy`.
+    @ObservationIgnored private var modelList = ModelListPolicy.State()
+    /// The read in flight, joined by anyone who asks while it runs.
+    @ObservationIgnored private var modelLoad: (
+        token: UUID, refreshing: Bool, task: Task<Bool, Never>
+    )?
 
     var showingBots = false
 
@@ -3357,7 +3641,8 @@ final class AppStore {
                 // The options Hermes listed. Offering "always" on a
                 // smart-denied request proposes a permanent grant the server
                 // will refuse.
-                choices: LiveEvents.choices(event.payload)
+                choices: LiveEvents.choices(event.payload),
+                smartDenied: (event.payload["smart_denied"] as? Bool) == true ? true : nil
             ))
         case "error":
             let message = (event.payload["message"] as? String) ?? "Hermes reported an error."
@@ -3912,16 +4197,25 @@ final class AppStore {
             )
             activityID = "run-approval:\(approval.runID):\(requestID)"
         }
-        return AliceEvent(
+        // Hermes' statement goes where the explanation reads it, and the
+        // command stays the command. `command ?? detail` put the statement in
+        // the command's place and dropped it as the reason.
+        let explanation = ApprovalExplainer.explain(
+            description: approval.hermesDescription, command: approval.command
+        )
+        var event = AliceEvent(
             id: activityID,
             kind: .needsInput, severity: .needsAttention,
-            profile: profile, title: "Needs your approval",
-            summary: "\(label) is waiting for permission to continue.",
-            detail: approval.command ?? approval.detail, occurred: now,
+            profile: profile, title: "\(label) needs your OK",
+            summary: "Wants to \(explanation.action)",
+            detail: approval.command, occurred: now,
             reference: reference,
             standing: .waiting,
             approvalChoices: approval.choices
         )
+        event.approvalDescription = approval.hermesDescription
+        event.smartDenied = approval.smartDenied == true
+        return event
     }
 
     private func fail(
@@ -4104,5 +4398,57 @@ final class AppStore {
         conversationsUnreadable = nil
         persistConversations()
         defaults.removeObject(forKey: Self.salvageKey)
+    }
+}
+
+/// Which model list the app keeps when several reads land.
+///
+/// Reads overlap and finish in whatever order the network returns them, so
+/// arrival order cannot decide. On the morning this was written the read that
+/// had timed out finished first, holding the one model `/v1/models` names; the
+/// full list arrived two seconds later and was discarded, because the fallback
+/// had already been taken as the answer.
+///
+/// A later answer replaces an earlier one only if it is at least as good:
+/// a fallback never replaces a catalogue, and the cached catalogue never
+/// replaces a refreshed one — that cache once declared every one of Nous's
+/// thirty-eight models unavailable, and a refresh is how it gets corrected.
+nonisolated enum ModelListPolicy {
+    enum Source: Int, Comparable, Sendable {
+        case none, fallback, cached, refreshed
+
+        static func < (lhs: Source, rhs: Source) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+
+    struct State: Equatable, Sendable {
+        var options: [HermesClient.ModelOption] = []
+        var source: Source = .none
+        /// One automatic refresh per connection, so a gateway that keeps
+        /// failing is not polled in a loop.
+        var refreshRequested = false
+    }
+
+    struct Outcome: Equatable, Sendable {
+        var state: State
+        var shouldRefresh: Bool
+    }
+
+    static func apply(
+        _ list: HermesClient.ModelList, refreshing: Bool, to current: State
+    ) -> Outcome {
+        let source: Source = !list.isCatalogue ? .fallback : (refreshing ? .refreshed : .cached)
+        var next = current
+        if source >= current.source {
+            next.options = list.options
+            next.source = source
+        }
+        // Anything short of a refreshed catalogue earns one refresh — a
+        // fallback most of all, which is what used to be left standing.
+        let shouldRefresh = !refreshing
+            && !current.refreshRequested
+            && next.source != .refreshed
+            && !list.options.isEmpty
+        if shouldRefresh || refreshing { next.refreshRequested = true }
+        return Outcome(state: next, shouldRefresh: shouldRefresh)
     }
 }

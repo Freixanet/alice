@@ -2,7 +2,7 @@ import XCTest
 
 @MainActor
 final class HomeKeyboardStabilityTests: XCTestCase {
-    func testEmptyHomeDoesNotMoveWhenKeyboardAppears() {
+    func testEmptyHomeMovesUpForSoftwareKeyboard() {
         let app = XCUIApplication()
         app.launch()
 
@@ -22,13 +22,14 @@ final class HomeKeyboardStabilityTests: XCTestCase {
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
-        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
         let focused = title.frame
 
-        let focusedDelta = abs(focused.minY - before.minY)
-        print("HOME_FRAME before=\(before) focused=\(focused) deltaY=\(focusedDelta)")
-        XCTAssertLessThanOrEqual(focusedDelta, 0.5, "Empty-home title moved when keyboard appeared")
-
+        let deltaY = focused.minY - before.minY
+        print("HOME_FRAME before=\(before) focused=\(focused) deltaY=\(deltaY)")
+        XCTAssertLessThan(deltaY, -20, "Empty Home should rise when the software keyboard appears")
+        XCTAssertLessThan(focused.maxY, keyboard.frame.minY, "Home title must remain above the keyboard")
     }
 }

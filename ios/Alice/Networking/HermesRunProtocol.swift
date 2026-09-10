@@ -211,7 +211,8 @@ enum HermesRunProtocol {
             command: bounded(nested["command"], max: 8_000),
             choices: choices.isEmpty ? [.once, .deny] : choices,
             resolving: nil,
-            error: nil
+            error: nil,
+            smartDenied: (nested["smart_denied"] as? Bool) == true ? true : nil
         )
     }
 

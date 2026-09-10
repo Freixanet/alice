@@ -396,7 +396,8 @@ struct BotsScreen: View {
                 .glassEffect(.regular, in: .capsule)
             }
         }
-        .padding(.horizontal, 16)
+        // 20, the same as the conversation's top controls on every screen.
+        .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 6)
     }
@@ -1347,8 +1348,17 @@ struct BotsScreen: View {
         }
     }
 
+    /// When the bot last replied, at the end of its row — the way a messaging
+    /// app dates a thread. The same reply the snippet under the name quotes.
+    /// Empty for a bot that has not replied, or whose replies came without a
+    /// time.
     private func timestamp(for bot: BotRow) -> String {
-        ""
+        guard let conversation = store.conversations.first(where: { $0.botName == bot.name }),
+              let reply = conversation.messages.last(where: {
+                  $0.role == .assistant && !$0.pending && MessageTime.isKnown($0.createdAt)
+              })
+        else { return "" }
+        return MessageTime.short(reply.createdAt) ?? ""
     }
 
     /// What the bot last said, which is what a list of conversations is

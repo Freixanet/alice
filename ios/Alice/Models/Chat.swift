@@ -90,6 +90,19 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         /// field existed continue to decode without a migration.
         var resolving: Bool?
         var error: String?
+        /// Hermes' safety check recommended refusing this one.
+        var smartDenied: Bool? = nil
+
+        /// Hermes' own statement of what makes this risky.
+        ///
+        /// Not in the same place on both routes: a run keeps the tool's name in
+        /// `title` ("terminal") and sends the statement as `description`, which
+        /// arrives here as `detail`; a bot chat carries it as the title. Reading
+        /// only the title explained every run approval as "terminal".
+        var hermesDescription: String? {
+            if let detail, !detail.isEmpty { return detail }
+            return ["Approval needed", "Hermes needs approval"].contains(title) ? nil : title
+        }
     }
 
     let id: String

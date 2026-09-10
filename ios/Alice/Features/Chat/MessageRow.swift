@@ -21,6 +21,16 @@ struct MessageRow: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             case .assistant:
+                // When the reply was sent, for looking back through a
+                // conversation. Centred and faint so it reads as a marker
+                // between replies rather than as part of one.
+                if let when = MessageTime.caption(message.createdAt) {
+                    Text(when)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .accessibilityLabel("Sent \(when)")
+                }
                 VStack(alignment: .leading, spacing: 10) {
                     if let bot = message.botName, !bot.isEmpty {
                         HStack(spacing: 6) {
@@ -432,28 +442,56 @@ private struct RunApprovalCard: View {
     let approval: Message.Approval
 
     var body: some View {
+        let explanation = ApprovalExplainer.explain(
+            description: approval.hermesDescription, command: approval.command
+        )
         VStack(alignment: .leading, spacing: 10) {
-            Label(approval.title, systemImage: "checkmark.shield")
+            Label("Wants to \(explanation.action)", systemImage: "checkmark.shield")
                 .font(.subheadline.weight(.semibold))
 
-            if let detail = approval.detail {
-                Text(detail)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            Text(explanation.risk)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-            if let command = approval.command {
-                Text(command)
-                    .font(.caption.monospaced())
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(Palette.background(scheme), in: .rect(cornerRadius: 10))
+            if approval.smartDenied == true {
+                Label(ApprovalExplainer.smartDeniedWarning, systemImage: "exclamationmark.shield")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
             }
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) { choiceButtons }
                 VStack(alignment: .leading, spacing: 8) { choiceButtons }
+            }
+
+            Text(ApprovalExplainer.choiceHint(approval.choices))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Hermes' own words and the command, for anyone who wants them, out
+            // of the way of everyone else.
+            if approval.command != nil || approval.hermesDescription != nil {
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let said = approval.hermesDescription {
+                            Text("Hermes says: \(said)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let command = approval.command {
+                            Text(command)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background(Palette.background(scheme), in: .rect(cornerRadius: 10))
+                        }
+                    }
+                } label: {
+                    Text("Show exact command").font(.caption)
+                }
             }
 
             if approval.resolving == true {
@@ -494,12 +532,7 @@ private struct RunApprovalCard: View {
     }
 
     private func label(for choice: Message.ApprovalChoice) -> String {
-        switch choice {
-        case .once: "Once"
-        case .session: "Session"
-        case .always: "Always"
-        case .deny: "Deny"
-        }
+        ApprovalExplainer.label(choice)
     }
 }
 

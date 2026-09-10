@@ -1,8 +1,21 @@
 {
-  "images": [
-    { "filename": "AliceHomeLogo@1x.png", "idiom": "universal", "scale": "1x" },
-    { "filename": "AliceHomeLogo@2x.png", "idiom": "universal", "scale": "2x" },
-    { "filename": "AliceHomeLogo@3x.png", "idiom": "universal", "scale": "3x" }
+  "images" : [
+    {
+      "filename" : "AliceHomeLogo.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    },
+    {
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "idiom" : "universal",
+      "scale" : "3x"
+    }
   ],
-  "info": { "author": "xcode", "version": 1 }
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
 }

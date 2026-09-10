@@ -178,6 +178,18 @@ actor HermesClient {
         return Self.parseManifest(object)
     }
 
+    /// What a model read reached.
+    ///
+    /// The catalogue is the picker inventory on `/api/model/options`; the
+    /// fallback is `/v1/models`, which names only the model the agent presents
+    /// to OpenAI-compatible clients. They are kept apart because a fallback
+    /// that passed for a catalogue was allowed to stand in for one, and a
+    /// phone showed a single model on a Hermes serving 374.
+    struct ModelList: Sendable, Equatable {
+        var options: [ModelOption]
+        var isCatalogue: Bool
+    }
+
     /// Every model this Hermes can reach.
     ///
     /// `/v1/models` is the OpenAI-compatible surface and answers with the one
@@ -185,7 +197,7 @@ actor HermesClient {
     /// models across six providers it still returns exactly one. The full
     /// picker lives on the management surface, so ask there first and keep
     /// `/v1/models` as the fallback for a build that has no picker.
-    func models(refreshing: Bool = false) async throws -> [ModelOption] {
+    func models(refreshing: Bool = false) async throws -> ModelList {
         // `/v1/models` is the one surface every build serves, so ask it first
         // and have something to show immediately. It answers with the single
         // model the agent presents to OpenAI-compatible clients.
@@ -199,43 +211,42 @@ actor HermesClient {
 
         // The full picker lives on the management surface, which plenty of
         // deployments do not expose at this address — a Tailscale Serve rule
-        // that proxies `/v1` and nothing else simply swallows these, so they
-        // get a short leash rather than the full request timeout.
-        // Order and timeout come from measuring a real agent: the plain
-        // options endpoint answered in 0.34s with 135 models across 54
-        // providers, while asking it to include unconfigured ones took 5.36s —
-        // past the leash these probes were on, so the fast, sufficient answer
-        // was never reached.
+        // that proxies `/v1` and nothing else simply swallows these.
+        //
+        // The gateway builds that answer on demand, and a cold build is slow.
+        // Four minutes after a restart the agent took 21s to answer and 9–10s
+        // on the calls behind it; the phone gave up on each at ten seconds,
+        // so a route that was working had its list thrown away while it was
+        // still being built. It gets the allowance a refresh gets.
+        //
         // Asking to refresh is not the same as asking again. The plain
-        // options endpoint answers from a computed cache, and that cache had
-        // every one of Nous's models marked unavailable — a stale reading of
-        // an account without credits — which emptied the provider out of the
-        // picker entirely. The same call with `refresh=1` came back with the
-        // list intact and nothing marked unavailable, including the free
-        // models the cached answer had dropped. It is slower, so it is only
-        // asked for when somebody actually pulls to refresh.
+        // options endpoint answers from a computed cache, and that cache once
+        // had every one of Nous's models marked unavailable — a stale reading
+        // of an account without credits — which emptied the provider out of
+        // the picker. `refresh=1` recomputes it, so it goes first when
+        // somebody actually pulls to refresh.
+        //
+        // `include_unconfigured=1` is no longer probed. The gateway always
+        // includes unconfigured providers, so after a timeout that call asked
+        // the same slow handler for the same payload again, and the two
+        // builds slowed each other down.
         var paths = ["api/model/options"]
         if refreshing { paths.insert("api/model/options?refresh=1", at: 0) }
-        paths += ["api/model/options?include_unconfigured=1", "api/models"]
+        paths.append("api/models")
 
         for path in paths {
             do {
-                // A recalculation is not a lookup. Measured against the
-                // running agent the cached answer comes back in 0.39s and the
-                // refresh in 8.2s — on a warm cache, on the machine itself.
-                // Over the tailnet from a phone, with providers to re-poll,
-                // that clears ten seconds easily, and the leash meant for the
-                // cheap call was cutting the expensive one off and quietly
-                // falling through to the stale list it was asked to replace.
-                let leash: TimeInterval = path.contains("refresh=1") ? 45 : 10
+                let leash: TimeInterval = path.hasPrefix("api/model/options") ? 45 : 10
                 let found = try await modelList(path, timeout: leash)
                 Self.trace("\(path) -> \(found.count) models")
-                if found.count > baseline.count { return found }
+                if found.count > baseline.count {
+                    return ModelList(options: found, isCatalogue: true)
+                }
             } catch {
                 Self.trace("\(path) -> \(error.localizedDescription)")
             }
         }
-        return baseline
+        return ModelList(options: baseline, isCatalogue: false)
     }
 
     private func modelList(
