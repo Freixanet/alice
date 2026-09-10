@@ -112,12 +112,6 @@ struct ActivityScreen: View {
                 }
             } header: {
                 Text(activitySections.needsAttention.isEmpty ? "Recent" : "Earlier")
-            } footer: {
-                // An orange "needs attention" row here, with nothing under Needs
-                // attention, read as a problem the list had missed.
-                if !activitySections.history.isEmpty {
-                    Text("A record of what happened — not a list of current problems.")
-                }
             }
 
             }
