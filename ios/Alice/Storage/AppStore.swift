@@ -2959,11 +2959,34 @@ final class AppStore {
     /// through Hermes' own API — it is one of the channel's configurable keys —
     /// leaving the config alone to decide, in either direction.
     func setMessagingPlatformEnabled(_ id: String, profile: String, enabled: Bool) async throws {
-        let platform = try? await messagingPlatforms(profile: profile).platforms.first { $0.id == id }
+        // Read first, and fail if the read fails. With `try?` a slow or failed
+        // read sent the switch without the flag: Hermes wrote only the config,
+        // `.env` switched WhatsApp straight back on, and "Turn off WhatsApp"
+        // reported success — every request in Hermes' log arrived with
+        // `cleared_keys=[]`.
+        let before = try await messagingPlatforms(profile: profile).platforms.first { $0.id == id }
         try await updateMessagingPlatform(
             id, profile: profile, enabled: enabled,
-            clearEnv: platform.map(Self.enablementFlags(in:)) ?? []
+            clearEnv: before.map(Self.enablementFlags(in:)) ?? []
         )
+        // And check it took. Hermes answers ok for a config write that its
+        // environment then overrides, which must not read as done.
+        if let after = try? await messagingPlatforms(profile: profile).platforms.first(where: { $0.id == id }),
+           after.enabled != enabled {
+            throw ChannelSwitchError.stillOverridden(name: after.name, on: after.enabled)
+        }
+    }
+
+    enum ChannelSwitchError: LocalizedError {
+        case stillOverridden(name: String, on: Bool)
+
+        var errorDescription: String? {
+            switch self {
+            case let .stillOverridden(name, on):
+                "Hermes still has \(name) switched \(on ? "on" : "off"). "
+                    + "A setting in its .env file is overriding this switch."
+            }
+        }
     }
 
     /// The flag-style keys that decide a channel's state ahead of its config.

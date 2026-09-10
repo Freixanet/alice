@@ -86,6 +86,10 @@ struct ActivityScreen: View {
                 }
             }
 
+            // No record while something needs attention: an "Earlier" heading
+            // over "Nothing yet" is a section about nothing. With nothing
+            // anywhere, the empty state stays, so the screen is not blank.
+            if !activitySections.history.isEmpty || activitySections.needsAttention.isEmpty {
             Section {
                 if activitySections.history.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -114,6 +118,8 @@ struct ActivityScreen: View {
                 if !activitySections.history.isEmpty {
                     Text("A record of what happened — not a list of current problems.")
                 }
+            }
+
             }
 
             Section("History & usage") {
