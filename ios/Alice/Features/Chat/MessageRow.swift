@@ -32,23 +32,11 @@ struct MessageRow: View {
                         .accessibilityLabel("Sent \(when)")
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    if let bot = message.botName, !bot.isEmpty {
-                        HStack(spacing: 6) {
-                            // The one moment a thinking face means something:
-                            // while this reply is still being written.
-                            BotMarkView(
-                                mark: store.mark(for: bot),
-                                size: 16,
-                                animated: message.pending,
-                                mood: .thinking,
-                                // Sitting on a line with the name: it thinks,
-                                // it does not levitate away from it.
-                                floats: false
-                            )
-                            // Trying the reply without the bot's name above
-                            // it: the conversation already says whose it is.
-                        }
-                    } else {
+                    // Trying bot replies with nothing above them — no name, no
+                    // mark. The conversation already says whose it is, and a
+                    // reply still being written says "Thinking…" in its tool
+                    // list. Alice's own replies keep their label.
+                    if message.botName?.isEmpty ?? true {
                         Text("ALICE")
                             .font(.caption2.weight(.medium))
                             .tracking(1.4)
