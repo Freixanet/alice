@@ -112,11 +112,22 @@ struct ChatScreen: View {
             // Reserve the unfocused composer height in the static layer, then
             // let the real composer follow the keyboard as a separate sibling.
             ZStack(alignment: .bottom) {
+                // No keyboard-ignoring here, deliberately.
+                //
+                // The intent was that the home should not move at all. But
+                // `ignoresSafeArea(.keyboard, edges: .bottom)` extends the
+                // block *downwards* past the container while its top edge
+                // stays put, so its centre fell — the logo drifted down and
+                // the title ended up behind the composer. Three shapes of that
+                // fix all failed the same way.
+                //
+                // So it centres in whatever room it has, like every other iOS
+                // screen: the block rises a little when the keyboard opens and
+                // settles back when it closes. Slight motion that keeps every
+                // word visible beats stillness that hides the title.
                 EmptyChatView()
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        Color.clear.frame(height: homeComposerHeight)
-                    }
-                    .ignoresSafeArea(.keyboard, edges: .bottom)
+                    .padding(.bottom, homeComposerHeight)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 Composer(focused: $composerFocused, placeholder: placeholder)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
@@ -333,14 +344,18 @@ struct ChatScreen: View {
 
 private struct EmptyChatView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        // Deliberately neutral about the keyboard and about the composer.
+        //
+        // This used to ignore the keyboard here as well as at the call site.
+        // `safeAreaInset` contributes to the bottom safe area, so ignoring
+        // that area threw away the composer's reserved space along with the
+        // keyboard's — and the block re-centred into the taller box, moving
+        // *down* by about a composer's height and sliding the title behind it.
+        // Whoever places this view owns both decisions now.
         centred
-            // An empty chat has nothing for the composer to cover, so there is
-            // no reason for it to move out of the way. Centred in a safe area
-            // the keyboard shrinks, the title lifted every time the keyboard
-            // opened — motion in answer to nothing.
-            .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     @ViewBuilder
@@ -366,6 +381,13 @@ private struct EmptyChatView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 8) {
+                Image(colorScheme == .dark ? "AliceHomeLogoDark" : "AliceHomeLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 88, height: 88)
+                    .accessibilityHidden(true)
+                    .padding(.bottom, 8)
+
                 Text("What are we working on?")
                     .font(.aliceTitle(.title))
                     .multilineTextAlignment(.center)
@@ -374,7 +396,9 @@ private struct EmptyChatView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 32)
-            .padding(.bottom, 140)
+            // No hardcoded composer offset either: the call site already
+            // reserves the real height, and 140 on top of it was a second
+            // guess at the same gap.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

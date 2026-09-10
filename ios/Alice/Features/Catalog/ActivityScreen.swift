@@ -46,7 +46,9 @@ struct ActivityScreen: View {
                     .padding(.vertical, 4)
                     .listRowBackground(Palette.card(scheme))
                 } else {
-                    ForEach(store.activity) { row($0) }
+                    ForEach(ActivityGroup.stack(store.activity)) { group in
+                        row(group.latest, stacked: group)
+                    }
                 }
             }
 
@@ -81,7 +83,7 @@ struct ActivityScreen: View {
     /// button never starts further left than the sentence it belongs to.
     private static let gutter: CGFloat = 26
 
-    private func row(_ event: AliceEvent) -> some View {
+    private func row(_ event: AliceEvent, stacked: ActivityGroup? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: icon(event))
@@ -102,9 +104,20 @@ struct ActivityScreen: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                Text(event.occurred, format: .relative(presentation: .numeric))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(event.occurred, format: .relative(presentation: .numeric))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if let stacked, stacked.count > 1 {
+                        Text("×\(stacked.count)")
+                            .font(.caption2.weight(.semibold))
+                            .monospacedDigit()
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Palette.background(scheme), in: .capsule)
+                            .accessibilityLabel("\(stacked.count) times")
+                    }
+                }
             }
 
             // Everything below lines up with the title, not with the icon.
@@ -206,7 +219,11 @@ struct ActivityScreen: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: !event.isActionable) {
             if !event.isActionable {
                 Button(role: .destructive) {
-                    withAnimation { store.dismissActivity(event) }
+                    withAnimation {
+                        for member in stacked?.events ?? [event] {
+                            store.dismissActivity(member)
+                        }
+                    }
                 } label: {
                     Label("Dismiss", systemImage: "xmark")
                 }

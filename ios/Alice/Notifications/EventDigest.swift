@@ -81,7 +81,10 @@ enum EventDigest {
                 title: row.name.isEmpty ? "An automation" : row.name,
                 summary: "This automation did not finish.",
                 detail: Self.failureDetail(row),
-                occurred: row.lastRun ?? now
+                occurred: row.lastRun ?? now,
+                reference: AliceEvent.Reference(
+                    profile: row.profile, routineKey: Self.key(for: row)
+                )
             ))
         }
 
@@ -110,7 +113,8 @@ enum EventDigest {
                 ? "This automation did not finish."
                 : "This automation finished.",
             detail: failed! ? Self.failureDetail(row) : row.lastStatus,
-            occurred: run
+            occurred: run,
+            reference: AliceEvent.Reference(profile: row.profile, routineKey: key)
         )
     }
 

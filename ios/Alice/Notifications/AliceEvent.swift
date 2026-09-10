@@ -159,6 +159,32 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     /// Whether this still wants an answer.
     var isActionable: Bool { standing == .waiting }
 
+    /// The thing this event is *about*, as opposed to this particular
+    /// occurrence of it.
+    ///
+    /// Ids carry a timestamp so two runs of the same automation are two facts,
+    /// which is right for the record and wrong for the list: an automation
+    /// that fails every morning filled Activity with a week of identical rows.
+    /// Events sharing a subject stack into one row that keeps a count.
+    ///
+    /// Requests are deliberately never grouped — each approval is a separate
+    /// decision, and stacking two of them would hide one behind the other's
+    /// buttons.
+    var subject: String {
+        if reference.requestID != nil { return id }
+        if let routine = reference.routineKey { return "routine:\(routine)" }
+        if let session = reference.sessionKey ?? reference.sessionID {
+            return "session:\(session)"
+        }
+        // Component events: "component:<name>:<status>" and
+        // "attention:component:<name>" are the same subject.
+        for prefix in ["attention:component:", "component:"] where id.hasPrefix(prefix) {
+            let rest = id.dropFirst(prefix.count)
+            return "component:" + (rest.split(separator: ":").first.map(String.init) ?? String(rest))
+        }
+        return id
+    }
+
     init(
         id: String, kind: Kind, severity: Severity, profile: String? = nil,
         title: String, summary: String, detail: String? = nil, occurred: Date,
@@ -178,6 +204,35 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
         self.occurred = occurred
         self.reference = reference
         self.standing = standing
+    }
+}
+
+/// One row in Activity: the newest event about a thing, and how many times
+/// that thing has happened.
+struct ActivityGroup: Identifiable, Sendable {
+    var id: String { latest.subject }
+    /// The one that is drawn.
+    var latest: AliceEvent
+    /// Every event in the stack, newest first — what a dismiss has to clear.
+    var events: [AliceEvent]
+    var count: Int { events.count }
+
+    /// Stacks events by what they are about, keeping order by recency.
+    ///
+    /// Stable: the group takes the position of its newest member, so a row
+    /// does not jump around as older occurrences are folded into it.
+    static func stack(_ events: [AliceEvent]) -> [ActivityGroup] {
+        var order: [String] = []
+        var buckets: [String: [AliceEvent]] = [:]
+        for event in events.sorted(by: { $0.occurred > $1.occurred }) {
+            let key = event.subject
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(event)
+        }
+        return order.compactMap { key in
+            guard let bucket = buckets[key], let latest = bucket.first else { return nil }
+            return ActivityGroup(latest: latest, events: bucket)
+        }
     }
 }
 
