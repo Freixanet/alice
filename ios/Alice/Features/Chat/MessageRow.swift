@@ -45,10 +45,8 @@ struct MessageRow: View {
                                 // it does not levitate away from it.
                                 floats: false
                             )
-                            Text(store.botCurrentName(for: bot).uppercased())
-                                .font(.caption2.weight(.medium))
-                                .tracking(1.4)
-                                .foregroundStyle(.secondary)
+                            // Trying the reply without the bot's name above
+                            // it: the conversation already says whose it is.
                         }
                     } else {
                         Text("ALICE")
