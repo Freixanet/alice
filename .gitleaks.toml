@@ -5,7 +5,7 @@
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Verified non-secrets"
 
 # scripts/pairing-hermes-config.test.mjs — deleted in eaca12a, still in the
@@ -17,3 +17,18 @@ description = "Verified non-secrets"
 #
 # Scoped to that one path so a real leak anywhere else still fails the scan.
 paths = ['''scripts/pairing-hermes-config\.test\.mjs''']
+
+# ios/AliceTests/ActivityStackingTests.swift — added in beea60f. The
+# generic-api-key rule reads `key: "default/job1"` as a credential because of
+# the argument's name; it is a routine identifier, `<profile>/<job id>`, the
+# shape `EventDigest.key(for:)` builds. Checked rather than assumed: its SHA-256
+# matches no KEY/TOKEN/SECRET in the Hermes .env files on this machine.
+#
+# Allowed by exact value, not by path. A path-scoped entry with
+# `condition = "AND"` was tried first and probed: a random ghp_ token and a
+# random api_key placed in that file passed the scan, while the same values
+# in any other file failed it — the path alone was enough. Matching only this
+# literal keeps every real credential, in every file, failing the scan.
+[[allowlists]]
+description = "Routine identifier in activity stacking tests"
+regexes = ['''^default/job1$''']
