@@ -321,7 +321,9 @@ struct ChatScreen: View {
             ScrollViewReader { proxy in
               GeometryReader { area in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 22) {
+                    // 34, up from 22: consecutive replies ran together, and
+                    // each now carries its time above it as well.
+                    LazyVStack(alignment: .leading, spacing: 34) {
                         ForEach(conversation.messages) { message in
                             MessageRow(message: message).id(message.id)
                         }

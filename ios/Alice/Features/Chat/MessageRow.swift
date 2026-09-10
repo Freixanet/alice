@@ -21,6 +21,16 @@ struct MessageRow: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             case .assistant:
+                // When the reply was sent, for looking back through a
+                // conversation. Centred and faint so it reads as a marker
+                // between replies rather than as part of one.
+                if let when = MessageTime.caption(message.createdAt) {
+                    Text(when)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .accessibilityLabel("Sent \(when)")
+                }
                 VStack(alignment: .leading, spacing: 10) {
                     if let bot = message.botName, !bot.isEmpty {
                         HStack(spacing: 6) {
