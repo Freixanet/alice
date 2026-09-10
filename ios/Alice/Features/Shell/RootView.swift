@@ -26,7 +26,11 @@ struct RootView: View {
                 // other way round — a panel sliding over a fixed conversation —
                 // reads as a panel; this reads as the conversation being moved
                 // aside, which is what the drawer is for.
-                Sidebar(width: drawerWidth, onDismiss: { setDrawer(false) })
+                Sidebar(
+                    width: drawerWidth,
+                    surfaceProgress: progress,
+                    onDismiss: { setDrawer(false) }
+                )
                     .frame(width: drawerWidth)
                     .safeAreaPadding(EdgeInsets(
                         top: proxy.safeAreaInsets.top,
@@ -70,7 +74,8 @@ struct RootView: View {
                     // than the phone's surface sliding aside. Continuous, because
                     // that is the curve the bezel is drawn with.
                     .clipShape(.rect(
-                        cornerRadius: displayCornerRadius, style: .continuous
+                        cornerRadius: displayCornerRadius * progress,
+                        style: .continuous
                     ))
                     // Cast to the left, onto the drawer. The hairline states
                     // where the conversation ends; this says which of the two
@@ -161,11 +166,18 @@ struct RootView: View {
             // on the bezel rather than being cut at the status bar. The screens
             // inside still take their insets from the window, so nothing moves.
             .ignoresSafeArea()
-            // The drawer's own surface, because this is what the conversation's
-            // rounded corners cut through to. Painting the page background here
-            // left the corners opening onto nothing — a wedge of a colour that
-            // belongs to neither layer.
-            .background(Palette.card(scheme))
+            // At rest, the clipped conversation corners must reveal the same
+            // page colour as Home. iOS 26/27 leaves those corners visible around
+            // the rounded software keyboard; using the drawer card here produced
+            // a pale/white halo. As the drawer opens, hand that exposed surface
+            // progressively to the drawer colour instead.
+            .background {
+                ZStack {
+                    Palette.background(scheme)
+                    Palette.card(scheme).opacity(progress)
+                }
+                .ignoresSafeArea()
+            }
             // Applied here rather than at the app, which had to guess a scheme
             // for it: on "system" it always resolved the light variant, so the
             // accent was wrong in the dark exactly where it is most visible.

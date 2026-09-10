@@ -5,6 +5,7 @@ struct Sidebar: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let width: CGFloat
+    let surfaceProgress: CGFloat
     let onDismiss: () -> Void
 
     @State private var showSearch = false
@@ -43,7 +44,13 @@ struct Sidebar: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .background(Palette.card(scheme).ignoresSafeArea())
+        .background {
+            ZStack {
+                Palette.background(scheme)
+                Palette.card(scheme).opacity(surfaceProgress)
+            }
+            .ignoresSafeArea()
+        }
         // An alert in Activity offering "Open messaging apps" asks through the
         // store; the drawer presents, so Activity is replaced by that screen.
         .onChange(of: store.requestedDestination) { _, target in
