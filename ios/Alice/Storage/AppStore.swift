@@ -1748,7 +1748,7 @@ final class AppStore {
         guard let index = activity.firstIndex(where: { $0.id == id }) else { return }
         activity[index].detail = (error as? LocalizedError)?.errorDescription
             ?? error.localizedDescription
-        activity[index].summary = "Alice could not send that answer. It is still waiting."
+        activity[index].summary = "Alice couldn’t send your response to Hermes, so this request is still waiting. Check the connection and try again."
         persistActivity()
     }
 
@@ -1851,6 +1851,16 @@ final class AppStore {
     }
 
     func markActivitySeen() { activitySeen = Date() }
+
+    /// Removes Activity history the person no longer wants to keep. Requests
+    /// that are still waiting cannot be hidden: dismissing a card must never
+    /// make an unresolved approval or question disappear.
+    func dismissActivity(_ ids: [String]) {
+        let removable = Set(ids)
+        activity.removeAll { removable.contains($0.id) && !$0.isActionable }
+        persistActivity()
+        refreshAttention()
+    }
 
     private func persistActivity() {
         guard let data = try? JSONEncoder().encode(activity.map(StoredEvent.init)) else { return }

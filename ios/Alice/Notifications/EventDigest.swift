@@ -67,7 +67,7 @@ enum EventDigest {
             items.append(AliceEvent(
                 id: "attention:component:\(component.name)",
                 kind: .attention, severity: .needsAttention,
-                title: label, summary: "\(label) needs attention.",
+                title: label, summary: Self.summary(for: component, healthy: false),
                 detail: [component.status, component.state]
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
                 occurred: now
@@ -81,7 +81,8 @@ enum EventDigest {
                 title: row.name.isEmpty ? "An automation" : row.name,
                 summary: "This automation did not finish.",
                 detail: Self.failureDetail(row),
-                occurred: row.lastRun ?? now
+                occurred: row.lastRun ?? now,
+                reference: .init(profile: row.profile, routineKey: Self.key(for: row))
             ))
         }
 
@@ -110,7 +111,8 @@ enum EventDigest {
                 ? "This automation did not finish."
                 : "This automation finished.",
             detail: failed! ? Self.failureDetail(row) : row.lastStatus,
-            occurred: run
+            occurred: run,
+            reference: .init(profile: row.profile, routineKey: key)
         )
     }
 
@@ -143,9 +145,7 @@ enum EventDigest {
             severity: healthy ? .informational : .needsAttention,
             profile: nil,
             title: label,
-            summary: healthy
-                ? "\(label) is working again."
-                : "\(label) needs attention.",
+            summary: Self.summary(for: component, healthy: healthy),
             detail: [component.status, component.state]
                 .compactMap { $0 }
                 .filter { !$0.isEmpty }
@@ -163,21 +163,61 @@ enum EventDigest {
             .contains(status.lowercased())
     }
 
-    /// Hermes' component names are its own vocabulary. Where Alice has a human
-    /// word for one it uses it, and where it does not it keeps Hermes' name
-    /// rather than inventing something that matches no documentation.
+    /// Human labels for Hermes' internal component names. Unknown names are
+    /// still made readable instead of leaking snake_case into Activity.
     static func label(for component: String) -> String {
         switch component.lowercased() {
-        case "gateway": "The Hermes service"
-        case "telegram": "Telegram"
-        case "whatsapp": "WhatsApp"
-        case "discord": "Discord"
-        case "slack": "Slack"
-        case "cron", "scheduler": "Automations"
-        case "mcp": "Integrations"
-        case "memory": "Memory"
-        case "models", "providers": "Models"
-        default: component
+        case "gateway": return "Hermes service"
+        case "dashboard": return "Hermes dashboard"
+        case "storage": return "Saved data"
+        case "platforms": return "Messaging connections"
+        case "telegram": return "Telegram"
+        case "whatsapp": return "WhatsApp"
+        case "discord": return "Discord"
+        case "slack": return "Slack"
+        case "cron", "scheduler": return "Routines"
+        case "mcp": return "Integrations"
+        case "memory": return "Memory"
+        case "models", "providers": return "Models"
+        default:
+            let words = component
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "-", with: " ")
+                .split(separator: " ")
+            guard !words.isEmpty else { return "System component" }
+            return words.map { String($0).capitalized }.joined(separator: " ")
+        }
+    }
+
+    static func summary(for component: HermesSystemComponent, healthy: Bool) -> String {
+        switch component.name.lowercased() {
+        case "gateway":
+            return healthy
+                ? "Alice can reach the Hermes service again."
+                : "Alice is having trouble reaching the Hermes service."
+        case "dashboard":
+            return healthy
+                ? "The Hermes dashboard is responding normally again."
+                : "The Hermes dashboard is not responding normally."
+        case "storage":
+            return healthy
+                ? "Hermes can access its saved data again."
+                : "Hermes is having trouble accessing its saved data."
+        case "platforms":
+            if healthy { return "Your messaging connections are working normally again." }
+            if let configured = component.configured, let connected = component.connected,
+               configured > connected {
+                let affected = configured - connected
+                return affected == 1
+                    ? "1 of your \(configured) messaging connections is offline."
+                    : "\(affected) of your \(configured) messaging connections are offline."
+            }
+            return "One or more messaging connections are offline or not working normally."
+        default:
+            let name = label(for: component.name)
+            return healthy
+                ? "\(name) is working normally again."
+                : "\(name) is not working normally."
         }
     }
 }

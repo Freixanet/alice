@@ -191,31 +191,32 @@ struct Sidebar: View {
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .black.opacity(0.18), location: 0.22),
-                    .init(color: .black.opacity(0.55), location: 0.48),
-                    .init(color: .black.opacity(0.85), location: 0.74),
+                    .init(color: .black.opacity(0.45), location: 0.35),
+                    .init(color: .black.opacity(0.82), location: 0.68),
                     .init(color: .black, location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 30)
+            .frame(height: 18)
 
             Color.black
 
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0),
-                    .init(color: .black.opacity(0.96), location: 0.22),
-                    .init(color: .black.opacity(0.78), location: 0.44),
-                    .init(color: .black.opacity(0.48), location: 0.64),
-                    .init(color: .black.opacity(0.20), location: 0.82),
+                    .init(color: .black, location: 0.18),
+                    .init(color: .black.opacity(0.96), location: 0.36),
+                    .init(color: .black.opacity(0.78), location: 0.56),
+                    .init(color: .black.opacity(0.52), location: 0.74),
+                    .init(color: .black.opacity(0.28), location: 0.86),
+                    .init(color: .black.opacity(0.10), location: 0.94),
                     .init(color: .clear, location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 180)
+            .frame(height: 240)
         }
     }
 
@@ -238,6 +239,9 @@ struct Sidebar: View {
                 }
             }
             .padding(.horizontal, 12)
+            // Keep the first section heading below the top fade at rest.
+            // Rows still pass through that fade once the user scrolls.
+            .padding(.top, 18)
         }
         // Keyed on the connection: the drawer is built before the dashboard
         // has signed in, and a one-shot task would leave the project list

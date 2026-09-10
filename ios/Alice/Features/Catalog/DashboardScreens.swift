@@ -98,17 +98,11 @@ struct ProjectsScreen: View {
                     Section {
                         ForEach(inferred) { row in
                             HStack(spacing: 12) {
-                                Image(systemName: "folder.badge.questionmark")
+                                Image(systemName: "folder.badge.plus")
                                     .foregroundStyle(.secondary)
+                                    .frame(width: 22)
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(row.label).font(.subheadline.weight(.medium))
-                                    if let path = row.path {
-                                        Text(path)
-                                            .font(.caption2.monospaced())
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                            .truncationMode(.head)
-                                    }
+                                    Text(workspaceName(row)).font(.subheadline.weight(.medium))
                                     Text(projectDetail(row))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
@@ -125,16 +119,30 @@ struct ProjectsScreen: View {
                             .listRowBackground(Palette.card(scheme))
                         }
                     } header: {
-                        Text("Workspaces from sessions")
+                        Text("Folders Alice found")
                     } footer: {
-                        Text("These are real workspaces inferred from Hermes session cwd/repository data. Promoting one creates a named Project around the same folder.")
+                        Text("Alice found these folders while working in past conversations. They are not Projects yet. Make one a Project if you want future work grouped under a clear name.")
                     }
                 }
 
                 if let home, home.sessions > 0 {
-                    Section("Home") {
-                        LabeledContent("Sessions outside a project", value: "\(home.sessions)")
-                            .listRowBackground(Palette.card(scheme))
+                    Section("Not in a project") {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "tray")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 22)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Unsorted conversations")
+                                    .font(.subheadline.weight(.medium))
+                                Text(home.sessions == 1
+                                    ? "1 conversation is not assigned to a Project yet."
+                                    : "\(home.sessions) conversations are not assigned to a Project yet.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 3)
+                        .listRowBackground(Palette.card(scheme))
                     }
                 }
 
@@ -245,11 +253,19 @@ struct ProjectsScreen: View {
         )
     }
 
+    private func workspaceName(_ row: ProjectRow) -> String {
+        if let path = row.path, !path.isEmpty {
+            let name = URL(fileURLWithPath: path).lastPathComponent
+            if !name.isEmpty && name != "/" { return name }
+        }
+        let cleaned = row.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "Folder found by Alice" : cleaned
+    }
+
     private func projectDetail(_ row: ProjectRow) -> String {
-        var parts = [row.sessions == 1 ? "1 session" : "\(row.sessions) sessions"]
-        if row.tokens > 0 { parts.append("\(Insights.compact(row.tokens)) tokens") }
+        var parts = [row.sessions == 1 ? "Used in 1 conversation" : "Used in \(row.sessions) conversations"]
         if let when = row.lastActive {
-            parts.append(when.formatted(.relative(presentation: .named)))
+            parts.append("last used \(when.formatted(.relative(presentation: .named)))")
         }
         return parts.joined(separator: " · ")
     }

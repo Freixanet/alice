@@ -230,27 +230,36 @@ struct MCPScreen: View {
 
             HStack(spacing: 8) {
                 Button { test(server) } label: {
-                    if testing.contains(server.name) { ProgressView() }
-                    else { Label("Test", systemImage: "bolt.horizontal.circle") }
+                    Group {
+                        if testing.contains(server.name) { ProgressView() }
+                        else { Label("Test", systemImage: "bolt.horizontal.circle") }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 20)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(testing.contains(server.name))
+                .frame(maxWidth: .infinity)
 
                 if server.auth == "oauth" {
                     Button { oauthServer = server } label: {
                         Label("Authenticate", systemImage: "key")
+                            .frame(maxWidth: .infinity, minHeight: 20)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .frame(maxWidth: .infinity)
                 }
 
                 Button(role: .destructive) { deleting = server } label: {
                     Label("Remove", systemImage: "trash")
+                        .frame(maxWidth: .infinity, minHeight: 20)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity)
 
             if let result = testResults[server.name] {
                 testResultView(result)

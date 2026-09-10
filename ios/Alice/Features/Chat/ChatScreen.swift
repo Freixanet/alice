@@ -11,6 +11,7 @@ struct ChatScreen: View {
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
     @State private var homeComposerHeight: CGFloat = 120
+    @State private var homeRestingHeight: CGFloat = 0
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -108,15 +109,36 @@ struct ChatScreen: View {
                     Composer(focused: $composerFocused, placeholder: placeholder)
                 }
         } else {
-            // The empty home should not reflow when the keyboard appears.
-            // Reserve the unfocused composer height in the static layer, then
-            // let the real composer follow the keyboard as a separate sibling.
+            // The empty state is drawn in the height it had before focus. The
+            // GeometryReader itself may shrink for the keyboard, but its child
+            // is top-anchored at the captured resting height and is allowed to
+            // overflow. The composer remains a normal sibling, so iOS moves it
+            // with the keyboard without changing the home layer's geometry.
             ZStack(alignment: .bottom) {
-                EmptyChatView()
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        Color.clear.frame(height: homeComposerHeight)
-                    }
-                    .ignoresSafeArea(.keyboard, edges: .bottom)
+                GeometryReader { proxy in
+                    let stableHeight = homeRestingHeight > 0
+                        ? homeRestingHeight
+                        : proxy.size.height
+
+                    EmptyChatView()
+                        .padding(.bottom, homeComposerHeight)
+                        .frame(
+                            width: proxy.size.width,
+                            height: stableHeight,
+                            alignment: .center
+                        )
+                        .position(
+                            x: proxy.size.width / 2,
+                            y: stableHeight / 2
+                        )
+                }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    guard !composerFocused, height > 0,
+                          abs(homeRestingHeight - height) > 0.5 else { return }
+                    homeRestingHeight = height
+                }
 
                 Composer(focused: $composerFocused, placeholder: placeholder)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
@@ -336,11 +358,6 @@ private struct EmptyChatView: View {
 
     var body: some View {
         centred
-            // An empty chat has nothing for the composer to cover, so there is
-            // no reason for it to move out of the way. Centred in a safe area
-            // the keyboard shrinks, the title lifted every time the keyboard
-            // opened — motion in answer to nothing.
-            .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     @ViewBuilder
@@ -366,6 +383,12 @@ private struct EmptyChatView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 8) {
+                Image("AliceHomeLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 88, height: 88)
+                    .accessibilityHidden(true)
+
                 Text("What are we working on?")
                     .font(.aliceTitle(.title))
                     .multilineTextAlignment(.center)
@@ -375,6 +398,7 @@ private struct EmptyChatView: View {
             }
             .padding(.horizontal, 32)
             .padding(.bottom, 140)
+            .offset(y: 6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

@@ -171,7 +171,7 @@ final class PairingFlow {
         switch failure {
         case .stale, .badResponse:
             return false
-        case .forbidden, .http, .unreachable, .timedOut, .offline:
+        case .forbidden, .http, .unreachable, .timedOut, .tailnetUnavailable, .offline:
             return true
         }
     }

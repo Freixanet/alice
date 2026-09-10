@@ -22,6 +22,7 @@ struct PairingClient {
         case http(status: Int)
         case unreachable
         case timedOut
+        case tailnetUnavailable
         case offline
 
         var errorDescription: String? {
@@ -38,6 +39,8 @@ struct PairingClient {
                 "Couldn't reach that address from this iPhone."
             case .timedOut:
                 "The pairing request timed out."
+            case .tailnetUnavailable:
+                "Couldn't reach Hermes over Tailscale. Open Tailscale on this iPhone, make sure it is connected to the same tailnet as the device running Hermes, then try again with a new QR code."
             case .offline:
                 "This iPhone has no network connection."
             }
@@ -80,7 +83,7 @@ struct PairingClient {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
-            throw Self.describe(error)
+            throw Self.describe(error, claimURL: payload.claimURL)
         }
         guard let http = response as? HTTPURLResponse else { throw Failure.badResponse }
 
@@ -198,14 +201,36 @@ struct PairingClient {
 
     /// Same mapping HermesClient uses for its own requests, so a claim that
     /// fails for transport reasons reads like every other failure here.
-    static func describe(_ error: Error) -> Failure {
+    static func describe(_ error: Error, claimURL: URL? = nil) -> Failure {
         if let failure = error as? Failure { return failure }
         guard let urlError = error as? URLError else { return .unreachable }
+        if urlError.code == .notConnectedToInternet { return .offline }
+
+        if isTailnetHost(claimURL?.host), [
+            URLError.timedOut,
+            .cannotFindHost,
+            .cannotConnectToHost,
+            .dnsLookupFailed,
+            .networkConnectionLost,
+        ].contains(urlError.code) {
+            return .tailnetUnavailable
+        }
+
         switch urlError.code {
         case .timedOut: return .timedOut
-        case .notConnectedToInternet: return .offline
         default: return .unreachable
         }
+    }
+
+    private static func isTailnetHost(_ rawHost: String?) -> Bool {
+        guard let host = rawHost?.lowercased(), !host.isEmpty else { return false }
+        if host.hasSuffix(".ts.net") || host.hasPrefix("fd7a:115c:a1e0:") { return true }
+
+        let octets = host.split(separator: ".").compactMap { Int($0) }
+        guard octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) else {
+            return false
+        }
+        return octets[0] == 100 && (64...127).contains(octets[1])
     }
 }
 

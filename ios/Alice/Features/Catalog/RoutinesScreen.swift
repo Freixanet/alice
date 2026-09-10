@@ -233,6 +233,10 @@ struct RoutineDetailSheet: View {
     @State private var deleting = false
     @State private var busy = false
     @State private var actionMessage: String?
+    @State private var expandedInstructions = false
+    @State private var collapsedInstructionHeight: CGFloat = 0
+    @State private var fullInstructionHeight: CGFloat = 0
+    @State private var expandedRuns = false
 
     var body: some View {
         NavigationStack {
@@ -250,11 +254,26 @@ struct RoutineDetailSheet: View {
                 }
                 .listRowBackground(Palette.card(scheme))
 
-                if !routine.prompt.isEmpty {
-                    Section("Instructions") {
-                        Text(routine.prompt).textSelection(.enabled)
-                            .listRowBackground(Palette.card(scheme))
+                // The controls are the reason most people open a routine. Keep
+                // them above long instructions and history so no scrolling is required.
+                Section("Actions") {
+                    if !routine.isCompleted {
+                        Button(routine.isPaused ? "Resume" : "Pause", systemImage: routine.isPaused ? "play" : "pause") {
+                            mutate { try await store.setRoutinePaused(routine, paused: !routine.isPaused) }
+                        }
                     }
+                    Button("Run now", systemImage: "play.circle") { runNow() }
+                    Button("Edit", systemImage: "slider.horizontal.3") { editing = true }
+                    Button("Delete Routine", systemImage: "trash", role: .destructive) { deleting = true }
+                }
+                .disabled(busy)
+                .listRowBackground(Palette.card(scheme))
+
+                if let actionMessage {
+                    Section {
+                        Text(actionMessage).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(Palette.card(scheme))
                 }
 
                 if let failure = RoutinePresentation.failureText(routine) {
@@ -265,6 +284,36 @@ struct RoutineDetailSheet: View {
                             Text(at.formatted(date: .abbreviated, time: .standard))
                                 .font(.caption).foregroundStyle(.secondary)
                                 .listRowBackground(Palette.card(scheme))
+                        }
+                    }
+                }
+
+                if !routine.prompt.isEmpty {
+                    Section("Instructions") {
+                        Text(routine.prompt)
+                            .lineLimit(expandedInstructions ? nil : 4)
+                            .textSelection(.enabled)
+                            .background {
+                                Text(routine.prompt)
+                                    .lineLimit(nil)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .hidden()
+                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                                        fullInstructionHeight = height
+                                    }
+                            }
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                                guard !expandedInstructions else { return }
+                                collapsedInstructionHeight = height
+                            }
+                            .listRowBackground(Palette.card(scheme))
+
+                        if expandedInstructions || instructionsAreTruncated {
+                            Button(expandedInstructions ? "Show less" : "Show full instructions") {
+                                withAnimation(.snappy) { expandedInstructions.toggle() }
+                            }
+                            .font(.footnote.weight(.medium))
+                            .listRowBackground(Palette.card(scheme))
                         }
                     }
                 }
@@ -281,27 +330,17 @@ struct RoutineDetailSheet: View {
                         Text("No recorded runs yet").foregroundStyle(.secondary)
                             .listRowBackground(Palette.card(scheme))
                     } else {
-                        ForEach(runs) { run in runRow(run).listRowBackground(Palette.card(scheme)) }
-                    }
-                }
-
-                Section {
-                    if !routine.isCompleted {
-                        Button(routine.isPaused ? "Resume" : "Pause", systemImage: routine.isPaused ? "play" : "pause") {
-                            mutate { try await store.setRoutinePaused(routine, paused: !routine.isPaused) }
+                        ForEach(Array(runs.prefix(expandedRuns ? runs.count : 3))) { run in
+                            runRow(run).listRowBackground(Palette.card(scheme))
+                        }
+                        if runs.count > 3 {
+                            Button(expandedRuns ? "Show fewer runs" : "Show all \(runs.count) runs") {
+                                withAnimation(.snappy) { expandedRuns.toggle() }
+                            }
+                            .font(.footnote.weight(.medium))
+                            .listRowBackground(Palette.card(scheme))
                         }
                     }
-                    Button("Run now", systemImage: "play.circle") {
-                        runNow()
-                    }
-                    Button("Edit", systemImage: "slider.horizontal.3") { editing = true }
-                    Button("Delete Routine", systemImage: "trash", role: .destructive) { deleting = true }
-                }
-                .disabled(busy)
-                .listRowBackground(Palette.card(scheme))
-
-                if let actionMessage {
-                    Section { Text(actionMessage).font(.footnote).foregroundStyle(.secondary) }
                 }
             }
             .navigationTitle(routine.name)
@@ -334,6 +373,10 @@ struct RoutineDetailSheet: View {
         } message: {
             Text("Hermes will stop scheduling “\(routine.name)”. Its existing run history is not rewritten.")
         }
+    }
+
+    private var instructionsAreTruncated: Bool {
+        fullInstructionHeight > collapsedInstructionHeight + 0.5
     }
 
     private var profileLabel: String {

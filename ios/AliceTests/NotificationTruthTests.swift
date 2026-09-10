@@ -138,13 +138,21 @@ final class EventDigestTests: XCTestCase {
         XCTAssertFalse(EventDigest.healthy("degraded"))
     }
 
-    /// Hermes' component names are its own vocabulary; where Alice has no
-    /// human word it keeps Hermes' name rather than inventing one that matches
-    /// no documentation.
-    func testComponentLabelsTranslateOnlyWhatItKnows() {
-        XCTAssertEqual(EventDigest.label(for: "gateway"), "The Hermes service")
-        XCTAssertEqual(EventDigest.label(for: "cron"), "Automations")
-        XCTAssertEqual(EventDigest.label(for: "some_new_subsystem"), "some_new_subsystem")
+    func testComponentLabelsAreHumanReadableAndConsistent() {
+        XCTAssertEqual(EventDigest.label(for: "gateway"), "Hermes service")
+        XCTAssertEqual(EventDigest.label(for: "cron"), "Routines")
+        XCTAssertEqual(EventDigest.label(for: "platforms"), "Messaging connections")
+        XCTAssertEqual(EventDigest.label(for: "some_new_subsystem"), "Some New Subsystem")
+    }
+
+    func testPlatformAttentionExplainsWhatIsWrong() {
+        let component = HermesSystemComponent(
+            name: "platforms", status: "degraded", configured: 3, connected: 2
+        )
+        XCTAssertEqual(
+            EventDigest.summary(for: component, healthy: false),
+            "1 of your 3 messaging connections is offline."
+        )
     }
 }
 
@@ -382,5 +390,248 @@ final class NotificationApplicationDelegateTests: XCTestCase {
         // Replacing the handler must not replay an already-consumed tap.
         delegate.deliver = { sink.routes.append($0) }
         XCTAssertEqual(sink.routes, [route])
+    }
+}
+
+final class ActivityEventStackingTests: XCTestCase {
+    private func event(
+        id: String, title: String = "Alice", summary: String = "This assistant finished.",
+        detail: String? = nil, conversationID: String? = "conversation-1",
+        standing: AliceEvent.Standing = .none
+    ) -> AliceEvent {
+        AliceEvent(
+            id: id, kind: standing == .none ? .finished : .needsInput,
+            severity: standing == .none ? .informational : .needsAttention,
+            profile: "alice", title: title, summary: summary, detail: detail,
+            occurred: Date(),
+            reference: .init(profile: "alice", conversationID: conversationID),
+            standing: standing
+        )
+    }
+
+    func testIdenticalNotificationsStackGlobally() {
+        let stacked = ActivityEventStacking.stack([
+            event(id: "3"), event(id: "2"), event(id: "1")
+        ])
+        XCTAssertEqual(stacked.count, 1)
+        XCTAssertEqual(stacked[0].count, 3)
+        XCTAssertEqual(stacked[0].latest.id, "3")
+    }
+
+    func testDifferentTechnicalDetailDoesNotStack() {
+        let stacked = ActivityEventStacking.stack([
+            event(id: "2", detail: "timeout"), event(id: "1", detail: "rate limit")
+        ])
+        XCTAssertEqual(stacked.count, 2)
+    }
+
+    func testDifferentConversationDoesNotStack() {
+        let stacked = ActivityEventStacking.stack([
+            event(id: "2", conversationID: "conversation-2"),
+            event(id: "1", conversationID: "conversation-1")
+        ])
+        XCTAssertEqual(stacked.count, 2)
+    }
+
+    func testActionableRequestsNeverStack() {
+        let stacked = ActivityEventStacking.stack([
+            event(id: "2", standing: .waiting), event(id: "1", standing: .waiting)
+        ])
+        XCTAssertEqual(stacked.count, 2)
+    }
+
+
+    func testNeedsAttentionIsPromotedAndNotRepeatedInHistory() {
+        let waiting = event(id: "waiting", standing: .waiting)
+        let normal = event(id: "normal")
+        let sections = ActivityEventStacking.partition(
+            attention: [waiting], activity: [normal, waiting]
+        )
+        XCTAssertEqual(sections.needsAttention.map(\.id), ["waiting"])
+        XCTAssertEqual(sections.history.map(\.id), ["normal"])
+    }
+
+    func testActionableActivityIsPromotedEvenBeforeAttentionRefreshes() {
+        let waiting = event(id: "waiting", standing: .waiting)
+        let normal = event(id: "normal")
+        let sections = ActivityEventStacking.partition(attention: [], activity: [normal, waiting])
+        XCTAssertEqual(sections.needsAttention.map(\.id), ["waiting"])
+        XCTAssertEqual(sections.history.map(\.id), ["normal"])
+    }
+
+    func testSeparatedIdenticalOccurrencesStillShareOneStack() {
+        let stacked = ActivityEventStacking.stack([
+            event(id: "3"),
+            event(id: "other", title: "Other"),
+            event(id: "1")
+        ])
+        XCTAssertEqual(stacked.map(\.count), [2, 1])
+        XCTAssertEqual(stacked[0].latest.id, "3")
+        XCTAssertEqual(stacked[1].latest.id, "other")
+    }
+
+    func testLatestRoutineFailureIsInferredAsAttention() {
+        let failure = AliceEvent(
+            id: "routine:radar-ia/job-1:100", kind: .automationFailed, severity: .failure,
+            profile: "radar-ia", title: "Radar IA — informe diario",
+            summary: "This automation did not finish.", detail: "shutdown",
+            occurred: Date(timeIntervalSince1970: 100)
+        )
+        let sections = ActivityEventStacking.partition(attention: [], activity: [failure])
+        XCTAssertEqual(sections.needsAttention.map(\.id), [failure.id])
+        XCTAssertTrue(sections.history.isEmpty)
+    }
+
+    func testLaterRoutineSuccessClearsEarlierFailure() {
+        let failure = AliceEvent(
+            id: "routine:radar-ia/job-1:100", kind: .automationFailed, severity: .failure,
+            profile: "radar-ia", title: "Radar IA — informe diario",
+            summary: "This automation did not finish.", detail: "shutdown",
+            occurred: Date(timeIntervalSince1970: 100)
+        )
+        let success = AliceEvent(
+            id: "routine:radar-ia/job-1:200", kind: .automationSucceeded,
+            severity: .informational, profile: "radar-ia",
+            title: "Radar IA — informe diario", summary: "This automation finished.",
+            detail: "ok", occurred: Date(timeIntervalSince1970: 200)
+        )
+        let sections = ActivityEventStacking.partition(
+            attention: [], activity: [success, failure]
+        )
+        XCTAssertTrue(sections.needsAttention.isEmpty)
+        XCTAssertEqual(sections.history.map(\.id), [success.id, failure.id])
+    }
+
+    func testDegradedComponentIsInferredUntilRecovery() {
+        let degraded = AliceEvent(
+            id: "component:gateway:degraded", kind: .attention,
+            severity: .needsAttention, title: "The Hermes service",
+            summary: "The Hermes service needs attention.", detail: "degraded · stopped",
+            occurred: Date(timeIntervalSince1970: 100)
+        )
+        let sections = ActivityEventStacking.partition(attention: [], activity: [degraded])
+        XCTAssertEqual(sections.needsAttention.map(\.id), [degraded.id])
+        XCTAssertTrue(sections.history.isEmpty)
+
+        let recovered = AliceEvent(
+            id: "component:gateway:ok", kind: .recovered, severity: .informational,
+            title: "The Hermes service", summary: "The Hermes service is working again.",
+            occurred: Date(timeIntervalSince1970: 200)
+        )
+        let recoveredSections = ActivityEventStacking.partition(
+            attention: [], activity: [recovered, degraded]
+        )
+        XCTAssertTrue(recoveredSections.needsAttention.isEmpty)
+        XCTAssertEqual(recoveredSections.history.map(\.id), [recovered.id, degraded.id])
+    }
+
+    func testCurrentPhonePatternOnlyKeepsUnresolvedProblemsUpTop() {
+        let radarFailure = AliceEvent(
+            id: "routine:radar-ia/daily:100", kind: .automationFailed,
+            severity: .failure, profile: "radar-ia", title: "Radar IA — informe diario",
+            summary: "This automation did not finish.", detail: "shutdown",
+            occurred: Date(timeIntervalSince1970: 100)
+        )
+        let radarSuccess = AliceEvent(
+            id: "routine:radar-ia/daily:300", kind: .automationSucceeded,
+            severity: .informational, profile: "radar-ia", title: "Radar IA — informe diario",
+            summary: "This automation finished.", detail: "ok",
+            occurred: Date(timeIntervalSince1970: 300)
+        )
+        let platforms = AliceEvent(
+            id: "component:platforms:degraded", kind: .attention,
+            severity: .needsAttention, title: "platforms",
+            summary: "platforms needs attention.", detail: "degraded",
+            occurred: Date(timeIntervalSince1970: 250)
+        )
+        let gateway = AliceEvent(
+            id: "component:gateway:degraded", kind: .attention,
+            severity: .needsAttention, title: "The Hermes service",
+            summary: "The Hermes service needs attention.", detail: "degraded · stopped",
+            occurred: Date(timeIntervalSince1970: 240)
+        )
+        let approval = event(
+            id: "approval-current",
+            summary: "Alice could not send that answer. It is still waiting.",
+            standing: .waiting
+        )
+
+        let sections = ActivityEventStacking.partition(
+            attention: [],
+            activity: [radarSuccess, platforms, gateway, approval, radarFailure]
+        )
+        XCTAssertEqual(Set(sections.needsAttention.map(\.id)), Set([
+            platforms.id, gateway.id, approval.id
+        ]))
+        XCTAssertFalse(sections.needsAttention.contains { $0.id == radarFailure.id })
+        XCTAssertTrue(sections.history.contains { $0.id == radarFailure.id })
+    }
+
+    func testFreshAttentionSuppressesHistoricalCopyFromBeforeRename() {
+        let historical = AliceEvent(
+            id: "component:platforms:degraded", kind: .attention,
+            severity: .needsAttention, title: "platforms",
+            summary: "platforms needs attention.", detail: "degraded",
+            occurred: Date(timeIntervalSince1970: 100)
+        )
+        let current = AliceEvent(
+            id: "attention:component:platforms", kind: .attention,
+            severity: .needsAttention, title: "Messaging connections",
+            summary: "One or more messaging connections are offline or not working normally.",
+            detail: "degraded", occurred: Date(timeIntervalSince1970: 300)
+        )
+
+        let sections = ActivityEventStacking.partition(
+            attention: [current], activity: [historical]
+        )
+
+        XCTAssertEqual(sections.needsAttention.map(\.id), [current.id])
+        XCTAssertTrue(sections.history.isEmpty)
+    }
+
+    func testFreshAttentionSnapshotDoesNotRepeatHistoricalProblem() {
+        let historical = AliceEvent(
+            id: "component:platforms:degraded", kind: .attention,
+            severity: .needsAttention, title: "platforms",
+            summary: "platforms needs attention.", detail: "degraded",
+            occurred: Date(timeIntervalSince1970: 100)
+        )
+        let current = AliceEvent(
+            id: "attention:component:platforms", kind: .attention,
+            severity: .needsAttention, title: "platforms",
+            summary: "platforms needs attention.", detail: "degraded",
+            occurred: Date(timeIntervalSince1970: 300)
+        )
+        let sections = ActivityEventStacking.partition(
+            attention: [current], activity: [historical]
+        )
+        XCTAssertEqual(sections.needsAttention.map(\.id), [current.id])
+        XCTAssertTrue(sections.history.isEmpty)
+    }
+}
+
+final class CatalogPresentationTests: XCTestCase {
+    func testGitHubIdentityWinsOverGenericSearchActionName() {
+        let row = CatalogRow(
+            id: "github", name: "github", label: "GitHub", detail: "",
+            enabled: nil, group: nil, tools: ["search_issues", "get_file"], configured: true
+        )
+
+        XCTAssertEqual(
+            CatalogScreen.toolDescription(for: row),
+            "Lets Alice work with code repositories, branches, commits, and related development tasks."
+        )
+    }
+
+    func testUnknownSearchToolsetFallsBackToWebDescription() {
+        let row = CatalogRow(
+            id: "research", name: "research", label: "Research", detail: "",
+            enabled: nil, group: nil, tools: ["search_pages"], configured: true
+        )
+
+        XCTAssertEqual(
+            CatalogScreen.toolDescription(for: row),
+            "Lets Alice find information online and work with web pages."
+        )
     }
 }

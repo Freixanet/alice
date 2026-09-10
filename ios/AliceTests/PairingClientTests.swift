@@ -162,6 +162,31 @@ final class PairingClientTests: XCTestCase {
         }
     }
 
+    func testTailnetTransportFailureExplainsTailscaleInsteadOfGenericTimeout() {
+        for url in [
+            URL(string: "http://macbook-pro-de-marcos.tail5b6e1d.ts.net:9119/api/alice/pairing/claim")!,
+            URL(string: "http://100.70.100.2:9119/api/alice/pairing/claim")!,
+        ] {
+            let failure = PairingClient.describe(URLError(.timedOut), claimURL: url)
+            guard case .tailnetUnavailable = failure else {
+                return XCTFail("tailnet timeout mapped to \(failure)")
+            }
+            XCTAssertTrue(failure.localizedDescription.contains("Tailscale"))
+            XCTAssertTrue(failure.localizedDescription.contains("device running Hermes"))
+            XCTAssertFalse(failure.localizedDescription.contains("same tailnet as the Mac"))
+        }
+    }
+
+    func testOrdinaryTimeoutStaysGeneric() {
+        let failure = PairingClient.describe(
+            URLError(.timedOut),
+            claimURL: URL(string: "https://example.com/claim")!
+        )
+        guard case .timedOut = failure else {
+            return XCTFail("ordinary timeout mapped to \(failure)")
+        }
+    }
+
     func testHTTPSClaimCannotDowngradeLongLivedServicesToHTTP() async {
         let securePayload = Self.payload(claim: "https://100.67.213.42:8643/claim")
         let body = Data("""

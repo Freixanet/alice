@@ -21,12 +21,14 @@ export default defineConfig({
       include: ["src/lib/**/*.{ts,tsx}"],
       exclude: ["src/lib/**/*.server.ts", "src/lib/auth/**"],
       thresholds: {
-        // Ratchet the measured baseline. These only move upward as the
-        // domain-by-domain reconstruction adds tests.
-        statements: 24,
-        branches: 66,
-        functions: 63,
-        lines: 24,
+        // Ratchet the measured baseline. Vitest 4 switched V8 coverage to
+        // stricter AST-aware remapping, so the v3 branch/function percentages
+        // are not comparable. These floors match the first v4 baseline and
+        // should only move upward from here.
+        statements: 46,
+        branches: 40,
+        functions: 52,
+        lines: 48,
       },
     },
   },
