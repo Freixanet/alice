@@ -1,0 +1,32 @@
+name: RDC inspect
+
+on:
+  push:
+    branches: [ops/rdc-recovery-20260910]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect Remote Desktop Commander agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$HOME/.desktop-commander/remote-recovery.log"
+          PIDFILE="$HOME/.desktop-commander/remote-recovery.pid"
+          echo "host=$(hostname)"
+          echo "Desktop Commander processes:"
+          ps ax -o pid=,ppid=,etime=,stat=,command= | grep '[d]esktop-commander' || true
+          if [ -f "$PIDFILE" ]; then
+            PID="$(cat "$PIDFILE")"
+            echo "Recorded recovery PID: $PID"
+            ps -p "$PID" -o pid=,ppid=,etime=,stat=,command= || true
+          fi
+          echo "State files:"
+          find "$HOME/.desktop-commander" -maxdepth 2 -type f -print 2>/dev/null | sed "s#$HOME#~#" | sort || true
+          echo "Recovery log:"
+          tail -n 200 "$LOG" 2>/dev/null || true
