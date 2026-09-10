@@ -422,6 +422,10 @@ struct ActivityScreen: View {
     private func perform(_ fix: AlertAdvice.Fix, for event: AliceEvent) async {
         fixing.insert(event.id)
         defer { fixing.remove(event.id) }
+        // Said at once. A fix waits on Hermes — signing in, reading, writing —
+        // and a button that only greyed out read as nothing happening, which is
+        // reason enough to leave before it finished.
+        fixNotes[event.id] = "Working on it…"
         switch await store.apply(fix, for: event) {
         case .done:
             fixNotes[event.id] = nil

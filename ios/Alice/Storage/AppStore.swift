@@ -2097,6 +2097,23 @@ final class AppStore {
 
     var hasActivityHistory: Bool { activity.contains { !$0.isActionable } }
 
+    #if DEBUG
+    /// UI tests only: puts one channel alert in Needs attention so the fix
+    /// flow can be driven without a Hermes. Its fix goes to the real client,
+    /// which, unconnected, fails and must say so.
+    func seedChannelAlertForUITests() {
+        guard ProcessInfo.processInfo.arguments.contains("-seedChannelAlert") else { return }
+        attention = EventDigest.attention(
+            routines: [], components: [],
+            platforms: [HermesPlatformHealth(
+                key: "whatsapp", profile: "default", platform: "whatsapp", state: "fatal",
+                errorCode: "whatsapp_not_paired",
+                errorMessage: "WhatsApp enabled but not paired"
+            )]
+        )
+    }
+    #endif
+
     /// Clears everything that is over, leaving anything still waiting.
     func dismissHandledActivity() {
         var dismissed = dismissedAttention

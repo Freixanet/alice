@@ -50,6 +50,9 @@ struct AliceApp: App {
                 }
                 .task {
                     installRouter()
+                    #if DEBUG
+                    store.seedChannelAlertForUITests()
+                    #endif
                     await store.restoreConnection()
                     await store.restoreDashboard()
                     // Hydrate canonical Bot Chat session ids before the watcher
