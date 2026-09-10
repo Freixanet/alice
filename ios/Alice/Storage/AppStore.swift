@@ -1926,6 +1926,24 @@ final class AppStore {
         return repaired
     }
 
+    /// A component row written by an older build keeps that build's words:
+    /// Hermes' raw name and a bare status, "Platforms needs attention". The id
+    /// has kept its shape — `component:<name>:<status>` — so the wording is
+    /// derived again from it, the same way a new row gets it.
+    nonisolated static func withCurrentWording(_ event: AliceEvent) -> AliceEvent {
+        guard event.id.hasPrefix("component:") else { return event }
+        let parts = event.id.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 3, !parts[1].isEmpty else { return event }
+        let name = parts[1]
+        let status = parts[2...].joined(separator: ":")
+        var repaired = event
+        repaired.title = EventDigest.label(for: name)
+        repaired.summary = EventDigest.healthy(status)
+            ? "\(repaired.title) is working again."
+            : EventDigest.consequence(for: name)
+        return repaired
+    }
+
     static let noLongerWaiting =
         "This was already answered elsewhere, or it expired."
 
@@ -2085,7 +2103,9 @@ final class AppStore {
         guard let data = defaults.data(forKey: Keys.activity),
               let stored = try? JSONDecoder().decode([StoredEvent].self, from: data)
         else { return }
-        activity = stored.map(\.event).map(Self.withoutMisplacedError)
+        activity = stored.map(\.event)
+            .map(Self.withoutMisplacedError)
+            .map(Self.withCurrentWording)
     }
 
     /// `AliceEvent` is the app's vocabulary; this is only its disk shape, kept

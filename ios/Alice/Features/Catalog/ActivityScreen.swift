@@ -45,7 +45,7 @@ struct ActivityScreen: View {
                 }
             }
 
-            Section(store.attention.isEmpty ? "Recent" : "Earlier") {
+            Section {
                 if store.activity.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Nothing yet")
@@ -64,6 +64,14 @@ struct ActivityScreen: View {
                     ForEach(ActivityGroup.stack(store.activity)) { group in
                         row(group.latest, stacked: group)
                     }
+                }
+            } header: {
+                Text(store.attention.isEmpty ? "Recent" : "Earlier")
+            } footer: {
+                // An orange "needs attention" row here, with nothing under Needs
+                // attention, read as a problem the list had missed.
+                if !store.activity.isEmpty {
+                    Text("A record of what happened — not a list of current problems.")
                 }
             }
 
@@ -121,7 +129,9 @@ struct ActivityScreen: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: icon(event))
-                    .foregroundStyle(tint(event))
+                    // Colour says "now". A row in the record keeps its shape
+                    // but not the alarm; anything still waiting keeps both.
+                    .foregroundStyle(stacked != nil && !event.isActionable ? Color.secondary : tint(event))
                     // A fixed column, centred on the title's own line. Baseline
                     // alignment put the glyph a little low against a two-line
                     // block and the row read as crooked.
@@ -173,7 +183,9 @@ struct ActivityScreen: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if !advice.fixes.isEmpty {
+                // Fixes act on the present, so they are offered where the present
+                // is listed. A failure from last week does not get "Try again now".
+                if !advice.fixes.isEmpty, stacked == nil {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 8) { fixButtons(advice.fixes, for: event) }
                         VStack(alignment: .leading, spacing: 8) { fixButtons(advice.fixes, for: event) }
