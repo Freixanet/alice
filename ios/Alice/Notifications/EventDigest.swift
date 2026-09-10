@@ -126,6 +126,23 @@ enum EventDigest {
         return items.sorted { $0.severity > $1.severity }
     }
 
+    /// What a component coming right means. "Messaging apps is working again"
+    /// read as a repair of something unnamed; for the roll-up of channels it
+    /// only ever means no channel has a problem left — including because one
+    /// was switched off.
+    static func recovery(for component: String, label: String) -> String {
+        isChannelRollup(component) ? "No messaging app has a problem now." : "\(label) is working again."
+    }
+
+    /// The components whose changes go in the record. With each channel named
+    /// in Needs attention, the "platforms" roll-up only repeats them without
+    /// saying which, so its changes are left out of the record.
+    static func digestComponents(
+        _ components: [HermesSystemComponent], channelsKnown: Bool
+    ) -> [HermesSystemComponent] {
+        channelsKnown ? components.filter { !isChannelRollup($0.name) } : components
+    }
+
     static func isChannelRollup(_ name: String) -> Bool {
         ["platforms", "messaging", "channels"].contains(name.lowercased())
     }
@@ -226,7 +243,7 @@ enum EventDigest {
             profile: nil,
             title: label,
             summary: healthy
-                ? "\(label) is working again."
+                ? Self.recovery(for: component.name, label: label)
                 : Self.consequence(for: component.name),
             detail: [component.status, component.state]
                 .compactMap { $0 }

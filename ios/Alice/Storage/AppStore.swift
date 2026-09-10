@@ -1492,7 +1492,9 @@ final class AppStore {
         }
 
         let result = EventDigest.digest(
-            routines: routines, components: components, since: marks
+            routines: routines,
+            components: EventDigest.digestComponents(components, channelsKnown: status?.platforms != nil),
+            since: marks
         )
         eventWatermarks = result.watermarks
         // Requests still waiting are read from current server state, not from
@@ -1642,6 +1644,11 @@ final class AppStore {
                 )
             case .turnOffChannel(let platform, let profile, _):
                 try await setMessagingPlatformEnabled(platform, profile: profile, enabled: false)
+                // Hermes has already confirmed the channel is off — the switch
+                // reads it back — so the alert goes now, not after the full
+                // re-read below, which took long enough to look like it had not
+                // worked.
+                attention.removeAll { $0.id == event.id }
             }
         } catch {
             return .failed("That didn't work: \(error.localizedDescription)")
@@ -1940,7 +1947,7 @@ final class AppStore {
         var repaired = event
         repaired.title = EventDigest.label(for: name)
         repaired.summary = EventDigest.healthy(status)
-            ? "\(repaired.title) is working again."
+            ? EventDigest.recovery(for: name, label: repaired.title)
             : EventDigest.consequence(for: name)
         return repaired
     }
