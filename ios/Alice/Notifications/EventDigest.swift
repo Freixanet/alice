@@ -67,7 +67,7 @@ enum EventDigest {
             items.append(AliceEvent(
                 id: "attention:component:\(component.name)",
                 kind: .attention, severity: .needsAttention,
-                title: label, summary: "\(label) needs attention.",
+                title: label, summary: Self.consequence(for: component.name),
                 detail: [component.status, component.state]
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
                 occurred: now
@@ -145,7 +145,7 @@ enum EventDigest {
             title: label,
             summary: healthy
                 ? "\(label) is working again."
-                : "\(label) needs attention.",
+                : Self.consequence(for: component.name),
             detail: [component.status, component.state]
                 .compactMap { $0 }
                 .filter { !$0.isEmpty }
@@ -168,16 +168,56 @@ enum EventDigest {
     /// rather than inventing something that matches no documentation.
     static func label(for component: String) -> String {
         switch component.lowercased() {
-        case "gateway": "The Hermes service"
+        case "gateway": "Alice's connection"
         case "telegram": "Telegram"
         case "whatsapp": "WhatsApp"
         case "discord": "Discord"
         case "slack": "Slack"
+        case "signal": "Signal"
+        case "email", "mail": "Email"
         case "cron", "scheduler": "Automations"
         case "mcp": "Integrations"
         case "memory": "Memory"
         case "models", "providers": "Models"
-        default: component
+        case "platforms", "messaging", "channels": "Messaging apps"
+        case "tools", "toolsets": "Tools"
+        case "skills": "Skills"
+        case "storage", "disk": "Storage"
+        default:
+            // Hermes' internal name, made presentable rather than printed raw.
+            // "platforms" arriving verbatim, lower-cased, under the sentence
+            // "platforms needs attention" told a reader nothing at all.
+            component
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "-", with: " ")
+                .capitalized
+        }
+    }
+
+    /// What a component being unwell actually means for the person reading.
+    ///
+    /// "X needs attention" is the shape of a status, not an explanation. Where
+    /// Alice knows the consequence it says the consequence; where it does not,
+    /// it says plainly that it does not, rather than dressing up a shrug.
+    static func consequence(for component: String) -> String {
+        switch component.lowercased() {
+        case "gateway":
+            "Alice can't reach the computer running Hermes, so nothing will run until it's back."
+        case "telegram", "whatsapp", "discord", "slack", "signal",
+             "platforms", "messaging", "channels":
+            "Messages sent through this app won't arrive, and automations that deliver there will fail."
+        case "cron", "scheduler":
+            "Scheduled automations aren't running right now."
+        case "mcp":
+            "An integration is disconnected, so the abilities it adds aren't available."
+        case "memory":
+            "Alice may not remember things it learned about you."
+        case "models", "providers":
+            "Alice can't reach the service that does the thinking — replies will fail."
+        case "storage", "disk":
+            "The computer is low on space, which can stop work from being saved."
+        default:
+            "Hermes reported a problem here. The exact wording is under More details."
         }
     }
 }

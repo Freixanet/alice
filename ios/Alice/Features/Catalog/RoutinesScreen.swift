@@ -233,6 +233,8 @@ struct RoutineDetailSheet: View {
     @State private var deleting = false
     @State private var busy = false
     @State private var actionMessage: String?
+    @State private var promptExpanded = false
+    @State private var runsExpanded = false
 
     var body: some View {
         NavigationStack {
@@ -250,10 +252,36 @@ struct RoutineDetailSheet: View {
                 }
                 .listRowBackground(Palette.card(scheme))
 
+                Section {
+                    if !routine.isCompleted {
+                        Button(routine.isPaused ? "Resume" : "Pause", systemImage: routine.isPaused ? "play" : "pause") {
+                            mutate { try await store.setRoutinePaused(routine, paused: !routine.isPaused) }
+                        }
+                    }
+                    Button("Run now", systemImage: "play.circle") {
+                        runNow()
+                    }
+                    Button("Edit", systemImage: "slider.horizontal.3") { editing = true }
+                    Button("Delete Routine", systemImage: "trash", role: .destructive) { deleting = true }
+                }
+                .disabled(busy)
+                .listRowBackground(Palette.card(scheme))
+
                 if !routine.prompt.isEmpty {
                     Section("Instructions") {
-                        Text(routine.prompt).textSelection(.enabled)
+                        // A routine's prompt can run to paragraphs, and all of
+                        // it sat between the top of the screen and the buttons.
+                        Text(routine.prompt)
+                            .textSelection(.enabled)
+                            .lineLimit(promptExpanded ? nil : 4)
                             .listRowBackground(Palette.card(scheme))
+                        if routine.prompt.count > 180 {
+                            Button(promptExpanded ? "Show less" : "Show all") {
+                                withAnimation { promptExpanded.toggle() }
+                            }
+                            .font(.footnote)
+                            .listRowBackground(Palette.card(scheme))
+                        }
                     }
                 }
 
@@ -281,24 +309,18 @@ struct RoutineDetailSheet: View {
                         Text("No recorded runs yet").foregroundStyle(.secondary)
                             .listRowBackground(Palette.card(scheme))
                     } else {
-                        ForEach(runs) { run in runRow(run).listRowBackground(Palette.card(scheme)) }
-                    }
-                }
-
-                Section {
-                    if !routine.isCompleted {
-                        Button(routine.isPaused ? "Resume" : "Pause", systemImage: routine.isPaused ? "play" : "pause") {
-                            mutate { try await store.setRoutinePaused(routine, paused: !routine.isPaused) }
+                        ForEach(runsExpanded ? runs : Array(runs.prefix(3))) { run in
+                            runRow(run).listRowBackground(Palette.card(scheme))
+                        }
+                        if runs.count > 3 {
+                            Button(runsExpanded ? "Show less" : "Show all \(runs.count)") {
+                                withAnimation { runsExpanded.toggle() }
+                            }
+                            .font(.footnote)
+                            .listRowBackground(Palette.card(scheme))
                         }
                     }
-                    Button("Run now", systemImage: "play.circle") {
-                        runNow()
-                    }
-                    Button("Edit", systemImage: "slider.horizontal.3") { editing = true }
-                    Button("Delete Routine", systemImage: "trash", role: .destructive) { deleting = true }
                 }
-                .disabled(busy)
-                .listRowBackground(Palette.card(scheme))
 
                 if let actionMessage {
                     Section { Text(actionMessage).font(.footnote).foregroundStyle(.secondary) }

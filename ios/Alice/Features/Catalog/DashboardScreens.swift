@@ -102,16 +102,21 @@ struct ProjectsScreen: View {
                                     .foregroundStyle(.secondary)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(row.label).font(.subheadline.weight(.medium))
-                                    if let path = row.path {
-                                        Text(path)
-                                            .font(.caption2.monospaced())
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                            .truncationMode(.head)
-                                    }
                                     Text(projectDetail(row))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                    // The full path used to sit here in
+                                    // monospace, head-truncated, so what you
+                                    // actually saw was "…/a/b/c" — the least
+                                    // recognisable part of a folder you already
+                                    // know by name. Kept, quietly, for anyone
+                                    // who needs to be sure which folder it is.
+                                    if let path = row.path {
+                                        Text(shortPath(path))
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
+                                    }
                                 }
                                 Spacer(minLength: 8)
                                 Button("Make Project") {
@@ -125,16 +130,20 @@ struct ProjectsScreen: View {
                             .listRowBackground(Palette.card(scheme))
                         }
                     } header: {
-                        Text("Workspaces from sessions")
+                        Text("Folders Alice noticed")
                     } footer: {
-                        Text("These are real workspaces inferred from Hermes session cwd/repository data. Promoting one creates a named Project around the same folder.")
+                        Text("Alice keeps seeing work happen in these folders, but they have no name yet. Make one a project to give it a name and keep its conversations together.")
                     }
                 }
 
                 if let home, home.sessions > 0 {
-                    Section("Home") {
-                        LabeledContent("Sessions outside a project", value: "\(home.sessions)")
-                            .listRowBackground(Palette.card(scheme))
+                    Section {
+                        LabeledContent(
+                            "Not in any project", value: "\(home.sessions)"
+                        )
+                        .listRowBackground(Palette.card(scheme))
+                    } footer: {
+                        Text("Conversations that did not happen in one of the folders above. Nothing is wrong with them — they are simply unfiled.")
                     }
                 }
 
@@ -243,6 +252,14 @@ struct ProjectsScreen: View {
             green: Double((value >> 8) & 0xFF) / 255,
             blue: Double(value & 0xFF) / 255
         )
+    }
+
+    /// The tail of a path, which is the part a person recognises. An absolute
+    /// path from `/Users/...` is mostly prefix everyone already knows.
+    private func shortPath(_ path: String) -> String {
+        let parts = path.split(separator: "/").map(String.init)
+        guard parts.count > 2 else { return path }
+        return "…/" + parts.suffix(2).joined(separator: "/")
     }
 
     private func projectDetail(_ row: ProjectRow) -> String {

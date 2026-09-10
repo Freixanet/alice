@@ -228,10 +228,25 @@ struct MCPScreen: View {
                 }
             }
 
+            // Each button sized itself to its own words, so "Test",
+            // "Authenticate" and "Remove" came out three different widths in a
+            // row that reads as one control. An equal share each makes the row
+            // a row. `maxWidth` goes on the labels, not the buttons, so the
+            // tappable area grows with the pill rather than staying around the
+            // text.
             HStack(spacing: 8) {
                 Button { test(server) } label: {
-                    if testing.contains(server.name) { ProgressView() }
-                    else { Label("Test", systemImage: "bolt.horizontal.circle") }
+                    Label("Test", systemImage: "bolt.horizontal.circle")
+                        .frame(maxWidth: .infinity)
+                        // Kept in place, not replaced: swapping the label for a
+                        // spinner resized the button mid-test and nudged the
+                        // other two sideways.
+                        .opacity(testing.contains(server.name) ? 0 : 1)
+                        .overlay {
+                            if testing.contains(server.name) {
+                                ProgressView().controlSize(.mini)
+                            }
+                        }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -240,6 +255,7 @@ struct MCPScreen: View {
                 if server.auth == "oauth" {
                     Button { oauthServer = server } label: {
                         Label("Authenticate", systemImage: "key")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -247,10 +263,12 @@ struct MCPScreen: View {
 
                 Button(role: .destructive) { deleting = server } label: {
                     Label("Remove", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
+            .lineLimit(1)
 
             if let result = testResults[server.name] {
                 testResultView(result)

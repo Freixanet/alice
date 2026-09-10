@@ -53,6 +53,22 @@ enum Accent: String, CaseIterable, Identifiable, Sendable {
         case (.amber, _): Color(hex: 0x8A6A38)
         }
     }
+
+    /// The fill for a control with a white knob on it — a switch, chiefly.
+    ///
+    /// `primary` is tuned for text and glyphs, where the contrast that matters
+    /// is against the background. A switch inverts that: iOS draws the knob
+    /// white, so the *track* is the background and it has to stay dark enough
+    /// for the knob to read against it. Stone's dark primary is 0xECECEA,
+    /// which put a white knob on a near-white track and made the switch look
+    /// broken rather than on. Only that one is moved; every other accent
+    /// already sits mid-tone and is passed through unchanged.
+    func control(_ scheme: ColorScheme) -> Color {
+        switch (self, scheme) {
+        case (.stone, .dark): Color(hex: 0x6C6C68)
+        default: primary(scheme)
+        }
+    }
 }
 
 enum ThemeChoice: String, CaseIterable, Identifiable, Sendable {

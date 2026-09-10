@@ -77,17 +77,26 @@ struct ActivityScreen: View {
         .accessibilityIdentifier("activity.list")
     }
 
+    /// The icon column, shared by the header and by everything under it, so a
+    /// button never starts further left than the sentence it belongs to.
+    private static let gutter: CGFloat = 26
+
     private func row(_ event: AliceEvent) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 Image(systemName: icon(event))
                     .foregroundStyle(tint(event))
+                    // A fixed column, centred on the title's own line. Baseline
+                    // alignment put the glyph a little low against a two-line
+                    // block and the row read as crooked.
+                    .frame(width: 18, height: 18)
+                    .padding(.top, 2)
                     // The icon repeats what the words say rather than being
                     // the only thing that says it — colour alone is not a
                     // status anybody can rely on reading.
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(event.title).font(.body)
+                    Text(displayTitle(event)).font(.body)
                     Text(event.summary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -97,6 +106,9 @@ struct ActivityScreen: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+
+            // Everything below lines up with the title, not with the icon.
+            VStack(alignment: .leading, spacing: 4) {
 
             if event.isActionable, !event.questions.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
@@ -110,6 +122,35 @@ struct ActivityScreen: View {
                 }
                 .padding(.top, 2)
             } else if event.isActionable {
+                // What is actually being asked. The buttons used to sit under
+                // a one-line summary with no statement of what "allow" would
+                // permit, which is the one thing a person needs before they
+                // press it.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("What it wants to do")
+                        .font(.caption.weight(.semibold))
+                    if let detail = event.detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(
+                                Palette.background(scheme),
+                                in: .rect(cornerRadius: 8)
+                            )
+                    } else {
+                        Text("Hermes didn't say what the action is. If you weren't expecting this, choose Deny.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Allow it only if you asked for this. “Once” is the safe choice — the others hand out permission for longer.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 2)
+
                 // Exactly what Hermes offered. A room-scoped approval may only
                 // allow once/deny, so Activity must not invent session/always.
                 ViewThatFits(in: .horizontal) {
@@ -128,7 +169,7 @@ struct ActivityScreen: View {
             }
 
             if event.reference.conversationID != nil {
-                Button("Open conversation") { store.open(route(for: event)) }
+                Button("See this in the chat") { store.open(route(for: event)) }
                     .font(.caption)
                     .buttonStyle(.plain)
                     .foregroundStyle(.tint)
@@ -152,13 +193,40 @@ struct ActivityScreen: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } label: {
-                    Text("Technical details").font(.caption)
+                    Text("More details").font(.caption)
                 }
             }
+            }
+            .padding(.leading, Self.gutter)
         }
         .padding(.vertical, 2)
         .listRowBackground(Palette.card(scheme))
         .accessibilityElement(children: .combine)
+        // Only what is over. A live approval must be answered, not swiped away.
+        .swipeActions(edge: .trailing, allowsFullSwipe: !event.isActionable) {
+            if !event.isActionable {
+                Button(role: .destructive) {
+                    withAnimation { store.dismissActivity(event) }
+                } label: {
+                    Label("Dismiss", systemImage: "xmark")
+                }
+            }
+        }
+    }
+
+    /// Titles Alice writes are sentence-cased; titles a person wrote are left
+    /// exactly as they typed them.
+    ///
+    /// A routine called "chollos del dia" is that person's name for it and
+    /// stays lower case; "platforms", which Hermes generated, does not get to
+    /// arrive shouting or whispering depending on the subsystem.
+    private func displayTitle(_ event: AliceEvent) -> String {
+        // Anything carrying a routine or a bot is user-named.
+        if event.reference.routineKey != nil || event.profile != nil {
+            return event.title
+        }
+        guard let first = event.title.first else { return event.title }
+        return first.uppercased() + event.title.dropFirst()
     }
 
     @ViewBuilder

@@ -1748,7 +1748,11 @@ final class AppStore {
         guard let index = activity.firstIndex(where: { $0.id == id }) else { return }
         activity[index].detail = (error as? LocalizedError)?.errorDescription
             ?? error.localizedDescription
-        activity[index].summary = "Alice could not send that answer. It is still waiting."
+        // Naming the assistant and what it is still blocked on, because "that
+        // answer" told the reader nothing about which request had failed.
+        let who = activity[index].profile.map(botCurrentName(for:)) ?? "The assistant"
+        activity[index].summary =
+            "Alice couldn't reach Hermes to send your reply, so \(who) is still waiting. Try again."
         persistActivity()
     }
 
@@ -1851,6 +1855,28 @@ final class AppStore {
     }
 
     func markActivitySeen() { activitySeen = Date() }
+
+    /// Removes a row the person is done with.
+    ///
+    /// Refuses anything still waiting on them: Activity accumulating forever
+    /// was a real complaint, but the fix cannot be a gesture that makes a live
+    /// approval disappear without answering it. Attention items are current
+    /// state, so they come back on the next sync if the thing is still wrong —
+    /// dismissing one clears the notice, not the problem.
+    func dismissActivity(_ event: AliceEvent) {
+        guard !event.isActionable else { return }
+        activity.removeAll { $0.id == event.id }
+        attention.removeAll { $0.id == event.id }
+        persistActivity()
+        withdraw?(event.id)
+    }
+
+    /// Clears everything that is over, leaving anything still waiting.
+    func dismissHandledActivity() {
+        activity.removeAll { !$0.isActionable }
+        attention.removeAll { !$0.isActionable }
+        persistActivity()
+    }
 
     private func persistActivity() {
         guard let data = try? JSONEncoder().encode(activity.map(StoredEvent.init)) else { return }

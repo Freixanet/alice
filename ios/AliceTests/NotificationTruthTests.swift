@@ -138,13 +138,46 @@ final class EventDigestTests: XCTestCase {
         XCTAssertFalse(EventDigest.healthy("degraded"))
     }
 
-    /// Hermes' component names are its own vocabulary; where Alice has no
-    /// human word it keeps Hermes' name rather than inventing one that matches
-    /// no documentation.
-    func testComponentLabelsTranslateOnlyWhatItKnows() {
-        XCTAssertEqual(EventDigest.label(for: "gateway"), "The Hermes service")
+    /// Hermes' component names are its own vocabulary. Alice translates the
+    /// ones it knows and makes the rest presentable — the same word, not a
+    /// different one, so nothing is invented and the original is still
+    /// recognisable. Printing them raw is what produced an alert reading
+    /// "platforms" over the sentence "platforms needs attention".
+    func testComponentLabelsAreReadable() {
+        XCTAssertEqual(EventDigest.label(for: "gateway"), "Alice's connection")
         XCTAssertEqual(EventDigest.label(for: "cron"), "Automations")
-        XCTAssertEqual(EventDigest.label(for: "some_new_subsystem"), "some_new_subsystem")
+        XCTAssertEqual(EventDigest.label(for: "platforms"), "Messaging apps")
+        // Unknown: tidied, never renamed.
+        XCTAssertEqual(EventDigest.label(for: "some_new_subsystem"), "Some New Subsystem")
+    }
+
+    /// A status is not an explanation. Every alert says what the problem means
+    /// for the person reading it, and an unfamiliar component admits that
+    /// Alice does not know rather than inventing a consequence.
+    func testEveryComponentExplainsItsConsequence() {
+        for component in ["gateway", "telegram", "cron", "mcp", "memory", "models"] {
+            let text = EventDigest.consequence(for: component)
+            XCTAssertFalse(text.isEmpty, component)
+            XCTAssertFalse(
+                text.lowercased().contains("needs attention"),
+                "\(component) still just restates the status"
+            )
+        }
+        XCTAssertTrue(
+            EventDigest.consequence(for: "something_new").contains("More details")
+        )
+    }
+
+    /// The summary a person reads must not be the bare status either.
+    func testAttentionRowsCarryTheConsequence() throws {
+        let items = EventDigest.attention(
+            routines: [],
+            components: [HermesSystemComponent(name: "telegram", status: "disconnected")]
+        )
+        let row = try XCTUnwrap(items.first)
+        XCTAssertEqual(row.title, "Telegram")
+        XCTAssertFalse(row.summary.contains("needs attention"))
+        XCTAssertTrue(row.summary.lowercased().contains("won't arrive"))
     }
 }
 

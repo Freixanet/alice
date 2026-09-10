@@ -71,6 +71,14 @@ struct CatalogScreen: View {
                 }
             }
 
+            if source == .toolsets, !filtered.isEmpty {
+                Text("Tools are the things Alice can actually do besides talk — search the web, run code, read your files. Switching a group off takes those abilities away from every assistant.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+                    .padding(.vertical, 4)
+            }
+
             ForEach(filtered) { row in
                 if source == .skills {
                     Button {
@@ -198,6 +206,19 @@ struct CatalogScreen: View {
         .tint(group == value ? store.accent.primary(scheme) : nil)
     }
 
+    /// What a toolset lets Alice do, in words.
+    ///
+    /// These are function names — `web_search`, `execute_code` — and printing
+    /// them in monospace made the screen look like a config file. The names
+    /// themselves are perfectly descriptive once they stop shouting that they
+    /// are identifiers.
+    private func capabilityLine(_ tools: [String]) -> String {
+        let named = tools.prefix(4).map { HermesClient.prettify($0) }
+        let rest = tools.count - named.count
+        let line = named.joined(separator: " · ")
+        return rest > 0 ? "\(line) · +\(rest) more" : line
+    }
+
     @ViewBuilder
     private func rowView(_ row: CatalogRow) -> some View {
         HStack(alignment: .top, spacing: 12) {
@@ -214,10 +235,10 @@ struct CatalogScreen: View {
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 } else if !row.tools.isEmpty {
-                    Text(row.tools.prefix(4).joined(separator: ", "))
-                        .font(.caption2.monospaced())
+                    Text(capabilityLine(row.tools))
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
             }
             Spacer(minLength: 8)
@@ -231,6 +252,9 @@ struct CatalogScreen: View {
                 } else {
                     Toggle(row.label, isOn: enabledBinding(row, enabled))
                         .labelsHidden()
+                        // Not the ambient accent: iOS draws the knob white, so
+                        // a near-white track leaves nothing to see.
+                        .tint(store.accent.control(scheme))
                 }
             }
         }

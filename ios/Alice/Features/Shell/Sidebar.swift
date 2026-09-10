@@ -181,6 +181,10 @@ struct Sidebar: View {
     /// itself. A hundred and thirty points is most of the way from the last
     /// legible row to the buttons, which is the distance a row actually has
     /// to disappear over.
+    /// Shared by the mask and by the list's top inset, so the heading and the
+    /// ramp cannot drift apart.
+    static let topFadeHeight: CGFloat = 30
+
     private var edgeFade: some View {
         VStack(spacing: 0) {
             // Both ramps are long, and both hold near-opaque for their first
@@ -199,23 +203,33 @@ struct Sidebar: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 30)
+            .frame(height: Self.topFadeHeight)
 
             Color.black
 
+            // Taller than the old 180, and it holds. The previous ramp was
+            // already down to three-quarters opacity a third of the way in,
+            // so a row went from legible to gone across about a finger —
+            // which reads as a hard edge that happens to be soft. Eight stops
+            // over 240pt keep a row readable well past halfway and then let
+            // it lose itself slowly, so full transparency lands lower down
+            // the drawer than it used to.
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0),
-                    .init(color: .black.opacity(0.96), location: 0.22),
-                    .init(color: .black.opacity(0.78), location: 0.44),
-                    .init(color: .black.opacity(0.48), location: 0.64),
-                    .init(color: .black.opacity(0.20), location: 0.82),
+                    .init(color: .black.opacity(0.99), location: 0.18),
+                    .init(color: .black.opacity(0.95), location: 0.34),
+                    .init(color: .black.opacity(0.85), location: 0.48),
+                    .init(color: .black.opacity(0.68), location: 0.61),
+                    .init(color: .black.opacity(0.46), location: 0.73),
+                    .init(color: .black.opacity(0.24), location: 0.85),
+                    .init(color: .black.opacity(0.08), location: 0.94),
                     .init(color: .clear, location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 180)
+            .frame(height: 240)
         }
     }
 
@@ -238,6 +252,12 @@ struct Sidebar: View {
                 }
             }
             .padding(.horizontal, 12)
+            // Clears the top fade. The band exists so a row scrolling up
+            // dissolves rather than being cut off, but the first heading was
+            // starting inside it — "Pinned" was half gone before anything had
+            // moved. Content now begins below the ramp and only enters it on
+            // the way out.
+            .padding(.top, Self.topFadeHeight)
         }
         // Keyed on the connection: the drawer is built before the dashboard
         // has signed in, and a one-shot task would leave the project list
