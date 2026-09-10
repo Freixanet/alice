@@ -122,7 +122,10 @@ struct Sidebar: View {
             .accessibilityIdentifier("sidebar.search")
         }
         .padding(.leading, 24)
-        .padding(.trailing, 12)
+        // The drawer is exactly as wide as the conversation slides, so this
+        // is also the search button's distance from the conversation's edge —
+        // matched to the drawer button's 20 from the screen's.
+        .padding(.trailing, 20)
         // The same 11pt the conversation's controls take, so the search button
         // and the drawer button line up while both are on screen.
         .padding(.top, 11)

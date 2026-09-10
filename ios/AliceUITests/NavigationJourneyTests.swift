@@ -169,9 +169,11 @@ final class NavigationJourneyTests: XCTestCase {
         let connection = app.staticTexts["Connection"]
         XCTAssertTrue(general.waitForExistence(timeout: 10))
         XCTAssertTrue(connection.waitForExistence(timeout: 10))
+        // Connection leads: whether Alice can reach Hermes is what the rest of
+        // Settings depends on, and what people open it to check.
         XCTAssertLessThan(
-            general.frame.minY, connection.frame.minY,
-            "General should be the first settings section"
+            connection.frame.minY, general.frame.minY,
+            "Connection should be the first settings section"
         )
         XCTAssertTrue(app.buttons["Advanced"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Sessions"].exists, "history is not a setting")

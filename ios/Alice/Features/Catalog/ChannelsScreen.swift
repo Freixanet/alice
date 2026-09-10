@@ -327,10 +327,17 @@ struct ChannelsScreen: View {
             defer { busyPlatforms.remove(platform.id) }
             do {
                 try await store.updateMessagingPlatform(
-                    platform.id, profile: selectedProfile, enabled: enabled
+                    platform.id, profile: selectedProfile, enabled: enabled,
+                    clearEnv: AppStore.enablementFlags(in: platform)
                 )
                 restartNeeded = true
                 await load()
+                // Said, not left to the switch: sliding back on its own read as
+                // the tap not registering.
+                if let now = currentPlatform(platform.id), now.enabled != enabled {
+                    failure = "Hermes still has \(platform.name) switched \(now.enabled ? "on" : "off"). "
+                        + "Something in its settings is overriding this switch."
+                }
             } catch {
                 failure = reason(error)
             }

@@ -1641,7 +1641,7 @@ final class AppStore {
                     model: drift.model.map { routine.modelSnapshot ?? $0.from }
                 )
             case .turnOffChannel(let platform, let profile, _):
-                try await updateMessagingPlatform(platform, profile: profile, enabled: false)
+                try await setMessagingPlatformEnabled(platform, profile: profile, enabled: false)
             }
         } catch {
             return .failed("That didn't work: \(error.localizedDescription)")
@@ -2947,6 +2947,28 @@ final class AppStore {
         try await dashboard.updateMessagingPlatform(
             id, profile: profile, enabled: enabled, env: env, clearEnv: clearEnv
         )
+    }
+
+    /// Switches a channel on or off so that it stays that way.
+    ///
+    /// Hermes reads whether a channel is on from two places, and for WhatsApp
+    /// the `.env` flag wins over config.yaml (`gateway/config_env.py`,
+    /// `_whatsapp`). The switch only wrote the config, so with
+    /// `WHATSAPP_ENABLED=true` in `.env` the channel came straight back on and
+    /// the toggle slid back as if nothing had happened. A set flag is cleared
+    /// through Hermes' own API — it is one of the channel's configurable keys —
+    /// leaving the config alone to decide, in either direction.
+    func setMessagingPlatformEnabled(_ id: String, profile: String, enabled: Bool) async throws {
+        let platform = try? await messagingPlatforms(profile: profile).platforms.first { $0.id == id }
+        try await updateMessagingPlatform(
+            id, profile: profile, enabled: enabled,
+            clearEnv: platform.map(Self.enablementFlags(in:)) ?? []
+        )
+    }
+
+    /// The flag-style keys that decide a channel's state ahead of its config.
+    nonisolated static func enablementFlags(in platform: MessagingPlatform) -> [String] {
+        platform.envVars.filter { $0.isSet && $0.key.hasSuffix("_ENABLED") }.map(\.key)
     }
 
     func testMessagingPlatform(

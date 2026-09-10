@@ -11,6 +11,9 @@ struct ChatScreen: View {
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
     @State private var homeComposerHeight: CGFloat = 120
+    /// Extra room under the empty home while the keyboard is closed. The block
+    /// centres in what is left, so it sits half of this higher.
+    private static let restingLift: CGFloat = 56
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -126,8 +129,12 @@ struct ChatScreen: View {
                 // settles back when it closes. Slight motion that keeps every
                 // word visible beats stillness that hides the title.
                 EmptyChatView()
-                    .padding(.bottom, homeComposerHeight)
+                    // Resting a little higher with the keyboard closed. With it
+                    // open the extra goes away, so the block ends exactly where
+                    // it did — the lift only changes where it starts.
+                    .padding(.bottom, homeComposerHeight + (composerFocused ? 0 : Self.restingLift))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .animation(.smooth(duration: 0.3), value: composerFocused)
 
                 Composer(focused: $composerFocused, placeholder: placeholder)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
@@ -255,7 +262,9 @@ struct ChatScreen: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
-        .padding(.horizontal, 16)
+        // 20, up from 16: the discs sat a little tight against the screen's
+        // edges. The drawer's search button keeps the same 20 on its side.
+        .padding(.horizontal, 20)
         .padding(.top, 11)
         // Something for the conversation to disappear into. The edge effect
         // has nothing to work against when the bar behind these two discs is
