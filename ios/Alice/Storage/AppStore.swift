@@ -62,6 +62,8 @@ final class AppStore {
     /// models" leaves you with nowhere to go.
     private(set) var modelsError: String?
     private(set) var isLoadingModels = false
+    /// Only `/v1/models` answered: one model, not the list.
+    private(set) var modelListIsPartial = false
 
     // Conversations
     var conversations: [Conversation] = [.blank()]
@@ -260,6 +262,8 @@ final class AppStore {
         defer { isConnecting = false }
 
         await client.connect(to: .init(url: url, key: key))
+        modelList = .init()
+        modelListIsPartial = false
 
         // Neither call is required on its own. A build can serve models without
         // a capability manifest, or a manifest while the model list is slow, and
@@ -311,33 +315,41 @@ final class AppStore {
     /// not, and that should not cost you the connection.
     @discardableResult
     func loadModels(refreshing: Bool = false) async -> Bool {
+        // One read at a time. Connecting and opening the picker both ask, and
+        // on a cold gateway two catalogue builds at once slowed each other:
+        // the read that took 21s had a second one queued behind it. A read in
+        // flight is joined. A refresh asked for during a plain read waits for
+        // it and then runs, because it is asking for something else.
+        while let current = modelLoad {
+            let joined = await current.task.value
+            if !refreshing || current.refreshing { return joined }
+        }
+        let token = UUID()
+        let task = Task { () -> Bool in
+            let reached = await self.readModels(refreshing: refreshing)
+            // Cleared from inside the task, before its value is delivered, so
+            // a caller waiting on it never finds the finished read still
+            // registered and waits on it again.
+            if self.modelLoad?.token == token { self.modelLoad = nil }
+            return reached
+        }
+        modelLoad = (token, refreshing, task)
+        return await task.value
+    }
+
+    private func readModels(refreshing: Bool) async -> Bool {
         isLoadingModels = true
         defer { isLoadingModels = false }
         do {
             let found = try await client.models(refreshing: refreshing)
-
-            // The cheap answer comes from a computed cache that is wrong in
-            // one direction: it marks a provider's models unavailable and
-            // then keeps saying so, which is how Nous — thirty-eight models,
-            // all thirty-eight declared unavailable — vanished from the
-            // picker. Recomputing fixes it but does not write the correction
-            // back, so the cheap call keeps its wrong answer for ever.
-            //
-            // So the cheap answer is a first paint only, and once a real
-            // refresh has landed it is not allowed to overwrite it. Several
-            // things ask for the list — connecting, opening the picker — and
-            // any one of them arriving after the refresh used to put the
-            // truncated list back, which is why refreshing appeared to work
-            // and then undo itself.
-            if refreshing || !hasRefreshedModels {
-                models = found
-                modelsError = found.isEmpty
-                    ? "This Hermes did not return a model list at that address."
-                    : nil
-            }
-            if refreshing { hasRefreshedModels = true }
-            if !refreshing, !hasRefreshedModels, !found.isEmpty {
-                hasRefreshedModels = true
+            let outcome = ModelListPolicy.apply(found, refreshing: refreshing, to: modelList)
+            modelList = outcome.state
+            models = outcome.state.options
+            modelListIsPartial = outcome.state.source == .fallback
+            modelsError = models.isEmpty
+                ? "This Hermes did not return a model list at that address."
+                : nil
+            if outcome.shouldRefresh {
                 Task { [weak self] in _ = await self?.loadModels(refreshing: true) }
             }
             // A saved choice is kept even when the list does not currently
@@ -350,9 +362,11 @@ final class AppStore {
                 selectedModel = models.first?.id
                 selectedProvider = models.first?.provider
             }
-            return !found.isEmpty
+            return !found.options.isEmpty
         } catch {
+            modelList = .init()
             models = []
+            modelListIsPartial = false
             modelsError = HermesClient.describe(error).localizedDescription
             return false
         }
@@ -364,6 +378,8 @@ final class AppStore {
         isConnected = false
         manifest = nil
         models = []
+        modelList = .init()
+        modelListIsPartial = false
         gatewayURL = ""
     }
 
@@ -3161,8 +3177,12 @@ final class AppStore {
     /// or by backing out of a bot's conversation, and a screen that rises
     /// from the bottom in answer to a swipe to the right reads as the wrong
     /// screen appearing.
-    /// Whether the catalogue has been genuinely recomputed this launch.
-    @ObservationIgnored private var hasRefreshedModels = false
+    /// The model list shown and where it came from; see `ModelListPolicy`.
+    @ObservationIgnored private var modelList = ModelListPolicy.State()
+    /// The read in flight, joined by anyone who asks while it runs.
+    @ObservationIgnored private var modelLoad: (
+        token: UUID, refreshing: Bool, task: Task<Bool, Never>
+    )?
 
     var showingBots = false
 
@@ -4123,5 +4143,57 @@ final class AppStore {
         conversationsUnreadable = nil
         persistConversations()
         defaults.removeObject(forKey: Self.salvageKey)
+    }
+}
+
+/// Which model list the app keeps when several reads land.
+///
+/// Reads overlap and finish in whatever order the network returns them, so
+/// arrival order cannot decide. On the morning this was written the read that
+/// had timed out finished first, holding the one model `/v1/models` names; the
+/// full list arrived two seconds later and was discarded, because the fallback
+/// had already been taken as the answer.
+///
+/// A later answer replaces an earlier one only if it is at least as good:
+/// a fallback never replaces a catalogue, and the cached catalogue never
+/// replaces a refreshed one — that cache once declared every one of Nous's
+/// thirty-eight models unavailable, and a refresh is how it gets corrected.
+nonisolated enum ModelListPolicy {
+    enum Source: Int, Comparable, Sendable {
+        case none, fallback, cached, refreshed
+
+        static func < (lhs: Source, rhs: Source) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+
+    struct State: Equatable, Sendable {
+        var options: [HermesClient.ModelOption] = []
+        var source: Source = .none
+        /// One automatic refresh per connection, so a gateway that keeps
+        /// failing is not polled in a loop.
+        var refreshRequested = false
+    }
+
+    struct Outcome: Equatable, Sendable {
+        var state: State
+        var shouldRefresh: Bool
+    }
+
+    static func apply(
+        _ list: HermesClient.ModelList, refreshing: Bool, to current: State
+    ) -> Outcome {
+        let source: Source = !list.isCatalogue ? .fallback : (refreshing ? .refreshed : .cached)
+        var next = current
+        if source >= current.source {
+            next.options = list.options
+            next.source = source
+        }
+        // Anything short of a refreshed catalogue earns one refresh — a
+        // fallback most of all, which is what used to be left standing.
+        let shouldRefresh = !refreshing
+            && !current.refreshRequested
+            && next.source != .refreshed
+            && !list.options.isEmpty
+        if shouldRefresh || refreshing { next.refreshRequested = true }
+        return Outcome(state: next, shouldRefresh: shouldRefresh)
     }
 }

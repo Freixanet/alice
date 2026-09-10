@@ -62,6 +62,26 @@ struct ModelPicker: View {
                     }
                 }
 
+                // Only the fallback answered: the one model the agent names to
+                // OpenAI clients, not the list. A picker that quietly looks
+                // complete is how one model passed for all of them.
+                if store.modelListIsPartial, query.isEmpty, !store.isLoadingModels {
+                    Section {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Only the default model loaded")
+                                    .foregroundStyle(.primary)
+                                Text("The full list took too long to arrive. Pull down to try again.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 // Recents first. Somebody who lives in one or two models
                 // should not read past ninety-eight others to reach them.
                 if !recents.isEmpty, query.isEmpty {
