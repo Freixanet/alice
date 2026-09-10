@@ -2061,6 +2061,8 @@ final class AppStore {
         var questions: [AliceEvent.Question]?
         var approvalChoices: [Message.ApprovalChoice]?
         var note: String?
+        var approvalDescription: String?
+        var smartDenied: Bool?
 
         init(_ event: AliceEvent) {
             id = event.id
@@ -2076,10 +2078,12 @@ final class AppStore {
             questions = event.questions
             approvalChoices = event.approvalChoices
             note = event.note
+            approvalDescription = event.approvalDescription
+            smartDenied = event.smartDenied ? true : nil
         }
 
         var event: AliceEvent {
-            AliceEvent(
+            var event = AliceEvent(
                 id: id,
                 kind: AliceEvent.Kind(rawValue: kind) ?? .finished,
                 severity: AliceEvent.Severity(rawValue: severity) ?? .informational,
@@ -2090,6 +2094,9 @@ final class AppStore {
                 questions: questions ?? [],
                 approvalChoices: approvalChoices ?? [], note: note
             )
+            event.approvalDescription = approvalDescription
+            event.smartDenied = smartDenied ?? false
+            return event
         }
     }
 
@@ -3531,7 +3538,8 @@ final class AppStore {
                 // The options Hermes listed. Offering "always" on a
                 // smart-denied request proposes a permanent grant the server
                 // will refuse.
-                choices: LiveEvents.choices(event.payload)
+                choices: LiveEvents.choices(event.payload),
+                smartDenied: (event.payload["smart_denied"] as? Bool) == true ? true : nil
             ))
         case "error":
             let message = (event.payload["message"] as? String) ?? "Hermes reported an error."

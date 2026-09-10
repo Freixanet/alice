@@ -34,11 +34,20 @@ enum LiveEvents {
         case "message.complete":
             return completion(frame, session: session, now: now)
         case "approval.request":
-            return intervention(
-                frame, session: session, now: now, kind: "approval",
-                title: "Needs your approval",
-                summary: "\(session.label) is waiting for permission to continue."
+            // Who is asking and what for, in words. "Needs your approval — X is
+            // waiting for permission to continue" said neither.
+            let description = frame.payload["description"] as? String
+            let explanation = ApprovalExplainer.explain(
+                description: description, command: frame.payload["command"] as? String
             )
+            var event = intervention(
+                frame, session: session, now: now, kind: "approval",
+                title: "\(session.label) needs your OK",
+                summary: "Wants to \(explanation.action)"
+            )
+            event?.approvalDescription = description
+            event?.smartDenied = (frame.payload["smart_denied"] as? Bool) == true
+            return event
         case "clarify.request":
             return clarify(frame.payload, session: session, now: now)
         default:
@@ -274,13 +283,17 @@ enum LiveEvents {
         _ payload: [String: Any], session: SessionIdentity, now: Date = Date()
     ) -> AliceEvent? {
         guard let requestID = Self.requestID(payload) else { return nil }
-        return AliceEvent(
+        let description = payload["description"] as? String
+        let explanation = ApprovalExplainer.explain(
+            description: description, command: payload["command"] as? String
+        )
+        var event = AliceEvent(
             id: "approval:\(requestID)",
             kind: .needsInput,
             severity: .needsAttention,
             profile: session.profile,
-            title: "Needs your approval",
-            summary: "\(session.label) is waiting for permission to continue.",
+            title: "\(session.label) needs your OK",
+            summary: "Wants to \(explanation.action)",
             detail: payload["command"] as? String,
             occurred: now,
             reference: AliceEvent.Reference(
@@ -291,6 +304,9 @@ enum LiveEvents {
             standing: .waiting,
             approvalChoices: choices(payload)
         )
+        event.approvalDescription = description
+        event.smartDenied = (payload["smart_denied"] as? Bool) == true
+        return event
     }
 
     /// A pending clarify question, from the same snapshot. Identical shape to

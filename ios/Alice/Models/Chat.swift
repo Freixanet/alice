@@ -90,6 +90,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         /// field existed continue to decode without a migration.
         var resolving: Bool?
         var error: String?
+        /// Hermes' safety check recommended refusing this one.
+        var smartDenied: Bool? = nil
     }
 
     let id: String

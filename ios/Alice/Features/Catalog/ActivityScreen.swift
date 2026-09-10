@@ -133,7 +133,7 @@ struct ActivityScreen: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayTitle(event)).font(.body)
-                    Text(AlertAdvice.advice(for: event)?.headline ?? event.summary)
+                    Text(summary(for: event))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -203,28 +203,22 @@ struct ActivityScreen: View {
                 // a one-line summary with no statement of what "allow" would
                 // permit, which is the one thing a person needs before they
                 // press it.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("What it wants to do")
-                        .font(.caption.weight(.semibold))
-                    if let detail = event.detail, !detail.isEmpty {
-                        Text(detail)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                            .background(
-                                Palette.background(scheme),
-                                in: .rect(cornerRadius: 8)
-                            )
-                    } else {
-                        Text("Hermes didn't say what the action is. If you weren't expecting this, choose Deny.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text("Allow it only if you asked for this. “Once” is the safe choice — the others hand out permission for longer.")
-                        .font(.caption2)
+                // What it would do and what could go wrong, in plain words. The
+                // card used to print Hermes' class name or the raw command, which
+                // is accurate and left people with no idea what they approved.
+                let explanation = ApprovalExplainer.explain(
+                    description: event.approvalDescription, command: event.detail
+                )
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(explanation.risk)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if event.smartDenied {
+                        Label(ApprovalExplainer.smartDeniedWarning, systemImage: "exclamationmark.shield")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                 }
                 .padding(.top, 2)
 
@@ -235,6 +229,10 @@ struct ActivityScreen: View {
                     VStack(alignment: .leading, spacing: 8) { choices(for: event) }
                 }
                 .padding(.top, 2)
+                Text(ApprovalExplainer.choiceHint(offered(event)))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else if event.standing == .gone || event.standing == .resolved {
                 Label(
                     event.standing == .resolved ? "Answered" : "No longer waiting",
@@ -277,7 +275,7 @@ struct ActivityScreen: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } label: {
-                    Text("More details").font(.caption)
+                    Text(isApproval(event) ? "Show exact command" : "More details").font(.caption)
                 }
             }
             }
@@ -481,11 +479,29 @@ struct ActivityScreen: View {
         }
     }
 
+    private func isApproval(_ event: AliceEvent) -> Bool {
+        event.isActionable && event.questions.isEmpty
+    }
+
+    /// The line under the title. An approval says what it wants to do — for rows
+    /// stored before approvals kept Hermes' class, the command still tells.
+    private func summary(for event: AliceEvent) -> String {
+        if isApproval(event) {
+            let explanation = ApprovalExplainer.explain(
+                description: event.approvalDescription, command: event.detail
+            )
+            return "Wants to \(explanation.action)"
+        }
+        return AlertAdvice.advice(for: event)?.headline ?? event.summary
+    }
+
+    private func offered(_ event: AliceEvent) -> [Message.ApprovalChoice] {
+        event.approvalChoices.isEmpty ? [.once, .deny] : event.approvalChoices
+    }
+
     @ViewBuilder
     private func choices(for event: AliceEvent) -> some View {
-        let allowed = event.approvalChoices.isEmpty
-            ? [Message.ApprovalChoice.once, .deny]
-            : event.approvalChoices
+        let allowed = offered(event)
         ForEach(allowed, id: \.self) { choice in
             Button(label(choice)) {
                 Task {
@@ -504,12 +520,7 @@ struct ActivityScreen: View {
     }
 
     private func label(_ choice: Message.ApprovalChoice) -> String {
-        switch choice {
-        case .once: "Once"
-        case .session: "This session"
-        case .always: "Always"
-        case .deny: "Deny"
-        }
+        ApprovalExplainer.label(choice)
     }
 
     private func route(for event: AliceEvent) -> Notifier.Route {

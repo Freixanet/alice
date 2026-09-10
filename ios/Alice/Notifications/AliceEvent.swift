@@ -168,6 +168,12 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     /// from its text through `AlertAdvice.advice(for:)`.
     var advice: AlertAdvice?
 
+    /// Hermes' class for an approval — `recursive delete`, `execute_code script
+    /// execution…` — which `ApprovalExplainer` turns into words.
+    var approvalDescription: String?
+    /// Hermes' safety check recommended refusing this one.
+    var smartDenied = false
+
     /// Whether this still wants an answer.
     var isActionable: Bool { standing == .waiting }
 

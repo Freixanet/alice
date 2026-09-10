@@ -432,9 +432,26 @@ private struct RunApprovalCard: View {
     let approval: Message.Approval
 
     var body: some View {
+        // The title is Hermes' class name when it sent one ("Approval needed"
+        // when it did not), which is what the explanation is read from.
+        let explanation = ApprovalExplainer.explain(
+            description: approval.title == "Approval needed" ? nil : approval.title,
+            command: approval.command
+        )
         VStack(alignment: .leading, spacing: 10) {
-            Label(approval.title, systemImage: "checkmark.shield")
+            Label("Wants to \(explanation.action)", systemImage: "checkmark.shield")
                 .font(.subheadline.weight(.semibold))
+
+            Text(explanation.risk)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if approval.smartDenied == true {
+                Label(ApprovalExplainer.smartDeniedWarning, systemImage: "exclamationmark.shield")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
 
             if let detail = approval.detail {
                 Text(detail)
@@ -442,18 +459,28 @@ private struct RunApprovalCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            if let command = approval.command {
-                Text(command)
-                    .font(.caption.monospaced())
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(Palette.background(scheme), in: .rect(cornerRadius: 10))
-            }
-
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) { choiceButtons }
                 VStack(alignment: .leading, spacing: 8) { choiceButtons }
+            }
+
+            Text(ApprovalExplainer.choiceHint(approval.choices))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Kept for anyone who wants it, out of the way of everyone else.
+            if let command = approval.command {
+                DisclosureGroup {
+                    Text(command)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(Palette.background(scheme), in: .rect(cornerRadius: 10))
+                } label: {
+                    Text("Show exact command").font(.caption)
+                }
             }
 
             if approval.resolving == true {
@@ -494,12 +521,7 @@ private struct RunApprovalCard: View {
     }
 
     private func label(for choice: Message.ApprovalChoice) -> String {
-        switch choice {
-        case .once: "Once"
-        case .session: "Session"
-        case .always: "Always"
-        case .deny: "Deny"
-        }
+        ApprovalExplainer.label(choice)
     }
 }
 
