@@ -187,10 +187,11 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
         // the screen showed six identical "Alice — This task finished" rows.
         // Read as words, that is one thing that happened six times.
         if kind == .finished {
-            if let profile, !profile.isEmpty { return "finished:\(profile)" }
-            if let session = reference.sessionKey ?? reference.sessionID {
-                return "finished:\(session)"
-            }
+            // Falling back to the session or the run id put every completion
+            // in a group of one, which is how six "Alice — This task
+            // finished" rows survived the first attempt at this: the main
+            // chat is not a bot, so these carry no profile at all.
+            return "finished:\(profile.flatMap { $0.isEmpty ? nil : $0 } ?? "alice")"
         }
 
         // Everything below reads the id, because rows already written to disk

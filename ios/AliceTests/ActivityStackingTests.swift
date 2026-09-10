@@ -107,6 +107,23 @@ final class ActivityStackingTests: XCTestCase {
         XCTAssertEqual(groups[0].count, 6)
     }
 
+    /// The main chat is not a bot, so its completions carry no profile — and
+    /// falling back to the run or session id put each one in a group of one.
+    /// That is how six identical rows survived the first fix.
+    func testFinishedTurnsWithoutAProfileStillGroup() {
+        let runs = (1...6).map { index in
+            AliceEvent(
+                id: "run:run-\(index)", kind: .finished, severity: .informational,
+                title: "Alice", summary: "This task finished.",
+                occurred: Date().addingTimeInterval(-Double(index)),
+                reference: .init(transport: .gatewayRun, runID: "run-\(index)")
+            )
+        }
+        let groups = ActivityGroup.stack(runs)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].count, 6)
+    }
+
     /// Two different assistants stay two rows.
     func testFinishedTurnsFromDifferentAssistantsStaySeparate() {
         let mine = AliceEvent(
