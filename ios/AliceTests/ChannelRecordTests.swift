@@ -14,12 +14,19 @@ final class ChannelRecordTests: XCTestCase {
         XCTAssertEqual(EventDigest.recovery(for: "telegram", label: "Telegram"), "Telegram is working again.")
     }
 
-    func testStoredRollUpRecoveriesAreReworded() {
-        let stored = AliceEvent(
-            id: "component:platforms:ok", kind: .recovered, severity: .informational,
-            title: "Messaging apps", summary: "Messaging apps is working again.", occurred: Date()
-        )
-        XCTAssertEqual(AppStore.withCurrentWording(stored).summary, "No messaging app has a problem now.")
+    /// Reworded to "No messaging app has a problem now" it still read as an
+    /// alert about nothing, so stored roll-up rows are dropped, both ways.
+    func testStoredRollUpRecordsAreDropped() {
+        func row(_ id: String) -> AliceEvent {
+            AliceEvent(id: id, kind: .recovered, severity: .informational,
+                       title: "Messaging apps", summary: "", occurred: Date())
+        }
+        XCTAssertTrue(AppStore.isChannelRollupRecord(row("component:platforms:ok")))
+        XCTAssertTrue(AppStore.isChannelRollupRecord(row("component:platforms:degraded")))
+        // A named component, and anything that is not a component, stay.
+        XCTAssertFalse(AppStore.isChannelRollupRecord(row("component:telegram:connected")))
+        XCTAssertFalse(AppStore.isChannelRollupRecord(row("attention:channel:whatsapp")))
+        XCTAssertFalse(AppStore.isChannelRollupRecord(row("routine:default/job1:1789000000")))
     }
 
     /// With each channel named, the roll-up's changes stay out of the record.

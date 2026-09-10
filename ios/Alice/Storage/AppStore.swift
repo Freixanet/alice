@@ -1491,6 +1491,13 @@ final class AppStore {
             persistActivity()
         }
 
+        // Roll-up rows are no longer recorded; the ones already stored go too,
+        // now rather than at the next launch.
+        if activity.contains(where: Self.isChannelRollupRecord) {
+            activity.removeAll(where: Self.isChannelRollupRecord)
+            persistActivity()
+        }
+
         let result = EventDigest.digest(
             routines: routines,
             components: EventDigest.digestComponents(components, channelsKnown: status?.platforms != nil),
@@ -1934,6 +1941,16 @@ final class AppStore {
         return repaired
     }
 
+    /// A stored record of the channels' roll-up — "platforms" going degraded or
+    /// coming back. Each channel has its own named alert now, and a row saying
+    /// only that some messaging app had, or no longer has, a problem was read
+    /// as an alert about nothing. Reworded, it still said nothing.
+    nonisolated static func isChannelRollupRecord(_ event: AliceEvent) -> Bool {
+        guard event.id.hasPrefix("component:") else { return false }
+        let parts = event.id.split(separator: ":", omittingEmptySubsequences: false)
+        return parts.count >= 2 && EventDigest.isChannelRollup(String(parts[1]))
+    }
+
     /// A component row written by an older build keeps that build's words:
     /// Hermes' raw name and a bare status, "Platforms needs attention". The id
     /// has kept its shape — `component:<name>:<status>` — so the wording is
@@ -2143,6 +2160,7 @@ final class AppStore {
               let stored = try? JSONDecoder().decode([StoredEvent].self, from: data)
         else { return }
         activity = stored.map(\.event)
+            .filter { !Self.isChannelRollupRecord($0) }
             .map(Self.withoutMisplacedError)
             .map(Self.withCurrentWording)
     }
