@@ -1,0 +1,49 @@
+name: RDC recovery
+
+on:
+  push:
+    branches: [ops/rdc-recovery-20260910]
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 5
+    steps:
+      - name: Restart Remote Desktop Commander agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "host=$(hostname)"
+          echo "user=$(whoami)"
+          echo "node=$(node --version 2>/dev/null || true)"
+          echo "npx=$(command -v npx || true)"
+          mkdir -p "$HOME/.desktop-commander"
+
+          echo "Existing Desktop Commander processes:"
+          ps ax -o pid=,command= | grep '[d]esktop-commander' || true
+
+          PIDS="$(ps ax -o pid=,command= | awk '/[d]esktop-commander/ && / remote( |$)/ {print $1}' | tr '\n' ' ')"
+          if [ -n "${PIDS// }" ]; then
+            echo "Stopping stale remote agent PIDs: $PIDS"
+            kill $PIDS 2>/dev/null || true
+            sleep 2
+          fi
+
+          LOG="$HOME/.desktop-commander/remote-recovery.log"
+          PIDFILE="$HOME/.desktop-commander/remote-recovery.pid"
+          : > "$LOG"
+
+          export RUNNER_TRACKING_ID=""
+          nohup npx -y @wonderwhy-er/desktop-commander@0.2.48 remote >"$LOG" 2>&1 < /dev/null &
+          AGENT_PID=$!
+          echo "$AGENT_PID" > "$PIDFILE"
+          echo "Started candidate agent PID: $AGENT_PID"
+
+          sleep 15
+          echo "Desktop Commander processes after restart:"
+          ps ax -o pid=,command= | grep '[d]esktop-commander' || true
+          echo "Agent log:"
+          tail -n 120 "$LOG" || true
