@@ -34,8 +34,14 @@ struct ActivityScreen: View {
     var body: some View {
         List {
             if !store.attention.isEmpty {
-                Section("Needs attention") {
+                Section {
                     ForEach(store.attention) { row($0) }
+                } header: {
+                    Text("Needs attention")
+                } footer: {
+                    // Said, because a dismissed alert that reappears reads as
+                    // the swipe not working rather than as the problem changing.
+                    Text("Swipe left to dismiss. It comes back only if something changes.")
                 }
             }
 

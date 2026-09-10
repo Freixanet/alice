@@ -120,6 +120,7 @@ final class AppStore {
         static let eventWatermarks = "alice.events.watermarks"
         static let activity = "alice.events.activity"
         static let activitySeen = "alice.events.activitySeen"
+        static let dismissedAttention = "alice.events.dismissedAttention"
     }
 
     static let unassignedSectionKey = "__unassigned__"
@@ -1485,6 +1486,7 @@ final class AppStore {
             marks = EventWatermarks(installation: fingerprint)
             activity = []
             attention = []
+            dismissedAttention = [:]
             persistActivity()
         }
 
@@ -1674,7 +1676,18 @@ final class AppStore {
         } else {
             items += attention.filter { $0.kind != .needsInput }
         }
-        attention = items.sorted { $0.severity > $1.severity }
+        let visible = EventDigest.visible(
+            items, dismissed: dismissedAttention,
+            completeReading: routines != nil && components != nil
+        )
+        dismissedAttention = visible.dismissed
+        attention = visible.shown.sorted { $0.severity > $1.severity }
+    }
+
+    /// Alert id → what it looked like when dismissed. See `EventDigest.fingerprint`.
+    private var dismissedAttention: [String: String] {
+        get { defaults.dictionary(forKey: Keys.dismissedAttention) as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: Keys.dismissedAttention) }
     }
 
     /// Answers a request Hermes is holding, then makes the record agree.
@@ -1994,6 +2007,11 @@ final class AppStore {
     /// dismissing one clears the notice, not the problem.
     func dismissActivity(_ event: AliceEvent) {
         guard !event.isActionable else { return }
+        // A current problem is read again on the next sync; without this it
+        // was back within seconds of being swiped away.
+        if let current = attention.first(where: { $0.id == event.id }) {
+            dismissedAttention[current.id] = EventDigest.fingerprint(current)
+        }
         activity.removeAll { $0.id == event.id }
         attention.removeAll { $0.id == event.id }
         persistActivity()
@@ -2002,6 +2020,11 @@ final class AppStore {
 
     /// Clears everything that is over, leaving anything still waiting.
     func dismissHandledActivity() {
+        var dismissed = dismissedAttention
+        for current in attention where !current.isActionable {
+            dismissed[current.id] = EventDigest.fingerprint(current)
+        }
+        dismissedAttention = dismissed
         activity.removeAll { !$0.isActionable }
         attention.removeAll { !$0.isActionable }
         persistActivity()

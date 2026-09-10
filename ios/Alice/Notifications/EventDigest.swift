@@ -138,6 +138,37 @@ enum EventDigest {
             && !["disabled", "not_configured"].contains(platform.state)
     }
 
+    /// What an alert looked like when it was dismissed.
+    ///
+    /// Current problems are read afresh every sync, so removing one from the
+    /// list only lasted until the next read — a few seconds — and a dismissed
+    /// alert came straight back. Dismissing is remembered against this instead:
+    /// the alert stays hidden while the problem is the same, and returns when it
+    /// changes. An automation's includes the run, so failing again brings it
+    /// back; a channel's or component's includes its state and Hermes' words.
+    static func fingerprint(_ event: AliceEvent) -> String {
+        if event.kind == .automationFailed {
+            return "\(event.id)|\(Int(event.occurred.timeIntervalSince1970))|\(event.detail ?? "")"
+        }
+        return "\(event.id)|\(event.detail ?? "")"
+    }
+
+    /// The alerts to show, and the dismissals still worth keeping.
+    ///
+    /// Anything still waiting on an answer is never hidden. With a complete
+    /// reading, a dismissal whose alert is gone is dropped: the problem was
+    /// fixed, and if it happens again it should be seen again.
+    static func visible(
+        _ items: [AliceEvent], dismissed: [String: String], completeReading: Bool
+    ) -> (shown: [AliceEvent], dismissed: [String: String]) {
+        let shown = items.filter { item in
+            item.isActionable || dismissed[item.id] != fingerprint(item)
+        }
+        guard completeReading else { return (shown, dismissed) }
+        let present = Set(items.map(\.id))
+        return (shown, dismissed.filter { present.contains($0.key) })
+    }
+
     /// A routine's identity is the pair, not the id: ids are `uuid4().hex[:12]`
     /// minted per profile store with no cross-profile uniqueness.
     static func key(for row: JobRow) -> String {
