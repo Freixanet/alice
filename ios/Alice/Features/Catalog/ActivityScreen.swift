@@ -105,9 +105,18 @@ struct ActivityScreen: View {
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(event.occurred, format: .relative(presentation: .numeric))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    // Attention rows describe the present and are stamped with
+                    // "now", which a relative formatter renders as a countdown
+                    // — "in 0 seconds". They say so in words instead.
+                    if abs(event.occurred.timeIntervalSinceNow) < 60 {
+                        Text("Now")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(event.occurred, format: .relative(presentation: .numeric))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                     if let stacked, stacked.count > 1 {
                         Text("×\(stacked.count)")
                             .font(.caption2.weight(.semibold))
@@ -179,6 +188,13 @@ struct ActivityScreen: View {
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            }
+
+            if let note = event.note, !note.isEmpty {
+                Label(note, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(.top, 2)
             }
 
             if event.reference.conversationID != nil {

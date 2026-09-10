@@ -1746,13 +1746,14 @@ final class AppStore {
     /// is probably still blocking the agent.
     private func markResolutionFailed(_ id: String, _ error: Error) {
         guard let index = activity.firstIndex(where: { $0.id == id }) else { return }
-        activity[index].detail = (error as? LocalizedError)?.errorDescription
+        // Recorded beside the request, not over it. Writing this into `detail`
+        // replaced the command the card is asking about, so the buttons ended
+        // up offering Once/Always over the text of a network error.
+        let reason = (error as? LocalizedError)?.errorDescription
             ?? error.localizedDescription
-        // Naming the assistant and what it is still blocked on, because "that
-        // answer" told the reader nothing about which request had failed.
-        let who = activity[index].profile.map(botCurrentName(for:)) ?? "The assistant"
-        activity[index].summary =
-            "Alice couldn't reach Hermes to send your reply, so \(who) is still waiting. Try again."
+        let who = activity[index].profile.map(botCurrentName(for:)) ?? "the assistant"
+        activity[index].note =
+            "That reply didn't reach Hermes (\(reason)), so \(who) is still waiting. Try again."
         persistActivity()
     }
 
@@ -1908,6 +1909,7 @@ final class AppStore {
         var standing: AliceEvent.Standing?
         var questions: [AliceEvent.Question]?
         var approvalChoices: [Message.ApprovalChoice]?
+        var note: String?
 
         init(_ event: AliceEvent) {
             id = event.id
@@ -1922,6 +1924,7 @@ final class AppStore {
             standing = event.standing
             questions = event.questions
             approvalChoices = event.approvalChoices
+            note = event.note
         }
 
         var event: AliceEvent {
@@ -1934,7 +1937,7 @@ final class AppStore {
                 reference: reference ?? .init(),
                 standing: standing ?? .none,
                 questions: questions ?? [],
-                approvalChoices: approvalChoices ?? []
+                approvalChoices: approvalChoices ?? [], note: note
             )
         }
     }

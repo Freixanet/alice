@@ -125,6 +125,13 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     var occurred: Date
     var reference = Reference()
     var standing: Standing = .none
+    /// A transient problem with *this* row — a reply that would not send.
+    ///
+    /// Separate from `summary` and `detail` on purpose: writing the error over
+    /// those replaced "what this approval is asking for" with "the send
+    /// failed", so a card offered Once/Always over the words "Couldn't reach
+    /// that address from this iPhone".
+    var note: String?
     /// What a clarify request is asking, when that is what this is. A batch
     /// keeps every question because Hermes locks them one-by-one by `qid`;
     /// reducing it to the first question would let one answer resolve the
@@ -173,14 +180,25 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     var subject: String {
         if reference.requestID != nil { return id }
         if let routine = reference.routineKey { return "routine:\(routine)" }
+
+        // Everything below reads the id, because rows already written to disk
+        // predate the reference carrying that identity — and those are exactly
+        // the rows that had piled up. An id is `<kind>:<what>:<when>`, so the
+        // subject is the id without its trailing occurrence.
+        for prefix in ["attention:routine:", "attention:component:"] where id.hasPrefix(prefix) {
+            _ = prefix
+            return String(id.dropFirst("attention:".count))
+        }
+        for prefix in ["routine:", "turn:", "component:"] where id.hasPrefix(prefix) {
+            _ = prefix
+            var parts = id.split(separator: ":").map(String.init)
+            // The last part is the occurrence, not the thing: an epoch for a
+            // run or a turn, a status word for a component.
+            if parts.count > 2 { parts.removeLast() }
+            return parts.joined(separator: ":")
+        }
         if let session = reference.sessionKey ?? reference.sessionID {
             return "session:\(session)"
-        }
-        // Component events: "component:<name>:<status>" and
-        // "attention:component:<name>" are the same subject.
-        for prefix in ["attention:component:", "component:"] where id.hasPrefix(prefix) {
-            let rest = id.dropFirst(prefix.count)
-            return "component:" + (rest.split(separator: ":").first.map(String.init) ?? String(rest))
         }
         return id
     }
@@ -190,8 +208,9 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
         title: String, summary: String, detail: String? = nil, occurred: Date,
         reference: Reference = Reference(), standing: Standing = .none,
         question: Question? = nil, questions: [Question] = [],
-        approvalChoices: [Message.ApprovalChoice] = []
+        approvalChoices: [Message.ApprovalChoice] = [], note: String? = nil
     ) {
+        self.note = note
         self.questions = questions.isEmpty ? question.map { [$0] } ?? [] : questions
         self.approvalChoices = approvalChoices
         self.id = id
