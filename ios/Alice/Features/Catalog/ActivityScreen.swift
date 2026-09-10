@@ -23,6 +23,7 @@ struct ActivityScreen: View {
     @State private var fixing: Set<String> = []
     @State private var fixNotes: [String: String] = [:]
     @State private var confirming: PendingFix?
+    @State private var confirmingClear = false
 
     private struct PendingFix: Identifiable {
         let id = UUID()
@@ -92,6 +93,28 @@ struct ActivityScreen: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Activity")
         .navigationBarTitleDisplayMode(.inline)
+        // One tap for the whole record, instead of a swipe per row.
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Clear") { confirmingClear = true }
+                    .disabled(!store.hasActivityHistory)
+                    .accessibilityIdentifier("activity.clear")
+                    // Attached here rather than to the list, which already
+                    // carries the fix confirmation.
+                    .confirmationDialog(
+                        "Clear activity history?",
+                        isPresented: $confirmingClear,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Clear history", role: .destructive) {
+                            withAnimation { store.clearActivityHistory() }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Removes everything under Recent. Current problems and anything waiting for your answer stay.")
+                    }
+            }
+        }
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .refreshable { await refresh() }

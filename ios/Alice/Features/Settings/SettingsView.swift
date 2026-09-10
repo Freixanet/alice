@@ -9,6 +9,24 @@ struct SettingsView: View {
         @Bindable var store = store
 
         Form {
+            // First: whether Alice can reach Hermes is what everything
+            // below depends on, and what people come here to check.
+            Section("Connection") {
+                NavigationLink { ConnectView() } label: {
+                    HStack {
+                        Label(
+                            store.isConnected ? "Hermes connected" : "Connect your Hermes",
+                            systemImage: "antenna.radiowaves.left.and.right"
+                        )
+                        Spacer()
+                        Circle()
+                            .fill(store.isConnected ? Color.green : Color.secondary.opacity(0.4))
+                            .frame(width: 8, height: 8)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+
             Section("General") {
                 Picker("Theme", selection: $store.theme) {
                     ForEach(ThemeChoice.allCases) { choice in
@@ -39,22 +57,6 @@ struct SettingsView: View {
                             .buttonStyle(.plain)
                             .accessibilityLabel(accent.label)
                         }
-                    }
-                }
-            }
-
-            Section("Connection") {
-                NavigationLink { ConnectView() } label: {
-                    HStack {
-                        Label(
-                            store.isConnected ? "Hermes connected" : "Connect your Hermes",
-                            systemImage: "antenna.radiowaves.left.and.right"
-                        )
-                        Spacer()
-                        Circle()
-                            .fill(store.isConnected ? Color.green : Color.secondary.opacity(0.4))
-                            .frame(width: 8, height: 8)
-                            .accessibilityHidden(true)
                     }
                 }
             }

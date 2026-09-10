@@ -164,7 +164,9 @@ struct Sidebar: View {
             row("Library", systemImage: "photo.on.rectangle", weight: .medium) { going = .library }
         }
         .padding(.horizontal, 12)
-        .padding(.bottom, 22)
+        // Most of the gap to Pinned is the list's own top inset, which has to
+        // clear the fade; this adds only a little on top of it.
+        .padding(.bottom, 6)
     }
 
     private func sectionLabel(_ title: String) -> some View {
@@ -190,7 +192,10 @@ struct Sidebar: View {
     /// to disappear over.
     /// Shared by the mask and by the list's top inset, so the heading and the
     /// ramp cannot drift apart.
-    static let topFadeHeight: CGFloat = 30
+    /// 22, down from 30 with the destinations' bottom padding down from 22 to
+    /// 6: the gap to Pinned was 52pt. The list still starts where the ramp
+    /// ends, because both read this one value.
+    static let topFadeHeight: CGFloat = 22
 
     private var edgeFade: some View {
         VStack(spacing: 0) {

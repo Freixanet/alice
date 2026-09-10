@@ -171,7 +171,9 @@ struct SystemScreen: View {
                         .font(.title3)
                         .foregroundStyle(status.overall == "ok" ? .green : .orange)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(status.overall == "ok" ? "Hermes healthy" : "Hermes degraded")
+                        // "Degraded" is Hermes' word for "running, but one part
+                        // isn't right", and read as though Hermes were failing.
+                        Text(status.overall == "ok" ? "Hermes is working normally" : "Hermes is running, with a problem")
                             .font(.subheadline.weight(.semibold))
                         Text("v\(status.version)\(status.releaseDate.isEmpty ? "" : " · \(status.releaseDate)")")
                             .font(.caption)
@@ -192,17 +194,24 @@ struct SystemScreen: View {
                             .fill(component.status == "ok" ? Color.green : Color.orange)
                             .frame(width: 8, height: 8)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(component.name.capitalized)
-                            if let detail = componentDetail(component) {
+                            Text(EventDigest.label(for: component.name))
+                            if let detail = componentDetail(component, in: status) {
                                 Text(detail).font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
-                        Text(component.status.uppercased())
+                        Text(component.status == "ok" ? "Working" : "Needs a look")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(component.status == "ok" ? .green : .orange)
                     }
                     .listRowBackground(Palette.card(scheme))
+                }
+
+                if status.overall != "ok" {
+                    Text("Hermes is still running and answering. “Needs a look” means one part of it isn't fully right — the line under it says which.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .listRowBackground(Palette.card(scheme))
                 }
 
                 HStack {
@@ -530,7 +539,20 @@ struct SystemScreen: View {
             .background(pressureTint(pressure).opacity(0.12), in: Capsule())
     }
 
-    private func componentDetail(_ component: HermesSystemComponent) -> String? {
+    /// What a component's status amounts to. For messaging apps a count alone
+    /// ("2 of 3 connected") left "degraded" unexplained, so the channels that
+    /// are not connected are named — along with the case that confuses most:
+    /// a channel switched off keeps its last error here until Hermes restarts.
+    private func componentDetail(
+        _ component: HermesSystemComponent, in status: HermesSystemStatus
+    ) -> String? {
+        if EventDigest.isChannelRollup(component.name), component.status != "ok" {
+            let broken = status.platforms.filter { !$0.isHealthy && $0.platform != "api_server" }
+            if !broken.isEmpty {
+                let names = broken.map { EventDigest.label(for: $0.platform) }.joined(separator: ", ")
+                return "Not connected: \(names). If you switched one off, it stays listed until Hermes restarts."
+            }
+        }
         if let state = component.state { return state.replacingOccurrences(of: "_", with: " ") }
         if let configured = component.configured, let connected = component.connected {
             return "\(connected) of \(configured) connected"

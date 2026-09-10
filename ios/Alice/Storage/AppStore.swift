@@ -1267,15 +1267,16 @@ final class AppStore {
         return attention.isEmpty ? .well : .needsAttention(attention.count)
     }
 
-    /// One sentence for the connection row. Says what is true, and when
+    /// A few words for the drawer's menu, which truncates anything longer —
+    /// "Everything is working" was cut off. Says what is true, and when
     /// something is wrong says how much rather than only that.
     var wellbeingSummary: String {
         switch wellbeing {
-        case .notConfigured: "Connect your Hermes"
+        case .notConfigured: "Connect Hermes"
         case .unreachable: "Can’t reach Hermes"
-        case .well: "Everything is working"
+        case .well: "Hermes connected"
         case let .needsAttention(count):
-            count == 1 ? "1 thing needs attention" : "\(count) things need attention"
+            count == 1 ? "1 alert to check" : "\(count) alerts to check"
         }
     }
 
@@ -2081,6 +2082,20 @@ final class AppStore {
         persistActivity()
         withdraw?(event.id)
     }
+
+    /// Clears the record under Recent.
+    ///
+    /// Not `dismissHandledActivity`, which also hides what is wrong now: Needs
+    /// attention lists the present, and clearing history is a different wish
+    /// from dismissing a problem. Anything still waiting on an answer stays.
+    func clearActivityHistory() {
+        let cleared = activity.filter { !$0.isActionable }
+        activity.removeAll { !$0.isActionable }
+        persistActivity()
+        for event in cleared { withdraw?(event.id) }
+    }
+
+    var hasActivityHistory: Bool { activity.contains { !$0.isActionable } }
 
     /// Clears everything that is over, leaving anything still waiting.
     func dismissHandledActivity() {
