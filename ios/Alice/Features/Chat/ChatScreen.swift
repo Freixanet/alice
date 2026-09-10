@@ -224,7 +224,10 @@ struct ChatScreen: View {
                             .lineLimit(1)
                     }
                     .padding(.horizontal, 14)
-                    .frame(height: 36)
+                    // The back disc's height, so the two sit on one line as a
+                    // pair; at 36 the name read as smaller than the button
+                    // beside it.
+                    .frame(height: discSize)
                     .glassEffect(.regular.interactive(), in: .capsule)
                 }
                 .accessibilityHint("Opens this bot’s settings")
