@@ -14,6 +14,10 @@ struct ChatScreen: View {
     /// Extra room under the empty home while the keyboard is closed. The block
     /// centres in what is left, so it sits half of this higher.
     private static let restingLift: CGFloat = 56
+    /// Whether an on-screen keyboard is taking room. Not the composer's focus: a
+    /// hardware keyboard focuses it without taking any, and keying the lift on
+    /// focus dropped the block into the space the lift had left.
+    @State private var keyboardShown = false
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -129,12 +133,27 @@ struct ChatScreen: View {
                 // settles back when it closes. Slight motion that keeps every
                 // word visible beats stillness that hides the title.
                 EmptyChatView()
-                    // Resting a little higher with the keyboard closed. With it
-                    // open the extra goes away, so the block ends exactly where
-                    // it did — the lift only changes where it starts.
-                    .padding(.bottom, homeComposerHeight + (composerFocused ? 0 : Self.restingLift))
+                    // Resting a little higher with the keyboard closed. With an
+                    // on-screen keyboard up the extra goes away, so the block
+                    // ends exactly where it did — the lift only changes where it
+                    // starts.
+                    .padding(.bottom, homeComposerHeight + (keyboardShown ? 0 : Self.restingLift))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .animation(.smooth(duration: 0.3), value: composerFocused)
+                    .animation(.smooth(duration: 0.3), value: keyboardShown)
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: UIResponder.keyboardWillShowNotification
+                    )) { note in
+                        let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
+                            .cgRectValue ?? .zero
+                        // A hardware keyboard reports only its shortcut bar,
+                        // which leaves the room as it was.
+                        keyboardShown = frame.height > 120
+                    }
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: UIResponder.keyboardWillHideNotification
+                    )) { _ in
+                        keyboardShown = false
+                    }
 
                 Composer(focused: $composerFocused, placeholder: placeholder)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
