@@ -8,26 +8,40 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  recover:
     runs-on: [self-hosted, macOS]
     timeout-minutes: 5
     steps:
-      - name: Inspect Remote Desktop Commander agent
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Restart Remote Desktop Commander agent with Node 24
         shell: bash
         run: |
           set -euo pipefail
           echo "host=$(hostname)"
-          echo "user=$(whoami)"
+          echo "node=$(node --version)"
+          echo "npx=$(command -v npx)"
+          mkdir -p "$HOME/.desktop-commander"
+
+          PIDS="$(ps ax -o pid=,command= | awk '/[d]esktop-commander/ && / remote( |$)/ {print $1}' | tr '\n' ' ')"
+          if [ -n "${PIDS// }" ]; then
+            echo "Stopping stale remote agent PIDs: $PIDS"
+            kill $PIDS 2>/dev/null || true
+            sleep 2
+          fi
+
           LOG="$HOME/.desktop-commander/remote-recovery.log"
           PIDFILE="$HOME/.desktop-commander/remote-recovery.pid"
-          echo "Desktop Commander processes:"
-          ps ax -o pid=,ppid=,etime=,command= | grep '[d]esktop-commander' || true
-          if [ -f "$PIDFILE" ]; then
-            PID="$(cat "$PIDFILE")"
-            echo "Recorded recovery PID: $PID"
-            ps -p "$PID" -o pid=,ppid=,etime=,stat=,command= || true
-          fi
-          echo "Desktop Commander state directory:"
-          find "$HOME/.desktop-commander" -maxdepth 2 -type f -print 2>/dev/null | sed "s#$HOME#~#" | sort || true
-          echo "Recovery log:"
-          tail -n 200 "$LOG" 2>/dev/null || true
+          : > "$LOG"
+          export RUNNER_TRACKING_ID=""
+          nohup npx -y @wonderwhy-er/desktop-commander@0.2.48 remote >"$LOG" 2>&1 < /dev/null &
+          AGENT_PID=$!
+          echo "$AGENT_PID" > "$PIDFILE"
+          echo "Started candidate agent PID: $AGENT_PID"
+
+          sleep 20
+          echo "Desktop Commander processes after restart:"
+          ps ax -o pid=,ppid=,etime=,stat=,command= | grep '[d]esktop-commander' || true
+          echo "Agent log:"
+          tail -n 160 "$LOG" || true
