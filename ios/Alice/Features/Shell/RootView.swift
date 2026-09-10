@@ -106,6 +106,10 @@ struct RootView: View {
                         BotsScreen(onClose: {
                             DispatchQueue.main.async { store.showingBots = false }
                         })
+                        // Same as the conversation's: the stack's container is
+                        // white by default and is what the search keyboard's
+                        // corners would show.
+                        .containerBackground(Palette.background(scheme), for: .navigation)
                     }
                     .background(Palette.background(scheme))
                     // The same swipe that got here from a bot's conversation,

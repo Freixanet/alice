@@ -74,6 +74,12 @@ struct ChatScreen: View {
                     TapGesture().onEnded { composerFocused = false }
                 )
             .background(Palette.background(scheme))
+            // The stack's own container, which sits above every background
+            // painted outside it and is system white in light mode. That white
+            // is what showed around the software keyboard's rounded corners —
+            // measured at 253–254 against the page's 240 — however many layers
+            // were painted beneath.
+            .containerBackground(Palette.background(scheme), for: .navigation)
             .contentShape(.rect)
             .navigationBarTitleDisplayMode(.inline)
             // The bar's own buttons cannot be moved down: iOS 26 draws
