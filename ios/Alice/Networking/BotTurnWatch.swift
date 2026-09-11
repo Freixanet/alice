@@ -1,0 +1,168 @@
+import Foundation
+
+/// What Hermes did with a message sent into a bot's chat.
+///
+/// A bot that is already working does not refuse a message. Hermes applies
+/// `display.busy_input_mode`: the text is folded into the task it is running,
+/// or queued to run once that task ends. Only a bot with nothing to do starts
+/// a turn for it.
+struct BotChatSubmission: Equatable, Sendable {
+    enum Disposition: Equatable, Sendable {
+        /// A turn began for this message.
+        case started
+        /// The bot was busy; the message joins the task it is running.
+        case foldedIn
+        /// The bot was busy; the message runs after the current task.
+        case queued
+
+        /// `prompt.submit`'s `status`: `streaming` for a new turn, `steered`
+        /// or `redirected` for a correction to the running one, `queued` for
+        /// one behind it.
+        init(status: String?) {
+            switch status {
+            case "queued": self = .queued
+            case "steered", "redirected": self = .foldedIn
+            default: self = .started
+            }
+        }
+    }
+
+    /// The runtime id this socket's resume minted, which pushed frames and
+    /// `session.interrupt` both use. Not the stored chat id.
+    let liveSessionID: String
+    let disposition: Disposition
+}
+
+/// A bot chat's runtime, as Hermes reports it when a socket re-attaches.
+struct BotTurnState: Equatable, Sendable {
+    let liveSessionID: String
+    let running: Bool
+
+    init(liveSessionID: String, running: Bool) {
+        self.liveSessionID = liveSessionID
+        self.running = running
+    }
+
+    /// From a `session.activate` or `session.resume` result.
+    init?(_ payload: JSONObject) {
+        guard let id = payload["session_id"] as? String, !id.isEmpty else { return nil }
+        liveSessionID = id
+        running = (payload["running"] as? Bool) == true
+            || (payload["status"] as? String) == "streaming"
+    }
+}
+
+/// Follows one reply in a bot's chat to an ending the socket may never deliver.
+///
+/// A reply used to be a loop over pushed frames that ended only on the turn's
+/// own completion. Radar IA spent ten minutes at a time waiting out a rate
+/// limit, the phone locked, the socket died, and no frame could ever arrive:
+/// the reply sat on "Thinking…", or came back drawn as a failure, while the
+/// bot carried on. A message sent to a busy bot was followed as if its turn
+/// had begun, so the task ahead of it was drawn as its answer.
+///
+/// The decisions live here, away from the store, so each can be tested: which
+/// frames belong to this reply, when a quiet turn is worth asking about, and
+/// what the answer means.
+struct BotTurnWatch: Sendable {
+    enum Signal: Sendable {
+        case frame(HermesRPCEvent)
+        /// Time passing, so a silent turn can be asked about.
+        case tick
+    }
+
+    enum FrameStep: Equatable, Sendable {
+        /// Not this reply's: another chat, or the task ahead of a queued message.
+        case ignore
+        /// Part of this reply.
+        case apply
+        /// This reply's turn ending. Apply it, then stop watching.
+        case finish
+        /// The task ahead of a queued message ended; this one is next.
+        case ownTurnBegan
+    }
+
+    enum CheckStep: Equatable, Sendable {
+        /// Still working. The runtime id may have changed on re-attach.
+        case keepWaiting(liveSessionIDChanged: Bool)
+        /// Hermes could not be asked; it will be asked again.
+        case reconnecting
+        /// Nothing is running, and no ending was seen.
+        case endedUnseen
+        /// Hermes could not be reached, repeatedly.
+        case lostTouch
+    }
+
+    /// How long a turn may be silent before Hermes is asked about it. Hermes
+    /// pushes nothing while it waits out a provider's rate limit — ten minutes
+    /// at a time for a free model — so silence alone is not an ending.
+    static let quietInterval: TimeInterval = 30
+    /// Failed checks in a row before the reply is left to arrive on its own.
+    static let attemptsBeforeLosingTouch = 4
+
+    private(set) var liveSessionID: String
+    private var taskAhead: Bool
+    private var lastHeard: Date
+    private var failedChecks = 0
+
+    init(submission: BotChatSubmission, now: Date) {
+        liveSessionID = submission.liveSessionID
+        taskAhead = submission.disposition == .queued
+        lastHeard = now
+    }
+
+    mutating func receive(_ frame: HermesRPCEvent, now: Date) -> FrameStep {
+        guard frame.sessionID.isEmpty || frame.sessionID == liveSessionID else { return .ignore }
+        lastHeard = now
+        // Only a real turn outcome ends a turn. The subagent mirror emits
+        // `message.complete` with no `status`, on the parent's session id,
+        // when a child finishes — breaking on that abandoned the parent.
+        let ending = LiveEvents.isTurnOutcome(frame)
+        if taskAhead {
+            guard ending else { return .ignore }
+            taskAhead = false
+            return .ownTurnBegan
+        }
+        return ending ? .finish : .apply
+    }
+
+    func shouldCheck(now: Date) -> Bool {
+        now.timeIntervalSince(lastHeard) >= Self.quietInterval
+    }
+
+    mutating func checked(_ result: Result<BotTurnState, Error>, now: Date) -> CheckStep {
+        switch result {
+        case let .success(state):
+            failedChecks = 0
+            lastHeard = now
+            let changed = state.liveSessionID != liveSessionID
+            liveSessionID = state.liveSessionID
+            return state.running ? .keepWaiting(liveSessionIDChanged: changed) : .endedUnseen
+        case .failure:
+            failedChecks += 1
+            return failedChecks >= Self.attemptsBeforeLosingTouch ? .lostTouch : .reconnecting
+        }
+    }
+
+    /// Frames as they arrive, with a tick every `interval` in between.
+    static func signals(
+        from frames: AsyncStream<HermesRPCEvent>, every interval: Duration
+    ) -> AsyncStream<Signal> {
+        AsyncStream { continuation in
+            let listening = Task {
+                for await frame in frames { continuation.yield(.frame(frame)) }
+            }
+            let ticking = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: interval)
+                    guard !Task.isCancelled else { return }
+                    continuation.yield(.tick)
+                }
+            }
+            continuation.onTermination = { _ in
+                listening.cancel()
+                ticking.cancel()
+            }
+        }
+    }
+}

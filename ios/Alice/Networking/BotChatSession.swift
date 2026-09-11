@@ -137,8 +137,17 @@ struct BotChatSync: Sendable {
         // approval or an unacknowledged send are in flight; everything else is
         // history from before this device read the canonical chat.
         var carried: [Message] = []
+        // A turn this device wrote comes back in the transcript under the
+        // agent's own id, and the local copy has no id to be matched by — so
+        // it stayed beside the persisted one and the chat showed it twice. It
+        // is matched by what it says and when: see `persistedCopy`.
+        var claimed = Set<String>()
         for message in local {
             if let remoteID = message.remoteID, byRemoteID[remoteID] != nil { continue }
+            if let copy = persistedCopy(of: message, in: remote, excluding: claimed) {
+                claimed.insert(copy)
+                continue
+            }
             var kept = message
             if kept.role == .assistant, kept.botName == nil {
                 kept.botName = botName
@@ -166,6 +175,72 @@ struct BotChatSync: Sendable {
             }
             .map(\.element.1)
         return merged
+    }
+
+    /// The phone and the machine running Hermes keep their own clocks, and a
+    /// message sent to a busy bot is written only when its turn begins.
+    static let copyClockSlack: TimeInterval = 60
+    static let copyWindow: TimeInterval = 6 * 60 * 60
+    /// How much earlier than its placeholder a reply may be stamped and still
+    /// be its answer. Small: the reply to the previous message is not this one.
+    static let replyClockSlack: TimeInterval = 5
+
+    /// The persisted turn a local one is a copy of, once Hermes has written it.
+    ///
+    /// Matched by what it says and when, because the local copy has no other
+    /// identity: the same role and text, stamped no earlier than the local
+    /// copy — less clock slack — and within hours of it. Each persisted turn
+    /// is claimed once, so a message sent twice stays twice, and one sent again
+    /// later is not mistaken for the earlier copy.
+    static func persistedCopy(
+        of message: Message, in remote: [BotChatTurn], excluding claimed: Set<String>
+    ) -> String? {
+        guard message.remoteID == nil, message.approval == nil,
+              message.role == .user || (message.role == .assistant && !message.isInFlight)
+        else { return nil }
+        let text = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        let earliest = message.createdAt.addingTimeInterval(-copyClockSlack)
+        let latest = message.createdAt.addingTimeInterval(copyWindow)
+        return remote.first { turn in
+            turn.role == message.role
+                && !claimed.contains(turn.id)
+                && turn.createdAt >= earliest && turn.createdAt <= latest
+                && turn.content.trimmingCharacters(in: .whitespacesAndNewlines) == text
+        }?.id
+    }
+
+    /// Whether an answer to `placeholder` has landed in the transcript.
+    static func replyLanded(after placeholder: Message, in messages: [Message]) -> Bool {
+        let earliest = placeholder.createdAt.addingTimeInterval(-replyClockSlack)
+        return messages.contains { other in
+            other.role == .assistant && other.remoteID != nil
+                && !other.content.isEmpty && other.createdAt >= earliest
+        }
+    }
+
+    /// Settles replies this device stopped watching before they arrived.
+    ///
+    /// A placeholder outlives the task filling it when the app is suspended or
+    /// relaunched mid-reply, and nothing else would ever take it off
+    /// "Thinking…". Once an answer is in the transcript the placeholder goes —
+    /// the persisted reply is the same words, complete. Until then it stays,
+    /// saying the bot may still be working rather than that it failed.
+    static func settle(
+        _ messages: [Message], watching: Set<String>, note: String
+    ) -> [Message] {
+        messages.compactMap { (message: Message) -> Message? in
+            guard message.role == .assistant, message.remoteID == nil,
+                  message.approval == nil, !watching.contains(message.id),
+                  message.awaitingRemote || message.pending
+            else { return message }
+            if replyLanded(after: message, in: messages) { return nil }
+            var waiting = message
+            waiting.pending = false
+            waiting.awaitingRemote = true
+            if waiting.deliveryNote == nil || message.pending { waiting.deliveryNote = note }
+            return waiting
+        }
     }
 }
 

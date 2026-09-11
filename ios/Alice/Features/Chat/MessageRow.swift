@@ -68,8 +68,18 @@ struct MessageRow: View {
                         ToolList(
                             tools: message.tools,
                             pending: message.pending && message.approval == nil,
-                            hasContent: !message.content.isEmpty
+                            hasContent: !message.content.isEmpty,
+                            note: message.deliveryNote
                         )
+                    }
+                    // A reply this device stopped watching. The bot may still
+                    // be working, and saying so beats a spinner that never
+                    // ends or a failure that did not happen.
+                    if !message.pending, message.awaitingRemote,
+                       let note = message.deliveryNote {
+                        Text(note)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                     if let approval = message.approval {
                         RunApprovalCard(messageID: message.id, approval: approval)
@@ -337,6 +347,9 @@ private struct ToolList: View {
     /// Whether any of it has arrived. Once the words are appearing the reader
     /// can see for themselves that it is not thinking any more.
     let hasContent: Bool
+    /// What the reply is waiting on when that is not the bot thinking: a busy
+    /// bot that has not started on it yet, or a connection being re-made.
+    var note: String? = nil
 
     /// The last one still going. Hermes reports a tool twice — start, then
     /// done — so anything with a later `done` is behind us.
@@ -350,7 +363,7 @@ private struct ToolList: View {
     /// what the gap actually is; the line only disappears when the reply does.
     private var caption: String? {
         if let running { return Self.phrase(for: running) }
-        return pending && !hasContent ? "Thinking…" : nil
+        return pending && !hasContent ? (note ?? "Thinking…") : nil
     }
 
     var body: some View {

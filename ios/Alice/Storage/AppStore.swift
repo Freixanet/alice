@@ -535,6 +535,7 @@ final class AppStore {
         if let rpcClient { await rpcClient.disconnect() }
         rpcClient = nil
         liveBotSessions.removeAll()
+        botLiveSessionIDs.removeAll()
         botMetadataIsRemote = false
     }
 
@@ -3569,10 +3570,16 @@ final class AppStore {
             guard let current = conversations.firstIndex(where: { $0.id == conversationID })
             else { return }
             conversations[current].hermesSessionID = updated.hermesSessionID
-            conversations[current].messages = BotChatSync.merge(
-                updated.messages.compactMap(Self.turn(from:)),
-                into: conversations[current].messages,
-                botName: profile
+            // A reply nobody is following any more — the app was suspended or
+            // relaunched mid-reply — is settled against what just arrived.
+            conversations[current].messages = BotChatSync.settle(
+                BotChatSync.merge(
+                    updated.messages.compactMap(Self.turn(from:)),
+                    into: conversations[current].messages,
+                    botName: profile
+                ),
+                watching: Set([activeBotTurn?.replyID].compactMap { $0 }),
+                note: Self.lostTouchNote(label: botCurrentName(for: profile))
             )
             botChatFailure[conversationID] = nil
             persistConversations()
@@ -3610,42 +3617,126 @@ final class AppStore {
             finish(replyID, conversationID: conversationID)
             return
         }
+        let token = UUID()
+        activeBotTurn = ActiveBotTurn(
+            token: token, conversationID: conversationID, replyID: replyID
+        )
+        let label = botCurrentName(for: profile)
+        var ending = BotTurnEnding.stopped
         do {
             let chat = try await BotChatSync(source: source).resolve(profile: profile)
             if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
                 conversations[index].hermesSessionID = chat.resolvedID
             }
             let events = source.rpc.events()
-            let liveSessionID = try await source.submit(
+            let submission = try await source.submit(
                 profile: profile, sessionID: chat.resolvedID, text: text
             )
-            liveBotSessions[liveSessionID] = conversationID
-            for await event in events {
-                guard event.sessionID.isEmpty || event.sessionID == liveSessionID
-                else { continue }
-                if let chatEvent = Self.chatEvent(from: event) {
-                    apply(
-                        chatEvent, to: replyID, conversationID: conversationID,
-                        approvalTransport: .socket,
-                        approvalSessionID: liveSessionID,
-                        approvalSessionKey: chat.resolvedID
-                    )
+            track(liveSessionID: submission.liveSessionID, for: conversationID)
+            var watch = BotTurnWatch(submission: submission, now: Date())
+            // Said while it is true: a busy bot has not started on this yet.
+            var waitingNote = Self.deliveryNote(for: submission.disposition, label: label)
+            setDeliveryNote(waitingNote, on: replyID, conversationID: conversationID)
+
+            // Frames end the reply only when they say the turn is over, and a
+            // silence is asked about rather than waited on forever.
+            watching: for await signal in BotTurnWatch.signals(from: events, every: .seconds(15)) {
+                switch signal {
+                case let .frame(event):
+                    let step = watch.receive(event, now: Date())
+                    if step == .ignore { continue }
+                    if step == .ownTurnBegan {
+                        waitingNote = nil
+                        setDeliveryNote(nil, on: replyID, conversationID: conversationID)
+                        continue
+                    }
+                    if let chatEvent = Self.chatEvent(from: event) {
+                        apply(
+                            chatEvent, to: replyID, conversationID: conversationID,
+                            approvalTransport: .socket,
+                            approvalSessionID: watch.liveSessionID,
+                            approvalSessionKey: chat.resolvedID
+                        )
+                    }
+                    if step == .finish {
+                        ending = .outcome
+                        break watching
+                    }
+                case .tick:
+                    guard watch.shouldCheck(now: Date()) else { continue }
+                    let state: Result<BotTurnState, Error>
+                    do {
+                        state = .success(try await source.turnState(
+                            profile: profile,
+                            storedSessionID: chat.resolvedID,
+                            liveSessionID: watch.liveSessionID
+                        ))
+                    } catch {
+                        state = .failure(error)
+                    }
+                    switch watch.checked(state, now: Date()) {
+                    case let .keepWaiting(liveSessionIDChanged):
+                        if liveSessionIDChanged {
+                            track(liveSessionID: watch.liveSessionID, for: conversationID)
+                        }
+                        setDeliveryNote(waitingNote, on: replyID, conversationID: conversationID)
+                    case .reconnecting:
+                        setDeliveryNote(
+                            "Reconnecting to Hermes…", on: replyID, conversationID: conversationID
+                        )
+                    case .endedUnseen:
+                        ending = .endedUnseen
+                        break watching
+                    case .lostTouch:
+                        ending = .lostTouch
+                        break watching
+                    }
                 }
-                // Only a real turn outcome ends the stream. The subagent
-                // mirror in `agent_callbacks` emits `message.complete` with no
-                // `status`, on the PARENT's session id, when a child finishes
-                // — breaking on that abandoned the parent mid-run and threw
-                // away the reply it was still writing.
-                if LiveEvents.isTurnOutcome(event) { break }
             }
         } catch {
+            ending = .failed
             fail(replyID, conversationID: conversationID,
                  message: (error as? LocalizedError)?.errorDescription
                     ?? "Hermes did not answer.",
                  limit: nil)
         }
-        finish(replyID, conversationID: conversationID)
-        await refreshBotChat(conversationID)
+
+        // Stopped, or superseded by a newer message: whoever let go of this
+        // reply has already settled it, and may be watching another.
+        guard activeBotTurn?.token == token else { return }
+        activeBotTurn = nil
+        switch ending {
+        case .outcome, .failed, .stopped:
+            setDeliveryNote(nil, on: replyID, conversationID: conversationID)
+            finish(replyID, conversationID: conversationID)
+            await refreshBotChat(conversationID)
+        case .endedUnseen:
+            // Nothing is running and no ending was seen: the phone slept
+            // through it, or Hermes dropped the message. The transcript says
+            // which — a landed answer replaces the placeholder.
+            awaitRemote(replyID, conversationID: conversationID, note: nil)
+            await refreshBotChat(conversationID)
+            if botChatFailure[conversationID] == nil,
+               let location = messageLocation(replyID, conversationID: conversationID) {
+                conversations[location.chat].messages[location.message].awaitingRemote = false
+                conversations[location.chat].messages[location.message].deliveryNote = nil
+                fail(replyID, conversationID: conversationID,
+                     message: "\(label) finished without answering this. Send it again if you still need a reply.",
+                     limit: nil)
+                persistConversations()
+            } else if botChatFailure[conversationID] != nil {
+                awaitRemote(
+                    replyID, conversationID: conversationID,
+                    note: Self.lostTouchNote(label: label)
+                )
+            }
+        case .lostTouch:
+            awaitRemote(
+                replyID, conversationID: conversationID,
+                note: Self.lostTouchNote(label: label)
+            )
+            await refreshBotChat(conversationID)
+        }
     }
 
     /// One pushed frame as the event this app already knows how to draw.
@@ -3753,7 +3844,16 @@ final class AppStore {
     func send() {
         guard !activeIsRecoveredHistory else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !draftAttachments.isEmpty, !isSending else { return }
+        guard !text.isEmpty || !draftAttachments.isEmpty else { return }
+        if isSending {
+            // A busy bot still takes a message — Hermes folds it into the task
+            // it is running or queues it — so the chat following that bot lets
+            // go of the older reply and follows this one. Refusing it here
+            // dropped the message without a word. Anywhere else a second send
+            // would race the first.
+            guard let turn = activeBotTurn, turn.conversationID == activeID else { return }
+            releaseBotTurn(stopped: false)
+        }
 
         // Management commands and a deliberately small set of natural control
         // intents stay on-device and use Hermes' authoritative management
@@ -3993,18 +4093,122 @@ final class AppStore {
 
     func stop() {
         // A bot chat's run lives on the agent, not in this task: cancelling
-        // here would only stop listening. Tell the session to stop.
+        // here would only stop listening. Tell the session to stop — by the
+        // runtime id Hermes knows it under, which the stored row is not.
         if let index = conversations.firstIndex(where: { $0.id == activeID }),
            let sessionID = conversations[index].hermesSessionID,
+           let profile = conversations[index].routedBotName,
            conversations[index].isCanonicalBotChat {
+            let liveSessionID = botLiveSessionIDs[conversations[index].id]
             Task { [weak self] in
                 guard let source = await self?.botChatSource() else { return }
-                try? await source.interrupt(sessionID: sessionID)
+                _ = try? await source.interrupt(
+                    profile: profile, storedSessionID: sessionID, liveSessionID: liveSessionID
+                )
             }
+        }
+        if activeBotTurn != nil {
+            releaseBotTurn(stopped: true)
+            return
         }
         streamTask?.cancel()
         streamTask = nil
         isSending = false
+    }
+
+    // MARK: - Following a bot's reply
+
+    /// The bot reply this device is following. The token tells a watcher
+    /// that has been let go — stopped, or superseded by a newer message — that
+    /// the reply is no longer its to settle.
+    private struct ActiveBotTurn {
+        let token: UUID
+        let conversationID: String
+        let replyID: String
+    }
+
+    private enum BotTurnEnding {
+        case outcome, failed, stopped, endedUnseen, lostTouch
+    }
+
+    private var activeBotTurn: ActiveBotTurn?
+    /// The runtime id each bot chat was last reached under, which is what
+    /// `session.interrupt` needs. It dies with the socket; `interrupt` recovers.
+    private var botLiveSessionIDs: [String: String] = [:]
+
+    private func track(liveSessionID: String, for conversationID: String) {
+        liveBotSessions[liveSessionID] = conversationID
+        botLiveSessionIDs[conversationID] = liveSessionID
+    }
+
+    /// Lets go of the reply being followed and settles it where it stands.
+    ///
+    /// Stopped, it says so. Superseded by a newer message to the same busy bot,
+    /// an empty placeholder goes — Hermes folds that message in or queues it,
+    /// and the answer arrives with the newer one — and a partial one is left
+    /// for the transcript to complete.
+    private func releaseBotTurn(stopped: Bool) {
+        guard let turn = activeBotTurn else { return }
+        activeBotTurn = nil
+        streamTask?.cancel()
+        streamTask = nil
+        isSending = false
+        guard let location = messageLocation(turn.replyID, conversationID: turn.conversationID)
+        else { return }
+        var reply = conversations[location.chat].messages[location.message]
+        reply.pending = false
+        reply.deliveryNote = nil
+        if stopped {
+            if reply.content.isEmpty && reply.approval == nil {
+                reply.content = "Stopped."
+                reply.incomplete = true
+            }
+        } else if reply.content.isEmpty && reply.approval == nil {
+            conversations[location.chat].messages.remove(at: location.message)
+            persistConversations()
+            return
+        } else {
+            reply.awaitingRemote = true
+        }
+        conversations[location.chat].messages[location.message] = reply
+        persistConversations()
+    }
+
+    private func setDeliveryNote(_ note: String?, on replyID: String, conversationID: String) {
+        guard let location = messageLocation(replyID, conversationID: conversationID),
+              conversations[location.chat].messages[location.message].deliveryNote != note
+        else { return }
+        conversations[location.chat].messages[location.message].deliveryNote = note
+        persistConversations()
+    }
+
+    /// Stops drawing a reply as in progress without calling it a failure.
+    private func awaitRemote(_ replyID: String, conversationID: String, note: String?) {
+        isSending = false
+        streamTask = nil
+        guard let location = messageLocation(replyID, conversationID: conversationID) else { return }
+        conversations[location.chat].messages[location.message].pending = false
+        conversations[location.chat].messages[location.message].awaitingRemote = true
+        conversations[location.chat].messages[location.message].deliveryNote = note
+        persistConversations()
+    }
+
+    /// What a reply to a busy bot is waiting on, or nil when a turn began.
+    nonisolated static func deliveryNote(
+        for disposition: BotChatSubmission.Disposition, label: String
+    ) -> String? {
+        switch disposition {
+        case .started:
+            return nil
+        case .foldedIn:
+            return "\(label) is busy with something else. It will read this before it finishes."
+        case .queued:
+            return "\(label) is finishing something else. Your message is next."
+        }
+    }
+
+    nonisolated static func lostTouchNote(label: String) -> String {
+        "Lost touch with Hermes. If \(label) is still working, its reply will appear here."
     }
 
     /// Answers a real Hermes approval request and resumes the same durable run.

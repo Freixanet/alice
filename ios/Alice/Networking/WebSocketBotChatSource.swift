@@ -127,8 +127,15 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// No system directive is added. The agent answering is the bot, so
     /// telling it who to pretend to be is both unnecessary and the thing that
     /// used to make one assistant impersonate another.
+    ///
+    /// What Hermes did with it comes back too. A bot that is already working
+    /// does not refuse a message: it folds the text into the task it is
+    /// running or queues it behind it, and reading every accepted send as a
+    /// turn that had started drew the other task's answer as this one's.
     @discardableResult
-    func submit(profile: String, sessionID: String, text: String) async throws -> String {
+    func submit(
+        profile: String, sessionID: String, text: String
+    ) async throws -> BotChatSubmission {
         let resumed = try await resume(profile: profile, target: sessionID)
         // Alice persists the durable SQLite row id. `session.resume` binds that
         // row to this socket and returns the live id `_sess_nowait` requires
@@ -138,16 +145,76 @@ struct WebSocketBotChatSource: BotChatSessionSource {
                 reason: "Hermes resumed the chat without a live session id."
             )
         }
-        _ = try await rpc.call("prompt.submit", JSONObject([
+        let result = try await rpc.call("prompt.submit", JSONObject([
             "session_id": liveID,
             "text": text,
         ]))
-        return liveID
+        return BotChatSubmission(
+            liveSessionID: liveID,
+            disposition: .init(status: result["status"] as? String)
+        )
     }
 
-    /// Stops the run in that session.
-    func interrupt(sessionID: String) async throws {
-        _ = try await rpc.call("session.interrupt", JSONObject(["session_id": sessionID]))
+    /// Stops the turn running in a bot's chat.
+    ///
+    /// `session.interrupt` takes the runtime id a resume minted, never the
+    /// stored row. Sent the stored id, Hermes answered "session not found",
+    /// the error was swallowed, and the bot carried on working. The live id
+    /// this device last used is tried first; when that runtime is gone — the
+    /// socket dropped, or Hermes reaped it — the stored chat is resumed to find
+    /// the one that is actually running.
+    ///
+    /// - Returns: whether a running turn was told to stop.
+    @discardableResult
+    func interrupt(
+        profile: String, storedSessionID: String, liveSessionID: String?
+    ) async throws -> Bool {
+        if let liveSessionID, !liveSessionID.isEmpty,
+           (try? await rpc.call(
+               "session.interrupt", JSONObject(["session_id": liveSessionID])
+           )) != nil {
+            return true
+        }
+        let state = try await resumedState(profile: profile, storedSessionID: storedSessionID)
+        guard state.running else { return false }
+        _ = try await rpc.call(
+            "session.interrupt", JSONObject(["session_id": state.liveSessionID])
+        )
+        return true
+    }
+
+    /// Whether the bot is still working in this chat, and under which live id.
+    ///
+    /// Asked while a long turn is quiet: Hermes pushes nothing while it waits
+    /// out a provider's rate limit, and a locked phone loses the socket
+    /// without being told. `session.activate` re-attaches this socket to a
+    /// runtime it already knows and leaves the transcript out, which makes it
+    /// the cheap question. A runtime Hermes no longer holds is an error, and
+    /// then the stored chat is resumed, which mints a live id again.
+    func turnState(
+        profile: String, storedSessionID: String, liveSessionID: String?
+    ) async throws -> BotTurnState {
+        if let liveSessionID, !liveSessionID.isEmpty,
+           let active = try? await rpc.call("session.activate", JSONObject([
+               "session_id": liveSessionID,
+               "omit_messages": true,
+           ])),
+           let state = BotTurnState(active) {
+            return state
+        }
+        return try await resumedState(profile: profile, storedSessionID: storedSessionID)
+    }
+
+    private func resumedState(
+        profile: String, storedSessionID: String
+    ) async throws -> BotTurnState {
+        let resumed = try await resume(profile: profile, target: storedSessionID)
+        guard let state = BotTurnState(resumed) else {
+            throw HermesRPCClient.Failure(
+                reason: "Hermes resumed the chat without a live session id."
+            )
+        }
+        return state
     }
 
     /// Answers an approval in that session.

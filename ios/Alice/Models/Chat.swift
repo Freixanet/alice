@@ -136,6 +136,17 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// into Hermes — the agent has no record of them, and inventing one would
     /// put words in its mouth.
     var localOnly: Bool = false
+    /// What a reply that has not arrived is waiting on, said in words.
+    ///
+    /// A busy bot takes a message without starting on it — folded into the
+    /// task it is running, or queued behind it — and a phone that locks
+    /// mid-reply stops hearing about it. Both looked exactly like a bot
+    /// thinking, or, once the app came back, like a failure.
+    var deliveryNote: String? = nil
+    /// A reply this device stopped watching before it arrived. The bot may
+    /// still be working; the next read of its chat replaces this placeholder
+    /// with the answer once there is one.
+    var awaitingRemote: Bool = false
 
     /// Decoded field by field, every optional one at a time.
     ///
@@ -163,6 +174,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         approval = try box.decodeIfPresent(Approval.self, forKey: .approval)
         remoteID = try box.decodeIfPresent(String.self, forKey: .remoteID)
         localOnly = try box.decodeIfPresent(Bool.self, forKey: .localOnly) ?? false
+        deliveryNote = try box.decodeIfPresent(String.self, forKey: .deliveryNote)
+        awaitingRemote = try box.decodeIfPresent(Bool.self, forKey: .awaitingRemote) ?? false
     }
 
     init(
@@ -172,8 +185,11 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         attachments: [Attachment] = [], botName: String? = nil,
         runID: String? = nil, runStatus: RunStatus? = nil,
         approval: Approval? = nil, remoteID: String? = nil,
-        localOnly: Bool = false
+        localOnly: Bool = false, deliveryNote: String? = nil,
+        awaitingRemote: Bool = false
     ) {
+        self.deliveryNote = deliveryNote
+        self.awaitingRemote = awaitingRemote
         self.id = id
         self.role = role
         self.content = content

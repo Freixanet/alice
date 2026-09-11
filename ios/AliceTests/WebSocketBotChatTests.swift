@@ -173,13 +173,14 @@ final class WebSocketBotChatTests: XCTestCase {
         let source = WebSocketBotChatSource(rpc: rpc)
         let aliceLocalUUID = UUID().uuidString
 
-        let liveID = try await source.submit(
+        let submission = try await source.submit(
             profile: "radar-ia",
             sessionID: "20260905_104136_281747",
             text: "¿algo nuevo?"
         )
 
-        XCTAssertEqual(liveID, "live-ws-session")
+        XCTAssertEqual(submission.liveSessionID, "live-ws-session")
+        XCTAssertEqual(submission.disposition, .started)
         let submit = await rpc.params(of: "prompt.submit")
         XCTAssertEqual(submit?["session_id"], "live-ws-session",
                        "prompt.submit must use the live id returned by session.resume")
