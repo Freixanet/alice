@@ -318,6 +318,12 @@ struct Composer: View {
             .padding(.vertical, 12)
             .glassEffect(.regular, in: .rect(cornerRadius: 26))
             .glassEffectID("composer", in: glass)
+            // The composer keeps its own presses. Glass is not a hit target,
+            // so a press on its padding — or on Send while it is disabled —
+            // fell through to the page behind, whose tap puts the keyboard
+            // away. Its controls still take precedence over this.
+            .contentShape(.rect(cornerRadius: 26))
+            .onTapGesture {}
         }
     }
 
@@ -454,7 +460,10 @@ struct Composer: View {
         )
         .glassEffect(.regular.interactive(), in: .circle)
         .glassEffectID("send", in: glass)
-        .disabled(!sending && (!hasDraft || !store.isConnected))
+        // Not disabled while the connection is being re-made: `send()`
+        // reconnects first. Disabled, a press did nothing at all.
+        .disabled(!sending && !hasDraft)
         .accessibilityLabel(stopping ? "Stop" : "Send")
+        .accessibilityIdentifier("composer.action")
     }
 }

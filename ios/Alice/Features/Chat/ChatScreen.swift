@@ -67,12 +67,6 @@ struct ChatScreen: View {
     var body: some View {
         NavigationStack {
             chatContent
-                // A plain tap anywhere off the composer dismisses the
-                // keyboard; `simultaneousGesture` leaves scrolling and text
-                // selection working underneath it.
-                .simultaneousGesture(
-                    TapGesture().onEnded { composerFocused = false }
-                )
             .background(Palette.background(scheme))
             // The stack's own container, which sits above every background
             // painted outside it and is system white in light mode. That white
@@ -118,10 +112,22 @@ struct ChatScreen: View {
         .task(id: bot) { await refreshBots() }
     }
 
+    /// A plain tap off the composer dismisses the keyboard.
+    ///
+    /// Attached to the transcript and the empty home, not the whole screen.
+    /// On the screen it also fired for presses on the composer's own
+    /// buttons, so Send closed the keyboard — sliding the button out from
+    /// under the finger — instead of sending. `simultaneousGesture` leaves
+    /// scrolling and text selection working underneath it.
+    private var dismissKeyboard: some Gesture {
+        TapGesture().onEnded { composerFocused = false }
+    }
+
     @ViewBuilder
     private var chatContent: some View {
         if let conversation = store.activeConversation, !conversation.messages.isEmpty {
             transcript
+                .simultaneousGesture(dismissKeyboard)
                 // A real conversation reserves the live composer height so the
                 // last message still follows attachments, extra lines, and the
                 // keyboard.
@@ -153,6 +159,8 @@ struct ChatScreen: View {
                     // starts.
                     .padding(.bottom, homeComposerHeight + (keyboardShown ? 0 : Self.restingLift))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(.rect)
+                    .simultaneousGesture(dismissKeyboard)
                     .animation(.smooth(duration: 0.3), value: keyboardShown)
                     .onReceive(NotificationCenter.default.publisher(
                         for: UIResponder.keyboardWillShowNotification
