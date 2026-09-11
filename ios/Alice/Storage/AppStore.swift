@@ -3665,13 +3665,22 @@ final class AppStore {
                 case .tick:
                     guard watch.shouldCheck(now: Date()) else { continue }
                     let state: Result<BotTurnState, Error>
+                    let storedSessionID = chat.resolvedID
+                    let liveSessionID = watch.liveSessionID
                     do {
-                        state = .success(try await source.turnState(
-                            profile: profile,
-                            storedSessionID: chat.resolvedID,
-                            liveSessionID: watch.liveSessionID
-                        ))
+                        state = .success(try await BotTurnWatch.answer(
+                            within: BotTurnWatch.checkDeadline
+                        ) {
+                            try await source.turnState(
+                                profile: profile,
+                                storedSessionID: storedSessionID,
+                                liveSessionID: liveSessionID
+                            )
+                        })
                     } catch {
+                        // A socket that died without saying so leaves the call
+                        // hanging. Drop it, so the next check reconnects.
+                        if error is BotTurnWatch.NoAnswer { await rpcClient?.disconnect() }
                         state = .failure(error)
                     }
                     switch watch.checked(state, now: Date()) {

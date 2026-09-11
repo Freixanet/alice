@@ -255,6 +255,23 @@ final class BotChatDeliveryTests: XCTestCase {
         XCTAssertEqual(step, .reconnecting)
     }
 
+    func testACheckThatNeverHearsBackGivesUp() async {
+        do {
+            _ = try await BotTurnWatch.answer(within: .milliseconds(50)) { () async throws -> Bool in
+                try await Task.sleep(for: .seconds(5))
+                return true
+            }
+            XCTFail("a call on a dead socket must not hold the watch")
+        } catch {
+            XCTAssertTrue(error is BotTurnWatch.NoAnswer)
+        }
+    }
+
+    func testACheckThatAnswersInTimeIsUsed() async throws {
+        let value = try await BotTurnWatch.answer(within: .seconds(5)) { 42 }
+        XCTAssertEqual(value, 42)
+    }
+
     // MARK: - A persisted copy replaces the local one
 
     func testASentMessageIsShownOnceItIsPersisted() {

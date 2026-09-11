@@ -165,4 +165,59 @@ struct BotTurnWatch: Sendable {
             }
         }
     }
+
+    /// How long a check may take before the connection is treated as dead.
+    static let checkDeadline: Duration = .seconds(20)
+
+    /// Hermes did not answer a check in time.
+    struct NoAnswer: Error, LocalizedError {
+        var errorDescription: String? { "Hermes did not answer in time." }
+    }
+
+    /// Runs `operation`, giving up after `limit`.
+    ///
+    /// A call on a socket that died without saying so — the phone changed
+    /// networks, say — waits for a reply that will never come, and the watch
+    /// waited with it: no further check, no "lost touch", a reply that looked
+    /// busy forever. The abandoned call ends whenever the socket is finally
+    /// torn down; nothing waits on it.
+    static func answer<T: Sendable>(
+        within limit: Duration,
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let once = Once<T>()
+        return try await withCheckedThrowingContinuation { continuation in
+            once.arm(continuation)
+            let timer = Task {
+                try? await Task.sleep(for: limit)
+                once.resume(with: .failure(NoAnswer()))
+            }
+            Task {
+                do {
+                    once.resume(with: .success(try await operation()))
+                } catch {
+                    once.resume(with: .failure(error))
+                }
+                timer.cancel()
+            }
+        }
+    }
+}
+
+/// Resumes a continuation exactly once, whichever side finishes first.
+private final class Once<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Error>?
+
+    func arm(_ continuation: CheckedContinuation<T, Error>) {
+        lock.withLock { self.continuation = continuation }
+    }
+
+    func resume(with result: Result<T, Error>) {
+        let pending = lock.withLock { () -> CheckedContinuation<T, Error>? in
+            defer { continuation = nil }
+            return continuation
+        }
+        pending?.resume(with: result)
+    }
 }
