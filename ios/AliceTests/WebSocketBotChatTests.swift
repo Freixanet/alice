@@ -110,6 +110,23 @@ final class WebSocketBotChatTests: XCTestCase {
         XCTAssertEqual(params?["include_sessions"], "true")
     }
 
+    func testFirstCreationKeepsTheDurableStoredIDNotTheRuntimeID() async throws {
+        let rpc = FakeRPC(results: [
+            "profiles.list": ["profiles": [["name": "radar-ia", "canonical_session": NSNull()]]],
+            "session.create": ["session_id": "runtime-created", "stored_session_id": "stored-created"],
+            "session.resume": [
+                "session_id": "runtime-resumed", "stored_session_id": "stored-created", "messages": [],
+            ],
+        ])
+        let source = WebSocketBotChatSource(rpc: rpc)
+
+        let chat = try await source.createCanonicalBotChat(profile: "radar-ia")
+
+        XCTAssertEqual(chat.id, "stored-created")
+        XCTAssertEqual(chat.resolvedID, "stored-created")
+        XCTAssertNotEqual(chat.id, "runtime-resumed")
+    }
+
     // MARK: - H. Compression moves the tip; Alice follows it
 
     func testAResolvedTipIsFollowedWithoutMakingAnotherChat() async throws {
@@ -202,15 +219,57 @@ final class WebSocketBotChatTests: XCTestCase {
         )
     }
 
+    func testBotAttachmentsAreStagedBeforePromptSubmit() async throws {
+        let rpc = FakeRPC(results: [
+            "session.resume": ["session_id": "live", "messages": []],
+            "image.attach_bytes": ["attached": true, "path": "/tmp/upload.png"],
+            "file.attach": [
+                "attached": true, "ref_text": "@file:`attachments/report.txt`",
+            ],
+            "prompt.submit": ["status": "streaming"],
+        ])
+        let source = WebSocketBotChatSource(rpc: rpc)
+        let image = Attachment(
+            id: "i", name: "photo.png", mime: "image/png", kind: .image, data: Data([1, 2, 3])
+        )
+        let file = Attachment(
+            id: "f", name: "report.txt", mime: "text/plain", kind: .file, data: Data("hello".utf8)
+        )
+
+        let submission = try await source.submit(
+            profile: "radar-ia", sessionID: "stored", text: "Please inspect",
+            attachments: [image, file]
+        )
+
+        let methods = await rpc.methods()
+        let imageParams = await rpc.params(of: "image.attach_bytes")
+        let fileParams = await rpc.params(of: "file.attach")
+        let submitParams = await rpc.params(of: "prompt.submit")
+        XCTAssertEqual(
+            methods,
+            ["session.resume", "image.attach_bytes", "file.attach", "prompt.submit"]
+        )
+        XCTAssertEqual(imageParams?["session_id"], "live")
+        XCTAssertEqual(imageParams?["content_base64"], "AQID")
+        XCTAssertTrue(fileParams?["data_url"]?.hasPrefix("data:text/plain;base64,") == true)
+        let expected = "@file:`attachments/report.txt`\n\nPlease inspect"
+        XCTAssertEqual(submitParams?["text"], expected)
+        XCTAssertEqual(submission.submittedText, expected)
+    }
+
     /// The model the UI shows for a bot must be the one the turn actually
     /// runs under. A per-session override is the sanctioned way; a global
     /// config write is not, and neither is quietly sending via another route.
     func testAModelChoiceIsAPerSessionOverrideNotAGlobalWrite() async throws {
         let rpc = FakeRPC(results: [
             "profiles.list": ["profiles": [["name": "radar-ia", "canonical_session": NSNull()]]],
-            "session.resume": Self.history([]),
+            "session.resume": [
+                "session_id": "fresh-runtime", "stored_session_id": "fresh-stored", "messages": [],
+            ],
         ])
-        await rpc.set("session.create", ["session_id": "fresh"])
+        await rpc.set("session.create", [
+            "session_id": "fresh-runtime", "stored_session_id": "fresh-stored",
+        ])
         let source = WebSocketBotChatSource(rpc: rpc)
 
         _ = try? await source.createCanonicalBotChat(profile: "radar-ia")

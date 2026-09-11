@@ -147,6 +147,12 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// still be working; the next read of its chat replaces this placeholder
     /// with the answer once there is one.
     var awaitingRemote: Bool = false
+    /// The exact user turn this assistant placeholder belongs to.
+    var replyToMessageID: String? = nil
+    /// Exact text submitted to Hermes when it differs from the visible bubble
+    /// (for example, gateway-side @file: refs). Used only to correlate the
+    /// canonical transcript back to this local message.
+    var remoteMatchContent: String? = nil
 
     /// Decoded field by field, every optional one at a time.
     ///
@@ -176,6 +182,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         localOnly = try box.decodeIfPresent(Bool.self, forKey: .localOnly) ?? false
         deliveryNote = try box.decodeIfPresent(String.self, forKey: .deliveryNote)
         awaitingRemote = try box.decodeIfPresent(Bool.self, forKey: .awaitingRemote) ?? false
+        replyToMessageID = try box.decodeIfPresent(String.self, forKey: .replyToMessageID)
+        remoteMatchContent = try box.decodeIfPresent(String.self, forKey: .remoteMatchContent)
     }
 
     init(
@@ -186,10 +194,13 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         runID: String? = nil, runStatus: RunStatus? = nil,
         approval: Approval? = nil, remoteID: String? = nil,
         localOnly: Bool = false, deliveryNote: String? = nil,
-        awaitingRemote: Bool = false
+        awaitingRemote: Bool = false, replyToMessageID: String? = nil,
+        remoteMatchContent: String? = nil
     ) {
         self.deliveryNote = deliveryNote
         self.awaitingRemote = awaitingRemote
+        self.replyToMessageID = replyToMessageID
+        self.remoteMatchContent = remoteMatchContent
         self.id = id
         self.role = role
         self.content = content

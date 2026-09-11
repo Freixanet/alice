@@ -58,12 +58,18 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         // exact-title registry lookup, which resolves hidden rows and
         // un-archives a canonical one a reaper had filed away.
         let resumed = try await resume(profile: profile, target: Self.canonicalTitle)
-        guard let id = resumed["session_id"] as? String, !id.isEmpty else {
+        // `session_id` is the ephemeral runtime id. The durable chat identity
+        // is `stored_session_id` for an unpersisted draft and `session_key`
+        // once a row exists. Persisting the runtime id made a brand-new bot
+        // work once and then 4007 after that runtime was reaped.
+        let durableID = (resumed["stored_session_id"] as? String)
+            ?? (resumed["session_key"] as? String)
+        guard let durableID, !durableID.isEmpty else {
             throw HermesRPCClient.Failure(
-                reason: "Hermes did not report a canonical Bot Chat for '\(profile)'."
+                reason: "Hermes did not report a durable Bot Chat for '\(profile)'."
             )
         }
-        return CanonicalBotChat(id: id)
+        return CanonicalBotChat(id: durableID)
     }
 
     // MARK: - Reading
@@ -134,7 +140,7 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// turn that had started drew the other task's answer as this one's.
     @discardableResult
     func submit(
-        profile: String, sessionID: String, text: String
+        profile: String, sessionID: String, text: String, attachments: [Attachment] = []
     ) async throws -> BotChatSubmission {
         let resumed = try await resume(profile: profile, target: sessionID)
         // Alice persists the durable SQLite row id. `session.resume` binds that
@@ -145,13 +151,57 @@ struct WebSocketBotChatSource: BotChatSessionSource {
                 reason: "Hermes resumed the chat without a live session id."
             )
         }
+
+        // Stage attachments on the SAME live runtime before submit, matching
+        // Hermes Desktop's remote-client contract. Images become attached
+        // image bytes; files return workspace-relative @file: refs that must be
+        // included in the prompt text the agent sees.
+        var fileRefs: [String] = []
+        var hasImage = false
+        for attachment in attachments {
+            switch attachment.kind {
+            case .image:
+                let attached = try await rpc.call("image.attach_bytes", JSONObject([
+                    "session_id": liveID,
+                    "content_base64": attachment.data.base64EncodedString(),
+                    "filename": attachment.name,
+                ]))
+                guard (attached["attached"] as? Bool) == true else {
+                    throw HermesRPCClient.Failure(
+                        reason: (attached["message"] as? String)
+                            ?? "Hermes could not attach \(attachment.name)."
+                    )
+                }
+                hasImage = true
+            case .file:
+                let attached = try await rpc.call("file.attach", JSONObject([
+                    "session_id": liveID,
+                    "name": attachment.name,
+                    "data_url": attachment.dataURL,
+                ]))
+                guard (attached["attached"] as? Bool) == true,
+                      let ref = attached["ref_text"] as? String, !ref.isEmpty else {
+                    throw HermesRPCClient.Failure(
+                        reason: (attached["message"] as? String)
+                            ?? "Hermes could not attach \(attachment.name)."
+                    )
+                }
+                fileRefs.append(ref)
+            }
+        }
+
+        let refs = fileRefs.joined(separator: "\n")
+        var submittedText = [refs, text].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        if submittedText.isEmpty, hasImage { submittedText = "What do you see in this image?" }
+
         let result = try await rpc.call("prompt.submit", JSONObject([
             "session_id": liveID,
-            "text": text,
+            "text": submittedText,
         ]))
         return BotChatSubmission(
             liveSessionID: liveID,
-            disposition: .init(status: result["status"] as? String)
+            disposition: .init(status: result["status"] as? String),
+            submittedText: submittedText
         )
     }
 

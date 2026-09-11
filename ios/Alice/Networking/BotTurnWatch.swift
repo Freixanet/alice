@@ -31,6 +31,17 @@ struct BotChatSubmission: Equatable, Sendable {
     /// `session.interrupt` both use. Not the stored chat id.
     let liveSessionID: String
     let disposition: Disposition
+    /// Exact text Hermes accepted after attachment refs were staged. It can
+    /// differ from the visible bubble and is the transcript-correlation key.
+    let submittedText: String
+
+    init(
+        liveSessionID: String, disposition: Disposition, submittedText: String = ""
+    ) {
+        self.liveSessionID = liveSessionID
+        self.disposition = disposition
+        self.submittedText = submittedText
+    }
 }
 
 /// A bot chat's runtime, as Hermes reports it when a socket re-attaches.
@@ -78,8 +89,9 @@ struct BotTurnWatch: Sendable {
         case apply
         /// This reply's turn ending. Apply it, then stop watching.
         case finish
-        /// The task ahead of a queued message ended; this one is next.
-        case ownTurnBegan
+        /// One queued turn ended. Re-read the canonical transcript; only the
+        /// durable prompt/reply pair can prove whether it was ours.
+        case queuedTurnEnded
     }
 
     enum CheckStep: Equatable, Sendable {
@@ -101,13 +113,13 @@ struct BotTurnWatch: Sendable {
     static let attemptsBeforeLosingTouch = 4
 
     private(set) var liveSessionID: String
-    private var taskAhead: Bool
+    private var waitingForQueuedOrigin: Bool
     private var lastHeard: Date
     private var failedChecks = 0
 
     init(submission: BotChatSubmission, now: Date) {
         liveSessionID = submission.liveSessionID
-        taskAhead = submission.disposition == .queued
+        waitingForQueuedOrigin = submission.disposition == .queued
         lastHeard = now
     }
 
@@ -118,12 +130,23 @@ struct BotTurnWatch: Sendable {
         // `message.complete` with no `status`, on the parent's session id,
         // when a child finishes — breaking on that abandoned the parent.
         let ending = LiveEvents.isTurnOutcome(frame)
-        if taskAhead {
-            guard ending else { return .ignore }
-            taskAhead = false
-            return .ownTurnBegan
+        if waitingForQueuedOrigin {
+            // There may be any number of queued turns ahead. A terminal frame
+            // is only a boundary, never proof that the next frames are ours.
+            return ending ? .queuedTurnEnded : .ignore
         }
         return ending ? .finish : .apply
+    }
+
+    var needsTranscriptCorrelation: Bool { waitingForQueuedOrigin }
+
+    /// The canonical transcript now contains the exact persisted user row for
+    /// this queued submission. From this point, frames on the live session are
+    /// ours and can stream normally.
+    mutating func confirmQueuedOrigin(now: Date) {
+        waitingForQueuedOrigin = false
+        lastHeard = now
+        failedChecks = 0
     }
 
     func shouldCheck(now: Date) -> Bool {

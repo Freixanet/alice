@@ -133,26 +133,58 @@ struct BotChatSync: Sendable {
             )
         }
 
-        // Local turns the agent has no record of. `pending`, an unresolved
-        // approval or an unacknowledged send are in flight; everything else is
-        // history from before this device read the canonical chat.
+        // Hermes intentionally coalesces consecutive text-only queued prompts
+        // into one future user turn (B + C becomes "B\n\nC"). Correlate
+        // that canonical row with the local burst before deciding which local
+        // messages are historical or which assistant placeholder it answers.
+        let userGroups = persistedUserGroups(local, in: remote)
+        var remoteCopyByLocalID: [String: String] = [:]
+        for (remoteID, group) in userGroups {
+            for message in group { remoteCopyByLocalID[message.id] = remoteID }
+            guard var canonical = byRemoteID[remoteID] else { continue }
+            // Keep Alice's presentation (visible text + attachment chips) while
+            // taking Hermes' durable identity and chronology. File refs added
+            // only for transport must never leak into the visible bubble.
+            canonical.content = group.map(\.content).filter { !$0.isEmpty }.joined(separator: "\n\n")
+            canonical.attachments = group.flatMap(\.attachments)
+            canonical.remoteMatchContent = remote.first(where: { $0.id == remoteID })?.content
+            byRemoteID[remoteID] = canonical
+        }
+
+        // A turn this device wrote comes back under Hermes' own row id. Exact
+        // assistant copies are still matched individually; user copies were
+        // handled above because one remote row can represent several locals.
+        var claimed = Set(userGroups.keys)
+        let pendingOrigins = Set(local.compactMap { message -> String? in
+            guard message.role == .assistant, message.pending || message.awaitingRemote else { return nil }
+            return message.replyToMessageID
+        })
         var carried: [Message] = []
-        // A turn this device wrote comes back in the transcript under the
-        // agent's own id, and the local copy has no id to be matched by — so
-        // it stayed beside the persisted one and the chat showed it twice. It
-        // is matched by what it says and when: see `persistedCopy`.
-        var claimed = Set<String>()
         for message in local {
             if let remoteID = message.remoteID, byRemoteID[remoteID] != nil { continue }
+            if message.role == .user, remoteCopyByLocalID[message.id] != nil { continue }
             if let copy = persistedCopy(of: message, in: remote, excluding: claimed) {
                 claimed.insert(copy)
                 continue
             }
             var kept = message
+            if let anchor = kept.replyToMessageID,
+               let remoteAnchor = remoteCopyByLocalID[anchor] {
+                kept.replyToMessageID = remoteAnchor
+                // A queued prompt is stamped by Hermes when it STARTS, which
+                // may be much later than the local placeholder was created.
+                // Keep the placeholder visually after the user row it belongs
+                // to rather than sorting it above its own prompt.
+                if let origin = remote.first(where: { $0.id == remoteAnchor }),
+                   kept.createdAt <= origin.createdAt {
+                    kept.createdAt = origin.createdAt.addingTimeInterval(0.001)
+                }
+            }
             if kept.role == .assistant, kept.botName == nil {
                 kept.botName = botName
             }
-            if !message.isInFlight && message.remoteID == nil {
+            if !message.isInFlight, message.remoteID == nil,
+               !pendingOrigins.contains(message.id) {
                 kept.localOnly = true
             }
             carried.append(kept)
@@ -162,7 +194,7 @@ struct BotChatSync: Sendable {
         // Stable: equal timestamps keep the agent's turn ahead of a local one,
         // so an optimistic send settles below the reply it prompted rather
         // than jumping over it on the next read.
-        let merged = (remoteMessages.map { (0, $0) } + carried.map { (1, $0) })
+        return (remoteMessages.map { (0, $0) } + carried.map { (1, $0) })
             .enumerated()
             .sorted { left, right in
                 let (leftIndex, leftItem) = left
@@ -174,17 +206,107 @@ struct BotChatSync: Sendable {
                 return leftIndex < rightIndex
             }
             .map(\.element.1)
-        return merged
+    }
+
+    private static func normalized(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func matchText(of message: Message) -> String {
+        normalized(message.remoteMatchContent ?? message.content)
+    }
+
+    /// Maps each persisted Hermes user row to the local user message(s) that
+    /// produced it. A run may contain several locals because Hermes' queue
+    /// losslessly merges consecutive text-only prompts with a blank line.
+    private static func persistedUserGroups(
+        _ local: [Message], in remote: [BotChatTurn]
+    ) -> [String: [Message]] {
+        let referenced = Set(local.compactMap(\.replyToMessageID))
+        var runs: [[Message]] = []
+        var run: [Message] = []
+        func flush() {
+            if !run.isEmpty { runs.append(run); run.removeAll(keepingCapacity: true) }
+        }
+        for message in local {
+            if message.role == .user, message.remoteID == nil {
+                // Old local-only legacy history must not be mistaken for a new
+                // persisted turn merely because the words happen to match.
+                if !message.localOnly || message.remoteMatchContent != nil || referenced.contains(message.id) {
+                    run.append(message)
+                } else {
+                    flush()
+                }
+            } else if message.role == .assistant, message.remoteID == nil,
+                      message.content.isEmpty, message.approval == nil {
+                // An optimistic placeholder between rapid user sends is not a
+                // semantic boundary; releaseBotTurn normally removes it, but
+                // tolerating one closes the race with a concurrent refresh.
+                continue
+            } else {
+                flush()
+            }
+        }
+        flush()
+
+        let alreadyRepresented = Set(local.compactMap(\.remoteID))
+        var usedLocalIDs = Set<String>()
+        var result: [String: [Message]] = [:]
+
+        for turn in remote where turn.role == .user && !alreadyRepresented.contains(turn.id) {
+            let target = normalized(turn.content)
+            guard !target.isEmpty else { continue }
+            var best: [Message]?
+            var bestScore = TimeInterval.greatestFiniteMagnitude
+
+            for candidateRun in runs {
+                for start in candidateRun.indices {
+                    var group: [Message] = []
+                    var parts: [String] = []
+                    for index in start..<candidateRun.endIndex {
+                        let message = candidateRun[index]
+                        if usedLocalIDs.contains(message.id) { break }
+                        let part = matchText(of: message)
+                        if part.isEmpty { break }
+                        group.append(message)
+                        parts.append(part)
+                        let joined = parts.joined(separator: "\n\n")
+
+                        if joined == target, let first = group.first, let last = group.last {
+                            let timestampUnknown = turn.createdAt.timeIntervalSince1970 == 0
+                            let plausible = timestampUnknown || (
+                                turn.createdAt >= first.createdAt.addingTimeInterval(-copyClockSlack)
+                                && turn.createdAt <= last.createdAt.addingTimeInterval(copyWindow)
+                            )
+                            if plausible {
+                                let score = timestampUnknown
+                                    ? TimeInterval(group.count)
+                                    : abs(turn.createdAt.timeIntervalSince(last.createdAt))
+                                if best == nil || score < bestScore
+                                    || (score == bestScore && group.count > (best?.count ?? 0)) {
+                                    best = group
+                                    bestScore = score
+                                }
+                            }
+                        }
+
+                        if joined != target && !target.hasPrefix(joined + "\n\n") { break }
+                    }
+                }
+            }
+
+            if let best {
+                result[turn.id] = best
+                for message in best { usedLocalIDs.insert(message.id) }
+            }
+        }
+        return result
     }
 
     /// The phone and the machine running Hermes keep their own clocks, and a
     /// message sent to a busy bot is written only when its turn begins.
     static let copyClockSlack: TimeInterval = 60
     static let copyWindow: TimeInterval = 6 * 60 * 60
-    /// How much earlier than its placeholder a reply may be stamped and still
-    /// be its answer. Small: the reply to the previous message is not this one.
-    static let replyClockSlack: TimeInterval = 5
-
     /// The persisted turn a local one is a copy of, once Hermes has written it.
     ///
     /// Matched by what it says and when, because the local copy has no other
@@ -198,7 +320,9 @@ struct BotChatSync: Sendable {
         guard message.remoteID == nil, message.approval == nil,
               message.role == .user || (message.role == .assistant && !message.isInFlight)
         else { return nil }
-        let text = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = message.role == .user
+            ? matchText(of: message)
+            : normalized(message.content)
         guard !text.isEmpty else { return nil }
         let earliest = message.createdAt.addingTimeInterval(-copyClockSlack)
         let latest = message.createdAt.addingTimeInterval(copyWindow)
@@ -210,13 +334,23 @@ struct BotChatSync: Sendable {
         }?.id
     }
 
-    /// Whether an answer to `placeholder` has landed in the transcript.
+    /// Whether the answer to this exact placeholder has landed.
+    ///
+    /// Time cannot correlate queued bot turns: several complete replies may
+    /// land while this prompt is still waiting. The placeholder therefore
+    /// points at its persisted user row, and only a later persisted assistant
+    /// can settle it. A legacy placeholder without an anchor stays visible.
     static func replyLanded(after placeholder: Message, in messages: [Message]) -> Bool {
-        let earliest = placeholder.createdAt.addingTimeInterval(-replyClockSlack)
-        return messages.contains { other in
-            other.role == .assistant && other.remoteID != nil
-                && !other.content.isEmpty && other.createdAt >= earliest
+        guard let anchor = placeholder.replyToMessageID,
+              let origin = messages.firstIndex(where: { message in
+                  message.role == .user && message.remoteID == anchor
+              })
+        else { return false }
+        for other in messages[messages.index(after: origin)...] {
+            if other.role == .user, other.remoteID != nil { return false }
+            if other.role == .assistant, other.remoteID != nil, !other.content.isEmpty { return true }
         }
+        return false
     }
 
     /// Settles replies this device stopped watching before they arrived.
@@ -231,10 +365,12 @@ struct BotChatSync: Sendable {
     ) -> [Message] {
         messages.compactMap { (message: Message) -> Message? in
             guard message.role == .assistant, message.remoteID == nil,
-                  message.approval == nil, !watching.contains(message.id),
-                  message.awaitingRemote || message.pending
+                  message.approval == nil, message.awaitingRemote || message.pending
             else { return message }
+            // A canonical answer is authoritative even if this device still
+            // has a watcher. Otherwise a watched placeholder is untouched.
             if replyLanded(after: message, in: messages) { return nil }
+            guard !watching.contains(message.id) else { return message }
             var waiting = message
             waiting.pending = false
             waiting.awaitingRemote = true

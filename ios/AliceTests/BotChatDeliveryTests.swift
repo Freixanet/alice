@@ -192,17 +192,28 @@ final class BotChatDeliveryTests: XCTestCase {
         XCTAssertEqual(done, .finish)
     }
 
-    func testAQueuedMessageWaitsOutTheTaskAheadOfIt() {
+    func testAQueuedMessageNeverClaimsAStreamByCountingBoundaries() {
         var watch = Self.watch(.queued)
-        // The bot's other task is still talking; none of it is this reply.
-        let theirs = watch.receive(Self.frame("message.delta", ["text": "otro"]), now: Self.t0)
-        XCTAssertEqual(theirs, .ignore)
-        let theirEnd = watch.receive(Self.frame("message.complete", ["status": "complete"]), now: Self.t0)
-        XCTAssertEqual(theirEnd, .ownTurnBegan)
-        let ours = watch.receive(Self.frame("message.delta", ["text": "hola"]), now: Self.t0)
-        XCTAssertEqual(ours, .apply)
-        let ourEnd = watch.receive(Self.frame("message.complete", ["status": "complete"]), now: Self.t0)
-        XCTAssertEqual(ourEnd, .finish)
+        // Queue depth is not part of prompt.submit. Every frame stays
+        // unclaimed until the canonical transcript identifies our exact turn.
+        XCTAssertTrue(watch.needsTranscriptCorrelation)
+        let first = watch.receive(Self.frame("message.delta", ["text": "uno"]), now: Self.t0)
+        XCTAssertEqual(first, .ignore)
+        let firstEnd = watch.receive(Self.frame("message.complete", ["status": "complete"]), now: Self.t0)
+        XCTAssertEqual(firstEnd, .queuedTurnEnded)
+        let second = watch.receive(Self.frame("message.delta", ["text": "dos"]), now: Self.t0)
+        XCTAssertEqual(second, .ignore)
+        let secondEnd = watch.receive(Self.frame("message.complete", ["status": "complete"]), now: Self.t0)
+        XCTAssertEqual(secondEnd, .queuedTurnEnded)
+
+        watch.confirmQueuedOrigin(now: Self.at(1))
+        XCTAssertFalse(watch.needsTranscriptCorrelation)
+        XCTAssertEqual(
+            watch.receive(Self.frame("message.delta", ["text": "mío"]), now: Self.at(2)), .apply
+        )
+        XCTAssertEqual(
+            watch.receive(Self.frame("message.complete", ["status": "complete"]), now: Self.at(3)), .finish
+        )
     }
 
     // MARK: - Silence
@@ -282,6 +293,62 @@ final class BotChatDeliveryTests: XCTestCase {
         XCTAssertEqual(merged.map(\.id), ["r-1"])
     }
 
+    func testPersistedUserTurnReanchorsItsReplyPlaceholder() throws {
+        let sent = Message(id: "local-u", role: .user, content: "hazlo", createdAt: Self.at(100))
+        let reply = Message(
+            id: "p", role: .assistant, content: "", createdAt: Self.at(101), pending: true,
+            replyToMessageID: "local-u"
+        )
+        let merged = BotChatSync.merge(
+            [Self.turn("remote-u", .user, "hazlo", 103)], into: [sent, reply]
+        )
+        let placeholder = try XCTUnwrap(merged.first(where: { $0.id == "p" }))
+        XCTAssertEqual(placeholder.replyToMessageID, "remote-u")
+    }
+
+    func testHermesMergedQueuedBurstBecomesOneCanonicalUserTurn() throws {
+        let b = Message(
+            id: "b", role: .user, content: "B", createdAt: Self.at(100),
+            remoteMatchContent: "B"
+        )
+        let c = Message(
+            id: "c", role: .user, content: "C", createdAt: Self.at(110),
+            remoteMatchContent: "C"
+        )
+        let reply = Message(
+            id: "p", role: .assistant, content: "", createdAt: Self.at(111), pending: true,
+            replyToMessageID: "c"
+        )
+
+        let merged = BotChatSync.merge(
+            [Self.turn("remote-bc", .user, "B\n\nC", 200)], into: [b, c, reply]
+        )
+
+        XCTAssertEqual(merged.filter { $0.role == .user }.map(\.remoteID), ["remote-bc"])
+        XCTAssertEqual(merged.first(where: { $0.remoteID == "remote-bc" })?.content, "B\n\nC")
+        let placeholder = try XCTUnwrap(merged.first(where: { $0.id == "p" }))
+        XCTAssertEqual(placeholder.replyToMessageID, "remote-bc")
+        XCTAssertGreaterThan(placeholder.createdAt, Self.at(200))
+    }
+
+    func testTransportFileRefCorrelatesWithoutLeakingIntoVisibleBubble() throws {
+        let attachment = Attachment(
+            id: "f", name: "report.txt", mime: "text/plain", kind: .file, data: Data("x".utf8)
+        )
+        let sent = Message(
+            id: "u", role: .user, content: "summarize this", createdAt: Self.at(100),
+            attachments: [attachment], remoteMatchContent: "@file:`attachments/report.txt`\n\nsummarize this"
+        )
+        let merged = BotChatSync.merge(
+            [Self.turn("remote-u", .user, "@file:`attachments/report.txt`\n\nsummarize this", 101)],
+            into: [sent]
+        )
+        let canonical = try XCTUnwrap(merged.first)
+        XCTAssertEqual(canonical.remoteID, "remote-u")
+        XCTAssertEqual(canonical.content, "summarize this")
+        XCTAssertEqual(canonical.attachments, [attachment])
+    }
+
     func testAFinishedReplyIsShownOnceItIsPersisted() {
         let reply = Message(
             id: "local-reply", role: .assistant, content: "Sin novedades.",
@@ -311,10 +378,28 @@ final class BotChatDeliveryTests: XCTestCase {
     // MARK: - A reply nobody was watching
 
     func testAReplyThatLandedWhileNobodyWatchedReplacesItsPlaceholder() {
-        let placeholder = Message(id: "p", role: .assistant, content: "", createdAt: Self.at(100), pending: true)
-        let landed = Message(id: "r", role: .assistant, content: "informe", createdAt: Self.at(900), remoteID: "r")
-        let settled = BotChatSync.settle([placeholder, landed], watching: [], note: "Lost touch")
-        XCTAssertEqual(settled.map(\.id), ["r"])
+        let prompt = Message(id: "u", role: .user, content: "informe", createdAt: Self.at(100), remoteID: "u")
+        let placeholder = Message(
+            id: "p", role: .assistant, content: "", createdAt: Self.at(101), pending: true,
+            replyToMessageID: "u"
+        )
+        let landed = Message(id: "r", role: .assistant, content: "hecho", createdAt: Self.at(900), remoteID: "r")
+        let settled = BotChatSync.settle([prompt, placeholder, landed], watching: [], note: "Lost touch")
+        XCTAssertEqual(settled.map(\.id), ["u", "r"])
+    }
+
+    func testAReplyFromATurnAheadDoesNotSettleAQueuedPlaceholder() {
+        let earlierPrompt = Message(id: "u1", role: .user, content: "primero", createdAt: Self.at(100), remoteID: "u1")
+        let earlierReply = Message(id: "r1", role: .assistant, content: "uno", createdAt: Self.at(200), remoteID: "r1")
+        let waiting = Message(
+            id: "p2", role: .assistant, content: "", createdAt: Self.at(150), pending: true,
+            replyToMessageID: "u2"
+        )
+        let settled = BotChatSync.settle(
+            [earlierPrompt, waiting, earlierReply], watching: [], note: "Lost touch"
+        )
+        XCTAssertEqual(settled.map(\.id), ["u1", "p2", "r1"])
+        XCTAssertTrue(settled[1].awaitingRemote)
     }
 
     func testAReplyNotYetLandedSaysTheBotMayStillBeWorking() {
@@ -348,6 +433,8 @@ final class BotChatDeliveryTests: XCTestCase {
         let message = try JSONDecoder().decode(Message.self, from: Data(json.utf8))
         XCTAssertNil(message.deliveryNote)
         XCTAssertFalse(message.awaitingRemote)
+        XCTAssertNil(message.replyToMessageID)
+        XCTAssertNil(message.remoteMatchContent)
 
         var waiting = message
         waiting.awaitingRemote = true

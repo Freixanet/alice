@@ -3608,7 +3608,8 @@ final class AppStore {
     /// agent on the other end *is* the bot, with its own SOUL, memory, skills
     /// and configuration.
     private func sendToBotChat(
-        profile: String, conversationID: String, replyID: String, text: String
+        profile: String, conversationID: String, replyID: String, text: String,
+        attachments: [Attachment]
     ) async {
         guard let source = await botChatSource() else {
             fail(replyID, conversationID: conversationID,
@@ -3630,12 +3631,31 @@ final class AppStore {
             }
             let events = source.rpc.events()
             let submission = try await source.submit(
-                profile: profile, sessionID: chat.resolvedID, text: text
+                profile: profile, sessionID: chat.resolvedID, text: text,
+                attachments: attachments
             )
+            setRemoteMatchContent(
+                submission.submittedText, forReply: replyID, conversationID: conversationID
+            )
+            if activeBotTurn?.token == token {
+                activeBotTurn?.disposition = submission.disposition
+            }
             track(liveSessionID: submission.liveSessionID, for: conversationID)
+            // Stop may have been tapped while prompt.submit itself was still
+            // awaiting its ACK. In that window interrupting first would race
+            // the yet-to-arrive prompt and let it run AFTER the stop. The stop
+            // intent is latched and fulfilled here, once Hermes has accepted
+            // this exact submit and its live runtime is known.
+            if botStopInFlight == token {
+                let ended = await interruptBotTurn(
+                    token: token, profile: profile, storedSessionID: chat.resolvedID,
+                    liveSessionID: submission.liveSessionID, source: source
+                )
+                if ended || activeBotTurn?.token != token { return }
+            }
             var watch = BotTurnWatch(submission: submission, now: Date())
             // Said while it is true: a busy bot has not started on this yet.
-            var waitingNote = Self.deliveryNote(for: submission.disposition, label: label)
+            let waitingNote = Self.deliveryNote(for: submission.disposition, label: label)
             setDeliveryNote(waitingNote, on: replyID, conversationID: conversationID)
 
             // Frames end the reply only when they say the turn is over, and a
@@ -3645,9 +3665,19 @@ final class AppStore {
                 case let .frame(event):
                     let step = watch.receive(event, now: Date())
                     if step == .ignore { continue }
-                    if step == .ownTurnBegan {
-                        waitingNote = nil
-                        setDeliveryNote(nil, on: replyID, conversationID: conversationID)
+                    if step == .queuedTurnEnded {
+                        // A queued submission may have several turns ahead.
+                        // Never claim the next stream blindly: the canonical
+                        // transcript settles us only after our exact user row.
+                        await refreshBotChat(conversationID)
+                        if messageLocation(replyID, conversationID: conversationID) == nil {
+                            ending = .outcome
+                            break watching
+                        }
+                        if botReplyOriginIsRemote(replyID, conversationID: conversationID) {
+                            watch.confirmQueuedOrigin(now: Date())
+                            setDeliveryNote(nil, on: replyID, conversationID: conversationID)
+                        }
                         continue
                     }
                     if let chatEvent = Self.chatEvent(from: event) {
@@ -3664,6 +3694,17 @@ final class AppStore {
                     }
                 case .tick:
                     guard watch.shouldCheck(now: Date()) else { continue }
+                    if watch.needsTranscriptCorrelation {
+                        await refreshBotChat(conversationID)
+                        if messageLocation(replyID, conversationID: conversationID) == nil {
+                            ending = .outcome
+                            break watching
+                        }
+                        if botReplyOriginIsRemote(replyID, conversationID: conversationID) {
+                            watch.confirmQueuedOrigin(now: Date())
+                            setDeliveryNote(nil, on: replyID, conversationID: conversationID)
+                        }
+                    }
                     let state: Result<BotTurnState, Error>
                     let storedSessionID = chat.resolvedID
                     let liveSessionID = watch.liveSessionID
@@ -3688,7 +3729,10 @@ final class AppStore {
                         if liveSessionIDChanged {
                             track(liveSessionID: watch.liveSessionID, for: conversationID)
                         }
-                        setDeliveryNote(waitingNote, on: replyID, conversationID: conversationID)
+                        setDeliveryNote(
+                            watch.needsTranscriptCorrelation ? waitingNote : nil,
+                            on: replyID, conversationID: conversationID
+                        )
                     case .reconnecting:
                         setDeliveryNote(
                             "Reconnecting to Hermes…", on: replyID, conversationID: conversationID
@@ -3854,6 +3898,9 @@ final class AppStore {
         guard !activeIsRecoveredHistory else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !draftAttachments.isEmpty else { return }
+        // Hermes stop clears the active turn AND its server-side queue. Do not
+        // accept another local send while that destructive RPC is unresolved.
+        guard botStopInFlight == nil else { return }
         if isSending {
             // A busy bot still takes a message — Hermes folds it into the task
             // it is running or queues it — so the chat following that bot lets
@@ -3957,7 +4004,8 @@ final class AppStore {
         conversations[index].messages.append(
             Message(
                 id: replyID, role: .assistant, content: "",
-                createdAt: Date(), pending: true, botName: invokedBot
+                createdAt: Date(), pending: true, botName: invokedBot,
+                replyToMessageID: user.id
             )
         )
         if conversations[index].title == "New chat" {
@@ -3981,7 +4029,8 @@ final class AppStore {
                     profile: directBot,
                     conversationID: conversationID,
                     replyID: replyID,
-                    text: text
+                    text: text,
+                    attachments: attachments
                 )
             }
             return
@@ -4101,25 +4150,38 @@ final class AppStore {
     }
 
     func stop() {
-        // A bot chat's run lives on the agent, not in this task: cancelling
-        // here would only stop listening. Tell the session to stop — by the
-        // runtime id Hermes knows it under, which the stored row is not.
+        // A bot chat's run lives on the agent, not in this task. `interrupt`
+        // also clears Hermes' queued_prompt(s), so stopping is transactional:
+        // keep listening until the backend confirms it and reject a new local
+        // send meanwhile. The old fire-and-forget path painted "Stopped." even
+        // when the RPC failed, then a new send could be erased by the late stop.
         if let index = conversations.firstIndex(where: { $0.id == activeID }),
            let sessionID = conversations[index].hermesSessionID,
            let profile = conversations[index].routedBotName,
-           conversations[index].isCanonicalBotChat {
-            let liveSessionID = botLiveSessionIDs[conversations[index].id]
+           conversations[index].isCanonicalBotChat,
+           let turn = activeBotTurn {
+            guard botStopInFlight == nil else { return }
+            let token = turn.token
+            botStopInFlight = token
+            setDeliveryNote(
+                "Stopping…", on: turn.replyID, conversationID: turn.conversationID
+            )
+
+            // A turn with no disposition has not received prompt.submit's ACK
+            // yet. Latch the intent; sendToBotChat fulfils it immediately after
+            // that ACK so stop can never overtake the submit it is meant to end.
+            guard turn.disposition != nil else { return }
+            let liveSessionID = botLiveSessionIDs[turn.conversationID]
             Task { [weak self] in
-                guard let source = await self?.botChatSource() else { return }
-                _ = try? await source.interrupt(
-                    profile: profile, storedSessionID: sessionID, liveSessionID: liveSessionID
+                guard let self else { return }
+                _ = await self.interruptBotTurn(
+                    token: token, profile: profile, storedSessionID: sessionID,
+                    liveSessionID: liveSessionID, source: nil
                 )
             }
-        }
-        if activeBotTurn != nil {
-            releaseBotTurn(stopped: true)
             return
         }
+
         streamTask?.cancel()
         streamTask = nil
         isSending = false
@@ -4134,6 +4196,7 @@ final class AppStore {
         let token: UUID
         let conversationID: String
         let replyID: String
+        var disposition: BotChatSubmission.Disposition? = nil
     }
 
     private enum BotTurnEnding {
@@ -4141,6 +4204,9 @@ final class AppStore {
     }
 
     private var activeBotTurn: ActiveBotTurn?
+    /// A confirmed stop is destructive to Hermes' whole server-side queue.
+    /// While its RPC is in flight, another send must stay in the composer.
+    private var botStopInFlight: UUID?
     /// The runtime id each bot chat was last reached under, which is what
     /// `session.interrupt` needs. It dies with the socket; `interrupt` recovers.
     private var botLiveSessionIDs: [String: String] = [:]
@@ -4150,15 +4216,103 @@ final class AppStore {
         botLiveSessionIDs[conversationID] = liveSessionID
     }
 
+    /// Completes one latched Stop against the exact Hermes runtime that
+    /// accepted the turn. Returns true when there is no watcher left to run.
+    @discardableResult
+    private func interruptBotTurn(
+        token: UUID, profile: String, storedSessionID: String,
+        liveSessionID: String?, source existingSource: WebSocketBotChatSource?
+    ) async -> Bool {
+        guard botStopInFlight == token, activeBotTurn?.token == token else { return true }
+        let conversationID = activeBotTurn!.conversationID
+        let replyID = activeBotTurn!.replyID
+
+        do {
+            let source: WebSocketBotChatSource
+            if let existingSource {
+                source = existingSource
+            } else if let connected = await botChatSource() {
+                source = connected
+            } else {
+                throw HermesRPCClient.Failure(reason: "Hermes is not connected.")
+            }
+            let interrupted = try await source.interrupt(
+                profile: profile, storedSessionID: storedSessionID,
+                liveSessionID: liveSessionID
+            )
+            guard botStopInFlight == token, activeBotTurn?.token == token else { return true }
+            botStopInFlight = nil
+
+            if interrupted {
+                releaseBotTurn(
+                    stopped: true, expectedToken: token,
+                    stopMessage: "Stopped. Any queued messages were cleared too."
+                )
+                await refreshBotChat(conversationID)
+                return true
+            }
+
+            // It may have finished in the race between the tap and the RPC.
+            // Re-read canonical truth before deciding what to leave on screen.
+            await refreshBotChat(conversationID)
+            if messageLocation(replyID, conversationID: conversationID) == nil {
+                releaseBotWatcher(expectedToken: token)
+                return true
+            }
+            setDeliveryNote(
+                "Hermes had already stopped. Checking for its reply…",
+                on: replyID, conversationID: conversationID
+            )
+            return false
+        } catch {
+            guard botStopInFlight == token else { return activeBotTurn?.token != token }
+            botStopInFlight = nil
+            guard activeBotTurn?.token == token else { return true }
+            setDeliveryNote(
+                "Couldn’t stop Hermes. It may still be working.",
+                on: replyID, conversationID: conversationID
+            )
+            return false
+        }
+    }
+
+    private func setRemoteMatchContent(
+        _ content: String, forReply replyID: String, conversationID: String
+    ) {
+        guard let reply = messageLocation(replyID, conversationID: conversationID),
+              let originID = conversations[reply.chat].messages[reply.message].replyToMessageID,
+              let origin = conversations[reply.chat].messages.firstIndex(where: { $0.id == originID })
+        else { return }
+        conversations[reply.chat].messages[origin].remoteMatchContent = content
+        persistConversations()
+    }
+
+    /// True once Hermes' canonical transcript contains the exact user row this
+    /// local assistant placeholder belongs to. For queued sends this is the
+    /// only safe point at which the live WebSocket stream becomes ours.
+    private func botReplyOriginIsRemote(
+        _ replyID: String, conversationID: String
+    ) -> Bool {
+        guard let reply = messageLocation(replyID, conversationID: conversationID),
+              let anchor = conversations[reply.chat].messages[reply.message].replyToMessageID
+        else { return false }
+        return conversations[reply.chat].messages.contains { message in
+            message.role == .user && message.remoteID == anchor
+        }
+    }
+
     /// Lets go of the reply being followed and settles it where it stands.
     ///
     /// Stopped, it says so. Superseded by a newer message to the same busy bot,
     /// an empty placeholder goes — Hermes folds that message in or queues it,
     /// and the answer arrives with the newer one — and a partial one is left
     /// for the transcript to complete.
-    private func releaseBotTurn(stopped: Bool) {
-        guard let turn = activeBotTurn else { return }
+    private func releaseBotTurn(
+        stopped: Bool, expectedToken: UUID? = nil, stopMessage: String = "Stopped."
+    ) {
+        guard let turn = activeBotTurn, expectedToken == nil || turn.token == expectedToken else { return }
         activeBotTurn = nil
+        if botStopInFlight == turn.token { botStopInFlight = nil }
         streamTask?.cancel()
         streamTask = nil
         isSending = false
@@ -4169,7 +4323,7 @@ final class AppStore {
         reply.deliveryNote = nil
         if stopped {
             if reply.content.isEmpty && reply.approval == nil {
-                reply.content = "Stopped."
+                reply.content = stopMessage
                 reply.incomplete = true
             }
         } else if reply.content.isEmpty && reply.approval == nil {
@@ -4181,6 +4335,15 @@ final class AppStore {
         }
         conversations[location.chat].messages[location.message] = reply
         persistConversations()
+    }
+
+    private func releaseBotWatcher(expectedToken: UUID) {
+        guard activeBotTurn?.token == expectedToken else { return }
+        activeBotTurn = nil
+        if botStopInFlight == expectedToken { botStopInFlight = nil }
+        streamTask?.cancel()
+        streamTask = nil
+        isSending = false
     }
 
     private func setDeliveryNote(_ note: String?, on replyID: String, conversationID: String) {
