@@ -3665,6 +3665,12 @@ final class AppStore {
                 case let .frame(event):
                     let step = watch.receive(event, now: Date())
                     if step == .ignore { continue }
+                    if step == .finish,
+                       let failure = Self.botTerminalFailure(from: event) {
+                        recordBotFailure(
+                            failure, on: replyID, conversationID: conversationID
+                        )
+                    }
                     if step == .queuedTurnEnded {
                         // A queued submission may have several turns ahead.
                         // Never claim the next stream blindly: the canonical
@@ -3737,8 +3743,8 @@ final class AppStore {
                         setDeliveryNote(
                             "Reconnecting to Hermes…", on: replyID, conversationID: conversationID
                         )
-                    case .endedUnseen:
-                        ending = .endedUnseen
+                    case let .endedUnseen(failure):
+                        ending = .endedUnseen(failure)
                         break watching
                     case .lostTouch:
                         ending = .lostTouch
@@ -3763,20 +3769,33 @@ final class AppStore {
             setDeliveryNote(nil, on: replyID, conversationID: conversationID)
             finish(replyID, conversationID: conversationID)
             await refreshBotChat(conversationID)
-        case .endedUnseen:
-            // Nothing is running and no ending was seen: the phone slept
-            // through it, or Hermes dropped the message. The transcript says
-            // which — a landed answer replaces the placeholder.
+        case let .endedUnseen(retainedFailure):
+            // Nothing is running and no ending was seen. A disconnected client
+            // can miss Hermes' terminal frame; session.activate/resume retains
+            // failed turns in `inflight`, so prefer that exact cause over a
+            // guessed "finished without answering" message.
             awaitRemote(replyID, conversationID: conversationID, note: nil)
             await refreshBotChat(conversationID)
             if botChatFailure[conversationID] == nil,
-               let location = messageLocation(replyID, conversationID: conversationID) {
-                conversations[location.chat].messages[location.message].awaitingRemote = false
-                conversations[location.chat].messages[location.message].deliveryNote = nil
-                fail(replyID, conversationID: conversationID,
-                     message: "\(label) finished without answering this. Send it again if you still need a reply.",
-                     limit: nil)
-                persistConversations()
+               messageLocation(replyID, conversationID: conversationID) != nil {
+                if let retainedFailure {
+                    recordBotFailure(
+                        retainedFailure, on: replyID, conversationID: conversationID
+                    )
+                } else {
+                    if let location = messageLocation(
+                        replyID, conversationID: conversationID
+                    ) {
+                        conversations[location.chat].messages[location.message].awaitingRemote = false
+                        conversations[location.chat].messages[location.message].deliveryNote = nil
+                    }
+                    fail(
+                        replyID, conversationID: conversationID,
+                        message: "\(label) stopped before producing a final reply. Hermes no longer reports this turn as running.",
+                        limit: nil
+                    )
+                    persistConversations()
+                }
             } else if botChatFailure[conversationID] != nil {
                 awaitRemote(
                     replyID, conversationID: conversationID,
@@ -3790,6 +3809,55 @@ final class AppStore {
             )
             await refreshBotChat(conversationID)
         }
+    }
+
+    /// A terminal error carried by the live WebSocket frame. The same shape
+    /// is also reconstructed from Hermes' retained `inflight` state after a
+    /// reconnect, so both paths show the provider's real cause.
+    nonisolated static func botTerminalFailure(
+        from event: HermesRPCEvent
+    ) -> BotTurnFailure? {
+        guard event.type == "message.complete",
+              (event.payload["status"] as? String) == "error"
+        else { return nil }
+        let raw = ((event.payload["error"] as? String)
+            ?? (event.payload["text"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        return BotTurnFailure(
+            message: raw, partial: "",
+            recoverable: (event.payload["recoverable"] as? Bool) == true
+        )
+    }
+
+    private func recordBotFailure(
+        _ failure: BotTurnFailure, on replyID: String, conversationID: String
+    ) {
+        guard let location = messageLocation(replyID, conversationID: conversationID) else { return }
+        var reply = conversations[location.chat].messages[location.message]
+        let cause = failure.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let retained = failure.partial.trimmingCharacters(in: .whitespacesAndNewlines)
+        let heading = "Hermes stopped before finishing."
+        var pieces: [String] = []
+        if !reply.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            pieces.append(reply.content)
+        } else if !retained.isEmpty {
+            pieces.append(retained)
+        }
+        let detail = cause.isEmpty ? heading : "\(heading)\n\n\(cause)"
+        if !pieces.contains(where: { $0.contains(cause) && !cause.isEmpty }) {
+            pieces.append(detail)
+        }
+        reply.content = pieces.joined(separator: "\n\n")
+        reply.pending = false
+        reply.awaitingRemote = false
+        reply.deliveryNote = nil
+        reply.error = cause.isEmpty ? heading : cause
+        reply.errorLimit = nil
+        reply.incomplete = true
+        reply.runStatus = .failed
+        conversations[location.chat].messages[location.message] = reply
+        persistConversations()
     }
 
     /// One pushed frame as the event this app already knows how to draw.
@@ -4200,7 +4268,8 @@ final class AppStore {
     }
 
     private enum BotTurnEnding {
-        case outcome, failed, stopped, endedUnseen, lostTouch
+        case outcome, failed, stopped, lostTouch
+        case endedUnseen(BotTurnFailure?)
     }
 
     private var activeBotTurn: ActiveBotTurn?

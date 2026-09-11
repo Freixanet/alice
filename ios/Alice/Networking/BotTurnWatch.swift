@@ -44,14 +44,25 @@ struct BotChatSubmission: Equatable, Sendable {
     }
 }
 
+/// A terminal turn Hermes retained because the client missed its ending.
+struct BotTurnFailure: Equatable, Sendable {
+    let message: String
+    let partial: String
+    let recoverable: Bool
+}
+
 /// A bot chat's runtime, as Hermes reports it when a socket re-attaches.
 struct BotTurnState: Equatable, Sendable {
     let liveSessionID: String
     let running: Bool
+    let failure: BotTurnFailure?
 
-    init(liveSessionID: String, running: Bool) {
+    init(
+        liveSessionID: String, running: Bool, failure: BotTurnFailure? = nil
+    ) {
         self.liveSessionID = liveSessionID
         self.running = running
+        self.failure = failure
     }
 
     /// From a `session.activate` or `session.resume` result.
@@ -60,6 +71,18 @@ struct BotTurnState: Equatable, Sendable {
         liveSessionID = id
         running = (payload["running"] as? Bool) == true
             || (payload["status"] as? String) == "streaming"
+        if let inflight = payload["inflight"] as? [String: Any],
+           (inflight["streaming"] as? Bool) != true,
+           let raw = inflight["error"] as? String {
+            let error = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            failure = error.isEmpty ? nil : BotTurnFailure(
+                message: error,
+                partial: (inflight["assistant"] as? String) ?? "",
+                recoverable: (inflight["recoverable"] as? Bool) == true
+            )
+        } else {
+            failure = nil
+        }
     }
 }
 
@@ -99,8 +122,9 @@ struct BotTurnWatch: Sendable {
         case keepWaiting(liveSessionIDChanged: Bool)
         /// Hermes could not be asked; it will be asked again.
         case reconnecting
-        /// Nothing is running, and no ending was seen.
-        case endedUnseen
+        /// Nothing is running, and no ending was seen. Hermes may retain the
+        /// terminal failure a disconnected client missed.
+        case endedUnseen(failure: BotTurnFailure?)
         /// Hermes could not be reached, repeatedly.
         case lostTouch
     }
@@ -160,7 +184,9 @@ struct BotTurnWatch: Sendable {
             lastHeard = now
             let changed = state.liveSessionID != liveSessionID
             liveSessionID = state.liveSessionID
-            return state.running ? .keepWaiting(liveSessionIDChanged: changed) : .endedUnseen
+            return state.running
+                ? .keepWaiting(liveSessionIDChanged: changed)
+                : .endedUnseen(failure: state.failure)
         case .failure:
             failedChecks += 1
             return failedChecks >= Self.attemptsBeforeLosingTouch ? .lostTouch : .reconnecting

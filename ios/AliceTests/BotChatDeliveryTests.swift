@@ -243,7 +243,44 @@ final class BotChatDeliveryTests: XCTestCase {
         let step = watch.checked(
             .success(BotTurnState(liveSessionID: "live-1", running: false)), now: Self.at(60)
         )
-        XCTAssertEqual(step, .endedUnseen)
+        XCTAssertEqual(step, .endedUnseen(failure: nil))
+    }
+
+    func testARetainedTerminalErrorSurvivesAWebSocketDisconnect() throws {
+        let payload = JSONObject([
+            "session_id": "live-1",
+            "running": false,
+            "status": "idle",
+            "inflight": [
+                "assistant": "",
+                "streaming": false,
+                "error": "HTTP 403: spending limit",
+                "status": "error",
+                "recoverable": true,
+            ],
+        ])
+        let state = try XCTUnwrap(BotTurnState(payload))
+        XCTAssertEqual(
+            state.failure,
+            BotTurnFailure(
+                message: "HTTP 403: spending limit", partial: "", recoverable: true
+            )
+        )
+
+        var watch = Self.watch()
+        let step = watch.checked(.success(state), now: Self.at(60))
+        XCTAssertEqual(step, .endedUnseen(failure: state.failure))
+    }
+
+    func testALiveTerminalErrorExposesHermesActualCause() throws {
+        let event = Self.frame("message.complete", [
+            "status": "error",
+            "error": "HTTP 429: fair-share rate limit",
+            "recoverable": true,
+        ])
+        let failure = try XCTUnwrap(AppStore.botTerminalFailure(from: event))
+        XCTAssertEqual(failure.message, "HTTP 429: fair-share rate limit")
+        XCTAssertTrue(failure.recoverable)
     }
 
     func testRepeatedlyFailingToReachHermesEndsTheWait() {
