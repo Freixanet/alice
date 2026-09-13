@@ -52,6 +52,34 @@ final class BotNavigationTests: XCTestCase {
         XCTAssertGreaterThan(latest.frame.maxY, window.midY, "at the end of the chat")
     }
 
+    /// A reply that lands whole — a bot's report arrives in one piece once its
+    /// turn ends — must not be left underneath the composer for the reader to
+    /// scroll out.
+    func testAReplyThatGrowsIsNotLeftUnderTheComposer() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-seedLongBotChat", "-growSeededChat"]
+        app.launch()
+
+        let grown = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Fin del informe")
+        ).firstMatch
+        XCTAssertTrue(grown.waitForExistence(timeout: 15), "the last reply grows")
+        let composer = app.buttons["composer.action"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+
+        for _ in 0..<10 where grown.frame.maxY > composer.frame.minY {
+            usleep(300_000)
+        }
+        XCTAssertLessThanOrEqual(
+            grown.frame.maxY, composer.frame.minY,
+            "the end of the reply sits above the composer without scrolling"
+        )
+        XCTAssertFalse(
+            app.buttons["chat.scrollToBottom"].exists,
+            "following the chat, there is nothing to jump to"
+        )
+    }
+
     /// Pressed straight after a flick, while the transcript is still coasting,
     /// which is when a thumb reaches for it.
     func testJumpToLatestWorksWhileTheChatIsStillMoving() {

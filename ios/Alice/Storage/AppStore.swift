@@ -2360,6 +2360,18 @@ final class AppStore {
         conversations.removeAll { $0.id == chat.id }
         conversations.insert(chat, at: 0)
         activeID = chat.id
+
+        // `-growSeededChat` makes the last reply land whole a moment after
+        // opening, the way a bot's report arrives once its turn ends.
+        guard arguments.contains("-growSeededChat") else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self,
+                  let chat = self.conversations.firstIndex(where: { $0.id == "uitest-long-bot-chat" }),
+                  let last = self.conversations[chat].messages.indices.last
+            else { return }
+            self.conversations[chat].messages[last].content += "\n\n\(report)\n\nFin del informe."
+        }
     }    #endif
 
     /// Clears everything that is over, leaving anything still waiting.

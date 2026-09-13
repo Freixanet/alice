@@ -366,12 +366,33 @@ private struct TranscriptView: View {
     let conversation: Conversation
 
     @State private var position = ScrollPosition(edge: .bottom)
-    /// Whether the reader is at the live edge. New output follows only then:
-    /// once they have scrolled up, streaming must not drag them back down.
-    @State private var nearBottom = true
+    /// Whether the transcript keeps to its live edge as it grows. Only the
+    /// reader turns it off, by scrolling up: then new output must not drag
+    /// them back down. Until they do, nothing that grows the chat — a reply
+    /// landing whole, a tool appearing, the composer or keyboard rising — may
+    /// leave the latest message underneath the composer.
+    @State private var following = true
+    /// The reader's finger, or its flick, is what is moving the transcript.
+    @State private var readerScrolling = false
+    /// The transcript's end as last measured, for decisions made a moment later.
+    @State private var lastTail: Tail?
+
+    private static func isReader(_ phase: ScrollPhase) -> Bool {
+        phase == .tracking || phase == .interacting || phase == .decelerating
+    }
     /// Set the first time the transcript reaches its live edge, so the jump
     /// button does not flash while a long chat is still settling on open.
     @State private var settled = false
+
+    /// Where the end of the transcript is, against what can be seen of it.
+    private struct Tail: Equatable {
+        let contentHeight: CGFloat
+        let viewportHeight: CGFloat
+        /// Close enough that the reader is still reading the end.
+        let near: Bool
+        /// Nothing left underneath the composer.
+        let atEnd: Bool
+    }
 
     /// How many messages are laid out at a time, and added per "earlier".
     private static let page = 80
@@ -425,16 +446,59 @@ private struct TranscriptView: View {
             // controls with nothing between them.
             .scrollEdgeEffectStyle(.soft, for: .top)
             .scrollEdgeEffectStyle(.soft, for: .bottom)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.containerSize.height
-                    >= geometry.contentSize.height - 120
-            } action: { _, isNear in
-                nearBottom = isNear
-                if isNear { settled = true }
+            .onScrollPhaseChange { oldPhase, phase in
+                readerScrolling = Self.isReader(phase)
+                // Once the reader lets go, where they left it decides. The
+                // geometry that crossed the line can arrive before the phase
+                // that says who was moving it.
+                if Self.isReader(oldPhase), !readerScrolling, let lastTail {
+                    following = lastTail.near
+                }
+            }
+            .onScrollGeometryChange(for: Tail.self) { geometry in
+                // The visible rect runs under the top controls and the
+                // composer, which are insets, so the end is reached when the
+                // last message clears the composer. Measured from the offset
+                // and the container instead, a chat at its very end read as
+                // 270pt short of it.
+                let below = geometry.contentSize.height + geometry.contentInsets.bottom
+                    - geometry.visibleRect.maxY
+                return Tail(
+                    contentHeight: geometry.contentSize.height.rounded(),
+                    viewportHeight: geometry.containerSize.height.rounded(),
+                    near: below < 120, atEnd: below < 2
+                )
+            } action: { old, tail in
+                lastTail = tail
+                if tail.near { settled = true }
+                let grew = tail.contentHeight != old.contentHeight
+                    || tail.viewportHeight != old.viewportHeight
+                if readerScrolling || !grew {
+                    // Only the offset moved: the reader, or the jump button.
+                    following = tail.near
+                    return
+                }
+                // Arriving at the end moves the insets too; being there is
+                // still being at the end.
+                if tail.near { following = true }
+                guard following, !tail.atEnd else { return }
+                // Grown past the edge with nobody moving it. Watching only the
+                // text missed a reply that landed whole, tools, notes and the
+                // composer growing — and a jump bigger than the near-bottom
+                // reach used to switch following off first.
+                //
+                // Decided a moment later, not in this frame: a drag's first
+                // frame arrives before its phase, and the insets shift as it
+                // starts, which reads as growth. Pulled straight back to the
+                // end, the reader could not scroll up at all.
+                Task { @MainActor in
+                    guard !readerScrolling, following, lastTail?.atEnd == false else { return }
+                    position.scrollTo(edge: .bottom)
+                }
             }
             .overlay(alignment: .bottom) {
                 ZStack {
-                    if settled && !nearBottom {
+                    if settled && !following {
                         Button {
                             position.scrollTo(edge: .bottom)
                         } label: {
@@ -459,15 +523,7 @@ private struct TranscriptView: View {
                 // of the near-bottom line — which is the moment a reader starts
                 // scrolling up — animated whatever the transcript's layout was
                 // doing in that instant, and the conversation lurched.
-                .animation(.snappy(duration: 0.2), value: settled && !nearBottom)
-            }
-            .onChange(of: conversation.messages.count) { oldCount, newCount in
-                guard newCount > oldCount, nearBottom else { return }
-                position.scrollTo(edge: .bottom)
-            }
-            .onChange(of: conversation.messages.last?.content) {
-                guard nearBottom else { return }
-                position.scrollTo(edge: .bottom)
+                .animation(.snappy(duration: 0.2), value: settled && !following)
             }
         }
     }
