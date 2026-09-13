@@ -388,7 +388,7 @@ struct Composer: View {
     }
 
     private var currentModel: String {
-        store.models.first { $0.id == store.selectedModel }?.label
+        store.currentChatModelLabel
             ?? (store.isConnected ? "Model" : "Not connected")
     }
 

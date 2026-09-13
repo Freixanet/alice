@@ -10,10 +10,15 @@ struct ModelPicker: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var query = ""
+    @State private var applyingModel = false
+    @State private var pendingBotModel: HermesClient.ModelOption?
+    @State private var modelConfirmation: String?
+    @State private var failure: String?
 
     /// A typed id worth offering: it looks like a model name, and nothing in
     /// the catalogue already matches it exactly.
     private var customCandidate: String? {
+        guard store.activeBotProfileForModelSelection == nil else { return nil }
         let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard typed.count >= 3, !typed.contains(" ") else { return nil }
         guard !store.models.contains(where: { $0.id == typed }) else { return nil }
@@ -50,8 +55,8 @@ struct ModelPicker: View {
                 // And once chosen, it has to be visible: a model this list has
                 // never heard of would otherwise leave the screen looking as
                 // though nothing were selected at all.
-                if let current = store.selectedModel,
-                   !store.models.contains(where: { $0.id == current }) {
+                if let current = store.currentChatModelLabel,
+                   !store.models.contains(where: { store.currentChatUses($0) }) {
                     Section("Current") {
                         HStack {
                             Text(current).foregroundStyle(.primary)
@@ -123,6 +128,45 @@ struct ModelPicker: View {
                 }
             }
             .refreshable { await store.loadModels(refreshing: true) }
+            .task {
+                // A Bot Chat's model is profile state owned by Hermes. Refresh
+                // it when this sheet opens so the checkmark reflects the
+                // server rather than a stale phone-side roster snapshot.
+                if store.activeBotProfileForModelSelection != nil, store.dashboardReady {
+                    _ = try? await store.bots()
+                }
+            }
+            .alert(
+                "Confirm model change",
+                isPresented: Binding(
+                    get: { modelConfirmation != nil },
+                    set: { if !$0 { modelConfirmation = nil; pendingBotModel = nil } }
+                )
+            ) {
+                Button("Cancel", role: .cancel) {
+                    pendingBotModel = nil
+                    modelConfirmation = nil
+                }
+                Button("Use Model") {
+                    guard let pendingBotModel else { return }
+                    modelConfirmation = nil
+                    applyBotModel(pendingBotModel, confirm: true)
+                    self.pendingBotModel = nil
+                }
+            } message: {
+                Text(modelConfirmation ?? "Hermes requires confirmation.")
+            }
+            .alert(
+                "Couldn’t change model",
+                isPresented: Binding(
+                    get: { failure != nil },
+                    set: { if !$0 { failure = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { failure = nil }
+            } message: {
+                Text(failure ?? "Hermes did not change the model.")
+            }
             .overlay {
                 if store.isLoadingModels && store.models.isEmpty {
                     ProgressView()
@@ -165,16 +209,55 @@ struct ModelPicker: View {
 
     private func row(_ model: HermesClient.ModelOption) -> some View {
         Button {
-            store.chooseModel(model.id, provider: model.provider)
-            dismiss()
+            choose(model)
         } label: {
             HStack {
                 Text(model.label).foregroundStyle(.primary)
                 Spacer()
-                if model.id == store.selectedModel {
+                if store.currentChatUses(model) {
                     Image(systemName: "checkmark")
                         .foregroundStyle(store.accent.primary(scheme))
+                } else if applyingModel, pendingBotModel == model {
+                    ProgressView()
                 }
+            }
+        }
+        .disabled(applyingModel)
+    }
+
+    private func choose(_ model: HermesClient.ModelOption) {
+        guard store.activeBotProfileForModelSelection != nil else {
+            store.chooseModel(model.id, provider: model.provider)
+            dismiss()
+            return
+        }
+        applyBotModel(model)
+    }
+
+    private func applyBotModel(
+        _ model: HermesClient.ModelOption, confirm: Bool = false
+    ) {
+        guard !applyingModel else { return }
+        guard let bot = store.activeBotForModelSelection else {
+            failure = "Hermes did not return this bot’s current profile."
+            return
+        }
+        applyingModel = true
+        pendingBotModel = model
+        Task {
+            defer { applyingModel = false }
+            do {
+                if let message = try await store.setBotModel(bot, to: model, confirm: confirm) {
+                    pendingBotModel = model
+                    modelConfirmation = message
+                } else {
+                    pendingBotModel = nil
+                    failure = nil
+                    dismiss()
+                }
+            } catch {
+                pendingBotModel = nil
+                failure = error.localizedDescription
             }
         }
     }

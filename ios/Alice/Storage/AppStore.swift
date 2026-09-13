@@ -242,6 +242,59 @@ final class AppStore {
         conversations.first { $0.id == activeID }
     }
 
+    /// A model picked while a canonical Bot Chat is open belongs to that bot,
+    /// not to Alice's global chat preference. Keeping the routing identity
+    /// explicit prevents a model chip from promising one model while Hermes
+    /// actually runs the profile's configured default.
+    var activeBotProfileForModelSelection: String? {
+        guard let conversation = activeConversation, conversation.isCanonicalBotChat else {
+            return nil
+        }
+        return conversation.routedBotName
+    }
+
+    var activeBotForModelSelection: BotRow? {
+        guard let profile = activeBotProfileForModelSelection else { return nil }
+        return cachedBots.first { $0.name == profile }
+    }
+
+    /// The catalogue row backing the model that the CURRENT chat will use.
+    /// Provider is part of the identity: several catalogues expose the same
+    /// model id through different providers with different billing/policies.
+    var currentChatModelOption: HermesClient.ModelOption? {
+        if activeBotProfileForModelSelection != nil {
+            guard let bot = activeBotForModelSelection else { return nil }
+            return botModelOption(for: bot)
+        }
+        guard let id = selectedModel else { return nil }
+        if let provider = selectedProvider, !provider.isEmpty,
+           let exact = models.first(where: { $0.id == id && $0.provider == provider }) {
+            return exact
+        }
+        return models.first { $0.id == id }
+    }
+
+    var currentChatModelLabel: String? {
+        if let option = currentChatModelOption { return option.label }
+        if let profile = activeBotProfileForModelSelection {
+            guard let id = botModel(for: profile), !id.isEmpty else { return nil }
+            return HermesClient.prettify(id)
+        }
+        if let id = selectedModel, !id.isEmpty { return HermesClient.prettify(id) }
+        return nil
+    }
+
+    func currentChatUses(_ option: HermesClient.ModelOption) -> Bool {
+        if activeBotProfileForModelSelection != nil {
+            guard let bot = activeBotForModelSelection, bot.model == option.id else { return false }
+            guard let provider = bot.provider, !provider.isEmpty else { return true }
+            return provider == option.provider
+        }
+        guard selectedModel == option.id else { return false }
+        guard let provider = selectedProvider, !provider.isEmpty else { return true }
+        return provider == option.provider
+    }
+
     // MARK: - Connection
 
     /// Restores a saved connection on launch. The address is an ordinary
