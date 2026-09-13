@@ -231,6 +231,12 @@ struct ModelPicker: View {
             dismiss()
             return
         }
+        // Already this bot's model: nothing to write, and nothing for Hermes
+        // to ask about again.
+        guard !store.currentChatUses(model) else {
+            dismiss()
+            return
+        }
         applyBotModel(model)
     }
 

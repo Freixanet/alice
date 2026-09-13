@@ -1650,9 +1650,19 @@ struct BotDetail: View {
                 }
                 .listRowBackground(Palette.card(scheme))
                 .disabled(applyingModel)
-                .onChange(of: selectedModel) { old, next in
-                    guard let next, next != old else { return }
-                    applyModel(next, previous: old)
+                .onChange(of: selectedModel) { _, next in
+                    // Only a pick that differs from what Hermes already has
+                    // pinned is a change. The page sets this picker itself —
+                    // on load, on Cancel, after a save — and each of those
+                    // used to count as a new pick. For a model Hermes asks to
+                    // confirm, that asked forever: Cancel put the current
+                    // model back, which asked again.
+                    guard let next,
+                          BotModelChoice.isChange(
+                              next, from: liveBot.model, provider: liveBot.provider
+                          )
+                    else { return }
+                    applyModel(next, previous: store.botModelOption(for: liveBot))
                 }
 
                 Picker("Section", selection: $selectedSection) {
@@ -1808,12 +1818,12 @@ struct BotDetail: View {
             Button("Cancel", role: .cancel) {
                 pendingModel = nil
                 modelConfirmation = nil
-                selectedModel = store.botModelOption(for: bot)
+                selectedModel = store.botModelOption(for: liveBot)
             }
             Button("Use Model") {
                 guard let pendingModel else { return }
                 modelConfirmation = nil
-                applyModel(pendingModel, previous: store.botModelOption(for: bot), confirm: true)
+                applyModel(pendingModel, previous: store.botModelOption(for: liveBot), confirm: true)
                 self.pendingModel = nil
             }
         } message: {
@@ -1831,7 +1841,7 @@ struct BotDetail: View {
             mark = store.mark(for: bot.name)
             name = store.botCurrentName(for: bot)
             detail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
-            selectedModel = store.botModelOption(for: bot)
+            selectedModel = store.botModelOption(for: liveBot)
             selectedSection = store.section(for: bot.name) ?? ""
             notifications = store.botNotificationsEnabled(for: bot.name)
             await notifier.refreshPermission()
@@ -1912,6 +1922,25 @@ struct BotDetail: View {
                 try? await store.deleteHermesFile(path: remote)
                 failure = nil
             } catch { failure = describeBotError(error) }
+        }
+    }
+
+    /// The bot as Hermes last reported it. `bot` is the row this page was
+    /// opened with, and goes stale the moment a model is saved.
+    private var liveBot: BotRow {
+        store.cachedBots.first { $0.name == bot.name } ?? bot
+    }
+
+    /// Whether a model picked for a bot changes what Hermes has pinned.
+    enum BotModelChoice {
+        static func isChange(
+            _ option: HermesClient.ModelOption, from model: String?, provider: String?
+        ) -> Bool {
+            guard option.id == model else { return true }
+            guard let provider, !provider.isEmpty,
+                  let chosen = option.provider, !chosen.isEmpty
+            else { return false }
+            return chosen != provider
         }
     }
 
