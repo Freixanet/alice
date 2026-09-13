@@ -108,7 +108,37 @@ struct DrawerPan: UIViewRepresentable {
         ) -> Bool {
             MainActor.assumeIsolated {
                 guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
-                return shouldBegin(pan.velocity(in: pan.view))
+                let velocity = pan.velocity(in: pan.view)
+                // A real swipe has intent and speed. Without a floor here, the
+                // few pixels a thumb naturally drifts while tapping a glass
+                // button can promote this full-screen recogniser to `.began`
+                // and make SwiftUI's Button tap lose on device. XCUI taps are
+                // perfectly still, which is why that failure escaped the test.
+                guard abs(velocity.x) >= 80 else { return false }
+                return shouldBegin(velocity)
+            }
+        }
+
+        nonisolated func gestureRecognizer(
+            _ recognizer: UIGestureRecognizer,
+            shouldReceive touch: UITouch
+        ) -> Bool {
+            MainActor.assumeIsolated {
+                // Screen-wide navigation must never compete with a control.
+                // SwiftUI commonly exposes the accessibility trait on a
+                // hosting descendant rather than a UIControl, so honour both.
+                var view: UIView? = touch.view
+                while let current = view, current !== host {
+                    if current is UIControl
+                        || current is UITextField
+                        || current is UITextView
+                        || current.accessibilityTraits.contains(.button)
+                        || current.accessibilityTraits.contains(.link) {
+                        return false
+                    }
+                    view = current.superview
+                }
+                return true
             }
         }
 

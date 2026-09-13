@@ -103,9 +103,16 @@ struct RootView: View {
                         // Deferred for the same reason as the gesture's: the page's
                         // exit direction and whatever it uncovers both have to
                         // be settled before it starts moving.
-                        BotsScreen(onClose: {
-                            DispatchQueue.main.async { store.showingBots = false }
-                        })
+                        BotsScreen(
+                            onClose: {
+                                closeBots(exitLeading: store.botsExitLeading) {}
+                            },
+                            onBack: {
+                                closeBots(exitLeading: false) {
+                                    store.goHome()
+                                }
+                            }
+                        )
                         // Same as the conversation's: the stack's container is
                         // white by default and is what the search keyboard's
                         // corners would show.
@@ -270,7 +277,10 @@ struct RootView: View {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         store.botsExitLeading = exitLeading
         settle()
-        DispatchQueue.main.async { store.showingBots = false }
+        // Do not defer this to a later run-loop turn. On a real device the
+        // page can be re-evaluated between the tap and that deferred write,
+        // leaving the visible Bots layer in place even though the action fired.
+        store.showingBots = false
     }
 
     /// Back out of a bot's conversation to the list it was opened from.

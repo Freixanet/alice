@@ -145,6 +145,26 @@ final class NavigationJourneyTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 10))
     }
 
+    /// Bots is a real page layered over Chat. Its leading chevron must
+    /// dismiss that page through RootView rather than mutating the chat and
+    /// hoping SwiftUI notices.
+    func testBotsBackReturnsToConversation() {
+        openDrawer()
+        let bots = app.buttons["sidebar.row.Bots"]
+        XCTAssertTrue(bots.waitForExistence(timeout: 10))
+        bots.tap()
+
+        let back = app.buttons["bots.back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "Bots needs a working way back")
+        back.tap()
+
+        XCTAssertTrue(
+            app.buttons["chat.leading"].waitForExistence(timeout: 10),
+            "Back from Bots should reveal the conversation"
+        )
+        XCTAssertFalse(back.exists, "the Bots page should actually be dismissed")
+    }
+
     func testActivityOpensFromTheDrawer() {
         openDrawer()
         app.buttons["sidebar.row.Activity"].tap()

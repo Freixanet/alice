@@ -7,9 +7,11 @@ import UniformTypeIdentifiers
 /// own standing instructions, model, skills and sessions. What the desktop
 /// client shows under Bot Mode is that, and so is this.
 struct BotsScreen: View {
-    /// Closes the page — Done, or having opened a chat, which lands on the
-    /// conversation the app is built around either way.
+    /// Closes the page after opening a conversation from it.
     var onClose: () -> Void = {}
+    /// Goes one level back from the Bots page. RootView owns this transition
+    /// because it also owns the page layered underneath it.
+    var onBack: () -> Void = {}
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -336,9 +338,7 @@ struct BotsScreen: View {
                 // there was no way back to the conversation. The same disc
                 // and the same chevron a bot's chat uses to get here.
                 Button {
-                    store.goHome()
-                    store.botsExitLeading = false
-                    onClose()
+                    onBack()
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 20, weight: .medium))
@@ -349,6 +349,7 @@ struct BotsScreen: View {
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Back")
+                .accessibilityIdentifier("bots.back")
 
                 Spacer()
 
