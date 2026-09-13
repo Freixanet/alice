@@ -2213,6 +2213,34 @@ final class AppStore {
             )]
         )
     }
+
+    /// UI tests only: a long bot conversation, open, so the transcript's
+    /// jump-to-latest control can be driven without a Hermes.
+    func seedLongBotChatForUITests() {
+        guard ProcessInfo.processInfo.arguments.contains("-seedLongBotChat") else { return }
+        let start = Date().addingTimeInterval(-3_600)
+        var messages: [Message] = []
+        for n in 1...30 {
+            let at = start.addingTimeInterval(Double(n) * 60)
+            messages.append(Message(
+                id: "uitest-q-\(n)", role: .user,
+                content: "Pregunta \(n): ¿qué ha cambiado desde la última vez?",
+                createdAt: at
+            ))
+            messages.append(Message(
+                id: "uitest-a-\(n)", role: .assistant,
+                content: "Respuesta de prueba \(n).",
+                createdAt: at.addingTimeInterval(20), botName: "uitest-bot"
+            ))
+        }
+        let chat = Conversation(
+            id: "uitest-long-bot-chat", title: "UI Test Bot",
+            createdAt: start, updatedAt: Date(), messages: messages, botName: "uitest-bot"
+        )
+        conversations.removeAll { $0.id == chat.id }
+        conversations.insert(chat, at: 0)
+        activeID = chat.id
+    }
     #endif
 
     /// Clears everything that is over, leaving anything still waiting.

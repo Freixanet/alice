@@ -52,6 +52,7 @@ struct AliceApp: App {
                     installRouter()
                     #if DEBUG
                     store.seedChannelAlertForUITests()
+                    store.seedLongBotChatForUITests()
                     #endif
                     await store.restoreConnection()
                     await store.restoreDashboard()
