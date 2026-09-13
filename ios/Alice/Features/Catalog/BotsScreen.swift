@@ -1671,6 +1671,15 @@ struct BotDetail: View {
                     applyModel(next, previous: store.botModelOption(for: liveBot))
                 }
 
+                if store.botModelSyncPending(bot.name) {
+                    Button("Retry model sync", systemImage: "arrow.clockwise") {
+                        guard let current = store.botModelOption(for: liveBot) else { return }
+                        applyModel(current, previous: current)
+                    }
+                    .disabled(applyingModel)
+                    .listRowBackground(Palette.card(scheme))
+                }
+
                 Picker("Section", selection: $selectedSection) {
                     Text("Unassigned").tag("")
                     ForEach(store.botCustomSections, id: \.self) { sec in
@@ -1960,13 +1969,14 @@ struct BotDetail: View {
         Task {
             defer { applyingModel = false }
             do {
-                if let message = try await store.setBotModel(bot, to: option, confirm: confirm) {
+                switch try await store.setBotModel(liveBot, to: option, confirm: confirm) {
+                case let .confirmation(message):
                     pendingModel = option
                     modelConfirmation = message
                     selectedModel = previous
-                } else {
+                case let .applied(warning):
                     selectedModel = option
-                    failure = nil
+                    failure = warning
                     onChange()
                 }
             } catch {

@@ -7,6 +7,14 @@ import XCTest
 /// longer matches: Radar IA's daily report would have failed closed the
 /// morning after its model changed.
 final class BotModelFollowTests: XCTestCase {
+    private func bot(_ model: String, provider: String) -> BotRow {
+        BotRow(
+            name: "radar-ia", displayName: "Radar IA", detail: "",
+            model: model, provider: provider, skills: 0, isDefault: false,
+            gatewayRunning: true, active: true
+        )
+    }
+
     private func job(
         _ id: String, model: String? = nil, provider: String? = nil,
         records model_snapshot: String? = nil, recordsProvider provider_snapshot: String? = nil,
@@ -67,5 +75,22 @@ final class BotModelFollowTests: XCTestCase {
     func testARoutineWithNoProfileCannotBeAddressed() {
         let orphan = job("orphan", records: "meta/muse-spark-1.3-contributor", profile: nil)
         XCTAssertEqual(changes([orphan]), [])
+    }
+
+    func testASecondChangeUsesTheLiveCachedModelAsItsStartingPoint() {
+        let stalePageRow = bot("model-a", provider: "provider-a")
+        let liveRow = bot("model-b", provider: "provider-b")
+
+        let transition = AppStore.modelSyncTransition(
+            for: stalePageRow,
+            cachedBots: [liveRow],
+            model: "model-c",
+            provider: "provider-c"
+        )
+
+        XCTAssertEqual(transition.previousModel, "model-b")
+        XCTAssertEqual(transition.previousProvider, "provider-b")
+        XCTAssertEqual(transition.model, "model-c")
+        XCTAssertEqual(transition.provider, "provider-c")
     }
 }

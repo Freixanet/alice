@@ -157,7 +157,7 @@ struct ModelPicker: View {
                 Text(modelConfirmation ?? "Hermes requires confirmation.")
             }
             .alert(
-                "Couldn’t change model",
+                "Model change needs attention",
                 isPresented: Binding(
                     get: { failure != nil },
                     set: { if !$0 { failure = nil } }
@@ -165,7 +165,7 @@ struct ModelPicker: View {
             ) {
                 Button("OK", role: .cancel) { failure = nil }
             } message: {
-                Text(failure ?? "Hermes did not change the model.")
+                Text(failure ?? "Hermes did not finish changing the model.")
             }
             .overlay {
                 if store.isLoadingModels && store.models.isEmpty {
@@ -226,14 +226,17 @@ struct ModelPicker: View {
     }
 
     private func choose(_ model: HermesClient.ModelOption) {
-        guard store.activeBotProfileForModelSelection != nil else {
+        guard let profile = store.activeBotProfileForModelSelection else {
             store.chooseModel(model.id, provider: model.provider)
             dismiss()
             return
         }
-        // Already this bot's model: nothing to write, and nothing for Hermes
-        // to ask about again.
-        guard !store.currentChatUses(model) else {
+        // An already-selected model normally has nothing to write. A partial
+        // routine/chat sync is the exception: tapping it resumes the saved,
+        // idempotent follow-up instead of silently dismissing the picker.
+        guard !store.currentChatUses(model)
+                || store.botModelSyncPending(profile)
+        else {
             dismiss()
             return
         }
@@ -253,13 +256,14 @@ struct ModelPicker: View {
         Task {
             defer { applyingModel = false }
             do {
-                if let message = try await store.setBotModel(bot, to: model, confirm: confirm) {
+                switch try await store.setBotModel(bot, to: model, confirm: confirm) {
+                case let .confirmation(message):
                     pendingBotModel = model
                     modelConfirmation = message
-                } else {
+                case let .applied(warning):
                     pendingBotModel = nil
-                    failure = nil
-                    dismiss()
+                    failure = warning
+                    if warning == nil { dismiss() }
                 }
             } catch {
                 pendingBotModel = nil

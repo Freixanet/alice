@@ -117,6 +117,7 @@ final class AppStore {
         static let botSectionOrder = "alice.bot.sectionOrder"
         static let botOrder = "alice.bot.order"
         static let cachedBots = "alice.cached.bots"
+        static let pendingBotModelSyncs = "alice.bot.model.pendingSyncs"
         static let eventWatermarks = "alice.events.watermarks"
         static let activity = "alice.events.activity"
         static let activitySeen = "alice.events.activitySeen"
@@ -171,6 +172,44 @@ final class AppStore {
         }
     }
 
+    /// A profile model was saved, but one or more routines or its live chat
+    /// have not caught up yet. Persist the old model too: without it, a retry
+    /// after relaunch cannot tell a deliberate pin from one that should move
+    /// with the bot.
+    struct PendingBotModelSync: Codable, Equatable, Sendable {
+        let previousModel: String?
+        let previousProvider: String?
+        let model: String
+        let provider: String
+    }
+
+    private var pendingBotModelSyncs: [String: PendingBotModelSync] = [:] {
+        didSet {
+            if let data = try? JSONEncoder().encode(pendingBotModelSyncs) {
+                defaults.set(data, forKey: Keys.pendingBotModelSyncs)
+            }
+        }
+    }
+
+    func botModelSyncPending(_ bot: String) -> Bool {
+        pendingBotModelSyncs[bot] != nil
+    }
+
+    nonisolated static func modelSyncTransition(
+        for bot: BotRow,
+        cachedBots: [BotRow],
+        model: String,
+        provider: String
+    ) -> PendingBotModelSync {
+        let current = cachedBots.first(where: { $0.name == bot.name }) ?? bot
+        return PendingBotModelSync(
+            previousModel: current.model,
+            previousProvider: current.provider,
+            model: model,
+            provider: provider
+        )
+    }
+
     /// True when the current roster came from Hermes' `profiles.list` Bot Mode
     /// protocol. In that mode presentation metadata belongs to the profile,
     /// not to this phone. The old UserDefaults sets remain only as a fallback
@@ -221,6 +260,12 @@ final class AppStore {
         if let data = defaults.data(forKey: Keys.cachedBots),
            let saved = try? JSONDecoder().decode([BotRow].self, from: data) {
             cachedBots = saved
+        }
+        if let data = defaults.data(forKey: Keys.pendingBotModelSyncs),
+           let saved = try? JSONDecoder().decode(
+               [String: PendingBotModelSync].self, from: data
+           ) {
+            pendingBotModelSyncs = saved
         }
         if let raw = defaults.string(forKey: Keys.theme),
            let value = ThemeChoice(rawValue: raw) { theme = value }
@@ -1243,21 +1288,63 @@ final class AppStore {
         return models.first(where: { $0.id == model })
     }
 
+    enum BotModelUpdate: Sendable {
+        case confirmation(String)
+        /// The profile itself changed. A warning means its dependent routines
+        /// or live chat still need the idempotent follow-up to be retried.
+        case applied(warning: String?)
+    }
+
     /// Persist a model selection on the Hermes profile. Bot Mode's RPC has the
     /// same expensive/data-policy confirmation handshake as the main model
-    /// picker; the returned string is the confirmation message, or nil after
-    /// a successful write.
+    /// picker. A profile write and its dependent routine/chat updates are not
+    /// one server transaction, so partial success is reported as applied with
+    /// a warning rather than thrown as though the model never changed.
     func setBotModel(
         _ bot: BotRow,
         to option: HermesClient.ModelOption,
         confirm: Bool = false
-    ) async throws -> String? {
+    ) async throws -> BotModelUpdate {
         guard let provider = option.provider, !provider.isEmpty else {
             throw HermesRPCClient.Failure(
                 reason: "Hermes did not identify the provider for this model."
             )
         }
 
+        if let pending = pendingBotModelSyncs[bot.name] {
+            if pending.model == option.id, pending.provider == provider {
+                return await completeBotModelSync(pending, botName: bot.name)
+            }
+            // Do not lose the old model needed to repair routines that only
+            // partly followed the previous change. Finish that repair before
+            // allowing another transition to replace its recovery record.
+            do {
+                try await carryModelChange(
+                    to: bot.name,
+                    previousModel: pending.previousModel,
+                    previousProvider: pending.previousProvider,
+                    model: pending.model,
+                    provider: pending.provider
+                )
+                pendingBotModelSyncs.removeValue(forKey: bot.name)
+            } catch {
+                throw HermesRPCClient.Failure(
+                    reason: "Finish syncing \(botCurrentName(for: bot.name)) to "
+                        + "\(HermesClient.prettify(pending.model)) before choosing another model. "
+                        + error.localizedDescription
+                )
+            }
+        }
+
+        // A Bot detail page can stay open across several selections. Its input
+        // row is then stale, while the cache is Hermes' latest accepted model.
+        // Always record the latter as the transition's true starting point.
+        let transition = Self.modelSyncTransition(
+            for: bot,
+            cachedBots: cachedBots,
+            model: option.id,
+            provider: provider
+        )
         if let rpc = await dashboardRPC() {
             var params: [String: Any] = [
                 "name": bot.name, "model": option.id, "provider": provider,
@@ -1265,8 +1352,10 @@ final class AppStore {
             if confirm { params["confirm_expensive_model"] = true }
             let response = try await rpc.call("profiles.configure", JSONObject(params))
             if response["confirm_required"] as? Bool == true {
-                return (response["confirm_message"] as? String)
-                    ?? "Hermes wants confirmation before using this model."
+                return .confirmation(
+                    (response["confirm_message"] as? String)
+                        ?? "Hermes wants confirmation before using this model."
+                )
             }
             let applied = response["applied"] as? [String: Any]
             guard applied?["model"] as? Bool == true else {
@@ -1290,11 +1379,28 @@ final class AppStore {
         // a routine whose record no longer matches refuses to run; a chat already
         // open keeps the model its runtime was built with. Both move with the
         // bot, or the picker shows one model while the bot runs another.
-        try await carryModelChange(
-            to: bot.name, previousModel: bot.model, previousProvider: bot.provider,
-            model: option.id, provider: provider
-        )
-        return nil
+        pendingBotModelSyncs[bot.name] = transition
+        return await completeBotModelSync(transition, botName: bot.name)
+    }
+
+    private func completeBotModelSync(
+        _ pending: PendingBotModelSync, botName: String
+    ) async -> BotModelUpdate {
+        do {
+            try await carryModelChange(
+                to: botName,
+                previousModel: pending.previousModel,
+                previousProvider: pending.previousProvider,
+                model: pending.model,
+                provider: pending.provider
+            )
+            pendingBotModelSyncs.removeValue(forKey: botName)
+            return .applied(warning: nil)
+        } catch {
+            // Keep the recovery record: the operation is idempotent and can be
+            // resumed from the picker now or after the app is relaunched.
+            return .applied(warning: error.localizedDescription)
+        }
     }
 
     /// What a bot's routine needs when the bot's model changes.
@@ -2649,6 +2755,7 @@ final class AppStore {
     func deleteBot(_ name: String) async throws {
         try await dashboard.deleteBot(name)
         botOrder.removeAll { $0 == name || $0 == name.lowercased() }
+        pendingBotModelSyncs.removeValue(forKey: name)
     }
 
     /// Profiles are the ownership boundary for Projects and Memory. Alice/Home
@@ -4465,11 +4572,39 @@ final class AppStore {
             let conversationID = conversations[chat].id
             Task { [weak self] in
                 guard let self else { return }
-                if let source = await self.botChatSource(),
-                   let target = try? await BotChatSync(source: source).resolve(profile: profile) {
-                    _ = try? await source.rewindForRetry(
-                        profile: profile, sessionID: target.resolvedID, text: priorUser.content
+                do {
+                    guard let source = await self.botChatSource() else {
+                        throw HermesRPCClient.Failure(reason: "Hermes is not connected.")
+                    }
+                    let target = try await BotChatSync(source: source).resolve(profile: profile)
+                    guard let current = self.conversations.first(where: { $0.id == conversationID })
+                    else { throw HermesRPCClient.Failure(reason: "This chat is no longer open.") }
+                    if let turnID = try await self.remoteTurnIDForRetry(
+                        source: source,
+                        profile: profile,
+                        sessionID: target.resolvedID,
+                        conversation: current,
+                        replyID: messageID,
+                        origin: priorUser
+                    ) {
+                        _ = try await source.rewindForRetry(
+                            profile: profile,
+                            sessionID: target.resolvedID,
+                            turnID: turnID,
+                            text: priorUser.remoteMatchContent ?? priorUser.content
+                        )
+                    }
+                } catch {
+                    self.botRetryInFlight = false
+                    guard self.activeID == conversationID else { return }
+                    self.fail(
+                        messageID,
+                        conversationID: conversationID,
+                        message: "Couldn’t retry safely without risking a duplicate. "
+                            + error.localizedDescription,
+                        limit: nil
                     )
+                    return
                 }
                 self.botRetryInFlight = false
                 guard self.activeID == conversationID, !self.isSending else { return }
@@ -4482,6 +4617,110 @@ final class AppStore {
 
     /// A bot chat's Retry is waiting on Hermes to rewind the exchange.
     private var botRetryInFlight = false
+
+    /// Resolves the local user bubble to Hermes' durable row before `/retry`.
+    /// The existing merge owns this correlation and accounts for timestamps,
+    /// attachment refs and coalesced queued prompts; comparing text alone can
+    /// erase an earlier, identical message when the latest send never arrived.
+    private func remoteTurnIDForRetry(
+        source: WebSocketBotChatSource,
+        profile: String,
+        sessionID: String,
+        conversation: Conversation,
+        replyID: String,
+        origin: Message
+    ) async throws -> String? {
+        let remote = try await source.transcript(profile: profile, sessionID: sessionID)
+        return try Self.retryTurnID(
+            in: remote,
+            conversation: conversation,
+            replyID: replyID,
+            origin: origin,
+            profile: profile
+        )
+    }
+
+    nonisolated static func retryTurnID(
+        in remote: [BotChatTurn],
+        conversation: Conversation,
+        replyID: String,
+        origin: Message,
+        profile: String
+    ) throws -> String? {
+        let merged = BotChatSync.merge(remote, into: conversation.messages, botName: profile)
+        guard let localReply = conversation.messages.first(where: { $0.id == replyID }) else {
+            throw HermesRPCClient.Failure(
+                reason: "Hermes' chat changed before Alice could identify this turn."
+            )
+        }
+
+        if let reply = merged.first(where: { $0.id == replyID }),
+           let anchor = reply.replyToMessageID,
+           let remoteOrigin = merged.first(where: {
+               $0.role == .user && $0.remoteID == anchor
+           }) {
+            return remoteOrigin.remoteID
+        }
+
+        // A refresh can replace the local failed reply with Hermes' persisted
+        // copy. In that case the local id is gone, but the matched assistant
+        // row still identifies the user row directly before it.
+        let remoteReplyID: String?
+        if let exact = localReply.remoteID {
+            remoteReplyID = exact
+        } else {
+            let represented = Set(conversation.messages.compactMap(\.remoteID))
+            let earliest = localReply.createdAt.addingTimeInterval(-BotChatSync.copyClockSlack)
+            let latest = localReply.createdAt.addingTimeInterval(BotChatSync.copyWindow)
+            let text = localReply.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let candidates = remote.filter {
+                $0.role == .assistant
+                    && !represented.contains($0.id)
+                    && $0.createdAt >= earliest
+                    && $0.createdAt <= latest
+                    && $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == text
+            }
+            guard candidates.count < 2 else {
+                throw HermesRPCClient.Failure(
+                    reason: "Hermes has several identical replies that Alice cannot identify safely."
+                )
+            }
+            remoteReplyID = candidates.first?.id
+        }
+        if let remoteReplyID,
+           let replyIndex = remote.firstIndex(where: {
+               $0.id == remoteReplyID && $0.role == .assistant
+           }),
+           let remoteOrigin = remote[..<replyIndex].last(where: { $0.role == .user }) {
+            return remoteOrigin.id
+        }
+
+        guard merged.contains(where: { $0.id == replyID }) else {
+            throw HermesRPCClient.Failure(
+                reason: "Hermes' chat changed before Alice could identify this turn."
+            )
+        }
+
+        // No correlated row means Hermes did not persist this send, so there
+        // is normally nothing to rewind. If an unclaimed identical row exists,
+        // however, its identity is ambiguous and resending would be unsafe.
+        let expected = (origin.remoteMatchContent ?? origin.content)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let matching = remote.last(where: {
+            $0.role == .user
+                && $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == expected
+        }) {
+            let alreadyRepresented = conversation.messages.contains {
+                $0.role == .user && $0.remoteID == matching.id
+            }
+            if !alreadyRepresented {
+                throw HermesRPCClient.Failure(
+                    reason: "Hermes has an identical message that Alice cannot identify safely."
+                )
+            }
+        }
+        return nil
+    }
 
     private func resend(_ priorUser: Message, replacing replyID: String, in conversationID: String) {
         guard let chat = conversations.firstIndex(where: { $0.id == conversationID }),

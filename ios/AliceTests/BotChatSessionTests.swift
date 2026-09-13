@@ -334,4 +334,80 @@ final class BotChatSessionTests: XCTestCase {
         XCTAssertEqual(merged.map(\.id), ["m-1", "local-send"])
         XCTAssertFalse(merged[1].localOnly)
     }
+
+    func testRetryCorrelationFindsThePersistedOriginByItsRemoteIdentity() throws {
+        let origin = Message(
+            id: "local-send", role: .user, content: "repite",
+            createdAt: Self.at(10), remoteMatchContent: "repite"
+        )
+        let reply = Message(
+            id: "local-reply", role: .assistant, content: "falló",
+            createdAt: Self.at(11), replyToMessageID: origin.id
+        )
+        let conversation = Self.conversation("radar-ia", messages: [origin, reply])
+
+        let id = try AppStore.retryTurnID(
+            in: [Self.turn("remote-current", .user, "repite", 10)],
+            conversation: conversation,
+            replyID: reply.id,
+            origin: origin,
+            profile: "radar-ia"
+        )
+
+        XCTAssertEqual(id, "remote-current")
+    }
+
+    func testRetryCorrelationDoesNotClaimAnEarlierIdenticalMessage() throws {
+        let earlier = Message(
+            id: "remote-earlier", role: .user, content: "repite",
+            createdAt: Self.at(10), remoteID: "remote-earlier"
+        )
+        let origin = Message(
+            id: "local-send", role: .user, content: "repite",
+            createdAt: Self.at(20), remoteMatchContent: "repite"
+        )
+        let reply = Message(
+            id: "local-reply", role: .assistant, content: "falló",
+            createdAt: Self.at(21), replyToMessageID: origin.id
+        )
+        let conversation = Self.conversation(
+            "radar-ia", messages: [earlier, origin, reply]
+        )
+
+        let id = try AppStore.retryTurnID(
+            in: [Self.turn("remote-earlier", .user, "repite", 10)],
+            conversation: conversation,
+            replyID: reply.id,
+            origin: origin,
+            profile: "radar-ia"
+        )
+
+        XCTAssertNil(id, "the newer local send has nothing in Hermes to rewind")
+    }
+
+    func testRetryCorrelationFollowsAPersistedCopyOfTheFailedReply() throws {
+        let origin = Message(
+            id: "local-send", role: .user, content: "repite",
+            createdAt: Self.at(10), remoteMatchContent: "repite"
+        )
+        let reply = Message(
+            id: "local-reply", role: .assistant, content: "falló",
+            createdAt: Self.at(11), replyToMessageID: origin.id
+        )
+        let conversation = Self.conversation("radar-ia", messages: [origin, reply])
+        let remote = [
+            Self.turn("remote-user", .user, "repite", 10),
+            Self.turn("remote-reply", .assistant, "falló", 11),
+        ]
+
+        let id = try AppStore.retryTurnID(
+            in: remote,
+            conversation: conversation,
+            replyID: reply.id,
+            origin: origin,
+            profile: "radar-ia"
+        )
+
+        XCTAssertEqual(id, "remote-user")
+    }
 }

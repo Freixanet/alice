@@ -224,7 +224,7 @@ final class WebSocketBotChatTests: XCTestCase {
         let source = WebSocketBotChatSource(rpc: rpc)
 
         let rewound = try await source.rewindForRetry(
-            profile: "revenue-agent", sessionID: "s1", text: "primer mensaje"
+            profile: "revenue-agent", sessionID: "s1", turnID: "3", text: "primer mensaje"
         )
 
         XCTAssertTrue(rewound)
@@ -233,20 +233,23 @@ final class WebSocketBotChatTests: XCTestCase {
         XCTAssertEqual(params?["session_id"], "live-9", "commands run on the live session")
     }
 
-    func testRetryOfAMessageHermesNeverGotRewindsNothing() async throws {
+    func testRetryRefusesToRewindADifferentExchangeWithTheSameText() async throws {
         let rpc = FakeRPC(results: [
             "session.resume": ["session_id": "live-9", "messages": [
-                Self.row(1, "user", "hola", 10),
-                Self.row(2, "assistant", "hola, ¿qué tal?", 11),
+                Self.row(1, "user", "primer mensaje", 10),
+                Self.row(2, "assistant", "respuesta anterior", 11),
             ]],
         ])
         let source = WebSocketBotChatSource(rpc: rpc)
 
-        let rewound = try await source.rewindForRetry(
-            profile: "revenue-agent", sessionID: "s1", text: "primer mensaje"
-        )
+        do {
+            _ = try await source.rewindForRetry(
+                profile: "revenue-agent", sessionID: "s1",
+                turnID: "3", text: "primer mensaje"
+            )
+            XCTFail("matching words must not stand in for the exact turn id")
+        } catch {}
 
-        XCTAssertFalse(rewound)
         let methods = await rpc.methods()
         XCTAssertFalse(methods.contains("command.dispatch"), "the earlier exchange stays")
     }
@@ -265,7 +268,7 @@ final class WebSocketBotChatTests: XCTestCase {
         let source = WebSocketBotChatSource(rpc: rpc)
 
         let rewound = try await source.rewindForRetry(
-            profile: "nous-radar", sessionID: "s1", text: "primer mensaje"
+            profile: "nous-radar", sessionID: "s1", turnID: "3", text: "primer mensaje"
         )
 
         XCTAssertTrue(rewound, "the rewind is asked again once the connection is back")
@@ -285,7 +288,7 @@ final class WebSocketBotChatTests: XCTestCase {
 
         do {
             _ = try await source.rewindForRetry(
-                profile: "nous-radar", sessionID: "s1", text: "primer mensaje"
+                profile: "nous-radar", sessionID: "s1", turnID: "1", text: "primer mensaje"
             )
             XCTFail("two failed attempts must not pass for a rewind")
         } catch {}
