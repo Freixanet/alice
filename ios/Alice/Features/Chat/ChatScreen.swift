@@ -18,6 +18,14 @@ struct ChatScreen: View {
     /// hardware keyboard focuses it without taking any, and keying the lift on
     /// focus dropped the block into the space the lift had left.
     @State private var keyboardShown = false
+    /// Whether the transcript is close enough to the newest message that new
+    /// output should keep following it. Once the reader scrolls up, streaming
+    /// must not drag them back down.
+    @State private var transcriptNearBottom = true
+    /// The conversation whose first layout has been explicitly placed at the
+    /// live edge. Kept separate from `transcriptNearBottom` so the jump button
+    /// never flashes while a long lazy transcript is still settling.
+    @State private var positionedTranscriptID: String?
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -344,57 +352,117 @@ struct ChatScreen: View {
     private var transcript: some View {
         if let conversation = store.activeConversation, !conversation.messages.isEmpty {
             ScrollViewReader { proxy in
-              GeometryReader { area in
-                ScrollView {
-                    // 34, up from 22: consecutive replies ran together, and
-                    // each now carries its time above it as well.
-                    LazyVStack(alignment: .leading, spacing: 34) {
-                        ForEach(conversation.messages) { message in
-                            MessageRow(message: message).id(message.id)
+                GeometryReader { area in
+                    ScrollView {
+                        // The bottom anchor deliberately lives OUTSIDE the lazy
+                        // stack. An id inside LazyVStack may not exist yet when
+                        // a long bot chat first opens, which is exactly how the
+                        // transcript could render blank and ignore scrollTo.
+                        VStack(spacing: 0) {
+                            LazyVStack(alignment: .leading, spacing: 34) {
+                                ForEach(conversation.messages) { message in
+                                    MessageRow(message: message).id(message.id)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 28)
+
+                            Color.clear
+                                .frame(height: 34)
+                                .id(bottomAnchor)
                         }
-                        // Air between the last reply and the composer, so the
-                        // conversation ends rather than stopping against the
-                        // glass.
-                        Color.clear.frame(height: 34).id(bottomAnchor)
+                        .frame(minHeight: area.size.height, alignment: .top)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 28)
-                    // At least a screenful, aligned to the top. Without this
-                    // the bottom anchor pinned a short conversation to the
-                    // foot of the view and left a screen of nothing above it;
-                    // now only a conversation long enough to overflow sticks
-                    // to the bottom, which is the whole point of the anchor.
-                    .frame(minHeight: area.size.height, alignment: .top)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                // On the scroll view itself, where the effect has an edge to
-                // work against. On the container outside it, text ran under
-                // the top controls with nothing between them.
-                .scrollEdgeEffectStyle(.soft, for: .top)
-                .scrollEdgeEffectStyle(.soft, for: .bottom)
-                // Opens on the newest message and stays there.
-                //
-                // The plain form, not `.sizeChanges`. The keyboard does not
-                // resize this scroll view — the composer is a safe-area inset,
-                // so what grows is the inset, and an anchor watching for size
-                // changes never fires. This one follows the inset, which is
-                // what was wanted all along. And only this one: pairing it
-                // with a scroll driven by focus moved the conversation twice
-                // for one keystroke, which is what read as broken.
-                .defaultScrollAnchor(.bottom)
-                .onChange(of: conversation.messages.last?.content) {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                    .scrollDismissesKeyboard(.interactively)
+                    .scrollEdgeEffectStyle(.soft, for: .top)
+                    .scrollEdgeEffectStyle(.soft, for: .bottom)
+                    .onScrollGeometryChange(for: Bool.self) { geometry in
+                        let viewportBottom = geometry.contentOffset.y + geometry.containerSize.height
+                        return viewportBottom >= geometry.contentSize.height - 120
+                    } action: { _, nearBottom in
+                        transcriptNearBottom = nearBottom
+                    }
+                    .overlay(alignment: .bottom) {
+                        if positionedTranscriptID == conversation.id && !transcriptNearBottom {
+                            Button {
+                                scrollTranscriptToBottom(proxy, animated: true)
+                            } label: {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(.rect)
+                            }
+                            .buttonStyle(.plain)
+                            .glassEffect(.regular.interactive(), in: .circle)
+                            .accessibilityLabel("Jump to latest message")
+                            .accessibilityIdentifier("chat.scrollToBottom")
+                            .padding(.bottom, 14)
+                            .zIndex(20)
+                            .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        }
+                    }
+                    .animation(.snappy(duration: 0.2), value: transcriptNearBottom)
+                    .task(id: conversation.id) {
+                        positionedTranscriptID = nil
+                        transcriptNearBottom = true
+                        await positionTranscriptAtBottom(proxy, conversationID: conversation.id)
+                    }
+                    .onChange(of: conversation.messages.count) { oldCount, newCount in
+                        guard newCount >= oldCount else { return }
+                        if positionedTranscriptID != conversation.id || transcriptNearBottom {
+                            scrollTranscriptToBottom(
+                                proxy, animated: positionedTranscriptID == conversation.id
+                            )
+                        }
+                    }
+                    .onChange(of: conversation.messages.last?.content) { _, _ in
+                        guard transcriptNearBottom else { return }
+                        scrollTranscriptToBottom(proxy, animated: true)
                     }
                 }
-              }
             }
         } else {
             EmptyChatView()
         }
     }
 
-    private var bottomAnchor: String { "bottom" }
+    private func scrollTranscriptToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
+        if animated {
+            withAnimation(.easeOut(duration: 0.18)) {
+                proxy.scrollTo(bottomAnchor, anchor: .bottom)
+            }
+        } else {
+            proxy.scrollTo(bottomAnchor, anchor: .bottom)
+        }
+        // Do not hide the button optimistically. Geometry owns that truth and
+        // removes it only after the viewport has actually reached the live edge.
+    }
+
+    @MainActor
+    private func positionTranscriptAtBottom(
+        _ proxy: ScrollViewProxy, conversationID: String
+    ) async {
+        // Long Hermes transcripts need more than one layout pass: the outer
+        // anchor exists immediately, while the lazy rows refine their measured
+        // height over the next frames. Reasserting the same destination is
+        // cheap and prevents opening halfway up or on an apparently blank page.
+        await Task.yield()
+        guard store.activeID == conversationID else { return }
+        proxy.scrollTo(bottomAnchor, anchor: .bottom)
+
+        try? await Task.sleep(for: .milliseconds(70))
+        guard store.activeID == conversationID else { return }
+        proxy.scrollTo(bottomAnchor, anchor: .bottom)
+
+        try? await Task.sleep(for: .milliseconds(120))
+        guard store.activeID == conversationID else { return }
+        proxy.scrollTo(bottomAnchor, anchor: .bottom)
+        positionedTranscriptID = conversationID
+        transcriptNearBottom = true
+    }
+
+    private var bottomAnchor: String { "chat.bottom" }
+
 }
 
 private struct EmptyChatView: View {
