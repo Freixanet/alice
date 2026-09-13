@@ -13,6 +13,10 @@ struct RootView: View {
 
     @State private var drawerOpen = false
     @State private var drag: CGFloat = 0
+    /// Where the bots page is while it slides away; see `closeBots`.
+    @State private var botsExitOffset: CGFloat = 0
+    @State private var closingBots = false
+    @State private var screenWidth: CGFloat = 0
 
     private let drawerWidth: CGFloat = 300
 
@@ -153,25 +157,20 @@ struct RootView: View {
                         )
                         .allowsHitTesting(false)
                     }
-                    // Only the arrival varies. A removal transition is read
-                    // from the view as it last existed, not as it is being
-                    // dismissed, so setting the direction in the same breath
-                    // as closing the page had no effect: it left by whichever
-                    // side it had arrived from. Backing out of a bot's chat
-                    // set that to the left, and home was then uncovered from
-                    // the right, against the finger, for every swipe after.
-                    // Leaving is always rightward, which is what leaving is.
+                    // Leaving is `closeBots`' explicit slide rather than a
+                    // removal transition; see there for why a transition's
+                    // direction could not be trusted.
+                    .offset(x: botsExitOffset)
                     .transition(.asymmetric(
                         insertion: .move(
                             edge: store.botsFromLeading ? .leading : .trailing
                         ),
-                        removal: .move(
-                            edge: store.botsExitLeading ? .leading : .trailing
-                        )
+                        removal: .identity
                     ))
                     .zIndex(1)
                 }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
             // Both layers have to reach the physical edges: the drawer so it fills
             // the display behind, and the conversation so its rounded corners land
             // on the bezel rather than being cut at the status bar. The screens
@@ -265,22 +264,35 @@ struct RootView: View {
         !(store.activeConversation?.botName ?? "").isEmpty
     }
 
-    /// Dismisses the bots page, one frame after settling what is behind it.
+    /// Dismisses the bots page by sliding it off the side it is leaving by.
     ///
-    /// Two things have to be true before the page starts moving: the exit
-    /// direction, because a removal transition is read from the view as it
-    /// last stood rather than as it is being dismissed; and whatever the page
-    /// is uncovering. Changing the conversation in the same breath showed the
-    /// old one for an instant as the page slid off, and the page left by
-    /// whichever side it had arrived from.
+    /// Whatever the page uncovers is settled first, while it still covers
+    /// the screen. The slide is then an explicit animation, and the page is
+    /// only removed once it has finished, without a transition of its own.
+    /// It used to leave through a removal transition whose edge came from
+    /// `botsExitLeading` — but a removal transition is the one the view last
+    /// rendered with, and setting the edge in the same update as closing had
+    /// no effect. After opening a bot from the list (which left leftwards),
+    /// backing out to the list and on to home slid the page off to the left,
+    /// so home came in from the right, against the finger.
     private func closeBots(exitLeading: Bool, _ settle: () -> Void) {
+        guard !closingBots else { return }
+        closingBots = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         store.botsExitLeading = exitLeading
         settle()
-        // Do not defer this to a later run-loop turn. On a real device the
-        // page can be re-evaluated between the tap and that deferred write,
-        // leaving the visible Bots layer in place even though the action fired.
-        store.showingBots = false
+        let width = max(screenWidth, 1)
+        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+            botsExitOffset = exitLeading ? -width : width
+        } completion: {
+            var quiet = Transaction()
+            quiet.disablesAnimations = true
+            withTransaction(quiet) {
+                store.showingBots = false
+                botsExitOffset = 0
+            }
+            closingBots = false
+        }
     }
 
     /// Back out of a bot's conversation to the list it was opened from.
@@ -288,12 +300,14 @@ struct RootView: View {
     /// the way anything you are moving towards should arrive.
     private func openBots() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        botsExitOffset = 0
         store.botsFromLeading = false
         store.showingBots = true
     }
 
     private func goBackToBots() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        botsExitOffset = 0
         store.botsFromLeading = true
         store.showingBots = true
     }
