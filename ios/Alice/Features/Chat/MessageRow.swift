@@ -111,12 +111,33 @@ struct MessageRow: View {
     /// bold, italics and code while leaving every newline exactly where the
     /// model put it, which is the half of Markdown that survives here.
     private var attributed: AttributedString {
-        Self.linkified(
-            parsed,
-            body: message.error == nil ? Color.primary : Color.red,
-            link: Palette.link(scheme)
+        let key = RenderKey(
+            content: message.content, failed: message.error != nil, link: Palette.link(scheme)
         )
+        if let cached = Self.rendered[key] { return cached }
+        let fresh = Self.linkified(
+            parsed, body: key.failed ? Color.red : Color.primary, link: key.link
+        )
+        if Self.rendered.count >= 400 { Self.rendered.removeAll(keepingCapacity: true) }
+        Self.rendered[key] = fresh
+        return fresh
     }
+
+    /// Replies already parsed and linkified, by what they say and how they
+    /// are drawn.
+    ///
+    /// Markdown parsing and link detection ran in `body`, for every row, on
+    /// every render. A bot chat is now laid out whole, and a Radar IA chat is
+    /// sixty long reports: opening one did all that work sixty times over,
+    /// which was the lag on opening. A reply only renders differently when its
+    /// text, its failure state or the colour scheme changes.
+    private struct RenderKey: Hashable {
+        let content: String
+        let failed: Bool
+        let link: Color
+    }
+
+    @MainActor private static var rendered: [RenderKey: AttributedString] = [:]
 
     /// Makes a bare URL tappable.
     ///
