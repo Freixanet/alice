@@ -92,7 +92,13 @@ struct BotsScreen: View {
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .top, spacing: 0) {
+        // A safe-area *bar*, not an inset or an overlay. With a scrolling list
+        // under it, a phone delivered every press on Back to a container
+        // above the controls and the button never fired — while the empty
+        // page, with no list, worked. `safeAreaBar` is iOS 26's place for
+        // custom controls over scrolling content, taking part in its edge
+        // effect instead of sitting underneath it.
+        .safeAreaBar(edge: .top, spacing: 0) {
             topControls
         }
         .sheet(isPresented: $creatingBot) {
