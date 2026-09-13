@@ -83,6 +83,12 @@ struct AliceApp: App {
                     Task {
                         store.isForeground = true
                         await notifier.refreshPermission()
+                        // Reachability is a fact to re-check, not a preference.
+                        // A Mac can go offline while Alice is suspended; probing
+                        // both saved surfaces here keeps the drawer's connection
+                        // label from reporting yesterday's state.
+                        await store.restoreConnection()
+                        await store.restoreDashboard()
                         // Re-resolve the canonical tips before listening again:
                         // compression can advance a bot to a new session while
                         // Alice is suspended, and events must route by that live id.

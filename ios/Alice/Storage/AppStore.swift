@@ -382,6 +382,12 @@ final class AppStore {
         modelList = .init()
         modelListIsPartial = false
         gatewayURL = ""
+
+        // “Disconnect and forget Hermes” means the whole installation. The
+        // dashboard used to stay authenticated after the gateway was forgotten,
+        // so the drawer could truthfully have no gateway and still claim
+        // “Hermes connected” from a stale dashboardReady flag.
+        await forgetDashboard()
     }
 
     /// Accepts what someone actually types: a bare host, a host and port, or a
@@ -509,12 +515,26 @@ final class AppStore {
         guard !dashboardURL.isEmpty, !dashboardUser.isEmpty,
               let password = KeyStore.read(account: Self.dashboardAccount),
               let url = Self.normalize(dashboardURL)
-        else { return }
+        else {
+            dashboardReady = false
+            return
+        }
         await resetDashboardRPC()
         await dashboard.use(
             .init(url: url, username: dashboardUser, password: password)
         )
-        dashboardReady = true
+        // Saved credentials say only that this dashboard worked before. Probe
+        // the authenticated surface before advertising it as live; otherwise a
+        // stopped Mac looks connected forever after relaunch. Keep the saved
+        // values on failure so a later foreground refresh can recover.
+        do {
+            _ = try await dashboard.memory()
+            dashboardReady = true
+        } catch {
+            await resetDashboardRPC()
+            await dashboard.use(nil)
+            dashboardReady = false
+        }
     }
 
     func forgetDashboard() async {
@@ -1262,8 +1282,11 @@ final class AppStore {
     }
 
     var wellbeing: Wellbeing {
-        guard isConnected || dashboardReady else {
-            return gatewayURL.isEmpty && dashboardURL.isEmpty ? .notConfigured : .unreachable
+        // The user-facing Hermes connection is the gateway connection. The
+        // dashboard is an authenticated management surface layered on top; it
+        // must never turn a disconnected gateway into “Hermes connected”.
+        guard isConnected else {
+            return gatewayURL.isEmpty ? .notConfigured : .unreachable
         }
         return attention.isEmpty ? .well : .needsAttention(attention.count)
     }
