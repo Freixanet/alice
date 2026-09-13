@@ -30,6 +30,48 @@ final class BotNavigationTests: XCTestCase {
         )
     }
 
+    /// A chat whose replies are as long as a Radar IA report must open showing
+    /// its latest message, not a blank page that fills in once scrolled.
+    func testATallBotChatOpensShowingItsLatestMessage() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-seedTallBotChat"]
+        app.launch()
+
+        let latest = app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Respuesta de prueba 30.")
+        ).firstMatch
+        XCTAssertTrue(
+            latest.waitForExistence(timeout: 10),
+            "the latest reply is drawn on open, without scrolling"
+        )
+        // A report is taller than the screen, so at the end of the chat only its
+        // last lines show: on screen means overlapping the window, not having
+        // its centre visible.
+        let window = app.windows.firstMatch.frame
+        XCTAssertTrue(latest.frame.intersects(window), "and it is on screen")
+        XCTAssertGreaterThan(latest.frame.maxY, window.midY, "at the end of the chat")
+    }
+
+    /// Pressed straight after a flick, while the transcript is still coasting,
+    /// which is when a thumb reaches for it.
+    func testJumpToLatestWorksWhileTheChatIsStillMoving() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-seedLongBotChat"]
+        app.launch()
+
+        let last = app.staticTexts["Respuesta de prueba 30."]
+        XCTAssertTrue(last.waitForExistence(timeout: 15))
+        app.swipeDown(velocity: .fast)
+        app.swipeDown(velocity: .fast)
+
+        let jump = app.buttons["chat.scrollToBottom"]
+        XCTAssertTrue(jump.waitForExistence(timeout: 3))
+        jump.tap()
+
+        expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: last)
+        waitForExpectations(timeout: 5)
+    }
+
     /// A thumb is never perfectly still. A press on Back that drifts a few
     /// points sideways must still go back, rather than being taken for the
     /// start of a swipe by the screen-wide pan.

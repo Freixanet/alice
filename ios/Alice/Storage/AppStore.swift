@@ -2217,7 +2217,14 @@ final class AppStore {
     /// UI tests only: a long bot conversation, open, so the transcript's
     /// jump-to-latest control can be driven without a Hermes.
     func seedLongBotChatForUITests() {
-        guard ProcessInfo.processInfo.arguments.contains("-seedLongBotChat") else { return }
+        let arguments = ProcessInfo.processInfo.arguments
+        // `-seedTallBotChat` gives every reply the length of a Radar IA report,
+        // the kind of chat that opened blank on a phone.
+        let tall = arguments.contains("-seedTallBotChat")
+        guard tall || arguments.contains("-seedLongBotChat") else { return }
+        let report = (1...14).map { item in
+            "**Titular de prueba \(item)**\nUna frase con qué cambia y por qué importa en la práctica, lo bastante larga para ocupar dos líneas.\nhttps://example.com/noticia/\(item)"
+        }.joined(separator: "\n\n")
         let start = Date().addingTimeInterval(-3_600)
         var messages: [Message] = []
         for n in 1...30 {
@@ -2229,7 +2236,7 @@ final class AppStore {
             ))
             messages.append(Message(
                 id: "uitest-a-\(n)", role: .assistant,
-                content: "Respuesta de prueba \(n).",
+                content: tall ? "Respuesta de prueba \(n).\n\n\(report)" : "Respuesta de prueba \(n).",
                 createdAt: at.addingTimeInterval(20), botName: "uitest-bot"
             ))
         }
@@ -2240,8 +2247,7 @@ final class AppStore {
         conversations.removeAll { $0.id == chat.id }
         conversations.insert(chat, at: 0)
         activeID = chat.id
-    }
-    #endif
+    }    #endif
 
     /// Clears everything that is over, leaving anything still waiting.
     func dismissHandledActivity() {

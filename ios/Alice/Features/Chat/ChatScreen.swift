@@ -18,14 +18,6 @@ struct ChatScreen: View {
     /// hardware keyboard focuses it without taking any, and keying the lift on
     /// focus dropped the block into the space the lift had left.
     @State private var keyboardShown = false
-    /// Whether the transcript is close enough to the newest message that new
-    /// output should keep following it. Once the reader scrolls up, streaming
-    /// must not drag them back down.
-    @State private var transcriptNearBottom = true
-    /// The conversation whose first layout has been explicitly placed at the
-    /// live edge. Kept separate from `transcriptNearBottom` so the jump button
-    /// never flashes while a long lazy transcript is still settling.
-    @State private var positionedTranscriptID: String?
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -351,118 +343,134 @@ struct ChatScreen: View {
     @ViewBuilder
     private var transcript: some View {
         if let conversation = store.activeConversation, !conversation.messages.isEmpty {
-            ScrollViewReader { proxy in
-                GeometryReader { area in
-                    ScrollView {
-                        // The bottom anchor deliberately lives OUTSIDE the lazy
-                        // stack. An id inside LazyVStack may not exist yet when
-                        // a long bot chat first opens, which is exactly how the
-                        // transcript could render blank and ignore scrollTo.
-                        VStack(spacing: 0) {
-                            LazyVStack(alignment: .leading, spacing: 34) {
-                                ForEach(conversation.messages) { message in
-                                    MessageRow(message: message).id(message.id)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 28)
-
-                            Color.clear
-                                .frame(height: 34)
-                                .id(bottomAnchor)
-                        }
-                        .frame(minHeight: area.size.height, alignment: .top)
-                    }
-                    .scrollDismissesKeyboard(.interactively)
-                    .scrollEdgeEffectStyle(.soft, for: .top)
-                    .scrollEdgeEffectStyle(.soft, for: .bottom)
-                    .onScrollGeometryChange(for: Bool.self) { geometry in
-                        let viewportBottom = geometry.contentOffset.y + geometry.containerSize.height
-                        return viewportBottom >= geometry.contentSize.height - 120
-                    } action: { _, nearBottom in
-                        transcriptNearBottom = nearBottom
-                    }
-                    .overlay(alignment: .bottom) {
-                        if positionedTranscriptID == conversation.id && !transcriptNearBottom {
-                            Button {
-                                scrollTranscriptToBottom(proxy, animated: true)
-                            } label: {
-                                Image(systemName: "arrow.down")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(.rect)
-                            }
-                            .buttonStyle(.plain)
-                            .glassEffect(.regular.interactive(), in: .circle)
-                            .accessibilityLabel("Jump to latest message")
-                            .accessibilityIdentifier("chat.scrollToBottom")
-                            .padding(.bottom, 14)
-                            .zIndex(20)
-                            .transition(.scale(scale: 0.9).combined(with: .opacity))
-                        }
-                    }
-                    .animation(.snappy(duration: 0.2), value: transcriptNearBottom)
-                    .task(id: conversation.id) {
-                        positionedTranscriptID = nil
-                        transcriptNearBottom = true
-                        await positionTranscriptAtBottom(proxy, conversationID: conversation.id)
-                    }
-                    .onChange(of: conversation.messages.count) { oldCount, newCount in
-                        guard newCount >= oldCount else { return }
-                        if positionedTranscriptID != conversation.id || transcriptNearBottom {
-                            scrollTranscriptToBottom(
-                                proxy, animated: positionedTranscriptID == conversation.id
-                            )
-                        }
-                    }
-                    .onChange(of: conversation.messages.last?.content) { _, _ in
-                        guard transcriptNearBottom else { return }
-                        scrollTranscriptToBottom(proxy, animated: true)
-                    }
-                }
-            }
+            // A fresh transcript for every conversation. Reusing one scroll view
+            // across chats carried the old chat's offset into the new one, and
+            // a lazy stack scrolled by code alone did not draw the rows at that
+            // offset: a bot chat opened blank until the reader moved it.
+            TranscriptView(conversation: conversation)
+                .id(conversation.id)
         } else {
             EmptyChatView()
         }
     }
 
-    private func scrollTranscriptToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
-        if animated {
-            withAnimation(.easeOut(duration: 0.18)) {
-                proxy.scrollTo(bottomAnchor, anchor: .bottom)
+}
+
+/// One conversation's messages, scrolled.
+///
+/// Positioned by the scroll view itself rather than by scrolling to an id by
+/// hand. The hand-driven version reasserted a far anchor over several frames
+/// while lazy rows were still measuring; on a phone it could land short, and
+/// a press on the jump button during a flick took several tries.
+private struct TranscriptView: View {
+    let conversation: Conversation
+
+    @State private var position = ScrollPosition(edge: .bottom)
+    /// Whether the reader is at the live edge. New output follows only then:
+    /// once they have scrolled up, streaming must not drag them back down.
+    @State private var nearBottom = true
+    /// Set the first time the transcript reaches its live edge, so the jump
+    /// button does not flash while a long chat is still settling on open.
+    @State private var settled = false
+
+    /// How many messages are laid out at a time, and added per "earlier".
+    private static let page = 80
+    @State private var shown = TranscriptView.page
+
+    private var visibleMessages: ArraySlice<Message> { conversation.messages.suffix(shown) }
+    private var hiddenCount: Int { max(0, conversation.messages.count - shown) }
+
+    var body: some View {
+        GeometryReader { area in
+            ScrollView {
+                // Laid out eagerly, a page at a time — no lazy stack. A lazy
+                // stack of very tall rows (a Radar IA report runs to dozens of
+                // lines) placed rows by estimated heights: opened at its end it
+                // drew nothing until scrolled, and scrolling up re-measured rows
+                // as they arrived, so the conversation vanished and came back.
+                // Bounding the page keeps a years-long chat from laying out
+                // every message it has ever had.
+                VStack(alignment: .leading, spacing: 34) {
+                    if hiddenCount > 0 {
+                        Button {
+                            shown += Self.page
+                        } label: {
+                            Text("Show \(min(hiddenCount, Self.page)) earlier messages")
+                                .font(.footnote.weight(.medium))
+                                .padding(.horizontal, 14)
+                                .frame(height: 36)
+                        }
+                        .buttonStyle(.plain)
+                        .glassEffect(.regular.interactive(), in: .capsule)
+                        .frame(maxWidth: .infinity)
+                    }
+                    ForEach(visibleMessages) { message in
+                        MessageRow(message: message).id(message.id)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 28)
+                // Air between the last reply and the composer, so the
+                // conversation ends rather than stopping against the glass.
+                .padding(.bottom, 34)
+                // At least a screenful, aligned to the top, so a short
+                // conversation is not pinned to the foot of the view.
+                .frame(minHeight: area.size.height, alignment: .top)
             }
-        } else {
-            proxy.scrollTo(bottomAnchor, anchor: .bottom)
+            .scrollPosition($position)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .scrollDismissesKeyboard(.interactively)
+            // On the scroll view itself, where the effect has an edge to work
+            // against. On the container outside it, text ran under the top
+            // controls with nothing between them.
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height
+                    >= geometry.contentSize.height - 120
+            } action: { _, isNear in
+                nearBottom = isNear
+                if isNear { settled = true }
+            }
+            .overlay(alignment: .bottom) {
+                ZStack {
+                    if settled && !nearBottom {
+                        Button {
+                            position.scrollTo(edge: .bottom)
+                        } label: {
+                            // A 44pt disc with 12pt of reach around it. On a
+                            // phone, presses a few points off the disc landed
+                            // on the transcript beneath and did nothing.
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 17, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                                .glassEffect(.regular.interactive(), in: .circle)
+                                .padding(12)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Jump to latest message")
+                        .accessibilityIdentifier("chat.scrollToBottom")
+                        .padding(.bottom, 2)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    }
+                }
+                // Animates the button only. On the scroll view, every crossing
+                // of the near-bottom line — which is the moment a reader starts
+                // scrolling up — animated whatever the transcript's layout was
+                // doing in that instant, and the conversation lurched.
+                .animation(.snappy(duration: 0.2), value: settled && !nearBottom)
+            }
+            .onChange(of: conversation.messages.count) { oldCount, newCount in
+                guard newCount > oldCount, nearBottom else { return }
+                position.scrollTo(edge: .bottom)
+            }
+            .onChange(of: conversation.messages.last?.content) {
+                guard nearBottom else { return }
+                position.scrollTo(edge: .bottom)
+            }
         }
-        // Do not hide the button optimistically. Geometry owns that truth and
-        // removes it only after the viewport has actually reached the live edge.
     }
-
-    @MainActor
-    private func positionTranscriptAtBottom(
-        _ proxy: ScrollViewProxy, conversationID: String
-    ) async {
-        // Long Hermes transcripts need more than one layout pass: the outer
-        // anchor exists immediately, while the lazy rows refine their measured
-        // height over the next frames. Reasserting the same destination is
-        // cheap and prevents opening halfway up or on an apparently blank page.
-        await Task.yield()
-        guard store.activeID == conversationID else { return }
-        proxy.scrollTo(bottomAnchor, anchor: .bottom)
-
-        try? await Task.sleep(for: .milliseconds(70))
-        guard store.activeID == conversationID else { return }
-        proxy.scrollTo(bottomAnchor, anchor: .bottom)
-
-        try? await Task.sleep(for: .milliseconds(120))
-        guard store.activeID == conversationID else { return }
-        proxy.scrollTo(bottomAnchor, anchor: .bottom)
-        positionedTranscriptID = conversationID
-        transcriptNearBottom = true
-    }
-
-    private var bottomAnchor: String { "chat.bottom" }
-
 }
 
 private struct EmptyChatView: View {
