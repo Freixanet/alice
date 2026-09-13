@@ -170,6 +170,10 @@ final class WebSocketBotChatTests: XCTestCase {
         let turns = WebSocketBotChatSource.turns(from: [
             Self.row(11, "user", "¿novedades?", 10),
             Self.row(12, "assistant", "**Radar IA — 6 de septiembre**", 20),
+            // Hermes stores tool-call envelopes as assistant rows with no text.
+            // They must not become timestamp-only ghost messages in Alice.
+            Self.row(13, "assistant", "", 21),
+            Self.row(14, "assistant", "   ", 22),
             ["role": "tool", "name": "web_search"],
             ["role": "assistant", "text": "sin row_id todavía"],
             ["role": "system", "text": "andamiaje"],

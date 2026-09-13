@@ -162,6 +162,17 @@ struct BotChatSync: Sendable {
         var carried: [Message] = []
         for message in local {
             if let remoteID = message.remoteID, byRemoteID[remoteID] != nil { continue }
+            // Older Alice builds imported Hermes' tool-call envelopes as empty
+            // assistant messages. The source now filters those rows, so retire
+            // any already-cached shell when canonical truth no longer contains
+            // its remote id. Keeping it would preserve the timestamp-only ghost
+            // forever even after the parser was fixed.
+            if message.role == .assistant, message.remoteID != nil,
+               normalized(message.content).isEmpty, !message.isInFlight,
+               message.approval == nil, message.tools.isEmpty, message.error == nil,
+               message.errorLimit == nil, message.deliveryNote == nil {
+                continue
+            }
             if message.role == .user, remoteCopyByLocalID[message.id] != nil { continue }
             if let copy = persistedCopy(of: message, in: remote, excluding: claimed) {
                 claimed.insert(copy)

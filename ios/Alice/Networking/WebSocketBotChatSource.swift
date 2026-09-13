@@ -107,6 +107,15 @@ struct WebSocketBotChatSource: BotChatSessionSource {
                   let text = row["text"] as? String
             else { return nil }
             guard let rowID = Self.rowID(row) else { return nil }
+            // Hermes persists assistant rows whose only payload is a tool call.
+            // The projected history exposes those as assistant + empty text, while
+            // the tool rows themselves are intentionally hidden. Rendering the
+            // empty assistant shell therefore produced a timestamp-only ghost row
+            // for every tool call in a Bot Chat. Only final/partial assistant text
+            // belongs in Alice's transcript.
+            if role == .assistant && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return nil
+            }
             let seconds = (row["timestamp"] as? Double)
                 ?? (row["timestamp"] as? NSNumber)?.doubleValue
             return BotChatTurn(

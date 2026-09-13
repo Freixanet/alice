@@ -308,6 +308,21 @@ final class BotChatSessionTests: XCTestCase {
         XCTAssertEqual(second[0].content, "definitivo")
     }
 
+    /// Empty assistant rows imported by an older build were Hermes tool-call
+    /// envelopes, not conversational turns. Once the canonical parser omits
+    /// them, a refresh must also remove the cached timestamp-only shell.
+    func testCachedEmptyRemoteAssistantShellIsRetired() {
+        let ghost = Message(
+            id: "194", role: .assistant, content: "", createdAt: Self.at(20),
+            botName: "Cuba News", remoteID: "194"
+        )
+        let merged = BotChatSync.merge(
+            [Self.turn("211", .assistant, "Configuración verificada", 30)],
+            into: [ghost]
+        )
+        XCTAssertEqual(merged.map(\.id), ["211"])
+    }
+
     /// A message just sent, not yet persisted, must not vanish on the refresh
     /// that races it.
     func testAnUnacknowledgedSendSurvives() {
