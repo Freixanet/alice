@@ -1564,6 +1564,17 @@ extension DashboardClient {
         try await send("PUT", "api/cron/jobs/\(job)?profile=\(scoped)", ["updates": updates])
     }
 
+    /// Releases an automation's model pin, so it follows its assistant's model
+    /// again. Hermes stores an empty value as no pin.
+    func followProfileModel(_ id: String, profile: String) async throws {
+        let scoped = Self.queryValue(profile)
+        let job = Self.pathSegment(id)
+        try await send(
+            "PUT", "api/cron/jobs/\(job)?profile=\(scoped)",
+            ["updates": ["provider": "", "model": ""]]
+        )
+    }
+
     func pauseRoutine(_ id: String, profile: String) async throws {
         try await routineAction("pause", id: id, profile: profile)
     }

@@ -93,6 +93,31 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         ]))
     }
 
+    /// Rewinds the chat's last exchange in Hermes, so a retry replaces it
+    /// instead of sending the same message a second time.
+    ///
+    /// Retrying used to resend the text as a new turn while Hermes kept the
+    /// failed one, and the message appeared twice. Hermes' own `/retry` drops
+    /// the last user turn and everything after it. It runs only when that turn
+    /// is the message being retried: one that never reached Hermes has nothing
+    /// to rewind, and `/retry` would then undo the exchange before it.
+    ///
+    /// - Returns: whether Hermes rewound the exchange.
+    func rewindForRetry(profile: String, sessionID: String, text: String) async throws -> Bool {
+        let resumed = try await resume(profile: profile, target: sessionID)
+        guard let liveID = resumed["session_id"] as? String, !liveID.isEmpty else { return false }
+        let lastUser = resumed.rows.last { ($0["role"] as? String) == "user" }
+        guard let lastText = lastUser?["text"] as? String,
+              lastText.trimmingCharacters(in: .whitespacesAndNewlines)
+                == text.trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return false }
+        let result = try await rpc.call("command.dispatch", JSONObject([
+            "name": "retry",
+            "session_id": liveID,
+        ]))
+        return (result["type"] as? String) == "send"
+    }
+
     /// Maps the agent's projected history onto Alice's messages.
     ///
     /// The projection is `{role, text, timestamp?, row_id?}`. `row_id` is the
@@ -101,7 +126,17 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// the live stream. Tool and system rows are scaffolding this screen does
     /// not draw.
     static func turns(from rows: [[String: Any]]) -> [BotChatTurn] {
-        rows.compactMap { row in
+        rows.indices.compactMap { index in
+            let row = rows[index]
+            // Text an assistant row carries alongside a tool call is the model
+            // on its way to an answer, not the answer: Hermes lists that call's
+            // tool rows straight after it. A free model echoed a tool's own
+            // description — "Required parameters (if any): query — via
+            // default.hermes_web_search." — and it showed as the bot's reply.
+            if (row["role"] as? String) == "assistant",
+               index + 1 < rows.count, (rows[index + 1]["role"] as? String) == "tool" {
+                return nil
+            }
             guard let rawRole = row["role"] as? String,
                   let role = Message.Role(rawValue: rawRole),
                   let text = row["text"] as? String

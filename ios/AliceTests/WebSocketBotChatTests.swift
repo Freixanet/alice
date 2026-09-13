@@ -184,6 +184,66 @@ final class WebSocketBotChatTests: XCTestCase {
         XCTAssertEqual(turns[1].createdAt, Date(timeIntervalSince1970: 20))
     }
 
+    func testTextBesideAToolCallIsNotTheReply() {
+        let turns = WebSocketBotChatSource.turns(from: [
+            Self.row(1, "user", "primer mensaje", 10),
+            Self.row(2, "assistant", "Required parameters (if any): query", 11),
+            ["role": "tool", "name": "web_search"],
+            Self.row(3, "assistant", "Plan de 30 días", 12),
+        ])
+
+        XCTAssertEqual(turns.map(\.id), ["1", "3"])
+    }
+
+    func testToolCommentaryIsNotStreamedIntoTheReply() {
+        let interim = HermesRPCEvent(
+            type: "message.interim", sessionID: "s",
+            payload: ["text": "Required parameters (if any): query", "already_streamed": true]
+        )
+        XCTAssertNil(AppStore.chatEvent(from: interim))
+    }
+
+    // MARK: - Retry rewinds the exchange it replaces
+
+    func testRetryRewindsTheExchangeItRepeats() async throws {
+        let rpc = FakeRPC(results: [
+            "session.resume": ["session_id": "live-9", "messages": [
+                Self.row(1, "user", "hola", 10),
+                Self.row(2, "assistant", "hola, ¿qué tal?", 11),
+                Self.row(3, "user", "primer mensaje ", 12),
+            ]],
+            "command.dispatch": ["type": "send", "message": "primer mensaje"],
+        ])
+        let source = WebSocketBotChatSource(rpc: rpc)
+
+        let rewound = try await source.rewindForRetry(
+            profile: "revenue-agent", sessionID: "s1", text: "primer mensaje"
+        )
+
+        XCTAssertTrue(rewound)
+        let params = await rpc.params(of: "command.dispatch")
+        XCTAssertEqual(params?["name"], "retry")
+        XCTAssertEqual(params?["session_id"], "live-9", "commands run on the live session")
+    }
+
+    func testRetryOfAMessageHermesNeverGotRewindsNothing() async throws {
+        let rpc = FakeRPC(results: [
+            "session.resume": ["session_id": "live-9", "messages": [
+                Self.row(1, "user", "hola", 10),
+                Self.row(2, "assistant", "hola, ¿qué tal?", 11),
+            ]],
+        ])
+        let source = WebSocketBotChatSource(rpc: rpc)
+
+        let rewound = try await source.rewindForRetry(
+            profile: "revenue-agent", sessionID: "s1", text: "primer mensaje"
+        )
+
+        XCTAssertFalse(rewound)
+        let methods = await rpc.methods()
+        XCTAssertFalse(methods.contains("command.dispatch"), "the earlier exchange stays")
+    }
+
     // MARK: - E. Sending — the heart of it
 
     func testSendingGoesToTheCanonicalSessionUnderTheBotsProfile() async throws {

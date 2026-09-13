@@ -1285,7 +1285,120 @@ final class AppStore {
             cachedBots[index].model = option.id
             cachedBots[index].provider = provider
         }
+        // The profile is not the only place a bot's model lives. Hermes records
+        // for each routine that follows the bot the model it was following, and
+        // a routine whose record no longer matches refuses to run; a chat already
+        // open keeps the model its runtime was built with. Both move with the
+        // bot, or the picker shows one model while the bot runs another.
+        try await carryModelChange(
+            to: bot.name, previousModel: bot.model, previousProvider: bot.provider,
+            model: option.id, provider: provider
+        )
         return nil
+    }
+
+    /// What a bot's routine needs when the bot's model changes.
+    enum RoutineModelChange: Equatable, Sendable {
+        /// Follows the bot, but Hermes recorded another model for it: refresh
+        /// the record, or the routine fails closed on its next run.
+        case follow(id: String, profile: String)
+        /// Pinned to the bot's previous model: the pin moves with the bot.
+        case repin(id: String, profile: String)
+    }
+
+    /// Which of a bot's routines have to change so they keep running on the
+    /// model the bot now uses. A routine pinned to some other model was given
+    /// that model on purpose, and keeps it.
+    nonisolated static func routineModelChanges(
+        _ jobs: [JobRow], previousModel: String?, previousProvider: String?,
+        newModel: String, newProvider: String
+    ) -> [RoutineModelChange] {
+        func same(_ lhs: String?, _ rhs: String?) -> Bool {
+            (lhs ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+                == (rhs ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        }
+        return jobs.compactMap { job in
+            guard let profile = job.profile, !profile.isEmpty else { return nil }
+            let pinned = (job.model ?? "").trimmingCharacters(in: .whitespaces)
+            if pinned.isEmpty {
+                let recordsNewModel = same(job.modelSnapshot, newModel)
+                    && same(job.providerSnapshot, newProvider)
+                return recordsNewModel ? nil : .follow(id: job.id, profile: profile)
+            }
+            if same(pinned, newModel) && same(job.provider, newProvider) { return nil }
+            guard same(pinned, previousModel) else { return nil }
+            if let pinnedProvider = job.provider, !pinnedProvider.isEmpty,
+               let previousProvider, !previousProvider.isEmpty,
+               !same(pinnedProvider, previousProvider) {
+                return nil
+            }
+            return .repin(id: job.id, profile: profile)
+        }
+    }
+
+    private func carryModelChange(
+        to botName: String, previousModel: String?, previousProvider: String?,
+        model: String, provider: String
+    ) async throws {
+        func reason(_ error: Error) -> String {
+            (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+        var problems: [String] = []
+        do {
+            let jobs = try await routines(for: botName)
+            let changes = Self.routineModelChanges(
+                jobs, previousModel: previousModel, previousProvider: previousProvider,
+                newModel: model, newProvider: provider
+            )
+            for change in changes {
+                switch change {
+                case let .follow(id, profile):
+                    // Hermes re-records what an unpinned routine follows only
+                    // when its pin changes: pin it to the new model, release it.
+                    try await dashboard.pinRoutineModel(
+                        id, profile: profile, provider: provider, model: model
+                    )
+                    try await dashboard.followProfileModel(id, profile: profile)
+                case let .repin(id, profile):
+                    try await dashboard.pinRoutineModel(
+                        id, profile: profile, provider: provider, model: model
+                    )
+                }
+            }
+        } catch {
+            problems.append("its routines could not be moved to it (\(reason(error)))")
+        }
+        do {
+            try await switchOpenBotChat(botName, model: model, provider: provider)
+        } catch {
+            problems.append("its chat could not be switched (\(reason(error)))")
+        }
+        guard !problems.isEmpty else { return }
+        throw HermesRPCClient.Failure(
+            reason: "\(botCurrentName(for: botName)) now uses \(HermesClient.prettify(model)), but \(problems.joined(separator: " and "))."
+        )
+    }
+
+    /// Moves the bot's own chat onto the model just set on its profile.
+    ///
+    /// Scoped to that session with `--session`: the profile change is the
+    /// persistent one, and a session switch must not write any other
+    /// profile's configuration. The model was already accepted for this bot
+    /// when the profile changed, so Hermes' confirmation is not asked twice.
+    private func switchOpenBotChat(_ botName: String, model: String, provider: String) async throws {
+        guard let conversation = conversations.first(where: {
+            $0.isCanonicalBotChat && $0.routedBotName == botName
+        }), let source = await botChatSource() else { return }
+        let chat = try await BotChatSync(source: source).resolve(profile: botName)
+        let resumed = try await source.resume(profile: botName, target: chat.resolvedID)
+        guard let liveID = resumed["session_id"] as? String, !liveID.isEmpty else { return }
+        track(liveSessionID: liveID, for: conversation.id)
+        _ = try await source.rpc.call("config.set", JSONObject([
+            "session_id": liveID,
+            "key": "model",
+            "value": "\(model) --provider \(provider) --session",
+            "confirm_expensive_model": true,
+        ]))
     }
 
     // MARK: - Events
@@ -3796,6 +3909,13 @@ final class AppStore {
                         }
                         continue
                     }
+                    // What streamed before a tool call was the model narrating
+                    // its way to that call. The answer comes after the last
+                    // tool, and the transcript drops the narration too.
+                    if event.type == "tool.start",
+                       let location = messageLocation(replyID, conversationID: conversationID) {
+                        conversations[location.chat].messages[location.message].content = ""
+                    }
                     if let chatEvent = Self.chatEvent(from: event) {
                         apply(
                             chatEvent, to: replyID, conversationID: conversationID,
@@ -3976,7 +4096,11 @@ final class AppStore {
     /// all reach `apply` the way the HTTP path's do.
     nonisolated static func chatEvent(from event: HermesRPCEvent) -> ChatEvent? {
         switch event.type {
-        case "message.delta", "message.interim":
+        // `message.interim` is not taken: it is the model's commentary beside a
+        // tool call, not its answer, and when that commentary was streamed it
+        // repeats text the deltas already delivered. A free model's
+        // "Required parameters (if any): query" showed up twice as the reply.
+        case "message.delta":
             guard let text = (event.payload["text"] as? String)
                 ?? (event.payload["delta"] as? String), !text.isEmpty
             else { return nil }
@@ -4319,6 +4443,38 @@ final class AppStore {
             .last { $0.role == .user }
         guard let priorUser else { return }
 
+        // A bot chat's history lives in Hermes, which still holds the failed
+        // exchange. Resending alone put the same message there twice, and the
+        // next refresh showed it twice. Rewind it there first.
+        if conversations[chat].isCanonicalBotChat,
+           let profile = conversations[chat].routedBotName {
+            guard !botRetryInFlight else { return }
+            botRetryInFlight = true
+            let conversationID = conversations[chat].id
+            Task { [weak self] in
+                guard let self else { return }
+                if let source = await self.botChatSource(),
+                   let target = try? await BotChatSync(source: source).resolve(profile: profile) {
+                    _ = try? await source.rewindForRetry(
+                        profile: profile, sessionID: target.resolvedID, text: priorUser.content
+                    )
+                }
+                self.botRetryInFlight = false
+                guard self.activeID == conversationID, !self.isSending else { return }
+                self.resend(priorUser, replacing: messageID, in: conversationID)
+            }
+            return
+        }
+        resend(priorUser, replacing: messageID, in: conversations[chat].id)
+    }
+
+    /// A bot chat's Retry is waiting on Hermes to rewind the exchange.
+    private var botRetryInFlight = false
+
+    private func resend(_ priorUser: Message, replacing replyID: String, in conversationID: String) {
+        guard let chat = conversations.firstIndex(where: { $0.id == conversationID }),
+              let index = conversations[chat].messages.firstIndex(where: { $0.id == replyID })
+        else { return }
         conversations[chat].messages.removeSubrange(index...)
         if let userIndex = conversations[chat].messages.firstIndex(where: { $0.id == priorUser.id }) {
             conversations[chat].messages.remove(at: userIndex)
