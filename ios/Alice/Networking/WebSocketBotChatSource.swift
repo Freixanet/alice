@@ -104,18 +104,33 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     ///
     /// - Returns: whether Hermes rewound the exchange.
     func rewindForRetry(profile: String, sessionID: String, text: String) async throws -> Bool {
-        let resumed = try await resume(profile: profile, target: sessionID)
-        guard let liveID = resumed["session_id"] as? String, !liveID.isEmpty else { return false }
-        let lastUser = resumed.rows.last { ($0["role"] as? String) == "user" }
-        guard let lastText = lastUser?["text"] as? String,
-              lastText.trimmingCharacters(in: .whitespacesAndNewlines)
-                == text.trimmingCharacters(in: .whitespacesAndNewlines)
-        else { return false }
-        let result = try await rpc.call("command.dispatch", JSONObject([
-            "name": "retry",
-            "session_id": liveID,
-        ]))
-        return (result["type"] as? String) == "send"
+        // Asked twice at most. A retry on a phone met a connection that dropped
+        // while the rewind was on its way: the error went unseen, the message was
+        // sent again, and Hermes kept both. Asked again after reconnecting,
+        // Hermes' own history says whether the first attempt took, so a rewind
+        // that already happened is never repeated onto the exchange before it.
+        var dispatched = false
+        var lastError: Error?
+        for _ in 0..<2 {
+            do {
+                let resumed = try await resume(profile: profile, target: sessionID)
+                guard let liveID = resumed["session_id"] as? String, !liveID.isEmpty else { return false }
+                let lastUser = resumed.rows.last { ($0["role"] as? String) == "user" }
+                guard let lastText = lastUser?["text"] as? String,
+                      lastText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        == text.trimmingCharacters(in: .whitespacesAndNewlines)
+                else { return dispatched }
+                dispatched = true
+                let result = try await rpc.call("command.dispatch", JSONObject([
+                    "name": "retry",
+                    "session_id": liveID,
+                ]))
+                return (result["type"] as? String) == "send"
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? HermesRPCClient.Failure(reason: "Hermes did not rewind the exchange.")
     }
 
     /// Maps the agent's projected history onto Alice's messages.

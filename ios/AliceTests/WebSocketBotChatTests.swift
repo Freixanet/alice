@@ -27,6 +27,9 @@ final class WebSocketBotChatTests: XCTestCase {
 
         func call(_ method: String, _ params: JSONObject) async throws -> JSONObject {
             calls.append(Call(method: method, params: Self.flatten(params.fields)))
+            if let failure = failures.removeValue(forKey: method) {
+                throw failure
+            }
             if let failNext {
                 self.failNext = nil
                 throw failNext
@@ -49,6 +52,10 @@ final class WebSocketBotChatTests: XCTestCase {
 
         func queue(_ events: [HermesRPCEvent]) { pushes = events }
         func fail(with error: Error) { failNext = error }
+
+        /// Fails the next call to one method only, once.
+        private var failures: [String: Error] = [:]
+        func fail(_ method: String, with error: Error) { failures[method] = error }
 
         func params(of method: String) -> [String: String]? {
             calls.last(where: { $0.method == method })?.params
@@ -242,6 +249,46 @@ final class WebSocketBotChatTests: XCTestCase {
         XCTAssertFalse(rewound)
         let methods = await rpc.methods()
         XCTAssertFalse(methods.contains("command.dispatch"), "the earlier exchange stays")
+    }
+
+    func testRetryRewindSurvivesTheConnectionDroppingMidway() async throws {
+        let rpc = FakeRPC(results: [
+            "session.resume": ["session_id": "live-9", "messages": [
+                Self.row(1, "user", "hola", 10),
+                Self.row(2, "assistant", "hola, ¿qué tal?", 11),
+                Self.row(3, "user", "primer mensaje", 12),
+                Self.row(4, "assistant", "Geschmacklose", 13),
+            ]],
+            "command.dispatch": ["type": "send", "message": "primer mensaje"],
+        ])
+        await rpc.fail("command.dispatch", with: Dropped.socket)
+        let source = WebSocketBotChatSource(rpc: rpc)
+
+        let rewound = try await source.rewindForRetry(
+            profile: "nous-radar", sessionID: "s1", text: "primer mensaje"
+        )
+
+        XCTAssertTrue(rewound, "the rewind is asked again once the connection is back")
+        let dispatches = await rpc.methods().filter { $0 == "command.dispatch" }
+        XCTAssertEqual(dispatches.count, 2)
+    }
+
+    func testRetryRewindThatKeepsFailingSaysSo() async throws {
+        let rpc = FakeRPC(results: [
+            "session.resume": ["session_id": "live-9", "messages": [
+                Self.row(1, "user", "primer mensaje", 12),
+            ]],
+        ])
+        await rpc.fail(with: Dropped.socket)
+        let source = WebSocketBotChatSource(rpc: rpc)
+        await rpc.fail("session.resume", with: Dropped.socket)
+
+        do {
+            _ = try await source.rewindForRetry(
+                profile: "nous-radar", sessionID: "s1", text: "primer mensaje"
+            )
+            XCTFail("two failed attempts must not pass for a rewind")
+        } catch {}
     }
 
     // MARK: - E. Sending — the heart of it
