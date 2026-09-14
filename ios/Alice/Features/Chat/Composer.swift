@@ -13,6 +13,7 @@ struct Composer: View {
     @Environment(\.colorScheme) private var scheme
     var focused: FocusState<Bool>.Binding
     var placeholder: String = "Talk to Alice…"
+    var keyboardShown = false
     @Namespace private var glass
     @State private var showModels = false
     @State private var dictation = Dictation()
@@ -58,7 +59,7 @@ struct Composer: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.bottom, 6)
+        .padding(.bottom, keyboardShown ? 10 : 6)
         // Flicking the composer down puts the keyboard away, which is quicker
         // than reaching for the transcript to tap it.
         .gesture(

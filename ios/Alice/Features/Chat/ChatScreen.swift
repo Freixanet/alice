@@ -109,6 +109,18 @@ struct ChatScreen: View {
         // The list is where these are normally read, and a conversation can
         // be opened without ever going through it.
         .task(id: bot) { await refreshBots() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIResponder.keyboardWillShowNotification
+        )) { note in
+            let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
+                .cgRectValue ?? .zero
+            keyboardShown = frame.height > 120
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIResponder.keyboardWillHideNotification
+        )) { _ in
+            keyboardShown = false
+        }
     }
 
     /// A plain tap off the composer dismisses the keyboard.
@@ -131,7 +143,11 @@ struct ChatScreen: View {
                 // last message still follows attachments, extra lines, and the
                 // keyboard.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Composer(focused: $composerFocused, placeholder: placeholder)
+                    Composer(
+                        focused: $composerFocused,
+                        placeholder: placeholder,
+                        keyboardShown: keyboardShown
+                    )
                 }
         } else {
             // Reserve the unfocused composer height in the static layer, then
@@ -146,20 +162,12 @@ struct ChatScreen: View {
                     .contentShape(.rect)
                     .simultaneousGesture(dismissKeyboard)
                     .animation(.smooth(duration: 0.3), value: keyboardShown)
-                    .onReceive(NotificationCenter.default.publisher(
-                        for: UIResponder.keyboardWillShowNotification
-                    )) { note in
-                        let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
-                            .cgRectValue ?? .zero
-                        keyboardShown = frame.height > 120
-                    }
-                    .onReceive(NotificationCenter.default.publisher(
-                        for: UIResponder.keyboardWillHideNotification
-                    )) { _ in
-                        keyboardShown = false
-                    }
 
-                Composer(focused: $composerFocused, placeholder: placeholder)
+                Composer(
+                    focused: $composerFocused,
+                    placeholder: placeholder,
+                    keyboardShown: keyboardShown
+                )
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                         guard !composerFocused, height > 0,
                               abs(homeComposerHeight - height) > 0.5 else { return }
