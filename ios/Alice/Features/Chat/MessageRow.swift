@@ -9,7 +9,16 @@ struct MessageRow: View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
             switch message.role {
             case .user:
-                if !message.attachments.isEmpty {
+                if let report = RoutineReport(message.content) {
+                    if let when = MessageTime.caption(message.createdAt) {
+                        Text(when)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .accessibilityLabel("Sent \(when)")
+                    }
+                    RoutineReportCard(name: report.name, report: attributed(report.body))
+                } else if !message.attachments.isEmpty {
                     SentAttachments(attachments: message.attachments)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
@@ -53,7 +62,7 @@ struct MessageRow: View {
                         // colour: tappable, underlined, and indistinguishable
                         // from the prose around them. The colours are set on
                         // the runs instead, body and links alike.
-                        Text(attributed)
+                        Text(attributed(message.content))
                             .textSelection(.enabled)
                             // Links are painted from the environment's tint,
                             // not from the colour set on their run — which is
@@ -110,13 +119,13 @@ struct MessageRow: View {
     /// paragraph breaks were understood and then discarded. Inline-only keeps
     /// bold, italics and code while leaving every newline exactly where the
     /// model put it, which is the half of Markdown that survives here.
-    private var attributed: AttributedString {
+    private func attributed(_ content: String) -> AttributedString {
         let key = RenderKey(
-            content: message.content, failed: message.error != nil, link: Palette.link(scheme)
+            content: content, failed: message.error != nil, link: Palette.link(scheme)
         )
         if let cached = Self.rendered[key] { return cached }
         let fresh = Self.linkified(
-            parsed, body: key.failed ? Color.red : Color.primary, link: key.link
+            Self.parsed(content), body: key.failed ? Color.red : Color.primary, link: key.link
         )
         if Self.rendered.count >= 400 { Self.rendered.removeAll(keepingCapacity: true) }
         Self.rendered[key] = fresh
@@ -195,14 +204,48 @@ struct MessageRow: View {
         return output
     }
 
-    private var parsed: AttributedString {
+    private static func parsed(_ content: String) -> AttributedString {
         (try? AttributedString(
-            markdown: message.content,
+            markdown: content,
             options: .init(
                 interpretedSyntax: .inlineOnlyPreservingWhitespace,
                 failurePolicy: .returnPartiallyParsedIfPossible
             )
-        )) ?? AttributedString(message.content)
+        )) ?? AttributedString(content)
+    }
+}
+
+/// A routine's report in a bot's chat.
+///
+/// Stock Hermes delivers a routine's output as a turn addressed to the bot,
+/// and the bot's answer follows it (`RoutineReport`). Drawn as the person's own
+/// bubble it read as if they had written the whole report, so it is shown as
+/// what it is: the routine, by name, and what it found.
+private struct RoutineReportCard: View {
+    @Environment(\.colorScheme) private var scheme
+    let name: String
+    let report: AttributedString
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(name, systemImage: "clock.arrow.circlepath")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Routine: \(name)")
+            if !report.characters.isEmpty {
+                Text(report)
+                    .textSelection(.enabled)
+                    .tint(Palette.link(scheme))
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Palette.border(scheme), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

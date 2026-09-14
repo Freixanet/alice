@@ -32,6 +32,9 @@ POLL_SECONDS = 5
 # Chats a person is in. `cron` sessions are a routine's own working transcript;
 # its result reaches the person as a delivery row in the bot's chat instead.
 REPLY_SOURCES = {'tui', 'cli', 'desktop', 'api_server'}
+# How stock Hermes opens a routine's report when it hands it to a bot's chat
+# (cron/scheduler_delivery.py); the bot's answer to it is the routine finishing.
+ROUTINE_REPORT = '[Cronjob "'
 # Replies older than this when first seen are history, not news: a watcher that
 # was stopped for a day must not ring the phone for all of it.
 FRESH_SECONDS = 15 * 60
@@ -60,15 +63,18 @@ def display_name(name, directory):
     return match.group(1).strip().strip('\'"') if match else name
 
 
-def classify(content, display_kind, finish_reason, source):
-    """'reply', 'routine', 'routine_failed', or None for rows a person need not hear about."""
+def classify(content, display_kind, finish_reason, source, answers_routine=False):
+    """'reply', 'routine', 'routine_failed', or None for rows a person need not hear about.
+
+    answers_routine: the turn this row answers is a routine's report, which stock Hermes
+    hands to the bot's chat as a message starting with ROUTINE_REPORT."""
     text = (content or '').strip()
     if display_kind == 'cron_delivery':
         return 'routine_failed' if text.startswith('⚠️') else 'routine'
     if display_kind:
         return None
     if finish_reason == 'stop' and source in REPLY_SOURCES and text and text != '[SILENT]':
-        return 'reply'
+        return 'routine' if answers_routine else 'reply'
     return None
 
 
@@ -102,10 +108,15 @@ def _query(db, sql, args, immutable):
 def assistant_rows(db, after_id):
     """Assistant rows newer than after_id, or None when the database cannot be read."""
     try:
+        # Whether the user turn before each row is a routine's report, decided in SQL so
+        # the report itself never leaves the database.
         return read(db,
-                    'SELECT m.id, m.content, m.display_kind, m.finish_reason, s.source, m.timestamp, s.id '
+                    'SELECT m.id, m.content, m.display_kind, m.finish_reason, s.source, m.timestamp, s.id, '
+                    '(SELECT substr(u.content, 1, ?) = ? FROM messages u WHERE u.session_id = m.session_id '
+                    'AND u.id < m.id AND u.role = ? ORDER BY u.id DESC LIMIT 1) '
                     'FROM messages m JOIN sessions s ON s.id = m.session_id '
-                    'WHERE m.id > ? AND m.role = ? ORDER BY m.id', (after_id, 'assistant'))
+                    'WHERE m.id > ? AND m.role = ? ORDER BY m.id',
+                    (len(ROUTINE_REPORT), ROUTINE_REPORT, 'user', after_id, 'assistant'))
     except sqlite3.Error as error:
         # One unreadable database must not silence every other chat.
         log.warning('Could not read %s: %s', db.parent.name, error)
@@ -161,8 +172,8 @@ def poll_once(state, home, send, now=None):
             else:
                 rows = assistant_rows(db, marks[name]) or []
                 found = []
-                for row_id, content, display_kind, finish_reason, source, stamp, session in rows:
-                    kind = classify(content, display_kind, finish_reason, source)
+                for row_id, content, display_kind, finish_reason, source, stamp, session, after_report in rows:
+                    kind = classify(content, display_kind, finish_reason, source, bool(after_report))
                     if kind and (stamp is None or now - float(stamp) <= FRESH_SECONDS):
                         found.append((kind, session if source == 'api_server' else None))
                 # A burst from one chat is one notification; a failure outranks the rest.

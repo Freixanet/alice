@@ -96,6 +96,18 @@ class NotifierTests(unittest.TestCase):
         self.poll()
         self.assertEqual([m[1] for m in self.sent], ['Ha terminado su rutina', 'Su rutina ha fallado'])
 
+    def test_a_bots_answer_to_a_routine_report_is_the_routine_finishing(self):
+        self.poll()
+        self.hermes.row('radar-ia', 'tui', '[Cronjob "Radar IA" output — scheduled job, not the user. Review it.]\n\ninforme',
+                        finish_reason=None, role='user')
+        self.hermes.row('radar-ia', 'tui', '', finish_reason='tool_calls')
+        self.hermes.row('radar-ia', 'tui', 'resumen')
+        self.poll()
+        self.hermes.row('radar-ia', 'tui', 'hola', finish_reason=None, role='user')
+        self.hermes.row('radar-ia', 'tui', 'respuesta')
+        self.poll()
+        self.assertEqual([m[1] for m in self.sent], ['Ha terminado su rutina', 'Ha respondido'])
+
     def test_a_burst_from_one_chat_is_one_notification(self):
         self.poll()
         for text in ('uno', 'dos', 'tres'):
