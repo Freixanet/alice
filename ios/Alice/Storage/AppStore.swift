@@ -1322,8 +1322,49 @@ final class AppStore {
     }
 
     func toggleBotUnread(_ bot: String) {
-        if unreadBots.contains(bot) { unreadBots.remove(bot) }
+        if isBotUnread(bot) { markBotRead(bot) }
         else { unreadBots.insert(bot) }
+    }
+
+    /// Whether this bot has said something since its conversation was last
+    /// opened. The explicit set remains the user's "Mark Unread" override;
+    /// ordinary chat replies and routine cards are derived from their dates.
+    func isBotUnread(_ bot: String) -> Bool {
+        if unreadBots.contains(bot) { return true }
+        let conversation = conversations.first { $0.routedBotName == bot }
+        return Self.hasUnreadBotContent(
+            messages: conversation?.messages ?? [],
+            quietRuns: quietRoutineRuns[bot] ?? [],
+            botName: bot,
+            openedAt: conversation?.openedAt
+        )
+    }
+
+    nonisolated static func hasUnreadBotContent(
+        messages: [Message], quietRuns: [QuietRoutineRun],
+        botName: String, openedAt: Date?
+    ) -> Bool {
+        let readThrough = openedAt ?? .distantPast
+        return RoutineDelivery.present(
+            messages, botName: botName, quietRuns: quietRuns
+        ).contains {
+            $0.role == .assistant && !$0.pending
+                && MessageTime.isKnown($0.createdAt) && $0.createdAt > readThrough
+        }
+    }
+
+    /// Opening the conversation reads both chat replies and routine cards.
+    func markBotRead(_ bot: String, at date: Date = Date()) {
+        unreadBots.remove(bot)
+        guard let index = conversations.firstIndex(where: { $0.routedBotName == bot })
+        else { return }
+        conversations[index].openedAt = date
+        persistConversations()
+    }
+
+    func markActiveBotRead() {
+        guard let bot = activeConversation?.routedBotName else { return }
+        markBotRead(bot)
     }
 
     func hideBot(_ bot: String) {
@@ -4038,6 +4079,7 @@ final class AppStore {
             persistConversations()
             id = chat.id
         }
+        markBotRead(bot.name)
         Task { [weak self] in await self?.refreshBotChat(id) }
         return id
     }
@@ -4104,8 +4146,16 @@ final class AppStore {
             )
             judgedRoutineRuns[profile, default: []].formUnion(found.judged)
             let kept = (quietRoutineRuns[profile] ?? []).filter { $0.finishedAt >= since }
-            let merged = (kept + found.quiet.filter { run in !kept.contains { $0.id == run.id } })
+            let newQuiet = found.quiet.filter { run in !kept.contains { $0.id == run.id } }
+            let merged = (kept + newQuiet)
                 .sorted { $0.finishedAt < $1.finishedAt }
+            // A refresh may finish after the reader has already left this
+            // chat. Preserve the notification explicitly in that race; when
+            // the chat is still visible, the new card has just been seen.
+            if !newQuiet.isEmpty,
+               showingBots || activeConversation?.routedBotName != profile {
+                unreadBots.insert(profile)
+            }
             if merged != (quietRoutineRuns[profile] ?? []) {
                 quietRoutineRuns[profile] = merged
             }

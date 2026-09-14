@@ -336,6 +336,7 @@ struct RootView: View {
         botsCloseTask = nil
         closingBots = false
         botsRowSwipeRecognized = false
+        store.markActiveBotRead()
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         botsExitOffset = 0
         store.botsFromLeading = true

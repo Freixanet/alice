@@ -475,7 +475,7 @@ struct BotsScreen: View {
             Button {
                 store.toggleBotUnread(bot.name)
             } label: {
-                Label(store.unreadBots.contains(bot.name) ? "Mark Read" : "Mark Unread", systemImage: "bubble.left")
+                Label(store.isBotUnread(bot.name) ? "Mark Read" : "Mark Unread", systemImage: "bubble.left")
             }
 
             Button {
@@ -618,11 +618,18 @@ struct BotsScreen: View {
             VStack(spacing: 8) {
                 glassMark(bot, size: 76)
 
-                Text(store.botCurrentName(for: bot.name))
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(spacing: 5) {
+                    Text(store.botCurrentName(for: bot.name))
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
+                    if store.isBotUnread(bot.name) {
+                        unreadDot(size: 7)
+                    }
+                }
+                .frame(maxWidth: 100)
             }
             .frame(width: 100)
             .contentShape(.interaction, .rect)
@@ -652,24 +659,41 @@ struct BotsScreen: View {
 
     /// The bot's mark as a glass surface.
     @ViewBuilder
-    private func glassMark(_ bot: BotRow, size: CGFloat) -> some View {
-        ZStack {
-            MarkShape(silhouette: mark(bot).silhouette)
-                .fill(mark(bot).color.opacity(Self.backing(mark(bot).color, scheme)))
-            BotFaceView(size: size)
+    private func glassMark(_ bot: BotRow, size: CGFloat, showsUnread: Bool = false) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            ZStack {
+                MarkShape(silhouette: mark(bot).silhouette)
+                    .fill(mark(bot).color.opacity(Self.backing(mark(bot).color, scheme)))
+                BotFaceView(size: size)
+            }
+            .frame(width: size, height: size)
+            // Interactive, which is what makes it stretch under a finger the
+            // way the discs in the conversation do.
+            .glassEffect(
+                .regular.interactive().tint(mark(bot).color.opacity(0.42)),
+                in: MarkShape(silhouette: mark(bot).silhouette)
+            )
+
+            if showsUnread && store.isBotUnread(bot.name) {
+                unreadDot(size: 10)
+                    .offset(x: 2, y: 2)
+            }
         }
-        .frame(width: size, height: size)
-        // Interactive, which is what makes it stretch under a finger the way
-        // the discs in the conversation do.
-        .glassEffect(
-            .regular.interactive().tint(mark(bot).color.opacity(0.42)),
-            in: MarkShape(silhouette: mark(bot).silhouette)
-        )
         // Slack outside the glass, not inside it: the shape is cut to the
         // mark first and the room comes after. The stretch draws beyond the
         // mark's own bounds, and with nothing around it the top of the bulge
         // was cut off against the edge of the layer.
         .padding(size * 0.16)
+    }
+
+    private func unreadDot(size: CGFloat) -> some View {
+        Circle()
+            .fill(Color.blue)
+            .frame(width: size, height: size)
+            .overlay {
+                Circle().stroke(Palette.background(scheme), lineWidth: 2)
+            }
+            .accessibilityLabel("Unread")
     }
 
     /// Said out loud rather than left to be assumed: this list came from the
@@ -1276,7 +1300,7 @@ struct BotsScreen: View {
     private func botRowContents(_ bot: BotRow, glassFace: Bool = true) -> some View {
         HStack(alignment: .center, spacing: 14) {
             Group {
-                if glassFace { glassMark(bot, size: 44) }
+                if glassFace { glassMark(bot, size: 44, showsUnread: true) }
                 else { BotMarkView(mark: mark(bot), size: 44) }
             }
 
@@ -1302,12 +1326,6 @@ struct BotsScreen: View {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(store.accent.primary(scheme))
-                    }
-
-                    if store.unreadBots.contains(bot.name) {
-                        Circle()
-                            .fill(Color.blue)
-                            .frame(width: 7, height: 7)
                     }
 
                     Spacer(minLength: 4)
