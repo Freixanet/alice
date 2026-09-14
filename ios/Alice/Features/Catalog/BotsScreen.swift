@@ -626,7 +626,7 @@ struct BotsScreen: View {
                         .truncationMode(.tail)
                         .layoutPriority(1)
                     if store.isBotUnread(bot.name) {
-                        unreadDot(size: 7)
+                        unreadDot(size: Self.unreadDotSize)
                     }
                 }
                 .frame(maxWidth: 100)
@@ -675,8 +675,14 @@ struct BotsScreen: View {
             )
 
             if showsUnread && store.isBotUnread(bot.name) {
-                unreadDot(size: 10)
-                    .offset(x: 2, y: 2)
+                unreadDot(size: Self.unreadDotSize)
+                    // Put the avatar's edge through the centre of the badge:
+                    // half sits on the face and half outside, with the badge's
+                    // outline cutting the small "bite" around it.
+                    .offset(
+                        x: Self.unreadDotSize / 2,
+                        y: Self.unreadDotSize / 2
+                    )
             }
         }
         // Slack outside the glass, not inside it: the shape is cut to the
@@ -695,6 +701,8 @@ struct BotsScreen: View {
             }
             .accessibilityLabel("Unread")
     }
+
+    private static let unreadDotSize: CGFloat = 10
 
     /// Said out loud rather than left to be assumed: this list came from the
     /// cache because the agent did not answer.
