@@ -91,6 +91,15 @@ struct SettingsView: View {
             } footer: {
                 Text("Technical and developer options are kept here so everyday settings stay simple.")
             }
+
+            let build = AliceBuildInfo.current
+            Section("About Alice") {
+                LabeledContent("Version", value: build.versionLabel)
+                if let revision = build.revision {
+                    LabeledContent("Revision", value: revision)
+                        .textSelection(.enabled)
+                }
+            }
         }
         .navigationTitle("Settings")
         .toolbar {

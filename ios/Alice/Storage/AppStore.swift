@@ -353,7 +353,7 @@ final class AppStore {
     func connect(urlText: String, key: String, persist: Bool = true) async {
         let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = Self.normalize(trimmed) else {
-            connectionError = "Check the address."
+            connectionError = Self.connectionAddressError(trimmed)
             return
         }
         isConnecting = true
@@ -488,20 +488,64 @@ final class AppStore {
         await forgetDashboard()
     }
 
-    /// Accepts what someone actually types: a bare host, a host and port, or a
-    /// full URL. Anything without a scheme is assumed to be plain HTTP, which
-    /// is how a Hermes on the local network is reached.
-    static func normalize(_ text: String) -> URL? {
+    /// Accepts what someone actually types: a bare local host, a host and port,
+    /// or a full URL. Plain HTTP is limited to local/private and Tailscale
+    /// destinations; a public host must authenticate and encrypt with HTTPS.
+    nonisolated static func normalize(_ text: String) -> URL? {
         guard !text.isEmpty else { return nil }
         var value = text
         if !value.contains("://") { value = "http://" + value }
         guard var components = URLComponents(string: value),
-              let host = components.host, !host.isEmpty
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = components.host, !host.isEmpty,
+              scheme == "https" || Self.allowsPrivateHTTP(host: host)
         else { return nil }
         if components.path.isEmpty { components.path = "/" }
         components.query = nil
         components.fragment = nil
         return components.url
+    }
+
+    nonisolated static func allowsPrivateHTTP(host rawHost: String) -> Bool {
+        let host = rawHost.lowercased().trimmingCharacters(
+            in: CharacterSet(charactersIn: "[]")
+        )
+        if host == "localhost" || host.hasSuffix(".localhost")
+            || host.hasSuffix(".local") || host.hasSuffix(".ts.net")
+            || (!host.contains(".") && !host.contains(":")) {
+            return true
+        }
+
+        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
+            .compactMap { Int($0) }
+        if octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) {
+            return octets[0] == 10
+                || octets[0] == 127
+                || (octets[0] == 100 && (64...127).contains(octets[1]))
+                || (octets[0] == 169 && octets[1] == 254)
+                || (octets[0] == 172 && (16...31).contains(octets[1]))
+                || (octets[0] == 192 && octets[1] == 168)
+        }
+
+        // Loopback, link-local and unique-local IPv6. Tailscale's IPv6 range
+        // is unique-local and therefore included without accepting public IPv6.
+        guard host.contains(":") else { return false }
+        return host == "::1" || host.hasPrefix("fe8") || host.hasPrefix("fe9")
+            || host.hasPrefix("fea") || host.hasPrefix("feb")
+            || host.hasPrefix("fc") || host.hasPrefix("fd")
+    }
+
+    nonisolated private static func connectionAddressError(_ text: String) -> String {
+        var value = text
+        if !value.contains("://") { value = "http://" + value }
+        if let components = URLComponents(string: value),
+           components.scheme?.lowercased() == "http",
+           let host = components.host, !host.isEmpty,
+           !allowsPrivateHTTP(host: host) {
+            return "Use HTTPS for a Hermes address outside your local network or tailnet."
+        }
+        return "Check the address."
     }
 
     // MARK: - Catalogs
@@ -589,7 +633,9 @@ final class AppStore {
     /// goes to the Keychain beside the gateway key, never to preferences.
     func connectDashboard(urlText: String, username: String, password: String) async -> String? {
         let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = Self.normalize(trimmed) else { return "Check the address." }
+        guard let url = Self.normalize(trimmed) else {
+            return Self.connectionAddressError(trimmed)
+        }
         await resetDashboardRPC()
         await dashboard.use(
             .init(url: url, username: username, password: password)
@@ -617,10 +663,17 @@ final class AppStore {
             dashboardReady = false
             return
         }
-        await resetDashboardRPC()
-        await dashboard.use(
-            .init(url: url, username: dashboardUser, password: password)
-        )
+        // Returning from suspension is a reachability check, not a connection
+        // change. Keep the configured dashboard and its shared RPC socket when
+        // the endpoint is unchanged: a bot turn may still own that socket, and
+        // replacing it here used to fail an acknowledged submit or create a
+        // thirty-second hole in its event stream.
+        if Self.dashboardEndpointChanged(from: await dashboard.baseURL, to: url) {
+            await resetDashboardRPC()
+            await dashboard.use(
+                .init(url: url, username: dashboardUser, password: password)
+            )
+        }
         // Saved credentials say only that this dashboard worked before. Probe
         // the authenticated surface before advertising it as live; otherwise a
         // stopped Mac looks connected forever after relaunch. Keep the saved
@@ -629,10 +682,17 @@ final class AppStore {
             _ = try await dashboard.memory()
             dashboardReady = true
         } catch {
-            await resetDashboardRPC()
-            await dashboard.use(nil)
             dashboardReady = false
+            // A foreground probe is observational. It must not tear down the
+            // RPC transport even when it fails: a bot turn, a settings save or
+            // another dashboard request may already be in flight. The next
+            // restore retries this configured client; an explicit repair or
+            // Forget remains the operation that replaces it.
         }
+    }
+
+    nonisolated static func dashboardEndpointChanged(from current: URL?, to saved: URL) -> Bool {
+        current != saved
     }
 
     func forgetDashboard() async {
@@ -650,7 +710,7 @@ final class AppStore {
     /// Changing/forgetting that dashboard must therefore retire the socket;
     /// otherwise a later Bot Mode action can be routed to the previous host.
     private func resetDashboardRPC() async {
-        if let rpcClient { await rpcClient.disconnect() }
+        if let rpcClient { await rpcClient.disconnect(finishingListeners: true) }
         rpcClient = nil
         liveBotSessions.removeAll()
         botLiveSessionIDs.removeAll()
@@ -2618,7 +2678,41 @@ final class AppStore {
         try await dashboard.soul(name)
     }
     func setSoul(_ name: String, _ text: String) async throws {
+        // A manual edit becomes user-owned before its content changes. Clearing
+        // the marker first is intentionally fail-closed: if Hermes cannot save
+        // the metadata, Alice must not leave a custom SOUL marked as safe for a
+        // future automatic template migration.
+        if botMetadataIsRemote {
+            try await mutateBotMetadata(name) { meta in
+                var meta = meta
+                meta.removeValue(forKey: "managedTemplateId")
+                meta.removeValue(forKey: "managedTemplateVersion")
+                return meta
+            }
+        }
         try await dashboard.setSoul(name, text)
+    }
+
+    /// Writes an Alice-managed SOUL and records the template version in the
+    /// profile's cross-device metadata. If the metadata write loses its race,
+    /// the exact SOUL remains detectable and a retry can safely finish marking
+    /// it; no user-authored text is inferred from a phrase match.
+    func setManagedSoul(
+        _ name: String, _ text: String, templateID: String, version: Int
+    ) async throws {
+        try await dashboard.setSoul(name, text)
+        guard botMetadataIsRemote else { return }
+        try await markManagedTemplate(name, id: templateID, version: version)
+    }
+
+    func markManagedTemplate(_ name: String, id: String, version: Int) async throws {
+        guard botMetadataIsRemote else { return }
+        try await mutateBotMetadata(name) { meta in
+            var meta = meta
+            meta["managedTemplateId"] = id
+            meta["managedTemplateVersion"] = version
+            return meta
+        }
     }
     func setBotDescription(_ name: String, _ text: String) async throws {
         // The agent first: a swallowed failure left the row showing a

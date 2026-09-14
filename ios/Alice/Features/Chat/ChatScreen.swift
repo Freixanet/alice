@@ -11,13 +11,9 @@ struct ChatScreen: View {
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
     @State private var homeComposerHeight: CGFloat = 120
-    /// Extra room under the empty home while the keyboard is closed. The block
-    /// centres in what is left, so it sits half of this higher.
+    /// Extra room under the empty home. Kept constant across keyboard changes
+    /// so the title does not jump when the composer becomes focused.
     private static let restingLift: CGFloat = 56
-    /// Whether an on-screen keyboard is taking room. Not the composer's focus: a
-    /// hardware keyboard focuses it without taking any, and keying the lift on
-    /// focus dropped the block into the space the lift had left.
-    @State private var keyboardShown = false
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -135,47 +131,16 @@ struct ChatScreen: View {
                     Composer(focused: $composerFocused, placeholder: placeholder)
                 }
         } else {
-            // The empty home should not reflow when the keyboard appears.
-            // Reserve the unfocused composer height in the static layer, then
-            // let the real composer follow the keyboard as a separate sibling.
+            // Reserve the unfocused composer height in the home, then let the
+            // real composer follow the keyboard as a separate sibling. The
+            // constant padding keeps the landing content visually stationary
+            // while the composer moves, without placing the title underneath.
             ZStack(alignment: .bottom) {
-                // No keyboard-ignoring here, deliberately.
-                //
-                // The intent was that the home should not move at all. But
-                // `ignoresSafeArea(.keyboard, edges: .bottom)` extends the
-                // block *downwards* past the container while its top edge
-                // stays put, so its centre fell — the logo drifted down and
-                // the title ended up behind the composer. Three shapes of that
-                // fix all failed the same way.
-                //
-                // So it centres in whatever room it has, like every other iOS
-                // screen: the block rises a little when the keyboard opens and
-                // settles back when it closes. Slight motion that keeps every
-                // word visible beats stillness that hides the title.
                 EmptyChatView()
-                    // Resting a little higher with the keyboard closed. With an
-                    // on-screen keyboard up the extra goes away, so the block
-                    // ends exactly where it did — the lift only changes where it
-                    // starts.
-                    .padding(.bottom, homeComposerHeight + (keyboardShown ? 0 : Self.restingLift))
+                    .padding(.bottom, homeComposerHeight + Self.restingLift)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(.rect)
                     .simultaneousGesture(dismissKeyboard)
-                    .animation(.smooth(duration: 0.3), value: keyboardShown)
-                    .onReceive(NotificationCenter.default.publisher(
-                        for: UIResponder.keyboardWillShowNotification
-                    )) { note in
-                        let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
-                            .cgRectValue ?? .zero
-                        // A hardware keyboard reports only its shortcut bar,
-                        // which leaves the room as it was.
-                        keyboardShown = frame.height > 120
-                    }
-                    .onReceive(NotificationCenter.default.publisher(
-                        for: UIResponder.keyboardWillHideNotification
-                    )) { _ in
-                        keyboardShown = false
-                    }
 
                 Composer(focused: $composerFocused, placeholder: placeholder)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in

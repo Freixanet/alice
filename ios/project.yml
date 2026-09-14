@@ -25,6 +25,9 @@ targets:
       path: Alice/Info.plist
       properties:
         CFBundleDisplayName: Alice
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AliceSourceRevision: $(ALICE_SOURCE_REVISION)
         # The pairing QR is an alice:// deep link; the scheme is what lets the
         # iPhone's own Camera app open Alice at the moment of pairing.
         CFBundleURLTypes:
@@ -56,25 +59,24 @@ targets:
           Alice transcribes what you dictate so you can edit it before sending.
         NSFaceIDUsageDescription: >-
           Alice uses Face ID to unlock the connection key for your Hermes agent.
-        # A Hermes on the local network is reached over plain HTTP; a hosted one
-        # is HTTPS and unaffected by this exception.
+        # Local/private IPs and names use the explicit local-network exception.
+        # Tailnet DNS names end in ts.net and need their own narrow HTTP
+        # exception; public Hermes addresses are accepted only over HTTPS by
+        # AppStore.normalize.
         NSAppTransportSecurity:
-          # A self-hosted Hermes usually answers over plain HTTP on an address
-          # only its owner can reach — a LAN box, a tailnet peer, a machine on
-          # the desk. `NSAllowsLocalNetworking` covers `.local` names and
-          # link-local ranges, but not a tailnet address like 100.x, so every
-          # such connection was refused before it left the phone and surfaced
-          # as "couldn't reach that address".
-          #
-          # The app talks only to the address its user typed, and the key never
-          # travels anywhere else, so the exception is scoped by intent rather
-          # than by a list of hosts nobody can predict.
-          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            ts.net:
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
         NSLocalNetworkUsageDescription: >-
           Alice connects to the Hermes agent running on your network.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "2"
+        ALICE_SOURCE_REVISION: development
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

@@ -460,6 +460,11 @@ struct BotMetadata: Hashable, Sendable, Codable {
     var group: String? = nil
     var imageKind: String? = nil
     var shape: String? = nil
+    /// Alice-authored templates are versioned in Hermes, not inferred from
+    /// their prose. Editing a SOUL by hand clears these fields, so a later app
+    /// update never overwrites a person's customization.
+    var managedTemplateID: String? = nil
+    var managedTemplateVersion: Int? = nil
     var created: Double? = nil
     var revision: Int = 0
     var present: Bool = false
@@ -1294,6 +1299,8 @@ extension DashboardClient {
                     group: Self.nonEmpty(rawMeta?["group"] as? String),
                     imageKind: Self.nonEmpty(rawMeta?["imageKind"] as? String),
                     shape: Self.nonEmpty(rawMeta?["shape"] as? String),
+                    managedTemplateID: Self.nonEmpty(rawMeta?["managedTemplateId"] as? String),
+                    managedTemplateVersion: Self.int(rawMeta?["managedTemplateVersion"]),
                     created: Self.double(rawMeta?["created"]),
                     revision: revision,
                     present: rawMeta != nil

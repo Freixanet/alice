@@ -78,6 +78,8 @@ final class BotRosterTests: XCTestCase {
                         "pinned": false,
                         "shape": "blobatar",
                         "groups": ["news"],
+                        "managedTemplateId": "radar-ia",
+                        "managedTemplateVersion": NSNumber(value: 3),
                         "created": NSNumber(value: 1_788_304_483_659 as Int64),
                     ]
                 ],
@@ -95,6 +97,8 @@ final class BotRosterTests: XCTestCase {
         XCTAssertFalse(bot.pinned)
         XCTAssertEqual(bot.metadata.shape, "blobatar")
         XCTAssertEqual(bot.metadata.groups, ["news"])
+        XCTAssertEqual(bot.metadata.managedTemplateID, "radar-ia")
+        XCTAssertEqual(bot.metadata.managedTemplateVersion, 3)
         XCTAssertEqual(bot.metadata.revision, 7)
         XCTAssertTrue(bot.metadata.present)
     }

@@ -135,6 +135,8 @@ actor HermesRPCClient: HermesRPCTransport {
     private var listeners: [UUID: AsyncStream<HermesRPCEvent>.Continuation] = [:]
     private var nextID = 1
     private var pump: Task<Void, Never>?
+    private var openingSocket: URLSessionWebSocketTask?
+    private var retired = false
     // `actor` methods are re-entrant across `await`: two first calls can both
     // enter connectIfNeeded while the ticket request is suspended. Serialize
     // that first connection so they share one ticket/socket instead of one
@@ -209,16 +211,26 @@ actor HermesRPCClient: HermesRPCTransport {
     }
 
     /// Drops the socket so the next call reconnects with a fresh ticket.
-    /// Pending calls fail rather than hang; the caller keeps its cache.
-    func disconnect(_ reason: Error? = nil) {
+    /// Pending calls fail rather than hang; ordinary recovery keeps event
+    /// listeners attached. Retiring a dashboard finishes them so an old
+    /// observer cannot keep a dead client alive or block a later watcher.
+    func disconnect(_ reason: Error? = nil, finishingListeners: Bool = false) {
         pump?.cancel()
         pump = nil
+        openingSocket?.cancel(with: .goingAway, reason: nil)
+        openingSocket = nil
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
         let failures = pending
         pending.removeAll()
         for (_, continuation) in failures {
             continuation.resume(throwing: reason ?? Failure(reason: "Hermes disconnected."))
+        }
+        if finishingListeners {
+            retired = true
+            let continuations = listeners
+            listeners.removeAll()
+            for (_, continuation) in continuations { continuation.finish() }
         }
     }
 
@@ -227,6 +239,10 @@ actor HermesRPCClient: HermesRPCTransport {
     private func addListener(
         _ key: UUID, _ continuation: AsyncStream<HermesRPCEvent>.Continuation
     ) {
+        guard !retired else {
+            continuation.finish()
+            return
+        }
         listeners[key] = continuation
     }
 
@@ -238,6 +254,7 @@ actor HermesRPCClient: HermesRPCTransport {
     }
 
     private func connectIfNeeded() async throws {
+        guard !retired else { throw Failure(reason: "This Hermes connection was replaced.") }
         if socket != nil { return }
 
         if connecting {
@@ -250,10 +267,14 @@ actor HermesRPCClient: HermesRPCTransport {
         connecting = true
         do {
             let value = try await ticket()
+            guard !retired else {
+                throw Failure(reason: "This Hermes connection was replaced.")
+            }
             guard let url = Self.socketURL(dashboard: endpoint, ticket: value) else {
                 throw Failure(reason: "The dashboard address is not usable for a socket.")
             }
             let task = session.webSocketTask(with: url)
+            openingSocket = task
             task.resume()
 
             // `resume()` only starts the WebSocket handshake. Publishing the
@@ -262,10 +283,16 @@ actor HermesRPCClient: HermesRPCTransport {
             // forever on a physical device. The URLSession delegate is the
             // authority for when this task is actually open.
             try await openDelegate.waitForOpen(task)
+            if openingSocket === task { openingSocket = nil }
+            guard !retired else {
+                task.cancel(with: .goingAway, reason: nil)
+                throw Failure(reason: "This Hermes connection was replaced.")
+            }
             socket = task
             pump = Task { [weak self] in await self?.receive(on: task) }
             finishConnection(with: .success(()))
         } catch {
+            openingSocket = nil
             finishConnection(with: .failure(error))
             throw error
         }

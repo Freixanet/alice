@@ -80,6 +80,22 @@ final class WebSocketBotChatTests: XCTestCase {
         var errorDescription: String? { "Hermes disconnected." }
     }
 
+    func testRetiringDashboardRPCFinishesExistingEventStreams() async throws {
+        let endpoint = try XCTUnwrap(URL(string: "http://127.0.0.1:9119"))
+        let client = HermesRPCClient(endpoint: endpoint) { "unused-ticket" }
+        let stream = client.events()
+        let finished = expectation(description: "event stream finished")
+        Task {
+            for await _ in stream {}
+            finished.fulfill()
+        }
+        await Task.yield()
+
+        await client.disconnect(finishingListeners: true)
+
+        await fulfillment(of: [finished], timeout: 1)
+    }
+
     private static func roster(
         _ profile: String, id: String, resolved: String? = nil
     ) -> [String: Any] {

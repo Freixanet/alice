@@ -5,6 +5,7 @@ final class RadarIATests: XCTestCase {
     func testRadarIsARealBotTemplate() {
         XCTAssertEqual(RadarIA.botName, "radar-ia")
         XCTAssertEqual(RadarIA.displayName, "Radar IA")
+        XCTAssertEqual(RadarIA.templateVersion, 1)
         XCTAssertTrue(RadarIA.ownsSoul(RadarIA.editorialPrompt))
     }
 
@@ -30,22 +31,37 @@ final class RadarIATests: XCTestCase {
         XCTAssertFalse(RadarIA.validSchedule(time: "10:00", zone: "Not/AZone"))
     }
 
-    func testSetupPromptPreservesBotAndSchedulerBoundaries() throws {
-        let prompt = try XCTUnwrap(
-            RadarIA.setupPrompt(time: "08:45", zone: "America/New_York")
-        )
-        XCTAssertTrue(prompt.contains("perfil real de Hermes `radar-ia`"))
-        XCTAssertTrue(prompt.contains("No crees otro perfil"))
-        XCTAssertTrue(prompt.contains("08:45"))
-        XCTAssertTrue(prompt.contains("America/New_York"))
-        XCTAssertTrue(prompt.contains("no crees duplicados"))
-        XCTAssertTrue(prompt.contains("No inventes un campo `timezone`"))
-        XCTAssertTrue(prompt.contains("`CRON_TZ`"))
-        XCTAssertTrue(prompt.contains("UNA rutina propiedad de `radar-ia`"))
-        XCTAssertTrue(prompt.contains("fuentes actuales"))
+    func testScheduleUsesHermesNativeDailySyntax() {
+        XCTAssertEqual(RadarIA.schedule(at: "08:45"), "every day at 08:45")
     }
 
-    func testSetupPromptRejectsFixedOffsetZone() {
-        XCTAssertNil(RadarIA.setupPrompt(time: "10:00", zone: "UTC+02:00"))
+    func testManagedRoutineDetectionDoesNotClaimAnUnrelatedCustomRoutine() {
+        let official = JobRow(
+            id: "one", name: RadarIA.routineName, prompt: RadarIA.editorialPrompt,
+            schedule: "every day at 10:00", enabled: true, lastStatus: nil,
+            lastError: nil, lastRun: nil, nextRun: nil, profile: RadarIA.botName
+        )
+        let legacy = JobRow(
+            id: "two", name: "Daily briefing", prompt: RadarIA.editorialPrompt,
+            schedule: "0 10 * * *", enabled: true, lastStatus: nil,
+            lastError: nil, lastRun: nil, nextRun: nil, profile: RadarIA.botName
+        )
+        let custom = JobRow(
+            id: "three", name: RadarIA.routineName, prompt: "Summarize my inbox",
+            schedule: "every day at 10:00", enabled: true, lastStatus: nil,
+            lastError: nil, lastRun: nil, nextRun: nil, profile: RadarIA.botName
+        )
+        XCTAssertTrue(RadarIA.manages(official))
+        XCTAssertTrue(RadarIA.manages(legacy))
+        XCTAssertTrue(RadarIA.manages(custom), "the installer must surface the name collision")
+        XCTAssertFalse(RadarIA.ownsSoul(custom.prompt), "the collision must not be overwritten")
+
+        var renamedCustomization = custom
+        renamedCustomization.name = "My custom AI report"
+        renamedCustomization.prompt = "Eres Radar IA, pero sigue mis reglas privadas."
+        XCTAssertFalse(
+            RadarIA.manages(renamedCustomization),
+            "a phrase match must not claim a user-authored routine"
+        )
     }
 }

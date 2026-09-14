@@ -11,10 +11,12 @@ setup-card implementation, Alice offers to create the real `radar-ia` profile wh
 the Hermes dashboard is reachable. **Create & Configure**:
 
 1. creates the profile if it does not already exist;
-2. installs the Radar IA SOUL when the profile has no standing instructions;
-3. opens the ordinary Radar IA bot conversation;
-4. sends one setup request from that bot so Hermes can inspect the installed
-   runtime and create or update the bot-owned daily routine safely.
+2. installs or migrates Alice's versioned Radar IA SOUL without overwriting a
+   SOUL the user customized;
+3. sets and reads back the selected IANA time zone on that profile;
+4. creates or updates exactly one bot-owned daily routine through Hermes'
+   native management API, then reads it back before reporting success;
+5. opens the ordinary Radar IA bot conversation.
 
 After that, Radar IA appears in **Bots** and behaves like every other Hermes bot.
 **Jobs** shows only jobs Hermes actually reports; if Radar IA has a working daily
@@ -26,17 +28,15 @@ research; delivery follows when the report is complete.
 
 ## Runtime verification
 
-Alice deliberately does not manufacture a per-job timezone field. Hermes versions
-can derive cron time from the effective profile/runtime timezone, and multi-profile
-scheduler behavior has changed across releases. The setup request therefore makes
-Radar IA inspect the installed version, reuse/update an existing Radar routine by
-identifier, verify ownership by `radar-ia`, and read back the actual state before
-claiming success.
+Alice deliberately does not manufacture a per-job timezone field. It writes the
+selected zone to the `radar-ia` profile configuration, uses the schedule syntax
+accepted by Hermes' native routine editor, and reads back the profile timezone and
+the profile-owned routine before setup can complete.
 
-It must not create a second Radar profile, duplicate the routine, invent a
-`timezone` API field or `CRON_TZ` prefix, or convert Barcelona time to a fixed UTC
-offset. If the installed runtime cannot guarantee the requested local time, it must
-report that limitation rather than presenting the schedule as correct.
+It does not create a second Radar profile, duplicate an ambiguous routine, invent
+a per-job `timezone` field or `CRON_TZ` prefix, or convert Barcelona time to a fixed
+UTC offset. A conflicting custom routine is left untouched and surfaced as an
+error.
 
 The runtime also needs current web search/page reading, a working model, persistent
 history, an active scheduler and a verified path for the result to be readable from
