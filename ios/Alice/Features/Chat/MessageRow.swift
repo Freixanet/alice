@@ -44,7 +44,11 @@ struct MessageRow: View {
                     }
 
                     if let routine = message.routineName {
-                        RoutineReportCard(name: routine, report: attributed(message.content))
+                        let content = message.botName == "chollometro"
+                            && routine == "Chollos del dia"
+                            ? ChollometroReport.normalizedMarkdown(message.content)
+                            : message.content
+                        RoutineReportCard(name: routine, report: attributed(content))
                     } else if !message.content.isEmpty {
                         // Markdown, the way every other model surface shows a
                         // reply. `.full` keeps block structure — lists, quotes

@@ -58,6 +58,36 @@ extension RoutineReport {
     }
 }
 
+/// Chollometro's source titles are user-written, and its model occasionally
+/// returns an unbalanced or missing Markdown delimiter. Keep the data intact
+/// while making the title line before each deal URL structurally consistent.
+enum ChollometroReport {
+    static func normalizedMarkdown(_ text: String) -> String {
+        var lines = text.components(separatedBy: "\n")
+        for index in lines.indices where index + 1 < lines.count {
+            let next = lines[index + 1].trimmingCharacters(in: .whitespaces)
+            guard URL(string: next)?.scheme?.hasPrefix("http") == true else { continue }
+
+            let raw = lines[index].trimmingCharacters(in: .whitespaces)
+            guard !raw.isEmpty else { continue }
+            let plain = raw.replacingOccurrences(of: "**", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            guard !plain.isEmpty else { continue }
+
+            if let separator = plain.range(of: " — ") {
+                let title = plain[..<separator.lowerBound].trimmingCharacters(in: .whitespaces)
+                let detail = plain[separator.upperBound...].trimmingCharacters(in: .whitespaces)
+                lines[index] = detail.isEmpty
+                    ? "**\(title)**"
+                    : "**\(title)** — \(detail)"
+            } else {
+                lines[index] = "**\(plain)**"
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
 /// How a bot's chat shows its routines: each report once, as the bot's message.
 ///
 /// Stock Hermes hands the report to the bot as a turn addressed to it, and the

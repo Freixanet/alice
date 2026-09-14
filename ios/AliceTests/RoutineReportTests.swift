@@ -92,4 +92,28 @@ final class RoutineReportTests: XCTestCase {
         XCTAssertNil(RoutineReport("[Cronjob \"Radar\" output]\n\nsin la marca de Hermes"))
         XCTAssertNil(RoutineReport("[Cronjob \"\" output — scheduled job, not the user.]\n\nsin nombre"))
     }
+
+    func testChollometroTitlesAreAlwaysBalancedBoldBeforeTheirURL() {
+        let report = """
+        GRATIS :: 4 meses de Amazon Music Unlimited — GRATIS
+        https://www.chollometro.com/ofertas/amazon-music
+
+        **Cámara Insta360 — 189€**
+        https://www.chollometro.com/ofertas/insta360
+
+        Una nota que no es un título
+        """
+        XCTAssertEqual(
+            ChollometroReport.normalizedMarkdown(report),
+            """
+            **GRATIS :: 4 meses de Amazon Music Unlimited** — GRATIS
+            https://www.chollometro.com/ofertas/amazon-music
+
+            **Cámara Insta360** — 189€
+            https://www.chollometro.com/ofertas/insta360
+
+            Una nota que no es un título
+            """
+        )
+    }
 }
