@@ -317,6 +317,37 @@ enum LiveEvents {
         clarify(payload, session: session, now: now)
     }
 
+    /// Everything a `session.resume` result says is still waiting on a person.
+    ///
+    /// A Hermes on gateway contract v7 lists its open server→client requests as
+    /// `open_requests`, keyed by the id the answer must carry. It may still send
+    /// `pending_approval`, naming the same approval by the queue's id — read
+    /// alongside, the one approval would become two rows, and the second could
+    /// not be answered. An older Hermes reports only the `pending_*` pair.
+    static func pendingEvents(
+        from resumed: JSONObject, session: SessionIdentity, now: Date = Date()
+    ) -> [AliceEvent] {
+        if let open = GatewayServerRequests.openRequests(in: resumed) {
+            return open.compactMap { frame in
+                switch frame.type {
+                case "approval.request": return pendingApproval(frame.payload, session: session, now: now)
+                case "clarify.request": return pendingClarify(frame.payload, session: session, now: now)
+                default: return nil
+                }
+            }
+        }
+        var events: [AliceEvent] = []
+        if let approval = resumed["pending_approval"] as? [String: Any],
+           let event = pendingApproval(approval, session: session, now: now) {
+            events.append(event)
+        }
+        if let clarify = resumed["pending_clarify"] as? [String: Any],
+           let event = pendingClarify(clarify, session: session, now: now) {
+            events.append(event)
+        }
+        return events
+    }
+
     /// Reconciles what Alice is holding against what the server still has
     /// pending for the sessions it just read.
     ///

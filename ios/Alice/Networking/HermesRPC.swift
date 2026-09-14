@@ -10,7 +10,18 @@ protocol HermesRPCTransport: Sendable {
     func call(_ method: String, _ params: JSONObject) async throws -> JSONObject
 
     /// Every `event` frame the agent pushes, for as long as the caller listens.
+    /// Questions Hermes asks as server→client requests arrive here too, as the
+    /// events Alice renders (see `GatewayServerRequests`).
     func events() -> AsyncStream<HermesRPCEvent>
+
+    /// Answers a question Hermes asked as a server→client request (`srq-…` id).
+    func respond(toServerRequest id: String, result: JSONObject) async throws
+}
+
+extension HermesRPCTransport {
+    func respond(toServerRequest id: String, result: JSONObject) async throws {
+        throw HermesRPCClient.Failure(reason: "This connection cannot answer Hermes' questions.")
+    }
 }
 
 /// A JSON object crossing an isolation boundary.
@@ -200,6 +211,72 @@ actor HermesRPCClient: HermesRPCTransport {
         return .string(String(decoding: data, as: UTF8.self))
     }
 
+    /// Answers a server→client request: a response frame carrying the request's
+    /// own id. Hermes routes it by that id alone, so any socket to the same
+    /// gateway can deliver it, and nothing comes back.
+    func respond(toServerRequest id: String, result: JSONObject) async throws {
+        try await connectIfNeeded()
+        guard let socket else { throw Failure(reason: "Not connected to Hermes.") }
+        try await socket.send(Self.responseMessage(id: id, result: result))
+    }
+
+    static func responseMessage(id: String, result: JSONObject) throws -> URLSessionWebSocketTask.Message {
+        let frame: [String: Any] = ["jsonrpc": "2.0", "id": id, "result": result.fields]
+        let data = try JSONSerialization.data(withJSONObject: frame)
+        return .string(String(decoding: data, as: UTF8.self))
+    }
+
+    static func errorMessage(
+        id: String, code: Int, message: String
+    ) throws -> URLSessionWebSocketTask.Message {
+        let frame: [String: Any] = [
+            "jsonrpc": "2.0", "id": id, "error": ["code": code, "message": message],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: frame)
+        return .string(String(decoding: data, as: UTF8.self))
+    }
+
+    /// What one incoming frame is.
+    enum Inbound {
+        /// The answer to one of Alice's calls.
+        case response(id: Int, result: Result<JSONObject, Failure>)
+        case event(HermesRPCEvent)
+        /// A question Hermes asks and waits on (gateway contract v7).
+        case serverRequest(id: String, method: String, params: [String: Any])
+        case ignored
+    }
+
+    /// Sorts a frame by JSON-RPC's own rules: a `method` other than `event` is a
+    /// request from the server, an integer `id` without one answers Alice.
+    /// Hermes mints string ids (`srq-…`) so the two never collide.
+    static func inbound(_ frame: [String: Any]) -> Inbound {
+        if let method = frame["method"] as? String, method != "event" {
+            guard let id = (frame["id"] as? String) ?? (frame["id"] as? Int).map(String.init)
+            else { return .ignored }
+            return .serverRequest(
+                id: id, method: method, params: (frame["params"] as? [String: Any]) ?? [:]
+            )
+        }
+        if let id = frame["id"] as? Int {
+            if let error = frame["error"] as? [String: Any] {
+                let message = (error["message"] as? String) ?? "Hermes refused that."
+                return .response(id: id, result: .failure(Failure(reason: message)))
+            }
+            return .response(
+                id: id, result: .success(JSONObject((frame["result"] as? [String: Any]) ?? [:]))
+            )
+        }
+        guard frame["method"] as? String == "event",
+              let params = frame["params"] as? [String: Any],
+              let type = params["type"] as? String
+        else { return .ignored }
+        return .event(HermesRPCEvent(
+            type: type,
+            sessionID: (params["session_id"] as? String) ?? "",
+            payload: (params["payload"] as? [String: Any]) ?? [:]
+        ))
+    }
+
     nonisolated func events() -> AsyncStream<HermesRPCEvent> {
         AsyncStream { continuation in
             let key = UUID()
@@ -330,24 +407,28 @@ actor HermesRPCClient: HermesRPCTransport {
     }
 
     private func deliver(_ frame: [String: Any]) {
-        if let id = frame["id"] as? Int {
-            if let error = frame["error"] as? [String: Any] {
-                let message = (error["message"] as? String) ?? "Hermes refused that."
-                settle(id, with: .failure(Failure(reason: message)))
-            } else {
-                settle(id, with: .success(JSONObject((frame["result"] as? [String: Any]) ?? [:])))
+        switch Self.inbound(frame) {
+        case let .response(id, result):
+            settle(id, with: result.mapError { $0 as Error })
+        case let .event(event):
+            for (_, continuation) in listeners { continuation.yield(event) }
+        case let .serverRequest(id, method, params):
+            guard let event = GatewayServerRequests.event(id: id, method: method, params: params)
+            else {
+                // A question this app cannot show (sudo, secrets, vault, desktop
+                // bridges). Saying so lets the agent fail fast instead of waiting
+                // out its timeout for an answer that will never come.
+                if let socket,
+                   let refusal = try? Self.errorMessage(
+                       id: id, code: -32601, message: "Alice cannot answer \(method)."
+                   ) {
+                    Task { try? await socket.send(refusal) }
+                }
+                return
             }
+            for (_, continuation) in listeners { continuation.yield(event) }
+        case .ignored:
             return
         }
-        guard frame["method"] as? String == "event",
-              let params = frame["params"] as? [String: Any],
-              let type = params["type"] as? String
-        else { return }
-        let event = HermesRPCEvent(
-            type: type,
-            sessionID: (params["session_id"] as? String) ?? "",
-            payload: (params["payload"] as? [String: Any]) ?? [:]
-        )
-        for (_, continuation) in listeners { continuation.yield(event) }
     }
 }

@@ -346,15 +346,51 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     }
 
     /// Answers an approval in that session.
+    ///
+    /// A server→client request (`srq-…`) is answered with a response frame, and
+    /// nothing comes back: a delivered answer counts as resolved, and a request
+    /// that had already ended is withdrawn by `request.cancel`. An older Hermes
+    /// resolves `approval.respond` and reports how many it resolved.
     @discardableResult
     func respondToApproval(
         sessionID: String, requestID: String, choice: String
     ) async throws -> JSONObject {
-        try await rpc.call("approval.respond", JSONObject([
+        if GatewayServerRequests.isServerRequestID(requestID) {
+            try await rpc.respond(toServerRequest: requestID, result: JSONObject(["choice": choice]))
+            return JSONObject(["resolved": 1])
+        }
+        return try await rpc.call("approval.respond", JSONObject([
             "session_id": sessionID,
             "request_id": requestID,
             "choice": choice,
         ]))
+    }
+
+    /// Answers a clarify question in that session.
+    ///
+    /// For a server→client request, a single question is answered by a response
+    /// frame `{answer}`; one question of a batch is locked with `clarify.lock`,
+    /// and the lock that completes the set resolves the request. An older Hermes
+    /// takes both through `clarify.respond`. Every path returns the
+    /// `{status, remaining}` envelope `LiveEvents.clarifyReply` reads.
+    func answerClarify(
+        sessionID: String?, requestID: String, questionID: String?, answer: String
+    ) async throws -> JSONObject {
+        if GatewayServerRequests.isServerRequestID(requestID) {
+            guard let questionID else {
+                try await rpc.respond(toServerRequest: requestID, result: JSONObject(["answer": answer]))
+                return JSONObject(["status": "ok"])
+            }
+            return try await rpc.call("clarify.lock", JSONObject([
+                "request_id": requestID,
+                "question_id": questionID,
+                "answer": answer,
+            ]))
+        }
+        var params: [String: Any] = ["request_id": requestID, "answer": answer]
+        if let sessionID { params["session_id"] = sessionID }
+        if let questionID { params["question_id"] = questionID }
+        return try await rpc.call("clarify.respond", JSONObject(params))
     }
 
     // MARK: - Out of band

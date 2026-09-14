@@ -1746,6 +1746,10 @@ final class AppStore {
 
     /// One pushed frame, if it is something a person should know about.
     private func absorb(_ frame: HermesRPCEvent) async {
+        if let withdrawn = GatewayServerRequests.cancelledRequestID(frame) {
+            withdrawServerRequest(withdrawn)
+            return
+        }
         guard let identity = sessionIdentity(for: frame.sessionID) else { return }
         guard let raw = LiveEvents.event(from: frame, session: identity) else { return }
         let event = tagged(raw)
@@ -1909,14 +1913,7 @@ final class AppStore {
                 conversationID: conversation.id,
                 label: botCurrentName(for: profile)
             )
-            if let approval = resumed["pending_approval"] as? [String: Any],
-               let event = LiveEvents.pendingApproval(approval, session: identity) {
-                events.append(event)
-            }
-            if let clarify = resumed["pending_clarify"] as? [String: Any],
-               let event = LiveEvents.pendingClarify(clarify, session: identity) {
-                events.append(event)
-            }
+            events += LiveEvents.pendingEvents(from: resumed, session: identity)
         }
         return (events, checked)
     }
@@ -2125,11 +2122,9 @@ final class AppStore {
                   let rpc = await dashboardRPC()
             else { return false }
             do {
-                let result = try await rpc.call("approval.respond", JSONObject([
-                    "session_id": sessionID,
-                    "request_id": requestID,
-                    "choice": choice.rawValue,
-                ]))
+                let result = try await WebSocketBotChatSource(rpc: rpc).respondToApproval(
+                    sessionID: sessionID, requestID: requestID, choice: choice.rawValue
+                )
                 guard LiveEvents.didResolve(result) else {
                     settle(event.id, as: .gone, summary: Self.noLongerWaiting)
                     mirrorApprovalIntoChat(event, resolved: false)
@@ -2182,10 +2177,10 @@ final class AppStore {
         defer { resolving.remove(event.id) }
 
         do {
-            var params: [String: Any] = ["request_id": requestID, "answer": text]
-            if let sessionID = event.reference.sessionID { params["session_id"] = sessionID }
-            if let questionID { params["question_id"] = questionID }
-            let result = try await rpc.call("clarify.respond", JSONObject(params))
+            let result = try await WebSocketBotChatSource(rpc: rpc).answerClarify(
+                sessionID: event.reference.sessionID, requestID: requestID,
+                questionID: questionID, answer: text
+            )
 
             switch LiveEvents.clarifyReply(result, questionID: questionID) {
             case .resolved:
@@ -2250,6 +2245,28 @@ final class AppStore {
             $0.reference.requestID == requestID && $0.standing == .waiting
         }) else { return }
         settle(event.id, as: .gone, summary: Self.noLongerWaiting)
+    }
+
+    /// A question Hermes withdrew with `request.cancel`: it timed out, the turn
+    /// was interrupted, or somebody answered on another device. Its Activity
+    /// row, its notification and its card in the chat go with it — a card left
+    /// behind would offer an answer nothing is waiting for.
+    func withdrawServerRequest(_ requestID: String) {
+        if let event = activity.first(where: {
+            $0.reference.requestID == requestID && $0.standing == .waiting
+        }) {
+            withdraw?(event.id)
+        }
+        markRequestGone(matching: requestID)
+        var changed = false
+        for chat in conversations.indices {
+            for message in conversations[chat].messages.indices
+            where conversations[chat].messages[message].approval?.requestID == requestID {
+                conversations[chat].messages[message].approval = nil
+                changed = true
+            }
+        }
+        if changed { persistConversations() }
     }
 
     /// Run approvals Alice still shows as waiting, checked with Hermes.
@@ -4126,6 +4143,10 @@ final class AppStore {
             watching: for await signal in BotTurnWatch.signals(from: events, every: .seconds(15)) {
                 switch signal {
                 case let .frame(event):
+                    if let withdrawn = GatewayServerRequests.cancelledRequestID(event) {
+                        withdrawServerRequest(withdrawn)
+                        continue
+                    }
                     let step = watch.receive(event, now: Date())
                     if step == .ignore { continue }
                     if step == .finish,
