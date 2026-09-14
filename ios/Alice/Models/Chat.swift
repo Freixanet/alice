@@ -258,8 +258,12 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     /// splice two agents' conversations together; leaving both nil filed the
     /// history under Home, where it does not belong either.
     var legacyBotName: String? = nil
+    /// A team: a shared chat with several bots (`channelBots`). The name is
+    /// from when a channel was a chat; a channel is now a folder (`BotChannel`).
     var isChannel: Bool? = false
     var channelBots: [String]? = []
+    /// The channel a team belongs to.
+    var teamChannelID: String? = nil
 
     /// Same contract as `Message.init(from:)`: every key an older build might
     /// not have written is optional here, so a new field can never turn an
@@ -279,6 +283,7 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
         hermesSessionID = try box.decodeIfPresent(String.self, forKey: .hermesSessionID)
         isChannel = try box.decodeIfPresent(Bool.self, forKey: .isChannel)
         channelBots = try box.decodeIfPresent([String].self, forKey: .channelBots)
+        teamChannelID = try box.decodeIfPresent(String.self, forKey: .teamChannelID)
     }
 
     init(
@@ -287,7 +292,7 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
         messages: [Message] = [], botName: String? = nil,
         legacyBotName: String? = nil,
         hermesSessionID: String? = nil, isChannel: Bool? = false,
-        channelBots: [String]? = []
+        channelBots: [String]? = [], teamChannelID: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -302,6 +307,7 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
         self.hermesSessionID = hermesSessionID
         self.isChannel = isChannel
         self.channelBots = channelBots
+        self.teamChannelID = teamChannelID
     }
 
     /// The profile a turn typed here is sent to, if any.

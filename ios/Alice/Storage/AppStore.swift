@@ -123,6 +123,9 @@ final class AppStore {
         static let botRoutines = "alice.bot.routines"
         static let botCustomNames = "alice.bot.customNames"
         static let botSectionOrder = "alice.bot.sectionOrder"
+        static let botChannels = "alice.bot.channels"
+        static let unassignedExpanded = "alice.bot.unassignedExpanded"
+        static let hiddenExpanded = "alice.bot.hiddenExpanded"
         static let botOrder = "alice.bot.order"
         static let cachedBots = "alice.cached.bots"
         static let pendingBotModelSyncs = "alice.bot.model.pendingSyncs"
@@ -156,6 +159,23 @@ final class AppStore {
     }
     var collapsedSections: Set<String> = [] {
         didSet { defaults.set(Array(collapsedSections), forKey: Keys.collapsedSections) }
+    }
+    /// Channels on the Bots page (`BotChannel`), kept on this phone like
+    /// sections.
+    var botChannels: [BotChannel] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(botChannels) {
+                defaults.set(data, forKey: Keys.botChannels)
+            }
+        }
+    }
+    /// Whether Unassigned and Hidden are open. Like every section, each stays
+    /// as it was left until the person changes it.
+    var unassignedExpanded = false {
+        didSet { defaults.set(unassignedExpanded, forKey: Keys.unassignedExpanded) }
+    }
+    var hiddenExpanded = false {
+        didSet { defaults.set(hiddenExpanded, forKey: Keys.hiddenExpanded) }
     }
     var pinnedBots: Set<String> = [] {
         didSet { defaults.set(Array(pinnedBots), forKey: Keys.pinnedBots) }
@@ -249,6 +269,7 @@ final class AppStore {
             if let b = conv.botName, !b.isEmpty { names.insert(b) }
             if let bots = conv.channelBots { names.formUnion(bots) }
         }
+        for channel in botChannels { names.formUnion(channel.bots) }
         return Array(names).sorted()
     }
 
@@ -259,6 +280,10 @@ final class AppStore {
         botSectionOrder = defaults.stringArray(forKey: Keys.botSectionOrder) ?? []
         botOrder = defaults.stringArray(forKey: Keys.botOrder) ?? []
         botSections = (defaults.dictionary(forKey: Keys.botSections) as? [String: String]) ?? [:]
+        botChannels = (defaults.data(forKey: Keys.botChannels))
+            .flatMap { try? JSONDecoder().decode([BotChannel].self, from: $0) } ?? []
+        unassignedExpanded = defaults.bool(forKey: Keys.unassignedExpanded)
+        hiddenExpanded = defaults.bool(forKey: Keys.hiddenExpanded)
         if let savedCollapsed = defaults.stringArray(forKey: Keys.collapsedSections) {
             collapsedSections = Set(savedCollapsed)
         }
@@ -317,6 +342,7 @@ final class AppStore {
         loadConversations()
         loadActivity()
         restoreSalvagedConversationsIfPossible()
+        migrateLegacyChannels()
         activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
     }
 
@@ -1148,6 +1174,7 @@ final class AppStore {
         move(&recentBotModels, from: name, to: trimmed)
         move(&botNotifications, from: name, to: trimmed)
         if let index = botOrder.firstIndex(of: name) { botOrder[index] = trimmed }
+        for index in botChannels.indices { botChannels[index].rename(bot: name, to: trimmed) }
         botOrder.removeAll { $0 == name.lowercased() && $0 != trimmed }
         botCustomNames.removeValue(forKey: name)
 
@@ -2800,42 +2827,114 @@ final class AppStore {
         botNotifications[bot.lowercased()] = enabled
     }
 
-    @discardableResult
-    func createChannel(name: String, bots: [String], topic: String? = nil) -> Conversation {
-        let now = Date()
-        var conversation = Conversation(
-            id: UUID().uuidString,
-            title: "#" + name,
-            createdAt: now,
-            updatedAt: now,
-            isChannel: true,
-            channelBots: bots
-        )
-        if let topic, !topic.isEmpty {
-            let members = bots.isEmpty ? "" : " with bots: \(bots.joined(separator: ", "))"
-            conversation.messages.append(
-                Message(
-                    id: UUID().uuidString,
-                    role: .assistant,
-                    content: "Channel **#\(name)** created\(members).\nTopic: \(topic)",
-                    createdAt: now
-                )
-            )
-        }
-        conversations.insert(conversation, at: 0)
-        activeID = conversation.id
-        persistConversations()
-        return conversation
+    // MARK: - Channels
+
+    /// Whether a bot lives in a channel, and so not in the Bots page's
+    /// general list.
+    func isInAnyChannel(_ bot: String) -> Bool {
+        botChannels.contains { $0.bots.contains(bot) }
     }
 
-    /// Renames a channel and sets which bots are in it. A channel can be
-    /// created without bots and filled in later.
-    func updateChannel(_ id: String, name: String, bots: [String]) {
-        guard let index = conversations.firstIndex(where: { $0.id == id && $0.isChannel == true })
-        else { return }
-        conversations[index].title = "#" + name
-        conversations[index].channelBots = bots
-        conversations[index].updatedAt = Date()
+    func hasUnread(_ bots: [String]) -> Bool {
+        bots.contains { isBotUnread($0) }
+    }
+
+    @discardableResult
+    func createChannel(name: String, bots: [String]) -> BotChannel? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let channel = BotChannel(name: trimmed, bots: bots)
+        botChannels.append(channel)
+        return channel
+    }
+
+    func renameChannel(_ id: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        changeChannel(id) { $0.name = trimmed }
+    }
+
+    func setChannelBots(_ id: String, bots: [String]) {
+        changeChannel(id) { $0.setBots(bots) }
+    }
+
+    func addBot(_ bot: String, toChannel id: String) {
+        changeChannel(id) { $0.add(bot) }
+    }
+
+    func removeBot(_ bot: String, fromChannel id: String) {
+        changeChannel(id) { $0.remove(bot) }
+    }
+
+    func toggleChannelCollapsed(_ id: String) {
+        changeChannel(id) { $0.collapsed.toggle() }
+    }
+
+    func addChannelSection(_ id: String, name: String, bot: String? = nil) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        changeChannel(id) { channel in
+            channel.addSection(trimmed)
+            if let bot { channel.setSection(trimmed, for: bot) }
+        }
+    }
+
+    func setChannelSection(_ id: String, bot: String, section: String?) {
+        changeChannel(id) { $0.setSection(section, for: bot) }
+    }
+
+    func deleteChannelSection(_ id: String, name: String) {
+        changeChannel(id) { $0.deleteSection(name) }
+    }
+
+    func toggleChannelSectionCollapsed(_ id: String, section: String) {
+        changeChannel(id) { $0.toggleSection(section) }
+    }
+
+    /// The channel goes, and its teams' chats with it. Its bots are untouched:
+    /// those in no other channel are back in the general list.
+    func deleteChannel(_ id: String) {
+        for team in teams(in: id) { delete(team.id) }
+        botChannels.removeAll { $0.id == id }
+    }
+
+    /// A channel's teams: shared chats with several of its bots.
+    func teams(in channelID: String) -> [Conversation] {
+        conversations.filter { $0.isChannel == true && $0.teamChannelID == channelID }
+    }
+
+    /// A team always has a bot. Without one it would be a chat with nobody —
+    /// or, worse, with Alice — and a channel is neither.
+    @discardableResult
+    func createTeam(inChannel id: String, name: String, bots: [String]) -> Conversation? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !bots.isEmpty, botChannels.contains(where: { $0.id == id })
+        else { return nil }
+        let now = Date()
+        let team = Conversation(
+            id: UUID().uuidString, title: trimmed, createdAt: now, updatedAt: now,
+            isChannel: true, channelBots: bots, teamChannelID: id
+        )
+        conversations.insert(team, at: 0)
+        persistConversations()
+        return team
+    }
+
+    private func changeChannel(_ id: String, _ change: (inout BotChannel) -> Void) {
+        guard let index = botChannels.firstIndex(where: { $0.id == id }) else { return }
+        var channel = botChannels[index]
+        change(&channel)
+        if channel != botChannels[index] { botChannels[index] = channel }
+    }
+
+    /// Channels an earlier build saved as conversations become folders
+    /// (`BotChannel.migratingLegacyChannels`). Never over an archive this
+    /// build could not read.
+    private func migrateLegacyChannels() {
+        guard conversationsUnreadable == nil else { return }
+        let migrated = BotChannel.migratingLegacyChannels(conversations, into: botChannels)
+        guard migrated.channels != botChannels else { return }
+        conversations = migrated.conversations.isEmpty ? [.blank()] : migrated.conversations
+        botChannels = migrated.channels
         persistConversations()
     }
 
@@ -4733,6 +4832,10 @@ final class AppStore {
                 }
             }
         }
+
+        // A team speaks to its bots. With none to route to there is nobody to
+        // talk to, and it must never fall through to Alice.
+        if conversations[index].isChannel == true, invokedBot == nil { return }
 
         let attachments = draftAttachments
         draft = ""

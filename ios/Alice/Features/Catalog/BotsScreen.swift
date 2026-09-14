@@ -33,12 +33,19 @@ struct BotsScreen: View {
     /// True when the list on screen came from the cache because the agent did
     /// not answer.
     @State private var stale = false
-    @State private var showHidden = false
     @State private var loading = false
     @State private var creatingBot = false
     @State private var creatingChannel = false
-    @State private var editingChannel: Conversation?
-    @State private var deletingChannel: Conversation?
+    /// A bot to start a new channel with, from that bot's menu.
+    @State private var channelSeedBot: String?
+    @State private var editingChannel: BotChannel?
+    @State private var deletingChannel: BotChannel?
+    @State private var renamingChannel: BotChannel?
+    @State private var channelNameDraft = ""
+    @State private var creatingTeamIn: BotChannel?
+    @State private var deletingTeam: Conversation?
+    @State private var newChannelSection: ChannelSectionTarget?
+    @State private var channelSectionName = ""
     @State private var importingBot = false
     @State private var importBusy = false
     @State private var editingBot: BotRow?
@@ -58,7 +65,6 @@ struct BotsScreen: View {
     @State private var searchQuery = ""
     @State private var selectedFilter: SearchFilter = .all
     @FocusState private var searchFocused: Bool
-    @State private var showUnassigned = false
     @State private var showNewSectionAlert = false
     @State private var newSectionName = ""
     @State private var newSectionTargetBot: String?
@@ -109,15 +115,47 @@ struct BotsScreen: View {
         .sheet(isPresented: $creatingBot) {
             NewBotSheet { await load() }
         }
-        .sheet(isPresented: $creatingChannel) {
-            NewChannelSheet(bots: rows)
+        .sheet(isPresented: $creatingChannel, onDismiss: { channelSeedBot = nil }) {
+            ChannelSheet(bots: rows, seedBot: channelSeedBot)
         }
-        .sheet(isPresented: Binding(
-            get: { editingChannel != nil },
-            set: { if !$0 { editingChannel = nil } }
-        )) {
-            if let channel = editingChannel {
-                NewChannelSheet(bots: rows, editing: channel)
+        .sheet(item: $editingChannel) { channel in
+            ChannelSheet(bots: rows, editing: channel)
+        }
+        .sheet(item: $creatingTeamIn) { channel in
+            TeamSheet(channel: channel, bots: rows.filter { channel.bots.contains($0.name) }) { team in
+                store.activeID = team.id
+                onClose()
+            }
+        }
+        .alert(
+            "Rename Channel",
+            isPresented: Binding(
+                get: { renamingChannel != nil },
+                set: { if !$0 { renamingChannel = nil } }
+            )
+        ) {
+            TextField("Channel Name", text: $channelNameDraft)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                if let channel = renamingChannel {
+                    store.renameChannel(channel.id, to: channelNameDraft)
+                }
+            }
+        }
+        .alert(
+            "New Section",
+            isPresented: Binding(
+                get: { newChannelSection != nil },
+                set: { if !$0 { newChannelSection = nil } }
+            )
+        ) {
+            TextField("Section Name", text: $channelSectionName)
+            Button("Cancel", role: .cancel) { channelSectionName = "" }
+            Button("Create") {
+                if let target = newChannelSection {
+                    store.addChannelSection(target.channelID, name: channelSectionName, bot: target.bot)
+                }
+                channelSectionName = ""
             }
         }
         .alert(
@@ -128,10 +166,25 @@ struct BotsScreen: View {
             ),
             presenting: deletingChannel
         ) { channel in
-            Button("Delete", role: .destructive) { store.delete(channel.id) }
+            Button("Delete", role: .destructive) { store.deleteChannel(channel.id) }
             Button("Cancel", role: .cancel) {}
         } message: { channel in
-            Text("\(channel.title) and its messages will be removed from this iPhone. The bots are not affected.")
+            Text(store.teams(in: channel.id).isEmpty
+                 ? "“\(channel.name)” will be removed. The bots are not deleted; those in no other channel go back to the list."
+                 : "“\(channel.name)” and its teams’ chats will be removed from this iPhone. The bots are not deleted; those in no other channel go back to the list.")
+        }
+        .alert(
+            "Delete Team",
+            isPresented: Binding(
+                get: { deletingTeam != nil },
+                set: { if !$0 { deletingTeam = nil } }
+            ),
+            presenting: deletingTeam
+        ) { team in
+            Button("Delete", role: .destructive) { store.delete(team.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { team in
+            Text("“\(team.title)” and its messages will be removed from this iPhone. The bots are not affected.")
         }
         .fileImporter(isPresented: $importingBot, allowedContentTypes: [.archive, .data], allowsMultipleSelection: false) { result in
             guard case let .success(urls) = result, let url = urls.first else { return }
@@ -283,13 +336,18 @@ struct BotsScreen: View {
     /// Pinned bots keep the order the list has, not the order they were
     /// pinned in — the shelf is a shortcut to the same list, not a second one.
     private var pinnedRows: [BotRow] {
-        filteredRows.filter { store.isBotPinned($0) }
+        generalRows.filter { store.isBotPinned($0) }
+    }
+
+    /// The page outside channels. A bot put into a channel shows only there.
+    private var generalRows: [BotRow] {
+        filteredRows.filter { !store.isInAnyChannel($0.name) }
     }
 
     /// Everything the shelf above is not already showing. A pinned bot in
     /// both places is the same bot twice.
     private var unpinnedRows: [BotRow] {
-        filteredRows.filter { !store.isBotPinned($0) }
+        generalRows.filter { !store.isBotPinned($0) }
     }
 
     private func bots(in section: String) -> [BotRow] {
@@ -495,55 +553,123 @@ struct BotsScreen: View {
     /// item where it answers with six everywhere else reads as the shelf
     /// being a lesser copy of the list.
     @ViewBuilder
-    private func botMenu(_ bot: BotRow) -> some View {
+    private func botMenu(_ bot: BotRow, channel: BotChannel? = nil) -> some View {
             Button {
                 store.toggleBotUnread(bot.name)
             } label: {
                 Label(store.isBotUnread(bot.name) ? "Mark Read" : "Mark Unread", systemImage: "bubble.left")
             }
 
-            Button {
-                let next = !store.isBotPinned(bot)
-                Task {
-                    do {
-                        try await store.setBotPinned(bot, pinned: next)
-                        await load()
-                    } catch {
-                        failure = describeBotError(error)
+            // Pinning puts a bot on the shelf above the general list, which a
+            // bot in a channel is no longer part of.
+            if !store.isInAnyChannel(bot.name) {
+                Button {
+                    let next = !store.isBotPinned(bot)
+                    Task {
+                        do {
+                            try await store.setBotPinned(bot, pinned: next)
+                            await load()
+                        } catch {
+                            failure = describeBotError(error)
+                        }
                     }
+                } label: {
+                    Label(store.isBotPinned(bot) ? "Unpin" : "Pin", systemImage: "pin")
                 }
-            } label: {
-                Label(store.isBotPinned(bot) ? "Unpin" : "Pin", systemImage: "pin")
             }
 
-            Menu {
-                if !store.botCustomSections.isEmpty {
-                    ForEach(store.botCustomSections, id: \.self) { sec in
+            if let channel {
+                // Inside a channel, sections are that channel's own.
+                Menu {
+                    ForEach(channel.sections, id: \.self) { sec in
                         Button {
-                            store.setBotSection(bot.name, section: sec)
+                            store.setChannelSection(channel.id, bot: bot.name, section: sec)
                         } label: {
-                            if store.section(for: bot.name) == sec {
+                            if channel.section(for: bot.name) == sec {
                                 Label(sec, systemImage: "checkmark")
                             } else {
                                 Text(sec)
                             }
                         }
                     }
-                    if store.section(for: bot.name) != nil {
-                        Button("Unassigned") {
-                            store.setBotSection(bot.name, section: nil)
+                    if channel.section(for: bot.name) != nil {
+                        Button("No Section") {
+                            store.setChannelSection(channel.id, bot: bot.name, section: nil)
                         }
                     }
-                    Divider()
-                }
-                Button {
-                    newSectionTargetBot = bot.name
-                    showNewSectionAlert = true
+                    if !channel.sections.isEmpty { Divider() }
+                    Button {
+                        newChannelSection = ChannelSectionTarget(channelID: channel.id, bot: bot.name)
+                    } label: {
+                        Label("New Section", systemImage: "plus")
+                    }
                 } label: {
-                    Label("New Section", systemImage: "plus")
+                    Label("Move to", systemImage: "folder")
+                }
+
+                Button {
+                    store.removeBot(bot.name, fromChannel: channel.id)
+                } label: {
+                    Label("Remove from \(channel.name)", systemImage: "folder.badge.minus")
+                }
+            } else {
+                Menu {
+                    if !store.botCustomSections.isEmpty {
+                        ForEach(store.botCustomSections, id: \.self) { sec in
+                            Button {
+                                store.setBotSection(bot.name, section: sec)
+                            } label: {
+                                if store.section(for: bot.name) == sec {
+                                    Label(sec, systemImage: "checkmark")
+                                } else {
+                                    Text(sec)
+                                }
+                            }
+                        }
+                        if store.section(for: bot.name) != nil {
+                            Button("Unassigned") {
+                                store.setBotSection(bot.name, section: nil)
+                            }
+                        }
+                        Divider()
+                    }
+                    Button {
+                        newSectionTargetBot = bot.name
+                        showNewSectionAlert = true
+                    } label: {
+                        Label("New Section", systemImage: "plus")
+                    }
+                } label: {
+                    Label("Move to", systemImage: "folder")
+                }
+            }
+
+            // A bot can be in several channels: each tick is one of them.
+            Menu {
+                ForEach(store.botChannels) { other in
+                    Button {
+                        if other.bots.contains(bot.name) {
+                            store.removeBot(bot.name, fromChannel: other.id)
+                        } else {
+                            store.addBot(bot.name, toChannel: other.id)
+                        }
+                    } label: {
+                        if other.bots.contains(bot.name) {
+                            Label(other.name, systemImage: "checkmark")
+                        } else {
+                            Text(other.name)
+                        }
+                    }
+                }
+                if !store.botChannels.isEmpty { Divider() }
+                Button {
+                    channelSeedBot = bot.name
+                    creatingChannel = true
+                } label: {
+                    Label("New Channel", systemImage: "plus")
                 }
             } label: {
-                Label("Move to", systemImage: "folder")
+                Label("Channels", systemImage: "folder.badge.person.crop")
             }
 
             Button(role: .destructive) {
@@ -755,13 +881,14 @@ struct BotsScreen: View {
         let hidden = rows.filter { store.isBotHidden($0) }
         if !hidden.isEmpty {
             Button {
-                showHidden.toggle()
+                store.hiddenExpanded.toggle()
             } label: {
                 HStack(spacing: 6) {
                     Text("Hidden")
                     Text("\(hidden.count)")
                         .foregroundStyle(.secondary)
-                    Image(systemName: showHidden ? "chevron.down" : "chevron.right")
+                    if store.hasUnread(hidden.map(\.name)) { unreadDot }
+                    Image(systemName: store.hiddenExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
@@ -773,7 +900,7 @@ struct BotsScreen: View {
             }
             .buttonStyle(.plain)
 
-            if showHidden {
+            if store.hiddenExpanded {
                 ForEach(hidden) { bot in
                     HStack(spacing: 12) {
                         BotMarkView(mark: store.mark(for: bot.name), size: 34)
@@ -804,43 +931,175 @@ struct BotsScreen: View {
         }
     }
 
-    /// Channels, found where they were made.
+    /// Channels: folders of bots and teams, above the general list.
     ///
-    /// A channel lives on the phone rather than in Hermes, and the chat list
-    /// leaves out everything filed under bots, so the only place one showed was
-    /// this page's search. One made without bots yet was simply nowhere, which
-    /// reads as creating it having failed.
+    /// A channel is never a chat. Tapping it opens or shuts it, and it stays as
+    /// it was left. Inside are its bots — loose, or in the channel's own
+    /// sections — and its teams; an empty one says so and offers nothing to
+    /// type into.
     @ViewBuilder
     private var channelsSection: some View {
-        let channels = store.conversations.filter { $0.isChannel == true }
-        if !channels.isEmpty {
-            HStack(spacing: 6) {
-                Text("Channels")
-                Text("\(channels.count)")
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
-            .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 20)
-            .padding(.top, 4)
-            .accessibilityAddTraits(.isHeader)
+        ForEach(store.botChannels) { channel in
+            channelFolder(channel)
+        }
+    }
 
-            ForEach(channels, id: \.id) { channel in
-                groupRowView(channel)
-                    .contextMenu {
-                        Button {
-                            editingChannel = channel
-                        } label: {
-                            Label("Edit Channel", systemImage: "pencil")
+    @ViewBuilder
+    private func channelFolder(_ channel: BotChannel) -> some View {
+        let members = channelRows(channel)
+        let teams = store.teams(in: channel.id)
+        Button {
+            withAnimation(.snappy(duration: 0.2)) {
+                store.toggleChannelCollapsed(channel.id)
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(store.accent.primary(scheme))
+                Text(channel.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if channel.collapsed {
+                    Text("\(members.count + teams.count)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.tertiary)
+                }
+                if store.hasUnread(members.map(\.name)) { unreadDot }
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(channel.collapsed ? -90 : 0))
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("bots.channel.\(channel.name)")
+        .contextMenu {
+            channelMenu(channel, hasBots: !members.isEmpty)
+        }
+
+        if !channel.collapsed {
+            Group {
+                if members.isEmpty && teams.isEmpty {
+                    Text("This channel is empty")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 6)
+                }
+                ForEach(teams, id: \.id) { team in
+                    groupRowView(team)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                deletingTeam = team
+                            } label: {
+                                Label("Delete Team", systemImage: "trash")
+                            }
                         }
-                        Button(role: .destructive) {
-                            deletingChannel = channel
-                        } label: {
-                            Label("Delete Channel", systemImage: "trash")
+                }
+                ForEach(channel.sections, id: \.self) { section in
+                    let sectionBots = members.filter { channel.section(for: $0.name) == section }
+                    channelSectionHeader(channel, section: section, bots: sectionBots)
+                    if !channel.collapsedSections.contains(section) {
+                        ForEach(sectionBots) { bot in
+                            botRowView(bot, channel: channel)
                         }
                     }
+                }
+                ForEach(members.filter { channel.section(for: $0.name) == nil }) { bot in
+                    botRowView(bot, channel: channel)
+                }
+            }
+            .padding(.leading, 12)
+        }
+    }
+
+    /// The bots shown in a channel, in the page's order; hidden ones stay in
+    /// Hidden.
+    private func channelRows(_ channel: BotChannel) -> [BotRow] {
+        let members = Set(channel.bots)
+        return filteredRows.filter { members.contains($0.name) }
+    }
+
+    private func channelSectionHeader(_ channel: BotChannel, section: String, bots: [BotRow]) -> some View {
+        let collapsed = channel.collapsedSections.contains(section)
+        return Button {
+            withAnimation(.snappy(duration: 0.2)) {
+                store.toggleChannelSectionCollapsed(channel.id, section: section)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(section)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                if store.hasUnread(bots.map(\.name)) { unreadDot }
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(collapsed ? -90 : 0))
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                store.deleteChannelSection(channel.id, name: section)
+            } label: {
+                Label("Delete Section", systemImage: "trash")
             }
         }
+    }
+
+    @ViewBuilder
+    private func channelMenu(_ channel: BotChannel, hasBots: Bool) -> some View {
+        Button {
+            channelNameDraft = channel.name
+            renamingChannel = channel
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+        Button {
+            editingChannel = channel
+        } label: {
+            Label("Choose Bots", systemImage: "person.2")
+        }
+        // A team is made from the channel's bots, so it needs some.
+        Button {
+            creatingTeamIn = channel
+        } label: {
+            Label("New Team", systemImage: "bubble.left.and.bubble.right")
+        }
+        .disabled(!hasBots)
+        Button {
+            newChannelSection = ChannelSectionTarget(channelID: channel.id, bot: nil)
+        } label: {
+            Label("New Section", systemImage: "plus")
+        }
+        Button(role: .destructive) {
+            deletingChannel = channel
+        } label: {
+            Label("Delete Channel", systemImage: "trash")
+        }
+    }
+
+    /// Between a section's name and its arrow: some bot inside has something
+    /// unread, which a shut section would otherwise keep out of sight.
+    private var unreadDot: some View {
+        Circle()
+            .fill(Color.blue)
+            .frame(width: 7, height: 7)
+            .accessibilityLabel("Unread")
     }
 
     @ViewBuilder
@@ -854,7 +1113,7 @@ struct BotsScreen: View {
                 if sectionKey == AppStore.unassignedSectionKey {
                     if !unassignedBots.isEmpty {
                         unassignedSectionHeader
-                        if showUnassigned {
+                        if store.unassignedExpanded {
                             ForEach(unassignedBots) { bot in
                                 botRowView(bot, reorderPeers: unassignedBots)
                             }
@@ -1073,12 +1332,7 @@ struct BotsScreen: View {
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     if let bots = group.channelBots, !bots.isEmpty {
-                        Text(bots.joined(separator: ", "))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    } else {
-                        Text("No bots yet · press and hold to add")
+                        Text(bots.map { store.botCurrentName(for: $0) }.joined(separator: ", "))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -1226,6 +1480,7 @@ struct BotsScreen: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
+                if store.hasUnread(bots(in: title).map(\.name)) { unreadDot }
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
@@ -1276,7 +1531,7 @@ struct BotsScreen: View {
     private var unassignedSectionHeader: some View {
         Button {
             withAnimation(.snappy(duration: 0.2)) {
-                showUnassigned.toggle()
+                store.unassignedExpanded.toggle()
             }
         } label: {
             // Laid out like the named sections: the title, then the mark that
@@ -1291,15 +1546,16 @@ struct BotsScreen: View {
                 Text("Unassigned")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                if !showUnassigned {
+                if !store.unassignedExpanded {
                     Text("\(unassignedBots.count)")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.tertiary)
                 }
+                if store.hasUnread(unassignedBots.map(\.name)) { unreadDot }
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(showUnassigned ? 0 : -90))
+                    .rotationEffect(.degrees(store.unassignedExpanded ? 0 : -90))
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -1329,9 +1585,11 @@ struct BotsScreen: View {
     }
 
     @ViewBuilder
-    private func botRowView(_ bot: BotRow, reorderPeers: [BotRow]? = nil) -> some View {
+    private func botRowView(
+        _ bot: BotRow, reorderPeers: [BotRow]? = nil, channel: BotChannel? = nil
+    ) -> some View {
         if let reorderPeers {
-            botRowBase(bot)
+            botRowBase(bot, channel: channel)
                 .onDrag {
                     draggedBotName = bot.name
                     return NSItemProvider(object: bot.name as NSString)
@@ -1348,11 +1606,11 @@ struct BotsScreen: View {
                     )
                 )
         } else {
-            botRowBase(bot)
+            botRowBase(bot, channel: channel)
         }
     }
 
-    private func botRowBase(_ bot: BotRow) -> some View {
+    private func botRowBase(_ bot: BotRow, channel: BotChannel? = nil) -> some View {
         Button {
             guard canOpenBot() else { return }
             store.openBotConversation(for: bot)
@@ -1368,7 +1626,7 @@ struct BotsScreen: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("bots.row.\(bot.name)")
         .contextMenu {
-            botMenu(bot)
+            botMenu(bot, channel: channel)
         } preview: {
             botRowPreview(bot)
         }
@@ -2271,95 +2529,117 @@ private struct NewBotSheet: View {
     }
 }
 
-// MARK: - NewChannelSheet
+// MARK: - Channels
 
-private struct NewChannelSheet: View {
+/// Where a new section inside a channel goes, and the bot to put in it.
+private struct ChannelSectionTarget: Identifiable {
+    let id = UUID()
+    let channelID: String
+    let bot: String?
+}
+
+/// Ticks bots on and off, for a channel or a team.
+private struct BotChecklist: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let bots: [BotRow]
+    @Binding var selected: Set<String>
+
+    var body: some View {
+        if bots.isEmpty {
+            Text("No bots available")
+                .foregroundStyle(.secondary)
+                .listRowBackground(Palette.card(scheme))
+        } else {
+            ForEach(bots) { bot in
+                Button {
+                    if selected.contains(bot.name) {
+                        selected.remove(bot.name)
+                    } else {
+                        selected.insert(bot.name)
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        BotMarkView(mark: store.mark(for: bot.name), size: 30)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(store.botCurrentName(for: bot))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                            if !bot.detail.isEmpty {
+                                Text(bot.detail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: selected.contains(bot.name) ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(
+                                selected.contains(bot.name)
+                                    ? AnyShapeStyle(store.accent.primary(scheme))
+                                    : AnyShapeStyle(.secondary.opacity(0.4))
+                            )
+                    }
+                    .padding(.vertical, 3)
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Palette.card(scheme))
+            }
+        }
+    }
+
+    /// In the list's order, not the order they were ticked.
+    static func ordered(_ selected: Set<String>, in bots: [BotRow]) -> [String] {
+        bots.map(\.name).filter { selected.contains($0) }
+            + selected.filter { name in !bots.contains { $0.name == name } }.sorted()
+    }
+}
+
+/// Makes a channel, or chooses the bots in one.
+private struct ChannelSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
     let bots: [BotRow]
-    /// The channel being edited; nil makes a new one.
-    var editing: Conversation? = nil
+    /// The channel whose bots are being chosen; nil makes a new one.
+    var editing: BotChannel? = nil
+    /// Ticked from the start, when the sheet was opened from a bot's menu.
+    var seedBot: String? = nil
 
     @State private var channelName = ""
-    @State private var topic = ""
     @State private var selectedBots: Set<String> = []
+    @State private var seeded = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     TextField("Name your channel (e.g. operations)", text: $channelName)
-                        .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .listRowBackground(Palette.card(scheme))
-
-                    // The topic is posted once, as the channel's first message.
-                    if editing == nil {
-                        TextField("Topic (optional)", text: $topic)
-                            .listRowBackground(Palette.card(scheme))
-                    }
                 } header: {
-                    Text("Channel Details")
+                    Text("Channel")
                 } footer: {
-                    Text("Channels bring multiple bots together into a shared workspace.")
+                    Text("A channel is a folder for bots and teams. Bots you put in it leave the main list and show only inside; a bot can be in several channels. It can stay empty until you add some.")
                 }
 
                 Section("Bots in this Channel") {
-                    if bots.isEmpty {
-                        Text("No bots available")
-                            .foregroundStyle(.secondary)
-                            .listRowBackground(Palette.card(scheme))
-                    } else {
-                        ForEach(bots) { bot in
-                            Button {
-                                if selectedBots.contains(bot.name) {
-                                    selectedBots.remove(bot.name)
-                                } else {
-                                    selectedBots.insert(bot.name)
-                                }
-                            } label: {
-                                HStack(spacing: 12) {
-                                    BotMarkView(mark: store.mark(for: bot.name), size: 30)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(bot.displayName)
-                                            .font(.subheadline.weight(.medium))
-                                            .foregroundStyle(.primary)
-                                        if !bot.detail.isEmpty {
-                                            Text(bot.detail)
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                    }
-
-                                    Spacer()
-
-                                    if selectedBots.contains(bot.name) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(store.accent.primary(scheme))
-                                    } else {
-                                        Image(systemName: "circle")
-                                            .foregroundStyle(.secondary.opacity(0.4))
-                                    }
-                                }
-                                .padding(.vertical, 3)
-                            }
-                            .buttonStyle(.plain)
-                            .listRowBackground(Palette.card(scheme))
-                        }
-                    }
+                    BotChecklist(bots: bots, selected: $selectedBots)
                 }
             }
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
-            .navigationTitle(editing == nil ? "New Channel" : "Edit Channel")
+            .navigationTitle(editing == nil ? "New Channel" : "Choose Bots")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                guard let editing, channelName.isEmpty else { return }
-                channelName = String(editing.title.drop(while: { $0 == "#" }))
-                selectedBots = Set(editing.channelBots ?? [])
+                guard !seeded else { return }
+                seeded = true
+                if let editing {
+                    channelName = editing.name
+                    selectedBots = Set(editing.bots)
+                } else if let seedBot {
+                    selectedBots = [seedBot]
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -2369,23 +2649,73 @@ private struct NewChannelSheet: View {
                     Button(editing == nil ? "Create" : "Save") {
                         let trimmed = channelName.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else { return }
-                        // In the list's order, not the order they were tapped:
-                        // the first bot is the one a message without a mention
-                        // goes to.
-                        let members = bots.map(\.name).filter { selectedBots.contains($0) }
-                            + selectedBots.filter { name in !bots.contains { $0.name == name } }.sorted()
+                        let members = BotChecklist.ordered(selectedBots, in: bots)
                         if let editing {
-                            store.updateChannel(editing.id, name: trimmed, bots: members)
+                            if trimmed != editing.name { store.renameChannel(editing.id, to: trimmed) }
+                            store.setChannelBots(editing.id, bots: members)
                         } else {
-                            store.createChannel(
-                                name: trimmed,
-                                bots: members,
-                                topic: topic.isEmpty ? nil : topic
-                            )
+                            store.createChannel(name: trimmed, bots: members)
                         }
                         dismiss()
                     }
                     .disabled(channelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+/// Makes a team: a shared chat with several of a channel's bots.
+private struct TeamSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+    let channel: BotChannel
+    /// The channel's bots, the only ones a team can have.
+    let bots: [BotRow]
+    let onCreated: (Conversation) -> Void
+
+    @State private var teamName = ""
+    @State private var selectedBots: Set<String> = []
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name your team", text: $teamName)
+                        .autocorrectionDisabled()
+                        .listRowBackground(Palette.card(scheme))
+                } header: {
+                    Text("Team in \(channel.name)")
+                } footer: {
+                    Text("A team is a shared chat with several of this channel’s bots. A message goes to the bot you @mention, or to the first one.")
+                }
+
+                Section("Bots in this Team") {
+                    BotChecklist(bots: bots, selected: $selectedBots)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Palette.background(scheme))
+            .navigationTitle("New Team")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        guard let team = store.createTeam(
+                            inChannel: channel.id, name: teamName,
+                            bots: BotChecklist.ordered(selectedBots, in: bots)
+                        ) else { return }
+                        dismiss()
+                        onCreated(team)
+                    }
+                    .disabled(
+                        teamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || selectedBots.isEmpty
+                    )
                 }
             }
         }
