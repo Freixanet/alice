@@ -91,8 +91,9 @@ extension HermesClient {
                     // native chat can otherwise wait forever for that same
                     // process to report completion. The management endpoint
                     // launches the updater independently and returns first.
-                    if let reply = try await self.selfUpdateReplyIfRequested(messages: messages) {
-                        continuation.yield(.delta(reply))
+                    if try await self.selfUpdateReplyIfRequested(
+                        messages: messages, say: { continuation.yield(.delta($0)) }
+                    ) {
                         continuation.finish()
                         return
                     }
