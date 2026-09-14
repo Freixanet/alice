@@ -329,7 +329,10 @@ struct ChatScreen: View {
             // across chats carried the old chat's offset into the new one, and
             // a lazy stack scrolled by code alone did not draw the rows at that
             // offset: a bot chat opened blank until the reader moved it.
-            TranscriptView(conversation: conversation)
+            TranscriptView(
+                conversation: conversation,
+                quietRuns: store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? []
+            )
                 .id(conversation.id)
         } else {
             EmptyChatView()
@@ -346,6 +349,8 @@ struct ChatScreen: View {
 /// a press on the jump button during a flick took several tries.
 private struct TranscriptView: View {
     let conversation: Conversation
+    /// This bot's routine runs that found nothing, shown as cards.
+    var quietRuns: [QuietRoutineRun] = []
 
     @State private var position = ScrollPosition(edge: .bottom)
     /// Whether the transcript keeps to its live edge as it grows. Only the
@@ -381,7 +386,9 @@ private struct TranscriptView: View {
     @State private var shown = TranscriptView.page
 
     private var presentedMessages: [Message] {
-        RoutineDelivery.present(conversation.messages, botName: conversation.botName)
+        RoutineDelivery.present(
+            conversation.messages, botName: conversation.botName, quietRuns: quietRuns
+        )
     }
     private var visibleMessages: ArraySlice<Message> { presentedMessages.suffix(shown) }
     private var hiddenCount: Int { max(0, presentedMessages.count - shown) }

@@ -68,7 +68,31 @@ extension RoutineReport {
 /// sent it, and the bot's answer to it is left out until the person writes
 /// again. Only the presentation changes: the transcript keeps Hermes' turns.
 enum RoutineDelivery {
+    /// The card for a run that found nothing (`QuietRoutineRun`).
+    static let noNews = "Sin novedades: la rutina se ejecutó y no encontró nada nuevo que contar."
+
     static func present<Messages: Sequence>(
+        _ messages: Messages, botName: String?, quietRuns: [QuietRoutineRun] = []
+    ) -> [Message] where Messages.Element == Message {
+        var shown = reports(messages, botName: botName)
+        // Runs without news leave nothing in the transcript; their cards go
+        // where they happened, among the turns around them.
+        for run in quietRuns.sorted(by: { $0.finishedAt < $1.finishedAt }) {
+            var card = Message(
+                id: "quiet:\(run.id)", role: .assistant, content: noNews,
+                createdAt: run.finishedAt, botName: botName
+            )
+            card.routineName = run.routineName
+            guard !shown.contains(where: { $0.id == card.id }) else { continue }
+            let index = shown.firstIndex {
+                MessageTime.isKnown($0.createdAt) && $0.createdAt > run.finishedAt
+            } ?? shown.endIndex
+            shown.insert(card, at: index)
+        }
+        return shown
+    }
+
+    private static func reports<Messages: Sequence>(
         _ messages: Messages, botName: String?
     ) -> [Message] where Messages.Element == Message {
         var shown: [Message] = []

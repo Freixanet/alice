@@ -89,6 +89,12 @@ final class AppStore {
     /// Why a bot chat's transcript could not be re-read, keyed by conversation.
     /// Present means the list on screen may be behind the agent's.
     var botChatFailure: [String: String] = [:]
+    /// Routine runs that finished with nothing to report, keyed by bot. Hermes
+    /// sends nothing for those, and without a card a routine with no news and
+    /// one that never ran look the same.
+    var quietRoutineRuns: [String: [QuietRoutineRun]] = [:]
+    /// Run ids already read for silence, keyed by bot.
+    private var judgedRoutineRuns: [String: Set<String>] = [:]
     private let dashboard = DashboardClient()
     private let defaults = UserDefaults.standard
     private var streamTask: Task<Void, Never>?
@@ -4075,6 +4081,7 @@ final class AppStore {
             )
             botChatFailure[conversationID] = nil
             persistConversations()
+            await refreshQuietRoutineRuns(profile: profile)
         } catch {
             // Keep what is on screen. The reason is recorded so the chat can
             // say the transcript may be behind, rather than pretending it is
@@ -4082,6 +4089,28 @@ final class AppStore {
             botChatFailure[conversationID] =
                 (error as? LocalizedError)?.errorDescription
                 ?? "Hermes did not answer."
+        }
+    }
+
+    /// Finds this bot's routine runs that ended with nothing to say. Best
+    /// effort, like the rest of a refresh: a failure keeps what was found.
+    private func refreshQuietRoutineRuns(profile: String) async {
+        do {
+            let routines = try await routines(for: profile)
+            let since = Date().addingTimeInterval(-QuietRoutineRun.window)
+            let found = try await dashboard.quietRoutineRuns(
+                profile: profile, routines: routines, since: since,
+                skipping: judgedRoutineRuns[profile] ?? []
+            )
+            judgedRoutineRuns[profile, default: []].formUnion(found.judged)
+            let kept = (quietRoutineRuns[profile] ?? []).filter { $0.finishedAt >= since }
+            let merged = (kept + found.quiet.filter { run in !kept.contains { $0.id == run.id } })
+                .sorted { $0.finishedAt < $1.finishedAt }
+            if merged != (quietRoutineRuns[profile] ?? []) {
+                quietRoutineRuns[profile] = merged
+            }
+        } catch {
+            // No card is better than a wrong one.
         }
     }
 
