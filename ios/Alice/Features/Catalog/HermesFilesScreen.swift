@@ -8,18 +8,58 @@ private enum HermesFilesMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private enum RemoteFileSource: String, Hashable {
+enum RemoteFileSource: String, Hashable {
     case managed
     case workspace
 }
 
-private struct RemoteFileSelection: Identifiable, Hashable {
+struct RemoteFileSelection: Identifiable, Hashable {
     var id: String { source.rawValue + "|" + path }
     var source: RemoteFileSource
     var name: String
     var path: String
     var size: Int64?
     var mimeType: String?
+    /// Shown, never edited: Library opens what an agent made, and a report
+    /// changed by an accidental tap is no longer the agent's report.
+    var readOnly = false
+}
+
+/// A remote file's failure, said the way a person would say it.
+///
+/// Hermes' own answers are for a developer — "The dashboard returned 403:
+/// Access to sensitive files is not allowed" — and the three a reader actually
+/// meets have a plain meaning each.
+enum RemoteFileProblem {
+    static func describe(_ error: Error) -> String {
+        if case let DashboardClient.Failure.http(status, _) = error {
+            switch status {
+            case 403: return "This file is private, so Alice doesn’t open it."
+            case 404: return "This file isn’t there any more. It may have been moved or deleted."
+            case 413: return "This file is too big to show here. You can still download it."
+            default: break
+            }
+        }
+        return (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer."
+    }
+}
+
+/// The symbol for a file, by its type.
+enum RemoteFileSymbol {
+    static func name(mime: String?, fileName: String) -> String {
+        let value = mime?.lowercased() ?? ""
+        let ext = URL(fileURLWithPath: fileName).pathExtension.lowercased()
+        if value.hasPrefix("image/") || ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "svg"].contains(ext) { return "photo" }
+        if value.hasPrefix("audio/") || ["mp3", "m4a", "wav", "flac", "ogg", "opus"].contains(ext) { return "waveform" }
+        if value.hasPrefix("video/") || ["mp4", "mov", "mkv", "webm", "avi"].contains(ext) { return "film" }
+        if value == "application/pdf" || ext == "pdf" { return "doc.richtext" }
+        if ["xlsx", "xls", "csv"].contains(ext) { return "tablecells" }
+        if value.hasPrefix("text/") || value.contains("json") || value.contains("xml")
+            || ["md", "txt", "swift", "py", "js", "ts", "tsx", "json", "yaml", "yml", "toml", "sh", "docx"].contains(ext) {
+            return "doc.text"
+        }
+        return "doc"
+    }
 }
 
 /// Hermes file administration has two deliberately different surfaces:
@@ -603,7 +643,7 @@ enum RemoteFilePath {
     }
 }
 
-private struct HermesRemoteFileDetail: View {
+struct HermesRemoteFileDetail: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
@@ -780,7 +820,7 @@ private struct HermesRemoteFileDetail: View {
     }
 
     private var canEdit: Bool {
-        guard selection.source == .workspace, let snapshot else { return false }
+        guard selection.source == .workspace, !selection.readOnly, let snapshot else { return false }
         return !snapshot.binary && !snapshot.truncated
     }
 
@@ -921,6 +961,6 @@ private struct HermesRemoteFileDetail: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer."
+        RemoteFileProblem.describe(error)
     }
 }

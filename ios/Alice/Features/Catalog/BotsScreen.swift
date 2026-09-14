@@ -1024,6 +1024,10 @@ struct BotsScreen: View {
                 store.toggleChannelCollapsed(channel.id)
             }
         }
+        // Dropped on the channel itself: out of every section, still inside.
+        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(draggedName: $draggedBotName) { dragged in
+            store.setChannelSection(channel.id, bot: dragged, section: nil)
+        })
         .contextMenu {
             channelMenu(channel, hasBots: !members.isEmpty)
         }
@@ -1048,17 +1052,26 @@ struct BotsScreen: View {
                             }
                         }
                 }
+                // Loose agents first. After the sections they sat under the last
+                // section's header, at its indent, and read as part of it. An
+                // agent dropped among them leaves its section; dropped in a
+                // section, it joins that one.
+                let loose = members.filter { channel.section(for: $0.name) == nil }
+                ForEach(loose) { bot in
+                    botRowView(bot, reorderPeers: loose, channel: channel) { dragged in
+                        store.setChannelSection(channel.id, bot: dragged, section: nil)
+                    }
+                }
                 ForEach(channel.sections, id: \.self) { section in
                     let sectionBots = members.filter { channel.section(for: $0.name) == section }
                     channelSectionHeader(channel, section: section, bots: sectionBots)
                     if !channel.collapsedSections.contains(section) {
                         ForEach(sectionBots) { bot in
-                            botRowView(bot, channel: channel)
+                            botRowView(bot, reorderPeers: sectionBots, channel: channel) { dragged in
+                                store.setChannelSection(channel.id, bot: dragged, section: section)
+                            }
                         }
                     }
-                }
-                ForEach(members.filter { channel.section(for: $0.name) == nil }) { bot in
-                    botRowView(bot, channel: channel)
                 }
             }
             .padding(.leading, 12)
@@ -1096,6 +1109,9 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(draggedName: $draggedBotName) { dragged in
+            store.setChannelSection(channel.id, bot: dragged, section: section)
+        })
         .contextMenu {
             Button(role: .destructive) {
                 store.deleteChannelSection(channel.id, name: section)
@@ -1160,7 +1176,9 @@ struct BotsScreen: View {
                         unassignedSectionHeader
                         if store.unassignedExpanded {
                             ForEach(unassignedBots) { bot in
-                                botRowView(bot, reorderPeers: unassignedBots)
+                                botRowView(bot, reorderPeers: unassignedBots) { dragged in
+                                    store.setBotSection(dragged, section: nil)
+                                }
                             }
                         }
                     }
@@ -1170,7 +1188,9 @@ struct BotsScreen: View {
 
                     if !store.collapsedSections.contains(sectionKey) {
                         ForEach(sectionBots) { bot in
-                            botRowView(bot, reorderPeers: sectionBots)
+                            botRowView(bot, reorderPeers: sectionBots) { dragged in
+                                store.setBotSection(dragged, section: sectionKey)
+                            }
                         }
                     }
                 }
@@ -1539,6 +1559,10 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(draggedName: $draggedBotName) { dragged in
+            guard !store.isInAnyChannel(dragged) else { return }
+            store.setBotSection(dragged, section: title)
+        })
         .contextMenu {
             let order = store.sectionOrder
             let isFirst = order.first == title
@@ -1609,6 +1633,10 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(draggedName: $draggedBotName) { dragged in
+            guard !store.isInAnyChannel(dragged) else { return }
+            store.setBotSection(dragged, section: nil)
+        })
         .contextMenu {
             let order = store.sectionOrder
             let isFirst = order.first == AppStore.unassignedSectionKey
@@ -1632,7 +1660,8 @@ struct BotsScreen: View {
 
     @ViewBuilder
     private func botRowView(
-        _ bot: BotRow, reorderPeers: [BotRow]? = nil, channel: BotChannel? = nil
+        _ bot: BotRow, reorderPeers: [BotRow]? = nil, channel: BotChannel? = nil,
+        adopt: ((String) -> Void)? = nil
     ) -> some View {
         if let reorderPeers {
             botRowBase(bot, channel: channel)
@@ -1648,7 +1677,8 @@ struct BotsScreen: View {
                         target: bot.name,
                         peers: reorderPeers.map(\.name),
                         draggedName: $draggedBotName,
-                        move: moveBot
+                        move: moveBot,
+                        adopt: adopt
                     )
                 )
         } else {
@@ -2831,11 +2861,38 @@ private struct GlassTile: ButtonStyle {
 /// as the dragged item crosses a peer, while the proposal explicitly advertises
 /// `.move`; this gives the same displacement behavior as system lists and avoids
 /// the copy-style plus badge produced by a generic drop destination.
+/// A section header, or a channel's own row, taking an agent dropped on it.
+///
+/// Rows can only reorder among themselves; an empty section has no rows to
+/// drop onto, and "out of every section" has no row of its own. Headers are
+/// the places that always exist.
+private struct SectionDropDelegate: DropDelegate {
+    @Binding var draggedName: String?
+    let drop: (String) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool { draggedName != nil }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let dragged = draggedName else { return false }
+        drop(dragged)
+        draggedName = nil
+        return true
+    }
+}
+
 private struct BotReorderDropDelegate: DropDelegate {
     let target: String
     let peers: [String]
     @Binding var draggedName: String?
     let move: (String, String, [String]) -> Void
+    /// Takes a dragged agent into the target's group. Reordering alone never
+    /// moved an agent out of its section: dropped among other rows, it snapped
+    /// back to where it was.
+    var adopt: ((String) -> Void)? = nil
 
     func dropEntered(info: DropInfo) {
         guard let source = draggedName, source != target else { return }
@@ -2847,6 +2904,7 @@ private struct BotReorderDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        if let dragged = draggedName, dragged != target { adopt?(dragged) }
         draggedName = nil
         return true
     }
