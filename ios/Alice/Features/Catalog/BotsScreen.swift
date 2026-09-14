@@ -37,6 +37,8 @@ struct BotsScreen: View {
     @State private var loading = false
     @State private var creatingBot = false
     @State private var creatingChannel = false
+    @State private var editingChannel: Conversation?
+    @State private var deletingChannel: Conversation?
     @State private var importingBot = false
     @State private var importBusy = false
     @State private var editingBot: BotRow?
@@ -109,6 +111,27 @@ struct BotsScreen: View {
         }
         .sheet(isPresented: $creatingChannel) {
             NewChannelSheet(bots: rows)
+        }
+        .sheet(isPresented: Binding(
+            get: { editingChannel != nil },
+            set: { if !$0 { editingChannel = nil } }
+        )) {
+            if let channel = editingChannel {
+                NewChannelSheet(bots: rows, editing: channel)
+            }
+        }
+        .alert(
+            "Delete Channel",
+            isPresented: Binding(
+                get: { deletingChannel != nil },
+                set: { if !$0 { deletingChannel = nil } }
+            ),
+            presenting: deletingChannel
+        ) { channel in
+            Button("Delete", role: .destructive) { store.delete(channel.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { channel in
+            Text("\(channel.title) and its messages will be removed from this iPhone. The bots are not affected.")
         }
         .fileImporter(isPresented: $importingBot, allowedContentTypes: [.archive, .data], allowsMultipleSelection: false) { result in
             guard case let .success(urls) = result, let url = urls.first else { return }
@@ -420,6 +443,7 @@ struct BotsScreen: View {
                 } else {
                     if stale { staleNotice }
                     pinnedShelf
+                    channelsSection
                     normalBotSections
                     hiddenSection
                 }
@@ -780,6 +804,45 @@ struct BotsScreen: View {
         }
     }
 
+    /// Channels, found where they were made.
+    ///
+    /// A channel lives on the phone rather than in Hermes, and the chat list
+    /// leaves out everything filed under bots, so the only place one showed was
+    /// this page's search. One made without bots yet was simply nowhere, which
+    /// reads as creating it having failed.
+    @ViewBuilder
+    private var channelsSection: some View {
+        let channels = store.conversations.filter { $0.isChannel == true }
+        if !channels.isEmpty {
+            HStack(spacing: 6) {
+                Text("Channels")
+                Text("\(channels.count)")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+            .accessibilityAddTraits(.isHeader)
+
+            ForEach(channels, id: \.id) { channel in
+                groupRowView(channel)
+                    .contextMenu {
+                        Button {
+                            editingChannel = channel
+                        } label: {
+                            Label("Edit Channel", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            deletingChannel = channel
+                        } label: {
+                            Label("Delete Channel", systemImage: "trash")
+                        }
+                    }
+            }
+        }
+    }
+
     @ViewBuilder
     private var normalBotSections: some View {
         if store.botCustomSections.isEmpty {
@@ -1011,6 +1074,11 @@ struct BotsScreen: View {
                         .lineLimit(1)
                     if let bots = group.channelBots, !bots.isEmpty {
                         Text(bots.joined(separator: ", "))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text("No bots yet · press and hold to add")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -2210,6 +2278,8 @@ private struct NewChannelSheet: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
     let bots: [BotRow]
+    /// The channel being edited; nil makes a new one.
+    var editing: Conversation? = nil
 
     @State private var channelName = ""
     @State private var topic = ""
@@ -2224,8 +2294,11 @@ private struct NewChannelSheet: View {
                         .autocorrectionDisabled()
                         .listRowBackground(Palette.card(scheme))
 
-                    TextField("Topic (optional)", text: $topic)
-                        .listRowBackground(Palette.card(scheme))
+                    // The topic is posted once, as the channel's first message.
+                    if editing == nil {
+                        TextField("Topic (optional)", text: $topic)
+                            .listRowBackground(Palette.card(scheme))
+                    }
                 } header: {
                     Text("Channel Details")
                 } footer: {
@@ -2281,21 +2354,35 @@ private struct NewChannelSheet: View {
             }
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
-            .navigationTitle("New Channel")
+            .navigationTitle(editing == nil ? "New Channel" : "Edit Channel")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                guard let editing, channelName.isEmpty else { return }
+                channelName = String(editing.title.drop(while: { $0 == "#" }))
+                selectedBots = Set(editing.channelBots ?? [])
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
+                    Button(editing == nil ? "Create" : "Save") {
                         let trimmed = channelName.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else { return }
-                        store.createChannel(
-                            name: trimmed,
-                            bots: Array(selectedBots),
-                            topic: topic.isEmpty ? nil : topic
-                        )
+                        // In the list's order, not the order they were tapped:
+                        // the first bot is the one a message without a mention
+                        // goes to.
+                        let members = bots.map(\.name).filter { selectedBots.contains($0) }
+                            + selectedBots.filter { name in !bots.contains { $0.name == name } }.sorted()
+                        if let editing {
+                            store.updateChannel(editing.id, name: trimmed, bots: members)
+                        } else {
+                            store.createChannel(
+                                name: trimmed,
+                                bots: members,
+                                topic: topic.isEmpty ? nil : topic
+                            )
+                        }
                         dismiss()
                     }
                     .disabled(channelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

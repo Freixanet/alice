@@ -2812,11 +2812,12 @@ final class AppStore {
             channelBots: bots
         )
         if let topic, !topic.isEmpty {
+            let members = bots.isEmpty ? "" : " with bots: \(bots.joined(separator: ", "))"
             conversation.messages.append(
                 Message(
                     id: UUID().uuidString,
                     role: .assistant,
-                    content: "Channel **#\(name)** created with bots: \(bots.joined(separator: ", ")).\nTopic: \(topic)",
+                    content: "Channel **#\(name)** created\(members).\nTopic: \(topic)",
                     createdAt: now
                 )
             )
@@ -2825,6 +2826,17 @@ final class AppStore {
         activeID = conversation.id
         persistConversations()
         return conversation
+    }
+
+    /// Renames a channel and sets which bots are in it. A channel can be
+    /// created without bots and filled in later.
+    func updateChannel(_ id: String, name: String, bots: [String]) {
+        guard let index = conversations.firstIndex(where: { $0.id == id && $0.isChannel == true })
+        else { return }
+        conversations[index].title = "#" + name
+        conversations[index].channelBots = bots
+        conversations[index].updatedAt = Date()
+        persistConversations()
     }
 
     /// How each bot's mark looks. Hermes stores no such thing, so it lives on
