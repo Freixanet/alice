@@ -30,6 +30,32 @@ extension RoutineReport {
             body: String(rest.drop(while: \.isNewline)).trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }
+
+    /// Hermes' own notice that a routine could not finish, said in Spanish.
+    ///
+    /// When a run fails, the report Hermes hands over is its English log line —
+    /// "⚠️ Cron 'Radar IA' failed: provider rate limit. Fallback chain was
+    /// exhausted…" — or the agent's guardrail message. Nil for a real report.
+    static func failure(in body: String) -> String? {
+        let cause: String
+        if body.hasPrefix("⚠️ Cron '"), let failed = body.range(of: "' failed:") {
+            let reason = body[failed.upperBound...].lowercased()
+            if reason.contains("rate limit") || reason.contains("429") || reason.contains("quota") {
+                cause = "el modelo de IA ha llegado a su límite de uso. Se volverá a intentar en la próxima ejecución."
+            } else if reason.contains("timed out") || reason.contains("timeout") {
+                cause = "tardó demasiado y se detuvo."
+            } else if reason.contains("401") || reason.contains("auth") || reason.contains("api key") {
+                cause = "el proveedor de IA no aceptó la clave."
+            } else {
+                cause = "algo falló en Hermes."
+            }
+        } else if body.hasPrefix("I stopped retrying") {
+            cause = "una herramienta falló varias veces seguidas."
+        } else {
+            return nil
+        }
+        return "⚠️ La rutina no se pudo completar: " + cause
+    }
 }
 
 /// How a bot's chat shows its routines: each report once, as the bot's message.
@@ -53,7 +79,7 @@ enum RoutineDelivery {
                 if let report = RoutineReport(message.content) {
                     var delivered = message
                     delivered.role = .assistant
-                    delivered.content = report.body
+                    delivered.content = RoutineReport.failure(in: report.body) ?? report.body
                     delivered.botName = botName
                     delivered.routineName = report.name
                     shown.append(delivered)

@@ -108,6 +108,14 @@ class NotifierTests(unittest.TestCase):
         self.poll()
         self.assertEqual([m[1] for m in self.sent], ['Ha terminado su rutina', 'Ha respondido'])
 
+    def test_a_bots_answer_to_a_failed_routine_is_the_routine_failing(self):
+        self.poll()
+        self.hermes.row('radar-ia', 'tui', '[Cronjob "Radar IA" output — scheduled job, not the user. Review it.]\n\n'
+                        "⚠️ Cron 'Radar IA' failed: provider rate limit.", finish_reason=None, role='user')
+        self.hermes.row('radar-ia', 'tui', "⚠️ Cron 'Radar IA' failed: provider rate limit.")
+        self.poll()
+        self.assertEqual([m[1] for m in self.sent], ['Su rutina ha fallado'])
+
     def test_a_burst_from_one_chat_is_one_notification(self):
         self.poll()
         for text in ('uno', 'dos', 'tres'):
