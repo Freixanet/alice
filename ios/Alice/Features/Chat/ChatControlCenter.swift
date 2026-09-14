@@ -44,7 +44,8 @@ enum ChatControlCenter {
 
         switch command {
         case "/control": return tokens.isEmpty ? .help : nil
-        case "/bots": return tokens.isEmpty ? .bots : nil
+        // `/bots` is the command's old name, kept so habit still works.
+        case "/agents", "/bots": return tokens.isEmpty ? .bots : nil
         case "/bot":
             guard tokens.count >= 2 else { return nil }
             switch tokens[0].lowercased() {
@@ -688,7 +689,7 @@ extension AppStore {
         **Alice control center**
 
         Read directly from Hermes:
-        `/bots`, `/routines`, `/projects`, `/memory`, `/model`, `/providers`, `/usage 30`, `/config`
+        `/agents`, `/routines`, `/projects`, `/memory`, `/model`, `/providers`, `/usage 30`, `/config`
 
         Common actions:
         `/bot open <name>` · `/bot create <name>` · `/bot rename <name> --to <title>` · `/bot delete <name> --confirm`

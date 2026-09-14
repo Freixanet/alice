@@ -160,7 +160,7 @@ struct Sidebar: View {
     /// grouped under Settings → Advanced instead of competing with recents.
     private var destinations: some View {
         VStack(spacing: 2) {
-            row("Bots", systemImage: "person.2", weight: .medium) {
+            row("Agents", systemImage: "person.2", weight: .medium) {
                 onDismiss()
                 store.botsFromLeading = false
                 store.showingBots = true

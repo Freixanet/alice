@@ -137,7 +137,7 @@ final class BotNavigationTests: XCTestCase {
 
         let leading = app.buttons["chat.leading"]
         XCTAssertTrue(leading.waitForExistence(timeout: 20))
-        XCTAssertEqual(leading.label, "Bots")
+        XCTAssertEqual(leading.label, "Agents")
         leading.tap()
 
         let back = app.buttons["bots.back"]
@@ -206,7 +206,7 @@ final class BotNavigationTests: XCTestCase {
 
         XCTAssertTrue(app.buttons["bots.back"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(leading.waitForExistence(timeout: 5))
-        XCTAssertEqual(leading.label, "Bots", "a stationary tap must still open the bot")
+        XCTAssertEqual(leading.label, "Agents", "a stationary tap must still open the bot")
     }
 
     private func firstVisibleBotRow(in app: XCUIApplication) -> XCUIElement {

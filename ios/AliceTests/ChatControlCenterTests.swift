@@ -3,6 +3,7 @@ import XCTest
 
 final class ChatControlCenterTests: XCTestCase {
     func testBareReadCommandsUseNativeControlCenter() {
+        XCTAssertEqual(ChatControlCenter.parse("/agents"), .bots)
         XCTAssertEqual(ChatControlCenter.parse("/bots"), .bots)
         XCTAssertEqual(ChatControlCenter.parse("/projects"), .projects(profile: nil))
         XCTAssertEqual(ChatControlCenter.parse("/memory --profile radar-ia"), .memory(profile: "radar-ia"))

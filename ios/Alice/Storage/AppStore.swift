@@ -126,6 +126,8 @@ final class AppStore {
         static let botChannels = "alice.bot.channels"
         static let unassignedExpanded = "alice.bot.unassignedExpanded"
         static let hiddenExpanded = "alice.bot.hiddenExpanded"
+        static let homeCollapsed = "alice.bot.homeCollapsed"
+        static let botChatClearedAt = "alice.bot.chatClearedAt"
         static let botOrder = "alice.bot.order"
         static let cachedBots = "alice.cached.bots"
         static let pendingBotModelSyncs = "alice.bot.model.pendingSyncs"
@@ -176,6 +178,15 @@ final class AppStore {
     }
     var hiddenExpanded = false {
         didSet { defaults.set(hiddenExpanded, forKey: Keys.hiddenExpanded) }
+    }
+    /// Home — the agents in no channel — folded shut.
+    var homeCollapsed = false {
+        didSet { defaults.set(homeCollapsed, forKey: Keys.homeCollapsed) }
+    }
+    /// When each agent's chat was last cleared, so routine cards from before
+    /// it do not come back into the empty chat.
+    var botChatClearedAt: [String: Date] = [:] {
+        didSet { defaults.set(botChatClearedAt, forKey: Keys.botChatClearedAt) }
     }
     var pinnedBots: Set<String> = [] {
         didSet { defaults.set(Array(pinnedBots), forKey: Keys.pinnedBots) }
@@ -284,6 +295,9 @@ final class AppStore {
             .flatMap { try? JSONDecoder().decode([BotChannel].self, from: $0) } ?? []
         unassignedExpanded = defaults.bool(forKey: Keys.unassignedExpanded)
         hiddenExpanded = defaults.bool(forKey: Keys.hiddenExpanded)
+        homeCollapsed = defaults.bool(forKey: Keys.homeCollapsed)
+        botChatClearedAt = (defaults.dictionary(forKey: Keys.botChatClearedAt) as? [String: Date]) ?? [:]
+        activitySeen = defaults.object(forKey: Keys.activitySeen) as? Date ?? .distantPast
         if let savedCollapsed = defaults.stringArray(forKey: Keys.collapsedSections) {
             collapsedSections = Set(savedCollapsed)
         }
@@ -1731,9 +1745,12 @@ final class AppStore {
     static let activityLimit = 200
 
     /// When the person last opened Activity, for the unread count.
-    var activitySeen: Date {
-        get { defaults.object(forKey: Keys.activitySeen) as? Date ?? .distantPast }
-        set { defaults.set(newValue, forKey: Keys.activitySeen) }
+    ///
+    /// Stored, not read through from UserDefaults: a computed property is
+    /// invisible to observation, so the drawer's badge kept its old number
+    /// after Activity had been seen, until something else redrew the drawer.
+    var activitySeen: Date = .distantPast {
+        didSet { defaults.set(activitySeen, forKey: Keys.activitySeen) }
     }
 
     var unreadActivity: Int {
@@ -4320,12 +4337,40 @@ final class AppStore {
         }
     }
 
+    /// Empties an agent's chat, in Hermes and on this phone. Its instructions,
+    /// memory, skills and routines are kept.
+    func clearBotChat(_ profile: String) async throws {
+        if let turn = activeBotTurn,
+           conversations.contains(where: { $0.id == turn.conversationID && $0.routedBotName == profile }) {
+            throw HermesRPCClient.Failure(reason: "Wait for the agent to finish replying, then clear its chat.")
+        }
+        guard let source = await botChatSource() else {
+            throw HermesRPCClient.Failure(reason: "Connect the Hermes dashboard to clear this agent's chat.")
+        }
+        let fresh = try await source.clearCanonicalBotChat(profile: profile)
+        botChatClearedAt[profile] = Date()
+        quietRoutineRuns[profile] = nil
+        for index in conversations.indices
+        where conversations[index].routedBotName == profile && conversations[index].isCanonicalBotChat {
+            conversations[index].messages = []
+            conversations[index].hermesSessionID = fresh.resolvedID
+            conversations[index].updatedAt = Date()
+        }
+        botChatFailure = botChatFailure.filter { entry in
+            !conversations.contains { $0.id == entry.key && $0.routedBotName == profile }
+        }
+        persistConversations()
+    }
+
     /// Finds this bot's routine runs that ended with nothing to say. Best
     /// effort, like the rest of a refresh: a failure keeps what was found.
     private func refreshQuietRoutineRuns(profile: String) async {
         do {
             let routines = try await routines(for: profile)
-            let since = Date().addingTimeInterval(-QuietRoutineRun.window)
+            let since = max(
+                Date().addingTimeInterval(-QuietRoutineRun.window),
+                botChatClearedAt[profile] ?? .distantPast
+            )
             let found = try await dashboard.quietRoutineRuns(
                 profile: profile, routines: routines, since: since,
                 skipping: judgedRoutineRuns[profile] ?? []

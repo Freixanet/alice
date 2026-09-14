@@ -72,6 +72,48 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         return CanonicalBotChat(id: durableID)
     }
 
+    // MARK: - Clearing
+
+    /// Empties a bot's chat for good and gives it a new, empty one.
+    ///
+    /// Hermes will not rename a bot's canonical chat — its title is its
+    /// identity, and it refuses rather than orphan the conversation — so there
+    /// is nowhere to file the old one away. Clearing deletes it (the row and,
+    /// after a compression, its live tip) and makes a fresh canonical chat.
+    /// The bot's instructions, memory, skills and routines live in its profile,
+    /// not in the chat, and are untouched. Hermes refuses to delete a chat that
+    /// is open live somewhere else; that refusal is the error thrown.
+    @discardableResult
+    func clearCanonicalBotChat(profile: String) async throws -> CanonicalBotChat {
+        if let chat = try await canonicalBotChat(profile: profile) {
+            // Every read here resumes the chat, so this connection may hold it
+            // live, and Hermes will not delete a live session: let go of it.
+            if let resumed = try? await resume(profile: profile, target: chat.resolvedID),
+               let live = resumed["session_id"] as? String, !live.isEmpty {
+                _ = try? await rpc.call("session.close", JSONObject(["session_id": live]))
+            }
+            var ids = [chat.resolvedID]
+            if chat.id != chat.resolvedID { ids.append(chat.id) }
+            for id in ids {
+                do {
+                    _ = try await rpc.call("session.delete", JSONObject([
+                        "session_id": id,
+                        "profile": profile,
+                    ]))
+                } catch {
+                    // Already gone is exactly what clearing wants.
+                    guard Self.isNotFound(error) else { throw error }
+                }
+            }
+        }
+        return try await createCanonicalBotChat(profile: profile)
+    }
+
+    private static func isNotFound(_ error: Error) -> Bool {
+        let text = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+        return text.localizedCaseInsensitiveContains("not found")
+    }
+
     // MARK: - Reading
 
     func transcript(profile: String, sessionID: String) async throws -> [BotChatTurn] {

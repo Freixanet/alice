@@ -22,7 +22,7 @@ enum Slash {
     static let all: [SlashCommand] = [
         SlashCommand("/new", "Start a new chat"),
         SlashCommand("/control", "Manage Hermes from chat"),
-        SlashCommand("/bots", "Bots"),
+        SlashCommand("/agents", "Agents"),
         SlashCommand("/bot", "Open or create a bot"),
         SlashCommand("/routines", "Routines"),
         SlashCommand("/routine", "Run, pause or resume a routine"),

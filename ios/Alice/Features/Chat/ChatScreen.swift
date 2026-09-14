@@ -203,7 +203,7 @@ struct ChatScreen: View {
                     .frame(width: discSize, height: discSize)
             }
             .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel(bot == nil ? "Chats" : "Bots")
+            .accessibilityLabel(bot == nil ? "Chats" : "Agents")
             .accessibilityIdentifier("chat.leading")
 
             Spacer(minLength: 0)
@@ -288,7 +288,7 @@ struct ChatScreen: View {
                     .frame(width: discSize, height: discSize)
                 }
                 .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Bots")
+                .accessibilityLabel("Agents")
             } else {
                 Color.clear
                     .frame(width: discSize, height: discSize)

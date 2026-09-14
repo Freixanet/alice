@@ -47,7 +47,7 @@ struct AliceDestination: Identifiable, Hashable, Sendable {
     }
 
     static let all: [AliceDestination] = [
-        .init(target: .bots, title: "Bots", technical: "Hermes profiles",
+        .init(target: .bots, title: "Agents", technical: "Hermes profiles",
               systemImage: "person.2",
               synonyms: ["assistant", "assistants", "agent", "agents", "profile", "profiles", "radar"]),
         .init(target: .activity, title: "Activity", technical: nil,
