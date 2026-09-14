@@ -44,10 +44,16 @@ struct Artifact: Identifiable, Hashable, Sendable {
 /// Hermes has no index of these — its own gallery works the same way, by
 /// reading back what the agent said and pulling the paths and links out of
 /// it. That makes over-detection the risk, not under-detection: a path
-/// mentioned in passing looks exactly like one that was written. Only tool
-/// output is scanned, and only absolute paths, which is where things the
-/// agent actually made turn up.
+/// mentioned in passing looks exactly like one that was written. Only the
+/// output of tools that create files is scanned, and only absolute paths.
+/// Reading a file used to count as making one: `read_file` results are the
+/// file's own text, full of paths the agent never produced.
 enum ArtifactScanner {
+    /// Tools whose results name a file the agent made or changed.
+    static let creatingTools: Set<String> = [
+        "write_file", "patch", "image_generate", "text_to_speech",
+    ]
+
     /// Extensions worth showing. Without an allowlist, `com.apple.Safari` and
     /// `icutz44l.dat` come back as files, because a dotted system path is
     /// shaped exactly like a document.
@@ -100,7 +106,8 @@ enum ArtifactScanner {
             let text = message.content
             guard !text.isEmpty else { continue }
 
-            for value in matches(Self.pathPattern, in: text) {
+            for value in matches(Self.pathPattern, in: text)
+            where Self.creatingTools.contains(message.toolName ?? "") {
                 let ext = value.split(separator: ".").last.map { $0.lowercased() } ?? ""
                 guard keptExtensions.contains(ext), !isIgnored(value),
                       !isSecretish(value)
