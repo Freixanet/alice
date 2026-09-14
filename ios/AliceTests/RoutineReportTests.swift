@@ -116,4 +116,32 @@ final class RoutineReportTests: XCTestCase {
             """
         )
     }
+
+    func testChollometroReportBecomesDealsWithButtonsAsDestinations() {
+        let report = """
+        **4 meses de Amazon Music Unlimited** — GRATIS
+        https://www.chollometro.com/ofertas/amazon-music
+
+        **Cámara Insta360 Ace Pro** — 189€ con cupón
+        https://www.chollometro.com/ofertas/insta360
+        """
+        XCTAssertEqual(
+            ChollometroReport.deals(in: report),
+            [
+                .init(
+                    title: "4 meses de Amazon Music Unlimited", detail: "GRATIS",
+                    url: URL(string: "https://www.chollometro.com/ofertas/amazon-music")!
+                ),
+                .init(
+                    title: "Cámara Insta360 Ace Pro", detail: "189€ con cupón",
+                    url: URL(string: "https://www.chollometro.com/ofertas/insta360")!
+                ),
+            ]
+        )
+    }
+
+    func testUnexpectedChollometroOutputFallsBackInsteadOfHidingText() {
+        XCTAssertNil(ChollometroReport.deals(in: "No he podido leer el feed local."))
+        XCTAssertNil(ChollometroReport.deals(in: "**Oferta**\nno es una URL"))
+    }
 }

@@ -48,7 +48,21 @@ struct MessageRow: View {
                             && routine == "Chollos del dia"
                             ? ChollometroReport.normalizedMarkdown(message.content)
                             : message.content
-                        RoutineReportCard(name: routine, report: attributed(content))
+                        if message.botName == "chollometro",
+                           let deals = ChollometroReport.deals(in: content) {
+                            RoutineReportCard(name: routine) {
+                                ChollometroDeals(
+                                    deals: deals,
+                                    tint: store.mark(for: "chollometro").color
+                                )
+                            }
+                        } else {
+                            RoutineReportCard(name: routine) {
+                                Text(attributed(content))
+                                    .textSelection(.enabled)
+                                    .tint(Palette.link(scheme))
+                            }
+                        }
                     } else if !message.content.isEmpty {
                         // Markdown, the way every other model surface shows a
                         // reply. `.full` keeps block structure — lists, quotes
@@ -216,10 +230,10 @@ struct MessageRow: View {
 ///
 /// On a card, named, so what a routine found on its own reads apart from the
 /// conversation with the bot.
-private struct RoutineReportCard: View {
+private struct RoutineReportCard<Content: View>: View {
     @Environment(\.colorScheme) private var scheme
     let name: String
-    let report: AttributedString
+    @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -227,11 +241,7 @@ private struct RoutineReportCard: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Routine: \(name)")
-            if !report.characters.isEmpty {
-                Text(report)
-                    .textSelection(.enabled)
-                    .tint(Palette.link(scheme))
-            }
+            content
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -241,6 +251,34 @@ private struct RoutineReportCard: View {
                 .stroke(Palette.border(scheme), lineWidth: 0.5)
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+private struct ChollometroDeals: View {
+    let deals: [ChollometroReport.Deal]
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(Array(deals.enumerated()), id: \.offset) { _, deal in
+                VStack(alignment: .leading, spacing: 8) {
+                    let detail = deal.detail.map { " — \($0)" } ?? ""
+                    Text("\(Text(deal.title).bold())\(Text(detail))")
+                    .textSelection(.enabled)
+
+                    Link(destination: deal.url) {
+                        Label("Ver chollo", systemImage: "arrow.up.right")
+                            .font(.footnote.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .contentShape(.capsule)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive().tint(tint.opacity(0.58)), in: .capsule)
+                    .accessibilityHint("Abre la oferta en el navegador")
+                }
+            }
+        }
     }
 }
 

@@ -62,6 +62,12 @@ extension RoutineReport {
 /// returns an unbalanced or missing Markdown delimiter. Keep the data intact
 /// while making the title line before each deal URL structurally consistent.
 enum ChollometroReport {
+    struct Deal: Equatable, Sendable {
+        let title: String
+        let detail: String?
+        let url: URL
+    }
+
     static func normalizedMarkdown(_ text: String) -> String {
         var lines = text.components(separatedBy: "\n")
         for index in lines.indices where index + 1 < lines.count {
@@ -85,6 +91,35 @@ enum ChollometroReport {
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// The routine's strict two-line format as data Alice can render with a
+    /// real button instead of exposing a long raw URL. Nil leaves unexpected
+    /// output untouched rather than hiding any part of it.
+    static func deals(in text: String) -> [Deal]? {
+        let lines = text.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard !lines.isEmpty, lines.count.isMultiple(of: 2) else { return nil }
+
+        var deals: [Deal] = []
+        for index in stride(from: 0, to: lines.count, by: 2) {
+            let raw = lines[index].replacingOccurrences(of: "**", with: "")
+            guard let url = URL(string: lines[index + 1]),
+                  url.scheme?.hasPrefix("http") == true
+            else { return nil }
+
+            if let separator = raw.range(of: " — ") {
+                let title = raw[..<separator.lowerBound].trimmingCharacters(in: .whitespaces)
+                let detail = raw[separator.upperBound...].trimmingCharacters(in: .whitespaces)
+                guard !title.isEmpty else { return nil }
+                deals.append(Deal(title: title, detail: detail.isEmpty ? nil : detail, url: url))
+            } else {
+                guard !raw.isEmpty else { return nil }
+                deals.append(Deal(title: raw, detail: nil, url: url))
+            }
+        }
+        return deals
     }
 }
 
