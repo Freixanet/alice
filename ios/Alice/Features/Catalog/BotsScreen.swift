@@ -1368,7 +1368,7 @@ struct BotsScreen: View {
     /// time.
     private func timestamp(for bot: BotRow) -> String {
         guard let conversation = store.conversations.first(where: { $0.botName == bot.name }),
-              let reply = conversation.messages.last(where: {
+              let reply = RoutineDelivery.present(conversation.messages, botName: bot.name).last(where: {
                   $0.role == .assistant && !$0.pending && MessageTime.isKnown($0.createdAt)
               })
         else { return "" }
@@ -1394,7 +1394,7 @@ struct BotsScreen: View {
         guard let conversation = store.conversations.first(
             where: { $0.botName == bot.name }
         ) else { return nil }
-        guard let reply = conversation.messages.last(where: {
+        guard let reply = RoutineDelivery.present(conversation.messages, botName: bot.name).last(where: {
             $0.role == .assistant && !$0.pending
                 && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }) else { return nil }

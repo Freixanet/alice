@@ -28,6 +28,43 @@ final class RoutineReportTests: XCTestCase {
         )
     }
 
+    private func message(_ id: String, _ role: Message.Role, _ content: String) -> Message {
+        Message(id: id, role: role, content: content, createdAt: Date(timeIntervalSince1970: 1_789_500_000), remoteID: id)
+    }
+
+    private let report = "[Cronjob \"Chollos del dia\" output — scheduled job, not the user. Review it.]\n\n**FILA -85%**"
+
+    func testAReportIsShownOnceAsTheBotsMessage() {
+        let shown = RoutineDelivery.present([
+            message("1", .assistant, "Hola"),
+            message("2", .user, report),
+            message("3", .assistant, "**FILA -85%**"),
+        ], botName: "chollometro")
+        XCTAssertEqual(shown.map(\.id), ["1", "2"])
+        XCTAssertEqual(shown[1].role, .assistant)
+        XCTAssertEqual(shown[1].content, "**FILA -85%**")
+        XCTAssertEqual(shown[1].botName, "chollometro")
+        XCTAssertEqual(shown[1].routineName, "Chollos del dia")
+    }
+
+    func testTheBotsCommentOnAReportIsLeftOutButTheNextExchangeIsNot() {
+        let shown = RoutineDelivery.present([
+            message("1", .user, report),
+            message("2", .assistant, "La rutina de hoy funcionó y su contenido cuadra."),
+            message("3", .user, "¿Y el hotel?"),
+            message("4", .assistant, "Es en Blanes."),
+        ], botName: "chollometro")
+        XCTAssertEqual(shown.map(\.id), ["1", "3", "4"])
+        XCTAssertEqual(shown.map(\.role), [.assistant, .user, .assistant])
+    }
+
+    func testAnApprovalTheBotWaitsOnStaysVisible() {
+        var asking = message("2", .assistant, "")
+        asking.approval = .init(runID: "r", title: "terminal", choices: [.once, .deny])
+        let shown = RoutineDelivery.present([message("1", .user, report), asking], botName: "radar-ia")
+        XCTAssertEqual(shown.map(\.id), ["1", "2"])
+    }
+
     func testOrdinaryMessagesAreNotReports() {
         XCTAssertNil(RoutineReport("hola"))
         XCTAssertNil(RoutineReport("¿Qué dice el [Cronjob \"Radar\" output — scheduled job, not the user.]?"))

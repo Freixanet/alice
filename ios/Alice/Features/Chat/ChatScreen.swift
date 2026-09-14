@@ -380,8 +380,11 @@ private struct TranscriptView: View {
     private static let page = 80
     @State private var shown = TranscriptView.page
 
-    private var visibleMessages: ArraySlice<Message> { conversation.messages.suffix(shown) }
-    private var hiddenCount: Int { max(0, conversation.messages.count - shown) }
+    private var presentedMessages: [Message] {
+        RoutineDelivery.present(conversation.messages, botName: conversation.botName)
+    }
+    private var visibleMessages: ArraySlice<Message> { presentedMessages.suffix(shown) }
+    private var hiddenCount: Int { max(0, presentedMessages.count - shown) }
 
     var body: some View {
         GeometryReader { area in

@@ -9,16 +9,7 @@ struct MessageRow: View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
             switch message.role {
             case .user:
-                if let report = RoutineReport(message.content) {
-                    if let when = MessageTime.caption(message.createdAt) {
-                        Text(when)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .accessibilityLabel("Sent \(when)")
-                    }
-                    RoutineReportCard(name: report.name, report: attributed(report.body))
-                } else if !message.attachments.isEmpty {
+                if !message.attachments.isEmpty {
                     SentAttachments(attachments: message.attachments)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
@@ -52,7 +43,9 @@ struct MessageRow: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    if !message.content.isEmpty {
+                    if let routine = message.routineName {
+                        RoutineReportCard(name: routine, report: attributed(message.content))
+                    } else if !message.content.isEmpty {
                         // Markdown, the way every other model surface shows a
                         // reply. `.full` keeps block structure — lists, quotes
                         // and code — instead of collapsing to one line.
@@ -215,12 +208,10 @@ struct MessageRow: View {
     }
 }
 
-/// A routine's report in a bot's chat.
+/// A routine's report in a bot's chat (`RoutineDelivery`).
 ///
-/// Stock Hermes delivers a routine's output as a turn addressed to the bot,
-/// and the bot's answer follows it (`RoutineReport`). Drawn as the person's own
-/// bubble it read as if they had written the whole report, so it is shown as
-/// what it is: the routine, by name, and what it found.
+/// On a card, named, so what a routine found on its own reads apart from the
+/// conversation with the bot.
 private struct RoutineReportCard: View {
     @Environment(\.colorScheme) private var scheme
     let name: String
@@ -294,13 +285,17 @@ private struct MessageActions: View {
                 speech.isSpeaking(message.id) ? "Stop reading" : "Read aloud"
             )
 
-            Button {
-                store.retry(message.id)
-            } label: {
-                ActionIcon("arrow.triangle.2.circlepath", slot: 19.33)
+            // A routine's report was not an answer to anything the person
+            // said, so there is nothing to ask again.
+            if message.routineName == nil {
+                Button {
+                    store.retry(message.id)
+                } label: {
+                    ActionIcon("arrow.triangle.2.circlepath", slot: 19.33)
+                }
+                .disabled(store.isSending)
+                .accessibilityLabel("Try again")
             }
-            .disabled(store.isSending)
-            .accessibilityLabel("Try again")
         }
         // Slots carry half a gap each, so the first glyph's ink would sit
         // half a gap in from the paragraph. Pull it back out, less the

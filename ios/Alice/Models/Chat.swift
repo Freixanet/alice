@@ -118,6 +118,9 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var incomplete: Bool = false
     var attachments: [Attachment] = []
     var botName: String? = nil
+    /// Set on a routine's report shown as the bot's message (`RoutineDelivery`).
+    /// Never stored with that role: the transcript keeps Hermes' own turn.
+    var routineName: String? = nil
     /// Durable Hermes run state. Optional fields preserve compatibility with
     /// conversations saved by older builds.
     var runID: String? = nil

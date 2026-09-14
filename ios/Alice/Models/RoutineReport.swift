@@ -31,3 +31,43 @@ extension RoutineReport {
         )
     }
 }
+
+/// How a bot's chat shows its routines: each report once, as the bot's message.
+///
+/// Stock Hermes hands the report to the bot as a turn addressed to it, and the
+/// bot answers that turn — copying the report word for word, or commenting on
+/// it in another voice. Drawn as they are, one routine came out as a card and
+/// then the same report again, or a note about it in a different format, and
+/// a failed run twice over. So the report is shown the way the bot would have
+/// sent it, and the bot's answer to it is left out until the person writes
+/// again. Only the presentation changes: the transcript keeps Hermes' turns.
+enum RoutineDelivery {
+    static func present<Messages: Sequence>(
+        _ messages: Messages, botName: String?
+    ) -> [Message] where Messages.Element == Message {
+        var shown: [Message] = []
+        var answeringRoutine = false
+        for message in messages {
+            switch message.role {
+            case .user:
+                if let report = RoutineReport(message.content) {
+                    var delivered = message
+                    delivered.role = .assistant
+                    delivered.content = report.body
+                    delivered.botName = botName
+                    delivered.routineName = report.name
+                    shown.append(delivered)
+                    answeringRoutine = true
+                } else {
+                    shown.append(message)
+                    answeringRoutine = false
+                }
+            case .assistant:
+                // A decision the bot is waiting on still needs the person.
+                if answeringRoutine, message.approval == nil { continue }
+                shown.append(message)
+            }
+        }
+        return shown
+    }
+}
