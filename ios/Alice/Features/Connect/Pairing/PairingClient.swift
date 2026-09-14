@@ -28,7 +28,7 @@ struct PairingClient {
         var errorDescription: String? {
             switch self {
             case .stale:
-                "That QR has expired or was already used. Open the Hermes dashboard and generate a fresh code (Pairing → Connect Alice)."
+                "That QR has expired or was already used. Open the Hermes dashboard and show a fresh code (Alice tab → Show pairing code)."
             case .forbidden:
                 "Your Hermes accepts pairing requests from its own network only. Join the same Tailscale and try again."
             case .badResponse:
@@ -73,6 +73,10 @@ struct PairingClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // The Alice plugin's claim route is authenticated by Hermes' own
+        // token seam, which reads a bearer header; the body keeps the token too
+        // for Hermes installs that serve the claim from their own code.
+        request.setValue("Bearer \(payload.token)", forHTTPHeaderField: "Authorization")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.httpBody = try JSONEncoder().encode(
             ClaimRequest(token: payload.token, deviceName: deviceName)
@@ -92,7 +96,9 @@ struct PairingClient {
             break
         case 410: throw Failure.stale
         case 403: throw Failure.forbidden
-        case 404: throw Failure.stale
+        // 401: Hermes' token seam recognised no pairing code — it expired with
+        // a restart of the dashboard, or never existed. Same meaning as 404.
+        case 404, 401: throw Failure.stale
         default: throw Failure.http(status: http.statusCode)
         }
 

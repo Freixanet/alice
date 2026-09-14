@@ -6,9 +6,11 @@ emparejamiento por QR lo sustituye por: **el Dashboard de Hermes muestra un QR
 
 Implementación actual:
 
-- **Lado Mac**: el propio Dashboard de Hermes (`hermes-agent`,
-  `hermes_cli/web_routers/alice_pairing.py` + la tarjeta "Connect Alice" en su
-  página Pairing). Ya no existe ningún helper externo ni comando de Terminal.
+- **Lado Mac**: el complemento «Alice para Hermes» (`hermes-plugin/` en este
+  repositorio), instalado en `~/.hermes/plugins/alice`. Añade la pestaña
+  **Alice** al Dashboard y sirve el emparejamiento bajo `/api/plugins/alice/`.
+  No toca el código de Hermes, así que `hermes update` nunca choca con él
+  (ver `hermes-plugin/README.md`).
 - **Lado iPhone**: app nativa (`ios/Alice/Features/Connect/Pairing/`), con deep
   link `alice://` y escáner propio.
 
@@ -23,7 +25,7 @@ No participan de esta decisión:
 
 - el perfil seleccionado en el Dashboard en ese momento,
 - el perfil activo persistido (`active_profile`),
-- ningún parámetro de la petición: `POST /api/alice/pairing/session` es
+- ningún parámetro de la petición: `POST /api/plugins/alice/pairing/session` es
   deliberadamente _profile-less_.
 
 Ese perfil principal es con quien habla el chat Home de la app. Los demás
@@ -66,14 +68,23 @@ se entregan en la respuesta del canje.
 ```http
 POST {c}
 Content-Type: application/json
+Authorization: Bearer <t>
 
 {"token":"<t>","device_name":"iPhone"}
 ```
+
+El iPhone aún no tiene sesión del Dashboard, así que el canje se autentica
+por la vía oficial de Hermes para credenciales no interactivas: el complemento
+registra un proveedor de tokens que reconoce los códigos pendientes y marca
+solo la ruta del canje como autenticable por token. La lista de rutas públicas
+de Hermes no cambia. El cuerpo repite `token` por compatibilidad; si lo trae,
+debe coincidir con el de la cabecera.
 
 | respuesta | significado                                                                                                                    |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `200`     | `{"profile":"default","profile_display_name":"Alice","gateway":{"url","key"},"dashboard":{"url","username","password"}\|null}` |
 | `410`     | token caducado o ya usado                                                                                                      |
+| `401`     | Hermes no reconoce el código (inexistente, caducado o sin cabecera); Alice lo trata como `404`                                 |
 | `404`     | token inexistente                                                                                                              |
 | `403`     | origen de red no permitido                                                                                                     |
 
@@ -159,7 +170,7 @@ seguir siendo el mismo.
 
 ## 5. Experiencia
 
-En el Mac: Dashboard → **Pairing → Connect Alice** → QR. En el iPhone:
+En el Mac: Dashboard → pestaña **Alice** → **Show pairing code** → QR. En el iPhone:
 instalar Alice, escanear con la app Cámara (o `Connect → Scan pairing QR`
 dentro de la app), confirmar el nombre del dispositivo y pulsar Connect.
 "Conectando con tu Hermes…" → "Conectado" sobre el perfil principal; los bots

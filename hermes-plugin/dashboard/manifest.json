@@ -1,0 +1,13 @@
+{
+  "name": "alice",
+  "label": "Alice",
+  "description": "Pair the Alice iPhone app with this Hermes by QR code.",
+  "icon": "MessageSquare",
+  "version": "1.0.0",
+  "tab": {
+    "path": "/alice",
+    "position": "end"
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

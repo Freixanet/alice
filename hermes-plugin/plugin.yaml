@@ -1,0 +1,5 @@
+name: alice
+version: 1.0.0
+description: "Connects the Alice iPhone app to this Hermes. Adds an Alice tab to the dashboard that shows a one-time pairing QR code, and lets Alice read and edit each profile's curated memory. Dashboard-only: no tools, hooks or changes to Hermes' own code, so Hermes updates never collide with it."
+author: Freixanet
+kind: standalone

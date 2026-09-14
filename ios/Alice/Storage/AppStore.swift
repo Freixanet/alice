@@ -3105,6 +3105,12 @@ final class AppStore {
     /// providers remain provider configuration; Alice never pretends they all
     /// expose the same editable-entry API.
     func memorySnapshot(profile: String = "default") async throws -> MemorySnapshot {
+        // The Alice plugin serves memory on any Hermes, so updates never touch
+        // it. A Hermes without the plugin answers 404 and may still carry the
+        // older in-core RPC this used before.
+        do {
+            return try await dashboard.aliceMemory(profile: profile)
+        } catch DashboardClient.Failure.http(404, _) {}
         guard let rpc = await dashboardRPC() else {
             throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
         }
@@ -3118,6 +3124,12 @@ final class AppStore {
         profile: String = "default", target: String, action: String,
         content: String = "", oldText: String = ""
     ) async throws -> MemorySnapshot {
+        do {
+            return try await dashboard.mutateAliceMemory(
+                profile: profile, target: target, action: action,
+                content: content, oldText: oldText
+            )
+        } catch DashboardClient.Failure.http(404, _) {}
         guard let rpc = await dashboardRPC() else {
             throw HermesRPCClient.Failure(reason: "The Hermes dashboard is not connected.")
         }

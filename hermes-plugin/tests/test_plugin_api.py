@@ -1,0 +1,163 @@
+"""Alice plugin backend, run with the Hermes virtualenv:
+
+    ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests
+
+Hermes' helpers are replaced where a test would otherwise touch the real installation.
+"""
+import base64
+import importlib.util
+import json
+import sys
+import unittest
+from pathlib import Path
+from unittest import mock
+
+sys.dont_write_bytecode = True
+PLUGIN_API = Path(__file__).resolve().parents[1] / "dashboard" / "plugin_api.py"
+
+
+def load_plugin():
+    spec = importlib.util.spec_from_file_location("hermes_dashboard_plugin_alice_test", PLUGIN_API)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class PluginAPITests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        cls.api = load_plugin()
+        app = FastAPI()
+        app.include_router(cls.api.router, prefix=cls.api.PLUGIN_PREFIX)
+        app.state.bound_port = 9119
+        app.state.bound_host = "127.0.0.1"
+        cls.client = TestClient(app)
+
+    def setUp(self):
+        self.api._reset_claim_state_for_tests()
+        self.config = {"profile": "default", "gateway": {"url": "http://mac.tail.ts.net:8643", "key": "k"},
+                       "dashboard": None}
+        patches = [
+            mock.patch.object(self.api, "_build_pairing_config",
+                              mock.AsyncMock(return_value=(self.config, "default", "mac.tail.ts.net", "Alice"))),
+            mock.patch.object(self.api, "_source_ip", return_value="100.100.1.2"),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def mint(self):
+        response = self.client.post("/api/plugins/alice/pairing/session")
+        self.assertEqual(response.status_code, 200, response.text)
+        link = response.json()["payload"]
+        encoded = link.split("p=", 1)[1]
+        offer = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        return link, offer
+
+    def claim(self, token, body=None, **headers):
+        return self.client.post("/api/plugins/alice/pairing/claim",
+                                headers={"Authorization": f"Bearer {token}", **headers},
+                                json=body if body is not None else {"token": token, "device_name": "iPhone"})
+
+    def test_the_offer_is_alices_v1_link_pointing_at_the_plugins_claim_route(self):
+        link, offer = self.mint()
+        self.assertTrue(link.startswith("alice://pair?v=1&p="))
+        self.assertEqual(list(offer), ["c", "t", "e", "pr"])
+        self.assertEqual(offer["c"], "http://mac.tail.ts.net:9119/api/plugins/alice/pairing/claim")
+        self.assertEqual(offer["pr"], "default")
+
+    def test_a_code_is_claimed_exactly_once(self):
+        _, offer = self.mint()
+        first = self.claim(offer["t"])
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json(), self.config)
+        self.assertEqual(first.headers["cache-control"], "no-store, max-age=0")
+        again = self.claim(offer["t"])
+        self.assertEqual(again.status_code, 410)
+
+    def test_the_token_seam_recognises_live_and_used_codes_only(self):
+        provider = self.api._provider_class()()
+        _, offer = self.mint()
+        self.assertIsNotNone(provider.verify_token(token=offer["t"]))
+        self.claim(offer["t"])
+        self.assertIsNotNone(provider.verify_token(token=offer["t"]), "a used code still answers 410, not 401")
+        self.assertIsNone(provider.verify_token(token="never-minted"))
+        self.assertIsNone(provider.verify_token(token=""))
+
+    def test_an_expired_code_is_gone_for_the_seam_and_the_route(self):
+        provider = self.api._provider_class()()
+        _, offer = self.mint()
+        with self.api._lock:
+            self.api._offers[offer["t"]]["expires_at"] = 0
+        self.assertIsNone(provider.verify_token(token=offer["t"]))
+        self.assertEqual(self.claim(offer["t"]).status_code, 404)
+
+    def test_a_body_token_must_name_the_bearers_code(self):
+        _, offer = self.mint()
+        response = self.claim(offer["t"], body={"token": "someone-else", "device_name": "iPhone"})
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(self.claim(offer["t"], body={"device_name": "iPhone"}).status_code, 200)
+
+    def test_claims_come_only_from_loopback_or_the_tailnet_and_never_through_a_proxy(self):
+        _, offer = self.mint()
+        with mock.patch.object(self.api, "_source_ip", return_value="192.168.1.20"):
+            self.assertEqual(self.claim(offer["t"]).status_code, 403)
+        self.assertEqual(self.claim(offer["t"], **{"X-Forwarded-For": "100.100.1.2"}).status_code, 403)
+        self.assertTrue(self.api._origin_allowed("127.0.0.1"))
+        self.assertTrue(self.api._origin_allowed("100.67.213.42"))
+        self.assertFalse(self.api._origin_allowed("8.8.8.8"))
+
+    def test_a_new_code_replaces_the_previous_one(self):
+        _, first = self.mint()
+        _, second = self.mint()
+        self.assertEqual(self.claim(first["t"]).status_code, 404)
+        self.assertEqual(self.claim(second["t"]).status_code, 200)
+
+    def test_memory_is_read_and_edited_for_a_known_profile_only(self):
+        class Store:
+            def __init__(self):
+                self.entries = {"memory": ["uno"], "user": []}
+
+            def _entries_for(self, target):
+                return self.entries[target]
+
+            def target_enabled(self, target):
+                return True
+
+            def _char_limit(self, target):
+                return 2200
+
+            def add(self, target, content):
+                self.entries[target].append(content)
+                return {"success": True}
+
+        store = Store()
+        profile = type("P", (), {"name": "radar-ia"})()
+        fake_memory_tool = type(sys)("tools.memory_tool")
+        fake_memory_tool.load_on_disk_store = lambda: store
+        fake_store_module = type(sys)("tools.memory_tool_store")
+        fake_store_module.ENTRY_DELIMITER = "\n§\n"
+        with mock.patch.dict(sys.modules, {"tools.memory_tool": fake_memory_tool,
+                                           "tools.memory_tool_store": fake_store_module}), \
+                mock.patch.object(self.api, "_list_profiles", return_value=[profile]), \
+                mock.patch.object(self.api, "_profile_scope", mock.MagicMock()), \
+                mock.patch.object(self.api, "_load_config", return_value={}):
+            read = self.client.get("/api/plugins/alice/memory", params={"profile": "radar-ia"})
+            self.assertEqual(read.status_code, 200, read.text)
+            self.assertEqual(read.json()["targets"][1]["entries"], ["uno"])
+            added = self.client.post("/api/plugins/alice/memory",
+                                     json={"profile": "radar-ia", "target": "memory", "action": "add", "content": "dos"})
+            self.assertEqual(added.status_code, 200, added.text)
+            self.assertEqual(added.json()["targets"][1]["entries"], ["uno", "dos"])
+            self.assertEqual(self.client.get("/api/plugins/alice/memory", params={"profile": "nope"}).status_code, 404)
+            bad = self.client.post("/api/plugins/alice/memory",
+                                   json={"profile": "radar-ia", "target": "secrets", "action": "add"})
+            self.assertEqual(bad.status_code, 400)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

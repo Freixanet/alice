@@ -1,5 +1,7 @@
 node_modules
 dist
+# The Alice Hermes plugin ships its built tab; installs copy the folder as is.
+!hermes-plugin/dashboard/dist/
 .output
 .vinxi
 .tanstack

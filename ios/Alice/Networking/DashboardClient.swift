@@ -2265,6 +2265,23 @@ extension DashboardClient {
         _ = try await send("PUT", "api/config?profile=\(Self.queryValue(profile))", body)
     }
 
+    /// A profile's curated memory as the Alice plugin for Hermes serves it
+    /// (`hermes-plugin/`). Hermes itself has no route that edits those entries.
+    func aliceMemory(profile: String) async throws -> MemorySnapshot {
+        let object = try await get("api/plugins/alice/memory?profile=\(Self.queryValue(profile))")
+        return try Self.memorySnapshot(from: object, profile: profile)
+    }
+
+    func mutateAliceMemory(
+        profile: String, target: String, action: String, content: String, oldText: String
+    ) async throws -> MemorySnapshot {
+        let object = try await send("POST", "api/plugins/alice/memory", [
+            "profile": profile, "target": target, "action": action,
+            "content": content, "old_text": oldText,
+        ])
+        return try Self.memorySnapshot(from: object, profile: profile)
+    }
+
     func memory() async throws -> [MemoryProvider] {
         try await memoryProviderStatus().providers
     }
