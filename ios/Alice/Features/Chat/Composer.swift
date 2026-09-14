@@ -60,7 +60,10 @@ struct Composer: View {
             }
         }
         .padding(.horizontal, isBotChat ? 20 : 18)
-        .padding(.bottom, keyboardShown ? 10 : 6)
+        // Bot chats sit flush with the bottom safe area. Keep the larger
+        // keyboard gap requested for typing, and leave Alice's resting
+        // position unchanged.
+        .padding(.bottom, keyboardShown ? 10 : (isBotChat ? 0 : 6))
         // Flicking the composer down puts the keyboard away, which is quicker
         // than reaching for the transcript to tap it.
         .gesture(
