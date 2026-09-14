@@ -48,6 +48,21 @@ extension HermesClient {
         var content: Content
     }
 
+    /// How long run recovery keeps asking a Hermes that does not answer.
+    ///
+    /// The window restarts whenever a status probe is answered: silence ends
+    /// recovery, a run that is merely long does not.
+    struct RunRecoveryBudget: Sendable {
+        static let window: TimeInterval = 180
+        private(set) var deadline: Date
+
+        init(now: Date) { deadline = now.addingTimeInterval(Self.window) }
+
+        mutating func heard(at now: Date) { deadline = now.addingTimeInterval(Self.window) }
+
+        func isExhausted(at now: Date) -> Bool { now >= deadline }
+    }
+
     private enum RunStartOutcome {
         case started(HermesRunProtocol.Start)
         case unsupported
@@ -407,9 +422,9 @@ extension HermesClient {
         // Keep the same recovery budget as the web client. A Hermes update can
         // intentionally restart the gateway, so five failed one-second probes
         // would turn a successful update into a false client-side failure.
-        let deadline = Date().addingTimeInterval(180)
+        var budget = RunRecoveryBudget(now: Date())
 
-        while !Task.isCancelled, Date() < deadline {
+        while !Task.isCancelled, !budget.isExhausted(at: Date()) {
             do {
                 guard let snapshot = try await runSnapshot(
                     runID: runID,
@@ -421,6 +436,11 @@ extension HermesClient {
                     continue
                 }
                 lastError = nil
+                // Hermes answered, so the run is alive. Counted from the start,
+                // the budget reported a tool that ran three minutes — closing
+                // Terminal tabs behind a macOS confirmation — as Hermes not
+                // answering, while the reply was still on its way.
+                budget.heard(at: Date())
 
                 if snapshot != prior {
                     for event in HermesRunProtocol.events(from: snapshot) {
