@@ -126,6 +126,15 @@ class NotifierTests(unittest.TestCase):
         self.poll()
         self.assertEqual(self.sent, [('Radar IA', 'Su rutina ha fallado', 'alice://open?bot=radar-ia')])
 
+    def test_an_unreadable_profile_does_not_silence_the_others(self):
+        broken = self.hermes.root / 'profiles' / 'broken'
+        broken.mkdir(parents=True)
+        (broken / 'state.db').write_bytes(b'not a database')
+        self.poll()
+        self.hermes.row('radar-ia', 'tui', 'hola')
+        self.poll()
+        self.assertEqual(self.sent, [('Radar IA', 'Ha respondido', 'alice://open?bot=radar-ia')])
+
     def test_the_database_is_only_read(self):
         self.poll()
         db = self.hermes.root / 'profiles' / 'radar-ia' / 'state.db'

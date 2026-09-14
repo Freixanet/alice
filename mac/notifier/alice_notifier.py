@@ -72,20 +72,39 @@ def classify(content, display_kind, finish_reason, source):
     return None
 
 
-def assistant_rows(db, after_id):
-    """Assistant rows newer than after_id, read-only."""
+def read(db, sql, args=()):
+    """Rows from a Hermes database, opened read-only and closed straight after.
+
+    `with sqlite3.connect(...)` only ends a transaction and leaves the
+    connection open, which a watcher polling seven databases every few seconds
+    cannot afford."""
     uri = 'file:' + urllib.parse.quote(str(db)) + '?mode=ro'
-    with sqlite3.connect(uri, uri=True, timeout=5) as conn:
-        return conn.execute(
-            'SELECT m.id, m.content, m.display_kind, m.finish_reason, s.source, m.timestamp, s.id '
-            'FROM messages m JOIN sessions s ON s.id = m.session_id '
-            'WHERE m.id > ? AND m.role = ? ORDER BY m.id', (after_id, 'assistant')).fetchall()
+    conn = sqlite3.connect(uri, uri=True, timeout=5)
+    try:
+        return conn.execute(sql, args).fetchall()
+    finally:
+        conn.close()
+
+
+def assistant_rows(db, after_id):
+    """Assistant rows newer than after_id, or None when the database cannot be read."""
+    try:
+        return read(db,
+                    'SELECT m.id, m.content, m.display_kind, m.finish_reason, s.source, m.timestamp, s.id '
+                    'FROM messages m JOIN sessions s ON s.id = m.session_id '
+                    'WHERE m.id > ? AND m.role = ? ORDER BY m.id', (after_id, 'assistant'))
+    except sqlite3.Error as error:
+        # One unreadable database must not silence every other chat.
+        log.warning('Could not read %s: %s', db.parent.name, error)
+        return None
 
 
 def last_message_id(db):
-    uri = 'file:' + urllib.parse.quote(str(db)) + '?mode=ro'
-    with sqlite3.connect(uri, uri=True, timeout=5) as conn:
-        return conn.execute('SELECT COALESCE(MAX(id), 0) FROM messages').fetchone()[0]
+    try:
+        return read(db, 'SELECT COALESCE(MAX(id), 0) FROM messages')[0][0]
+    except sqlite3.Error as error:
+        log.warning('Could not read %s: %s', db.parent.name, error)
+        return None
 
 
 def jobs(directory):
@@ -123,9 +142,11 @@ def poll_once(state, home, send, now=None):
         if db.is_file():
             if name not in marks:
                 # First sight of this profile: start from now, announce nothing old.
-                marks[name] = last_message_id(db)
+                last = last_message_id(db)
+                if last is not None:
+                    marks[name] = last
             else:
-                rows = assistant_rows(db, marks[name])
+                rows = assistant_rows(db, marks[name]) or []
                 found = []
                 for row_id, content, display_kind, finish_reason, source, stamp, session in rows:
                     kind = classify(content, display_kind, finish_reason, source)
@@ -219,7 +240,8 @@ def main():
             poll_once(state, HERMES, send)
             save_state(STATE, state)
         except Exception as error:
-            log.warning('Pass failed: %s', type(error).__name__)
+            # Database, file and JSON errors name the problem, never chat content.
+            log.warning('Pass failed: %s: %s', type(error).__name__, error)
         time.sleep(POLL_SECONDS)
 
 
