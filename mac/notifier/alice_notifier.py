@@ -78,7 +78,20 @@ def read(db, sql, args=()):
     `with sqlite3.connect(...)` only ends a transaction and leaves the
     connection open, which a watcher polling seven databases every few seconds
     cannot afford."""
-    uri = 'file:' + urllib.parse.quote(str(db)) + '?mode=ro'
+    try:
+        return _query(db, sql, args, immutable=False)
+    except sqlite3.OperationalError:
+        # A WAL database closed cleanly has no -wal or -shm file, and a read-only
+        # connection cannot create the -shm it needs ("unable to open database
+        # file"). With no -wal there is nothing unmerged, so the file as it
+        # stands is exactly the database.
+        if Path(str(db) + '-wal').exists():
+            raise
+        return _query(db, sql, args, immutable=True)
+
+
+def _query(db, sql, args, immutable):
+    uri = 'file:' + urllib.parse.quote(str(db)) + '?mode=ro' + ('&immutable=1' if immutable else '')
     conn = sqlite3.connect(uri, uri=True, timeout=5)
     try:
         return conn.execute(sql, args).fetchall()

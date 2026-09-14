@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -23,7 +24,7 @@ class Hermes:
     def profile(self, name, title=None):
         directory = self.root if name == 'default' else self.root / 'profiles' / name
         directory.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(directory / 'state.db') as conn:
+        with closing(sqlite3.connect(directory / 'state.db')) as conn, conn:
             conn.execute('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT)')
             conn.execute('CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, '
                          'content TEXT, display_kind TEXT, finish_reason TEXT, timestamp REAL)')
@@ -35,7 +36,7 @@ class Hermes:
 
     def row(self, name, source, content, display_kind=None, finish_reason='stop', age=0, role='assistant'):
         directory = self.root if name == 'default' else self.root / 'profiles' / name
-        with sqlite3.connect(directory / 'state.db') as conn:
+        with closing(sqlite3.connect(directory / 'state.db')) as conn, conn:
             conn.execute('INSERT INTO messages (session_id, role, content, display_kind, finish_reason, timestamp) '
                          'VALUES (?, ?, ?, ?, ?, ?)', (source, role, content, display_kind, finish_reason, time.time() - age))
 
@@ -132,6 +133,23 @@ class NotifierTests(unittest.TestCase):
         (broken / 'state.db').write_bytes(b'not a database')
         self.poll()
         self.hermes.row('radar-ia', 'tui', 'hola')
+        self.poll()
+        self.assertEqual(self.sent, [('Radar IA', 'Ha respondido', 'alice://open?bot=radar-ia')])
+
+    def test_a_cleanly_closed_wal_database_is_still_read(self):
+        # Hermes keeps state.db in WAL mode; once every writer closes, the -wal
+        # and -shm files are gone and a read-only open used to fail every pass.
+        db = self.hermes.root / 'profiles' / 'radar-ia' / 'state.db'
+        with closing(sqlite3.connect(db)) as conn, conn:
+            conn.execute('PRAGMA journal_mode=WAL')
+        self.poll()
+        self.hermes.row('radar-ia', 'tui', 'hola')
+        # macOS's own SQLite keeps an emptied -wal on close; the one Hermes runs on
+        # does not. Leave the files as Hermes does: checkpointed, closed, side files gone.
+        with closing(sqlite3.connect(db)) as conn:
+            conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        for suffix in ('-wal', '-shm'):
+            Path(str(db) + suffix).unlink(missing_ok=True)
         self.poll()
         self.assertEqual(self.sent, [('Radar IA', 'Ha respondido', 'alice://open?bot=radar-ia')])
 
