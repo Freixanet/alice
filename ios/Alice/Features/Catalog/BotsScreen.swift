@@ -627,6 +627,7 @@ struct BotsScreen: View {
                         .layoutPriority(1)
                     if store.isBotUnread(bot.name) {
                         unreadDot(size: Self.unreadDotSize)
+                            .offset(y: -1)
                     }
                 }
                 .frame(maxWidth: 100)
@@ -676,12 +677,12 @@ struct BotsScreen: View {
 
             if showsUnread && store.isBotUnread(bot.name) {
                 unreadDot(size: Self.unreadDotSize)
-                    // Put the avatar's edge through the centre of the badge:
-                    // half sits on the face and half outside, with the badge's
-                    // outline cutting the small "bite" around it.
+                    // The visible edge of a round mark crosses this badge near
+                    // its centre. A rectangular bottom-trailing alignment sits
+                    // beyond that curved edge, so pull it back into the face.
                     .offset(
-                        x: Self.unreadDotSize / 2,
-                        y: Self.unreadDotSize / 2
+                        x: -Self.unreadDotSize * 0.15,
+                        y: -Self.unreadDotSize * 0.15
                     )
             }
         }
