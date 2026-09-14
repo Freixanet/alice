@@ -126,4 +126,43 @@ final class BotNavigationTests: XCTestCase {
         )
         XCTAssertTrue(app.buttons["chat.leading"].waitForExistence(timeout: 5))
     }
+
+    /// Backing out of a bot is a two-step journey: bot chat → Bots → Home.
+    /// The second step must change the active conversation before uncovering
+    /// Chat; otherwise the Bots page disappears onto the same bot again.
+    func testBackFromABotThroughBotsReturnsHome() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-seedLongBotChat"]
+        app.launch()
+
+        let leading = app.buttons["chat.leading"]
+        XCTAssertTrue(leading.waitForExistence(timeout: 20))
+        XCTAssertEqual(leading.label, "Bots")
+        leading.tap()
+
+        let back = app.buttons["bots.back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        back.tap()
+
+        XCTAssertTrue(leading.waitForExistence(timeout: 10))
+        XCTAssertEqual(leading.label, "Chats", "Bots Back must uncover Alice, not the bot")
+        XCTAssertTrue(back.waitForNonExistence(timeout: 5))
+    }
+
+    func testSwipeBackFromBotsAfterABotReturnsHome() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-seedLongBotChat"]
+        app.launch()
+
+        let leading = app.buttons["chat.leading"]
+        XCTAssertTrue(leading.waitForExistence(timeout: 20))
+        leading.tap()
+        XCTAssertTrue(app.buttons["bots.back"].waitForExistence(timeout: 10))
+
+        app.swipeRight(velocity: .fast)
+
+        XCTAssertTrue(leading.waitForExistence(timeout: 10))
+        XCTAssertEqual(leading.label, "Chats", "the Bots swipe must uncover Alice")
+        XCTAssertTrue(app.buttons["bots.back"].waitForNonExistence(timeout: 5))
+    }
 }

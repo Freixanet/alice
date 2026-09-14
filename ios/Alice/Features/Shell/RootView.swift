@@ -16,6 +16,7 @@ struct RootView: View {
     /// Where the bots page is while it slides away; see `closeBots`.
     @State private var botsExitOffset: CGFloat = 0
     @State private var closingBots = false
+    @State private var botsCloseTask: Task<Void, Never>?
     @State private var screenWidth: CGFloat = 0
 
     private let drawerWidth: CGFloat = 300
@@ -284,7 +285,19 @@ struct RootView: View {
         let width = max(screenWidth, 1)
         withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
             botsExitOffset = exitLeading ? -width : width
-        } completion: {
+        }
+        // SwiftUI's animation completion has occasionally not been delivered
+        // on a physical device, leaving the fully translated Bots layer alive
+        // above Home. Retire it independently of the renderer after the same
+        // duration. The task is cancelled if navigation opens Bots again.
+        botsCloseTask?.cancel()
+        botsCloseTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(320))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
             var quiet = Transaction()
             quiet.disablesAnimations = true
             withTransaction(quiet) {
@@ -292,6 +305,7 @@ struct RootView: View {
                 botsExitOffset = 0
             }
             closingBots = false
+            botsCloseTask = nil
         }
     }
 
@@ -299,6 +313,9 @@ struct RootView: View {
     /// Forward into the bots from Alice's own conversation: in off the right,
     /// the way anything you are moving towards should arrive.
     private func openBots() {
+        botsCloseTask?.cancel()
+        botsCloseTask = nil
+        closingBots = false
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         botsExitOffset = 0
         store.botsFromLeading = false
@@ -306,6 +323,9 @@ struct RootView: View {
     }
 
     private func goBackToBots() {
+        botsCloseTask?.cancel()
+        botsCloseTask = nil
+        closingBots = false
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         botsExitOffset = 0
         store.botsFromLeading = true

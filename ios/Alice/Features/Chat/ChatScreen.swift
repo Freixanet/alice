@@ -11,9 +11,12 @@ struct ChatScreen: View {
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
     @State private var homeComposerHeight: CGFloat = 120
-    /// Extra room under the empty home. Kept constant across keyboard changes
-    /// so the title does not jump when the composer becomes focused.
+    /// Extra room under the empty home while the keyboard is closed. The block
+    /// centres in what is left, so it sits half of this higher.
     private static let restingLift: CGFloat = 56
+    /// Whether an on-screen keyboard is taking room. Not the composer's focus:
+    /// a hardware keyboard focuses it without taking any.
+    @State private var keyboardShown = false
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -131,16 +134,30 @@ struct ChatScreen: View {
                     Composer(focused: $composerFocused, placeholder: placeholder)
                 }
         } else {
-            // Reserve the unfocused composer height in the home, then let the
-            // real composer follow the keyboard as a separate sibling. The
-            // constant padding keeps the landing content visually stationary
-            // while the composer moves, without placing the title underneath.
+            // Reserve the unfocused composer height in the static layer, then
+            // let the real composer follow the keyboard as a separate sibling.
+            // Removing the small resting lift while the keyboard is present
+            // offsets part of the safe-area contraction, so Home rises only as
+            // much as it did before focus instead of being pushed too high.
             ZStack(alignment: .bottom) {
                 EmptyChatView()
-                    .padding(.bottom, homeComposerHeight + Self.restingLift)
+                    .padding(.bottom, homeComposerHeight + (keyboardShown ? 0 : Self.restingLift))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(.rect)
                     .simultaneousGesture(dismissKeyboard)
+                    .animation(.smooth(duration: 0.3), value: keyboardShown)
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: UIResponder.keyboardWillShowNotification
+                    )) { note in
+                        let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
+                            .cgRectValue ?? .zero
+                        keyboardShown = frame.height > 120
+                    }
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: UIResponder.keyboardWillHideNotification
+                    )) { _ in
+                        keyboardShown = false
+                    }
 
                 Composer(focused: $composerFocused, placeholder: placeholder)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in

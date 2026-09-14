@@ -60,14 +60,16 @@ targets:
         NSFaceIDUsageDescription: >-
           Alice uses Face ID to unlock the connection key for your Hermes agent.
         # Local/private IPs and names use the explicit local-network exception.
-        # Tailnet DNS names end in ts.net and need their own narrow HTTP
-        # exception; public Hermes addresses are accepted only over HTTPS by
-        # AppStore.normalize.
+        # Tailnet DNS names end in ts.net, while direct Tailscale IPv4 addresses
+        # live in 100.64.0.0/10. Both need narrow HTTP exceptions; public Hermes
+        # addresses are accepted only over HTTPS by AppStore.normalize.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSExceptionDomains:
             ts.net:
               NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+            "100.64.0.0/10":
               NSExceptionAllowsInsecureHTTPLoads: true
         NSLocalNetworkUsageDescription: >-
           Alice connects to the Hermes agent running on your network.
