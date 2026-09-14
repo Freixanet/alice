@@ -76,6 +76,26 @@ final class BotChannelTests: XCTestCase {
         XCTAssertEqual(migrated.conversations.first?.messages.count, 1)
     }
 
+    func testASectionDraggedOntoAnotherTakesItsPlace() {
+        var channel = BotChannel(name: "Work")
+        for name in ["Daily", "Weekly", "Ideas"] { channel.addSection(name) }
+        channel.moveSection("Ideas", to: "Daily")
+        XCTAssertEqual(channel.sections, ["Ideas", "Daily", "Weekly"])
+        channel.moveSection("Ideas", to: "Weekly")
+        XCTAssertEqual(channel.sections, ["Daily", "Weekly", "Ideas"])
+        channel.moveSection("Missing", to: "Daily")
+        channel.moveSection("Daily", to: "Daily")
+        XCTAssertEqual(channel.sections, ["Daily", "Weekly", "Ideas"])
+    }
+
+    func testAChannelDraggedOntoAnotherTakesItsPlace() {
+        let channels = ["a", "b", "c"].map { BotChannel(id: $0, name: $0.uppercased()) }
+        XCTAssertEqual(BotChannel.moving(channels, "c", to: "a").map(\.id), ["c", "a", "b"])
+        XCTAssertEqual(BotChannel.moving(channels, "a", to: "c").map(\.id), ["b", "c", "a"])
+        XCTAssertEqual(BotChannel.moving(channels, "x", to: "a").map(\.id), ["a", "b", "c"])
+        XCTAssertEqual(BotChannel.moving(channels, "b", to: "b").map(\.id), ["a", "b", "c"])
+    }
+
     func testSavedChannelsFromAnOlderBuildStillDecode() throws {
         let data = Data(#"[{"id":"x","name":"Work","bots":["537"]}]"#.utf8)
         let decoded = try JSONDecoder().decode([BotChannel].self, from: data)

@@ -1361,6 +1361,23 @@ final class AppStore {
         botCustomSections = list.filter { $0 != Self.unassignedSectionKey }
     }
 
+    /// Moves a Home section to where `target` is, the way a drag lands: before
+    /// it when moving up, after it when moving down. Unassigned moves too, as it
+    /// does with Move Up and Move Down.
+    func moveSection(_ source: String, to target: String) {
+        func key(_ name: String) -> String {
+            (name == "Unassigned" || name == Self.unassignedSectionKey) ? Self.unassignedSectionKey : name
+        }
+        var list = sectionOrder
+        guard let from = list.firstIndex(of: key(source)),
+              let to = list.firstIndex(of: key(target)), from != to
+        else { return }
+        let item = list.remove(at: from)
+        list.insert(item, at: to)
+        botSectionOrder = list
+        botCustomSections = list.filter { $0 != Self.unassignedSectionKey }
+    }
+
     func renameSection(from oldName: String, to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != oldName else { return }
@@ -2905,6 +2922,15 @@ final class AppStore {
 
     func toggleChannelSectionCollapsed(_ id: String, section: String) {
         changeChannel(id) { $0.toggleSection(section) }
+    }
+
+    func moveChannelSection(_ id: String, section: String, to target: String) {
+        changeChannel(id) { $0.moveSection(section, to: target) }
+    }
+
+    func moveChannel(_ id: String, to target: String) {
+        let moved = BotChannel.moving(botChannels, id, to: target)
+        if moved != botChannels { botChannels = moved }
     }
 
     /// The channel goes, and its teams' chats with it. Its bots are untouched:

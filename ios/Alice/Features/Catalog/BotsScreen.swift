@@ -76,6 +76,12 @@ struct BotsScreen: View {
     /// DropDelegate advertise a real move operation instead of SwiftUI's default
     /// copy-style drop (the misleading “+” badge).
     @State private var draggedBotName: String?
+    /// A section being dragged to a new place. Its own state, so a header can
+    /// tell a section arriving from an agent arriving.
+    @State private var draggedSection: String?
+    /// A channel being dragged to a new place, kept apart from sections and
+    /// agents for the same reason.
+    @State private var draggedChannel: String?
 
     var body: some View {
         Group {
@@ -1024,8 +1030,18 @@ struct BotsScreen: View {
                 store.toggleChannelCollapsed(channel.id)
             }
         }
-        // Dropped on the channel itself: out of every section, still inside.
-        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(draggedName: $draggedBotName) { dragged in
+        .onDrag {
+            draggedChannel = channel.id
+            draggedSection = nil
+            draggedBotName = nil
+            return NSItemProvider(object: channel.name as NSString)
+        }
+        // Dropped on the channel itself: an agent leaves every section and stays
+        // inside; another channel takes this one's place.
+        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
+            draggedName: $draggedBotName, draggedSection: $draggedChannel,
+            reorder: { store.moveChannel($0, to: channel.id) }
+        ) { dragged in
             store.setChannelSection(channel.id, bot: dragged, section: nil)
         })
         .contextMenu {
@@ -1109,7 +1125,15 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(draggedName: $draggedBotName) { dragged in
+        .onDrag {
+            draggedSection = section
+            draggedBotName = nil
+            return NSItemProvider(object: section as NSString)
+        }
+        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
+            draggedName: $draggedBotName, draggedSection: $draggedSection,
+            reorder: { store.moveChannelSection(channel.id, section: $0, to: section) }
+        ) { dragged in
             store.setChannelSection(channel.id, bot: dragged, section: section)
         })
         .contextMenu {
@@ -1559,7 +1583,15 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(draggedName: $draggedBotName) { dragged in
+        .onDrag {
+            draggedSection = title
+            draggedBotName = nil
+            return NSItemProvider(object: title as NSString)
+        }
+        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
+            draggedName: $draggedBotName, draggedSection: $draggedSection,
+            reorder: { store.moveSection($0, to: title) }
+        ) { dragged in
             guard !store.isInAnyChannel(dragged) else { return }
             store.setBotSection(dragged, section: title)
         })
@@ -1633,7 +1665,15 @@ struct BotsScreen: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(draggedName: $draggedBotName) { dragged in
+        .onDrag {
+            draggedSection = AppStore.unassignedSectionKey
+            draggedBotName = nil
+            return NSItemProvider(object: "Unassigned" as NSString)
+        }
+        .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
+            draggedName: $draggedBotName, draggedSection: $draggedSection,
+            reorder: { store.moveSection($0, to: AppStore.unassignedSectionKey) }
+        ) { dragged in
             guard !store.isInAnyChannel(dragged) else { return }
             store.setBotSection(dragged, section: nil)
         })
@@ -2868,15 +2908,26 @@ private struct GlassTile: ButtonStyle {
 /// the places that always exist.
 private struct SectionDropDelegate: DropDelegate {
     @Binding var draggedName: String?
+    /// A section being dragged, and what to do with one dropped here. Declared
+    /// before `drop` so a trailing closure still means the agent drop.
+    var draggedSection: Binding<String?>? = nil
+    var reorder: ((String) -> Void)? = nil
     let drop: (String) -> Void
 
-    func validateDrop(info: DropInfo) -> Bool { draggedName != nil }
+    func validateDrop(info: DropInfo) -> Bool {
+        draggedName != nil || (reorder != nil && draggedSection?.wrappedValue != nil)
+    }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         DropProposal(operation: .move)
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        if let reorder, let section = draggedSection?.wrappedValue {
+            reorder(section)
+            draggedSection?.wrappedValue = nil
+            return true
+        }
         guard let dragged = draggedName else { return false }
         drop(dragged)
         draggedName = nil

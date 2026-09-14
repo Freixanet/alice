@@ -159,7 +159,11 @@ struct ActivityScreen: View {
         .background(Palette.background(scheme))
         .refreshable { await refresh() }
         .task {
+            // Seen the moment it opens. Marked only after the refresh, the
+            // drawer's number stayed for as long as Hermes took to answer.
+            store.markActivitySeen()
             await refresh()
+            // Whatever the refresh brought in was on screen too.
             store.markActivitySeen()
         }
         .confirmationDialog(

@@ -107,12 +107,36 @@ extension BotChannel {
         }
     }
 
+    /// Moves a section to where `target` is, the way a drag lands: before it
+    /// when moving up, after it when moving down.
+    mutating func moveSection(_ source: String, to target: String) {
+        guard source != target,
+              let from = sections.firstIndex(of: source),
+              let to = sections.firstIndex(of: target)
+        else { return }
+        let item = sections.remove(at: from)
+        sections.insert(item, at: to)
+    }
+
     mutating func toggleSection(_ name: String) {
         if collapsedSections.contains(name) {
             collapsedSections.removeAll { $0 == name }
         } else if sections.contains(name) {
             collapsedSections.append(name)
         }
+    }
+
+    /// Channels in a new order, the way a drag lands: the dragged one takes the
+    /// target's place, before it when moving up and after it when moving down.
+    static func moving(_ channels: [BotChannel], _ source: String, to target: String) -> [BotChannel] {
+        guard source != target,
+              let from = channels.firstIndex(where: { $0.id == source }),
+              let to = channels.firstIndex(where: { $0.id == target })
+        else { return channels }
+        var result = channels
+        let item = result.remove(at: from)
+        result.insert(item, at: to)
+        return result
     }
 
     /// Channels made before a channel was a folder were conversations flagged
