@@ -58,7 +58,7 @@ struct Composer: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.bottom, 10)
+        .padding(.bottom, 6)
         // Flicking the composer down puts the keyboard away, which is quicker
         // than reaching for the transcript to tap it.
         .gesture(
