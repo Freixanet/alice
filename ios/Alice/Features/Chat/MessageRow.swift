@@ -259,7 +259,7 @@ private struct ChollometroDeals: View {
     let tint: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 22) {
             ForEach(Array(deals.enumerated()), id: \.offset) { _, deal in
                 VStack(alignment: .leading, spacing: 8) {
                     let detail = deal.detail.map { " — \($0)" } ?? ""
@@ -272,8 +272,8 @@ private struct ChollometroDeals: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .background(tint, in: .rect(cornerRadius: 14))
-                            .contentShape(.rect(cornerRadius: 14))
+                            .background(tint, in: .rect(cornerRadius: 7))
+                            .contentShape(.rect(cornerRadius: 7))
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Abre la oferta en el navegador")
