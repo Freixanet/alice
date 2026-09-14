@@ -64,6 +64,7 @@ struct Composer: View {
         // keyboard gap requested for typing, and leave Alice's resting
         // position unchanged.
         .padding(.bottom, keyboardShown ? 10 : (isBotChat ? 0 : 6))
+        .animation(.easeOut(duration: 0.25), value: keyboardShown)
         // Flicking the composer down puts the keyboard away, which is quicker
         // than reaching for the transcript to tap it.
         .gesture(

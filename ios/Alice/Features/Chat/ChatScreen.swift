@@ -114,12 +114,23 @@ struct ChatScreen: View {
         )) { note in
             let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
                 .cgRectValue ?? .zero
-            keyboardShown = frame.height > 120
+            setKeyboardShown(frame.height > 120)
         }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillHideNotification
         )) { _ in
-            keyboardShown = false
+            setKeyboardShown(false)
+        }
+    }
+
+    /// UIKit posts the notification just before it commits the keyboard's
+    /// first layout frame. Updating immediately let the page move one frame
+    /// before the composer. Defer only that state flip to the next main-loop
+    /// turn; the two local animations below then start with the keyboard.
+    private func setKeyboardShown(_ shown: Bool) {
+        guard keyboardShown != shown else { return }
+        DispatchQueue.main.async {
+            keyboardShown = shown
         }
     }
 
@@ -161,7 +172,7 @@ struct ChatScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(.rect)
                     .simultaneousGesture(dismissKeyboard)
-                    .animation(.smooth(duration: 0.3), value: keyboardShown)
+                    .animation(.easeOut(duration: 0.25), value: keyboardShown)
 
                 Composer(
                     focused: $composerFocused,
