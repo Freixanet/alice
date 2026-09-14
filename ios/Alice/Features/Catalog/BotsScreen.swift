@@ -627,7 +627,7 @@ struct BotsScreen: View {
                         .layoutPriority(1)
                     if store.isBotUnread(bot.name) {
                         unreadDot(size: Self.unreadDotSize)
-                            .offset(y: -1)
+                            .offset(y: 1)
                     }
                 }
                 .frame(maxWidth: 100)
