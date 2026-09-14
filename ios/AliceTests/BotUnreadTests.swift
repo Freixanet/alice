@@ -39,6 +39,22 @@ final class BotUnreadTests: XCTestCase {
         ))
     }
 
+    func testAnOldQuietRunRediscoveredAfterRelaunchStaysRead() {
+        let quiet = QuietRoutineRun(
+            id: "old-run", routineName: "Daily scan",
+            finishedAt: opened.addingTimeInterval(-1)
+        )
+        XCTAssertFalse(AppStore.hasUnreadQuietRun([quiet], openedAt: opened))
+    }
+
+    func testAQuietRunAfterLeavingTheChatIsUnread() {
+        let quiet = QuietRoutineRun(
+            id: "new-run", routineName: "Daily scan",
+            finishedAt: opened.addingTimeInterval(1)
+        )
+        XCTAssertTrue(AppStore.hasUnreadQuietRun([quiet], openedAt: opened))
+    }
+
     func testPendingRepliesDoNotBecomeUnreadUntilTheyFinish() {
         var reply = Message(
             id: "reply", role: .assistant, content: "Working",

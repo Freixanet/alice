@@ -1510,13 +1510,10 @@ struct BotDetail: View {
     @State private var mark = BotMark(colour: 0, shape: 0)
     @State private var name = ""
     @State private var detail = ""
-    @State private var selectedModel: HermesClient.ModelOption?
+    @State private var choosingModel = false
     @State private var selectedSection = ""
     @State private var notifications = false
     @Environment(Notifier.self) private var notifier
-    @State private var pendingModel: HermesClient.ModelOption?
-    @State private var modelConfirmation: String?
-    @State private var applyingModel = false
     @State private var routines: RoutineState = .loading
     @State private var addingRoutine = false
     @State private var selectedRoutine: JobRow?
@@ -1679,38 +1676,30 @@ struct BotDetail: View {
             }
 
             Section("Configuration") {
-                Picker("Model", selection: $selectedModel) {
-                    if selectedModel == nil {
-                        Text(bot.model ?? "Not configured")
-                            .tag(nil as HermesClient.ModelOption?)
+                Button { choosingModel = true } label: {
+                    HStack {
+                        Text("Model").foregroundStyle(.primary)
+                        Spacer(minLength: 12)
+                        Text(
+                            store.botModelOption(for: liveBot)?.label
+                                ?? liveBot.model.map(HermesClient.prettify)
+                                ?? "Not configured"
+                        )
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
-                    ForEach(store.models) { model in
-                        Text(model.label).tag(model as HermesClient.ModelOption?)
-                    }
+                    .contentShape(.rect)
                 }
+                .buttonStyle(.plain)
                 .listRowBackground(Palette.card(scheme))
-                .disabled(applyingModel)
-                .onChange(of: selectedModel) { _, next in
-                    // Only a pick that differs from what Hermes already has
-                    // pinned is a change. The page sets this picker itself —
-                    // on load, on Cancel, after a save — and each of those
-                    // used to count as a new pick. For a model Hermes asks to
-                    // confirm, that asked forever: Cancel put the current
-                    // model back, which asked again.
-                    guard let next,
-                          BotModelChoice.isChange(
-                              next, from: liveBot.model, provider: liveBot.provider
-                          )
-                    else { return }
-                    applyModel(next, previous: store.botModelOption(for: liveBot))
-                }
 
                 if store.botModelSyncPending(bot.name) {
                     Button("Retry model sync", systemImage: "arrow.clockwise") {
-                        guard let current = store.botModelOption(for: liveBot) else { return }
-                        applyModel(current, previous: current)
+                        choosingModel = true
                     }
-                    .disabled(applyingModel)
                     .listRowBackground(Palette.card(scheme))
                 }
 
@@ -1832,6 +1821,10 @@ struct BotDetail: View {
         .sheet(isPresented: $editingSoul) {
             SoulEditor(bot: bot.name)
         }
+        .sheet(isPresented: $choosingModel) {
+            ModelPicker(bot: liveBot)
+                .preferredColorScheme(store.theme.colorScheme)
+        }
         .sheet(isPresented: $addingRoutine) {
             RoutineEditorSheet(
                 profiles: [(bot.name, store.botCurrentName(for: bot))]
@@ -1857,27 +1850,6 @@ struct BotDetail: View {
             }
             .preferredColorScheme(store.theme.colorScheme)
         }
-        .alert(
-            "Confirm model change",
-            isPresented: Binding(
-                get: { modelConfirmation != nil },
-                set: { if !$0 { modelConfirmation = nil; pendingModel = nil } }
-            )
-        ) {
-            Button("Cancel", role: .cancel) {
-                pendingModel = nil
-                modelConfirmation = nil
-                selectedModel = store.botModelOption(for: liveBot)
-            }
-            Button("Use Model") {
-                guard let pendingModel else { return }
-                modelConfirmation = nil
-                applyModel(pendingModel, previous: store.botModelOption(for: liveBot), confirm: true)
-                self.pendingModel = nil
-            }
-        } message: {
-            Text(modelConfirmation ?? "Hermes requires confirmation.")
-        }
         .onChange(of: mark) {
             guard mark != store.mark(for: bot.name) else { return }
             store.botMarks[bot.name] = mark
@@ -1890,7 +1862,6 @@ struct BotDetail: View {
             mark = store.mark(for: bot.name)
             name = store.botCurrentName(for: bot)
             detail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
-            selectedModel = store.botModelOption(for: liveBot)
             selectedSection = store.section(for: bot.name) ?? ""
             notifications = store.botNotificationsEnabled(for: bot.name)
             await notifier.refreshPermission()
@@ -1990,33 +1961,6 @@ struct BotDetail: View {
                   let chosen = option.provider, !chosen.isEmpty
             else { return false }
             return chosen != provider
-        }
-    }
-
-    private func applyModel(
-        _ option: HermesClient.ModelOption,
-        previous: HermesClient.ModelOption?,
-        confirm: Bool = false
-    ) {
-        guard !applyingModel else { return }
-        applyingModel = true
-        Task {
-            defer { applyingModel = false }
-            do {
-                switch try await store.setBotModel(liveBot, to: option, confirm: confirm) {
-                case let .confirmation(message):
-                    pendingModel = option
-                    modelConfirmation = message
-                    selectedModel = previous
-                case let .applied(warning):
-                    selectedModel = option
-                    failure = warning
-                    onChange()
-                }
-            } catch {
-                selectedModel = previous
-                failure = describeBotError(error)
-            }
         }
     }
 

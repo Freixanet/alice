@@ -55,10 +55,11 @@ struct Composer: View {
             } else {
                 if !commands.isEmpty { commandList }
                 else if !matchingBots.isEmpty { botMentionList }
-                composer
+                if isBotChat { botComposer }
+                else { aliceComposer }
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, isBotChat ? 20 : 18)
         .padding(.bottom, keyboardShown ? 10 : 6)
         // Flicking the composer down puts the keyboard away, which is quicker
         // than reaching for the transcript to tap it.
@@ -119,6 +120,10 @@ struct Composer: View {
 
     private var commands: [SlashCommand] {
         commandsDismissed ? [] : Slash.matches(store.draft)
+    }
+
+    private var isBotChat: Bool {
+        store.activeBotProfileForModelSelection != nil
     }
 
     private var botMentionQuery: String? {
@@ -280,7 +285,7 @@ struct Composer: View {
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
-    private var composer: some View {
+    private var aliceComposer: some View {
         @Bindable var store = store
 
         return GlassEffectContainer(spacing: 14) {
@@ -325,6 +330,129 @@ struct Composer: View {
             // away. Its controls still take precedence over this.
             .contentShape(.rect(cornerRadius: 26))
             .onTapGesture {}
+        }
+    }
+
+    /// Bot chats deliberately have a smaller, single-line composer. Their
+    /// model belongs in profile settings, while attachment is a peer of the
+    /// 44pt back button above rather than a control buried in the field.
+    private var botComposer: some View {
+        @Bindable var store = store
+
+        return GlassEffectContainer(spacing: 10) {
+            VStack(spacing: 8) {
+                if !store.draftAttachments.isEmpty {
+                    AttachmentChips(attachments: store.draftAttachments) { attachment in
+                        store.draftAttachments.removeAll { $0.id == attachment.id }
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    botAttachButton
+
+                    HStack(spacing: 6) {
+                        TextField(placeholder, text: $store.draft)
+                            .textFieldStyle(.plain)
+                            .font(.body)
+                            .focused(focused)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(.rect)
+                            .onTapGesture { focused.wrappedValue = true }
+
+                        botVoiceOrSendButton
+                    }
+                    .padding(.leading, 14)
+                    .padding(.trailing, 5)
+                    .frame(height: 44)
+                    .glassEffect(.regular, in: .capsule)
+                    .glassEffectID("composer", in: glass)
+                    .contentShape(.capsule)
+                    .onTapGesture {}
+                }
+            }
+        }
+    }
+
+    private var botAttachButton: some View {
+        Menu {
+            if CameraPicker.isAvailable {
+                Button {
+                    showCamera = true
+                } label: {
+                    Label("Camera", systemImage: "camera")
+                }
+            }
+            Button {
+                showPhotos = true
+            } label: {
+                Label("Photos", systemImage: "photo")
+            }
+            Button {
+                showFiles = true
+            } label: {
+                Label("Files", systemImage: "folder")
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .regular))
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .menuOrder(.fixed)
+        .accessibilityLabel("Attach")
+    }
+
+    /// One trailing control: dictation while the field is empty, Send as soon
+    /// as there is content, and Stop while a reply is streaming.
+    @ViewBuilder
+    private var botVoiceOrSendButton: some View {
+        let listening = pendingListen ?? dictation.isListening
+        let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !store.draftAttachments.isEmpty
+        let stopping = store.isSending && !hasDraft && !listening
+
+        Button {
+            if listening {
+                toggleDictation(listening: true)
+            } else if stopping {
+                store.stop()
+            } else if hasDraft {
+                store.send()
+            } else {
+                toggleDictation(listening: false)
+            }
+        } label: {
+            Image(
+                systemName: listening
+                    ? "waveform" : (stopping ? "stop.fill" : (hasDraft ? "arrow.up" : "mic"))
+            )
+            .font(.system(size: 16, weight: hasDraft ? .semibold : .medium))
+            .frame(width: controlHeight, height: controlHeight)
+            .contentTransition(.symbolEffect(.replace))
+            .symbolEffect(.variableColor, isActive: listening)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(
+            listening || stopping || hasDraft
+                ? AnyShapeStyle(store.accent.primary(scheme)) : AnyShapeStyle(.secondary)
+        )
+        .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
+        .accessibilityLabel(
+            listening ? "Stop dictating" : (stopping ? "Stop" : (hasDraft ? "Send" : "Dictate"))
+        )
+        .accessibilityIdentifier("composer.action")
+        .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
+    }
+
+    private func toggleDictation(listening: Bool) {
+        micTaps += 1
+        pendingListen = !listening
+        let draft = store.draft
+        Task {
+            dictation.prime(with: draft)
+            dictation.toggle { store.draft = $0 }
         }
     }
 

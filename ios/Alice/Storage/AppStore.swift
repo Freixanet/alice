@@ -115,8 +115,10 @@ final class AppStore {
         static let collapsedSections = "alice.bot.collapsedSections"
         static let pinnedBots = "alice.bot.pinned"
         static let unreadBots = "alice.bot.unread"
+        static let unreadBotsVersion = "alice.bot.unread.version"
         static let hiddenBots = "alice.bot.hidden"
         static let botModels = "alice.bot.models"
+        static let recentBotModels = "alice.bot.models.recent"
         static let botNotifications = "alice.bot.notifications"
         static let botRoutines = "alice.bot.routines"
         static let botCustomNames = "alice.bot.customNames"
@@ -166,6 +168,21 @@ final class AppStore {
     }
     var botModels: [String: String] = [:] {
         didSet { defaults.set(botModels, forKey: Keys.botModels) }
+    }
+
+    private struct RecentBotModel: Codable, Equatable {
+        let id: String
+        let provider: String?
+    }
+
+    /// Models are remembered per profile. A global list makes a bot's picker
+    /// advertise choices that were only ever used by a different assistant.
+    private var recentBotModels: [String: [RecentBotModel]] = [:] {
+        didSet {
+            if let data = try? JSONEncoder().encode(recentBotModels) {
+                defaults.set(data, forKey: Keys.recentBotModels)
+            }
+        }
     }
     var botNotifications: [String: Bool] = [:] {
         didSet { defaults.set(botNotifications, forKey: Keys.botNotifications) }
@@ -251,11 +268,25 @@ final class AppStore {
         if let savedUnread = defaults.stringArray(forKey: Keys.unreadBots) {
             unreadBots = Set(savedUnread)
         }
+        // Older builds mixed a manual "Mark unread" preference with routine
+        // runs rediscovered after launch. Clear that ambiguous legacy set
+        // once; real unread replies are reconstructed from their timestamps,
+        // and future manual marks remain untouched by later updates.
+        if defaults.integer(forKey: Keys.unreadBotsVersion) < 2 {
+            unreadBots.removeAll()
+            defaults.set(2, forKey: Keys.unreadBotsVersion)
+        }
         if let savedHidden = defaults.stringArray(forKey: Keys.hiddenBots) {
             hiddenBots = Set(savedHidden)
         }
         if let savedModels = defaults.dictionary(forKey: Keys.botModels) as? [String: String] {
             botModels = savedModels
+        }
+        if let data = defaults.data(forKey: Keys.recentBotModels),
+           let saved = try? JSONDecoder().decode(
+               [String: [RecentBotModel]].self, from: data
+           ) {
+            recentBotModels = saved
         }
         if let savedNotifs = defaults.dictionary(forKey: Keys.botNotifications) as? [String: Bool] {
             botNotifications = savedNotifs
@@ -1114,6 +1145,7 @@ final class AppStore {
         move(&botMarks, from: name, to: trimmed)
         move(&botSections, from: name, to: trimmed)
         move(&botModels, from: name, to: trimmed)
+        move(&recentBotModels, from: name, to: trimmed)
         move(&botNotifications, from: name, to: trimmed)
         if let index = botOrder.firstIndex(of: name) { botOrder[index] = trimmed }
         botOrder.removeAll { $0 == name.lowercased() && $0 != trimmed }
@@ -1353,6 +1385,18 @@ final class AppStore {
         }
     }
 
+    /// A quiet run reconstructed after launch is only unread when it really
+    /// happened after this conversation was last opened. Rediscovery is not
+    /// a new event.
+    nonisolated static func hasUnreadQuietRun(
+        _ runs: [QuietRoutineRun], openedAt: Date?
+    ) -> Bool {
+        let readThrough = openedAt ?? .distantPast
+        return runs.contains {
+            MessageTime.isKnown($0.finishedAt) && $0.finishedAt > readThrough
+        }
+    }
+
     /// Opening the conversation reads both chat replies and routine cards.
     func markBotRead(_ bot: String, at date: Date = Date()) {
         unreadBots.remove(bot)
@@ -1393,6 +1437,31 @@ final class AppStore {
             return exact
         }
         return models.first(where: { $0.id == model })
+    }
+
+    /// Models actually used by this bot, newest first, resolved against the
+    /// live catalogue so unavailable entries quietly fall away.
+    func recentBotModelOptions(for bot: String) -> [HermesClient.ModelOption] {
+        (recentBotModels[bot] ?? []).compactMap { recent in
+            if let provider = recent.provider, !provider.isEmpty,
+               let exact = models.first(where: {
+                   $0.id == recent.id && $0.provider == provider
+               }) {
+                return exact
+            }
+            return models.first { $0.id == recent.id }
+        }
+    }
+
+    private func rememberBotModel(
+        id: String?, provider: String?, for bot: String
+    ) {
+        guard let id, !id.isEmpty else { return }
+        let selection = RecentBotModel(id: id, provider: provider)
+        var recent = recentBotModels[bot] ?? []
+        recent.removeAll { $0.id == id && $0.provider == provider }
+        recent.insert(selection, at: 0)
+        recentBotModels[bot] = Array(recent.prefix(6))
     }
 
     enum BotModelUpdate: Sendable {
@@ -1477,6 +1546,12 @@ final class AppStore {
 
         botModels.removeValue(forKey: bot.name)
         botModels.removeValue(forKey: bot.name.lowercased())
+        rememberBotModel(
+            id: transition.previousModel,
+            provider: transition.previousProvider,
+            for: bot.name
+        )
+        rememberBotModel(id: option.id, provider: provider, for: bot.name)
         if let index = cachedBots.firstIndex(where: { $0.name == bot.name }) {
             cachedBots[index].model = option.id
             cachedBots[index].provider = provider
@@ -4152,7 +4227,10 @@ final class AppStore {
             // A refresh may finish after the reader has already left this
             // chat. Preserve the notification explicitly in that race; when
             // the chat is still visible, the new card has just been seen.
-            if !newQuiet.isEmpty,
+            let openedAt = conversations.first {
+                $0.routedBotName == profile
+            }?.openedAt
+            if Self.hasUnreadQuietRun(newQuiet, openedAt: openedAt),
                showingBots || activeConversation?.routedBotName != profile {
                 unreadBots.insert(profile)
             }

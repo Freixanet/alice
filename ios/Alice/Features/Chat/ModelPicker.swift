@@ -14,11 +14,34 @@ struct ModelPicker: View {
     @State private var pendingBotModel: HermesClient.ModelOption?
     @State private var modelConfirmation: String?
     @State private var failure: String?
+    /// Supplied by a bot's settings page. When absent, Alice's own model is
+    /// being chosen (the chat composer never opens this sheet for a bot).
+    var bot: BotRow?
+
+    init(bot: BotRow? = nil) {
+        self.bot = bot
+    }
+
+    private var targetBot: BotRow? {
+        guard let profile = targetProfile else { return nil }
+        return store.cachedBots.first { $0.name == profile }
+            ?? (bot?.name == profile ? bot : nil)
+    }
+
+    private var targetProfile: String? {
+        bot?.name ?? store.activeBotProfileForModelSelection
+    }
+
+    private var currentModelLabel: String? {
+        guard let targetBot else { return store.currentChatModelLabel }
+        return store.botModelOption(for: targetBot)?.label
+            ?? targetBot.model.map(HermesClient.prettify)
+    }
 
     /// A typed id worth offering: it looks like a model name, and nothing in
     /// the catalogue already matches it exactly.
     private var customCandidate: String? {
-        guard store.activeBotProfileForModelSelection == nil else { return nil }
+        guard targetProfile == nil else { return nil }
         let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard typed.count >= 3, !typed.contains(" ") else { return nil }
         guard !store.models.contains(where: { $0.id == typed }) else { return nil }
@@ -55,8 +78,8 @@ struct ModelPicker: View {
                 // And once chosen, it has to be visible: a model this list has
                 // never heard of would otherwise leave the screen looking as
                 // though nothing were selected at all.
-                if let current = store.currentChatModelLabel,
-                   !store.models.contains(where: { store.currentChatUses($0) }) {
+                if let current = currentModelLabel,
+                   !store.models.contains(where: uses) {
                     Section("Current") {
                         HStack {
                             Text(current).foregroundStyle(.primary)
@@ -132,7 +155,7 @@ struct ModelPicker: View {
                 // A Bot Chat's model is profile state owned by Hermes. Refresh
                 // it when this sheet opens so the checkmark reflects the
                 // server rather than a stale phone-side roster snapshot.
-                if store.activeBotProfileForModelSelection != nil, store.dashboardReady {
+                if targetProfile != nil, store.dashboardReady {
                     _ = try? await store.bots()
                 }
             }
@@ -200,11 +223,33 @@ struct ModelPicker: View {
     }
 
     /// The recently chosen models that the agent still offers, in the order
-    /// they were last picked.
+    /// they were last picked. Bot history is profile-specific; Alice keeps
+    /// her existing global history.
     private var recents: [HermesClient.ModelOption] {
-        store.recentModels.compactMap { id in
+        if let profile = targetProfile {
+            var result = store.recentBotModelOptions(for: profile)
+            if let current = targetBot.flatMap({ store.botModelOption(for: $0) }),
+               !result.contains(where: { sameModel($0, current) }) {
+                result.insert(current, at: 0)
+            }
+            return result
+        }
+        return store.recentModels.compactMap { id in
             store.models.first { $0.id == id }
         }
+    }
+
+    private func sameModel(
+        _ lhs: HermesClient.ModelOption, _ rhs: HermesClient.ModelOption
+    ) -> Bool {
+        lhs.id == rhs.id && lhs.provider == rhs.provider
+    }
+
+    private func uses(_ model: HermesClient.ModelOption) -> Bool {
+        guard let targetBot else { return store.currentChatUses(model) }
+        guard targetBot.model == model.id else { return false }
+        guard let provider = targetBot.provider, !provider.isEmpty else { return true }
+        return provider == model.provider
     }
 
     private func row(_ model: HermesClient.ModelOption) -> some View {
@@ -214,7 +259,7 @@ struct ModelPicker: View {
             HStack {
                 Text(model.label).foregroundStyle(.primary)
                 Spacer()
-                if store.currentChatUses(model) {
+                if uses(model) {
                     Image(systemName: "checkmark")
                         .foregroundStyle(store.accent.primary(scheme))
                 } else if applyingModel, pendingBotModel == model {
@@ -226,7 +271,7 @@ struct ModelPicker: View {
     }
 
     private func choose(_ model: HermesClient.ModelOption) {
-        guard let profile = store.activeBotProfileForModelSelection else {
+        guard let profile = targetProfile else {
             store.chooseModel(model.id, provider: model.provider)
             dismiss()
             return
@@ -234,7 +279,7 @@ struct ModelPicker: View {
         // An already-selected model normally has nothing to write. A partial
         // routine/chat sync is the exception: tapping it resumes the saved,
         // idempotent follow-up instead of silently dismissing the picker.
-        guard !store.currentChatUses(model)
+        guard !uses(model)
                 || store.botModelSyncPending(profile)
         else {
             dismiss()
@@ -247,7 +292,7 @@ struct ModelPicker: View {
         _ model: HermesClient.ModelOption, confirm: Bool = false
     ) {
         guard !applyingModel else { return }
-        guard let bot = store.activeBotForModelSelection else {
+        guard let bot = targetBot else {
             failure = "Hermes did not return this bot’s current profile."
             return
         }
