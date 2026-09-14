@@ -2393,6 +2393,26 @@ final class AppStore {
     var withdraw: (@MainActor (String) -> Void)?
 
     /// Opens what a tapped notification was about.
+    /// Opens the chat a notification from the Mac watcher points at.
+    func open(_ link: NotificationLink) {
+        showingBots = false
+        switch link {
+        case let .bot(name):
+            let bot = cachedBots.first(where: { $0.name == name }) ?? BotRow(
+                name: name, displayName: botCurrentName(for: name), detail: "",
+                model: nil, provider: nil, skills: 0, isDefault: false,
+                gatewayRunning: false, active: true
+            )
+            openBotConversation(for: bot)
+        case let .chat(id):
+            if let id, conversations.contains(where: { $0.id == id }) {
+                activeID = id
+            } else if let latest = conversations.first(where: { !$0.isCanonicalBotChat && $0.botName == nil }) {
+                activeID = latest.id
+            }
+        }
+    }
+
     @discardableResult
     func open(_ route: Notifier.Route) -> Bool {
         if let installation = route.installation,

@@ -43,6 +43,10 @@ struct AliceApp: App {
                 // own Camera app can open Alice at the moment of pairing —
                 // no in-app scanner needed, least of all on a first install.
                 .onOpenURL { url in
+                    if let link = NotificationLink(url: url) {
+                        store.open(link)
+                        return
+                    }
                     guard url.scheme?.lowercased() == "alice",
                           url.host?.lowercased() == "pair"
                     else { return }

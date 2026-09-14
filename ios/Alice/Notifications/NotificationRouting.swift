@@ -66,3 +66,30 @@ final class NotificationApplicationDelegate: NSObject, UIApplicationDelegate, UN
         [.list]
     }
 }
+
+/// Where a notification sent from outside Alice points.
+///
+/// Alice cannot be woken while iOS has it suspended, so the Mac that hosts
+/// Hermes watches for replies and routine results and notifies through Bark
+/// (mac/notifier). Tapping one opens `alice://open?bot=<profile>` for a bot's
+/// chat, or `alice://open?chat=<conversation>` — `chat=home` for Alice's own.
+/// Opening a chat is all a link can do: any app can open one.
+enum NotificationLink: Equatable, Sendable {
+    case bot(String)
+    /// A conversation id, or nil for Alice's most recent chat of her own.
+    case chat(String?)
+
+    init?(url: URL) {
+        guard url.scheme?.lowercased() == "alice",
+              url.host?.lowercased() == "open",
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        else { return nil }
+        if let bot = items.first(where: { $0.name == "bot" })?.value, !bot.isEmpty {
+            self = .bot(bot)
+        } else if let chat = items.first(where: { $0.name == "chat" })?.value, !chat.isEmpty {
+            self = .chat(chat == "home" ? nil : chat)
+        } else {
+            return nil
+        }
+    }
+}
