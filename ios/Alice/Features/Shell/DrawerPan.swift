@@ -19,11 +19,27 @@ import UIKit
 /// the window, so anything presented above the chat — the model picker, a
 /// share sheet — keeps its own gestures.
 struct DrawerPan: UIViewRepresentable {
+    /// A control whose accessibility identifier starts with this prefix may
+    /// still start the pan. Used for full-width navigation rows: a tap keeps
+    /// activating the row, while a horizontal swipe cancels it and navigates.
+    let controlIdentifierPrefix: String?
     /// Given the pan's velocity, whether this drag should drive the drawer.
     let shouldBegin: (CGPoint) -> Bool
     let onChange: (CGFloat) -> Void
     /// Translation and predicted end translation, both on the x axis.
     let onEnd: (CGFloat, CGFloat) -> Void
+
+    init(
+        controlIdentifierPrefix: String? = nil,
+        shouldBegin: @escaping (CGPoint) -> Bool,
+        onChange: @escaping (CGFloat) -> Void,
+        onEnd: @escaping (CGFloat, CGFloat) -> Void
+    ) {
+        self.controlIdentifierPrefix = controlIdentifierPrefix
+        self.shouldBegin = shouldBegin
+        self.onChange = onChange
+        self.onEnd = onEnd
+    }
 
     func makeUIView(context: Context) -> UIView {
         let view = AnchorView()
@@ -37,13 +53,18 @@ struct DrawerPan: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.controlIdentifierPrefix = controlIdentifierPrefix
+        context.coordinator.pan?.cancelsTouchesInView = controlIdentifierPrefix != nil
         context.coordinator.shouldBegin = shouldBegin
         context.coordinator.onChange = onChange
         context.coordinator.onEnd = onEnd
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(shouldBegin: shouldBegin, onChange: onChange, onEnd: onEnd)
+        Coordinator(
+            controlIdentifierPrefix: controlIdentifierPrefix,
+            shouldBegin: shouldBegin, onChange: onChange, onEnd: onEnd
+        )
     }
 
     static func dismantleUIView(_ view: UIView, coordinator: Coordinator) {
@@ -52,18 +73,21 @@ struct DrawerPan: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var controlIdentifierPrefix: String?
         var shouldBegin: (CGPoint) -> Bool
         var onChange: (CGFloat) -> Void
         var onEnd: (CGFloat, CGFloat) -> Void
 
         private weak var host: UIView?
-        private var pan: UIPanGestureRecognizer?
+        fileprivate var pan: UIPanGestureRecognizer?
 
         init(
+            controlIdentifierPrefix: String?,
             shouldBegin: @escaping (CGPoint) -> Bool,
             onChange: @escaping (CGFloat) -> Void,
             onEnd: @escaping (CGFloat, CGFloat) -> Void
         ) {
+            self.controlIdentifierPrefix = controlIdentifierPrefix
             self.shouldBegin = shouldBegin
             self.onChange = onChange
             self.onEnd = onEnd
@@ -75,7 +99,10 @@ struct DrawerPan: UIViewRepresentable {
             pan.delegate = self
             // Buttons, links and text selection all keep working: this watches
             // the touch, it does not swallow it.
-            pan.cancelsTouchesInView = false
+            // Ordinary controls are excluded below. When an explicitly named
+            // row is allowed, a recognised swipe must cancel that row's press
+            // so lifting the finger cannot open it after navigation began.
+            pan.cancelsTouchesInView = controlIdentifierPrefix != nil
             pan.delaysTouchesBegan = false
             host.addGestureRecognizer(pan)
             self.host = host
@@ -128,17 +155,23 @@ struct DrawerPan: UIViewRepresentable {
                 // SwiftUI commonly exposes the accessibility trait on a
                 // hosting descendant rather than a UIControl, so honour both.
                 var view: UIView? = touch.view
+                var touchesControl = false
+                var matchesAllowedControl = false
                 while let current = view, current !== host {
+                    if let prefix = controlIdentifierPrefix,
+                       current.accessibilityIdentifier?.hasPrefix(prefix) == true {
+                        matchesAllowedControl = true
+                    }
                     if current is UIControl
                         || current is UITextField
                         || current is UITextView
                         || current.accessibilityTraits.contains(.button)
                         || current.accessibilityTraits.contains(.link) {
-                        return false
+                        touchesControl = true
                     }
                     view = current.superview
                 }
-                return true
+                return !touchesControl || matchesAllowedControl
             }
         }
 

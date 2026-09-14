@@ -2523,6 +2523,13 @@ final class AppStore {
             id: "uitest-long-bot-chat", title: "UI Test Bot",
             createdAt: start, updatedAt: Date(), messages: messages, botName: "uitest-bot"
         )
+        if !cachedBots.contains(where: { $0.name == "uitest-bot" }) {
+            cachedBots.insert(BotRow(
+                name: "uitest-bot", displayName: "UI Test Bot", detail: "Test bot",
+                model: nil, provider: nil, skills: 0, isDefault: false,
+                gatewayRunning: false, active: true
+            ), at: 0)
+        }
         conversations.removeAll { $0.id == chat.id }
         conversations.insert(chat, at: 0)
         activeID = chat.id

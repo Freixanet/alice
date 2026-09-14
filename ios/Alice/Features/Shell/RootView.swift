@@ -17,6 +17,9 @@ struct RootView: View {
     @State private var botsExitOffset: CGFloat = 0
     @State private var closingBots = false
     @State private var botsCloseTask: Task<Void, Never>?
+    /// A row may receive its Button action after the full-screen pan ends.
+    /// Keep that late action from reopening the bot we just swiped away from.
+    @State private var botsRowSwipeRecognized = false
     @State private var screenWidth: CGFloat = 0
 
     private let drawerWidth: CGFloat = 300
@@ -109,6 +112,7 @@ struct RootView: View {
                         // exit direction and whatever it uncovers both have to
                         // be settled before it starts moving.
                         BotsScreen(
+                            canOpenBot: { !botsRowSwipeRecognized },
                             onClose: {
                                 closeBots(exitLeading: store.botsExitLeading) {}
                             },
@@ -129,11 +133,15 @@ struct RootView: View {
                     // reaching for a button is a page the thumb argues with.
                     .overlay {
                         DrawerPan(
+                            controlIdentifierPrefix: "bots.row.",
                             shouldBegin: { velocity in
                                 abs(velocity.x) > abs(velocity.y) * 1.5
                             },
-                            onChange: { _ in },
+                            onChange: { _ in
+                                botsRowSwipeRecognized = true
+                            },
                             onEnd: { translation, predicted in
+                                defer { releaseBotsRowSwipeBlock() }
                                 // Leftward is forward, back into the bot you
                                 // were last talking to — the page is between
                                 // home and that conversation, so it should
@@ -316,6 +324,7 @@ struct RootView: View {
         botsCloseTask?.cancel()
         botsCloseTask = nil
         closingBots = false
+        botsRowSwipeRecognized = false
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         botsExitOffset = 0
         store.botsFromLeading = false
@@ -326,10 +335,21 @@ struct RootView: View {
         botsCloseTask?.cancel()
         botsCloseTask = nil
         closingBots = false
+        botsRowSwipeRecognized = false
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         botsExitOffset = 0
         store.botsFromLeading = true
         store.showingBots = true
+    }
+
+    /// UIKit can deliver the Button's release just after the pan's `.ended`.
+    /// One short run-loop grace period covers that release without making a
+    /// later, deliberate tap feel dead when a short horizontal drag cancels.
+    private func releaseBotsRowSwipeBlock() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            botsRowSwipeRecognized = false
+        }
     }
 
     private var offset: CGFloat {

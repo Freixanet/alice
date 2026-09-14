@@ -165,4 +165,59 @@ final class BotNavigationTests: XCTestCase {
         XCTAssertEqual(leading.label, "Chats", "the Bots swipe must uncover Alice")
         XCTAssertTrue(app.buttons["bots.back"].waitForNonExistence(timeout: 5))
     }
+
+    /// A bot row covers most of this page, so the page-wide back gesture must
+    /// win once a press becomes a horizontal swipe. The row must remain a
+    /// normal button when the finger does not travel.
+    func testSwipeBackStartingOnABotRowReturnsHomeInsteadOfOpeningTheBot() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-seedLongBotChat"]
+        app.launch()
+
+        let leading = app.buttons["chat.leading"]
+        XCTAssertTrue(leading.waitForExistence(timeout: 20))
+        leading.tap()
+        XCTAssertTrue(app.buttons["bots.back"].waitForExistence(timeout: 10))
+
+        let row = firstVisibleBotRow(in: app)
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "the Bots page exposes a bot row")
+        let start = row.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.5))
+        let end = start.withOffset(CGVector(dx: 280, dy: 0))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: 900, thenHoldForDuration: 0)
+
+        XCTAssertTrue(app.buttons["bots.back"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(leading.waitForExistence(timeout: 5))
+        XCTAssertEqual(leading.label, "Chats", "swiping across a row must return to Home")
+    }
+
+    func testBotRowStillOpensWhenTappedWithoutDragging() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-seedLongBotChat"]
+        app.launch()
+
+        let leading = app.buttons["chat.leading"]
+        XCTAssertTrue(leading.waitForExistence(timeout: 20))
+        leading.tap()
+        XCTAssertTrue(app.buttons["bots.back"].waitForExistence(timeout: 10))
+
+        let row = firstVisibleBotRow(in: app)
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+
+        XCTAssertTrue(app.buttons["bots.back"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(leading.waitForExistence(timeout: 5))
+        XCTAssertEqual(leading.label, "Bots", "a stationary tap must still open the bot")
+    }
+
+    private func firstVisibleBotRow(in app: XCUIApplication) -> XCUIElement {
+        let collapsedUnassigned = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Unassigned,")
+        ).firstMatch
+        if collapsedUnassigned.waitForExistence(timeout: 3) {
+            collapsedUnassigned.tap()
+        }
+        return app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "bots.row.")
+        ).firstMatch
+    }
 }

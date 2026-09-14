@@ -7,6 +7,9 @@ import UniformTypeIdentifiers
 /// own standing instructions, model, skills and sessions. What the desktop
 /// client shows under Bot Mode is that, and so is this.
 struct BotsScreen: View {
+    /// RootView turns this off for the brief tail of a recognised page swipe,
+    /// when SwiftUI may still deliver a row Button action on finger-up.
+    var canOpenBot: () -> Bool = { true }
     /// Closes the page after opening a conversation from it.
     var onClose: () -> Void = {}
     /// Goes one level back from the Bots page. RootView owns this transition
@@ -607,6 +610,7 @@ struct BotsScreen: View {
 
     private func pinnedTileBase(_ bot: BotRow) -> some View {
         Button {
+            guard canOpenBot() else { return }
             store.openBotConversation(for: bot)
             store.botsExitLeading = true
             onClose()
@@ -625,6 +629,7 @@ struct BotsScreen: View {
             .contentShape(.contextMenuPreview, .rect(cornerRadius: 18))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("bots.row.\(bot.name)")
         .contextMenu {
             botMenu(bot)
         } preview: {
@@ -1248,6 +1253,7 @@ struct BotsScreen: View {
 
     private func botRowBase(_ bot: BotRow) -> some View {
         Button {
+            guard canOpenBot() else { return }
             store.openBotConversation(for: bot)
             store.botsExitLeading = true
             onClose()
@@ -1259,6 +1265,7 @@ struct BotsScreen: View {
                 .contentShape(.contextMenuPreview, .rect(cornerRadius: 16))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("bots.row.\(bot.name)")
         .contextMenu {
             botMenu(bot)
         } preview: {
