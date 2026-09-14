@@ -52,7 +52,7 @@ struct MessageRow: View {
                         // No foregroundStyle here. Applied to the Text it
                         // wins over every colour set inside the attributed
                         // string, which repainted the links in the body
-                        // colour: tappable, underlined, and indistinguishable
+                        // colour: tappable, but indistinguishable
                         // from the prose around them. The colours are set on
                         // the runs instead, body and links alike.
                         Text(attributed(message.content))
@@ -192,7 +192,7 @@ struct MessageRow: View {
         let linked = output.runs.filter { $0.link != nil }.map(\.range)
         for range in linked {
             output[range].foregroundColor = link
-            output[range].underlineStyle = .single
+            output[range].underlineStyle = nil
         }
         return output
     }
@@ -627,4 +627,3 @@ private struct ModelLimitNote: View {
             : "This model is taking requests too fast right now. Try again in about \(wait)."
     }
 }
-
