@@ -267,14 +267,15 @@ private struct ChollometroDeals: View {
                     .textSelection(.enabled)
 
                     Link(destination: deal.url) {
-                        Label("Ver chollo", systemImage: "arrow.up.right")
+                        Text("Ver chollo")
                             .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.white)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .contentShape(.capsule)
+                            .background(tint, in: .rect(cornerRadius: 14))
+                            .contentShape(.rect(cornerRadius: 14))
                     }
                     .buttonStyle(.plain)
-                    .glassEffect(.regular.interactive().tint(tint.opacity(0.58)), in: .capsule)
                     .accessibilityHint("Abre la oferta en el navegador")
                 }
             }
