@@ -260,8 +260,12 @@ def enable_isolation(check: bool) -> dict:
     every profile: the hook runs in the sender's own process, so a profile without it
     could still reach the team."""
     from crear_agente import hermes
+    import re
+    # Only real profiles: Hermes keeps deleted ones in `.deleted` and a half-removed
+    # profile has no config to enable anything in.
     homes = [("default", HERMES_ROOT.parent)] + sorted(
-        (p.name, p) for p in (HERMES_ROOT.parent / "profiles").iterdir() if p.is_dir())
+        (p.name, p) for p in (HERMES_ROOT.parent / "profiles").iterdir()
+        if p.is_dir() and re.fullmatch(r"[a-z0-9][a-z0-9-]*", p.name) and (p / "config.yaml").is_file())
     changed = []
     for name, home in homes:
         cfg = _load_yaml(home / "config.yaml")
