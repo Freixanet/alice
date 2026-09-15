@@ -21,7 +21,15 @@ What it adds, all in the dashboard:
   own `inbox.py add`, so the store stays append-only; `GET` reports `available: false`
   when no agent keeps one.
 
-The agent gains nothing: no tools, hooks or commands.
+The agent gains one rule and nothing else (no tools or commands):
+
+- **The Business team talks only among itself.** A `pre_tool_call` hook on `message_agent`
+  lets a profile filed in the Business channel (`ui_meta['alice'].channel`, written by
+  `hermes-agents/business-team/instalar.py`) message only teammates in that channel, and
+  blocks anyone outside it, Alice included, from messaging them. Agents outside Business
+  keep talking to each other. If the rule cannot be checked, the message does not go.
+  The hook runs only in profiles where the plugin is enabled; the team installer enables
+  it in every profile.
 
 ## Install
 
@@ -34,7 +42,8 @@ hermes plugins enable alice --no-allow-tool-override
 ```
 
 Then restart the dashboard (on macOS with the launchd service:
-`launchctl kickstart -k gui/$(id -u)/ai.hermes.dashboard`).
+`launchctl kickstart -k gui/$(id -u)/ai.hermes.dashboard`) and any running gateway: Hermes
+loads plugins once per process, so the hook reaches a running agent only after a restart.
 
 ## Develop
 

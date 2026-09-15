@@ -40,6 +40,16 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
   departamentos del canal. Alice ordena las secciones así y quita las vacías que
   no estén en la lista; nunca una con agentes. Nunca borra agentes.
 
+## Solo entre ellos
+
+Los agentes de Business solo pueden escribirse entre ellos, y nadie de fuera (Alice
+incluida) puede escribirles. No es una instrucción que puedan saltarse: el plugin de
+Alice (`hermes-plugin/`) revisa cada `message_agent` antes de ejecutarlo y bloquea los
+que cruzan el límite del equipo. El equipo son los perfiles que este instalador coloca
+en «Business (Beta)». El instalador activa el plugin en todos los perfiles; Hermes carga
+los plugins al arrancar, así que la regla llega a los agentes que ya están en marcha
+tras reiniciar el dashboard y los gateways.
+
 ## Evals
 
 `evals` evalúa a todos los agentes de este Hermes con benchmarks propios. Su

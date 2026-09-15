@@ -40,7 +40,9 @@ Nombres de archivo en minúsculas y con guiones. Si ves algo mal o desactualizad
 
 ### Pedir algo a un compañero
 
-Usa `message_agent`. Cada petición se entiende sola, sin leer ninguna otra conversación:
+Usa `message_agent`, y **solo con los agentes de la tabla de arriba**: Hermes bloquea cualquier mensaje a alguien de fuera del equipo, y los de fuera tampoco pueden escribirte. Si necesitas algo de fuera, díselo al CEO en tu respuesta.
+
+Cada petición se entiende sola, sin leer ninguna otra conversación:
 
 **PETICIÓN** · título corto
 - **Objetivo:** qué decisión o avance desbloquea.

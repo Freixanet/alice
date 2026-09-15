@@ -255,6 +255,35 @@ def prepare_evals(check: bool) -> dict:
             if changes else "sin cambios", "resultado": {"ok": True}}
 
 
+def enable_isolation(check: bool) -> dict:
+    """The Alice plugin, whose hook keeps Business talking only among itself, enabled in
+    every profile: the hook runs in the sender's own process, so a profile without it
+    could still reach the team."""
+    from crear_agente import hermes
+    homes = [("default", HERMES_ROOT.parent)] + sorted(
+        (p.name, p) for p in (HERMES_ROOT.parent / "profiles").iterdir() if p.is_dir())
+    changed = []
+    for name, home in homes:
+        cfg = _load_yaml(home / "config.yaml")
+        enabled = ((cfg.get("plugins") or {}).get("enabled")) or []
+        if "alice" in enabled:
+            continue
+        changed.append(name)
+        if not check:
+            prefix = [] if name == "default" else ["-p", name]
+            hermes(*prefix, "plugins", "enable", "alice", "--no-allow-tool-override")
+    return {"agente": "aislamiento de Business", "estado": ("cambiaría: " if check else "plugin activado en: ")
+            + ", ".join(changed) if changed else "sin cambios", "resultado": {"ok": True}}
+
+
+def _load_yaml(path: Path) -> dict:
+    import yaml
+    if not path.is_file():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
 def install_lead(check: bool) -> dict:
     from hermes_cli.profiles import get_profile_dir
     profile_dir = Path(get_profile_dir(LEAD))
@@ -369,9 +398,12 @@ def main(argv: list) -> int:
     refresh = "--actualizar" in argv
     results = [prepare_shared_folder(check), prepare_evals(check), install_lead(check),
                install_specialist(EVALS, 1, check, refresh)]
+    # Last: a profile created above must get the hook too.
+    finals = [enable_isolation]
     by_department = sorted(TEAM, key=lambda m: DEPARTMENTS.index(m["department"]))
     for order, member in enumerate(by_department, start=2):
         results.append(install_specialist(member, order, check, refresh))
+    results += [step(check) for step in finals]
     ok = all(r["resultado"].get("ok", False) for r in results)
     print(json.dumps({"ok": ok, "canal": CHANNEL, "equipo": results}, ensure_ascii=False, indent=2))
     return 0 if ok else 1
