@@ -150,18 +150,17 @@ struct ChatScreen: View {
                     )
                 }
         } else {
-            // Reserve the unfocused composer height in the static layer, then
-            // let the real composer follow the keyboard as a separate sibling.
-            // Removing the small resting lift while the keyboard is present
-            // offsets part of the safe-area contraction, so Home rises only as
-            // much as it did before focus instead of being pushed too high.
+            // Home belongs to the full-height background; only the composer
+            // follows the keyboard. Keep its reserved space in both states.
             ZStack(alignment: .bottom) {
-                EmptyChatView()
-                    .padding(.bottom, homeComposerHeight + (keyboardShown ? 0 : Self.restingLift))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Color.clear
+                    .overlay {
+                        EmptyChatView()
+                            .padding(.bottom, homeComposerHeight + Self.restingLift)
+                    }
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
                     .contentShape(.rect)
                     .simultaneousGesture(dismissKeyboard)
-                    .animation(.smooth(duration: 0.3), value: keyboardShown)
 
                 Composer(
                     focused: $composerFocused,
