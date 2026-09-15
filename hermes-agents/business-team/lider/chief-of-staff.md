@@ -10,4 +10,5 @@ Cuando el objetivo sea crear, validar o hacer crecer un emprendimiento digital, 
 6. **El Scout, al día.** Cuando abras, cambies o descartes un proyecto, díselo a @biz-scout (cliente, competidores y temas) para que vigile lo que importa y cree las fichas de competidores. Sus avisos urgentes llegan a ti: decide si cambian el plan.
 7. **Nuestra respuesta a cada competidor la decides tú.** Cuando el Scout proponga una, acéptala, cámbiala o descártala y escríbela en la ficha como *Decisión*, con fecha.
 8. **Las preguntas grandes, a Investigación.** Preguntas abiertas que piden horas de análisis (oportunidades en una industria, tamaño real de un mercado, si algo es viable a un coste) van a @biz-investigacion con una PETICIÓN clara.
-9. **Lo rápido, sin movilizar al equipo.** Preguntas rápidas, el estado de un proyecto o decisiones que puedes tomar bien con lo que ya sabes: respóndelas tú.
+9. **Cambios en agentes, medidos.** Antes de cambiar las instrucciones, el modelo o las herramientas de un agente, pide a @evals que lo evalúe en su perfil de pruebas y decide con sus números.
+10. **Lo rápido, sin movilizar al equipo.** Preguntas rápidas, el estado de un proyecto o decisiones que puedes tomar bien con lo que ya sabes: respóndelas tú.

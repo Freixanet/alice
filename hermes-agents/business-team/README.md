@@ -1,6 +1,6 @@
 # Business — un equipo de agentes para emprendimientos digitales
 
-Diez agentes de Hermes que trabajan como un equipo. Lo dirige el **Chief of
+Once agentes de Hermes que trabajan como un equipo. Lo dirige el **Chief of
 Staff**, que ya coordinaba al resto de agentes: recibe el objetivo, reparte el
 trabajo con `message_agent` y convierte las entregas en decisiones. En Alice
 aparecen dentro del canal **Business (Beta)**: el Chief of Staff suelto arriba y
@@ -10,6 +10,7 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
 | Agente | Nombre en Alice | Departamento | Para qué |
 | --- | --- | --- | --- |
 | `chief-of-staff` | Chief of Staff | — (arriba) | Objetivo, plan, reparto, integración y decisión |
+| `evals` | Evals | — (arriba) | Si cada agente trabaja bien: benchmarks, regresiones y torneo de modelos (con Luna) |
 | `biz-mercado` | Mercado | Intelligence Dept. | Qué quiere el cliente, demanda y competencia con fuentes |
 | `biz-critico` | Abogado del diablo | Intelligence Dept. | Riesgos, supuestos, legal y verificación |
 | `biz-scout` | Scout | Intelligence Dept. | Vigilancia continua, fichas de competidores y oportunidades (ronda diaria a las 8:00, informe los lunes) |
@@ -38,6 +39,22 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
   escribe `ui_meta['alice']` con el canal, el departamento, el orden y la lista de
   departamentos del canal. Alice ordena las secciones así y quita las vacías que
   no estén en la lista; nunca una con agentes. Nunca borra agentes.
+
+## Evals
+
+`evals` evalúa a todos los agentes de este Hermes con benchmarks propios. Su
+herramienta, `../evals/evals.py`, se instala en
+`~/hermes-workspaces/evals/herramienta/` y hace el trabajo determinista: huellas de
+cambios (instrucciones, modelo, herramientas, skills y memoria), lista de modelos
+desde la caché de Hermes, ejecución de suites con coste y latencia (`hermes -z
+--usage-file`), juez con un modelo distinto al evaluado, marcador por agente y
+cambio o reversión de modelo con copia de seguridad. Toda evaluación corre en el
+perfil `evals-sandbox` (oculto en Alice), sincronizado antes con el agente y solo
+con herramientas que no escriben, no ejecutan comandos ni programan rutinas.
+Rutina diaria de cambios a las 7:00 y torneo de modelos los domingos a las 5:00;
+en esta fase ningún cambio de modelo se aplica sin tu sí. Pruebas:
+`~/.hermes/hermes-agent/venv/bin/python hermes-agents/evals/prueba_evals.py`
+(contra un Hermes falso).
 
 ## Builders temporales
 

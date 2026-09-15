@@ -35,6 +35,15 @@ CHANNEL = "Business (Beta)"
 # research reports, readable by every agent. `{{BUSINESS_DIR}}` in the
 # instructions becomes this path.
 BUSINESS_DIR = Path.home() / "hermes-workspaces" / "business"
+# Evals: its harness lives here, where its routines call it, and every
+# evaluation runs in the sandbox profile.
+EVALS_DIR = Path.home() / "hermes-workspaces" / "evals"
+EVALS_TOOL = EVALS_DIR / "herramienta" / "evals.py"
+EVALS_SOURCE = HERE.parent / "evals" / "evals.py"
+HERMES_PYTHON = HERMES_ROOT / "venv" / "bin" / "python"
+SANDBOX = "evals-sandbox"
+SANDBOX_TITLE = "Evals · pruebas"
+SANDBOX_DESCRIPTION = "Perfil técnico donde Evals ejecuta sus pruebas. No es un compañero: no le envíes mensajes."
 # The channel's departments, in the order a venture moves through them:
 # understand, define, build, sell. Alice lays the channel out this way and
 # drops empty sections left out of it.
@@ -90,8 +99,34 @@ TEAM = [
 ]
 
 
+# Evaluates every agent on this Hermes, not only Business; filed loose at the top
+# of the channel, next to the Chief of Staff. Judges with Luna, so the team's
+# standard model is never its own judge.
+EVALS = {
+    "name": "evals", "department": None, "title": "Evals",
+    "tools": ["terminal", "code_execution", "session_search"],
+    "config": {
+        "model.default": "gpt-5.6-luna",
+        "model.provider": "openai-codex",
+        "model.base_url": "https://chatgpt.com/backend-api/codex",
+        "fallback_providers": [{"provider": "opencode-free", "model": "muse-spark-1.3-contributor-free", "base_url": ""}],
+    },
+    "routines": [
+        {"name": "Evals — cambios", "schedule": "0 7 * * *",
+         "prompt": "Haz la rutina diaria de Evals siguiendo tu SOUL.md (Rutina diaria · cambios). "
+                   "Si no hay nada que contar, responde exactamente [SILENT]."},
+        {"name": "Evals — modelos", "schedule": "0 5 * * 0",
+         "prompt": "Haz la rutina semanal de Evals siguiendo tu SOUL.md (Rutina semanal · modelos)."},
+    ],
+    "description": "Mide si cada agente hace bien su trabajo: benchmarks propios, regresiones tras cada cambio y torneo de modelos con propuesta de cambio.",
+}
+
+
 def read(path: Path) -> str:
-    return path.read_text(encoding="utf-8").strip().replace("{{BUSINESS_DIR}}", str(BUSINESS_DIR))
+    return (path.read_text(encoding="utf-8").strip()
+            .replace("{{BUSINESS_DIR}}", str(BUSINESS_DIR))
+            .replace("{{EVALS_DIR}}", str(EVALS_DIR))
+            .replace("{{EVALS_CMD}}", f"{HERMES_PYTHON} {EVALS_TOOL}"))
 
 
 # Templates the installer owns in the shared folder, from compartido/.
@@ -173,6 +208,53 @@ def set_alice_placement(profile_dir: Path, section, order: int, check: bool = Fa
     return True
 
 
+def hide_sandbox(profile_dir: Path, check: bool) -> bool:
+    """The sandbox under Hidden in Alice, with a name that says what it is."""
+    import tui_gateway.methods_profiles as profiles_rpc
+    from utils import atomic_yaml_write
+    existing = profiles_rpc._read_profile_yaml(profile_dir)
+    meta = existing.get("ui_meta") if isinstance(existing.get("ui_meta"), dict) else {}
+    bots = dict(meta.get("hermes-bots") or {})
+    if bots.get("hidden") is True and bots.get("title") == SANDBOX_TITLE:
+        return False
+    if check:
+        return True
+    raw = existing.get("_ui_meta_revisions")
+    revisions = profiles_rpc._clean_revisions(raw if isinstance(raw, dict) else {})
+    bots.update({"hidden": True, "title": SANDBOX_TITLE})
+    meta["hermes-bots"] = bots
+    revisions["hermes-bots"] = revisions.get("hermes-bots", 0) + 1
+    existing["ui_meta"] = meta
+    existing["_ui_meta_revisions"] = revisions
+    atomic_yaml_write(profile_dir / "profile.yaml", existing, sort_keys=False)
+    return True
+
+
+def prepare_evals(check: bool) -> dict:
+    """The evals harness in its stable place and the sandbox profile that every
+    evaluation runs in. The sandbox is a clone of Alice's profile (config, keys and
+    skills, never messaging channels) that evals.py re-syncs before each run."""
+    from hermes_cli.profiles import get_profile_dir
+    from crear_agente import hermes
+    changes = []
+    wanted = EVALS_SOURCE.read_text(encoding="utf-8")
+    if not EVALS_TOOL.is_file() or EVALS_TOOL.read_text(encoding="utf-8") != wanted:
+        changes.append("herramienta")
+        if not check:
+            EVALS_TOOL.parent.mkdir(parents=True, exist_ok=True)
+            EVALS_TOOL.write_text(wanted, encoding="utf-8")
+    sandbox_dir = Path(get_profile_dir(SANDBOX))
+    if not sandbox_dir.is_dir():
+        changes.append("perfil de pruebas")
+        if not check:
+            hermes("profile", "create", SANDBOX, "--clone-from", "default", "--no-alias",
+                   "--description", SANDBOX_DESCRIPTION)
+    if sandbox_dir.is_dir() and hide_sandbox(sandbox_dir, check):
+        changes.append("oculto en Alice")
+    return {"agente": "evals · herramienta y pruebas", "estado": ("cambiaría: " if check else "cambiado: ") + ", ".join(changes)
+            if changes else "sin cambios", "resultado": {"ok": True}}
+
+
 def install_lead(check: bool) -> dict:
     from hermes_cli.profiles import get_profile_dir
     profile_dir = Path(get_profile_dir(LEAD))
@@ -250,7 +332,7 @@ def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> 
     if profile_dir.exists():
         if refresh and not check:
             update_specialist(member, profile_dir)
-        placed = set_alice_placement(profile_dir, member["department"], order, check)
+        placed = set_alice_placement(profile_dir, member.get("department"), order, check)
         synced = sync_profile(member, profile_dir, check)
         state = "actualizado" if refresh else "ya existe"
         if check:
@@ -277,7 +359,7 @@ def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> 
     except (ValueError, IndexError):
         created = {"ok": False, "error": (run.stderr or run.stdout).strip()[-400:]}
     if created.get("ok") and not check:
-        set_alice_placement(profile_dir, member["department"], order)
+        set_alice_placement(profile_dir, member.get("department"), order)
         sync_profile(member, profile_dir, check)
     return {"agente": member["name"], "estado": "comprobado" if check else "creado", "resultado": created}
 
@@ -285,9 +367,10 @@ def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> 
 def main(argv: list) -> int:
     check = "--comprobar" in argv
     refresh = "--actualizar" in argv
-    results = [prepare_shared_folder(check), install_lead(check)]
+    results = [prepare_shared_folder(check), prepare_evals(check), install_lead(check),
+               install_specialist(EVALS, 1, check, refresh)]
     by_department = sorted(TEAM, key=lambda m: DEPARTMENTS.index(m["department"]))
-    for order, member in enumerate(by_department, start=1):
+    for order, member in enumerate(by_department, start=2):
         results.append(install_specialist(member, order, check, refresh))
     ok = all(r["resultado"].get("ok", False) for r in results)
     print(json.dumps({"ok": ok, "canal": CHANNEL, "equipo": results}, ensure_ascii=False, indent=2))

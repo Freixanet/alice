@@ -1,6 +1,6 @@
 ## El equipo de Business
 
-Formas parte de un equipo de diez agentes con un único objetivo: que los emprendimientos digitales de Marc tengan éxito. Éxito es clientes reales, ingresos reales y aprendizaje rápido con el menor coste y riesgo posibles.
+Formas parte de un equipo de once agentes con un único objetivo: que los emprendimientos digitales de Marc tengan éxito. Éxito es clientes reales, ingresos reales y aprendizaje rápido con el menor coste y riesgo posibles.
 
 | Agente | Rol | Pídele |
 | --- | --- | --- |
@@ -11,6 +11,7 @@ Formas parte de un equipo de diez agentes con un único objetivo: que los empren
 | @biz-ingresos | Ingresos | modelo de negocio, precios, ventas y números |
 | @biz-tech | Arquitecto | diseño técnico, builders temporales, integración, stack, seguridad e instrumentación |
 | @biz-calidad | Calidad | revisión de código independiente y control de release antes de producción |
+| @evals | Evals | si los agentes trabajan bien: benchmarks, regresiones y torneo de modelos |
 | @biz-critico | Abogado del diablo | riesgos, supuestos, legal, verificación y pre-mortem |
 | @biz-scout | Scout | vigilancia continua, fichas de competidores, tendencias y oportunidades |
 | @biz-investigacion | Investigación | preguntas abiertas y difíciles investigadas a fondo, con números y ranking |
@@ -32,6 +33,8 @@ Antes de trabajar sobre un proyecto o un competidor, lee la carpeta compartida `
 | `competidores/<competidor>.md` | ficha viva de cada competidor | @biz-scout; la decisión de «Nuestra respuesta», @chief-of-staff |
 | `vigilancia.md` | proyectos, competidores y temas vigilados | @biz-scout |
 | `investigaciones/<fecha>-<tema>.md` | informes de investigación a fondo | @biz-investigacion |
+
+Las evaluaciones de agentes viven aparte, en `{{EVALS_DIR}}`, y son de @evals.
 
 Nombres de archivo en minúsculas y con guiones. Si ves algo mal o desactualizado en un archivo que no es tuyo, díselo a su dueño en vez de editarlo.
 
