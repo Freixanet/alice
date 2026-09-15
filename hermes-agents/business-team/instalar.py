@@ -79,19 +79,30 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8").strip().replace("{{BUSINESS_DIR}}", str(BUSINESS_DIR))
 
 
+# Templates the installer owns in the shared folder, from compartido/.
+TEMPLATES = {
+    "competidores/_plantilla.md": "plantilla-competidor.md",
+    "proyectos/_plantilla-cliente.md": "plantilla-cliente.md",
+    "proyectos/_plantilla-oportunidades.md": "plantilla-oportunidades.md",
+}
+FOLDERS = ("proyectos", "competidores", "investigaciones")
+
+
 def prepare_shared_folder(check: bool) -> dict:
-    """The shared folder and its competitor template. Never touches what the
-    agents wrote; the template is the installer's own and kept current."""
-    template = BUSINESS_DIR / "competidores" / "_plantilla.md"
-    wanted = read(HERE / "compartido" / "plantilla-competidor.md") + "\n"
-    missing = [d for d in ("proyectos", "competidores", "investigaciones") if not (BUSINESS_DIR / d).is_dir()]
-    stale = not template.is_file() or template.read_text(encoding="utf-8") != wanted
+    """The shared folder and its templates. Never touches what the agents wrote;
+    the templates are the installer's own and kept current."""
+    changes = [d for d in FOLDERS if not (BUSINESS_DIR / d).is_dir()]
     if not check:
-        for d in ("proyectos", "competidores", "investigaciones"):
+        for d in FOLDERS:
             (BUSINESS_DIR / d).mkdir(parents=True, exist_ok=True)
-        if stale:
-            template.write_text(wanted, encoding="utf-8")
-    changes = missing + (["_plantilla.md"] if stale else [])
+    for target, source in TEMPLATES.items():
+        path = BUSINESS_DIR / target
+        wanted = read(HERE / "compartido" / source) + "\n"
+        if path.is_file() and path.read_text(encoding="utf-8") == wanted:
+            continue
+        changes.append(target)
+        if not check:
+            path.write_text(wanted, encoding="utf-8")
     return {"agente": "carpeta compartida", "estado": ("cambiaría: " if check else "cambiado: ") + ", ".join(changes)
             if changes else "sin cambios", "resultado": {"ok": True}}
 
