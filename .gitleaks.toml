@@ -32,3 +32,9 @@ paths = ['''scripts/pairing-hermes-config\.test\.mjs''']
 [[allowlists]]
 description = "Routine identifier in activity stacking tests"
 regexes = ['''^default/job1$''']
+
+# A literal synthetic input for testing the 32-character production requirement.
+# Exact-value exception; the file and real credentials remain scanned.
+[[allowlists]]
+description = "Production configuration test fixture (not a credential)"
+regexes = ['''^test-fixture-secret-with-32-characters$''']

@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { createSelectiveJSONStorage } from "./selective-storage";
 import {
   addons,
   channels,
@@ -637,11 +638,13 @@ export const useHermes = create<HermesState>()(
     }),
     {
       name: COCKPIT_STORE,
-      storage: createJSONStorage(() =>
-        createHybridStorage({
-          userId: cockpitUserId,
-          isLegacyOwner: cockpitIsOwner,
-        }),
+      storage: createSelectiveJSONStorage(
+        () =>
+          createHybridStorage({
+            userId: cockpitUserId,
+            isLegacyOwner: cockpitIsOwner,
+          }),
+        cockpitUserId,
       ),
       skipHydration: true,
       version: 11,
