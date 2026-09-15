@@ -2775,9 +2775,13 @@ final class AppStore {
         // the kind of chat that opened blank on a phone.
         let tall = arguments.contains("-seedTallBotChat")
         guard tall || arguments.contains("-seedLongBotChat") else { return }
-        let report = (1...14).map { item in
-            "**Titular de prueba \(item)**\nUna frase con qué cambia y por qué importa en la práctica, lo bastante larga para ocupar dos líneas.\nhttps://example.com/noticia/\(item)"
-        }.joined(separator: "\n\n")
+        // Headlines carry their reply's number, so the end of one reply can be
+        // told from the end of another: replies are drawn block by block.
+        let report = { (reply: Int) in
+            (1...14).map { item in
+                "**Titular de prueba \(reply).\(item)**\nUna frase con qué cambia y por qué importa en la práctica, lo bastante larga para ocupar dos líneas.\nhttps://example.com/noticia/\(item)"
+            }.joined(separator: "\n\n")
+        }
         let start = Date().addingTimeInterval(-3_600)
         var messages: [Message] = []
         for n in 1...30 {
@@ -2789,7 +2793,7 @@ final class AppStore {
             ))
             messages.append(Message(
                 id: "uitest-a-\(n)", role: .assistant,
-                content: tall ? "Respuesta de prueba \(n).\n\n\(report)" : "Respuesta de prueba \(n).",
+                content: tall ? "Respuesta de prueba \(n).\n\n\(report(n))" : "Respuesta de prueba \(n).",
                 createdAt: at.addingTimeInterval(20), botName: "uitest-bot"
             ))
         }
@@ -2817,7 +2821,7 @@ final class AppStore {
                   let chat = self.conversations.firstIndex(where: { $0.id == "uitest-long-bot-chat" }),
                   let last = self.conversations[chat].messages.indices.last
             else { return }
-            self.conversations[chat].messages[last].content += "\n\n\(report)\n\nFin del informe."
+            self.conversations[chat].messages[last].content += "\n\n\(report(30))\n\nFin del informe."
         }
     }    #endif
 

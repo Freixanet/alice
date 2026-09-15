@@ -37,8 +37,10 @@ final class BotNavigationTests: XCTestCase {
         app.launchArguments += ["-seedTallBotChat"]
         app.launch()
 
+        // A reply is drawn block by block, so the end of the latest reply is
+        // its last headline, not the line it opens with.
         let latest = app.staticTexts.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Respuesta de prueba 30.")
+            NSPredicate(format: "label BEGINSWITH %@", "Titular de prueba 30.14")
         ).firstMatch
         XCTAssertTrue(
             latest.waitForExistence(timeout: 10),
