@@ -150,15 +150,16 @@ struct ChatScreen: View {
                     )
                 }
         } else {
-            // Home belongs to the full-height background; only the composer
-            // follows the keyboard. Keep its reserved space in both states.
+            // Home sits above the composer, wherever the composer is. Held
+            // still while the keyboard rose, the block stayed centred on the
+            // composer's resting place and the line under the title ended up
+            // behind the risen glass; it now rides up with it and never drops.
             ZStack(alignment: .bottom) {
                 Color.clear
                     .overlay {
                         EmptyChatView()
                             .padding(.bottom, homeComposerHeight + Self.restingLift)
                     }
-                    .ignoresSafeArea(.keyboard, edges: .bottom)
                     .contentShape(.rect)
                     .simultaneousGesture(dismissKeyboard)
 

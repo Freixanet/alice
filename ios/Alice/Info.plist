@@ -65,6 +65,8 @@
 	<string>Alice uses the microphone when you dictate a message.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Alice transcribes what you dictate so you can edit it before sending.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIAppFonts</key>
 	<array>
 		<string>InstrumentSerif-Regular.ttf</string>

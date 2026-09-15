@@ -3013,6 +3013,31 @@ final class AppStore {
 
     nonisolated static let businessChannel = "Business (Beta)"
 
+    /// Agent chats at work that the person set going (`AgentActivities`): a
+    /// reply under way, or teammates' answers still to come. An agent another
+    /// agent is waiting on is not the person's task, so it has no activity.
+    var agentWorks: [AgentActivities.Work] {
+        conversations.compactMap { chat in
+            guard chat.isCanonicalBotChat, let bot = chat.routedBotName else { return nil }
+            let work = backgroundWork(for: chat.id)
+            guard sendingConversations.contains(chat.id) || !work.isEmpty else { return nil }
+            return AgentActivities.Work(
+                profile: bot, name: botCurrentName(for: bot), mark: mark(for: bot),
+                waitingOn: work.waitingOn.map { botCurrentName(for: $0.handle) }
+            )
+        }
+    }
+
+    /// How an agent's task ended, from its last reply.
+    func agentEnding(_ profile: String) -> AgentActivities.Ending {
+        guard let chat = conversations.first(where: { $0.isCanonicalBotChat && $0.routedBotName == profile }),
+              let reply = chat.messages.last(where: { $0.role == .assistant })
+        else { return .finished }
+        if reply.error != nil { return .failed }
+        if reply.incomplete == true { return .stopped }
+        return .finished
+    }
+
     @discardableResult
     func createChannel(name: String, bots: [String]) -> BotChannel? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

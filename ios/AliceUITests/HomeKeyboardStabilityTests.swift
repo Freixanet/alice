@@ -29,11 +29,25 @@ final class HomeKeyboardStabilityTests: XCTestCase {
 
         let deltaY = focused.minY - before.minY
         print("HOME_FRAME before=\(before) focused=\(focused) deltaY=\(deltaY)")
+        // Home rides up with the composer and never drops: sliding down is how
+        // it used to end up behind the composer's glass.
         XCTAssertLessThanOrEqual(
-            abs(deltaY), 2,
-            "Empty Home should stay visually fixed when the software keyboard appears"
+            deltaY, 2,
+            "Empty Home must never move down when the software keyboard appears"
         )
+        XCTAssertGreaterThan(focused.minY, 0, "Home title must stay on screen")
         XCTAssertLessThan(focused.maxY, keyboard.frame.minY, "Home title must remain above the keyboard")
+
+        // Everything Home says has to stay clear of the composer, not just the
+        // title: the line under it was ending up behind the glass.
+        let composerTop = app.textFields.firstMatch.frame.minY
+        let subtitle = app.staticTexts["You talk to Alice. One thing at a time."]
+        XCTAssertTrue(subtitle.exists, "Home's subtitle should be on screen")
+        print("HOME_CLEARANCE subtitle=\(subtitle.frame) composerTop=\(composerTop)")
+        XCTAssertLessThan(
+            subtitle.frame.maxY, composerTop,
+            "Home's subtitle must not sit under the composer once the keyboard opens"
+        )
     }
 
     /// A press on the composer's own button must not put the keyboard away.

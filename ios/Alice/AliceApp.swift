@@ -14,6 +14,7 @@ struct AliceApp: App {
     @State private var store = AppStore()
     @State private var speech = ReadAloud()
     @State private var notifier = Notifier()
+    @State private var activities = AgentActivities()
     @State private var showRadarBotInstaller = false
     @State private var pairingLink: PendingPairingLink?
 
@@ -106,6 +107,11 @@ struct AliceApp: App {
                         drainPendingRoute()
                     }
                 }
+                // An agent set to work shows on the Lock Screen and in the
+                // Dynamic Island, and says how it ended once it stops.
+                .onChange(of: store.agentWorks, initial: true) { _, works in
+                    activities.sync(working: works, ending: store.agentEnding)
+                }
         }
         .backgroundTask(.appRefresh(Self.refreshTaskID)) {
             await handleRefresh()
@@ -171,8 +177,12 @@ struct AliceApp: App {
     private func handleRefresh() async {
         scheduleRefresh()
         await notifier.refreshPermission()
-        guard notifier.permission.canDeliver else { return }
         await store.restoreDashboard()
+        // The one moment Alice gets while closed: agents' Live Activities are
+        // brought up to date — or ended — whether or not notifications are on.
+        await store.refreshVisibleBotChats()
+        activities.sync(working: store.agentWorks, ending: store.agentEnding)
+        guard notifier.permission.canDeliver else { return }
         await notifier.post(store.syncEvents())
     }
 
