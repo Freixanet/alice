@@ -72,7 +72,8 @@ jobs:
   ios:
     if: github.event_name != 'pull_request' || github.actor == github.repository_owner
     runs-on: [self-hosted, macOS]
-    timeout-minutes: 20
+    # A cold simulator plus the full UI suite exceeds the old build-only budget.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - name: Install XcodeGen

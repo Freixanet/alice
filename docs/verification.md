@@ -17,7 +17,9 @@ bash scripts/verify-ios.sh ui
 The script creates/reuses a simulator named **Alice Verification**. It does not
 select a developer's personal simulator. `ALICE_SIMULATOR_ID` and
 `ALICE_DERIVED_DATA_PATH` can explicitly override its test environment.
-`all` runs both suites; `build` compiles without running tests.
+`all` runs both suites; `build` compiles without running tests. Cold simulator
+startup and UI automation can take considerably longer than unit tests; CI
+allows 45 minutes for the complete native job without changing test assertions.
 
 For a release, also review on a physical iPhone: fresh pairing, camera permission
 denial, loss of network, app suspension, long responses, attachments, keyboard

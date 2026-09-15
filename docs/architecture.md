@@ -34,7 +34,9 @@ bytes are retained for recovery rather than overwritten with an empty archive.
 User edits are persisted immediately; backgrounding saves current conversation
 state. A future move to a database must include migration and recovery tests.
 
-The web persists state per account. Optional encrypted sync uses device keys,
+The web persists state per account. Persisted updates must remain immutable:
+transient input changes skip serialization when persisted field references are
+unchanged, with the cache separated by account. Optional encrypted sync uses device keys,
 conversation replicas and a server-side immutable verifier. A pull cursor is
 saved with the corresponding state. Disconnection, retries and key mismatch are
 different states, not a single on/off preference.

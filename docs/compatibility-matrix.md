@@ -36,3 +36,18 @@ See [the detailed contract checklist](../HERMES_PANTHEON.md).
 - Broader Hermes updates may add management contracts beyond the HTTP fixtures.
   Revisit this matrix after each upstream release; do not infer total parity from
   a version string or the ability to send a chat message.
+
+## A fixture is not a client implementation
+
+The source fixtures describe Hermes' advertised HTTP surface. They do not imply
+that Alice implements a separate client for every wire protocol. For example,
+`/v1/responses` is recorded in the fixture, while Alice's conversations use its
+chat, run and dashboard RPC transports. The browser-control registration/socket
+endpoints are also recorded, but Alice does not implement a device-browser bridge
+for them. Hermes can still use browser tools on its own host; that is a different
+execution surface.
+
+Native dictation and read-aloud use the iOS speech interfaces. They do not imply
+support for a Hermes realtime-voice service: the checked static manifest marks
+`audio_api` and `realtime_voice` false. Review new advertised features individually
+instead of treating a fixture version as a universal compatibility certificate.

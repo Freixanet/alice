@@ -9,6 +9,7 @@ command -v xcodegen >/dev/null || { echo 'Install XcodeGen before running iOS ve
 
 DERIVED=${ALICE_DERIVED_DATA_PATH:-"$PWD/ios/.build/DerivedData"}
 ARGS=(-project ios/Alice.xcodeproj -scheme Alice -configuration Debug
+  -sdk iphonesimulator
   -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO
   "CURRENT_PROJECT_VERSION=${GITHUB_RUN_NUMBER:-2}"
   "ALICE_SOURCE_REVISION=${GITHUB_SHA:-$(git rev-parse HEAD)}")
@@ -51,4 +52,5 @@ case "$MODE" in
   ui) ARGS+=(-only-testing:AliceUITests) ;;
 esac
 xcodebuild "${ARGS[@]}" -destination "platform=iOS Simulator,id=$SIMULATOR" \
+  -destination-timeout 180 \
   -parallel-testing-enabled NO test

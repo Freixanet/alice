@@ -14,6 +14,16 @@ A native iPhone app for talking to and managing your own
 
 </div>
 
+<table>
+<tr>
+<td width="33%"><img src="docs/media/alice-ios-chat.png" alt="Alice on iPhone with a direct Connect to Hermes action"><br><sub>Start with your own Hermes.</sub></td>
+<td width="33%"><img src="docs/media/alice-ios-navigation.png" alt="Native drawer with Agents, Notes, Activity, Routines, Projects and Library"><br><sub>Everyday work, within reach.</sub></td>
+<td width="33%"><img src="docs/media/alice-ios-settings.png" alt="Native settings with connection, appearance and advanced options"><br><sub>Connection and preferences.</sub></td>
+</tr>
+</table>
+
+<sub>Actual iOS simulator captures, before connecting an agent.</sub>
+
 ## An interface for the agent you already own
 
 Alice brings conversations, agents, routines and everyday work into a native
