@@ -30,6 +30,17 @@ BASE_TOOLS = ["web", "file", "skills", "memory", "clarify", "todo"]
 EXTRA_TOOLS = {"browser", "terminal", "code_execution", "vision", "image_gen", "tts",
                "session_search", "cronjob", "delegation"}
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
+# The message style every agent follows in Alice. One copy, beside this script,
+# so an agent Forja creates writes like the rest.
+STYLE = Path(__file__).resolve().parent.parent / "references" / "estilo-mensajes.md"
+STYLE_START = "<!-- alice:estilo inicio -->"
+
+
+def with_style(soul: str) -> str:
+    """The instructions with the message style appended, unless they carry it."""
+    if STYLE_START in soul or not STYLE.is_file():
+        return soul
+    return soul + "\n\n" + STYLE.read_text(encoding="utf-8").strip()
 
 
 class SpecError(ValueError):
@@ -63,7 +74,7 @@ def load_spec(path: Path) -> dict:
         "name": name,
         "title": str(spec["title"]).strip(),
         "description": str(spec["description"]).strip(),
-        "soul": str(spec["soul"]).strip() + "\n",
+        "soul": with_style(str(spec["soul"]).strip()) + "\n",
         "tools": BASE_TOOLS + [t for t in tools if t not in BASE_TOOLS],
         "routines": routines,
     }

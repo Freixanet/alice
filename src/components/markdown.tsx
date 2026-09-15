@@ -12,6 +12,14 @@ import rehypeHighlight from "rehype-highlight";
 import { Check, Copy } from "lucide-react";
 import { useT } from "@/lib/use-i18n";
 import { normalizeMathDelimiters } from "@/lib/math-delimiters";
+import {
+  QUICK_REPLY_EVENT,
+  calloutKind,
+  hastText,
+  isQuickReply,
+  prepareMessageMarkup,
+  quickReplyText,
+} from "@/lib/message-markup";
 
 /**
  * Renders assistant text as Markdown.
@@ -36,6 +44,8 @@ function safeUrl(url: string, key: string): string {
   const value = url.trim();
   if (key === "src" && SAFE_INLINE_IMAGE.test(value)) return value;
   if (SAFE_PROTOCOL.test(value)) return value;
+  // A reply button; it is drawn as a button and never navigated to.
+  if (key === "href" && isQuickReply(value)) return value;
   if (value.startsWith("/") || value.startsWith("#")) return value;
   return "";
 }
@@ -99,11 +109,40 @@ function CodeBlock({ children }: { children: ReactNode }) {
 }
 
 const components: Components = {
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer nofollow">
-      {children}
-    </a>
-  ),
+  a: ({ children, href, node }) => {
+    if (isQuickReply(href)) {
+      const text = quickReplyText(href, hastText(node));
+      // The chat on screen sends it, as if typed (`QUICK_REPLY_EVENT`).
+      return (
+        <button
+          type="button"
+          className="alice-quick-reply"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent(QUICK_REPLY_EVENT, { detail: text }),
+            )
+          }
+        >
+          {children}
+        </button>
+      );
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer nofollow">
+        {children}
+      </a>
+    );
+  },
+  blockquote: ({ children, node }) => {
+    const kind = calloutKind(node);
+    return (
+      <blockquote
+        className={kind ? `alice-callout alice-callout-${kind}` : undefined}
+      >
+        {children}
+      </blockquote>
+    );
+  },
   img: ({ src, alt }) => <img src={src} alt={alt || ""} loading="lazy" />,
   pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
   table: ({ children }) => (
@@ -157,7 +196,7 @@ function useMathPlugins(source: string): MathPlugins | null {
 let loadedMath: MathPlugins | null = null;
 
 function MarkdownBody({ text }: { text: string }) {
-  const source = normalizeMathDelimiters(text);
+  const source = normalizeMathDelimiters(prepareMessageMarkup(text));
   const math = useMathPlugins(source);
   return (
     <div className="alice-markdown">

@@ -498,6 +498,43 @@ html[data-alice-app]:has(.alice-app) .alice-composer {
   color: var(--muted-foreground);
 }
 
+/* `> [!WARNING]` and friends: a card with its label in the callout's colour. */
+.alice-markdown blockquote.alice-callout {
+  border-left: 3px solid var(--callout);
+  border-radius: 0.6rem;
+  background: var(--muted);
+  padding: 0.65rem 0.9rem;
+  color: var(--foreground);
+}
+
+.alice-markdown .alice-callout > p:first-child {
+  margin: 0 0 0.3rem;
+  font-size: 0.8em;
+  color: var(--callout);
+}
+
+.alice-callout-note { --callout: #3b82f6; }
+.alice-callout-tip { --callout: #16a34a; }
+.alice-callout-important { --callout: #9333ea; }
+.alice-callout-warning { --callout: #d97706; }
+.alice-callout-caution { --callout: #dc2626; }
+
+/* `[Title](alice://reply?text=…)`: a reply the person can send with one tap. */
+.alice-quick-reply {
+  display: inline-flex;
+  align-items: center;
+  margin: 0.2rem 0.4rem 0.2rem 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.9em;
+  color: var(--foreground);
+}
+
+.alice-quick-reply:hover {
+  background: var(--accent);
+}
+
 .alice-markdown hr {
   margin: 1.25rem 0;
   border: 0;

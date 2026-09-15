@@ -128,6 +128,7 @@ final class AppStore {
         static let botCustomNames = "alice.bot.customNames"
         static let botSectionOrder = "alice.bot.sectionOrder"
         static let botChannels = "alice.bot.channels"
+        static let botPlacementsApplied = "alice.bot.placementsApplied"
         static let unassignedExpanded = "alice.bot.unassignedExpanded"
         static let hiddenExpanded = "alice.bot.hiddenExpanded"
         static let homeCollapsed = "alice.bot.homeCollapsed"
@@ -175,6 +176,11 @@ final class AppStore {
                 defaults.set(data, forKey: Keys.botChannels)
             }
         }
+    }
+    /// The placement revision already applied to each agent
+    /// (`BotChannel.applyingPlacements`), so it is applied only once.
+    private var botPlacementsApplied: [String: Int] = [:] {
+        didSet { defaults.set(botPlacementsApplied, forKey: Keys.botPlacementsApplied) }
     }
     /// Whether Unassigned and Hidden are open. Like every section, each stays
     /// as it was left until the person changes it.
@@ -303,6 +309,7 @@ final class AppStore {
         botSections = (defaults.dictionary(forKey: Keys.botSections) as? [String: String]) ?? [:]
         botChannels = (defaults.data(forKey: Keys.botChannels))
             .flatMap { try? JSONDecoder().decode([BotChannel].self, from: $0) } ?? []
+        botPlacementsApplied = (defaults.dictionary(forKey: Keys.botPlacementsApplied) as? [String: Int]) ?? [:]
         unassignedExpanded = defaults.bool(forKey: Keys.unassignedExpanded)
         hiddenExpanded = defaults.bool(forKey: Keys.hiddenExpanded)
         homeCollapsed = defaults.bool(forKey: Keys.homeCollapsed)
@@ -892,7 +899,17 @@ final class AppStore {
         }
 
         if list != cachedBots { cachedBots = list }
+        if remoteMetadata { applyBotPlacements(list) }
         return list
+    }
+
+    /// Files agents Hermes says belong in a channel there, once per placement.
+    private func applyBotPlacements(_ bots: [BotRow]) {
+        let result = BotChannel.applyingPlacements(
+            bots, to: botChannels, applied: botPlacementsApplied
+        )
+        if result.channels != botChannels { botChannels = result.channels }
+        if result.applied != botPlacementsApplied { botPlacementsApplied = result.applied }
     }
 
     /// Alice owns `default` as Home. Every named profile remains in Bots, even
@@ -5109,6 +5126,28 @@ final class AppStore {
             sendingConversations.insert(activeID)
         } else {
             sendingConversations.remove(activeID)
+        }
+    }
+
+    /// A reply button in a message (`alice://reply`): its text goes into the
+    /// chat on screen as if typed. Whatever the person was writing stays in
+    /// the composer, and is not sent along with it.
+    func sendQuickReply(_ text: String) {
+        let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reply.isEmpty else { return }
+        let savedDraft = draft
+        let savedAttachments = draftAttachments
+        let keepsDraft = !savedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !savedAttachments.isEmpty
+        // Offline, `send` reconnects and then sends whatever is in the
+        // composer — which would be the person's own draft by then.
+        guard isConnected || !keepsDraft else { return }
+        draft = reply
+        draftAttachments = []
+        send()
+        if keepsDraft {
+            draft = savedDraft
+            draftAttachments = savedAttachments
         }
     }
 

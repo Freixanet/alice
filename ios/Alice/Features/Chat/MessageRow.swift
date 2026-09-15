@@ -61,36 +61,23 @@ struct MessageRow: View {
                             }
                         } else {
                             RoutineReportCard(name: routine) {
-                                Text(attributed(content))
-                                    .textSelection(.enabled)
-                                    .tint(Palette.link(scheme))
+                                RichMessageView(content: content, failed: message.error != nil)
                             }
                         }
                     } else if let agent = message.fromAgent {
                         AgentMessageCard(handle: agent) {
-                            Text(attributed(message.content))
-                                .textSelection(.enabled)
-                                .tint(Palette.link(scheme))
+                            RichMessageView(content: message.content, failed: message.error != nil)
                         }
                     } else if !message.content.isEmpty {
-                        // Markdown, the way every other model surface shows a
-                        // reply. `.full` keeps block structure — lists, quotes
-                        // and code — instead of collapsing to one line.
-                        // No foregroundStyle here. Applied to the Text it
-                        // wins over every colour set inside the attributed
-                        // string, which repainted the links in the body
-                        // colour: tappable, but indistinguishable
-                        // from the prose around them. The colours are set on
-                        // the runs instead, body and links alike.
-                        Text(attributed(message.content))
-                            .textSelection(.enabled)
-                            // Links are painted from the environment's tint,
-                            // not from the colour set on their run — which is
-                            // why setting the run's colour changed nothing and
-                            // the links kept coming out in the app's accent.
-                            // The accent here is Stone: #ECECEA in the dark,
-                            // the same near-white as the body.
-                            .tint(Palette.link(scheme))
+                        // Markdown as blocks — headings, lists, tables, code,
+                        // callouts, formulas and reply buttons — the way
+                        // every other model surface shows a reply.
+                        // No foregroundStyle here: applied to a Text it wins
+                        // over the colours set inside the attributed string
+                        // and repaints the links in the body colour. Links
+                        // take the environment's tint, which `RichMessageView`
+                        // sets on every block that can hold one.
+                        RichMessageView(content: message.content, failed: message.error != nil)
                     }
 
                     if message.pending || !message.tools.isEmpty {
@@ -131,43 +118,6 @@ struct MessageRow: View {
         }
     }
 
-    /// The reply, with its emphasis but also its shape.
-    ///
-    /// `.full` parses block structure that `AttributedString` has nowhere to
-    /// put: a numbered list came back as one run with the items welded
-    /// together — "…en renovación.Amazon: Cupón directo…" — because the
-    /// paragraph breaks were understood and then discarded. Inline-only keeps
-    /// bold, italics and code while leaving every newline exactly where the
-    /// model put it, which is the half of Markdown that survives here.
-    private func attributed(_ content: String) -> AttributedString {
-        let key = RenderKey(
-            content: content, failed: message.error != nil, link: Palette.link(scheme)
-        )
-        if let cached = Self.rendered[key] { return cached }
-        let fresh = Self.linkified(
-            Self.parsed(content), body: key.failed ? Color.red : Color.primary, link: key.link
-        )
-        if Self.rendered.count >= 400 { Self.rendered.removeAll(keepingCapacity: true) }
-        Self.rendered[key] = fresh
-        return fresh
-    }
-
-    /// Replies already parsed and linkified, by what they say and how they
-    /// are drawn.
-    ///
-    /// Markdown parsing and link detection ran in `body`, for every row, on
-    /// every render. A bot chat is now laid out whole, and a Radar IA chat is
-    /// sixty long reports: opening one did all that work sixty times over,
-    /// which was the lag on opening. A reply only renders differently when its
-    /// text, its failure state or the colour scheme changes.
-    private struct RenderKey: Hashable {
-        let content: String
-        let failed: Bool
-        let link: Color
-    }
-
-    @MainActor private static var rendered: [RenderKey: AttributedString] = [:]
-
     /// Makes a bare URL tappable.
     ///
     /// Markdown only marks a link that was written as one, and a model listing
@@ -179,7 +129,7 @@ struct MessageRow: View {
     /// attributed copy by searching for them. Converting string offsets across
     /// the two is the obvious route and the fragile one: markdown parsing does
     /// not preserve them, and every failed conversion silently dropped a link.
-    private static func linkified(
+    static func linkified(
         _ input: AttributedString, body: Color, link: Color
     ) -> AttributedString {
         var output = input
@@ -224,7 +174,11 @@ struct MessageRow: View {
         return output
     }
 
-    private static func parsed(_ content: String) -> AttributedString {
+    /// Inline Markdown only — bold, italics, code, links — with every newline
+    /// left where the model put it. The block structure is `RichMarkdown`'s:
+    /// `.full` understood lists and paragraphs and then welded them together,
+    /// "…en renovación.Amazon: Cupón directo…", with nowhere to put them.
+    static func parsed(_ content: String) -> AttributedString {
         (try? AttributedString(
             markdown: content,
             options: .init(

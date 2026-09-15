@@ -55,6 +55,7 @@ import {
   type ActiveHermesRun,
 } from "@/lib/use-hermes-run-recovery";
 import { cn, uid } from "@/lib/utils";
+import { QUICK_REPLY_EVENT } from "@/lib/message-markup";
 
 export function ChatView() {
   const conversations = useHermes((s) => s.conversations);
@@ -254,9 +255,15 @@ export function ChatView() {
     if (!modelsOpen) setModelQuery("");
   }, [modelsOpen]);
 
-  async function send() {
-    const text = draft.trim();
-    if ((!text && files.length === 0) || sending || !conv) return;
+  /**
+   * Sends the composer, or `reply` — a reply button in a message — as if
+   * typed. A reply leaves whatever the person was writing in the composer.
+   */
+  async function send(reply?: string) {
+    const typed = reply === undefined;
+    const text = (typed ? draft : reply).trim();
+    const attached = typed ? files : [];
+    if ((!text && attached.length === 0) || sending || !conv) return;
     if (text === "/new" || text === "/reset" || text === "/clear") {
       setDraft("");
       newChat();
@@ -276,7 +283,7 @@ export function ChatView() {
       role: "user",
       content: text,
       createdAt: Date.now(),
-      attachments: files.length ? files : undefined,
+      attachments: attached.length ? attached : undefined,
     };
     const assistantId = uid();
     appendMessage(conv.id, user);
@@ -287,10 +294,27 @@ export function ChatView() {
       createdAt: Date.now(),
       pending: true,
     });
-    setDraft("");
-    setFiles([]);
+    if (typed) {
+      setDraft("");
+      setFiles([]);
+    }
     await runStream(conv.id, assistantId, [...conv.messages, user]);
   }
+
+  // Reply buttons live inside rendered Markdown, far from this component;
+  // they announce themselves with an event and the chat on screen sends.
+  const sendRef = useRef(send);
+  useEffect(() => {
+    sendRef.current = send;
+  });
+  useEffect(() => {
+    const onQuickReply = (event: Event) => {
+      const text = (event as CustomEvent<unknown>).detail;
+      if (typeof text === "string" && text.trim()) void sendRef.current(text);
+    };
+    window.addEventListener(QUICK_REPLY_EVENT, onQuickReply);
+    return () => window.removeEventListener(QUICK_REPLY_EVENT, onQuickReply);
+  }, []);
 
   async function retry(assistantId: string) {
     if (sending || !conv || conv.hermesSessionId) return;

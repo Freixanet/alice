@@ -139,6 +139,61 @@ extension BotChannel {
         return result
     }
 
+    /// Channels with each agent put where Hermes says it belongs
+    /// (`AlicePlacement`): in the channel of that name, whatever its case,
+    /// made if there is none, and in its section, made if missing. Agents
+    /// arrive in their placement order.
+    ///
+    /// Each placement revision is applied once and remembered in `applied`, by
+    /// profile. After that the person owns the agent's place: moving it out or
+    /// deleting the channel is not undone the next time the roster loads.
+    static func applyingPlacements(
+        _ bots: [BotRow], to channels: [BotChannel], applied: [String: Int]
+    ) -> (channels: [BotChannel], applied: [String: Int]) {
+        var channels = channels
+        var applied = applied
+        let pending = bots
+            .compactMap { bot -> (name: String, placement: AlicePlacement)? in
+                guard let placement = bot.placement,
+                      applied[bot.name].map({ $0 < placement.revision }) ?? true
+                else { return nil }
+                return (bot.name, placement)
+            }
+            .sorted {
+                ($0.placement.order ?? .max, $0.name) < ($1.placement.order ?? .max, $1.name)
+            }
+
+        for (bot, placement) in pending {
+            let name = placement.channel.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { continue }
+            let index: Int
+            if let found = channels.firstIndex(where: {
+                $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .caseInsensitiveCompare(name) == .orderedSame
+            }) {
+                index = found
+            } else {
+                channels.append(BotChannel(name: name))
+                index = channels.count - 1
+            }
+            var channel = channels[index]
+            channel.add(bot)
+            if let wanted = placement.section?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !wanted.isEmpty {
+                let section = channel.sections.first {
+                    $0.caseInsensitiveCompare(wanted) == .orderedSame
+                } ?? wanted
+                channel.addSection(section)
+                channel.setSection(section, for: bot)
+            } else {
+                channel.setSection(nil, for: bot)
+            }
+            channels[index] = channel
+            applied[bot] = placement.revision
+        }
+        return (channels, applied)
+    }
+
     /// Channels made before a channel was a folder were conversations flagged
     /// `isChannel` with no channel of their own. Each becomes a channel of the
     /// same name. One nobody wrote in is only a name, so the conversation goes;

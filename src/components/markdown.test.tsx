@@ -122,6 +122,59 @@ describe("assistant Markdown", () => {
   });
 });
 
+describe("what Alice's agents write", () => {
+  it("draws a GitHub callout as a labelled card", () => {
+    const { container } = render(
+      <Markdown text={"> [!WARNING]\n> Mind the <u>deadline</u>."} />,
+    );
+    const quote = container.querySelector("blockquote");
+    expect(quote).toHaveClass("alice-callout", "alice-callout-warning");
+    expect(quote?.querySelector("p")).toHaveTextContent("Warning");
+    expect(container.textContent).not.toContain("[!WARNING]");
+    expect(container.textContent).not.toContain("<u>");
+    expect(container.querySelectorAll("strong")[1]).toHaveTextContent(
+      "deadline",
+    );
+  });
+
+  it("leaves a plain quote and code alone", () => {
+    const { container } = render(
+      <Markdown
+        text={"> just a quote\n\n```md\n> [!NOTE]\n<u>x</u>\n```\n\n`<u>y</u>`"}
+      />,
+    );
+    expect(container.querySelector("blockquote")).not.toHaveClass(
+      "alice-callout",
+    );
+    expect(container.querySelector("pre code")?.textContent).toContain(
+      "> [!NOTE]\n<u>x</u>",
+    );
+    expect(container.textContent).toContain("<u>y</u>");
+  });
+
+  it("turns a reply link into a button that sends its text", () => {
+    const heard: string[] = [];
+    const listener = (event: Event) =>
+      heard.push((event as CustomEvent<string>).detail);
+    window.addEventListener("alice:quick-reply", listener);
+    try {
+      render(
+        <Markdown
+          text={
+            "[Go ahead](alice://reply?text=Go%20ahead%2C%20please)\n[Wait](alice://reply)"
+          }
+        />,
+      );
+      expect(screen.queryByRole("link")).toBeNull();
+      screen.getByRole("button", { name: "Go ahead" }).click();
+      screen.getByRole("button", { name: "Wait" }).click();
+      expect(heard).toEqual(["Go ahead, please", "Wait"]);
+    } finally {
+      window.removeEventListener("alice:quick-reply", listener);
+    }
+  });
+});
+
 describe("math", () => {
   // KaTeX is a lazy chunk. Under the full coverage suite the first dynamic
   // import can legitimately take longer than Testing Library's 1 s default,

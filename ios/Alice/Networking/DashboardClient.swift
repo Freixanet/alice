@@ -470,6 +470,19 @@ struct BotMetadata: Hashable, Sendable, Codable {
     var present: Bool = false
 }
 
+/// Where Alice files an agent: `ui_meta["alice"]`, written by whoever set the
+/// agent up (the Business team's installer, for one).
+///
+/// A suggestion, not a rule. Alice applies each revision once, so an agent the
+/// person later moves or takes out of the channel stays where they left it.
+struct AlicePlacement: Hashable, Sendable, Codable {
+    var channel: String
+    var section: String? = nil
+    /// Position among the agents placed in the same channel.
+    var order: Int? = nil
+    var revision: Int = 0
+}
+
 /// A Hermes profile as Alice's bot roster sees it.
 ///
 /// Named profiles are the compatibility boundary used by Hermes Bot Mode: new
@@ -489,6 +502,7 @@ struct BotRow: Identifiable, Hashable, Sendable, Codable {
     var gatewayRunning: Bool
     var active: Bool
     var metadata: BotMetadata = .init()
+    var placement: AlicePlacement? = nil
 
     var hidden: Bool { metadata.hidden ?? false }
     var pinned: Bool { metadata.pinned ?? false }
@@ -1273,6 +1287,15 @@ extension DashboardClient {
             let rowTitle = Self.nonEmpty(row["title"] as? String)
             let metaDescription = Self.nonEmpty(rawMeta?["description"] as? String)
             let profileDescription = (row["description"] as? String) ?? ""
+            let rawPlacement = uiMeta?["alice"] as? [String: Any]
+            let placement = Self.nonEmpty(rawPlacement?["channel"] as? String).map { channel in
+                AlicePlacement(
+                    channel: channel,
+                    section: Self.nonEmpty(rawPlacement?["section"] as? String),
+                    order: Self.int(rawPlacement?["order"]),
+                    revision: Self.int(revisions?["alice"]) ?? 0
+                )
+            }
 
             return BotRow(
                 name: name,
@@ -1304,7 +1327,8 @@ extension DashboardClient {
                     created: Self.double(rawMeta?["created"]),
                     revision: revision,
                     present: rawMeta != nil
-                )
+                ),
+                placement: placement
             )
         }
         // Rows arrived and none of them had a name: a shape problem, not an
