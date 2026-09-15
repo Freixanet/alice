@@ -124,6 +124,9 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// Set on a routine's report shown as the bot's message (`RoutineDelivery`).
     /// Never stored with that role: the transcript keeps Hermes' own turn.
     var routineName: String? = nil
+    /// Set on another agent's message shown in a bot's chat (`AgentMessages`):
+    /// that agent's handle. Hermes stores it as a turn addressed to the bot.
+    var fromAgent: String? = nil
     /// Durable Hermes run state. Optional fields preserve compatibility with
     /// conversations saved by older builds.
     var runID: String? = nil
@@ -267,6 +270,10 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     var channelBots: [String]? = []
     /// The channel a team belongs to.
     var teamChannelID: String? = nil
+    /// Hermes rows in this bot chat that answer something it asked another
+    /// agent (`AgentMessages.delegations`). Any other agent's message here is
+    /// that agent asking this one, and is not shown.
+    var agentAnswerIDs: [String]? = nil
 
     /// Same contract as `Message.init(from:)`: every key an older build might
     /// not have written is optional here, so a new field can never turn an
@@ -287,6 +294,7 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
         isChannel = try box.decodeIfPresent(Bool.self, forKey: .isChannel)
         channelBots = try box.decodeIfPresent([String].self, forKey: .channelBots)
         teamChannelID = try box.decodeIfPresent(String.self, forKey: .teamChannelID)
+        agentAnswerIDs = try box.decodeIfPresent([String].self, forKey: .agentAnswerIDs)
     }
 
     init(

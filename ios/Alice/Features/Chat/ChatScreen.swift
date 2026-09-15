@@ -356,6 +356,7 @@ struct ChatScreen: View {
 /// while lazy rows were still measuring; on a phone it could land short, and
 /// a press on the jump button during a flick took several tries.
 private struct TranscriptView: View {
+    @Environment(AppStore.self) private var store
     let conversation: Conversation
     /// This bot's routine runs that found nothing, shown as cards.
     var quietRuns: [QuietRoutineRun] = []
@@ -395,7 +396,8 @@ private struct TranscriptView: View {
 
     private var presentedMessages: [Message] {
         RoutineDelivery.present(
-            conversation.messages, botName: conversation.botName, quietRuns: quietRuns
+            conversation.messages, botName: conversation.botName, quietRuns: quietRuns,
+            agentAnswers: Set(conversation.agentAnswerIDs ?? [])
         )
     }
     private var visibleMessages: ArraySlice<Message> { presentedMessages.suffix(shown) }
@@ -425,9 +427,18 @@ private struct TranscriptView: View {
                         .glassEffect(.regular.interactive(), in: .capsule)
                         .frame(maxWidth: .infinity)
                     }
+                    // While work goes on behind the scenes, the last reply is
+                    // not the end of the task: nothing to copy or share yet.
+                    let working = !store.backgroundWork(for: conversation.id).isEmpty
+                    let lastReply = visibleMessages.last { $0.role == .assistant }?.id
                     ForEach(visibleMessages) { message in
-                        MessageRow(message: message).id(message.id)
+                        MessageRow(
+                            message: message,
+                            showsActions: !(working && message.id == lastReply)
+                        )
+                        .id(message.id)
                     }
+                    BackgroundWorkCard(conversationID: conversation.id)
                     // A question the agent is waiting on, where the reply
                     // it holds up would appear.
                     ChatQuestionsCard(conversationID: conversation.id)

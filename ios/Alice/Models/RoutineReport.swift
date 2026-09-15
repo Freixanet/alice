@@ -136,10 +136,13 @@ enum RoutineDelivery {
     /// The card for a run that found nothing (`QuietRoutineRun`).
     static let noNews = "Sin novedades: la rutina se ejecutó y no encontró nada nuevo que contar."
 
+    /// - Parameter agentAnswers: the rows of this chat that answer something it
+    ///   asked another agent (`Conversation.agentAnswerIDs`).
     static func present<Messages: Sequence>(
-        _ messages: Messages, botName: String?, quietRuns: [QuietRoutineRun] = []
+        _ messages: Messages, botName: String?, quietRuns: [QuietRoutineRun] = [],
+        agentAnswers: Set<String> = []
     ) -> [Message] where Messages.Element == Message {
-        var shown = reports(messages, botName: botName)
+        var shown = reports(Array(messages), botName: botName, agentAnswers: agentAnswers)
         // Runs without news leave nothing in the transcript; their cards go
         // where they happened, among the turns around them.
         for run in quietRuns.sorted(by: { $0.finishedAt < $1.finishedAt }) {
@@ -157,12 +160,17 @@ enum RoutineDelivery {
         return shown
     }
 
-    private static func reports<Messages: Sequence>(
-        _ messages: Messages, botName: String?
-    ) -> [Message] where Messages.Element == Message {
+    private static func reports(
+        _ messages: [Message], botName: String?, agentAnswers: Set<String>
+    ) -> [Message] {
         var shown: [Message] = []
-        var answeringRoutine = false
-        for message in messages {
+        // The bot answering a turn that was not the person's — a routine's
+        // report, or Hermes' notice that a delivery to another agent finished.
+        // Left out until the person writes again.
+        var answeringHandover = false
+        // Another agent's answer is on screen since the person last wrote.
+        var heardFromAgent = false
+        for (index, message) in messages.enumerated() {
             switch message.role {
             case .user:
                 if let report = RoutineReport(message.content) {
@@ -172,14 +180,47 @@ enum RoutineDelivery {
                     delivered.botName = botName
                     delivered.routineName = report.name
                     shown.append(delivered)
-                    answeringRoutine = true
+                    answeringHandover = true
+                } else if let incoming = AgentMessages.incoming(message.content) {
+                    guard AgentMessages.isAnswer(at: index, in: messages, answers: agentAnswers) else {
+                        // Another agent asking this one. The exchange is
+                        // theirs: the person follows it in the chat that
+                        // asked, so neither the request nor this agent's
+                        // answer to it shows here.
+                        answeringHandover = true
+                        continue
+                    }
+                    // Another agent answering, not the person: its own card.
+                    var delivered = message
+                    delivered.role = .assistant
+                    delivered.content = incoming.body
+                    delivered.botName = botName
+                    delivered.fromAgent = incoming.handle
+                    shown.append(delivered)
+                    answeringHandover = false
+                    heardFromAgent = true
+                } else if let notice = AgentMessages.notice(message.content) {
+                    // Hermes telling the bot, with the shell's output attached.
+                    // Once the answer itself is on screen, what the bot says
+                    // about the delivery only repeats it.
+                    if notice.succeeded {
+                        answeringHandover = heardFromAgent
+                    } else {
+                        var failed = message
+                        failed.role = .assistant
+                        failed.content = AgentMessages.failure(to: notice.handle)
+                        failed.botName = botName
+                        shown.append(failed)
+                        answeringHandover = false
+                    }
                 } else {
                     shown.append(message)
-                    answeringRoutine = false
+                    answeringHandover = false
+                    heardFromAgent = false
                 }
             case .assistant:
                 // A decision the bot is waiting on still needs the person.
-                if answeringRoutine, message.approval == nil { continue }
+                if answeringHandover, message.approval == nil { continue }
                 shown.append(message)
             }
         }

@@ -775,8 +775,8 @@ struct BotsScreen: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .layoutPriority(1)
-                    if store.isBotUnread(bot.name) {
-                        unreadDot(size: Self.unreadDotSize)
+                    if let color = dotColor(bot.name) {
+                        statusDot(color, size: Self.unreadDotSize)
                             .offset(y: 1)
                     }
                 }
@@ -825,8 +825,8 @@ struct BotsScreen: View {
                 in: MarkShape(silhouette: mark(bot).silhouette)
             )
 
-            if showsUnread && store.isBotUnread(bot.name) {
-                unreadDot(size: Self.unreadDotSize)
+            if showsUnread, let color = dotColor(bot.name) {
+                statusDot(color, size: Self.unreadDotSize)
                     // The visible edge of a round mark crosses this badge near
                     // its centre. A rectangular bottom-trailing alignment sits
                     // beyond that curved edge, so pull it back into the face.
@@ -843,14 +843,21 @@ struct BotsScreen: View {
         .padding(size * 0.16)
     }
 
-    private func unreadDot(size: CGFloat) -> some View {
+    /// Green while the agent is at work, blue while something of its is
+    /// unread, nothing otherwise.
+    private func dotColor(_ bot: String) -> Color? {
+        if store.isBotWorking(bot) { return .green }
+        return store.isBotUnread(bot) ? .blue : nil
+    }
+
+    private func statusDot(_ color: Color, size: CGFloat) -> some View {
         Circle()
-            .fill(Color.blue)
+            .fill(color)
             .frame(width: size, height: size)
             .overlay {
                 Circle().stroke(Palette.background(scheme), lineWidth: 2)
             }
-            .accessibilityLabel("Unread")
+            .accessibilityLabel(color == .green ? "Working" : "Unread")
     }
 
     private static let unreadDotSize: CGFloat = 10
@@ -887,7 +894,7 @@ struct BotsScreen: View {
                     Text("Hidden")
                     Text("\(hidden.count)")
                         .foregroundStyle(.secondary)
-                    if !store.hiddenExpanded, store.hasUnread(hidden.map(\.name)) { unreadDot }
+                    if !store.hiddenExpanded { sectionDot(hidden.map(\.name)) }
                     Image(systemName: store.hiddenExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -936,7 +943,7 @@ struct BotsScreen: View {
     private var homeFolder: some View {
         folderHeader(
             "Home", systemImage: "house.fill", collapsed: store.homeCollapsed,
-            count: unpinnedRows.count, unread: store.hasUnread(unpinnedRows.map(\.name)),
+            count: unpinnedRows.count, bots: unpinnedRows.map(\.name),
             identifier: "bots.home"
         ) {
             withAnimation(.snappy(duration: 0.2)) {
@@ -971,7 +978,7 @@ struct BotsScreen: View {
     /// The row that opens and shuts a folder — Home or a channel — and stays
     /// as it was left.
     private func folderHeader(
-        _ name: String, systemImage: String, collapsed: Bool, count: Int, unread: Bool,
+        _ name: String, systemImage: String, collapsed: Bool, count: Int, bots: [String],
         identifier: String, toggle: @escaping () -> Void
     ) -> some View {
         Button(action: toggle) {
@@ -988,7 +995,7 @@ struct BotsScreen: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.tertiary)
                 }
-                if collapsed && unread { unreadDot }
+                if collapsed { sectionDot(bots) }
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
@@ -1023,7 +1030,7 @@ struct BotsScreen: View {
         let teams = store.teams(in: channel.id)
         folderHeader(
             channel.name, systemImage: "folder.fill", collapsed: channel.collapsed,
-            count: members.count + teams.count, unread: store.hasUnread(members.map(\.name)),
+            count: members.count + teams.count, bots: members.map(\.name),
             identifier: "bots.channel.\(channel.name)"
         ) {
             withAnimation(.snappy(duration: 0.2)) {
@@ -1112,7 +1119,7 @@ struct BotsScreen: View {
                 Text(section)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                if collapsed, store.hasUnread(bots.map(\.name)) { unreadDot }
+                if collapsed { sectionDot(bots.map(\.name)) }
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
@@ -1180,11 +1187,20 @@ struct BotsScreen: View {
     /// Only on a shut section, between its name and its arrow: something
     /// inside is unread and the fold keeps it out of sight. It goes the moment
     /// the section opens — the agents are then in view, with their own dots.
-    private var unreadDot: some View {
-        Circle()
-            .fill(Color.blue)
-            .frame(width: 7, height: 7)
-            .accessibilityLabel("Unread")
+    /// Green instead while an agent inside is at work.
+    @ViewBuilder
+    private func sectionDot(_ bots: [String]) -> some View {
+        if store.isWorking(bots) {
+            Circle()
+                .fill(Color.green)
+                .frame(width: 7, height: 7)
+                .accessibilityLabel("Working")
+        } else if store.hasUnread(bots) {
+            Circle()
+                .fill(Color.blue)
+                .frame(width: 7, height: 7)
+                .accessibilityLabel("Unread")
+        }
     }
 
     @ViewBuilder
@@ -1569,8 +1585,9 @@ struct BotsScreen: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                if store.collapsedSections.contains(title),
-                   store.hasUnread(bots(in: title).map(\.name)) { unreadDot }
+                if store.collapsedSections.contains(title) {
+                    sectionDot(bots(in: title).map(\.name))
+                }
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
@@ -1653,7 +1670,7 @@ struct BotsScreen: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.tertiary)
                 }
-                if !store.unassignedExpanded, store.hasUnread(unassignedBots.map(\.name)) { unreadDot }
+                if !store.unassignedExpanded { sectionDot(unassignedBots.map(\.name)) }
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
@@ -1837,7 +1854,11 @@ struct BotsScreen: View {
     /// time.
     private func timestamp(for bot: BotRow) -> String {
         guard let conversation = store.conversations.first(where: { $0.botName == bot.name }),
-              let reply = RoutineDelivery.present(conversation.messages, botName: bot.name, quietRuns: store.quietRoutineRuns[bot.name] ?? []).last(where: {
+              let reply = RoutineDelivery.present(
+                  conversation.messages, botName: bot.name,
+                  quietRuns: store.quietRoutineRuns[bot.name] ?? [],
+                  agentAnswers: Set(conversation.agentAnswerIDs ?? [])
+              ).last(where: {
                   $0.role == .assistant && !$0.pending && MessageTime.isKnown($0.createdAt)
               })
         else { return "" }
@@ -1863,7 +1884,11 @@ struct BotsScreen: View {
         guard let conversation = store.conversations.first(
             where: { $0.botName == bot.name }
         ) else { return nil }
-        guard let reply = RoutineDelivery.present(conversation.messages, botName: bot.name, quietRuns: store.quietRoutineRuns[bot.name] ?? []).last(where: {
+        guard let reply = RoutineDelivery.present(
+            conversation.messages, botName: bot.name,
+            quietRuns: store.quietRoutineRuns[bot.name] ?? [],
+            agentAnswers: Set(conversation.agentAnswerIDs ?? [])
+        ).last(where: {
             $0.role == .assistant && !$0.pending
                 && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }) else { return nil }

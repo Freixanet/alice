@@ -4,6 +4,9 @@ struct MessageRow: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let message: Message
+    /// Off for the last reply while its agent is still working behind the
+    /// scenes: that reply is not the end of the task yet.
+    var showsActions = true
 
     var body: some View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
@@ -63,6 +66,12 @@ struct MessageRow: View {
                                     .tint(Palette.link(scheme))
                             }
                         }
+                    } else if let agent = message.fromAgent {
+                        AgentMessageCard(handle: agent) {
+                            Text(attributed(message.content))
+                                .textSelection(.enabled)
+                                .tint(Palette.link(scheme))
+                        }
                     } else if !message.content.isEmpty {
                         // Markdown, the way every other model surface shows a
                         // reply. `.full` keeps block structure — lists, quotes
@@ -113,7 +122,7 @@ struct MessageRow: View {
                     }
                     // Only once the reply has finished: acting on half an
                     // answer copies or shares something that is still changing.
-                    if !message.pending && !message.content.isEmpty {
+                    if showsActions, !message.pending, !message.content.isEmpty {
                         MessageActions(message: message)
                     }
                 }
@@ -241,6 +250,37 @@ private struct RoutineReportCard<Content: View>: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Routine: \(name)")
+            content
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Palette.border(scheme), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Another agent's message in this chat — its answer to something this agent
+/// asked, or a request it sent — marked as that agent's rather than drawn as
+/// something the person wrote.
+private struct AgentMessageCard<Content: View>: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let handle: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                BotMarkView(mark: store.mark(for: handle), size: 18)
+                Text("From \(store.botCurrentName(for: handle))")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
             content
         }
         .padding(12)
