@@ -4,8 +4,15 @@ export type GatewayPlace = "cloud" | "mac" | "device";
 
 export type GatewayStatus = "idle" | "checking" | "live" | "down";
 
-export const HERMES_CURRENT_STABLE = "0.21.0";
+export const HERMES_CURRENT_STABLE = "0.21.3";
 export const HERMES_PREVIOUS_STABLE = "0.20.6";
+// Versions whose 0.21 API contracts have been checked against release sources.
+// `current` identifies this compatible contract family, not one exact patch.
+export const HERMES_CURRENT_CONTRACT_VERSIONS = [
+  HERMES_CURRENT_STABLE,
+  "0.21.2",
+  "0.21.0",
+] as const;
 
 export type HermesCompatibility = "current" | "previous" | "unknown";
 
@@ -21,7 +28,7 @@ export function parseHermesVersion(value: unknown): HermesVersion {
     ? (/^v?(\d+\.\d+\.\d+)(?:$|[-+])/.exec(raw)?.[1] ?? null)
     : null;
   const compatibility: HermesCompatibility =
-    normalized === HERMES_CURRENT_STABLE
+    HERMES_CURRENT_CONTRACT_VERSIONS.some((version) => version === normalized)
       ? "current"
       : normalized === HERMES_PREVIOUS_STABLE
         ? "previous"

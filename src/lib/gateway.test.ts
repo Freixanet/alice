@@ -108,6 +108,12 @@ describe("Hermes model parsing", () => {
 });
 
 describe("Hermes capability negotiation", () => {
+  it.each(["0.21.3", "v0.21.2", "0.21.0"])(
+    "keeps Pantheon controls available on verified patch %s",
+    (version) => {
+      expect(parseHermesVersion(version).compatibility).toBe("current");
+    },
+  );
   it("normalizes supported versions without accepting lookalikes", () => {
     expect(parseHermesVersion("v0.21.0-beta.1")).toEqual({
       raw: "v0.21.0-beta.1",

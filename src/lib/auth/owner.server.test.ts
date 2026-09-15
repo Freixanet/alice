@@ -57,6 +57,12 @@ beforeEach(() => {
   delete process.env.ALICE_OWNER_PASSWORD;
   delete process.env.ALICE_OWNER_CLAIM_LOCAL;
   process.env.ALICE_LOCAL_HERMES = "1";
+  const boot = globalThis as typeof globalThis & {
+    __aliceOwnerPasswordBoot__?: Promise<void>;
+    __aliceOwnerClaim__?: Promise<void>;
+  };
+  delete boot.__aliceOwnerPasswordBoot__;
+  delete boot.__aliceOwnerClaim__;
 });
 
 afterEach(() => {
@@ -64,6 +70,27 @@ afterEach(() => {
 });
 
 describe("isLocalHermesOwner", () => {
+  it("provisions once while concurrent authorization checks stay read-only", async () => {
+    process.env.ALICE_OWNER_EMAIL = "owner@example.test";
+    process.env.ALICE_OWNER_PASSWORD = "test-only-owner-password";
+    rows.user = [
+      { id: "owner", email: "owner@example.test", emailVerified: true },
+    ];
+    const { isLocalHermesOwner } = await subject();
+    const checks = await Promise.all(
+      Array.from({ length: 8 }, () => isLocalHermesOwner("owner")),
+    );
+    expect(checks.every(Boolean)).toBe(true);
+    expect(
+      queries.filter((q) => q.includes('insert into "account"')),
+    ).toHaveLength(1);
+    const provisioned = queries.length;
+    expect(await isLocalHermesOwner("owner")).toBe(true);
+    expect(
+      queries.slice(provisioned).every((q) => q.startsWith("select ")),
+    ).toBe(true);
+  });
+
   it("refuses an account that merely claims the pinned address", async () => {
     process.env.ALICE_OWNER_EMAIL = "owner@example.test";
     rows.user = [

@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Mark, Wordmark } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,26 @@ function LoginPage() {
   const [error, setError] = useState<string | null>(
     oauthError ? friendlyOAuthError(oauthError, t) : null,
   );
+  const [socialMethods, setSocialMethods] = useState<string[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/auth-methods", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data: unknown = await response.json();
+        if (controller.signal.aborted || !data || typeof data !== "object")
+          return;
+        const providers = (data as { providers?: unknown }).providers;
+        if (Array.isArray(providers))
+          setSocialMethods(
+            providers.filter(
+              (p): p is string => p === "google" || p === "apple",
+            ),
+          );
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   if (!authEnabled) return <Navigate to="/" />;
   if (!isPending && user && !user.isDevFallback) return <Navigate to="/" />;
@@ -111,33 +131,40 @@ function LoginPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           {t("login.subtitle")}
         </p>
-        <div className="mt-6 flex flex-col gap-2">
-          {LOGIN_SOCIAL.filter((provider) => provider.id !== "apple").map(
-            (provider) => (
-              <Button
-                key={provider.id}
-                type="button"
-                variant="outline"
-                disabled={busy !== null}
-                onClick={() => void continueWith(provider.id)}
-              >
-                {provider.id === "google" ? <GoogleMark /> : <AppleMark />}
-                {busy === provider.id
-                  ? t("login.wait")
-                  : provider.id === "google"
-                    ? t("login.continueGoogle")
-                    : t("login.continueApple")}
-              </Button>
-            ),
-          )}
-        </div>
-        <div className="relative my-6">
-          <div className="h-px bg-border" />
-          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-xs text-muted-foreground">
-            {t("login.or")}
-          </span>
-        </div>
-        <form className="flex flex-col gap-3" onSubmit={(e) => void submit(e)}>
+        {socialMethods.length > 0 && (
+          <>
+            <div className="mt-6 flex flex-col gap-2">
+              {LOGIN_SOCIAL.filter((provider) =>
+                socialMethods.includes(provider.id),
+              ).map((provider) => (
+                <Button
+                  key={provider.id}
+                  type="button"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => void continueWith(provider.id)}
+                >
+                  {provider.id === "google" ? <GoogleMark /> : <AppleMark />}
+                  {busy === provider.id
+                    ? t("login.wait")
+                    : provider.id === "google"
+                      ? t("login.continueGoogle")
+                      : t("login.continueApple")}
+                </Button>
+              ))}
+            </div>
+            <div className="relative my-6">
+              <div className="h-px bg-border" />
+              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-xs text-muted-foreground">
+                {t("login.or")}
+              </span>
+            </div>
+          </>
+        )}
+        <form
+          className="mt-6 flex flex-col gap-3"
+          onSubmit={(e) => void submit(e)}
+        >
           {mode === "up" ? (
             <label className="flex flex-col gap-1.5 text-sm">
               {t("login.name")}
@@ -169,7 +196,11 @@ function LoginPage() {
               minLength={8}
             />
           </label>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
           <Button
             type="submit"
             disabled={busy !== null || !email.trim() || password.length < 8}

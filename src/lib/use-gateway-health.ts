@@ -27,6 +27,16 @@ export function useGatewayHealth() {
     }
 
     async function check() {
+      try {
+        await probe();
+      } catch {
+        if (ctrl.signal.aborted) return;
+        setDown("Couldn’t check the connection to Hermes. Retrying shortly.");
+        schedule(15_000);
+      }
+    }
+
+    async function probe() {
       const alreadyLive = useHermes.getState().gatewayStatus === "live";
       if (!alreadyLive) setChecking();
       if (place !== "device") {
@@ -81,12 +91,9 @@ export function useGatewayHealth() {
         schedule(60_000);
         return;
       }
-      if (!(
-        alreadyLive &&
-        (result.code === "unreachable" || result.code === "cors")
-      )) {
-        setDown(result.error);
-      }
+      // A previous successful probe is not evidence of current connectivity.
+      // Keep the saved connection, but tell the user when it cannot be reached.
+      setDown(result.error);
       if (alreadyLive) {
         void import("./operational-telemetry-client")
           .then(({ reportClientError }) =>

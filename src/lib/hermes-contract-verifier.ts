@@ -1,6 +1,4 @@
 import {
-  HERMES_CURRENT_STABLE,
-  HERMES_PREVIOUS_STABLE,
   parseHermesCapabilityManifest,
   parseHermesVersion,
   type HermesCapabilityManifest,
@@ -44,10 +42,7 @@ export async function verifyLiveHermesContract(opts: {
       readJson(fetcher, `${base}/v1/toolsets`, headers, signal),
     ]);
     const version = parseHermesVersion(readVersion(health));
-    if (
-      version.normalized !== HERMES_CURRENT_STABLE &&
-      version.normalized !== HERMES_PREVIOUS_STABLE
-    ) {
+    if (version.normalized === null || version.compatibility === "unknown") {
       return {
         ok: false,
         error: version.raw

@@ -1,6 +1,7 @@
 import { authHeaders } from "./auth/client";
 import { conversationSchema } from "./conversation-contracts";
 import type { Conversation } from "./types";
+import { SyncKeyMismatchError } from "./sync-errors";
 import {
   deriveContentKey,
   decryptPayload,
@@ -63,34 +64,47 @@ export async function verifySyncKey(options: {
   signal?: AbortSignal;
 }): Promise<"matches" | "empty" | "mismatch"> {
   const key = await deriveContentKey(options.master, options.userId);
-  const response = syncPullResponseSchema.parse(
-    await postSync({ action: "pull", cursor: "0", limit: 50 }, options.signal),
-  );
-
-  const verifier = response.records.find((record) => record.id === VERIFIER_ID);
-  if (verifier) {
-    try {
-      await decryptPayload<unknown>(verifier.payload, key, VERIFIER_ID);
-      return "matches";
-    } catch {
-      return "mismatch";
+  let cursor = "0";
+  let sawConversation = false;
+  let readableConversation = false;
+  for (;;) {
+    const response = syncPullResponseSchema.parse(
+      await postSync({ action: "pull", cursor, limit: 200 }, options.signal),
+    );
+    const verifier = response.records.find(
+      (record) => record.id === VERIFIER_ID,
+    );
+    if (verifier) {
+      try {
+        await decryptPayload<unknown>(verifier.payload, key, VERIFIER_ID);
+        return "matches";
+      } catch {
+        return "mismatch";
+      }
     }
-  }
-
-  const readable = response.records.filter((record) =>
-    record.id.startsWith("conversation:"),
-  );
-  if (!readable.length) return "empty";
-  for (const record of readable) {
-    try {
-      await decryptPayload<unknown>(record.payload, key, record.id);
-      return "matches";
-    } catch {
-      // Try the next one: a single record could be corrupt for its own
-      // reasons, and one failure is not proof the key is wrong.
+    for (const record of response.records) {
+      if (!record.id.startsWith("conversation:")) continue;
+      sawConversation = true;
+      if (readableConversation) continue;
+      try {
+        await decryptPayload<unknown>(record.payload, key, record.id);
+        readableConversation = true;
+      } catch {
+        // A damaged record does not prove the whole account uses another key.
+      }
     }
+    if (!response.hasMore) break;
+    if (Number(response.cursor) <= Number(cursor))
+      throw new Error("Sync verification cursor did not advance.");
+    cursor = response.cursor;
   }
-  return "mismatch";
+  // Legacy accounts may predate the verifier. Inspect every page before
+  // treating an account as empty or accepting a legacy conversation's key.
+  return readableConversation
+    ? "matches"
+    : sawConversation
+      ? "mismatch"
+      : "empty";
 }
 
 /**
@@ -105,6 +119,8 @@ export async function ensureSyncVerifier(options: {
   master: Uint8Array;
   signal?: AbortSignal;
 }): Promise<void> {
+  if ((await verifySyncKey(options)) === "mismatch")
+    throw new SyncKeyMismatchError();
   const key = await deriveContentKey(options.master, options.userId);
   const payload = await encryptPayload(VERIFIER_PLAINTEXT, key, VERIFIER_ID);
   await postSync(
@@ -128,6 +144,10 @@ export async function ensureSyncVerifier(options: {
     },
     options.signal,
   );
+  // The server keeps the first verifier immutable. If another device created
+  // the set while this one was confirming its phrase, only its key may win.
+  if ((await verifySyncKey(options)) !== "matches")
+    throw new SyncKeyMismatchError();
 }
 
 /** What a pull produced, and where it got to. */

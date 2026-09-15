@@ -143,6 +143,15 @@ export default defineConfig(({ command, isPreview }) => ({
     host: "0.0.0.0",
     port: 8080,
     strictPort: true,
+    // Transform the entry route before the first browser requests it. Cold
+    // on-demand transforms otherwise serialize the initial hydration graph.
+    warmup: {
+      clientFiles: [
+        "./src/routes/__root.tsx",
+        "./src/routes/_app.tsx",
+        "./src/routes/_app/index.tsx",
+      ],
+    },
     watch: {
       ignored: [
         "**/coverage/**",

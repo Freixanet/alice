@@ -23,6 +23,7 @@ import { Route as AppProjectsRouteImport } from './routes/_app/projects'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSkillsRouteImport } from './routes/_app/skills'
 import { Route as AppToolsRouteImport } from './routes/_app/tools'
+import { Route as ApiAuthMethodsRouteImport } from './routes/api/auth-methods'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiHermesRouteImport } from './routes/api/hermes'
 import { Route as ApiPhoneRouteImport } from './routes/api/phone'
@@ -101,6 +102,11 @@ const AppToolsRoute = AppToolsRouteImport.update({
   path: '/tools',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiAuthMethodsRoute = ApiAuthMethodsRouteImport.update({
+  id: '/api/auth-methods',
+  path: '/api/auth-methods',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
   path: '/api/chat',
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/skills': typeof AppSkillsRoute
   '/tools': typeof AppToolsRoute
+  '/api/auth-methods': typeof ApiAuthMethodsRoute
   '/api/chat': typeof ApiChatRoute
   '/api/hermes': typeof ApiHermesRoute
   '/api/phone': typeof ApiPhoneRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/skills': typeof AppSkillsRoute
   '/tools': typeof AppToolsRoute
+  '/api/auth-methods': typeof ApiAuthMethodsRoute
   '/api/chat': typeof ApiChatRoute
   '/api/hermes': typeof ApiHermesRoute
   '/api/phone': typeof ApiPhoneRoute
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/_app/skills': typeof AppSkillsRoute
   '/_app/tools': typeof AppToolsRoute
+  '/api/auth-methods': typeof ApiAuthMethodsRoute
   '/api/chat': typeof ApiChatRoute
   '/api/hermes': typeof ApiHermesRoute
   '/api/phone': typeof ApiPhoneRoute
@@ -229,6 +238,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/skills'
     | '/tools'
+    | '/api/auth-methods'
     | '/api/chat'
     | '/api/hermes'
     | '/api/phone'
@@ -251,6 +261,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/skills'
     | '/tools'
+    | '/api/auth-methods'
     | '/api/chat'
     | '/api/hermes'
     | '/api/phone'
@@ -275,6 +286,7 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/skills'
     | '/_app/tools'
+    | '/api/auth-methods'
     | '/api/chat'
     | '/api/hermes'
     | '/api/phone'
@@ -289,6 +301,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiAuthMethodsRoute: typeof ApiAuthMethodsRoute
   ApiChatRoute: typeof ApiChatRoute
   ApiHermesRoute: typeof ApiHermesRoute
   ApiPhoneRoute: typeof ApiPhoneRoute
@@ -399,6 +412,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppToolsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/auth-methods': {
+      id: '/api/auth-methods'
+      path: '/api/auth-methods'
+      fullPath: '/api/auth-methods'
+      preLoaderRoute: typeof ApiAuthMethodsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -493,6 +513,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiAuthMethodsRoute: ApiAuthMethodsRoute,
   ApiChatRoute: ApiChatRoute,
   ApiHermesRoute: ApiHermesRoute,
   ApiPhoneRoute: ApiPhoneRoute,

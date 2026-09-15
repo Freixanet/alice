@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { generateMasterSecret } from "./sync-crypto";
+import {
+  deriveContentKey,
+  encryptPayload,
+  generateMasterSecret,
+} from "./sync-crypto";
 import {
   VERIFIER_ID,
   accountHasSyncSet,
@@ -241,6 +245,91 @@ describe("encrypted sync client", () => {
 });
 
 describe("key verification", () => {
+  it("finds a verifier after the first page instead of accepting an empty page", async () => {
+    const master = generateMasterSecret();
+    const payload = await encryptPayload(
+      { alice: "sync-verifier", version: 1 },
+      await deriveContentKey(master, "paged-account"),
+      VERIFIER_ID,
+    );
+    const reader = vi.fn(async (_i: RequestInfo | URL, init?: RequestInit) => {
+      const { cursor } = JSON.parse(String(init?.body));
+      return Response.json({
+        ok: true,
+        cursor: cursor === "0" ? "50" : "51",
+        hasMore: cursor === "0",
+        records:
+          cursor === "0"
+            ? []
+            : [
+                {
+                  id: VERIFIER_ID,
+                  kind: "verifier",
+                  clock: { wallTime: 1, counter: 0, deviceId: "device" },
+                  tombstone: false,
+                  payload,
+                  byteSize: 0,
+                  revision: 51,
+                },
+              ],
+      });
+    });
+    vi.stubGlobal("fetch", reader);
+    await expect(
+      verifySyncKey({ userId: "paged-account", master }),
+    ).resolves.toBe("matches");
+    await expect(
+      verifySyncKey({
+        userId: "paged-account",
+        master: generateMasterSecret(),
+      }),
+    ).resolves.toBe("mismatch");
+    expect(reader).toHaveBeenCalledTimes(4);
+  });
+
+  it("rejects a competing key that loses first-device initialization", async () => {
+    const payload = await encryptPayload(
+      { alice: "sync-verifier", version: 1 },
+      await deriveContentKey(generateMasterSecret(), "race-account"),
+      VERIFIER_ID,
+    );
+    let pushed = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_i: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body));
+        if (body.action === "push") {
+          pushed = true;
+          return Response.json({ ok: true, replayed: false, accepted: 0 });
+        }
+        return Response.json({
+          ok: true,
+          cursor: "1",
+          hasMore: false,
+          records: pushed
+            ? [
+                {
+                  id: VERIFIER_ID,
+                  kind: "verifier",
+                  clock: { wallTime: 1, counter: 0, deviceId: "other-device" },
+                  tombstone: false,
+                  payload,
+                  byteSize: 0,
+                  revision: 1,
+                },
+              ]
+            : [],
+        });
+      }),
+    );
+    await expect(
+      ensureSyncVerifier({
+        userId: "race-account",
+        master: generateMasterSecret(),
+      }),
+    ).rejects.toMatchObject({ name: "SyncKeyMismatchError" });
+  });
+
   it("answers from the verifier without touching conversations", async () => {
     const master = generateMasterSecret();
     let written: Array<Record<string, unknown>> = [];
@@ -255,7 +344,7 @@ describe("key verification", () => {
       }
       return Response.json({
         ok: true,
-        records: [],
+        records: written,
         cursor: "1",
         hasMore: false,
       });

@@ -97,9 +97,10 @@ async function resolveOwner(): Promise<{ id: string } | null> {
   const pinned = pinnedOwnerEmail();
   if (!pinned) return null;
   try {
+    // Provision once at startup. Ordinary authorization checks must never
+    // reset a password or repeat its expensive hash on every request.
+    await ownerBoot.__aliceOwnerPasswordBoot__;
     const sql = await getSql();
-    await claimOwnerIdentity(sql, pinned);
-    await ensureOwnerPassword(sql, pinned);
     const rows = await sql.query<{ id: string }>(
       `select id from "user"
        where lower(email) = $1 and "emailVerified" = true

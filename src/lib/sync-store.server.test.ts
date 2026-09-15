@@ -34,6 +34,26 @@ function record(
 }
 
 describe("encrypted sync store", () => {
+  it("keeps the first account verifier when another device tries to replace it", async () => {
+    const userId = crypto.randomUUID();
+    const first = {
+      ...record("verifier:v1", 1, "firstkey"),
+      kind: "verifier" as const,
+    };
+    const replacement = {
+      ...record("verifier:v1", 100, "otherkey"),
+      kind: "verifier" as const,
+    };
+    expect(
+      (await push(sql, userId, crypto.randomUUID(), [first])).accepted,
+    ).toBe(1);
+    expect(
+      (await push(sql, userId, crypto.randomUUID(), [replacement])).accepted,
+    ).toBe(0);
+    const stored = await pull(sql, userId, 0, 100);
+    expect(stored.records[0]?.payload.ciphertext).toBe("firstkey");
+  });
+
   it("isolates accounts and makes retries idempotent", async () => {
     const userA = crypto.randomUUID();
     const userB = crypto.randomUUID();

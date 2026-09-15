@@ -32,13 +32,18 @@ const requiredEndpoints = {
 } as const;
 
 describe("pinned Hermes release contracts", () => {
-  it("tracks exactly the current and previous official package versions", () => {
+  it("tracks current stable releases and keeps older regression contracts", () => {
     expect(
       HERMES_CONTRACT_FIXTURES.map((fixture) => fixture.source.tag),
-    ).toEqual(["v2026.8.31", "v2026.8.27"]);
+    ).toEqual(["v2026.9.14", "v2026.9.11", "v2026.8.31", "v2026.8.27"]);
     expect(
       HERMES_CONTRACT_FIXTURES.map((fixture) => fixture.source.packageVersion),
-    ).toEqual([HERMES_CURRENT_STABLE, HERMES_PREVIOUS_STABLE]);
+    ).toEqual([
+      HERMES_CURRENT_STABLE,
+      "0.21.2",
+      "0.21.0",
+      HERMES_PREVIOUS_STABLE,
+    ]);
     for (const fixture of HERMES_CONTRACT_FIXTURES) {
       expect(fixture.source.commit).toMatch(/^[a-f0-9]{40}$/);
       expect(fixture.source.apiServerSource).toContain(fixture.source.tag);
@@ -75,11 +80,13 @@ describe("pinned Hermes release contracts", () => {
   );
 
   it("negotiates durable run idempotency only where Hermes advertises it", () => {
-    const [current, previous] = HERMES_CONTRACT_FIXTURES.map((fixture) =>
+    const manifests = HERMES_CONTRACT_FIXTURES.map((fixture) =>
       parseHermesCapabilityManifest(fixture.capabilities),
     );
-    expect(current?.capabilities["chat.run_idempotency"]).toBe(true);
-    expect(previous?.capabilities["chat.run_idempotency"]).toBeUndefined();
+    expect(manifests[0]?.capabilities["chat.run_idempotency"]).toBe(true);
+    expect(
+      manifests.at(-1)?.capabilities["chat.run_idempotency"],
+    ).toBeUndefined();
   });
 });
 

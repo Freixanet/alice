@@ -1,5 +1,7 @@
 /**
- * Immutable snapshots of the official Hermes API-server capability contract.
+ * Normalized excerpts of the official Hermes API-server capability contract.
+ * Version is supplied by /health/detailed; the capability endpoint itself
+ * omits it. Runtime-dependent values represent an authenticated fixture.
  * Sources are pinned to release tags and commits so upstream main-branch drift
  * cannot silently change what Alice claims to support.
  */
@@ -95,7 +97,7 @@ export type HermesContractFixture = Readonly<{
   capabilities: Readonly<Record<string, unknown>>;
 }>;
 
-export const HERMES_CONTRACT_FIXTURES = [
+const legacyFixtures = [
   {
     source: {
       tag: "v2026.8.31",
@@ -150,4 +152,32 @@ export const HERMES_CONTRACT_FIXTURES = [
       endpoints: stableEndpoints,
     },
   },
+] as const satisfies readonly HermesContractFixture[];
+
+// _STATIC_FEATURE_FLAGS and _CAPABILITY_ENDPOINTS were compared directly in
+// gateway/platforms/api_server.py at both tags; these primitive routes match
+// the 0.21.0 contract. Dynamic browser settings are not claimed by this excerpt.
+export const HERMES_CONTRACT_FIXTURES = [
+  ...[
+    {
+      tag: "v2026.9.14",
+      commit: "345cd2b057a452236de401d3534b8502a7465e8d",
+      packageVersion: "0.21.3",
+    },
+    {
+      tag: "v2026.9.11",
+      commit: "939e45c91d751fadd94dcd1b873ac3cb44846213",
+      packageVersion: "0.21.2",
+    },
+  ].map((source) => ({
+    source: {
+      ...source,
+      apiServerSource: `https://github.com/NousResearch/hermes-agent/blob/${source.tag}/gateway/platforms/api_server.py`,
+    },
+    capabilities: {
+      ...legacyFixtures[0].capabilities,
+      version: source.packageVersion,
+    },
+  })),
+  ...legacyFixtures,
 ] as const satisfies readonly HermesContractFixture[];

@@ -66,7 +66,8 @@ export async function pushEncryptedSyncRecords(
            byte_size = excluded.byte_size,
            revision = nextval('alice_sync_revision_seq'),
            updated_at = now()
-         where (excluded.clock_wall_time, excluded.clock_counter, excluded.clock_device_id,
+         where alice_sync_record.kind <> 'verifier' and excluded.kind <> 'verifier'
+           and (excluded.clock_wall_time, excluded.clock_counter, excluded.clock_device_id,
                 excluded.tombstone::int, excluded.checksum)
              > (alice_sync_record.clock_wall_time, alice_sync_record.clock_counter,
                 alice_sync_record.clock_device_id, alice_sync_record.tombstone::int,

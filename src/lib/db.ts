@@ -1,4 +1,5 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
+import { assertProductionConfiguration } from "./deployment-config";
 
 /** Which database backend is active. */
 export type DbSource = "neon" | "pglite";
@@ -233,6 +234,7 @@ async function createPgliteSql(): Promise<Sql> {
 let sqlPromise: Promise<Sql> | null = null;
 
 async function createSql(): Promise<Sql> {
+  assertProductionConfiguration(process.env);
   if (typeof window !== "undefined") {
     throw new Error(
       "@/lib/db is server-only — call getSql() from a createServerFn handler " +

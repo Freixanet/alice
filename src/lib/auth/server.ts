@@ -1,39 +1,20 @@
 /**
- * Self-hosted Better Auth for THIS app (server-only).
+ * Server-only Better Auth for Alice, mounted at /api/auth/*.
  *
- * Pre-wired for live preview + deploy — do not rewrite this file. To enable
- * local email/password, flip the flag in `./email-password` only (see auth skill).
+ * Email/password and configured native Google/Apple providers use Alice's
+ * database. Optional Grok broker credentials support legacy preview deployments;
+ * the broker is disabled on Vercel. No shared secrets are shipped in source.
+ * Production validates database, secret and authentication settings before boot.
  *
- * The app runs its own Better Auth at `/api/auth/*`, so the session cookie stays
- * on this app's own origin. Sign-in federates to the shared **Grok auth broker**
- * (`GROK_AUTH_ISSUER`) via the `genericOAuth` plugin — the broker brokers the
- * upstream sign-in methods (Google, X, …) and holds their shared secrets; this
- * app only holds its own client id/secret and names the upstream it wants via
- * each provider's `idp` hint.
- *
- * Tri-mode:
- *   - Deployed: the deployer injects a per-app `GROK_AUTH_*` + `BETTER_AUTH_URL`
- *     + `DATABASE_URL`, so real federated auth is persisted in Postgres.
- *   - Sandbox live preview: no injection -> falls back to the shared **preview
- *     client** (`./preview`) and derives the preview's `https://*.grok-sandbox.com`
- *     origin from the request, so real sign-in works (no demo users). Sessions
- *     and identities persist in the embedded PGLite DB (same DB as app data);
- *     the process restart wipes both. Live-preview iframe clients use a bearer
- *     token (partitioned cookies) — see `client.ts`.
- *   - Off (`VITE_AUTH_ENABLED=false`, the shipped default): no providers;
- *     `requireUserId` resolves a dev user with no database configured, and
- *     throws fail-closed once `DATABASE_URL` is set (see `verify.server.ts`).
- *
- * NEVER import this from client code — it pulls in `pg` + the preview secret +
- * server-only Better Auth internals. The client uses `@/lib/auth/client`;
- * components read the user via `@/lib/auth/use-current-user`; server functions get
- * a verified id via `@/lib/auth/middleware`.
+ * Client code must use ./client or ./use-current-user. Importing this module
+ * into a browser bundle would pull in database and authentication internals.
  */
 import { betterAuth } from "better-auth";
 import { bearer, genericOAuth } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
+import { assertProductionConfiguration } from "../deployment-config";
 import { Pool } from "pg";
 import { ensureDbReady, getPglite } from "../db";
 import { emailAndPasswordEnabled } from "./email-password";
@@ -48,6 +29,7 @@ import {
 } from "./preview";
 
 // Kick (and share) PGLite bootstrap as soon as the auth server module loads.
+assertProductionConfiguration(process.env);
 void ensureDbReady();
 
 /**

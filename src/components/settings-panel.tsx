@@ -294,12 +294,12 @@ function GeneralSection() {
     setSyncBusy(true);
     setSyncError(null);
     try {
-      await saveMasterSecretForDevice(user.id, pendingMaster);
       // The set's own proof, written once by the device that starts it, so
       // every later device can test a phrase against one small record rather
       // than against somebody's conversations.
       const { ensureSyncVerifier } = await import("@/lib/sync-client");
       await ensureSyncVerifier({ userId: user.id, master: pendingMaster });
+      await saveMasterSecretForDevice(user.id, pendingMaster);
       setCloudSyncEnabled(true);
       setRecoveryPhrase(null);
       setPendingMaster(null);
@@ -325,12 +325,14 @@ function GeneralSection() {
       // moved, until the phrase has opened something that is already up
       // there. An account with nothing in it accepts any key: that device is
       // the one starting the set.
-      const { verifySyncKey } = await import("@/lib/sync-client");
+      const { verifySyncKey, ensureSyncVerifier } =
+        await import("@/lib/sync-client");
       const verdict = await verifySyncKey({ userId: user.id, master });
       if (verdict === "mismatch") {
         setSyncError(t("settings.recoveryMismatch"));
         return;
       }
+      await ensureSyncVerifier({ userId: user.id, master });
       await saveMasterSecretForDevice(user.id, master);
       setCloudSyncEnabled(true);
       setImportingRecovery(false);
