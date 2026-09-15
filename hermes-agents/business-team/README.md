@@ -1,6 +1,6 @@
 # Business — un equipo de agentes para emprendimientos digitales
 
-Ocho agentes de Hermes que trabajan como un equipo. Lo dirige el **Chief of
+Nueve agentes de Hermes que trabajan como un equipo. Lo dirige el **Chief of
 Staff**, que ya coordinaba al resto de agentes: recibe el objetivo, reparte el
 trabajo con `message_agent` y convierte las entregas en decisiones. En Alice
 aparecen dentro del canal **Business (Beta)**: el Chief of Staff suelto arriba y
@@ -12,7 +12,8 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
 | `chief-of-staff` | Chief of Staff | — (arriba) | Objetivo, plan, reparto, integración y decisión |
 | `biz-mercado` | Mercado | Intelligence Dept. | Clientes, demanda y competencia con fuentes |
 | `biz-critico` | Abogado del diablo | Intelligence Dept. | Riesgos, supuestos, legal y verificación |
-| `biz-scout` | Scout | Intelligence Dept. | Vigilancia continua y oportunidades (ronda diaria a las 8:00, informe los lunes) |
+| `biz-scout` | Scout | Intelligence Dept. | Vigilancia continua, fichas de competidores y oportunidades (ronda diaria a las 8:00, informe los lunes) |
+| `biz-investigacion` | Investigación | Intelligence Dept. | Preguntas abiertas investigadas a fondo, con números y ranking |
 | `biz-producto` | Producto | Product Dept. | Propuesta de valor, MVP y experiencia |
 | `biz-tech` | Tecnología | Engineering Dept. | Construir o comprar, stack, automatización y seguridad |
 | `biz-growth` | Growth | Revenue Dept. | Posicionamiento, mensajes, canales y experimentos |
@@ -25,6 +26,7 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
   arriesgada primero, pasar las apuestas por el crítico y resolver lo rápido sin
   movilizar al equipo.
 - `agentes/` — el rol de cada especialista.
+- `compartido/plantilla-competidor.md` — la estructura de las fichas de competidores.
 - `compartido/equipo.md` — lo que todos comparten: quién es quién, cómo se piden
   y entregan el trabajo (PETICIÓN / ENTREGA / BLOQUEO) y el estándar de calidad.
 - `instalar.py` — pone la sección del equipo en las instrucciones del Chief of
@@ -33,6 +35,15 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
   escribe `ui_meta['alice']` con el canal, el departamento, el orden y la lista de
   departamentos del canal. Alice ordena las secciones así y quita las vacías que
   no estén en la lista; nunca una con agentes. Nunca borra agentes.
+
+## Carpeta compartida
+
+`~/hermes-workspaces/business/` guarda lo que el equipo sabe, para que nadie repita
+trabajo: `proyectos/<proyecto>/estado.md` (del Chief of Staff), `competidores/`
+(fichas vivas del Scout; la decisión de «Nuestra respuesta» es del Chief of
+Staff), `vigilancia.md` (del Scout) e `investigaciones/` (de Investigación). En
+las instrucciones aparece como `{{BUSINESS_DIR}}` y el instalador pone la ruta
+real. Cada archivo tiene un solo dueño; el resto lo lee.
 
 La guía de estilo de mensajes es común a todos los agentes:
 `../forja/skill/forja-crear-agentes/references/estilo-mensajes.md`. Forja la añade

@@ -31,6 +31,10 @@ sys.path.insert(0, str(HERMES_ROOT))
 sys.path.insert(0, str(FORJA_SCRIPTS))
 
 CHANNEL = "Business (Beta)"
+# The team's shared folder: project state, competitor profiles, the watchlist and
+# research reports, readable by every agent. `{{BUSINESS_DIR}}` in the
+# instructions becomes this path.
+BUSINESS_DIR = Path.home() / "hermes-workspaces" / "business"
 # The channel's departments, in the order a venture moves through them:
 # understand, define, build, sell. Alice lays the channel out this way and
 # drops empty sections left out of it.
@@ -65,11 +69,31 @@ TEAM = [
                     "tu registro y una exploración nueva, y hasta 3 oportunidades con el problema, quién paga hoy y "
                     "cuánto, por qué ahora, la evidencia y el siguiente paso para validarla. Actualiza el registro."},
      ]},
+    {"name": "biz-investigacion", "department": "Intelligence Dept.", "title": "Investigación",
+     "tools": ["browser", "code_execution", "delegation"],
+     "description": "Investiga a fondo preguntas abiertas y difíciles, con fuentes contrastadas, cálculos, ranking de opciones y el siguiente experimento."},
 ]
 
 
 def read(path: Path) -> str:
-    return path.read_text(encoding="utf-8").strip()
+    return path.read_text(encoding="utf-8").strip().replace("{{BUSINESS_DIR}}", str(BUSINESS_DIR))
+
+
+def prepare_shared_folder(check: bool) -> dict:
+    """The shared folder and its competitor template. Never touches what the
+    agents wrote; the template is the installer's own and kept current."""
+    template = BUSINESS_DIR / "competidores" / "_plantilla.md"
+    wanted = read(HERE / "compartido" / "plantilla-competidor.md") + "\n"
+    missing = [d for d in ("proyectos", "competidores", "investigaciones") if not (BUSINESS_DIR / d).is_dir()]
+    stale = not template.is_file() or template.read_text(encoding="utf-8") != wanted
+    if not check:
+        for d in ("proyectos", "competidores", "investigaciones"):
+            (BUSINESS_DIR / d).mkdir(parents=True, exist_ok=True)
+        if stale:
+            template.write_text(wanted, encoding="utf-8")
+    changes = missing + (["_plantilla.md"] if stale else [])
+    return {"agente": "carpeta compartida", "estado": ("cambiaría: " if check else "cambiado: ") + ", ".join(changes)
+            if changes else "sin cambios", "resultado": {"ok": True}}
 
 
 def soul(name: str) -> str:
@@ -186,7 +210,7 @@ def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> 
 def main(argv: list) -> int:
     check = "--comprobar" in argv
     refresh = "--actualizar" in argv
-    results = [install_lead(check)]
+    results = [prepare_shared_folder(check), install_lead(check)]
     by_department = sorted(TEAM, key=lambda m: DEPARTMENTS.index(m["department"]))
     for order, member in enumerate(by_department, start=1):
         results.append(install_specialist(member, order, check, refresh))
