@@ -1,0 +1,8 @@
+---
+description: Shared engineering and verification rules for Alice
+alwaysApply: true
+---
+
+Read and follow `AGENTS.md` at the repository root. It is the shared source of
+project instructions across coding tools. Alice's primary product is the iOS app.
+Read `docs/verification.md` before changing or reporting verification behavior.

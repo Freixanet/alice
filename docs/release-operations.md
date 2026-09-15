@@ -39,3 +39,16 @@ are cooled down for one minute per code, route and metric.
 
 Database changes remain additive and backward-compatible across releases, so a
 code rollback must never require a destructive database rollback.
+
+## Encrypted sync schema upgrade
+
+Before deploying the recovery-key changes, run `npm run db:migrate` against the
+intended production database through the deployment environment. Migration
+`0005_sync_verifier.sql` admits the encrypted verifier record already used by the
+client. It preserves existing records and is compatible with older application
+code. Local PGlite applies the same migration automatically.
+
+Do not edit an already-applied migration or remove encrypted records to make a
+migration pass. A code rollback can retain this expanded constraint. Verify
+creating a sync set, importing its recovery phrase on a second test device and
+rejecting a different phrase before promoting the deployment.

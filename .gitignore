@@ -24,5 +24,7 @@ attachments
 test-results
 playwright-report
 coverage
+__pycache__/
+*.pyc
 *.log
 .prettierrc

@@ -1,0 +1,51 @@
+# Architecture
+
+## Product surfaces
+
+| Surface         | Responsibility                                                     | Entry points                                                       |
+| --------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| iOS — primary   | Native conversations, agent work and configuration                 | `ios/Alice/AliceApp.swift`, `Features/`, `Networking/`, `Storage/` |
+| Hermes plugin   | Pairing QR, curated memory and compatible notes stores             | `hermes-plugin/dashboard/plugin_api.py`                            |
+| Web — companion | Browser access, account boundaries and encrypted conversation sync | `src/routes/`, `src/components/`, `src/lib/`                       |
+| Mac notifier    | Optional local notifications from Hermes activity                  | `mac/notifier/`                                                    |
+
+## Connection and identity
+
+The native app connects directly to services on the user's Hermes host. The
+gateway provides the agent API; the dashboard provides management and canonical
+profile/session operations. They may have different ports and credentials.
+Pairing exchanges a short-lived code for these connections. See
+[the protocol](pairing.md) and [user instructions](getting-connected.md).
+
+The home conversation belongs to the default installation profile. An agent
+conversation retains its explicit profile and canonical session; navigating to
+another chat must not retarget an in-flight turn. `HomeChatSession`,
+`BotChatSession`, `HermesRPC` and `GatewayServerRequests` hold these contracts.
+
+The web supports an authenticated server proxy and a direct browser transport.
+Keep operation semantics and profile scoping equivalent. Local machine access
+belongs only to the configured, verified owner. See [security](../SECURITY.md).
+
+## Storage and lifecycle
+
+iOS stores connection secrets in Keychain and conversation archives/preferences
+in UserDefaults. Codable migrations must preserve older archives. Unreadable
+bytes are retained for recovery rather than overwritten with an empty archive.
+User edits are persisted immediately; backgrounding saves current conversation
+state. A future move to a database must include migration and recovery tests.
+
+The web persists state per account. Optional encrypted sync uses device keys,
+conversation replicas and a server-side immutable verifier. A pull cursor is
+saved with the corresponding state. Disconnection, retries and key mismatch are
+different states, not a single on/off preference.
+
+## Engineering boundaries
+
+`AppStore.swift` is currently a large coordinator. New networking, parsing and
+domain behavior should prefer focused modules with explicit inputs. Extract
+existing behavior only with regression coverage; do not split files just to hide
+coupling. The legacy web transport files need the same restraint.
+
+UI components should display facts from those services, show actionable failures
+and retain useful state during retries. Capability detection must distinguish
+absence from failed detection. Test the boundary, then test the user's journey.

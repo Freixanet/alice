@@ -1,7 +1,12 @@
-# Hermes v0.21.0 (Pantheon) compatibility
+# Hermes 0.21 contract compatibility
 
-Alice pins and tests Hermes `0.21.0` as its current stable contract. This file
-is the release-delta checklist for the Pantheon release, based on the official
+Alice's current stable API fixture is `0.21.3` (14 September 2026), with
+regression fixtures for `0.21.2`, `0.21.0` and `0.20.6`. The static capability
+flags and 28 HTTP endpoints were checked against `gateway/platforms/api_server.py`
+at the official `v2026.9.14` and `v2026.9.11` tags. This verifies those contracts,
+not every live configuration, integration or future release.
+
+The following is the release-delta checklist for Pantheon, based on the official
 [`v2026.8.31` release](https://github.com/NousResearch/hermes-agent/releases/tag/v2026.8.31)
 and the corresponding Hermes source contracts.
 
@@ -38,7 +43,7 @@ and the corresponding Hermes source contracts.
 
 ## Required gates
 
-- Contract fixtures cover current `0.21.0` and previous stable `0.20.6`.
+- Contract fixtures cover `0.21.3`, `0.21.2`, `0.21.0` and `0.20.6`.
 - Pantheon Cron create is atomic from Alice's perspective: if the follow-up
   update fails, Alice removes only the job it just created.
 - Unknown or older Hermes versions never receive unadvertised Pantheon fields.

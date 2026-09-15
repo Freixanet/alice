@@ -1,12 +1,13 @@
 # Alice for Hermes
 
 A Hermes plugin with what the Alice iPhone app needs from a Hermes and Hermes itself
-does not ship. It lives in `~/.hermes/plugins/alice`, outside Hermes' own code, so
-`hermes update` never collides with it.
+does not ship. It lives in `~/.hermes/plugins/alice`, outside Hermes' own code.
+Updates do not overwrite Hermes source, but upstream API changes still need a
+compatibility check.
 
 What it adds, all in the dashboard:
 
-- An **Alice** tab that shows a one-time pairing QR code (`docs/pairing.md`).
+- An **Alice** tab that shows a one-time pairing QR code ([protocol](../docs/pairing.md)).
 - `POST /api/plugins/alice/pairing/session` — behind the dashboard login; mints the QR
   and, when the main profile has no gateway yet, provisions one.
 - `POST /api/plugins/alice/pairing/claim` — the phone exchanges the QR's one-time code for
@@ -27,7 +28,8 @@ The agent gains nothing: no tools, hooks or commands.
 From a checkout of this repository:
 
 ```bash
-cp -R hermes-plugin ~/.hermes/plugins/alice
+mkdir -p ~/.hermes/plugins/alice
+cp -R hermes-plugin/. ~/.hermes/plugins/alice/
 hermes plugins enable alice --no-allow-tool-override
 ```
 

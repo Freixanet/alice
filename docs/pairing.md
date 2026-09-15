@@ -9,8 +9,8 @@ Implementación actual:
 - **Lado Mac**: el complemento «Alice para Hermes» (`hermes-plugin/` en este
   repositorio), instalado en `~/.hermes/plugins/alice`. Añade la pestaña
   **Alice** al Dashboard y sirve el emparejamiento bajo `/api/plugins/alice/`.
-  No toca el código de Hermes, así que `hermes update` nunca choca con él
-  (ver `hermes-plugin/README.md`).
+  No modifica el código de Hermes. Las actualizaciones del agente todavía
+  requieren comprobar compatibilidad (ver `hermes-plugin/README.md`).
 - **Lado iPhone**: app nativa (`ios/Alice/Features/Connect/Pairing/`), con deep
   link `alice://` y escáner propio.
 

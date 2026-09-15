@@ -4,31 +4,42 @@
 
 Please report security issues privately through
 [GitHub Security Advisories](https://github.com/Freixanet/alice/security/advisories/new)
-rather than opening a public issue. Expect a first response within a week.
+rather than opening a public issue. Include the affected version, reproduction
+steps and impact, without live credentials or private conversations.
 
 ## Threat model
 
 Alice is a front end for an agent that can read files, run commands and spend
 money on your behalf. The connection key to that agent is the asset worth
-protecting, so it never enters this repository and never reaches the browser as
-readable text.
+protecting. Do not commit real credentials. The browser can read credentials
+entered into the connection form, and needs the gateway key for direct mode.
 
 **Where the key lives**
 
-| Deployment                   | Storage                                                  | Readable by the page |
-| ---------------------------- | -------------------------------------------------------- | -------------------- |
-| Server (Vercel, self-hosted) | Encrypted in an `httpOnly` cookie, decrypted per request | No                   |
-| Same machine as the agent    | Process memory for the lifetime of the tab               | No                   |
+| Transport      | Stored credential                                                    | Trust boundary                                                                                 |
+| -------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Server proxy   | Encrypted `httpOnly` connection cookie                               | Alice's server decrypts the key to contact Hermes; JavaScript cannot read the cookie.          |
+| Direct browser | Account-scoped `sessionStorage` plus the encrypted connection cookie | The authenticated `device-secret` API returns the key to the browser so it can contact Hermes. |
+| Local Mac      | Server access to local Hermes and optional browser memory            | Only the configured owner may use local access with authentication enabled.                    |
+| iPhone         | `WhenUnlockedThisDeviceOnly` Keychain                                | Readable by the app when the device is unlocked; no separate biometric prompt is required.     |
 
 Set `HERMES_COOKIE_SECRET` to a long random value in any deployment you keep.
-Without it the cookie is encrypted with a key that dies with the process, so
-every restart forces a reconnect.
+Production requires a persistent encryption key (`HERMES_COOKIE_SECRET`,
+`HERMES_COOKIE_KEYS`, or the `BETTER_AUTH_SECRET` fallback). Development can
+create a persistent key file at `~/.alice/hermes-credential.key`.
 
 **What Alice does not do**
 
-- It never writes the key to `localStorage`, to the DOM, or to a log line.
-- It never echoes a key back in an API response, including on errors.
-- It never sends the key anywhere but the Hermes address you configured.
+- It does not persist the gateway key in `localStorage` or intentionally log it.
+- Server proxy mode sends credentials through Alice's server; direct mode sends
+  them from the browser to the configured Hermes origin.
+- Native requests and redirects are restricted to the configured service origin.
+
+An injected script or compromised dependency running in the browser can access
+direct-mode credentials and decrypted conversations. Encryption at rest does
+not protect against code running inside an unlocked, authenticated client.
+The pairing QR contains a short-lived bearer secret; anyone holding it who can
+reach the allowed network can claim it once. See [pairing](docs/pairing.md).
 
 **What Alice cannot protect you from**
 

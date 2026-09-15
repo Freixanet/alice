@@ -1,21 +1,9 @@
 #!/usr/bin/env bash
 #
-# The Quality workflow, run here.
-#
-# GitHub bills private repositories for hosted runners, so while the account's
-# payments are unsettled no job on .github/workflows/quality.yml starts at all
-# — every push since has been red for that reason and not for anything in the
-# code. This runs the same checks locally so pushing is still gated by
-# something.
-#
-# It mirrors the workflow's checks while reusing the dependencies already
-# installed in this checkout so the pre-push gate stays fast. GitHub remains
-# the clean-install authority (`npm ci` + fresh Playwright browsers). Where a
-# local prerequisite is missing, this fails rather than pretending it ran.
-#
-#   scripts/ci-local.sh            verify + browser + ios   (everything)
-#   scripts/ci-local.sh verify     the job that was failing (fast)
-#   scripts/ci-local.sh ios        build + simulator tests
+# Run the Quality workflow locally with the installed prerequisites.
+# Usage: scripts/ci-local.sh [all|verify|browser|ios]
+# Local runs reuse dependencies; CI performs a clean npm install.
+# Missing prerequisites fail explicitly.
 #
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -111,6 +99,9 @@ job_verify() {
   run "check:static" npm run --silent check:static
   run "security:check" npm run --silent security:check
   run "deps:check" npm run --silent deps:check
+  local hermes_python=${ALICE_HERMES_TEST_PYTHON:-"$HOME/.hermes/hermes-agent/venv/bin/python"}
+  run "Hermes plugin tests" "$hermes_python" -m unittest discover -s hermes-plugin/tests
+  run "Mac notifier tests" "$hermes_python" -m unittest discover -s mac/notifier
 }
 
 job_browser() {
@@ -124,36 +115,7 @@ job_browser() {
 }
 
 job_ios() {
-  run "xcodegen" bash -c 'cd ios && xcodegen generate'
-
-  # The workflow picks the first available iOS 26 iPhone; same choice here so a
-  # simulator difference cannot explain a difference in result.
-  local device
-  device=$(xcrun simctl list devices available -j | python3 -c '
-import json, sys
-for runtime, rows in json.load(sys.stdin)["devices"].items():
-    if "iOS-26" not in runtime:
-        continue
-    for row in rows:
-        if row.get("isAvailable") and row.get("name", "").startswith("iPhone"):
-            print(row["udid"]); raise SystemExit
-' 2>/dev/null)
-
-  if [[ -z $device ]]; then
-    printf "%s  ✗ No available iOS 26 iPhone simulator.%s\n" "$RED" "$OFF"
-    FAILED+=("ios (no simulator)")
-    return
-  fi
-
-  xcrun simctl boot "$device" >/dev/null 2>&1 || true
-  xcrun simctl bootstatus "$device" -b >/dev/null 2>&1 || true
-
-  run "iOS build" xcodebuild -project ios/Alice.xcodeproj -scheme Alice \
-    -configuration Debug -destination 'generic/platform=iOS Simulator' \
-    CODE_SIGNING_ALLOWED=NO build
-  run "iOS tests" xcodebuild -project ios/Alice.xcodeproj -scheme Alice \
-    -configuration Debug -destination "platform=iOS Simulator,id=$device" \
-    CODE_SIGNING_ALLOWED=NO test
+  run "iOS build and tests" bash scripts/verify-ios.sh all
 }
 
 case "${1:-all}" in
