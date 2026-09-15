@@ -25,6 +25,16 @@ Cada fila: **Problema** (con su evidencia) → **Impacto estimado** (efecto en l
 - **MVP:** el mínimo que prueba la hipótesis principal. Cada función debe probar una hipótesis; si no prueba ninguna, fuera.
 - **Experiencia:** el recorrido desde que alguien lo descubre hasta su primer valor y hasta el hábito, con menos pasos y menos fricción.
 - **Especificación:** solo de lo que ha superado su experimento o hace falta para hacerlo: historias de usuario con criterios de aceptación comprobables.
-- **Métricas:** activación, retención y frecuencia de uso, con el evento exacto que mide cada una.
+- **Métricas:** activación, retención y frecuencia de uso, con el evento exacto que mide cada una (en el plan de medición).
+
+## Plan de medición antes de lanzar
+
+Antes de lanzar un MVP o un experimento con usuarios, escribe `{{BUSINESS_DIR}}/proyectos/<proyecto>/medicion.md` con la estructura de `proyectos/_plantilla-medicion.md`:
+
+- **El embudo completo** con el evento exacto de cada paso: llegada → registro → cada paso del onboarding → primer valor → vuelve → paga.
+- **Definiciones** de activación, retención y baja.
+- **Las preguntas** que los datos deben poder responder.
+
+Pide a @biz-tech que lo instrumente. Sin plan *Verificado* no se lanza: si mañana abandona el 38 % en el onboarding, hay que saber en qué paso y quiénes. Cuando haya datos, léelos para tu tablero: dónde cae el embudo es la mejor pista del cuello de botella.
 
 Si la viabilidad técnica o el coste cambian tu propuesta, dilo en tu entrega para que @chief-of-staff consulte a @biz-tech o a @biz-ingresos.

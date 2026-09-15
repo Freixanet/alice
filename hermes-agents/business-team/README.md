@@ -27,7 +27,7 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
   movilizar al equipo.
 - `agentes/` — el rol de cada especialista.
 - `compartido/plantilla-*.md` — la estructura de las fichas de competidores, del
-  documento de cliente y del tablero de oportunidades.
+  documento de cliente, del tablero de oportunidades y del plan de medición.
 - `compartido/equipo.md` — lo que todos comparten: quién es quién, cómo se piden
   y entregan el trabajo (PETICIÓN / ENTREGA / BLOQUEO) y el estándar de calidad.
 - `instalar.py` — pone la sección del equipo en las instrucciones del Chief of
@@ -43,7 +43,9 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
 trabajo: `proyectos/<proyecto>/estado.md` (del Chief of Staff),
 `proyectos/<proyecto>/cliente.md` (qué quiere el cliente, de Mercado),
 `proyectos/<proyecto>/oportunidades.md` (problema → impacto → confianza → coste →
-experimento mínimo → resultado, de Producto), `competidores/`
+experimento mínimo → resultado, de Producto),
+`proyectos/<proyecto>/medicion.md` (embudo y eventos de Producto, instrumentados y
+verificados por Tecnología; nada se lanza sin él), `competidores/`
 (fichas vivas del Scout; la decisión de «Nuestra respuesta» es del Chief of
 Staff), `vigilancia.md` (del Scout) e `investigaciones/` (de Investigación). En
 las instrucciones aparece como `{{BUSINESS_DIR}}` y el instalador pone la ruta

@@ -84,6 +84,7 @@ TEMPLATES = {
     "competidores/_plantilla.md": "plantilla-competidor.md",
     "proyectos/_plantilla-cliente.md": "plantilla-cliente.md",
     "proyectos/_plantilla-oportunidades.md": "plantilla-oportunidades.md",
+    "proyectos/_plantilla-medicion.md": "plantilla-medicion.md",
 }
 FOLDERS = ("proyectos", "competidores", "investigaciones")
 

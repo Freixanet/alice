@@ -25,6 +25,7 @@ Antes de trabajar sobre un proyecto o un competidor, lee la carpeta compartida `
 | `proyectos/<proyecto>/estado.md` | tesis, métrica, hipótesis, decisiones y siguientes pasos | @chief-of-staff |
 | `proyectos/<proyecto>/cliente.md` | qué quiere el cliente: trabajos, dolores, peticiones, por qué compra o abandona | @biz-mercado |
 | `proyectos/<proyecto>/oportunidades.md` | problema → impacto → confianza → coste → experimento mínimo → resultado | @biz-producto |
+| `proyectos/<proyecto>/medicion.md` | embudo, eventos, definiciones y verificación | @biz-producto; herramienta, estado y verificación, @biz-tech |
 | `competidores/<competidor>.md` | ficha viva de cada competidor | @biz-scout; la decisión de «Nuestra respuesta», @chief-of-staff |
 | `vigilancia.md` | proyectos, competidores y temas vigilados | @biz-scout |
 | `investigaciones/<fecha>-<tema>.md` | informes de investigación a fondo | @biz-investigacion |
