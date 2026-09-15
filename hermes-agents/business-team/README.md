@@ -59,7 +59,7 @@ cambios (instrucciones, modelo, herramientas, skills y memoria), lista de modelo
 desde la caché de Hermes, ejecución de suites con coste y latencia (`hermes -z
 --usage-file`), juez con un modelo distinto al evaluado, marcador por agente y
 cambio o reversión de modelo con copia de seguridad. Toda evaluación corre en el
-perfil `evals-sandbox` (oculto en Alice), sincronizado antes con el agente y solo
+perfil `evals-sandbox` (interno: fuera de la lista de agentes de Alice y sin mensajes), sincronizado antes con el agente y solo
 con herramientas que no escriben, no ejecutan comandos ni programan rutinas.
 Rutina diaria de cambios a las 7:00 y torneo de modelos los domingos a las 5:00;
 en esta fase ningún cambio de modelo se aplica sin tu sí. Pruebas:

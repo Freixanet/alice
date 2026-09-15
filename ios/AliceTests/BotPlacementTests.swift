@@ -118,8 +118,13 @@ final class BotPlacementTests: XCTestCase {
                 "ui_meta_revisions": ["hermes-bots": 1, "alice": 2],
             ],
             ["name": "inbox", "ui_meta": ["alice": ["channel": "  "]]],
+            ["name": "evals-sandbox", "ui_meta": [
+                "hermes-bots": ["title": "Evals · pruebas", "hidden": true],
+                "alice": ["internal": true],
+            ]],
         ]]
         let bots = try DashboardClient.bots(from: object, active: nil)
+        XCTAssertEqual(bots.map(\.name), ["biz-mercado", "inbox"], "an internal profile is not an agent")
         XCTAssertEqual(
             bots[0].placement,
             AlicePlacement(

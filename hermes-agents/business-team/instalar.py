@@ -209,21 +209,30 @@ def set_alice_placement(profile_dir: Path, section, order: int, check: bool = Fa
 
 
 def hide_sandbox(profile_dir: Path, check: bool) -> bool:
-    """The sandbox under Hidden in Alice, with a name that says what it is."""
+    """The sandbox marked internal, so Alice leaves it out of the roster and no agent can
+    message it, and hidden with a name that says what it is for other Hermes clients."""
     import tui_gateway.methods_profiles as profiles_rpc
     from utils import atomic_yaml_write
     existing = profiles_rpc._read_profile_yaml(profile_dir)
     meta = existing.get("ui_meta") if isinstance(existing.get("ui_meta"), dict) else {}
     bots = dict(meta.get("hermes-bots") or {})
-    if bots.get("hidden") is True and bots.get("title") == SANDBOX_TITLE:
+    alice = dict(meta.get("alice") or {})
+    bots_ok = bots.get("hidden") is True and bots.get("title") == SANDBOX_TITLE
+    alice_ok = alice.get("internal") is True
+    if bots_ok and alice_ok:
         return False
     if check:
         return True
     raw = existing.get("_ui_meta_revisions")
     revisions = profiles_rpc._clean_revisions(raw if isinstance(raw, dict) else {})
-    bots.update({"hidden": True, "title": SANDBOX_TITLE})
-    meta["hermes-bots"] = bots
-    revisions["hermes-bots"] = revisions.get("hermes-bots", 0) + 1
+    if not bots_ok:
+        bots.update({"hidden": True, "title": SANDBOX_TITLE})
+        meta["hermes-bots"] = bots
+        revisions["hermes-bots"] = revisions.get("hermes-bots", 0) + 1
+    if not alice_ok:
+        alice["internal"] = True
+        meta["alice"] = alice
+        revisions["alice"] = revisions.get("alice", 0) + 1
     existing["ui_meta"] = meta
     existing["_ui_meta_revisions"] = revisions
     atomic_yaml_write(profile_dir / "profile.yaml", existing, sort_keys=False)
@@ -250,7 +259,7 @@ def prepare_evals(check: bool) -> dict:
             hermes("profile", "create", SANDBOX, "--clone-from", "default", "--no-alias",
                    "--description", SANDBOX_DESCRIPTION)
     if sandbox_dir.is_dir() and hide_sandbox(sandbox_dir, check):
-        changes.append("oculto en Alice")
+        changes.append("interno y oculto en Alice")
     return {"agente": "evals · herramienta y pruebas", "estado": ("cambiaría: " if check else "cambiado: ") + ", ".join(changes)
             if changes else "sin cambios", "resultado": {"ok": True}}
 

@@ -35,6 +35,7 @@ class BusinessIsolationTests(unittest.TestCase):
         self.profile("biz-mercado", {"alice": {"channel": "business (beta)", "section": "Intelligence Dept."}})
         self.profile("radar-ia", {"hermes-bots": {"title": "Radar IA"}})
         self.profile("inbox", None)
+        self.profile("evals-sandbox", {"alice": {"internal": True}, "hermes-bots": {"hidden": True}})
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -52,6 +53,12 @@ class BusinessIsolationTests(unittest.TestCase):
 
     def test_membership_comes_from_the_business_placement(self):
         self.assertEqual(self.plugin.business_members(self.root), {"chief-of-staff", "biz-mercado"})
+
+    def test_nobody_writes_to_or_from_an_internal_profile(self):
+        self.assertEqual(self.plugin.internal_profiles(self.root), {"evals-sandbox"})
+        for sender in ("radar-ia", "chief-of-staff", "default"):
+            self.assertIn("interno", self.verdict(sender, "evals-sandbox"))
+        self.assertIn("interno", self.verdict("evals-sandbox", "inbox"))
 
     def test_the_team_talks_among_itself(self):
         self.assertIsNone(self.verdict("chief-of-staff", "biz-mercado"))

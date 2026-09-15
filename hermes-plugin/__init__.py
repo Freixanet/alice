@@ -7,8 +7,8 @@ Alice tab.
 The agent gains one rule, as a ``pre_tool_call`` hook: the Business team talks only
 among itself. A profile filed in the Business channel (``ui_meta['alice']``, written by
 ``hermes-agents/business-team/instalar.py``) can message only teammates in that channel,
-and nobody outside it can message them. No tools, commands or changes to Hermes' own
-code.
+and nobody outside it can message them. Internal profiles (Evals' sandbox) neither send
+nor receive messages. No tools, commands or changes to Hermes' own code.
 """
 from pathlib import Path
 
@@ -26,19 +26,30 @@ def _read_yaml(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def business_members(root: Path) -> set:
-    """The profiles filed in the Business channel."""
-    members = set()
+def _placements(root: Path) -> dict:
+    """``ui_meta['alice']`` of every named profile."""
+    found = {}
     profiles = root / "profiles"
     if not profiles.is_dir():
-        return members
+        return found
     for child in profiles.iterdir():
         meta = _read_yaml(child / "profile.yaml").get("ui_meta")
         placement = meta.get("alice") if isinstance(meta, dict) else None
-        channel = placement.get("channel") if isinstance(placement, dict) else None
-        if isinstance(channel, str) and channel.strip().casefold() == BUSINESS_CHANNEL.casefold():
-            members.add(child.name)
-    return members
+        if isinstance(placement, dict):
+            found[child.name] = placement
+    return found
+
+
+def business_members(root: Path) -> set:
+    """The profiles filed in the Business channel."""
+    return {name for name, placement in _placements(root).items()
+            if isinstance(placement.get("channel"), str)
+            and placement["channel"].strip().casefold() == BUSINESS_CHANNEL.casefold()}
+
+
+def internal_profiles(root: Path) -> set:
+    """Technical profiles agents run on, such as Evals' sandbox: not anyone's teammate."""
+    return {name for name, placement in _placements(root).items() if placement.get("internal") is True}
 
 
 def _root_and_sender(home: Path) -> tuple:
@@ -60,10 +71,15 @@ def _handles(names) -> str:
 def business_verdict(root: Path, sender: str, target: str):
     """None when the message may go; otherwise why it may not. A target that is not a
     local teammate (another machine, a peer) counts as outside the team."""
+    receiver = _local_name(target)
+    internal = internal_profiles(root)
+    if receiver in internal:
+        return f"No enviado: @{receiver} es un perfil técnico interno y no recibe mensajes. No lo reintentes."
+    if sender in internal:
+        return "No enviado: este perfil técnico interno no envía mensajes a otros agentes."
     members = business_members(root)
     if not members:
         return None
-    receiver = _local_name(target)
     sender_inside, receiver_inside = sender in members, receiver in members
     if sender_inside and not receiver_inside:
         return (f"No enviado: eres del equipo de Business y solo puedes escribir a tu equipo "

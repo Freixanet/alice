@@ -1291,6 +1291,9 @@ extension DashboardClient {
             let metaDescription = Self.nonEmpty(rawMeta?["description"] as? String)
             let profileDescription = (row["description"] as? String) ?? ""
             let rawPlacement = uiMeta?["alice"] as? [String: Any]
+            // A technical profile the agents run on (Evals' sandbox): not an agent
+            // anyone talks to, so it is not in the roster at all, hidden or not.
+            if rawPlacement?["internal"] as? Bool == true { return nil }
             let placement = Self.nonEmpty(rawPlacement?["channel"] as? String).map { channel in
                 AlicePlacement(
                     channel: channel,
@@ -1337,7 +1340,8 @@ extension DashboardClient {
         }
         // Rows arrived and none of them had a name: a shape problem, not an
         // agent without bots.
-        if !rows.isEmpty && bots.isEmpty { throw Failure.unreadable }
+        let named = rows.contains { ($0["name"] as? String)?.isEmpty == false }
+        if !rows.isEmpty && !named { throw Failure.unreadable }
         return bots
     }
 
