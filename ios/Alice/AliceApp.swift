@@ -80,6 +80,7 @@ struct AliceApp: App {
                     guard phase == .active else {
                         store.isForeground = false
                         if phase == .background {
+                            store.persistConversations()
                             store.stopWatchingLiveEvents()
                             scheduleRefresh()
                         }

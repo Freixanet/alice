@@ -59,8 +59,6 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Alice uses the camera to scan a Hermes pairing QR code and when you attach a photo you take from the composer.</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Alice uses Face ID to unlock the connection key for your Hermes agent.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Alice connects to the Hermes agent running on your network.</string>
 	<key>NSMicrophoneUsageDescription</key>

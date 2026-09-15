@@ -100,7 +100,7 @@ final class AppStore {
     /// Run ids already read for silence, keyed by bot.
     private var judgedRoutineRuns: [String: Set<String>] = [:]
     private let dashboard = DashboardClient()
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private var streamTasks: [String: Task<Void, Never>] = [:]
 
     private enum Keys {
@@ -293,7 +293,8 @@ final class AppStore {
         return Array(names).sorted()
     }
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         botMarks = (defaults.data(forKey: Keys.marks))
             .flatMap { try? JSONDecoder().decode([String: BotMark].self, from: $0) } ?? [:]
         botCustomSections = defaults.stringArray(forKey: Keys.botCustomSections) ?? []
@@ -679,11 +680,15 @@ final class AppStore {
               let index = conversations.firstIndex(where: { $0.id == id })
         else { return }
         conversations[index].title = trimmed
+        conversations[index].updatedAt = Date()
+        persistConversations()
     }
 
     func togglePin(_ id: String) {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         conversations[index].pinned.toggle()
+        conversations[index].updatedAt = Date()
+        persistConversations()
     }
 
     /// Every routine on the agent, and how much of it the answer covers.

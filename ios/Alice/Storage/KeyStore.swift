@@ -4,8 +4,9 @@ import Security
 /// Where the Hermes key lives on the phone.
 ///
 /// This is the one asset worth protecting: whoever holds it can act as you
-/// through your agent. It goes into the Keychain behind the device passcode or
-/// Face ID, is never written to `UserDefaults`, never logged, and never leaves
+/// through your agent. It is available from Keychain while the device is
+/// unlocked; reading it does not request a separate biometric prompt.
+/// It is never written to `UserDefaults`, never logged, and never leaves
 /// the device except in the `Authorization` header of a request to the address
 /// you configured.
 ///

@@ -57,8 +57,6 @@ targets:
           Alice uses the microphone when you dictate a message.
         NSSpeechRecognitionUsageDescription: >-
           Alice transcribes what you dictate so you can edit it before sending.
-        NSFaceIDUsageDescription: >-
-          Alice uses Face ID to unlock the connection key for your Hermes agent.
         # Local/private IPs and names use the explicit local-network exception.
         # Tailnet DNS names end in ts.net, while direct Tailscale IPv4 addresses
         # live in 100.64.0.0/10. Both need narrow HTTP exceptions; public Hermes

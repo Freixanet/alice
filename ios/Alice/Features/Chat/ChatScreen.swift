@@ -546,6 +546,7 @@ private struct TranscriptView: View {
 private struct EmptyChatView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
+    @State private var showingConnection = false
 
     var body: some View {
         // Deliberately neutral about the keyboard and about the composer.
@@ -557,6 +558,10 @@ private struct EmptyChatView: View {
         // *down* by about a composer's height and sliding the title behind it.
         // Whoever places this view owns both decisions now.
         centred
+            .sheet(isPresented: $showingConnection) {
+                ConnectView()
+                    .preferredColorScheme(store.theme.colorScheme)
+            }
     }
 
     @ViewBuilder
@@ -595,6 +600,14 @@ private struct EmptyChatView: View {
                 Text("You talk to Alice. One thing at a time.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                if store.gatewayURL.isEmpty {
+                    Button("Connect to Hermes") { showingConnection = true }
+                        .buttonStyle(.glassProminent)
+                        .controlSize(.large)
+                        .accessibilityIdentifier("home.connect")
+                        .padding(.top, 12)
+                }
             }
             .padding(.horizontal, 32)
             // No hardcoded composer offset either: the call site already
