@@ -4,9 +4,14 @@ import SwiftUI
 ///
 /// They live in the store an agent keeps on Hermes — the Inbox agent's — so a
 /// note written here is sorted by that agent like one sent in its chat, and
-/// one sent in its chat is here. Opening the screen puts the cursor in the
+/// one sent in its chat is here. Opening the page puts the cursor in the
 /// field: writing a note is the reason most people come.
+///
+/// A page, like Agents, not a sheet: a sheet closes on a stray downward swipe,
+/// which is the gesture of someone scrolling back through what they wrote.
 struct NotesScreen: View {
+    var onClose: () -> Void = {}
+
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
 
@@ -24,72 +29,57 @@ struct NotesScreen: View {
     private var canSave: Bool {
         !saving && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+    private var showsCapture: Bool { snapshot?.available != false }
+    private var shown: [Note] {
+        (snapshot?.notes ?? []).filter { NotesFeed.matches($0, query: query) }
+    }
+
+    /// What stands in for the notes when there are none to show.
+    private enum Status {
+        case noStore, failed(String), loading, nothingYet, noResults
+    }
+
+    private var status: Status? {
+        if let snapshot, !snapshot.available { return .noStore }
+        guard let snapshot else {
+            if let loadFailure { return .failed(loadFailure) }
+            return .loading
+        }
+        if snapshot.notes.isEmpty { return .nothingYet }
+        return shown.isEmpty ? .noResults : nil
+    }
 
     var body: some View {
-        List {
-            if snapshot?.available != false {
-                Section {
-                    capture
-                        .listRowBackground(Palette.card(scheme))
-                } footer: {
-                    if let saveFailure {
-                        Text(saveFailure).foregroundStyle(.red)
-                    } else if saved {
-                        Label(savedNote, systemImage: "checkmark")
-                    }
-                }
-            }
-
-            if let snapshot, !snapshot.available {
-                Section {
-                    ContentUnavailableView(
-                        "No notes agent", systemImage: "note.text",
-                        description: Text("Notes are kept by an agent with a notes store, like Inbox. None was found on this Hermes.")
-                    )
-                }
-                .listRowBackground(Color.clear)
-            } else if let loadFailure, snapshot == nil {
-                Section {
-                    ContentUnavailableView(
-                        "Notes", systemImage: "note.text", description: Text(loadFailure)
-                    )
-                }
-                .listRowBackground(Color.clear)
-            } else if loading && snapshot == nil {
-                Section {
-                    ProgressView().frame(maxWidth: .infinity)
-                }
-                .listRowBackground(Color.clear)
-            } else if let snapshot {
-                let shown = snapshot.notes.filter { NotesFeed.matches($0, query: query) }
-                if snapshot.notes.isEmpty {
-                    Section {
-                        Text("Nothing written down yet.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .listRowBackground(Color.clear)
-                } else if shown.isEmpty {
-                    Section {
-                        ContentUnavailableView.search(text: query)
-                    }
-                    .listRowBackground(Color.clear)
-                }
-                ForEach(NotesFeed.groups(shown), id: \.title) { group in
-                    Section(group.title) {
-                        ForEach(group.notes) { note in
-                            row(note)
-                        }
-                    }
-                }
+        Group {
+            if store.notesAsCards {
+                cards
+            } else {
+                list
             }
         }
         .navigationTitle("Notes")
         .navigationBarTitleDisplayMode(.inline)
-        .scrollContentBackground(.hidden)
         .scrollDismissesKeyboard(.interactively)
         .background(Palette.background(scheme))
         .searchable(text: $query, prompt: "Search notes")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: onClose) {
+                    Image(systemName: "chevron.left")
+                }
+                .accessibilityLabel("Back")
+                .accessibilityIdentifier("notes.back")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { store.notesAsCards.toggle() }
+                } label: {
+                    Image(systemName: store.notesAsCards ? "list.bullet" : "square.grid.2x2")
+                }
+                .accessibilityLabel(store.notesAsCards ? "Show as list" : "Show as cards")
+                .accessibilityIdentifier("notes.layout")
+            }
+        }
         .task {
             writing = true
             await load()
@@ -102,10 +92,143 @@ struct NotesScreen: View {
         }
     }
 
-    private var savedNote: String {
-        guard let agent = snapshot?.agent else { return "Saved." }
-        return "Saved. \(store.botCurrentName(for: agent)) will sort it."
+    // MARK: - List
+
+    private var list: some View {
+        List {
+            if showsCapture {
+                Section {
+                    capture
+                        .listRowBackground(Palette.card(scheme))
+                } footer: {
+                    captureFooter
+                }
+            }
+            if let status {
+                Section { statusView(status) }
+                    .listRowBackground(Color.clear)
+            }
+            ForEach(NotesFeed.groups(shown), id: \.title) { group in
+                Section(group.title) {
+                    ForEach(group.notes) { note in
+                        row(note)
+                    }
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
     }
+
+    private func row(_ note: Note) -> some View {
+        Button {
+            opened = note
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(note.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .foregroundStyle(.primary)
+                    .lineLimit(5)
+                    .multilineTextAlignment(.leading)
+                HStack(spacing: 6) {
+                    when(note)
+                    ForEach(note.types.prefix(2), id: \.self) { type in
+                        TypeChip(type: type)
+                    }
+                    if note.sending {
+                        ProgressView().controlSize(.mini)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(note.sending)
+        .listRowBackground(Palette.card(scheme))
+        .contextMenu { menu(note) }
+    }
+
+    // MARK: - Cards
+
+    private var cards: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if showsCapture {
+                    VStack(alignment: .leading, spacing: 6) {
+                        capture
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
+                        captureFooter
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14)
+                    }
+                }
+                if let status {
+                    statusView(status)
+                        .frame(maxWidth: .infinity)
+                }
+                ForEach(NotesFeed.groups(shown), id: \.title) { group in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(group.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 150), spacing: 12)],
+                            spacing: 12
+                        ) {
+                            ForEach(group.notes) { note in
+                                card(note)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+    }
+
+    private func card(_ note: Note) -> some View {
+        Button {
+            opened = note
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(note.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(8)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 0)
+                HStack(spacing: 6) {
+                    if let type = note.types.first {
+                        TypeChip(type: type)
+                    }
+                    Spacer(minLength: 0)
+                    if note.sending {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        when(note)
+                    }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
+            .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Palette.border(scheme), lineWidth: 0.5)
+            }
+            .contentShape(.rect(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .disabled(note.sending)
+        .contextMenu { menu(note) }
+    }
+
+    // MARK: - Shared
 
     private var capture: some View {
         HStack(alignment: .bottom, spacing: 10) {
@@ -131,41 +254,61 @@ struct NotesScreen: View {
         .padding(.vertical, 4)
     }
 
-    private func row(_ note: Note) -> some View {
-        Button {
-            opened = note
-        } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(note.text.trimmingCharacters(in: .whitespacesAndNewlines))
-                    .foregroundStyle(.primary)
-                    .lineLimit(5)
-                    .multilineTextAlignment(.leading)
-                HStack(spacing: 6) {
-                    if let when = note.createdAt {
-                        Text(when.formatted(date: .omitted, time: .shortened))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(note.types.prefix(2), id: \.self) { type in
-                        TypeChip(type: type)
-                    }
-                    if note.sending {
-                        ProgressView().controlSize(.mini)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(.rect)
+    @ViewBuilder
+    private var captureFooter: some View {
+        if let saveFailure {
+            Text(saveFailure).foregroundStyle(.red)
+        } else if saved {
+            Label(savedNote, systemImage: "checkmark")
         }
-        .buttonStyle(.plain)
-        .disabled(note.sending)
-        .listRowBackground(Palette.card(scheme))
-        .contextMenu {
-            Button("Copy", systemImage: "doc.on.doc") {
-                UIPasteboard.general.string = note.text
-            }
-            ShareLink(item: note.text)
+    }
+
+    private var savedNote: String {
+        guard let agent = snapshot?.agent else { return "Saved." }
+        return "Saved. \(store.botCurrentName(for: agent)) will sort it."
+    }
+
+    @ViewBuilder
+    private func statusView(_ status: Status) -> some View {
+        switch status {
+        case .noStore:
+            ContentUnavailableView(
+                "No notes agent", systemImage: "note.text",
+                description: Text("Notes are kept by an agent with a notes store, like Inbox. None was found on this Hermes.")
+            )
+        case let .failed(reason):
+            ContentUnavailableView("Notes", systemImage: "note.text", description: Text(reason))
+        case .loading:
+            ProgressView().frame(maxWidth: .infinity)
+        case .nothingYet:
+            Text("Nothing written down yet.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        case .noResults:
+            ContentUnavailableView.search(text: query)
         }
+    }
+
+    /// The time for a note from today or yesterday — the section already says
+    /// the day — and the date for anything older.
+    @ViewBuilder
+    private func when(_ note: Note) -> some View {
+        if let date = note.createdAt {
+            let recent = Calendar.current.isDateInToday(date) || Calendar.current.isDateInYesterday(date)
+            Text(recent
+                 ? date.formatted(date: .omitted, time: .shortened)
+                 : date.formatted(.dateTime.day().month(.abbreviated)))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func menu(_ note: Note) -> some View {
+        Button("Copy", systemImage: "doc.on.doc") {
+            UIPasteboard.general.string = note.text
+        }
+        ShareLink(item: note.text)
     }
 
     private func load() async {

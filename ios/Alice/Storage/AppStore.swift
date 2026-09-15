@@ -131,6 +131,7 @@ final class AppStore {
         static let unassignedExpanded = "alice.bot.unassignedExpanded"
         static let hiddenExpanded = "alice.bot.hiddenExpanded"
         static let homeCollapsed = "alice.bot.homeCollapsed"
+        static let notesAsCards = "alice.notes.asCards"
         static let botChatClearedAt = "alice.bot.chatClearedAt"
         static let botOrder = "alice.bot.order"
         static let cachedBots = "alice.cached.bots"
@@ -186,6 +187,10 @@ final class AppStore {
     /// Home — the agents in no channel — folded shut.
     var homeCollapsed = false {
         didSet { defaults.set(homeCollapsed, forKey: Keys.homeCollapsed) }
+    }
+    /// Notes as cards rather than as a list, the way they were last left.
+    var notesAsCards = false {
+        didSet { defaults.set(notesAsCards, forKey: Keys.notesAsCards) }
     }
     /// When each agent's chat was last cleared, so routine cards from before
     /// it do not come back into the empty chat.
@@ -300,6 +305,7 @@ final class AppStore {
         unassignedExpanded = defaults.bool(forKey: Keys.unassignedExpanded)
         hiddenExpanded = defaults.bool(forKey: Keys.hiddenExpanded)
         homeCollapsed = defaults.bool(forKey: Keys.homeCollapsed)
+        notesAsCards = defaults.bool(forKey: Keys.notesAsCards)
         botChatClearedAt = (defaults.dictionary(forKey: Keys.botChatClearedAt) as? [String: Date]) ?? [:]
         activitySeen = defaults.object(forKey: Keys.activitySeen) as? Date ?? .distantPast
         if let savedCollapsed = defaults.stringArray(forKey: Keys.collapsedSections) {
@@ -2620,6 +2626,7 @@ final class AppStore {
     /// Opens the chat a notification from the Mac watcher points at.
     func open(_ link: NotificationLink) {
         showingBots = false
+        showingNotes = false
         switch link {
         case let .bot(name):
             let bot = cachedBots.first(where: { $0.name == name }) ?? BotRow(
@@ -2649,6 +2656,7 @@ final class AppStore {
         if let id = route.conversationID,
            conversations.contains(where: { $0.id == id }) {
             showingBots = false
+            showingNotes = false
             activeID = id
             return true
         }
@@ -4350,6 +4358,8 @@ final class AppStore {
     )?
 
     var showingBots = false
+    /// Notes is a page as well, reached sideways from the drawer.
+    var showingNotes = false
 
     /// Which side the bots page comes from and leaves by.
     ///

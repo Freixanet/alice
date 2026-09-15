@@ -178,6 +178,33 @@ struct RootView: View {
                     ))
                     .zIndex(1)
                 }
+
+                // Notes is a page for the same reasons: in off the right from
+                // the drawer, out by its back button or a swipe to the right,
+                // and never closed by a downward swipe through the notes.
+                if store.showingNotes {
+                    NavigationStack {
+                        NotesScreen(onClose: closeNotes)
+                            .containerBackground(Palette.background(scheme), for: .navigation)
+                    }
+                    .background(Palette.background(scheme))
+                    .overlay {
+                        DrawerPan(
+                            shouldBegin: { velocity in
+                                velocity.x > 0 && abs(velocity.x) > abs(velocity.y) * 1.5
+                            },
+                            onChange: { _ in },
+                            onEnd: { translation, predicted in
+                                guard translation > drawerWidth * 0.3 || predicted > 120
+                                else { return }
+                                closeNotes()
+                            }
+                        )
+                        .allowsHitTesting(false)
+                    }
+                    .transition(.move(edge: .trailing))
+                    .zIndex(2)
+                }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
             // Both layers have to reach the physical edges: the drawer so it fills
@@ -203,6 +230,7 @@ struct RootView: View {
             .tint(store.accent.primary(scheme))
             .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingBots)
+            .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingNotes)
             // The drawer answers a sideways swipe from anywhere, not just from a
             // strip at the edge. `DrawerPan` only claims a drag that starts out
             // sideways, so scrolling the conversation is untouched.
@@ -211,7 +239,7 @@ struct RootView: View {
                 // say no: both recognisers attach to the same ancestor, and
                 // one swipe was being answered twice — going home and opening
                 // the drawer on top of it.
-                if !store.showingBots {
+                if !store.showingBots && !store.showingNotes {
                     DrawerPan(
                     shouldBegin: { velocity in
                         // Sideways enough to be meant sideways.
@@ -350,6 +378,14 @@ struct RootView: View {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(150))
             botsRowSwipeRecognized = false
+        }
+    }
+
+    /// Notes leaves the way it came in, off the right.
+    private func closeNotes() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+            store.showingNotes = false
         }
     }
 
