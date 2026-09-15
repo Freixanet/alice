@@ -336,9 +336,13 @@ struct Composer: View {
         }
     }
 
-    /// Bot chats deliberately have a smaller, single-line composer. Their
-    /// model belongs in profile settings, while attachment is a peer of the
-    /// 44pt back button above rather than a control buried in the field.
+    /// Bot chats deliberately have a smaller composer. Their model belongs in
+    /// profile settings, while attachment is a peer of the 44pt back button
+    /// above rather than a control buried in the field.
+    ///
+    /// It grows upward as the text does, to the same seven lines as Alice's
+    /// own composer. Fixed at one line, a longer message scrolled sideways out
+    /// of sight while it was being written.
     private var botComposer: some View {
         @Bindable var store = store
 
@@ -350,16 +354,19 @@ struct Composer: View {
                     }
                 }
 
-                HStack(spacing: 10) {
+                // Bottom-aligned: as the field grows, attach and send stay by
+                // the line being typed.
+                HStack(alignment: .bottom, spacing: 10) {
                     botAttachButton
 
-                    HStack(spacing: 6) {
-                        TextField(placeholder, text: $store.draft)
+                    HStack(alignment: .bottom, spacing: 6) {
+                        TextField(placeholder, text: $store.draft, axis: .vertical)
                             .textFieldStyle(.plain)
                             .font(.body)
                             .focused(focused)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .lineLimit(1...7)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(.rect)
                             .onTapGesture { focused.wrappedValue = true }
 
@@ -367,10 +374,13 @@ struct Composer: View {
                     }
                     .padding(.leading, 14)
                     .padding(.trailing, 5)
-                    .frame(height: 44)
-                    .glassEffect(.regular, in: .capsule)
+                    .padding(.vertical, 5)
+                    .frame(minHeight: 44)
+                    // A 22pt radius is the capsule at one line, and stays a
+                    // tidy rounded box instead of a stretched pill when taller.
+                    .glassEffect(.regular, in: .rect(cornerRadius: 22))
                     .glassEffectID("composer", in: glass)
-                    .contentShape(.capsule)
+                    .contentShape(.rect(cornerRadius: 22))
                     .onTapGesture {}
                 }
             }

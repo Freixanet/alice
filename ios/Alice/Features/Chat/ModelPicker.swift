@@ -17,9 +17,19 @@ struct ModelPicker: View {
     /// Supplied by a bot's settings page. When absent, Alice's own model is
     /// being chosen (the chat composer never opens this sheet for a bot).
     var bot: BotRow?
+    /// Set when a model is only being picked, not applied — for an agent that
+    /// does not exist yet. The same list, recents and search as settings; the
+    /// tap hands the choice back instead of writing it to a profile.
+    var chosen: HermesClient.ModelOption?
+    var onChoose: ((HermesClient.ModelOption) -> Void)?
 
-    init(bot: BotRow? = nil) {
+    init(
+        bot: BotRow? = nil, chosen: HermesClient.ModelOption? = nil,
+        onChoose: ((HermesClient.ModelOption) -> Void)? = nil
+    ) {
         self.bot = bot
+        self.chosen = chosen
+        self.onChoose = onChoose
     }
 
     private var targetBot: BotRow? {
@@ -29,10 +39,12 @@ struct ModelPicker: View {
     }
 
     private var targetProfile: String? {
-        bot?.name ?? store.activeBotProfileForModelSelection
+        guard onChoose == nil else { return nil }
+        return bot?.name ?? store.activeBotProfileForModelSelection
     }
 
     private var currentModelLabel: String? {
+        if onChoose != nil { return chosen?.label }
         guard let targetBot else { return store.currentChatModelLabel }
         return store.botModelOption(for: targetBot)?.label
             ?? targetBot.model.map(HermesClient.prettify)
@@ -41,7 +53,9 @@ struct ModelPicker: View {
     /// A typed id worth offering: it looks like a model name, and nothing in
     /// the catalogue already matches it exactly.
     private var customCandidate: String? {
-        guard targetProfile == nil else { return nil }
+        // A typed id is chosen for Alice's own chat on the spot; picking for an
+        // agent that does not exist yet has nowhere to send it.
+        guard targetProfile == nil, onChoose == nil else { return nil }
         let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard typed.count >= 3, !typed.contains(" ") else { return nil }
         guard !store.models.contains(where: { $0.id == typed }) else { return nil }
@@ -246,6 +260,7 @@ struct ModelPicker: View {
     }
 
     private func uses(_ model: HermesClient.ModelOption) -> Bool {
+        if onChoose != nil { return chosen.map { sameModel($0, model) } ?? false }
         guard let targetBot else { return store.currentChatUses(model) }
         guard targetBot.model == model.id else { return false }
         guard let provider = targetBot.provider, !provider.isEmpty else { return true }
@@ -271,6 +286,11 @@ struct ModelPicker: View {
     }
 
     private func choose(_ model: HermesClient.ModelOption) {
+        if let onChoose {
+            onChoose(model)
+            dismiss()
+            return
+        }
         guard let profile = targetProfile else {
             store.chooseModel(model.id, provider: model.provider)
             dismiss()

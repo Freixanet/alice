@@ -2178,7 +2178,10 @@ struct BotDetail: View {
 
                 LabeledContent("Profile", value: "@\(bot.name)")
                     .listRowBackground(Palette.card(scheme))
-                if let provider = bot.provider {
+                // `liveBot`, like the Model row above: `bot` is the row this page
+                // opened with, and a model changed here left the provider it
+                // showed behind.
+                if let provider = liveBot.provider {
                     LabeledContent("Provider", value: provider)
                         .listRowBackground(Palette.card(scheme))
                 }
@@ -2567,7 +2570,9 @@ private struct NewBotSheet: View {
     @State private var name = ""
     @State private var detail = ""
     @State private var selectedModel: HermesClient.ModelOption?
+    @State private var selectedChannel = ""
     @State private var selectedSection = ""
+    @State private var choosingModel = false
     @State private var mark = BotMark(colour: 0, shape: 0)
     @State private var busy = false
     @State private var failure: String?
@@ -2602,20 +2607,39 @@ private struct NewBotSheet: View {
                         .listRowBackground(Palette.card(scheme))
                 }
 
-                Section("Options") {
-                    Picker("Model", selection: $selectedModel) {
-                        Text("Inherit Alice's model")
-                            .tag(nil as HermesClient.ModelOption?)
-                        ForEach(store.models) { model in
-                            Text(model.label).tag(model as HermesClient.ModelOption?)
+                Section("Place") {
+                    // Channel first: which sections there are depends on it.
+                    Picker("Channel", selection: $selectedChannel) {
+                        Text("Home").tag("")
+                        ForEach(store.botChannels) { channel in
+                            Text(channel.name).tag(channel.id)
                         }
                     }
                     .listRowBackground(Palette.card(scheme))
 
                     Picker("Section", selection: $selectedSection) {
-                        Text("Unassigned").tag("")
-                        ForEach(store.botCustomSections, id: \.self) { sec in
+                        Text(selectedChannel.isEmpty ? "Unassigned" : "No Section").tag("")
+                        ForEach(sectionChoices, id: \.self) { sec in
                             Text(sec).tag(sec)
+                        }
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                }
+                .onChange(of: selectedChannel) { selectedSection = "" }
+
+                Section("Model") {
+                    // The same model list as an agent's settings, picked here and
+                    // applied when the agent is made.
+                    Button { choosingModel = true } label: {
+                        HStack {
+                            Text("Model").foregroundStyle(.primary)
+                            Spacer(minLength: 12)
+                            Text(selectedModel?.label ?? "Same as Alice")
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
                         }
                     }
                     .listRowBackground(Palette.card(scheme))
@@ -2633,7 +2657,10 @@ private struct NewBotSheet: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .foregroundStyle(.white)
-                            .background(name.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary.opacity(0.4) : store.accent.primary(scheme), in: .capsule)
+                            // `control`, not `primary`: white text needs a fill that
+                            // stays dark enough, and Stone's dark primary is near
+                            // white — the label all but vanished into the button.
+                            .background(name.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary.opacity(0.4) : store.accent.control(scheme), in: .capsule)
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || busy)
                     .listRowBackground(Color.clear)
@@ -2643,6 +2670,10 @@ private struct NewBotSheet: View {
             .background(Palette.background(scheme))
             .navigationTitle("Create New Agent")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $choosingModel) {
+                ModelPicker(chosen: selectedModel) { selectedModel = $0 }
+                    .preferredColorScheme(store.theme.colorScheme)
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: {
@@ -2653,6 +2684,12 @@ private struct NewBotSheet: View {
                 }
             }
         }
+    }
+
+    /// Home's sections, or the chosen channel's own.
+    private var sectionChoices: [String] {
+        guard !selectedChannel.isEmpty else { return store.botCustomSections }
+        return store.botChannels.first { $0.id == selectedChannel }?.sections ?? []
     }
 
     private func create() {
@@ -2666,8 +2703,15 @@ private struct NewBotSheet: View {
                     displayName: trimmed, description: detail, model: selectedModel
                 )
                 store.botMarks[slug] = mark
-                if !selectedSection.isEmpty {
-                    store.setBotSection(slug, section: selectedSection)
+                if selectedChannel.isEmpty {
+                    if !selectedSection.isEmpty {
+                        store.setBotSection(slug, section: selectedSection)
+                    }
+                } else {
+                    store.addBot(slug, toChannel: selectedChannel)
+                    if !selectedSection.isEmpty {
+                        store.setChannelSection(selectedChannel, bot: slug, section: selectedSection)
+                    }
                 }
                 await onCreated()
                 dismiss()
