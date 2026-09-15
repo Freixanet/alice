@@ -28,7 +28,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "deps:check": "knip --include files,dependencies,unlisted",
-    "cycles:check": "madge --circular --extensions ts,tsx src --exclude 'routeTree\\.gen\\.ts'",
+    "cycles:check": "madge --circular --extensions ts,tsx --ts-config tsconfig.json src --exclude 'routeTree\\.gen\\.ts'",
     "duplicates:check": "jscpd src --min-lines 12 --min-tokens 80 --threshold 2 --reporters console",
     "design:check": "node scripts/check-design-system.mjs",
     "bundles:check": "node scripts/check-bundle-budgets.mjs",
