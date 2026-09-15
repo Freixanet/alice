@@ -266,14 +266,27 @@ def enable_isolation(check: bool) -> dict:
     homes = [("default", HERMES_ROOT.parent)] + sorted(
         (p.name, p) for p in (HERMES_ROOT.parent / "profiles").iterdir()
         if p.is_dir() and re.fullmatch(r"[a-z0-9][a-z0-9-]*", p.name) and (p / "config.yaml").is_file())
+    # Hermes looks for a profile's plugins in that profile's own plugins folder. A link to
+    # the one installed copy keeps a single source: updating the plugin updates them all.
+    source = HERMES_ROOT.parent / "plugins" / "alice"
+    if not (source / "plugin.yaml").is_file():
+        return {"agente": "aislamiento de Business", "resultado": {
+            "ok": False, "error": f"El plugin de Alice no está instalado en {source}."}}
     changed = []
     for name, home in homes:
+        link = home / "plugins" / "alice"
+        linked = name == "default" or link.exists()
         cfg = _load_yaml(home / "config.yaml")
-        enabled = ((cfg.get("plugins") or {}).get("enabled")) or []
-        if "alice" in enabled:
+        enabled = "alice" in (((cfg.get("plugins") or {}).get("enabled")) or [])
+        if linked and enabled:
             continue
         changed.append(name)
-        if not check:
+        if check:
+            continue
+        if not linked:
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(source, target_is_directory=True)
+        if not enabled:
             prefix = [] if name == "default" else ["-p", name]
             hermes(*prefix, "plugins", "enable", "alice", "--no-allow-tool-override")
     return {"agente": "aislamiento de Business", "estado": ("cambiaría: " if check else "plugin activado en: ")
