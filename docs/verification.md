@@ -44,6 +44,13 @@ work in production. Verify those flows separately using test accounts.
 If another checkout or CI run uses port 8091, set `ALICE_E2E_PORT` to a free
 port for Playwright. Each checkout must have its own running test server.
 
+The mobile web-vitals test runs against the Vite development server. Its INP
+window opens after one untimed keystroke: the first key typed into any text field
+costs Chromium on macOS about 200 ms before the next frame even on a page with
+only a `<textarea>` (232–296 ms measured, Chrome and Playwright Chromium alike).
+Field INP for a person's first keystroke includes that platform cost; the test
+budget measures Alice's own responsiveness. Budgets themselves are unchanged.
+
 On a loaded machine, run coverage with `npm run test:coverage -- --maxWorkers=2`.
 If a database bootstrap times out, repeat the affected suite without concurrent
 Xcode builds. Record both results; do not hide a failure by changing assertions.
