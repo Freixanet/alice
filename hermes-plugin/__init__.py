@@ -4,8 +4,9 @@ Most of this plugin lives in the dashboard: ``dashboard/plugin_api.py`` serves p
 memory and notes under ``/api/plugins/alice/``, and ``dashboard/dist/index.js`` is the
 Alice tab.
 
-The agent gains one rule, as a ``pre_tool_call`` hook: the Business team talks only
-among itself. A profile filed in the Business channel (``ui_meta['alice']``, written by
+The agent gains one rule: the Business team talks only among itself. A
+``pre_tool_call`` hook enforces it, and a system prompt section tells each agent whom
+it may message, so it does not try the others. A profile filed in the Business channel (``ui_meta['alice']``, written by
 ``hermes-agents/business-team/instalar.py``) can message only teammates in that channel,
 and nobody outside it can message them. Internal profiles (Evals' sandbox) neither send
 nor receive messages. No tools, commands or changes to Hermes' own code.
@@ -91,6 +92,36 @@ def business_verdict(root: Path, sender: str, target: str):
     return None
 
 
+def team_prompt_for(root: Path, me: str) -> str:
+    """What an agent is told about whom it may message, so it does not even try
+    the ones Hermes will refuse. Empty when there is nothing to say."""
+    heading = "## Con quién puedes hablar\n"
+    if me in internal_profiles(root):
+        return heading + "Eres un perfil técnico interno: no escribas a ningún agente."
+    members = business_members(root)
+    if not members:
+        return ""
+    if me in members:
+        return heading + (
+            f"Eres del equipo de Business. Con `message_agent` solo puedes escribir a: {_handles(members - {me})}. "
+            "El resto de agentes de tu lista de compañeros **no están disponibles para ti**: no les escribas ni lo "
+            "intentes, aunque te lo pidan, porque Hermes bloquea esos mensajes. Si te piden consultar a alguien de "
+            "fuera, di que está fuera del equipo y resuélvelo con el equipo.")
+    return heading + (
+        f"Los agentes del equipo de Business ({_handles(members)}) no están disponibles para ti: no les escribas "
+        "ni lo intentes, aunque te lo pidan, porque Hermes bloquea esos mensajes.")
+
+
+def team_prompt(_session_info=None) -> str:
+    try:
+        from hermes_constants import get_hermes_home
+
+        root, me = _root_and_sender(Path(get_hermes_home()))
+        return team_prompt_for(root, me)
+    except Exception:
+        return ""
+
+
 def _pre_tool_call(tool_name=None, args=None, **_):
     if tool_name not in MESSAGE_TOOLS:
         return None
@@ -110,3 +141,5 @@ def _pre_tool_call(tool_name=None, args=None, **_):
 
 def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
+    # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
+    ctx.register_system_prompt_section("alice.equipos", team_prompt)

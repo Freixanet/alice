@@ -426,15 +426,26 @@ private struct TranscriptView: View {
                         .glassEffect(.regular.interactive(), in: .capsule)
                         .frame(maxWidth: .infinity)
                     }
-                    // While work goes on behind the scenes, the last reply is
-                    // not the end of the task: nothing to copy or share yet.
-                    let working = !store.backgroundWork(for: conversation.id).isEmpty
-                    let lastReply = visibleMessages.last { $0.role == .assistant }?.id
-                    ForEach(visibleMessages) { message in
+                    // The agent's replies to one request are one task, shown as
+                    // one message (`ChatTasks`): one time at its top, actions
+                    // once at its end over all of it. While the latest task is
+                    // still going — a reply being written, or work behind the
+                    // scenes — it has neither.
+                    let messages = Array(visibleMessages)
+                    let positions = ChatTasks.positions(messages)
+                    let latestBusy = !store.backgroundWork(for: conversation.id).isEmpty
+                        || messages.last?.pending == true
+                    ForEach(messages) { message in
+                        let position = positions[message.id]
+                        let busy = (position?.isLatest ?? false) && latestBusy
                         MessageRow(
                             message: message,
-                            showsActions: !(working && message.id == lastReply)
+                            showsActions: (position?.isLast ?? true) && !busy,
+                            showsTime: (position?.isFirst ?? true) && !busy,
+                            actionsContent: position?.text
                         )
+                        // Parts of one task sit closer than separate messages.
+                        .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
                         .id(message.id)
                     }
                     BackgroundWorkCard(conversationID: conversation.id)

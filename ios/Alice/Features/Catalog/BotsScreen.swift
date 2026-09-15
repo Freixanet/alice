@@ -857,6 +857,7 @@ struct BotsScreen: View {
             .overlay {
                 Circle().stroke(Palette.background(scheme), lineWidth: 2)
             }
+            .modifier(WorkingPulse(active: color == .green))
             .accessibilityLabel(color == .green ? "Working" : "Unread")
     }
 
@@ -1194,6 +1195,7 @@ struct BotsScreen: View {
             Circle()
                 .fill(Color.green)
                 .frame(width: 7, height: 7)
+                .modifier(WorkingPulse(active: true))
                 .accessibilityLabel("Working")
         } else if store.hasUnread(bots) {
             Circle()
@@ -3036,5 +3038,24 @@ private struct BotReorderDropDelegate: DropDelegate {
         if let dragged = draggedName, dragged != target { adopt?(dragged) }
         draggedName = nil
         return true
+    }
+}
+
+/// The green "at work" dot breathes while the agent works, so a glance tells
+/// work in progress from something waiting to be read. Still under Reduce Motion.
+private struct WorkingPulse: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if active && !reduceMotion {
+            PhaseAnimator([false, true]) { dimmed in
+                content.opacity(dimmed ? 0.3 : 1)
+            } animation: { _ in
+                .easeInOut(duration: 0.8)
+            }
+        } else {
+            content
+        }
     }
 }

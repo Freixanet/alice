@@ -59,14 +59,42 @@ final class RichMarkdownTests: XCTestCase {
         ])
     }
 
-    func testFixedFormatsStayPlainParagraphs() {
-        // Chollometro's two lines per deal and Radar IA's items must not turn
-        // into something else.
-        let deals = "**Auriculares** — 19,99 €\nhttps://example.com/a\n\n**Teclado** — 45 €\nhttps://example.com/b"
+    func testFixedFormatsKeepTheirLinesAndTheirAddressesBecomeButtons() {
+        // Chollometro's two lines per deal and Radar IA's items keep their
+        // shape; the address under each is a button, not text.
+        let deals = "**Auriculares** — 19,99 €\nhttps://example.com/a\n\n**Teclado** — 45 €\nhttps://www.example.com/b"
         XCTAssertEqual(RichMarkdown.blocks(deals), [
-            .paragraph("**Auriculares** — 19,99 €\nhttps://example.com/a"),
-            .paragraph("**Teclado** — 45 €\nhttps://example.com/b"),
+            .paragraph("**Auriculares** — 19,99 €"),
+            .links([RichLink(title: "example.com", url: URL(string: "https://example.com/a")!)]),
+            .paragraph("**Teclado** — 45 €"),
+            .links([RichLink(title: "example.com", url: URL(string: "https://www.example.com/b")!)]),
         ])
+    }
+
+    func testLinksAreButtonsAndNeverAddressesInTheText() {
+        let source = """
+        Lee el [anuncio oficial](https://openai.com/blog/x) antes de decidir.
+        Fuente: https://www.reuters.com/tech/y
+        Usa `curl https://api.example.com` para probar.
+        """
+        XCTAssertEqual(RichMarkdown.blocks(source), [
+            .paragraph("Lee el anuncio oficial antes de decidir.\nUsa `curl https://api.example.com` para probar."),
+            .links([
+                RichLink(title: "anuncio oficial", url: URL(string: "https://openai.com/blog/x")!),
+                RichLink(title: "reuters.com", url: URL(string: "https://www.reuters.com/tech/y")!),
+            ]),
+        ])
+        XCTAssertEqual(
+            RichMarkdown.blocks("- Precio en https://shop.example.com/p\n- Otra vez https://shop.example.com/p\n- Sin enlace"),
+            [
+                .list([
+                    RichListItem(depth: 0, marker: .bullet, text: "Precio en"),
+                    RichListItem(depth: 0, marker: .bullet, text: "Otra vez"),
+                    RichListItem(depth: 0, marker: .bullet, text: "Sin enlace"),
+                ]),
+                .links([RichLink(title: "shop.example.com", url: URL(string: "https://shop.example.com/p")!)]),
+            ]
+        )
     }
 
     func testNumberedListsAndNesting() {
@@ -105,10 +133,10 @@ final class RichMarkdownTests: XCTestCase {
             RichMarkdown.blocks("¿Seguimos?\n[Sí](alice://reply?text=S%C3%AD%2C%20sigue)"),
             [.paragraph("¿Seguimos?"), .buttons([RichReplyButton(title: "Sí", reply: "Sí, sigue")])]
         )
-        // Ordinary links stay links.
+        // A web link is a button of its own, not a reply.
         XCTAssertEqual(
             RichMarkdown.blocks("[Web](https://example.com)"),
-            [.paragraph("[Web](https://example.com)")]
+            [.links([RichLink(title: "Web", url: URL(string: "https://example.com")!)])]
         )
     }
 

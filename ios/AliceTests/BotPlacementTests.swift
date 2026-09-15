@@ -98,6 +98,23 @@ final class BotPlacementTests: XCTestCase {
         XCTAssertEqual(reapplied.applied["biz-mercado"], 2)
     }
 
+    func testWhoMayMessageWhomFollowsTheBusinessTeam() {
+        let roster = [
+            bot("chief-of-staff", channel: "Business (Beta)"),
+            bot("biz-mercado", channel: "business (beta)", section: "Intelligence Dept."),
+            bot("radar-ia"),
+            bot("inbox", channel: "Otro canal"),
+        ]
+        XCTAssertTrue(AppStore.canMessage(from: "chief-of-staff", to: "@biz-mercado", roster: roster))
+        XCTAssertFalse(AppStore.canMessage(from: "chief-of-staff", to: "radar-ia", roster: roster))
+        XCTAssertFalse(AppStore.canMessage(from: "radar-ia", to: "biz-mercado", roster: roster))
+        XCTAssertTrue(AppStore.canMessage(from: "radar-ia", to: "inbox", roster: roster))
+        XCTAssertTrue(AppStore.canMessage(from: "radar-ia", to: "hermes", roster: roster))
+        XCTAssertFalse(AppStore.canMessage(from: nil, to: "chief-of-staff", roster: roster))
+        XCTAssertFalse(AppStore.canMessage(from: "radar-ia", to: "nadie", roster: roster), "no such agent")
+        XCTAssertTrue(AppStore.canMessage(from: "chief-of-staff", to: "radar-ia", roster: []), "roster not loaded")
+    }
+
     func testADeletedChannelIsNotMadeAgain() {
         let first = BotChannel.applyingPlacements(team, to: [], applied: [:])
         let again = BotChannel.applyingPlacements(team, to: [], applied: first.applied)

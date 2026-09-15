@@ -170,6 +170,8 @@ enum RoutineDelivery {
         var answeringHandover = false
         // Another agent's answer is on screen since the person last wrote.
         var heardFromAgent = false
+        // The agents whose answers are on screen since the person last wrote.
+        var answeredBy: Set<String> = []
         for (index, message) in messages.enumerated() {
             switch message.role {
             case .user:
@@ -197,13 +199,30 @@ enum RoutineDelivery {
                     delivered.botName = botName
                     delivered.fromAgent = incoming.handle
                     shown.append(delivered)
+                    answeredBy.insert(incoming.handle)
                     answeringHandover = false
                     heardFromAgent = true
                 } else if let notice = AgentMessages.notice(message.content) {
                     // Hermes telling the bot, with the shell's output attached.
                     // Once the answer itself is on screen, what the bot says
                     // about the delivery only repeats it.
-                    if notice.succeeded {
+                    if notice.succeeded,
+                       let handle = notice.handle,
+                       !answeredBy.contains(handle),
+                       let body = AgentMessages.noticeAnswer(message.content) {
+                        // The answer came back only inside the notice. It is
+                        // still that agent's answer, so it gets the same card
+                        // as one that arrived on its own.
+                        var delivered = message
+                        delivered.role = .assistant
+                        delivered.content = body
+                        delivered.botName = botName
+                        delivered.fromAgent = handle
+                        shown.append(delivered)
+                        answeredBy.insert(handle)
+                        answeringHandover = false
+                        heardFromAgent = true
+                    } else if notice.succeeded {
                         answeringHandover = heardFromAgent
                     } else {
                         var failed = message
@@ -217,6 +236,7 @@ enum RoutineDelivery {
                     shown.append(message)
                     answeringHandover = false
                     heardFromAgent = false
+                    answeredBy = []
                 }
             case .assistant:
                 // A decision the bot is waiting on still needs the person.

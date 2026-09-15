@@ -27,7 +27,8 @@ The agent gains one rule and nothing else (no tools or commands):
   lets a profile filed in the Business channel (`ui_meta['alice'].channel`, written by
   `hermes-agents/business-team/instalar.py`) message only teammates in that channel, and
   blocks anyone outside it, Alice included, from messaging them. Agents outside Business
-  keep talking to each other. Internal profiles (`ui_meta['alice'].internal`, such as
+  keep talking to each other. A system prompt section (`alice.equipos`) tells each agent
+  whom it may message, so it does not try the others. Internal profiles (`ui_meta['alice'].internal`, such as
   Evals' sandbox) neither send nor receive messages. If the rule cannot be checked, the
   message does not go.
   The hook runs only in profiles where the plugin is enabled; the team installer enables

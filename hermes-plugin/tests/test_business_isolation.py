@@ -113,10 +113,22 @@ class BusinessIsolationTests(unittest.TestCase):
             blocked = self.plugin._pre_tool_call(tool_name="message_agent", args={"target": "inbox"})
         self.assertEqual(blocked["action"], "block")
 
-    def test_register_adds_the_hook(self):
+    def test_each_agent_is_told_whom_it_may_message(self):
+        inside = self.plugin.team_prompt_for(self.root, "biz-mercado")
+        self.assertIn("solo puedes escribir a: @chief-of-staff", inside)
+        self.assertIn("no están disponibles para ti", inside)
+        outside = self.plugin.team_prompt_for(self.root, "radar-ia")
+        self.assertIn("@biz-mercado, @chief-of-staff", outside)
+        self.assertIn("interno", self.plugin.team_prompt_for(self.root, "evals-sandbox"))
+        empty = Path(self.tmp.name) / "vacio"
+        (empty / "profiles" / "radar-ia").mkdir(parents=True)
+        self.assertEqual(self.plugin.team_prompt_for(empty, "radar-ia"), "")
+
+    def test_register_adds_the_hook_and_the_prompt_section(self):
         ctx = mock.Mock()
         self.plugin.register(ctx)
         ctx.register_hook.assert_called_once_with("pre_tool_call", self.plugin._pre_tool_call)
+        ctx.register_system_prompt_section.assert_called_once_with("alice.equipos", self.plugin.team_prompt)
 
 
 if __name__ == "__main__":

@@ -16,9 +16,12 @@ struct BackgroundWorkCard: View {
             let name = store.botCurrentName(for: agent)
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(work.waitingOn) { delegation in
+                    let asked = store.botCurrentName(for: delegation.handle)
                     row(
-                        "Waiting for \(store.botCurrentName(for: delegation.handle))",
-                        detail: Text("\(name) asked it \(Text(delegation.sentAt, style: .relative)) ago. Its answer will appear here.")
+                        "Waiting for \(asked)",
+                        detail: Text("\(name) asked it \(Text(delegation.sentAt, style: .relative)) ago. Its answer will appear here."),
+                        stop: { store.stopWaiting(for: delegation.handle, in: conversationID) },
+                        stopLabel: "Stop waiting for \(asked)"
                     )
                 }
                 if work.running {
@@ -32,12 +35,14 @@ struct BackgroundWorkCard: View {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(Palette.border(scheme), lineWidth: 0.5)
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("chat.backgroundWork")
         }
     }
 
-    private func row(_ title: String, detail: Text) -> some View {
+    private func row(
+        _ title: String, detail: Text, stop: (() -> Void)? = nil, stopLabel: String = ""
+    ) -> some View {
         HStack(alignment: .top, spacing: 10) {
             ProgressView()
                 .controlSize(.small)
@@ -49,6 +54,20 @@ struct BackgroundWorkCard: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            if let stop {
+                Spacer(minLength: 8)
+                // An answer that will never come — refused out of sight, or
+                // lost — must not hold the chat until the wait runs out.
+                Button("Stop", action: stop)
+                    .font(.footnote.weight(.medium))
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
+                    .tint(.secondary)
+                    .accessibilityLabel(stopLabel)
+                    .accessibilityIdentifier("chat.backgroundWork.stop")
             }
         }
     }

@@ -18,6 +18,7 @@ enum RichBlock: Equatable {
     case rule
     case math(String)
     case buttons([RichReplyButton])
+    case links([RichLink])
 }
 
 struct RichListItem: Equatable {
@@ -43,6 +44,12 @@ struct RichTable: Equatable {
     let header: [String]
     let alignments: [Alignment]
     let rows: [[String]]
+}
+
+/// A web link, drawn as a button that opens it: the address itself never shows.
+struct RichLink: Equatable, Hashable {
+    let title: String
+    let url: URL
 }
 
 /// `[Title](alice://reply?text=…)`: a button that sends its text in the chat.
@@ -130,11 +137,18 @@ enum RichMarkdown {
                     rows.append(fitted(cells(row), to: header.count, filler: ""))
                     index += 1
                 }
+                var links: [RichLink] = []
+                func cell(_ text: String) -> String {
+                    let extracted = RichLinks.extract(text)
+                    links += extracted.links
+                    return extracted.text
+                }
                 blocks.append(.table(RichTable(
-                    header: header,
+                    header: header.map(cell),
                     alignments: fitted(alignments, to: header.count, filler: .leading),
-                    rows: rows
+                    rows: rows.map { $0.map(cell) }
                 )))
+                if !links.isEmpty { blocks.append(.links(RichLinks.unique(links))) }
                 continue
             }
 
@@ -182,7 +196,15 @@ enum RichMarkdown {
                 if let buttons = onlyReplyButtons(items.map(\.text)) {
                     blocks.append(.buttons(buttons))
                 } else {
-                    blocks.append(.list(items))
+                    var links: [RichLink] = []
+                    let cleaned = items.compactMap { item -> RichListItem? in
+                        let extracted = RichLinks.extract(item.text)
+                        links += extracted.links
+                        guard !extracted.text.isEmpty else { return nil }
+                        return RichListItem(depth: item.depth, marker: item.marker, text: extracted.text)
+                    }
+                    if !cleaned.isEmpty { blocks.append(.list(cleaned)) }
+                    if !links.isEmpty { blocks.append(.links(RichLinks.unique(links))) }
                 }
                 continue
             }
@@ -199,8 +221,12 @@ enum RichMarkdown {
                 index += 1
             }
             let extracted = replyButtons(in: paragraph.joined(separator: "\n"))
-            if !extracted.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                blocks.append(.paragraph(extracted.text))
+            let linked = RichLinks.extract(extracted.text)
+            if !linked.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                blocks.append(.paragraph(linked.text))
+            }
+            if !linked.links.isEmpty {
+                blocks.append(.links(linked.links))
             }
             if !extracted.buttons.isEmpty {
                 blocks.append(.buttons(extracted.buttons))
@@ -381,6 +407,120 @@ enum RichMarkdown {
             .first { $0.name == "text" }?.value?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return (text?.isEmpty == false ? text : nil) ?? title
+    }
+}
+
+// MARK: - Links
+
+/// Web links taken out of the text, to be drawn as buttons. A link written as
+/// `[title](url)` keeps its title in the sentence; a bare address leaves the
+/// text entirely, and a line that only introduced it ("Fuente: …") goes too.
+/// Code is never touched.
+enum RichLinks {
+    private static let markdownLink = try? NSRegularExpression(pattern: #"\[([^\]\n]+)\]\((https?://[^)\s]+)\)"#)
+    private static let autolink = try? NSRegularExpression(pattern: #"<(https?://[^>\s]+)>"#)
+    private static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    static func extract(_ text: String) -> (text: String, links: [RichLink]) {
+        let lowered = text.lowercased()
+        guard lowered.contains("http") || lowered.contains("www.") else { return (text, []) }
+        var links: [RichLink] = []
+        var kept: [String] = []
+        for line in text.components(separatedBy: "\n") {
+            var withTitles = "", bare = "", found = false
+            for (index, part) in line.components(separatedBy: "`").enumerated() {
+                let tick = index == 0 ? "" : "`"
+                guard index % 2 == 0 else {
+                    withTitles += tick + part
+                    bare += tick + part
+                    continue
+                }
+                let stripped = strip(part, into: &links)
+                found = found || stripped.found
+                withTitles += tick + stripped.withTitles
+                bare += tick + stripped.bare
+            }
+            guard found else {
+                kept.append(line)
+                continue
+            }
+            let label = bare.replacingOccurrences(of: "*", with: "").replacingOccurrences(of: "_", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            let introducesLink = label.hasSuffix(":") && label.split(separator: " ").count <= 3
+            if tidy(bare).isEmpty || introducesLink { continue }
+            let clean = tidy(withTitles)
+            if !clean.isEmpty { kept.append(clean) }
+        }
+        return (kept.joined(separator: "\n"), unique(links))
+    }
+
+    static func unique(_ links: [RichLink]) -> [RichLink] {
+        var seen = Set<String>()
+        return links.filter { seen.insert($0.url.absoluteString).inserted }
+    }
+
+    private static func strip(
+        _ text: String, into links: inout [RichLink]
+    ) -> (withTitles: String, bare: String, found: Bool) {
+        var withTitles = text, bare = text, found = false
+        if let regex = markdownLink {
+            let ns = text as NSString
+            let range = NSRange(location: 0, length: ns.length)
+            for match in regex.matches(in: text, range: range) {
+                guard let url = URL(string: ns.substring(with: match.range(at: 2))) else { continue }
+                links.append(RichLink(title: title(ns.substring(with: match.range(at: 1)), url: url), url: url))
+                found = true
+            }
+            withTitles = regex.stringByReplacingMatches(in: text, range: range, withTemplate: "$1")
+            bare = regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+        }
+        if let regex = autolink {
+            let ns = bare as NSString
+            for match in regex.matches(in: bare, range: NSRange(location: 0, length: ns.length)).reversed() {
+                let whole = ns.substring(with: match.range)
+                guard let url = URL(string: ns.substring(with: match.range(at: 1))) else { continue }
+                links.append(RichLink(title: domain(url), url: url))
+                found = true
+                withTitles = withTitles.replacingOccurrences(of: whole, with: "")
+                bare = bare.replacingOccurrences(of: whole, with: "")
+            }
+        }
+        if let detector {
+            let ns = bare as NSString
+            for match in detector.matches(in: bare, range: NSRange(location: 0, length: ns.length)) {
+                guard let url = match.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { continue }
+                let raw = ns.substring(with: match.range)
+                links.append(RichLink(title: domain(url), url: url))
+                found = true
+                withTitles = withTitles.replacingOccurrences(of: raw, with: "")
+                bare = bare.replacingOccurrences(of: raw, with: "")
+            }
+        }
+        return (withTitles, bare, found)
+    }
+
+    private static func tidy(_ line: String) -> String {
+        var text = line.replacingOccurrences(of: #"\(\s*\)"#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"[ \t]+([,.;!?])"#, with: "$1", options: .regularExpression)
+        text = text.trimmingCharacters(in: .whitespaces)
+        while let last = text.last, "—–-·|→:".contains(last) {
+            text.removeLast()
+            text = text.trimmingCharacters(in: .whitespaces)
+        }
+        return text
+    }
+
+    private static func title(_ raw: String, url: URL) -> String {
+        let clean = raw.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        guard !clean.isEmpty else { return domain(url) }
+        return clean.count > 60 ? String(clean.prefix(57)) + "…" : clean
+    }
+
+    static func domain(_ url: URL) -> String {
+        let host = (url.host ?? url.absoluteString).lowercased()
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 }
 
@@ -623,7 +763,7 @@ struct RichMessageView: View {
     var failed = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             ForEach(Array(RichMarkdown.cached(content).enumerated()), id: \.offset) { _, block in
                 view(for: block)
             }
@@ -646,6 +786,7 @@ struct RichMessageView: View {
                 .accessibilityAddTraits(.isHeader)
         case let .paragraph(text):
             Text(inline(text))
+                .lineSpacing(3)
                 .textSelection(.enabled)
                 .tint(Palette.link(scheme))
         case let .list(items):
@@ -669,6 +810,8 @@ struct RichMessageView: View {
                 .accessibilityLabel(formula)
         case let .buttons(buttons):
             RichReplyButtonsView(buttons: buttons)
+        case let .links(links):
+            RichLinksView(links: links)
         }
     }
 
@@ -688,7 +831,7 @@ private struct RichListView: View {
     let inline: (String) -> AttributedString
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     marker(item)
@@ -875,6 +1018,39 @@ private struct RichTableView: View {
         case .leading: .leading
         case .center: .center
         case .trailing: .trailing
+        }
+    }
+}
+
+/// Web links as buttons that open them, never as addresses in the text.
+private struct RichLinksView: View {
+    let links: [RichLink]
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { items }
+            VStack(alignment: .leading, spacing: 8) { items }
+        }
+    }
+
+    @ViewBuilder
+    private var items: some View {
+        ForEach(links, id: \.self) { link in
+            Link(destination: link.url) {
+                HStack(spacing: 4) {
+                    Text(link.title)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "arrow.up.right")
+                        .imageScale(.small)
+                }
+                .font(.footnote.weight(.medium))
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            .tint(.primary)
+            .accessibilityHint("Opens \(RichLinks.domain(link.url))")
         }
     }
 }

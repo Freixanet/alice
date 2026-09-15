@@ -7,6 +7,17 @@ struct MessageRow: View {
     /// Off for the last reply while its agent is still working behind the
     /// scenes: that reply is not the end of the task yet.
     var showsActions = true
+    /// Off for replies after the first of a task (`ChatTasks`), and while the
+    /// task is under way: one task has one time.
+    var showsTime = true
+    /// What copying, sharing and reading aloud take: the whole task.
+    var actionsContent: String? = nil
+
+    private var actionsMessage: Message {
+        var whole = message
+        if let actionsContent, !actionsContent.isEmpty { whole.content = actionsContent }
+        return whole
+    }
 
     var body: some View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
@@ -27,7 +38,7 @@ struct MessageRow: View {
                 // When the reply was sent, for looking back through a
                 // conversation. Centred and faint so it reads as a marker
                 // between replies rather than as part of one.
-                if let when = MessageTime.caption(message.createdAt) {
+                if showsTime, let when = MessageTime.caption(message.createdAt) {
                     Text(when)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -39,7 +50,7 @@ struct MessageRow: View {
                     // mark. The conversation already says whose it is, and a
                     // reply still being written says "Thinking…" in its tool
                     // list. Alice's own replies keep their label.
-                    if message.botName?.isEmpty ?? true {
+                    if showsTime, message.botName?.isEmpty ?? true {
                         Text("ALICE")
                             .font(.caption2.weight(.medium))
                             .tracking(1.4)
@@ -110,7 +121,7 @@ struct MessageRow: View {
                     // Only once the reply has finished: acting on half an
                     // answer copies or shares something that is still changing.
                     if showsActions, !message.pending, !message.content.isEmpty {
-                        MessageActions(message: message)
+                        MessageActions(message: actionsMessage)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

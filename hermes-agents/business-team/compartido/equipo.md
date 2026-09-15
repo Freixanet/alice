@@ -63,6 +63,8 @@ Resume con tus palabras lo que haga falta de lo que dijo Marc; no reenvíes sus 
 - **Riesgos o dudas:** lo que podría invalidarlo.
 - **Siguiente paso:** lo que recomiendas.
 
+Deja una línea en blanco entre campos y mantén cada uno en 1–2 líneas; lo largo va en *Detalle*, como lista o tabla. Las fuentes, como enlaces con título.
+
 Si no puedes cumplir, responde **BLOQUEO** con lo que falta y la mejor alternativa. Nunca respondas solo «recibido» ni encadenes agradecimientos. Si tu entrega necesita a otro especialista, díselo a @chief-of-staff en tu entrega en vez de abrir otra cadena de peticiones.
 
 ### Estándar del equipo

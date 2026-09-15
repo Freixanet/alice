@@ -2993,6 +2993,26 @@ final class AppStore {
         bots.contains { isBotWorking($0) }
     }
 
+    /// Whether Hermes lets `sender` message `handle`, as the Alice plugin
+    /// decides (`hermes-plugin/__init__.py`): the agent exists, and both are in
+    /// Business or both are not. Alice's own chat is `nil` or `default`. An
+    /// unknown roster decides nothing, so nothing is dropped before it loads.
+    nonisolated static func canMessage(from sender: String?, to handle: String, roster: [BotRow]) -> Bool {
+        guard !roster.isEmpty else { return true }
+        let named = (AgentMessages.normalized(handle) ?? handle).lowercased()
+        let target = named == "hermes" ? "default" : named
+        let from = (sender?.isEmpty ?? true) ? "default" : sender!
+        guard target == "default" || roster.contains(where: { $0.name == target }) else { return false }
+        func inBusiness(_ name: String) -> Bool {
+            guard let channel = roster.first(where: { $0.name == name })?.placement?.channel else { return false }
+            return channel.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare(Self.businessChannel) == .orderedSame
+        }
+        return inBusiness(from) == inBusiness(target)
+    }
+
+    nonisolated static let businessChannel = "Business (Beta)"
+
     @discardableResult
     func createChannel(name: String, bots: [String]) -> BotChannel? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4474,7 +4494,10 @@ final class AppStore {
                 note: Self.lostTouchNote(label: botCurrentName(for: profile))
             )
             _ = index
-            let delegations = AgentMessages.delegations(in: resumed.rows)
+            let roster = cachedBots
+            let delegations = AgentMessages.delegations(in: resumed.rows) { handle in
+                Self.canMessage(from: profile, to: handle, roster: roster)
+            }
             // Kept across reads: a compressed history can drop the call an
             // answer belonged to, and the answer must not turn into a request.
             let answers = Set(conversations[current].agentAnswerIDs ?? []).union(delegations.answers)
@@ -4513,9 +4536,20 @@ final class AppStore {
     /// Records what a chat is waiting on, and keeps reading the chat until
     /// that is over. Nothing on this phone follows it: the other agent's
     /// answer wakes this one inside Hermes.
+    /// When the person stopped waiting for each agent, by chat.
+    private var stoppedWaits: [String: [String: Date]] = [:]
+
+    /// The person stops waiting for an agent's answer: a request refused out of
+    /// sight, or an answer that will never come, no longer holds the chat.
+    func stopWaiting(for handle: String, in conversationID: String) {
+        stoppedWaits[conversationID, default: [:]][handle] = Date()
+        setBackgroundWork(backgroundWorks[conversationID] ?? AgentMessages.BackgroundWork(), for: conversationID)
+    }
+
     private func setBackgroundWork(
-        _ work: AgentMessages.BackgroundWork, for conversationID: String
+        _ incoming: AgentMessages.BackgroundWork, for conversationID: String
     ) {
+        let work = incoming.withoutStopped(stoppedWaits[conversationID] ?? [:])
         guard !work.isEmpty else {
             if backgroundWorks[conversationID] != nil { backgroundWorks[conversationID] = nil }
             backgroundFollowers[conversationID]?.cancel()
@@ -4767,9 +4801,25 @@ final class AppStore {
                     if event.type == "tool.start",
                        (event.payload["name"] as? String) == "message_agent",
                        let target = (event.payload["args"] as? [String: Any])?["target"] as? String,
-                       let handle = AgentMessages.normalized(target) {
+                       let handle = AgentMessages.normalized(target),
+                       Self.canMessage(
+                           from: conversations.first(where: { $0.id == conversationID })?.routedBotName,
+                           to: handle, roster: cachedBots
+                       ) {
                         var work = backgroundWorks[conversationID] ?? AgentMessages.BackgroundWork()
                         work.waitingOn.append(.init(handle: handle, sentAt: Date()))
+                        setBackgroundWork(work, for: conversationID)
+                    }
+                    // Refused on the spot all the same (Hermes says why in the
+                    // result): nobody is going to answer, so nobody is waited for.
+                    if event.type == "tool.complete",
+                       (event.payload["name"] as? String) == "message_agent",
+                       let result = event.payload["result"] as? [String: Any], result["error"] != nil,
+                       let target = (event.payload["args"] as? [String: Any])?["target"] as? String,
+                       let handle = AgentMessages.normalized(target),
+                       var work = backgroundWorks[conversationID],
+                       let index = work.waitingOn.lastIndex(where: { $0.handle == handle }) {
+                        work.waitingOn.remove(at: index)
                         setBackgroundWork(work, for: conversationID)
                     }
                     if let chatEvent = Self.chatEvent(from: event) {

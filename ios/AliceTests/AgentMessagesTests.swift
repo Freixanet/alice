@@ -126,6 +126,86 @@ final class AgentMessagesTests: XCTestCase {
         XCTAssertEqual(AgentMessages.delegations(in: rows).answers, ["3"])
     }
 
+    private func noticeCarrying(_ handle: String, _ answer: String) -> String {
+        """
+        [IMPORTANT: Background process proc_cc244b84e258 completed normally (exit code 0).
+        Command: /x/venv/bin/python /x/tools/bot_mode_dm.py --run-delivery --author '{"id":"bot:chief-of-staff"}' query-file /tmp/dm.txt --profile-home /x/profiles/\(handle) hermes -p \(handle) chat --in '~' -c 'Bot Chat' --create-if-missing -Q
+        Output:
+        (anon):setopt:7: can't change option: monitor
+
+        [ERROR]: gitstatus failed to initialize.
+
+
+          Add the following parameter to ~/.zshrc for extra diagnostics on error:
+
+            GITSTATUS_LOG_LEVEL=DEBUG
+
+          Restart Zsh to retry gitstatus initialization:
+
+            exec zsh
+        /Users/me/.zshrc:source:118: no such file or directory: /Users/%tu_usuario%/.oh-my-zsh/oh-my-zsh.sh
+          ⚠ tirith security scanner enabled but not available — command scanning will use pattern matching only
+        \(answer)
+        Session 20260915_181701_3b0b47 found but has no messages. Starting fresh.
+
+        session_id: 20260915_181701_3b0b47
+        ]
+        """
+    }
+
+    func testAnAnswerThatCameOnlyInsideItsNoticeIsReadFromIt() {
+        let answer = "**ENTREGA · clínicas**\n\n⚠️ **Resultado:** viable.\n**Siguiente paso:** 3 entrevistas."
+        let text = noticeCarrying("biz-producto", answer)
+        XCTAssertEqual(AgentMessages.notice(text)?.handle, "biz-producto")
+        XCTAssertEqual(AgentMessages.noticeAnswer(text), answer)
+        XCTAssertNil(AgentMessages.noticeAnswer(notice), "only the shell's chatter: no answer")
+    }
+
+    func testAnAnswerInsideItsNoticeGetsTheAgentsCardOnce() {
+        let now = Date()
+        let body = "**ENTREGA · precio**\n- **Resultado:** 49 €/mes."
+        let messages = [
+            Message(id: "1", role: .user, content: "Valida la idea", createdAt: now),
+            Message(id: "2", role: .assistant, content: "Consultas lanzadas.", createdAt: now),
+            // Forja's answer arrives on its own, then its notice repeats it.
+            Message(id: "3", role: .user, content: answer, createdAt: now),
+            Message(id: "4", role: .user, content: noticeCarrying("forja", "Evaluación de nombres."), createdAt: now),
+            Message(id: "5", role: .assistant, content: "Recibido lo de Forja.", createdAt: now),
+            // Ingresos' answer only ever comes inside its notice.
+            Message(id: "6", role: .user, content: noticeCarrying("biz-ingresos", body), createdAt: now),
+            Message(id: "7", role: .assistant, content: "Recomendación final.", createdAt: now),
+        ]
+        let shown = RoutineDelivery.present(messages, botName: "chief-of-staff")
+        XCTAssertEqual(shown.map(\.id), ["1", "2", "3", "6", "7"])
+        XCTAssertEqual(shown[2].fromAgent, "forja")
+        XCTAssertEqual(shown[3].fromAgent, "biz-ingresos")
+        XCTAssertEqual(shown[3].content, body)
+    }
+
+    func testAWaitThePersonStoppedStaysStoppedUntilTheAgentIsAskedAgain() {
+        let earlier = Date(timeIntervalSince1970: 1_000)
+        let stoppedAt = Date(timeIntervalSince1970: 2_000)
+        let work = AgentMessages.BackgroundWork(waitingOn: [
+            .init(handle: "radar-ia", sentAt: earlier),
+            .init(handle: "biz-mercado", sentAt: earlier),
+            .init(handle: "radar-ia", sentAt: Date(timeIntervalSince1970: 3_000)),
+        ])
+        let left = work.withoutStopped(["radar-ia": stoppedAt])
+        XCTAssertEqual(left.waitingOn.map(\.handle), ["biz-mercado", "radar-ia"])
+        XCTAssertEqual(left.waitingOn.last?.sentAt, Date(timeIntervalSince1970: 3_000))
+    }
+
+    func testACallHermesRefusesIsNeverWaitedFor() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let rows: [[String: Any]] = [
+            ["role": "user", "text": "Consulta a todos", "timestamp": 9_900.0],
+            ["role": "tool", "name": "message_agent", "args": ["target": "biz-mercado"]],
+            ["role": "tool", "name": "message_agent", "args": ["target": "radar-ia"]],
+        ]
+        let open = AgentMessages.pending(in: rows, now: now) { $0 != "radar-ia" }
+        XCTAssertEqual(open.map(\.handle), ["biz-mercado"])
+    }
+
     func testADeliveryThatFailedIsSaidAndTheBotsWordOnItKept() {
         let now = Date()
         let failed = notice.replacingOccurrences(of: "completed normally (exit code 0)", with: "exited with code 1")
