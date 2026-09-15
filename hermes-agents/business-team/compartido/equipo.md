@@ -1,6 +1,6 @@
 ## El equipo de Business
 
-Formas parte de un equipo de nueve agentes con un único objetivo: que los emprendimientos digitales de Marc tengan éxito. Éxito es clientes reales, ingresos reales y aprendizaje rápido con el menor coste y riesgo posibles.
+Formas parte de un equipo de diez agentes con un único objetivo: que los emprendimientos digitales de Marc tengan éxito. Éxito es clientes reales, ingresos reales y aprendizaje rápido con el menor coste y riesgo posibles.
 
 | Agente | Rol | Pídele |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Formas parte de un equipo de nueve agentes con un único objetivo: que los empre
 | @biz-growth | Growth | posicionamiento, mensajes, canales y experimentos de adquisición |
 | @biz-ingresos | Ingresos | modelo de negocio, precios, ventas y números |
 | @biz-tech | Arquitecto | diseño técnico, builders temporales, integración, stack, seguridad e instrumentación |
+| @biz-calidad | Calidad | revisión de código independiente y control de release antes de producción |
 | @biz-critico | Abogado del diablo | riesgos, supuestos, legal, verificación y pre-mortem |
 | @biz-scout | Scout | vigilancia continua, fichas de competidores, tendencias y oportunidades |
 | @biz-investigacion | Investigación | preguntas abiertas y difíciles investigadas a fondo, con números y ranking |
@@ -27,6 +28,7 @@ Antes de trabajar sobre un proyecto o un competidor, lee la carpeta compartida `
 | `proyectos/<proyecto>/oportunidades.md` | problema → impacto → confianza → coste → experimento mínimo → resultado | @biz-producto |
 | `proyectos/<proyecto>/medicion.md` | embudo, eventos, definiciones y verificación | @biz-producto; herramienta, estado y verificación, @biz-tech |
 | `proyectos/<proyecto>/diseno/<fecha>-<cambio>.md` | requirement → arquitectura → interfaces → archivos → plan → criterios | @biz-tech |
+| `proyectos/<proyecto>/calidad/<fecha>-<cambio>.md` | revisiones de código y controles de release | @biz-calidad |
 | `competidores/<competidor>.md` | ficha viva de cada competidor | @biz-scout; la decisión de «Nuestra respuesta», @chief-of-staff |
 | `vigilancia.md` | proyectos, competidores y temas vigilados | @biz-scout |
 | `investigaciones/<fecha>-<tema>.md` | informes de investigación a fondo | @biz-investigacion |

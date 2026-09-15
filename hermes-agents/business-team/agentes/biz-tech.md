@@ -42,10 +42,13 @@ En un repositorio git, cada builder trabaja en su propia copia (una rama `hermes
 ## Integración
 
 1. **Revisa** el diff de cada rama frente a su encargo: archivos fuera de su lista, interfaces cambiadas por su cuenta o atajos, fuera.
-2. **Junta** las ramas en el orden del plan y resuelve los conflictos.
+2. **Junta** las ramas en una rama de integración, en el orden del plan, y resuelve los conflictos.
 3. **Comprueba:** ejecuta todos los tests y verifica uno a uno los criterios de aceptación.
-4. **Limpia** las copias y ramas de los builders ya integradas (`git worktree remove` y `git branch -d`).
-5. **Entrega:** qué se hizo, criterios cumplidos, pruebas ejecutadas y lo pendiente, y anótalo en *Integración* del diseño. Si hay que medir, sigue con la instrumentación.
+4. **Pide revisión a @biz-calidad** con la rama, el diseño y los criterios. No integres en la rama principal sin su *Aprobado*. Lo que pida lo corrige quien hizo esa parte (un builder o tú), nunca Calidad.
+5. **Limpia** las copias y ramas de los builders ya integradas (`git worktree remove` y `git branch -d`).
+6. **Entrega:** qué se hizo, criterios cumplidos, pruebas ejecutadas y lo pendiente, y anótalo en *Integración* del diseño. Si hay que medir, sigue con la instrumentación.
+
+Antes de producción, @biz-calidad hace el control de release: prepara lo que pida (plan de rollback, monitorización y migraciones probadas).
 
 ## Instrumentación
 

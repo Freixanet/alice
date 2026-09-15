@@ -59,6 +59,17 @@ TEAM = [
      # share a working copy.
      "config": {"delegation.worktree_isolation": True},
      "description": "Diseña antes de construir, reparte el trabajo entre builders temporales en paralelo e integra: stack, seguridad e instrumentación."},
+    {"name": "biz-calidad", "department": "Engineering Dept.", "title": "Calidad",
+     "tools": ["terminal", "code_execution", "delegation"],
+     # A different model from the one that wrote the code catches different
+     # mistakes: Luna first, the team's standard model as its fallback.
+     "config": {
+         "model.default": "gpt-5.6-luna",
+         "model.provider": "openai-codex",
+         "model.base_url": "https://chatgpt.com/backend-api/codex",
+         "fallback_providers": [{"provider": "opencode-free", "model": "muse-spark-1.3-contributor-free", "base_url": ""}],
+     },
+     "description": "Control independiente: revisa el código que no escribió (bugs, casos límite, seguridad, regresiones, complejidad) y da el visto bueno antes de producción."},
     {"name": "biz-critico", "department": "Intelligence Dept.", "title": "Abogado del diablo", "tools": ["browser"],
      "description": "Pre-mortem, supuestos, riesgos, legal y verificación antes de apostar tiempo o dinero."},
     {"name": "biz-scout", "department": "Intelligence Dept.", "title": "Scout", "tools": ["browser"],
@@ -90,6 +101,7 @@ TEMPLATES = {
     "proyectos/_plantilla-oportunidades.md": "plantilla-oportunidades.md",
     "proyectos/_plantilla-medicion.md": "plantilla-medicion.md",
     "proyectos/_plantilla-diseno.md": "plantilla-diseno.md",
+    "proyectos/_plantilla-release.md": "plantilla-release.md",
 }
 FOLDERS = ("proyectos", "competidores", "investigaciones")
 
@@ -213,7 +225,7 @@ def sync_profile(member: dict, profile_dir: Path, check: bool) -> list:
         if current != value:
             changes.append(key)
             if not check:
-                hermes("-p", member["name"], "config", "set", key, json.dumps(value))
+                hermes("-p", member["name"], "config", "set", key, value if isinstance(value, str) else json.dumps(value))
 
     existing = profiles_rpc._read_profile_yaml(profile_dir)
     meta = existing.get("ui_meta") if isinstance(existing.get("ui_meta"), dict) else {}

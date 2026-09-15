@@ -1,6 +1,6 @@
 # Business — un equipo de agentes para emprendimientos digitales
 
-Nueve agentes de Hermes que trabajan como un equipo. Lo dirige el **Chief of
+Diez agentes de Hermes que trabajan como un equipo. Lo dirige el **Chief of
 Staff**, que ya coordinaba al resto de agentes: recibe el objetivo, reparte el
 trabajo con `message_agent` y convierte las entregas en decisiones. En Alice
 aparecen dentro del canal **Business (Beta)**: el Chief of Staff suelto arriba y
@@ -16,6 +16,7 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
 | `biz-investigacion` | Investigación | Intelligence Dept. | Preguntas abiertas investigadas a fondo, con números y ranking |
 | `biz-producto` | Producto | Product Dept. | Mayor cuello de botella de valor, tablero de oportunidades, MVP y experiencia |
 | `biz-tech` | Arquitecto | Engineering Dept. | Diseño antes del código, builders temporales en paralelo e integración; stack, seguridad e instrumentación |
+| `biz-calidad` | Calidad | Engineering Dept. | Revisión de código independiente y control de release, con otro modelo (Luna) |
 | `biz-growth` | Growth | Revenue Dept. | Posicionamiento, mensajes, canales y experimentos |
 | `biz-ingresos` | Ingresos | Revenue Dept. | Modelo de negocio, precios, ventas y números |
 
@@ -27,8 +28,8 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
   movilizar al equipo.
 - `agentes/` — el rol de cada especialista.
 - `compartido/plantilla-*.md` — la estructura de las fichas de competidores, del
-  documento de cliente, del tablero de oportunidades, del plan de medición y del
-  diseño técnico.
+  documento de cliente, del tablero de oportunidades, del plan de medición, del
+  diseño técnico y del control de release.
 - `compartido/equipo.md` — lo que todos comparten: quién es quién, cómo se piden
   y entregan el trabajo (PETICIÓN / ENTREGA / BLOQUEO) y el estándar de calidad.
 - `instalar.py` — pone la sección del equipo en las instrucciones del Chief of
@@ -46,7 +47,9 @@ migraciones reversibles), cada uno en su propia copia del repositorio
 (`delegation.worktree_isolation` en su perfil), con un encargo cerrado y sus
 archivos. Los builders no preguntan ni usan memoria y desaparecen al terminar;
 Hermes no junta su trabajo solo: el Arquitecto revisa cada rama, la integra,
-ejecuta los tests, comprueba los criterios y limpia las copias.
+ejecuta los tests, comprueba los criterios, pide la revisión de Calidad (otro
+agente, con otro modelo, que nunca escribe el código que revisa) y limpia las
+copias.
 
 ## Carpeta compartida
 
@@ -58,7 +61,9 @@ experimento mínimo → resultado, de Producto),
 `proyectos/<proyecto>/medicion.md` (embudo y eventos de Producto, instrumentados y
 verificados por el Arquitecto; nada se lanza sin él),
 `proyectos/<proyecto>/diseno/` (requirement → arquitectura → interfaces → archivos
-afectados → plan → criterios de aceptación, del Arquitecto), `competidores/`
+afectados → plan → criterios de aceptación, del Arquitecto),
+`proyectos/<proyecto>/calidad/` (revisiones de código y controles de release, de
+Calidad; nada llega a producción sin su *Adelante* y tu confirmación), `competidores/`
 (fichas vivas del Scout; la decisión de «Nuestra respuesta» es del Chief of
 Staff), `vigilancia.md` (del Scout) e `investigaciones/` (de Investigación). En
 las instrucciones aparece como `{{BUSINESS_DIR}}` y el instalador pone la ruta
