@@ -85,33 +85,68 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// is open live somewhere else; that refusal is the error thrown.
     @discardableResult
     func clearCanonicalBotChat(profile: String) async throws -> CanonicalBotChat {
-        if let chat = try await canonicalBotChat(profile: profile) {
-            // Every read here resumes the chat, so this connection may hold it
-            // live, and Hermes will not delete a live session: let go of it.
-            if let resumed = try? await resume(profile: profile, target: chat.resolvedID),
-               let live = resumed["session_id"] as? String, !live.isEmpty {
-                _ = try? await rpc.call("session.close", JSONObject(["session_id": live]))
-            }
-            var ids = [chat.resolvedID]
-            if chat.id != chat.resolvedID { ids.append(chat.id) }
-            for id in ids {
-                do {
-                    _ = try await rpc.call("session.delete", JSONObject([
-                        "session_id": id,
-                        "profile": profile,
-                    ]))
-                } catch {
-                    // Already gone is exactly what clearing wants.
-                    guard Self.isNotFound(error) else { throw error }
-                }
-            }
+        guard let chat = try await canonicalBotChat(profile: profile) else {
+            return try await createCanonicalBotChat(profile: profile)
         }
-        return try await createCanonicalBotChat(profile: profile)
+        var ids = [chat.resolvedID]
+        if chat.id != chat.resolvedID { ids.append(chat.id) }
+        for id in ids {
+            try await delete(id, profile: profile)
+        }
+        let fresh = try await createCanonicalBotChat(profile: profile)
+        // Only a new chat is a cleared one. Handed the old chat back, Alice
+        // emptied the screen and the next refresh put every message back.
+        guard !ids.contains(fresh.id), !ids.contains(fresh.resolvedID) else {
+            throw HermesRPCClient.Failure(
+                reason: "Hermes kept the old chat, so nothing was cleared. Try again."
+            )
+        }
+        return fresh
     }
 
-    private static func isNotFound(_ error: Error) -> Bool {
+    /// Deletes one stored chat, letting go of it first.
+    ///
+    /// Hermes will not delete a session held live, and every read of a chat
+    /// resumes it: a refresh on this socket can take hold of it again between
+    /// the release and the delete. The release is repeated a couple of times
+    /// before Hermes' refusal is passed on.
+    private func delete(_ id: String, profile: String) async throws {
+        var attempt = 0
+        while true {
+            if let resumed = try? await resume(profile: profile, target: id),
+               let live = resumed["session_id"] as? String, !live.isEmpty {
+                // Closing waits only briefly for a running turn and then lets
+                // it carry on, writing into a chat that no longer exists — one
+                // held up by a question for as long as an hour. Stop it first.
+                if BotTurnState(resumed)?.running == true {
+                    _ = try? await rpc.call("session.interrupt", JSONObject(["session_id": live]))
+                }
+                _ = try? await rpc.call("session.close", JSONObject(["session_id": live]))
+            }
+            do {
+                _ = try await rpc.call("session.delete", JSONObject([
+                    "session_id": id,
+                    "profile": profile,
+                ]))
+                return
+            } catch let error where Self.isNotFound(error) {
+                // Already gone is exactly what clearing wants.
+                return
+            } catch let error where Self.isHeldLive(error) && attempt < 2 {
+                attempt += 1
+                try await Task.sleep(for: .milliseconds(300))
+            }
+        }
+    }
+
+    static func isNotFound(_ error: Error) -> Bool {
         let text = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         return text.localizedCaseInsensitiveContains("not found")
+    }
+
+    private static func isHeldLive(_ error: Error) -> Bool {
+        let text = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+        return text.localizedCaseInsensitiveContains("active session")
     }
 
     // MARK: - Reading
@@ -126,13 +161,13 @@ struct WebSocketBotChatSource: BotChatSessionSource {
 
     /// Resumes a session in a profile. `target` is a session id or an exact
     /// title — the agent accepts either, and the title form is how Bot Mode's
-    /// canonical chat is addressed.
+    /// canonical chat is addressed. No profile is Alice's own: the profile the
+    /// dashboard runs as.
     @discardableResult
-    func resume(profile: String, target: String) async throws -> JSONObject {
-        try await rpc.call("session.resume", JSONObject([
-            "session_id": target,
-            "profile": profile,
-        ]))
+    func resume(profile: String?, target: String) async throws -> JSONObject {
+        var params: [String: Any] = ["session_id": target]
+        if let profile { params["profile"] = profile }
+        return try await rpc.call("session.resume", JSONObject(params))
     }
 
     /// Rewinds the chat's last exchange in Hermes, so a retry replaces it
@@ -271,7 +306,16 @@ struct WebSocketBotChatSource: BotChatSessionSource {
                 reason: "Hermes resumed the chat without a live session id."
             )
         }
+        return try await submit(liveSessionID: liveID, text: text, attachments: attachments)
+    }
 
+    /// Sends a turn into a session this socket already holds live.
+    ///
+    /// A chat Alice has just created has no stored row until its first prompt,
+    /// so it cannot be resumed by its stored id yet; its live id is used as is.
+    func submit(
+        liveSessionID liveID: String, text: String, attachments: [Attachment] = []
+    ) async throws -> BotChatSubmission {
         // Stage attachments on the SAME live runtime before submit, matching
         // Hermes Desktop's remote-client contract. Images become attached
         // image bytes; files return workspace-relative @file: refs that must be
@@ -337,7 +381,7 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// - Returns: whether a running turn was told to stop.
     @discardableResult
     func interrupt(
-        profile: String, storedSessionID: String, liveSessionID: String?
+        profile: String?, storedSessionID: String, liveSessionID: String?
     ) async throws -> Bool {
         if let liveSessionID, !liveSessionID.isEmpty,
            (try? await rpc.call(
@@ -362,7 +406,7 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// the cheap question. A runtime Hermes no longer holds is an error, and
     /// then the stored chat is resumed, which mints a live id again.
     func turnState(
-        profile: String, storedSessionID: String, liveSessionID: String?
+        profile: String?, storedSessionID: String, liveSessionID: String?
     ) async throws -> BotTurnState {
         if let liveSessionID, !liveSessionID.isEmpty,
            let active = try? await rpc.call("session.activate", JSONObject([
@@ -376,7 +420,7 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     }
 
     private func resumedState(
-        profile: String, storedSessionID: String
+        profile: String?, storedSessionID: String
     ) async throws -> BotTurnState {
         let resumed = try await resume(profile: profile, target: storedSessionID)
         guard let state = BotTurnState(resumed) else {

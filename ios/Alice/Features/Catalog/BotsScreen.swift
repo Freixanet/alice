@@ -1967,6 +1967,7 @@ struct BotDetail: View {
     @State private var setupCommand: String?
     @State private var autoDescribing = false
     @State private var clearing = false
+    @State private var clearFailure: String?
     @State private var confirmingClear = false
 
     var body: some View {
@@ -2024,14 +2025,14 @@ struct BotDetail: View {
                 }
                 .disabled(clearing || busy)
                 .listRowBackground(Palette.card(scheme))
-                .alert("Clear Chat?", isPresented: $confirmingClear) {
-                    Button("Clear", role: .destructive) { clearChat() }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("The whole conversation with \(store.botCurrentName(for: bot)) is deleted and can’t be recovered. Its instructions, memory, skills and routines stay.")
-                }
             } footer: {
-                Text("Starts this agent’s chat again, empty.")
+                // Said under the button that failed, not at the foot of the
+                // page, where a refusal looked like a button doing nothing.
+                if let clearFailure {
+                    Text(clearFailure).foregroundStyle(.red)
+                } else {
+                    Text("Starts this agent’s chat again, empty.")
+                }
             }
 
             Section("Profile tools") {
@@ -2249,6 +2250,14 @@ struct BotDetail: View {
         }
          .navigationTitle(store.botCurrentName(for: bot))
         .navigationBarTitleDisplayMode(.inline)
+        // On the page, not on the row: a list re-renders its rows, and an
+        // alert hung on one can fail to appear at all.
+        .alert("Clear Chat?", isPresented: $confirmingClear) {
+            Button("Clear", role: .destructive) { clearChat() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The whole conversation with \(store.botCurrentName(for: bot)) is deleted and can’t be recovered. Its instructions, memory, skills and routines stay.")
+        }
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .toolbar {
@@ -2435,9 +2444,9 @@ struct BotDetail: View {
             defer { clearing = false }
             do {
                 try await store.clearBotChat(bot.name)
-                failure = nil
+                clearFailure = nil
             } catch {
-                failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not clear the chat."
+                clearFailure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not clear the chat."
             }
         }
     }

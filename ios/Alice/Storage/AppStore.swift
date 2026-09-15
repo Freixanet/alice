@@ -1953,18 +1953,23 @@ final class AppStore {
     private func sessionIdentity(for sessionID: String) -> LiveEvents.SessionIdentity? {
         guard !sessionID.isEmpty else { return nil }
         let conversation: Conversation?
+        // A bot's chat, or Alice's own chat held as a session: both can ask.
+        let holdsSession = { (chat: Conversation) in
+            chat.isCanonicalBotChat || chat.isHomeSessionChat
+        }
         if let direct = conversations.first(where: {
-            $0.hermesSessionID == sessionID && $0.isCanonicalBotChat
+            $0.hermesSessionID == sessionID && holdsSession($0)
         }) {
             conversation = direct
         } else if let conversationID = liveBotSessions[sessionID] {
             conversation = conversations.first(where: {
-                $0.id == conversationID && $0.isCanonicalBotChat
+                $0.id == conversationID && holdsSession($0)
             })
         } else {
             conversation = nil
         }
-        guard let conversation, let profile = conversation.routedBotName else { return nil }
+        guard let conversation else { return nil }
+        let profile = conversation.routedBotName
         let durableID = conversation.hermesSessionID ?? sessionID
         return LiveEvents.SessionIdentity(
             profile: profile,
@@ -1973,7 +1978,7 @@ final class AppStore {
             sessionID: durableID,
             sessionKey: durableID,
             conversationID: conversation.id,
-            label: botCurrentName(for: profile)
+            label: profile.map { botCurrentName(for: $0) } ?? "Alice"
         )
     }
 
@@ -2082,9 +2087,14 @@ final class AppStore {
         var events: [AliceEvent] = []
         var checked: Set<String> = []
 
-        for conversation in conversations where conversation.isCanonicalBotChat {
-            guard let profile = conversation.routedBotName,
-                  let sessionID = conversation.hermesSessionID else { continue }
+        // Alice's own chats only while one could be waiting: a question blocks
+        // a turn, and resuming every chat she ever had would open a session
+        // per conversation on each sync.
+        for conversation in conversations where conversation.isCanonicalBotChat
+            || (conversation.isHomeSessionChat && (Self.awaitsReply(conversation)
+                || activity.contains { $0.isActionable && $0.reference.conversationID == conversation.id })) {
+            guard let sessionID = conversation.hermesSessionID else { continue }
+            let profile = conversation.routedBotName
             guard let resumed = try? await source.resume(
                 profile: profile, target: sessionID
             ) else { continue }
@@ -2094,7 +2104,7 @@ final class AppStore {
                 profile: profile, sessionID: sessionID,
                 sessionKey: (resumed["session_key"] as? String) ?? sessionID,
                 conversationID: conversation.id,
-                label: botCurrentName(for: profile)
+                label: profile.map { botCurrentName(for: $0) } ?? "Alice"
             )
             events += LiveEvents.pendingEvents(from: resumed, session: identity)
         }
@@ -4366,14 +4376,25 @@ final class AppStore {
     /// Empties an agent's chat, in Hermes and on this phone. Its instructions,
     /// memory, skills and routines are kept.
     func clearBotChat(_ profile: String) async throws {
-        if let turn = activeBotTurn,
-           conversations.contains(where: { $0.id == turn.conversationID && $0.routedBotName == profile }) {
-            throw HermesRPCClient.Failure(reason: "Wait for the agent to finish replying, then clear its chat.")
-        }
         guard let source = await botChatSource() else {
             throw HermesRPCClient.Failure(reason: "Connect the Hermes dashboard to clear this agent's chat.")
         }
+        // A reply still under way — or held up by a question — belongs to the
+        // chat being thrown away. Refusing until it finished made Clear Chat do
+        // nothing for an agent waiting on an answer, which can be forever.
+        if let turn = activeBotTurn,
+           conversations.contains(where: { $0.id == turn.conversationID && $0.routedBotName == profile }) {
+            releaseBotTurn(stopped: true)
+        }
+        let cleared = Set(conversations.filter {
+            $0.routedBotName == profile && $0.isCanonicalBotChat
+        }.map(\.id))
         let fresh = try await source.clearCanonicalBotChat(profile: profile)
+        // Its questions and approvals went with it.
+        for event in activity where event.isActionable
+            && cleared.contains(event.reference.conversationID ?? "") {
+            settle(event.id, as: .gone, summary: "The chat was cleared.")
+        }
         botChatClearedAt[profile] = Date()
         quietRoutineRuns[profile] = nil
         for index in conversations.indices
@@ -4430,6 +4451,13 @@ final class AppStore {
     func refreshVisibleBotChats() async {
         let ids = conversations.filter(\.isCanonicalBotChat).map(\.id)
         for id in ids { await refreshBotChat(id) }
+        // Alice's own chats: a reply that finished while nobody was watching.
+        if !isSending {
+            for conversation in conversations
+            where conversation.isHomeSessionChat && Self.awaitsReply(conversation) {
+                await settleHomeReply(conversation.id)
+            }
+        }
     }
 
     /// Sends one turn into a bot's canonical Hermes chat and streams the reply.
@@ -4438,11 +4466,19 @@ final class AppStore {
     /// the same chat cron delivers to. Nothing here builds a persona: the
     /// agent on the other end *is* the bot, with its own SOUL, memory, skills
     /// and configuration.
+    /// A turn in a Hermes session over the dashboard socket: a bot's canonical
+    /// chat, or, with no profile, Alice's own chat.
     private func sendToBotChat(
-        profile: String, conversationID: String, replyID: String, text: String,
-        attachments: [Attachment]
+        profile: String?, conversationID: String, replyID: String, text: String,
+        attachments: [Attachment], earlier: [Message] = []
     ) async {
         guard let source = await botChatSource() else {
+            if profile == nil {
+                streamThroughGateway(
+                    conversationID: conversationID, replyID: replyID, invokedBot: nil
+                )
+                return
+            }
             fail(replyID, conversationID: conversationID,
                  message: "Connect the Hermes dashboard to talk to this bot.",
                  limit: nil)
@@ -4453,18 +4489,41 @@ final class AppStore {
         activeBotTurn = ActiveBotTurn(
             token: token, conversationID: conversationID, replyID: replyID
         )
-        let label = botCurrentName(for: profile)
+        let label = profile.map { botCurrentName(for: $0) } ?? "Alice"
         var ending = BotTurnEnding.stopped
         do {
-            let chat = try await BotChatSync(source: source).resolve(profile: profile)
-            if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
-                conversations[index].hermesSessionID = chat.resolvedID
-            }
+            let storedSessionID: String
             let events = source.rpc.events()
-            let submission = try await source.submit(
-                profile: profile, sessionID: chat.resolvedID, text: text,
-                attachments: attachments
-            )
+            let submission: BotChatSubmission
+            if let profile {
+                let chat = try await BotChatSync(source: source).resolve(profile: profile)
+                storedSessionID = chat.resolvedID
+                if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+                    conversations[index].hermesSessionID = storedSessionID
+                }
+                submission = try await source.submit(
+                    profile: profile, sessionID: storedSessionID, text: text,
+                    attachments: attachments
+                )
+            } else {
+                guard let session = try await openHomeSession(
+                    source: source, conversationID: conversationID, earlier: earlier
+                ) else {
+                    // Hermes could not open the chat and nothing was sent, so
+                    // the gateway can still take the turn — unless it was
+                    // stopped meanwhile.
+                    guard activeBotTurn?.token == token, !Task.isCancelled else { return }
+                    activeBotTurn = nil
+                    streamThroughGateway(
+                        conversationID: conversationID, replyID: replyID, invokedBot: nil
+                    )
+                    return
+                }
+                storedSessionID = session.storedID
+                submission = try await source.submit(
+                    liveSessionID: session.liveID, text: text, attachments: attachments
+                )
+            }
             setRemoteMatchContent(
                 submission.submittedText, forReply: replyID, conversationID: conversationID
             )
@@ -4479,7 +4538,7 @@ final class AppStore {
             // this exact submit and its live runtime is known.
             if botStopInFlight == token {
                 let ended = await interruptBotTurn(
-                    token: token, profile: profile, storedSessionID: chat.resolvedID,
+                    token: token, profile: profile, storedSessionID: storedSessionID,
                     liveSessionID: submission.liveSessionID, source: source
                 )
                 if ended || activeBotTurn?.token != token { return }
@@ -4505,6 +4564,13 @@ final class AppStore {
                         recordBotFailure(
                             failure, on: replyID, conversationID: conversationID
                         )
+                    }
+                    if step == .queuedTurnEnded, profile == nil {
+                        // Only this chat sends into Alice's own session, so
+                        // what follows the turn ahead of it is its own.
+                        watch.confirmQueuedOrigin(now: Date())
+                        setDeliveryNote(nil, on: replyID, conversationID: conversationID)
+                        continue
                     }
                     if step == .queuedTurnEnded {
                         // A queued submission may have several turns ahead.
@@ -4533,7 +4599,7 @@ final class AppStore {
                             chatEvent, to: replyID, conversationID: conversationID,
                             approvalTransport: .socket,
                             approvalSessionID: watch.liveSessionID,
-                            approvalSessionKey: chat.resolvedID
+                            approvalSessionKey: storedSessionID
                         )
                     }
                     if step == .finish {
@@ -4554,7 +4620,6 @@ final class AppStore {
                         }
                     }
                     let state: Result<BotTurnState, Error>
-                    let storedSessionID = chat.resolvedID
                     let liveSessionID = watch.liveSessionID
                     do {
                         state = .success(try await BotTurnWatch.answer(
@@ -4618,6 +4683,10 @@ final class AppStore {
             // guessed "finished without answering" message.
             awaitRemote(replyID, conversationID: conversationID, note: nil)
             await refreshBotChat(conversationID)
+            if profile == nil,
+               await settleHomeReply(conversationID, replyID: replyID) {
+                return
+            }
             if botChatFailure[conversationID] == nil,
                messageLocation(replyID, conversationID: conversationID) != nil {
                 if let retainedFailure {
@@ -4650,7 +4719,79 @@ final class AppStore {
                 note: Self.lostTouchNote(label: label)
             )
             await refreshBotChat(conversationID)
+            if profile == nil {
+                await settleHomeReply(conversationID, replyID: replyID)
+            }
         }
+    }
+
+    /// The Hermes session Alice's own chat continues in, on the model her
+    /// picker names. Nil when Hermes could not open it: nothing was sent then,
+    /// and the gateway can still take the turn. A model Hermes will not switch
+    /// to without confirmation is thrown, to be said in the reply.
+    private func openHomeSession(
+        source: WebSocketBotChatSource, conversationID: String, earlier: [Message]
+    ) async throws -> HomeChatSession? {
+        guard let index = conversations.firstIndex(where: { $0.id == conversationID })
+        else { return nil }
+        let model = selectedModel
+        let provider = Self.provider(for: model, among: models, chosen: selectedProvider)
+        guard let session = try? await source.openHomeChat(
+            storedID: conversations[index].hermesSessionID,
+            model: model, provider: provider,
+            history: WebSocketBotChatSource.openingHistory(earlier)
+        ) else { return nil }
+        if let current = conversations.firstIndex(where: { $0.id == conversationID }),
+           conversations[current].hermesSessionID != session.storedID {
+            conversations[current].hermesSessionID = session.storedID
+            persistConversations()
+        }
+        guard let model, !model.isEmpty else { return session }
+        let wanted = "\(model)|\(provider ?? "")"
+        guard homeChatModels[session.storedID] != wanted else { return session }
+        let switched = try await source.useModel(model, provider: provider, in: session)
+        homeChatModels[session.storedID] = wanted
+        return switched
+    }
+
+    /// The model each of Alice's sessions was last put on from this app.
+    private var homeChatModels: [String: String] = [:]
+
+    /// A reply in Alice's own chat that is still outstanding.
+    nonisolated static func awaitsReply(_ conversation: Conversation) -> Bool {
+        guard let reply = conversation.messages.last(where: { $0.role == .assistant })
+        else { return false }
+        return reply.pending || reply.awaitingRemote == true
+    }
+
+    /// Settles a reply in Alice's own chat that nobody saw finish — the app
+    /// was suspended, or the socket dropped — with the answer Hermes kept.
+    @discardableResult
+    private func settleHomeReply(_ conversationID: String, replyID: String? = nil) async -> Bool {
+        guard let chat = conversations.firstIndex(where: { $0.id == conversationID }),
+              conversations[chat].isHomeSessionChat,
+              let storedID = conversations[chat].hermesSessionID
+        else { return false }
+        let messages = conversations[chat].messages
+        let candidate = replyID.flatMap { id in messages.first { $0.id == id } }
+            ?? messages.last { $0.role == .assistant }
+        guard let reply = candidate, reply.pending || reply.awaitingRemote == true,
+              let source = await botChatSource(),
+              let turns = try? await source.homeTranscript(storedID),
+              let answer = WebSocketBotChatSource.finishedReply(in: turns, sentAt: reply.createdAt),
+              let location = messageLocation(reply.id, conversationID: conversationID)
+        else { return false }
+        var settled = conversations[location.chat].messages[location.message]
+        settled.content = answer
+        settled.pending = false
+        settled.awaitingRemote = false
+        settled.deliveryNote = nil
+        settled.error = nil
+        settled.errorLimit = nil
+        settled.incomplete = false
+        conversations[location.chat].messages[location.message] = settled
+        persistConversations()
+        return true
     }
 
     /// A terminal error carried by the live WebSocket frame. The same shape
@@ -4765,7 +4906,8 @@ final class AppStore {
                 // smart-denied request proposes a permanent grant the server
                 // will refuse.
                 choices: LiveEvents.choices(event.payload),
-                smartDenied: (event.payload["smart_denied"] as? Bool) == true ? true : nil
+                smartDenied: (event.payload["smart_denied"] as? Bool) == true ? true : nil,
+                viaSocket: true
             ))
         case "error":
             let message = (event.payload["message"] as? String) ?? "Hermes reported an error."
@@ -4821,7 +4963,11 @@ final class AppStore {
             // go of the older reply and follows this one. Refusing it here
             // dropped the message without a word. Anywhere else a second send
             // would race the first.
-            guard let turn = activeBotTurn, turn.conversationID == activeID else { return }
+            // Alice's own chat still waits its turn: a second prompt there would
+            // queue behind the first with nobody following it.
+            guard let turn = activeBotTurn, turn.conversationID == activeID,
+                  activeConversation?.isCanonicalBotChat == true
+            else { return }
             releaseBotTurn(stopped: false)
         }
 
@@ -4953,6 +5099,40 @@ final class AppStore {
             }
             return
         }
+
+        // Alice's own chat goes through the dashboard socket when there is
+        // one: there Hermes can stop and ask a question, which a gateway run
+        // cannot. A mention keeps the gateway, since that turn speaks as a
+        // bot, and so does /update, which the gateway answers itself.
+        if invokedBot == nil, conversations[index].isChannel != true,
+           dashboardReady, !HermesSelfUpdateIntent.matches(text) {
+            let earlier = conversations[index].messages.filter {
+                $0.id != user.id && $0.id != replyID
+            }
+            streamTask = Task { [weak self] in
+                await self?.sendToBotChat(
+                    profile: nil,
+                    conversationID: conversationID,
+                    replyID: replyID,
+                    text: text,
+                    attachments: attachments,
+                    earlier: earlier
+                )
+            }
+            return
+        }
+
+        streamThroughGateway(
+            conversationID: conversationID, replyID: replyID, invokedBot: invokedBot
+        )
+    }
+
+    /// A turn as a gateway run, with the conversation sent along with it.
+    private func streamThroughGateway(
+        conversationID: String, replyID: String, invokedBot: String?
+    ) {
+        guard let index = conversations.firstIndex(where: { $0.id == conversationID })
+        else { return }
 
         // Only the newest turn that has attachments sends them. Repeating
         // every image on every request is what turns a long conversation into
@@ -5109,6 +5289,11 @@ final class AppStore {
             }
             return
         }
+        if conversations[chat].isHomeSessionChat {
+            // Hermes still holds the exchange being replaced. A session that
+            // opens with the conversation as it now stands does not.
+            conversations[chat].hermesSessionID = nil
+        }
         resend(priorUser, replacing: messageID, in: conversations[chat].id)
     }
 
@@ -5239,9 +5424,9 @@ final class AppStore {
         // when the RPC failed, then a new send could be erased by the late stop.
         if let index = conversations.firstIndex(where: { $0.id == activeID }),
            let sessionID = conversations[index].hermesSessionID,
-           let profile = conversations[index].routedBotName,
-           conversations[index].isCanonicalBotChat,
-           let turn = activeBotTurn {
+           conversations[index].isCanonicalBotChat || conversations[index].isHomeSessionChat,
+           let turn = activeBotTurn, turn.conversationID == conversations[index].id {
+            let profile = conversations[index].routedBotName
             guard botStopInFlight == nil else { return }
             let token = turn.token
             botStopInFlight = token
@@ -5303,7 +5488,7 @@ final class AppStore {
     /// accepted the turn. Returns true when there is no watcher left to run.
     @discardableResult
     private func interruptBotTurn(
-        token: UUID, profile: String, storedSessionID: String,
+        token: UUID, profile: String?, storedSessionID: String,
         liveSessionID: String?, source existingSource: WebSocketBotChatSource?
     ) async -> Bool {
         guard botStopInFlight == token, activeBotTurn?.token == token else { return true }
@@ -5482,10 +5667,11 @@ final class AppStore {
         let profile = conversations[location.chat].messages[location.message].botName
             ?? conversations[location.chat].routedBotName
 
-        // Canonical Bot Chats receive approvals over the dashboard socket.
-        // Their `runID` field historically held the request id; do not send it
-        // to `/v1/runs`, which is a different server and identity domain.
-        if conversations[location.chat].isCanonicalBotChat {
+        // Canonical Bot Chats receive approvals over the dashboard socket, and
+        // so does Alice's own chat when it runs there. Their `runID` field
+        // holds the request id; do not send it to `/v1/runs`, which is a
+        // different server and identity domain.
+        if conversations[location.chat].isCanonicalBotChat || approval.viaSocket == true {
             let requestID = approval.requestID ?? approval.runID
             guard let sessionID = conversations[location.chat].hermesSessionID,
                   let source = await botChatSource()

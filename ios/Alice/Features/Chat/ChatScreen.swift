@@ -428,6 +428,9 @@ private struct TranscriptView: View {
                     ForEach(visibleMessages) { message in
                         MessageRow(message: message).id(message.id)
                     }
+                    // A question the agent is waiting on, where the reply
+                    // it holds up would appear.
+                    ChatQuestionsCard(conversationID: conversation.id)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 28)

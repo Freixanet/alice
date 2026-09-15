@@ -92,6 +92,9 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         var error: String?
         /// Hermes' safety check recommended refusing this one.
         var smartDenied: Bool? = nil
+        /// Asked over the dashboard socket, which is where the answer goes —
+        /// not to the gateway's runs, whatever kind of chat it appeared in.
+        var viaSocket: Bool? = nil
 
         /// Hermes' own statement of what makes this risky.
         ///
@@ -331,6 +334,13 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     /// read and write. A recovered legacy thread is not one of these.
     var isCanonicalBotChat: Bool {
         routedBotName != nil && isChannel != true
+    }
+
+    /// Alice's own chat, continuing in a Hermes session over the dashboard
+    /// socket rather than as gateway runs.
+    var isHomeSessionChat: Bool {
+        routedBotName == nil && legacyBotName == nil && isChannel != true
+            && hermesSessionID != nil
     }
 
     /// Recovered history, kept for reading. Sending into it would resume a
