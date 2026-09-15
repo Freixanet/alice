@@ -2282,6 +2282,19 @@ extension DashboardClient {
         return try Self.memorySnapshot(from: object, profile: profile)
     }
 
+    /// The notes an agent keeps on Hermes, newest first (`hermes-plugin/`).
+    func notes(limit: Int = 500) async throws -> NotesSnapshot {
+        try NotesFeed.snapshot(from: await get("api/plugins/alice/notes?limit=\(limit)"))
+    }
+
+    /// Adds a note exactly as written, through the store's own writer.
+    func addNote(_ text: String) async throws -> Note {
+        let object = try await send("POST", "api/plugins/alice/notes", ["text": text])
+        guard let row = object["note"] as? [String: Any], let note = NotesFeed.note(from: row)
+        else { throw Failure.unreadable }
+        return note
+    }
+
     func memory() async throws -> [MemoryProvider] {
         try await memoryProviderStatus().providers
     }

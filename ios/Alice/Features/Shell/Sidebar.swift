@@ -20,7 +20,7 @@ struct Sidebar: View {
     /// destinations are listed visibly; configuration is progressively disclosed
     /// through Settings while remaining searchable for expert users.
     private enum Destination: String, Identifiable {
-        case activity, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
+        case notes, activity, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
         var id: String { rawValue }
     }
 
@@ -64,6 +64,7 @@ struct Sidebar: View {
         ) { destination in
             Group {
                 switch destination {
+                case .notes: closable { NotesScreen() }
                 case .activity: closable { ActivityScreen() }
                 case .routines: closable { RoutinesScreen() }
                 case .projects: closable { ProjectsScreen() }
@@ -165,6 +166,9 @@ struct Sidebar: View {
                 store.botsFromLeading = false
                 store.showingBots = true
             }
+            // Second, right under Agents: a note is written in the moment or
+            // not at all, so it is the shortest way in the drawer.
+            row("Notes", systemImage: "note.text", weight: .medium) { going = .notes }
             row(
                 "Activity", systemImage: "bell", weight: .medium,
                 badge: store.unreadActivity
@@ -516,6 +520,7 @@ struct Sidebar: View {
             onDismiss()
             store.botsFromLeading = false
             store.showingBots = true
+        case .notes: going = .notes
         case .activity: going = .activity
         case .routines: going = .routines
         case .projects: going = .projects

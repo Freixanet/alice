@@ -10,6 +10,9 @@ Two things Alice needs from a Hermes that Hermes itself does not ship:
   registers a token provider that recognises outstanding pairing codes and opts the claim
   route (only) into that seam. Hermes' public path list is left untouched.
 * **Curated memory** (MEMORY.md / USER.md) per profile: ``GET memory`` and ``POST memory``.
+* **Notes**: ``GET notes`` and ``POST notes`` read and add to the notes store an agent keeps
+  in its workspace (``workspace/inbox-store``, the Inbox agent's). Writes go through the
+  store's own ``inbox.py add``, so its append-only contract is the store's, not ours.
 
 It lives outside Hermes' checkout, so ``hermes update`` never collides with it.
 """
@@ -22,6 +25,7 @@ import http.client
 import ipaddress
 import json
 import logging
+import os
 import re
 import secrets
 import socket
@@ -31,7 +35,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Deque, Dict, Optional, Tuple
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -749,6 +753,133 @@ async def get_memory(profile: str = "default") -> Dict[str, Any]:
 async def mutate_memory(body: _MemoryMutation) -> Dict[str, Any]:
     body.profile = await asyncio.to_thread(_known_profile, body.profile)
     return await asyncio.to_thread(_mutate_memory, body)
+
+
+# --- Notes: the store an agent keeps in its workspace ------------------------------------
+
+NOTES_STORE = Path("workspace") / "inbox-store"
+NOTE_MAX_BYTES = 64_000
+NOTES_LIMIT_MAX = 2000
+
+
+def _notes_store() -> Optional[Tuple[str, Path]]:
+    """The profile keeping a notes store, and the store's folder: ``inbox`` when it has one,
+    otherwise the first profile that does. None when no agent keeps notes."""
+    found: List[Tuple[str, Path]] = []
+    for profile in _list_profiles():
+        home = getattr(profile, "path", None)
+        if not home:
+            continue
+        root = Path(home) / NOTES_STORE
+        if (root / "inbox.py").is_file():
+            found.append((str(profile.name), root))
+    if not found:
+        return None
+    return next((item for item in found if item[0] == "inbox"), found[0])
+
+
+def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    """Rows of an append-only JSONL file; a torn or foreign line is skipped, never repaired."""
+    rows: List[Dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(row, dict):
+                    rows.append(row)
+    except FileNotFoundError:
+        pass
+    return rows
+
+
+def _note_payload(entry: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+    def strings(value: Any) -> List[str]:
+        return [str(item) for item in value if str(item).strip()] if isinstance(value, list) else []
+
+    return {
+        "id": str(entry.get("id")),
+        "ts": str(entry.get("ts") or ""),
+        "text": str(entry.get("text") or ""),
+        "urls": strings(entry.get("urls")),
+        # The agent's own reading wins over the store's first guess at capture.
+        "types": strings(extra.get("types")) or strings(entry.get("heuristic_types")),
+        "topics": strings(extra.get("topics")),
+        "actions": strings(extra.get("actions")),
+        "open_questions": strings(extra.get("open_questions")),
+        "summary": str(extra.get("summary") or ""),
+        "status": str(extra.get("status") or ""),
+        "processed": bool(extra.get("processed")),
+    }
+
+
+def _notes_snapshot(limit: int) -> Dict[str, Any]:
+    store = _notes_store()
+    if store is None:
+        return {"available": False, "notes": [], "total": 0}
+    profile, root = store
+    enrichment: Dict[str, Dict[str, Any]] = {}
+    for row in _read_jsonl(root / "enrichment.jsonl"):
+        if row.get("id"):
+            enrichment[str(row["id"])] = row  # the last record for an id wins
+    entries = [row for row in _read_jsonl(root / "entries.jsonl")
+               if row.get("id") and isinstance(row.get("text"), str)]
+    entries.reverse()
+    return {"available": True, "profile": profile, "total": len(entries),
+            "notes": [_note_payload(row, enrichment.get(str(row["id"]), {})) for row in entries[:limit]]}
+
+
+class _NewNote(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+
+
+def _add_note(text: str) -> Dict[str, Any]:
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="A note needs some text.")
+    if len(text.encode("utf-8")) > NOTE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="That note is too long.")
+    store = _notes_store()
+    if store is None:
+        raise HTTPException(status_code=404, detail="No agent on this Hermes keeps a notes store.")
+    profile, root = store
+    try:
+        # Text on stdin and no shell: the note is data, whatever it says.
+        result = subprocess.run(
+            [sys.executable, str(root / "inbox.py"), "add", "--stdin"],
+            input=text, capture_output=True, text=True, timeout=20,
+            env={**os.environ, "INBOX_STORE": str(root)},
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise HTTPException(status_code=502, detail="The notes store did not answer.") from exc
+    try:
+        reply = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        reply = {}
+    if result.returncode != 0 or not isinstance(reply, dict) or not reply.get("ok"):
+        detail = reply.get("error") if isinstance(reply, dict) else None
+        raise HTTPException(status_code=502, detail=str(detail or "The notes store did not save the note."))
+    saved = str(reply.get("id") or "")
+    entry = next((row for row in reversed(_read_jsonl(root / "entries.jsonl")) if row.get("id") == saved), None)
+    if entry is None:
+        entry = {"id": saved, "ts": reply.get("ts"), "text": text, "heuristic_types": reply.get("types")}
+    return {"ok": True, "profile": profile, "note": _note_payload(entry, {})}
+
+
+@router.get("/notes")
+async def get_notes(limit: int = 500) -> Dict[str, Any]:
+    return await asyncio.to_thread(_notes_snapshot, max(1, min(limit, NOTES_LIMIT_MAX)))
+
+
+@router.post("/notes")
+async def add_note(body: _NewNote) -> Dict[str, Any]:
+    return await asyncio.to_thread(_add_note, body.text)
 
 
 _register_claim_auth()

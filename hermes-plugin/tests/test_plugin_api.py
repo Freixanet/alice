@@ -158,6 +158,81 @@ class PluginAPITests(unittest.TestCase):
                                    json={"profile": "radar-ia", "target": "secrets", "action": "add"})
             self.assertEqual(bad.status_code, 400)
 
+    def notes_profile(self, root):
+        """A profile whose workspace holds a notes store with a stand-in for its ``inbox.py``."""
+        import tempfile
+        import textwrap
+
+        home = Path(root) / "profiles" / "inbox"
+        store = home / "workspace" / "inbox-store"
+        store.mkdir(parents=True)
+        (store / "inbox.py").write_text(textwrap.dedent("""
+            import json, os, sys
+            from pathlib import Path
+            text = sys.stdin.read()
+            if sys.argv[1:] != ["add", "--stdin"] or not text.strip():
+                print(json.dumps({"ok": False, "error": "texto vacío"})); sys.exit(1)
+            entry = {"schema": 1, "id": "n3", "ts": "2026-09-15T10:00:00+02:00", "text": text,
+                     "urls": [], "heuristic_types": ["tarea"], "bytes": len(text.encode())}
+            with (Path(os.environ["INBOX_STORE"]) / "entries.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\\n")
+            print(json.dumps({"ok": True, "id": "n3", "ts": entry["ts"], "types": ["tarea"]}))
+        """), encoding="utf-8")
+        return type("P", (), {"name": "inbox", "path": home})(), store
+
+    def test_without_a_notes_store_notes_are_unavailable_and_nothing_is_written(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            other = type("P", (), {"name": "default", "path": Path(root)})()
+            with mock.patch.object(self.api, "_list_profiles", return_value=[other]):
+                read = self.client.get("/api/plugins/alice/notes")
+                self.assertEqual(read.status_code, 200, read.text)
+                self.assertEqual(read.json(), {"available": False, "notes": [], "total": 0})
+                self.assertEqual(self.client.post("/api/plugins/alice/notes", json={"text": "hola"}).status_code, 404)
+
+    def test_notes_are_listed_newest_first_with_the_agents_reading_of_them(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            profile, store = self.notes_profile(root)
+            (store / "entries.jsonl").write_text(
+                json.dumps({"id": "n1", "ts": "2026-09-14T09:00:00+02:00", "text": "Idea: notas en Alice",
+                            "heuristic_types": ["idea"]}) + "\n"
+                + "not json\n"
+                + json.dumps({"id": "n2", "ts": "2026-09-14T10:00:00+02:00", "text": "Llamar al banco",
+                              "heuristic_types": ["tarea"]}) + "\n", encoding="utf-8")
+            (store / "enrichment.jsonl").write_text(
+                json.dumps({"id": "n1", "types": ["idea"], "topics": ["viejo"], "processed": False}) + "\n"
+                + json.dumps({"id": "n1", "types": ["idea", "posible_proyecto"], "topics": ["alice"],
+                              "summary": "Notas", "processed": True}) + "\n", encoding="utf-8")
+            with mock.patch.object(self.api, "_list_profiles", return_value=[profile]):
+                read = self.client.get("/api/plugins/alice/notes").json()
+        self.assertTrue(read["available"])
+        self.assertEqual(read["profile"], "inbox")
+        self.assertEqual([note["id"] for note in read["notes"]], ["n2", "n1"])
+        self.assertEqual(read["notes"][0]["types"], ["tarea"])
+        self.assertFalse(read["notes"][0]["processed"])
+        self.assertEqual(read["notes"][1]["types"], ["idea", "posible_proyecto"])
+        self.assertEqual(read["notes"][1]["topics"], ["alice"])
+        self.assertTrue(read["notes"][1]["processed"])
+
+    def test_a_note_is_saved_by_the_stores_own_add_exactly_as_written(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            profile, store = self.notes_profile(root)
+            text = "Comprar pan; $(rm -rf ~) no es un comando\n"
+            with mock.patch.object(self.api, "_list_profiles", return_value=[profile]):
+                saved = self.client.post("/api/plugins/alice/notes", json={"text": text})
+                self.assertEqual(saved.status_code, 200, saved.text)
+                self.assertEqual(saved.json()["note"]["id"], "n3")
+                self.assertEqual(saved.json()["note"]["text"], text)
+                self.assertEqual(self.client.post("/api/plugins/alice/notes", json={"text": "   "}).status_code, 400)
+                self.assertEqual(self.client.post("/api/plugins/alice/notes", json={"text": "x", "profile": "y"}).status_code, 422)
+            stored = [json.loads(line) for line in (store / "entries.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([row["text"] for row in stored], [text])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

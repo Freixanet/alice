@@ -14,6 +14,11 @@ What it adds, all in the dashboard:
   (`Authorization: Bearer <code>`); only loopback and Tailscale addresses may claim.
 - `GET` / `POST /api/plugins/alice/memory` — read and edit a profile's curated memory
   (MEMORY.md / USER.md), behind the dashboard login.
+- `GET` / `POST /api/plugins/alice/notes` — Alice's Notes: list and add to the notes store
+  an agent keeps in `workspace/inbox-store` (the Inbox agent's; `inbox` first, else the
+  first profile with one), behind the dashboard login. Notes are added through the store's
+  own `inbox.py add`, so the store stays append-only; `GET` reports `available: false`
+  when no agent keeps one.
 
 The agent gains nothing: no tools, hooks or commands.
 

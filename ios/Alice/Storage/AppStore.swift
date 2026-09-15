@@ -2887,6 +2887,52 @@ final class AppStore {
 
     // MARK: - Channels
 
+    // MARK: - Notes
+
+    /// The notes an agent keeps on Hermes, as last read. Nil until read once,
+    /// so Notes opens on what it had while it asks again.
+    private(set) var notesSnapshot: NotesSnapshot?
+
+    func refreshNotes() async throws {
+        do {
+            notesSnapshot = try await dashboard.notes()
+        } catch DashboardClient.Failure.http(404, _) {
+            throw HermesRPCClient.Failure(
+                reason: "Notes need the latest Alice plugin on your Hermes."
+            )
+        }
+    }
+
+    /// Shows a note at once and saves it in the agent's store. One Hermes did
+    /// not take is taken off the list again, and the error thrown so the words
+    /// go back into the field.
+    func addNote(_ text: String) async throws {
+        let placeholder = Note(
+            id: "local-\(UUID().uuidString)", createdAt: Date(), text: text, sending: true
+        )
+        if let current = notesSnapshot {
+            notesSnapshot = NotesSnapshot(
+                available: current.available, agent: current.agent,
+                notes: [placeholder] + current.notes
+            )
+        }
+        func replacing(_ note: Note?) {
+            guard let current = notesSnapshot else { return }
+            var notes = current.notes.filter { $0.id != placeholder.id }
+            if let note { notes.insert(note, at: 0) }
+            notesSnapshot = NotesSnapshot(
+                available: current.available, agent: current.agent, notes: notes
+            )
+        }
+        do {
+            let saved = try await dashboard.addNote(text)
+            replacing(saved)
+        } catch {
+            replacing(nil)
+            throw error
+        }
+    }
+
     /// Whether a bot lives in a channel, and so not in the Bots page's
     /// general list.
     func isInAnyChannel(_ bot: String) -> Bool {
