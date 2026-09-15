@@ -9,7 +9,7 @@ El equipo lo dirige el Chief of Staff, que ya existe: a sus instrucciones se les
 añade (o se les actualiza, entre marcadores) la sección de emprendimientos
 digitales y lo que comparte el equipo; nada más de ellas cambia.
 
-Los seis especialistas se crean con la herramienta de Forja (modelo estándar con
+Los especialistas se crean con la herramienta de Forja (modelo estándar con
 reserva, herramientas con la de preguntas, instrucciones con la guía de estilo y
 nombre visible). Un especialista que ya existe se deja como está, salvo con
 --actualizar: entonces se reescriben sus instrucciones y su descripción; su
@@ -31,25 +31,40 @@ sys.path.insert(0, str(HERMES_ROOT))
 sys.path.insert(0, str(FORJA_SCRIPTS))
 
 CHANNEL = "Business (Beta)"
-SECTION = "Especialistas"
+# The channel's departments, in the order a venture moves through them:
+# understand, define, build, sell. Alice lays the channel out this way and
+# drops empty sections left out of it.
+DEPARTMENTS = ["Intelligence Dept.", "Product Dept.", "Engineering Dept.", "Revenue Dept."]
 LEAD = "chief-of-staff"
 BLOCK_START = "<!-- alice:business inicio -->"
 BLOCK_END = "<!-- alice:business fin -->"
 STYLE_START = "<!-- alice:estilo inicio -->"
 
 TEAM = [
-    {"name": "biz-mercado", "title": "Mercado", "tools": ["browser"],
+    {"name": "biz-mercado", "department": "Intelligence Dept.", "title": "Mercado", "tools": ["browser"],
      "description": "Clientes, demanda y competencia con fuentes verificables para validar o descartar ideas rápido."},
-    {"name": "biz-producto", "title": "Producto", "tools": ["browser"],
+    {"name": "biz-producto", "department": "Product Dept.", "title": "Producto", "tools": ["browser"],
      "description": "Propuesta de valor, MVP mínimo y experiencia de usuario que hace volver."},
-    {"name": "biz-growth", "title": "Growth", "tools": ["browser"],
+    {"name": "biz-growth", "department": "Revenue Dept.", "title": "Growth", "tools": ["browser"],
      "description": "Posicionamiento, mensajes, canales y experimentos para conseguir clientes al menor coste."},
-    {"name": "biz-ingresos", "title": "Ingresos", "tools": ["code_execution"],
+    {"name": "biz-ingresos", "department": "Revenue Dept.", "title": "Ingresos", "tools": ["code_execution"],
      "description": "Modelo de negocio, precios, ventas y números: CAC, LTV, márgenes y escenarios."},
-    {"name": "biz-tech", "title": "Tecnología", "tools": ["terminal", "code_execution", "browser"],
+    {"name": "biz-tech", "department": "Engineering Dept.", "title": "Tecnología", "tools": ["terminal", "code_execution", "browser"],
      "description": "Construir o comprar, stack, automatización, estimaciones y seguridad sin sobreingeniería."},
-    {"name": "biz-critico", "title": "Abogado del diablo", "tools": ["browser"],
+    {"name": "biz-critico", "department": "Intelligence Dept.", "title": "Abogado del diablo", "tools": ["browser"],
      "description": "Pre-mortem, supuestos, riesgos, legal y verificación antes de apostar tiempo o dinero."},
+    {"name": "biz-scout", "department": "Intelligence Dept.", "title": "Scout", "tools": ["browser"],
+     "description": "Vigila de forma continua competidores, startups, precios, regulación, Reddit/HN/X y tendencias, y avisa de lo que cambia tus apuestas.",
+     "routines": [
+         {"name": "Scout — ronda diaria", "schedule": "0 8 * * *",
+          "prompt": "Haz la ronda diaria del Scout siguiendo tu SOUL.md: lee la lista de vigilancia y el registro, "
+                    "cubre solo lo nuevo desde la última ronda, verifica en fuente primaria, actualiza el registro "
+                    "y entrega solo señales Urgentes e Importantes. Si no hay ninguna, responde exactamente [SILENT]."},
+         {"name": "Scout — informe semanal", "schedule": "0 9 * * 1",
+          "prompt": "Haz el informe semanal del Scout siguiendo tu SOUL.md: tendencias de los últimos 7 días según "
+                    "tu registro y una exploración nueva, y hasta 3 oportunidades con el problema, quién paga hoy y "
+                    "cuánto, por qué ahora, la evidencia y el siguiente paso para validarla. Actualiza el registro."},
+     ]},
 ]
 
 
@@ -90,6 +105,7 @@ def set_alice_placement(profile_dir: Path, section, order: int, check: bool = Fa
     placement = {"channel": CHANNEL, "order": order}
     if section:
         placement["section"] = section
+    placement["sections"] = DEPARTMENTS
     if current.get("alice") == placement:
         return False
     if check:
@@ -138,7 +154,7 @@ def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> 
     if profile_dir.exists():
         if refresh and not check:
             update_specialist(member, profile_dir)
-        placed = set_alice_placement(profile_dir, SECTION, order, check)
+        placed = set_alice_placement(profile_dir, member["department"], order, check)
         state = "actualizado" if refresh else "ya existe"
         if check:
             state = "ya existe" + (" (se actualizaría)" if refresh else "")
@@ -146,7 +162,8 @@ def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> 
                 "resultado": {"ok": True}}
 
     spec = {"name": member["name"], "title": member["title"], "description": member["description"],
-            "soul": soul(member["name"]), "tools": member["tools"], "routines": []}
+            "soul": soul(member["name"]), "tools": member["tools"],
+            "routines": member.get("routines", [])}
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
         json.dump(spec, handle, ensure_ascii=False)
         spec_path = handle.name
@@ -162,7 +179,7 @@ def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> 
     except (ValueError, IndexError):
         created = {"ok": False, "error": (run.stderr or run.stdout).strip()[-400:]}
     if created.get("ok") and not check:
-        set_alice_placement(profile_dir, SECTION, order)
+        set_alice_placement(profile_dir, member["department"], order)
     return {"agente": member["name"], "estado": "comprobado" if check else "creado", "resultado": created}
 
 
@@ -170,7 +187,8 @@ def main(argv: list) -> int:
     check = "--comprobar" in argv
     refresh = "--actualizar" in argv
     results = [install_lead(check)]
-    for order, member in enumerate(TEAM, start=1):
+    by_department = sorted(TEAM, key=lambda m: DEPARTMENTS.index(m["department"]))
+    for order, member in enumerate(by_department, start=1):
         results.append(install_specialist(member, order, check, refresh))
     ok = all(r["resultado"].get("ok", False) for r in results)
     print(json.dumps({"ok": ok, "canal": CHANNEL, "equipo": results}, ensure_ascii=False, indent=2))

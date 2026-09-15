@@ -6,15 +6,51 @@ import XCTest
 final class BotPlacementTests: XCTestCase {
     private func bot(
         _ name: String, channel: String? = nil, section: String? = nil,
-        order: Int? = nil, revision: Int = 1
+        order: Int? = nil, revision: Int = 1, sections: [String]? = nil
     ) -> BotRow {
         BotRow(
             name: name, displayName: name, detail: "", model: nil, provider: nil,
             skills: 0, isDefault: false, gatewayRunning: false, active: false,
             placement: channel.map {
-                AlicePlacement(channel: $0, section: section, order: order, revision: revision)
+                AlicePlacement(
+                    channel: $0, section: section, order: order, revision: revision, sections: sections
+                )
             }
         )
+    }
+
+    func testALayoutOrdersTheSectionsAndDropsOnlyEmptyOnesItLeavesOut() {
+        var channel = BotChannel(
+            id: "b", name: "Business (Beta)",
+            bots: ["chief-of-staff", "biz-mercado", "biz-tech", "own"]
+        )
+        for name in ["Intelligence Dept.", "Product Dept.", "Engineering Dept.", "Especialistas", "Mine"] {
+            channel.addSection(name)
+        }
+        channel.setSection("Especialistas", for: "biz-mercado")
+        channel.setSection("Especialistas", for: "biz-tech")
+        channel.setSection("Mine", for: "own")
+        channel.toggleSection("Especialistas")
+
+        let layout = ["Intelligence Dept.", "Product Dept.", "Engineering Dept.", "Revenue Dept."]
+        let team = [
+            bot("chief-of-staff", channel: "Business (Beta)", order: 0, revision: 2, sections: layout),
+            bot("biz-mercado", channel: "Business (Beta)", section: "Intelligence Dept.", order: 1, revision: 2, sections: layout),
+            bot("biz-tech", channel: "Business (Beta)", section: "engineering dept.", order: 2, revision: 2, sections: layout),
+        ]
+        let result = BotChannel.applyingPlacements(
+            team, to: [channel], applied: ["chief-of-staff": 1, "biz-mercado": 1, "biz-tech": 1]
+        )
+        let placed = result.channels[0]
+        XCTAssertEqual(
+            placed.sections,
+            ["Intelligence Dept.", "Product Dept.", "Engineering Dept.", "Revenue Dept.", "Mine"]
+        )
+        XCTAssertNil(placed.section(for: "chief-of-staff"))
+        XCTAssertEqual(placed.section(for: "biz-mercado"), "Intelligence Dept.")
+        XCTAssertEqual(placed.section(for: "biz-tech"), "Engineering Dept.")
+        XCTAssertEqual(placed.section(for: "own"), "Mine")
+        XCTAssertTrue(placed.collapsedSections.isEmpty)
     }
 
     private var team: [BotRow] {
@@ -74,7 +110,10 @@ final class BotPlacementTests: XCTestCase {
                 "name": "biz-mercado",
                 "ui_meta": [
                     "hermes-bots": ["title": "Mercado"],
-                    "alice": ["channel": "Business (Beta)", "section": "Especialistas", "order": 1],
+                    "alice": [
+                        "channel": "Business (Beta)", "section": "Intelligence Dept.", "order": 1,
+                        "sections": ["Intelligence Dept.", " ", "Revenue Dept."],
+                    ],
                 ],
                 "ui_meta_revisions": ["hermes-bots": 1, "alice": 2],
             ],
@@ -83,7 +122,10 @@ final class BotPlacementTests: XCTestCase {
         let bots = try DashboardClient.bots(from: object, active: nil)
         XCTAssertEqual(
             bots[0].placement,
-            AlicePlacement(channel: "Business (Beta)", section: "Especialistas", order: 1, revision: 2)
+            AlicePlacement(
+                channel: "Business (Beta)", section: "Intelligence Dept.", order: 1, revision: 2,
+                sections: ["Intelligence Dept.", "Revenue Dept."]
+            )
         )
         XCTAssertEqual(bots[0].displayName, "Mercado")
         XCTAssertNil(bots[1].placement)

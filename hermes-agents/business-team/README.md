@@ -1,20 +1,22 @@
 # Business — un equipo de agentes para emprendimientos digitales
 
-Siete agentes de Hermes que trabajan como un equipo. Lo dirige el **Chief of
+Ocho agentes de Hermes que trabajan como un equipo. Lo dirige el **Chief of
 Staff**, que ya coordinaba al resto de agentes: recibe el objetivo, reparte el
 trabajo con `message_agent` y convierte las entregas en decisiones. En Alice
 aparecen dentro del canal **Business (Beta)**: el Chief of Staff suelto arriba y
-los especialistas en la sección *Especialistas*.
+los especialistas en departamentos, en el orden en que avanza un proyecto
+(entender, definir, construir, vender).
 
-| Agente | Nombre en Alice | Para qué |
-| --- | --- | --- |
-| `chief-of-staff` | Chief of Staff | Objetivo, plan, reparto, integración y decisión |
-| `biz-mercado` | Mercado | Clientes, demanda y competencia con fuentes |
-| `biz-producto` | Producto | Propuesta de valor, MVP y experiencia |
-| `biz-growth` | Growth | Posicionamiento, mensajes, canales y experimentos |
-| `biz-ingresos` | Ingresos | Modelo de negocio, precios, ventas y números |
-| `biz-tech` | Tecnología | Construir o comprar, stack, automatización y seguridad |
-| `biz-critico` | Abogado del diablo | Riesgos, supuestos, legal y verificación |
+| Agente | Nombre en Alice | Departamento | Para qué |
+| --- | --- | --- | --- |
+| `chief-of-staff` | Chief of Staff | — (arriba) | Objetivo, plan, reparto, integración y decisión |
+| `biz-mercado` | Mercado | Intelligence Dept. | Clientes, demanda y competencia con fuentes |
+| `biz-critico` | Abogado del diablo | Intelligence Dept. | Riesgos, supuestos, legal y verificación |
+| `biz-scout` | Scout | Intelligence Dept. | Vigilancia continua y oportunidades (ronda diaria a las 8:00, informe los lunes) |
+| `biz-producto` | Producto | Product Dept. | Propuesta de valor, MVP y experiencia |
+| `biz-tech` | Tecnología | Engineering Dept. | Construir o comprar, stack, automatización y seguridad |
+| `biz-growth` | Growth | Revenue Dept. | Posicionamiento, mensajes, canales y experimentos |
+| `biz-ingresos` | Ingresos | Revenue Dept. | Modelo de negocio, precios, ventas y números |
 
 ## Qué hay aquí
 
@@ -28,8 +30,9 @@ los especialistas en la sección *Especialistas*.
 - `instalar.py` — pone la sección del equipo en las instrucciones del Chief of
   Staff (entre marcadores, sin tocar el resto), crea los especialistas con el
   script de Forja (modelo estándar con reserva y herramienta de preguntas) y
-  escribe `ui_meta['alice']` con el canal, la sección y el orden en que Alice los
-  coloca. Nunca borra agentes.
+  escribe `ui_meta['alice']` con el canal, el departamento, el orden y la lista de
+  departamentos del canal. Alice ordena las secciones así y quita las vacías que
+  no estén en la lista; nunca una con agentes. Nunca borra agentes.
 
 La guía de estilo de mensajes es común a todos los agentes:
 `../forja/skill/forja-crear-agentes/references/estilo-mensajes.md`. Forja la añade

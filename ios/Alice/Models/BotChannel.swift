@@ -144,6 +144,9 @@ extension BotChannel {
     /// made if there is none, and in its section, made if missing. Agents
     /// arrive in their placement order.
     ///
+    /// A placement that carries the channel's section layout applies it once
+    /// every agent is in place (`applyLayout`).
+    ///
     /// Each placement revision is applied once and remembered in `applied`, by
     /// profile. After that the person owns the agent's place: moving it out or
     /// deleting the channel is not undone the next time the roster loads.
@@ -152,6 +155,7 @@ extension BotChannel {
     ) -> (channels: [BotChannel], applied: [String: Int]) {
         var channels = channels
         var applied = applied
+        var layouts: [Int: [String]] = [:]
         let pending = bots
             .compactMap { bot -> (name: String, placement: AlicePlacement)? in
                 guard let placement = bot.placement,
@@ -190,8 +194,35 @@ extension BotChannel {
             }
             channels[index] = channel
             applied[bot] = placement.revision
+            if let layout = placement.sections { layouts[index] = layout }
+        }
+        for (index, layout) in layouts {
+            channels[index].applyLayout(layout)
         }
         return (channels, applied)
+    }
+
+    /// The sections in `layout`'s order, made if missing and matched whatever
+    /// their case; after them, any other section that still holds an agent.
+    /// An empty section the layout leaves out goes: nobody loses their place.
+    mutating func applyLayout(_ layout: [String]) {
+        var ordered: [String] = []
+        for wanted in layout {
+            let name = wanted.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { continue }
+            let existing = sections.first { $0.caseInsensitiveCompare(name) == .orderedSame } ?? name
+            if !ordered.contains(where: { $0.caseInsensitiveCompare(existing) == .orderedSame }) {
+                ordered.append(existing)
+            }
+        }
+        let used = Set(bots.compactMap { section(for: $0) })
+        for other in sections where !ordered.contains(other) && used.contains(other) {
+            ordered.append(other)
+        }
+        let removed = Set(sections).subtracting(ordered)
+        sections = ordered
+        collapsedSections.removeAll { removed.contains($0) }
+        botSections = botSections.filter { ordered.contains($0.value) }
     }
 
     /// Channels made before a channel was a folder were conversations flagged

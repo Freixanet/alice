@@ -481,6 +481,9 @@ struct AlicePlacement: Hashable, Sendable, Codable {
     /// Position among the agents placed in the same channel.
     var order: Int? = nil
     var revision: Int = 0
+    /// The channel's sections in order. Given, sections it leaves out go
+    /// when they hold no agent (`BotChannel.applyLayout`).
+    var sections: [String]? = nil
 }
 
 /// A Hermes profile as Alice's bot roster sees it.
@@ -1293,7 +1296,8 @@ extension DashboardClient {
                     channel: channel,
                     section: Self.nonEmpty(rawPlacement?["section"] as? String),
                     order: Self.int(rawPlacement?["order"]),
-                    revision: Self.int(revisions?["alice"]) ?? 0
+                    revision: Self.int(revisions?["alice"]) ?? 0,
+                    sections: (rawPlacement?["sections"] as? [String])?.compactMap { Self.nonEmpty($0) }
                 )
             }
 
