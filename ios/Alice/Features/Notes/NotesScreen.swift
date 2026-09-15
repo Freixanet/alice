@@ -57,10 +57,32 @@ struct NotesScreen: View {
                 list
             }
         }
+        // One field for both views, held above them: the same form whichever
+        // way the notes are laid out, and in reach however far down you are.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if showsCapture {
+                VStack(alignment: .leading, spacing: 6) {
+                    capture
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
+                    captureFooter
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Palette.background(scheme))
+            }
+        }
         .navigationTitle("Notes")
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
-        .background(Palette.background(scheme))
+        .background {
+            Palette.background(scheme)
+                .ignoresSafeArea()
+        }
         .searchable(text: $query, prompt: "Search notes")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -80,10 +102,9 @@ struct NotesScreen: View {
                 .accessibilityIdentifier("notes.layout")
             }
         }
-        .task {
-            writing = true
-            await load()
-        }
+        // No keyboard on arrival: most visits are to read, and a keyboard
+        // covering half the notes is in the way of that. The field is one tap.
+        .task { await load() }
         .refreshable { await load() }
         .sheet(item: $opened) { note in
             NoteDetail(note: note, agent: snapshot?.agent)
@@ -96,14 +117,6 @@ struct NotesScreen: View {
 
     private var list: some View {
         List {
-            if showsCapture {
-                Section {
-                    capture
-                        .listRowBackground(Palette.card(scheme))
-                } footer: {
-                    captureFooter
-                }
-            }
             if let status {
                 Section { statusView(status) }
                     .listRowBackground(Color.clear)
@@ -152,18 +165,6 @@ struct NotesScreen: View {
     private var cards: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if showsCapture {
-                    VStack(alignment: .leading, spacing: 6) {
-                        capture
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
-                        captureFooter
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 14)
-                    }
-                }
                 if let status {
                     statusView(status)
                         .frame(maxWidth: .infinity)
@@ -234,6 +235,9 @@ struct NotesScreen: View {
         HStack(alignment: .bottom, spacing: 10) {
             TextField("Write a note…", text: $draft, axis: .vertical)
                 .lineLimit(1...8)
+                // As tall as the button beside it, so a single line sits in
+                // the middle of the field rather than on its floor.
+                .frame(minHeight: 32, alignment: .leading)
                 .focused($writing)
                 .accessibilityIdentifier("notes.field")
             Button(action: save) {

@@ -61,7 +61,7 @@ final class NavigationJourneyTests: XCTestCase {
     /// from search without competing with chats for vertical space.
     func testDrawerKeepsOnlyEverydayDestinations() {
         openDrawer()
-        for title in ["Agents", "Activity", "Routines", "Projects", "Library"] {
+        for title in ["Agents", "Notes", "Activity", "Routines", "Projects", "Library"] {
             assertDrawerRow(title)
         }
         for title in [
@@ -100,7 +100,7 @@ final class NavigationJourneyTests: XCTestCase {
         XCTAssertTrue(leading.waitForExistence(timeout: 25))
         leading.tap()
 
-        for title in ["Agents", "Activity", "Routines", "Projects", "Library"] {
+        for title in ["Agents", "Notes", "Activity", "Routines", "Projects", "Library"] {
             let row = app.buttons["sidebar.row.\(title)"]
             XCTAssertTrue(
                 row.waitForExistence(timeout: 10),
@@ -150,7 +150,7 @@ final class NavigationJourneyTests: XCTestCase {
     /// hoping SwiftUI notices.
     func testBotsBackReturnsToConversation() {
         openDrawer()
-        let bots = app.buttons["sidebar.row.Bots"]
+        let bots = app.buttons["sidebar.row.Agents"]
         XCTAssertTrue(bots.waitForExistence(timeout: 10))
         bots.tap()
 

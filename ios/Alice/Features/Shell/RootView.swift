@@ -187,7 +187,13 @@ struct RootView: View {
                         NotesScreen(onClose: closeNotes)
                             .containerBackground(Palette.background(scheme), for: .navigation)
                     }
-                    .background(Palette.background(scheme))
+                    // Painted under the keyboard too, as the conversation is:
+                    // resized to the keyboard, the page left its rounded
+                    // corners showing whatever was beneath it.
+                    .background {
+                        Palette.background(scheme)
+                            .ignoresSafeArea()
+                    }
                     .overlay {
                         DrawerPan(
                             shouldBegin: { velocity in

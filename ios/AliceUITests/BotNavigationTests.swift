@@ -110,7 +110,7 @@ final class BotNavigationTests: XCTestCase {
         let leading = app.buttons["chat.leading"]
         XCTAssertTrue(leading.waitForExistence(timeout: 20))
         leading.tap()
-        let bots = app.buttons["sidebar.row.Bots"]
+        let bots = app.buttons["sidebar.row.Agents"]
         XCTAssertTrue(bots.waitForExistence(timeout: 10))
         bots.tap()
 
