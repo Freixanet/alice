@@ -15,7 +15,7 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
 | `biz-scout` | Scout | Intelligence Dept. | Vigilancia continua, fichas de competidores y oportunidades (ronda diaria a las 8:00, informe los lunes) |
 | `biz-investigacion` | Investigación | Intelligence Dept. | Preguntas abiertas investigadas a fondo, con números y ranking |
 | `biz-producto` | Producto | Product Dept. | Mayor cuello de botella de valor, tablero de oportunidades, MVP y experiencia |
-| `biz-tech` | Tecnología | Engineering Dept. | Construir o comprar, stack, automatización y seguridad |
+| `biz-tech` | Arquitecto | Engineering Dept. | Diseño antes del código, builders temporales en paralelo e integración; stack, seguridad e instrumentación |
 | `biz-growth` | Growth | Revenue Dept. | Posicionamiento, mensajes, canales y experimentos |
 | `biz-ingresos` | Ingresos | Revenue Dept. | Modelo de negocio, precios, ventas y números |
 
@@ -27,7 +27,8 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
   movilizar al equipo.
 - `agentes/` — el rol de cada especialista.
 - `compartido/plantilla-*.md` — la estructura de las fichas de competidores, del
-  documento de cliente, del tablero de oportunidades y del plan de medición.
+  documento de cliente, del tablero de oportunidades, del plan de medición y del
+  diseño técnico.
 - `compartido/equipo.md` — lo que todos comparten: quién es quién, cómo se piden
   y entregan el trabajo (PETICIÓN / ENTREGA / BLOQUEO) y el estándar de calidad.
 - `instalar.py` — pone la sección del equipo en las instrucciones del Chief of
@@ -37,6 +38,16 @@ los especialistas en departamentos, en el orden en que avanza un proyecto
   departamentos del canal. Alice ordena las secciones así y quita las vacías que
   no estén en la lista; nunca una con agentes. Nunca borra agentes.
 
+## Builders temporales
+
+El Arquitecto no escribe todo el código: tras diseñar, lanza builders temporales
+en paralelo (backend, frontend, tests desde los criterios de aceptación y
+migraciones reversibles), cada uno en su propia copia del repositorio
+(`delegation.worktree_isolation` en su perfil), con un encargo cerrado y sus
+archivos. Los builders no preguntan ni usan memoria y desaparecen al terminar;
+Hermes no junta su trabajo solo: el Arquitecto revisa cada rama, la integra,
+ejecuta los tests, comprueba los criterios y limpia las copias.
+
 ## Carpeta compartida
 
 `~/hermes-workspaces/business/` guarda lo que el equipo sabe, para que nadie repita
@@ -45,7 +56,9 @@ trabajo: `proyectos/<proyecto>/estado.md` (del Chief of Staff),
 `proyectos/<proyecto>/oportunidades.md` (problema → impacto → confianza → coste →
 experimento mínimo → resultado, de Producto),
 `proyectos/<proyecto>/medicion.md` (embudo y eventos de Producto, instrumentados y
-verificados por Tecnología; nada se lanza sin él), `competidores/`
+verificados por el Arquitecto; nada se lanza sin él),
+`proyectos/<proyecto>/diseno/` (requirement → arquitectura → interfaces → archivos
+afectados → plan → criterios de aceptación, del Arquitecto), `competidores/`
 (fichas vivas del Scout; la decisión de «Nuestra respuesta» es del Chief of
 Staff), `vigilancia.md` (del Scout) e `investigaciones/` (de Investigación). En
 las instrucciones aparece como `{{BUSINESS_DIR}}` y el instalador pone la ruta

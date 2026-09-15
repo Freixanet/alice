@@ -53,8 +53,12 @@ TEAM = [
      "description": "Posicionamiento, mensajes, canales y experimentos para conseguir clientes al menor coste."},
     {"name": "biz-ingresos", "department": "Revenue Dept.", "title": "Ingresos", "tools": ["code_execution"],
      "description": "Modelo de negocio, precios, ventas y números: CAC, LTV, márgenes y escenarios."},
-    {"name": "biz-tech", "department": "Engineering Dept.", "title": "Tecnología", "tools": ["terminal", "code_execution", "browser"],
-     "description": "Construir o comprar, stack, automatización, estimaciones y seguridad sin sobreingeniería."},
+    {"name": "biz-tech", "department": "Engineering Dept.", "title": "Arquitecto",
+     "tools": ["terminal", "code_execution", "browser", "delegation"],
+     # Each temporary builder gets its own git worktree, so parallel builders never
+     # share a working copy.
+     "config": {"delegation.worktree_isolation": True},
+     "description": "Diseña antes de construir, reparte el trabajo entre builders temporales en paralelo e integra: stack, seguridad e instrumentación."},
     {"name": "biz-critico", "department": "Intelligence Dept.", "title": "Abogado del diablo", "tools": ["browser"],
      "description": "Pre-mortem, supuestos, riesgos, legal y verificación antes de apostar tiempo o dinero."},
     {"name": "biz-scout", "department": "Intelligence Dept.", "title": "Scout", "tools": ["browser"],
@@ -85,6 +89,7 @@ TEMPLATES = {
     "proyectos/_plantilla-cliente.md": "plantilla-cliente.md",
     "proyectos/_plantilla-oportunidades.md": "plantilla-oportunidades.md",
     "proyectos/_plantilla-medicion.md": "plantilla-medicion.md",
+    "proyectos/_plantilla-diseno.md": "plantilla-diseno.md",
 }
 FOLDERS = ("proyectos", "competidores", "investigaciones")
 
@@ -184,6 +189,49 @@ def update_specialist(member: dict, profile_dir: Path) -> None:
         atomic_yaml_write(profile_dir / "profile.yaml", existing, sort_keys=False)
 
 
+def sync_profile(member: dict, profile_dir: Path, check: bool) -> list:
+    """What the team needs from a specialist that already exists: its visible
+    name, its extra tools and its config. Tools are only added, never removed."""
+    import yaml
+    import tui_gateway.methods_profiles as profiles_rpc
+    from utils import atomic_yaml_write
+    from crear_agente import hermes
+    changes = []
+    cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8")) or {}
+
+    tools = list(((cfg.get("platform_toolsets") or {}).get("cli")) or [])
+    missing = [t for t in member["tools"] if t not in tools]
+    if missing:
+        changes.append("herramientas +" + ",".join(missing))
+        if not check:
+            hermes("-p", member["name"], "config", "set", "platform_toolsets.cli", json.dumps(tools + missing))
+
+    for key, value in (member.get("config") or {}).items():
+        current = cfg
+        for part in key.split("."):
+            current = current.get(part) if isinstance(current, dict) else None
+        if current != value:
+            changes.append(key)
+            if not check:
+                hermes("-p", member["name"], "config", "set", key, json.dumps(value))
+
+    existing = profiles_rpc._read_profile_yaml(profile_dir)
+    meta = existing.get("ui_meta") if isinstance(existing.get("ui_meta"), dict) else {}
+    bots = dict(meta.get("hermes-bots") or {})
+    if bots.get("title") != member["title"]:
+        changes.append("nombre")
+        if not check:
+            raw = existing.get("_ui_meta_revisions")
+            revisions = profiles_rpc._clean_revisions(raw if isinstance(raw, dict) else {})
+            bots["title"] = member["title"]
+            meta["hermes-bots"] = bots
+            revisions["hermes-bots"] = revisions.get("hermes-bots", 0) + 1
+            existing["ui_meta"] = meta
+            existing["_ui_meta_revisions"] = revisions
+            atomic_yaml_write(profile_dir / "profile.yaml", existing, sort_keys=False)
+    return changes
+
+
 def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> dict:
     from hermes_cli.profiles import get_profile_dir
     profile_dir = Path(get_profile_dir(member["name"]))
@@ -191,10 +239,12 @@ def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> 
         if refresh and not check:
             update_specialist(member, profile_dir)
         placed = set_alice_placement(profile_dir, member["department"], order, check)
+        synced = sync_profile(member, profile_dir, check)
         state = "actualizado" if refresh else "ya existe"
         if check:
             state = "ya existe" + (" (se actualizaría)" if refresh else "")
-        return {"agente": member["name"], "estado": state + (" · sitio en Alice" if placed else ""),
+        extras = (["sitio en Alice"] if placed else []) + synced
+        return {"agente": member["name"], "estado": state + "".join(" · " + e for e in extras),
                 "resultado": {"ok": True}}
 
     spec = {"name": member["name"], "title": member["title"], "description": member["description"],
@@ -216,6 +266,7 @@ def install_specialist(member: dict, order: int, check: bool, refresh: bool) -> 
         created = {"ok": False, "error": (run.stderr or run.stdout).strip()[-400:]}
     if created.get("ok") and not check:
         set_alice_placement(profile_dir, member["department"], order)
+        sync_profile(member, profile_dir, check)
     return {"agente": member["name"], "estado": "comprobado" if check else "creado", "resultado": created}
 
 

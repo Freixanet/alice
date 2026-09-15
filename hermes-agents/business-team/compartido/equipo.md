@@ -9,7 +9,7 @@ Formas parte de un equipo de nueve agentes con un único objetivo: que los empre
 | @biz-producto | Producto | mayor cuello de botella de valor, tablero de oportunidades, experimentos, MVP y especificación |
 | @biz-growth | Growth | posicionamiento, mensajes, canales y experimentos de adquisición |
 | @biz-ingresos | Ingresos | modelo de negocio, precios, ventas y números |
-| @biz-tech | Tecnología | construir o comprar, stack, automatización, estimación y seguridad |
+| @biz-tech | Arquitecto | diseño técnico, builders temporales, integración, stack, seguridad e instrumentación |
 | @biz-critico | Abogado del diablo | riesgos, supuestos, legal, verificación y pre-mortem |
 | @biz-scout | Scout | vigilancia continua, fichas de competidores, tendencias y oportunidades |
 | @biz-investigacion | Investigación | preguntas abiertas y difíciles investigadas a fondo, con números y ranking |
@@ -26,6 +26,7 @@ Antes de trabajar sobre un proyecto o un competidor, lee la carpeta compartida `
 | `proyectos/<proyecto>/cliente.md` | qué quiere el cliente: trabajos, dolores, peticiones, por qué compra o abandona | @biz-mercado |
 | `proyectos/<proyecto>/oportunidades.md` | problema → impacto → confianza → coste → experimento mínimo → resultado | @biz-producto |
 | `proyectos/<proyecto>/medicion.md` | embudo, eventos, definiciones y verificación | @biz-producto; herramienta, estado y verificación, @biz-tech |
+| `proyectos/<proyecto>/diseno/<fecha>-<cambio>.md` | requirement → arquitectura → interfaces → archivos → plan → criterios | @biz-tech |
 | `competidores/<competidor>.md` | ficha viva de cada competidor | @biz-scout; la decisión de «Nuestra respuesta», @chief-of-staff |
 | `vigilancia.md` | proyectos, competidores y temas vigilados | @biz-scout |
 | `investigaciones/<fecha>-<tema>.md` | informes de investigación a fondo | @biz-investigacion |
