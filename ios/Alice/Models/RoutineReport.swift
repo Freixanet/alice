@@ -172,6 +172,11 @@ enum RoutineDelivery {
         var heardFromAgent = false
         // The agents whose answers are on screen since the person last wrote.
         var answeredBy: Set<String> = []
+        // The agents that wrote to *this* chat asking for something. What this
+        // agent sends back is a delivery to them, and Hermes' notice for it
+        // names them exactly as one for an answer would. Kept for the whole
+        // chat: the notice can arrive long after the request.
+        var requesters: Set<String> = []
         for (index, message) in messages.enumerated() {
             switch message.role {
             case .user:
@@ -190,6 +195,7 @@ enum RoutineDelivery {
                         // asked, so neither the request nor this agent's
                         // answer to it shows here.
                         answeringHandover = true
+                        requesters.insert(incoming.handle)
                         continue
                     }
                     // Another agent answering, not the person: its own card.
@@ -206,7 +212,13 @@ enum RoutineDelivery {
                     // Hermes telling the bot, with the shell's output attached.
                     // Once the answer itself is on screen, what the bot says
                     // about the delivery only repeats it.
-                    if notice.succeeded,
+                    if let handle = notice.handle, requesters.contains(handle) {
+                        // This agent's own answer on its way back to whoever
+                        // asked: a notice says who a delivery went to, never
+                        // that they answered. Its output is that chat's, and
+                        // so is what this agent says about having delivered.
+                        answeringHandover = true
+                    } else if notice.succeeded,
                        let handle = notice.handle,
                        !answeredBy.contains(handle),
                        let body = AgentMessages.noticeAnswer(message.content) {

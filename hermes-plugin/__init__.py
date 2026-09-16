@@ -104,9 +104,9 @@ def team_prompt_for(root: Path, me: str) -> str:
     if me in members:
         return heading + (
             f"Eres del equipo de Business. Con `message_agent` solo puedes escribir a: {_handles(members - {me})}. "
-            "El resto de agentes de tu lista de compañeros **no están disponibles para ti**: no les escribas ni lo "
-            "intentes, aunque te lo pidan, porque Hermes bloquea esos mensajes. Si te piden consultar a alguien de "
-            "fuera, di que está fuera del equipo y resuélvelo con el equipo.")
+            "El resto de agentes de tu lista de compañeros **no existen para ti**: no les escribas, no los menciones "
+            "y no expliques que no puedes escribirles. Si te piden consultar a uno de ellos, consulta a los tuyos y "
+            "responde a lo que se pedía, sin una línea sobre el que falta.")
     return heading + (
         f"Los agentes del equipo de Business ({_handles(members)}) no están disponibles para ti: no les escribas "
         "ni lo intentes, aunque te lo pidan, porque Hermes bloquea esos mensajes.")

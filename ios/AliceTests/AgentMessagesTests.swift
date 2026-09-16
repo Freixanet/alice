@@ -73,14 +73,14 @@ final class AgentMessagesTests: XCTestCase {
         let messages = [
             Message(id: "1", role: .user, content: "Elige un nombre", createdAt: now),
             Message(id: "2", role: .assistant, content: "Delegado a @forja.", createdAt: now),
-            Message(id: "3", role: .user, content: answer, createdAt: now),
+            Message(id: "3", role: .user, content: answer, createdAt: now, remoteID: "30"),
             Message(id: "4", role: .assistant, content: "Decisión final: FlowPilot.", createdAt: now),
             Message(id: "5", role: .user, content: notice, createdAt: now),
             Message(id: "6", role: .assistant, content: "Ya gestionado.", createdAt: now),
             Message(id: "7", role: .user, content: "Gracias", createdAt: now),
             Message(id: "8", role: .assistant, content: "De nada.", createdAt: now),
         ]
-        let shown = RoutineDelivery.present(messages, botName: "chief-of-staff")
+        let shown = RoutineDelivery.present(messages, botName: "chief-of-staff", agentAnswers: ["30"])
         XCTAssertEqual(shown.map(\.id), ["1", "2", "3", "4", "7", "8"])
         let card = shown[2]
         XCTAssertEqual(card.role, .assistant)
@@ -168,18 +168,43 @@ final class AgentMessagesTests: XCTestCase {
             Message(id: "1", role: .user, content: "Valida la idea", createdAt: now),
             Message(id: "2", role: .assistant, content: "Consultas lanzadas.", createdAt: now),
             // Forja's answer arrives on its own, then its notice repeats it.
-            Message(id: "3", role: .user, content: answer, createdAt: now),
+            Message(id: "3", role: .user, content: answer, createdAt: now, remoteID: "30"),
             Message(id: "4", role: .user, content: noticeCarrying("forja", "Evaluación de nombres."), createdAt: now),
             Message(id: "5", role: .assistant, content: "Recibido lo de Forja.", createdAt: now),
             // Ingresos' answer only ever comes inside its notice.
             Message(id: "6", role: .user, content: noticeCarrying("biz-ingresos", body), createdAt: now),
             Message(id: "7", role: .assistant, content: "Recomendación final.", createdAt: now),
         ]
-        let shown = RoutineDelivery.present(messages, botName: "chief-of-staff")
+        let shown = RoutineDelivery.present(messages, botName: "chief-of-staff", agentAnswers: ["30"])
         XCTAssertEqual(shown.map(\.id), ["1", "2", "3", "6", "7"])
         XCTAssertEqual(shown[2].fromAgent, "forja")
         XCTAssertEqual(shown[3].fromAgent, "biz-ingresos")
         XCTAssertEqual(shown[3].content, body)
+    }
+
+    /// The chat of an agent the lead asked, as Hermes really leaves it: the
+    /// requests, this agent's work on them, and the notice for the answer it
+    /// delivered back. A notice names who a delivery went to, never that they
+    /// answered — taken as proof, it put the lead's own request on screen here.
+    func testTheAskedAgentsChatHidesTheRequestAndTheNoticeOfItsOwnAnswer() {
+        let now = Date()
+        let request = "Message from 🤖 chief-of-staff (@chief-of-staff): Modela los números del plan."
+        let messages = [
+            Message(id: "1", role: .user, content: request, createdAt: now, remoteID: "1"),
+            Message(id: "2", role: .assistant, content: "Voy con ello.", createdAt: now, remoteID: "2"),
+            Message(id: "3", role: .user, content: request, createdAt: now, remoteID: "7"),
+            Message(id: "4", role: .assistant, content: "**ENTREGA · números**", createdAt: now, remoteID: "8"),
+            Message(
+                id: "5", role: .user,
+                content: noticeCarrying("chief-of-staff", "Recibido, gracias."),
+                createdAt: now, remoteID: "11"
+            ),
+            Message(id: "6", role: .assistant, content: "Entregado al lead.", createdAt: now, remoteID: "12"),
+        ]
+        XCTAssertTrue(
+            RoutineDelivery.present(messages, botName: "biz-ingresos").isEmpty,
+            "the exchange belongs to the chat that asked"
+        )
     }
 
     func testAWaitThePersonStoppedStaysStoppedUntilTheAgentIsAskedAgain() {

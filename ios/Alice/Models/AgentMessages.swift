@@ -216,16 +216,15 @@ enum AgentMessages {
     static func isAnswer(
         at index: Int, in messages: [Message], answers: Set<String>
     ) -> Bool {
-        guard let from = incoming(messages[index].content) else { return false }
-        if let id = messages[index].remoteID, answers.contains(id) { return true }
-        for later in messages[(index + 1)...] where later.role == .user {
-            if let notice = notice(later.content) {
-                if notice.handle == from.handle { return true }
-            } else if incoming(later.content) == nil, RoutineReport(later.content) == nil {
-                // The person wrote before any notice came.
-                return false
-            }
-        }
-        return false
+        // Only what Hermes' own history pairs with a `message_agent` call this
+        // chat made (`delegations`). A delivery notice naming the same agent
+        // used to be taken as proof, which held while agents only answered the
+        // person: now that teammates answer each other, the agent that was
+        // asked writes back, and its own notice names the asker — so the
+        // request it had received showed in its chat as if it were an answer.
+        guard incoming(messages[index].content) != nil,
+              let id = messages[index].remoteID
+        else { return false }
+        return answers.contains(id)
     }
 }

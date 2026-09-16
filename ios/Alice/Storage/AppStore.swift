@@ -4493,6 +4493,10 @@ final class AppStore {
               let profile = conversations[index].routedBotName,
               conversations[index].isCanonicalBotChat
         else { return }
+        // A chat being cleared is emptied here first and deleted in Hermes
+        // after. Until that finishes, the old chat is still readable there, and
+        // a read would put every message back on the screen it just left.
+        guard !clearingBotChats.contains(profile) else { return }
         guard let source = await botChatSource() else {
             botChatFailure[conversationID] =
                 "Connect the Hermes dashboard to see this bot's own chat."
@@ -4599,6 +4603,10 @@ final class AppStore {
         }
     }
 
+    /// The agents whose chat is being cleared: emptied here, still being
+    /// deleted in Hermes.
+    private var clearingBotChats: Set<String> = []
+
     /// Empties an agent's chat, in Hermes and on this phone. Its instructions,
     /// memory, skills and routines are kept.
     func clearBotChat(_ profile: String) async throws {
@@ -4615,19 +4623,44 @@ final class AppStore {
             releaseBotTurn(conversationID, stopped: true)
             setBackgroundWork(AgentMessages.BackgroundWork(), for: conversationID)
         }
-        let fresh = try await source.clearCanonicalBotChat(profile: profile)
+        // The screen empties now, not when Hermes is done. Deleting a chat
+        // there is the better part of a dozen round trips — let go of the live
+        // session, delete the row and its compressed tip, make a fresh chat —
+        // and waiting for all of them left the conversation sitting on screen
+        // for about ten seconds after the person had cleared it. Reads are held
+        // off meanwhile so nothing puts the old chat back, and a refusal from
+        // Hermes restores exactly what was there.
+        let kept = conversations.filter { cleared.contains($0.id) }.map { ($0.id, $0.messages) }
+        let clearedBefore = botChatClearedAt[profile]
+        clearingBotChats.insert(profile)
+        defer { clearingBotChats.remove(profile) }
+        botChatClearedAt[profile] = Date()
+        quietRoutineRuns[profile] = nil
+        for index in conversations.indices where cleared.contains(conversations[index].id) {
+            conversations[index].messages = []
+            conversations[index].updatedAt = Date()
+        }
+        persistConversations()
+
+        let fresh: CanonicalBotChat
+        do {
+            fresh = try await source.clearCanonicalBotChat(profile: profile)
+        } catch {
+            botChatClearedAt[profile] = clearedBefore
+            for (id, messages) in kept {
+                guard let index = conversations.firstIndex(where: { $0.id == id }) else { continue }
+                conversations[index].messages = messages
+            }
+            persistConversations()
+            throw error
+        }
         // Its questions and approvals went with it.
         for event in activity where event.isActionable
             && cleared.contains(event.reference.conversationID ?? "") {
             settle(event.id, as: .gone, summary: "The chat was cleared.")
         }
-        botChatClearedAt[profile] = Date()
-        quietRoutineRuns[profile] = nil
-        for index in conversations.indices
-        where conversations[index].routedBotName == profile && conversations[index].isCanonicalBotChat {
-            conversations[index].messages = []
+        for index in conversations.indices where cleared.contains(conversations[index].id) {
             conversations[index].hermesSessionID = fresh.resolvedID
-            conversations[index].updatedAt = Date()
         }
         botChatFailure = botChatFailure.filter { entry in
             !conversations.contains { $0.id == entry.key && $0.routedBotName == profile }
