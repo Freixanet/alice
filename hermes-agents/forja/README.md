@@ -13,7 +13,8 @@ you confirm creates the agent and makes it appear in Alice.
   agent with Hermes' own commands (`hermes profile create`, `hermes config set`,
   `hermes cron create`), writes its instructions and its name in Alice, then
   checks everything. It never changes or deletes an agent that already exists.
-- `install.sh` — installs Forja into this Mac's Hermes.
+- `install.sh` — installs Forja into this Mac's Hermes. If Forja already
+  exists, it only refreshes the skill; the profile is left alone.
 
 ## Install
 
@@ -21,7 +22,8 @@ you confirm creates the agent and makes it appear in Alice.
 hermes-agents/forja/install.sh
 ```
 
-Forja then appears in Alice under Agents → Home.
+Forja then appears in Alice under Agents → Home. Run the same command again
+after changing the skill; it will not recreate the agent.
 
 To try it without touching your Hermes:
 

@@ -36,11 +36,23 @@ STYLE = Path(__file__).resolve().parent.parent / "references" / "estilo-mensajes
 STYLE_START = "<!-- alice:estilo inicio -->"
 
 
+def after_title(text: str, block: str) -> str:
+    lines = text.splitlines(keepends=True)
+    insert = 0
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("# "):
+            insert = i + 1
+            if insert < len(lines) and lines[insert].strip() == "":
+                insert += 1
+            break
+    return "".join(lines[:insert]) + block.strip() + "\n\n" + "".join(lines[insert:])
+
+
 def with_style(soul: str) -> str:
-    """The instructions with the message style appended, unless they carry it."""
+    """The instructions with the message style after the title, unless they carry it."""
     if STYLE_START in soul or not STYLE.is_file():
         return soul
-    return soul + "\n\n" + STYLE.read_text(encoding="utf-8").strip()
+    return after_title(soul, STYLE.read_text(encoding="utf-8"))
 
 
 class SpecError(ValueError):

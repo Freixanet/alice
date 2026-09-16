@@ -4,14 +4,27 @@
 #   hermes-agents/forja/install.sh [--sin-atajo]
 #
 # Creates the `forja` agent with its own creation script (checked first, then
-# for real), then copies its skill into the profile. Refuses if `forja` already
-# exists; never changes or deletes another agent. Honours HERMES_HOME.
+# for real), then copies its skill into the profile. If `forja` already exists,
+# only the skill is refreshed; the profile, instructions and tools are left
+# alone. Never changes or deletes another agent. Honours HERMES_HOME.
 set -euo pipefail
 
 here=${0:A:h}
 hermes_home=${HERMES_HOME:-$HOME/.hermes}
 py=$HOME/.hermes/hermes-agent/venv/bin/python
 [[ -x $py ]] || { print -u2 "Hermes was not found at ~/.hermes/hermes-agent."; exit 1; }
+
+dest=$hermes_home/profiles/forja/skills/productivity/forja-crear-agentes
+install_skill() {
+  mkdir -p "$dest"
+  cp -R "$here/skill/forja-crear-agentes/." "$dest/"
+}
+
+if [[ -d $hermes_home/profiles/forja && -f $hermes_home/profiles/forja/config.yaml ]]; then
+  install_skill
+  print "Forja already exists; its skill is up to date. In Alice it is under Agents → Home."
+  exit 0
+fi
 
 spec=$(mktemp -t forja-spec)
 trap 'rm -f "$spec"' EXIT
@@ -33,7 +46,5 @@ script=$here/skill/forja-crear-agentes/scripts/crear_agente.py
 "$py" "$script" "$spec" --comprobar
 "$py" "$script" "$spec" "$@"
 
-dest=$hermes_home/profiles/forja/skills/productivity/forja-crear-agentes
-mkdir -p "$dest"
-cp -R "$here/skill/forja-crear-agentes/." "$dest/"
+install_skill
 print "Forja is installed. In Alice it is under Agents → Home."

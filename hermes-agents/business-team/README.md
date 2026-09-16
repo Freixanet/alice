@@ -97,9 +97,10 @@ las instrucciones aparece como `{{BUSINESS_DIR}}` y el instalador pone la ruta
 real. Cada archivo tiene un solo dueño; el resto lo lee.
 
 La guía de estilo de mensajes es común a todos los agentes:
-`../forja/skill/forja-crear-agentes/references/estilo-mensajes.md`. Forja la añade
-a los agentes que crea, y `../aplicar_estilo.py` la pone o actualiza en los que ya
-existen y en Alice, sin tocar nada más de sus instrucciones.
+`../forja/skill/forja-crear-agentes/references/estilo-mensajes.md`. Forja la pone
+después del título de los agentes que crea, y `../aplicar_estilo.py` la actualiza
+en el mismo sitio en los que ya existen y en Alice, sin tocar nada más de sus
+instrucciones.
 
 ## Instalar
 
@@ -107,6 +108,7 @@ existen y en Alice, sin tocar nada más de sus instrucciones.
 ~/.hermes/hermes-agent/venv/bin/python hermes-agents/business-team/instalar.py --comprobar
 ~/.hermes/hermes-agent/venv/bin/python hermes-agents/business-team/instalar.py
 python3 hermes-agents/aplicar_estilo.py
+python3 hermes-agents/prueba_estilo.py   # comprueba la guía contra un HERMES_HOME temporal
 ```
 
 Con `--actualizar`, `instalar.py` reescribe las instrucciones y la descripción de

@@ -95,12 +95,15 @@ def main() -> int:
         write_yaml(home / "profiles" / "evals" / "config.yaml", {"model": {"default": "luna", "provider": "openai-codex"}})
         sandbox = home / "profiles" / "evals-sandbox"
         write_yaml(sandbox / "config.yaml", {"model": {"default": "otro"}, "platform_toolsets": {"cli": ["web"]}})
+        (home / "profiles" / ".deleted").mkdir()
+        (home / "profiles" / "biz-director").mkdir()
         (home / "provider_models_cache.json").write_text(json.dumps({
             "openrouter": {"at": 1789500000, "models": ["a", "b"]},
             "opencode-free": {"at": 1789500000, "models": [{"id": "muse"}]},
         }))
 
-        # Fingerprints: every agent is new, the sandbox is never an agent.
+        # Fingerprints: every agent is new. The sandbox, a leftover `.deleted`
+        # folder and a half-removed profile without config.yaml are not agents.
         first = run(env, "huella", "--guardar")
         assert {c["agente"] for c in first["cambiados"]} == {"default", "radar", "evals"}, first
         assert run(env, "huella")["cambiados"] == []

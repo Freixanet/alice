@@ -5,9 +5,10 @@ agentes de este Hermes y en las de Alice.
     python3 aplicar_estilo.py [--comprobar]
 
 La guía vive en forja/skill/forja-crear-agentes/references/estilo-mensajes.md y
-va entre marcadores: si un agente ya la tiene, se sustituye por la versión
-actual; si no, se añade al final. Nada más de las instrucciones cambia. La guía
-cede ante cualquier formato exacto que fijen las instrucciones del agente.
+va entre marcadores, justo después del título, para que el modelo la vea antes
+del resto. Si un agente ya la tiene, se mueve y se sustituye por la versión
+actual; si no, se inserta. Nada más de las instrucciones cambia. La guía cede
+ante cualquier formato exacto que fijen las instrucciones del agente.
 Respeta HERMES_HOME. Imprime un JSON con lo que cambió.
 """
 import json
@@ -21,12 +22,28 @@ START = "<!-- alice:estilo inicio -->"
 END = "<!-- alice:estilo fin -->"
 
 
+def strip_style(text: str) -> str:
+    if START not in text or END not in text:
+        return text
+    head, rest = text.split(START, 1)
+    tail = rest.split(END, 1)[1]
+    return (head.rstrip() + "\n\n" + tail.lstrip()).strip() + "\n"
+
+
+def after_title(text: str, block: str) -> str:
+    lines = text.splitlines(keepends=True)
+    insert = 0
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("# "):
+            insert = i + 1
+            if insert < len(lines) and lines[insert].strip() == "":
+                insert += 1
+            break
+    return "".join(lines[:insert]) + block.strip() + "\n\n" + "".join(lines[insert:])
+
+
 def styled(text: str, block: str) -> str:
-    if START in text and END in text:
-        head, rest = text.split(START, 1)
-        tail = rest.split(END, 1)[1]
-        return head + block + tail
-    return text.rstrip() + "\n\n" + block + "\n"
+    return after_title(strip_style(text), block)
 
 
 def main(argv: list) -> int:

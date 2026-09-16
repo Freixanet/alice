@@ -45,6 +45,9 @@ EUR_PER_USD = float(os.environ.get("EVALS_EUR_POR_USD") or 0.92)
 
 SANDBOX = "evals-sandbox"
 JUDGE = "evals"
+# Hermes profile names, the same shape Forja accepts. Leftovers such as
+# `.deleted` or a half-removed folder without config.yaml are not agents.
+PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 # What an evaluation may use: nothing that writes files, runs commands, schedules
 # work, remembers or talks to other agents.
 SAFE_TOOLSETS = {"web", "browser", "skills", "todo", "vision", "session_search"}
@@ -72,8 +75,18 @@ def profile_args(name: str) -> list:
 
 
 def agents() -> list:
-    named = sorted(p.name for p in (HOME / "profiles").iterdir() if p.is_dir()) if (HOME / "profiles").is_dir() else []
-    return ["default"] + [n for n in named if n != SANDBOX]
+    profiles = HOME / "profiles"
+    named = []
+    if profiles.is_dir():
+        for path in sorted(profiles.iterdir()):
+            if not path.is_dir() or path.name == SANDBOX:
+                continue
+            if not PROFILE_NAME.fullmatch(path.name):
+                continue
+            if not (path / "config.yaml").is_file():
+                continue
+            named.append(path.name)
+    return ["default"] + named
 
 
 def load_yaml(path: Path) -> dict:
