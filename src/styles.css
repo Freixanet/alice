@@ -27,7 +27,7 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --text-2xs: 0.75rem;
   --text-2xs--line-height: 1rem;
-  /* GTA6.md defines one 8px radius for every standalone surface. Semantic
+  /* docs/design-system.md defines one 8px radius for every standalone surface. Semantic
      exceptions use `rounded-none` or `rounded-full` explicitly. */
   --radius-sm: 0.5rem;
   --radius-md: 0.5rem;
@@ -167,7 +167,7 @@ html[data-theme="light"][data-accent="amber"] {
   --accent-tint: color-mix(in oklab, #8a6a38 28%, #eceae4);
 }
 
-/* The Alice app follows GTA6.md. AppShell scopes this visual system to the
+/* The Alice app follows docs/design-system.md. AppShell scopes this visual system to the
    authenticated product and removes the marker when login is shown. */
 html[data-alice-app]:has(.alice-app) {
   --composer: #131314;
@@ -513,11 +513,21 @@ html[data-alice-app]:has(.alice-app) .alice-composer {
   color: var(--callout);
 }
 
-.alice-callout-note { --callout: #3b82f6; }
-.alice-callout-tip { --callout: #16a34a; }
-.alice-callout-important { --callout: #9333ea; }
-.alice-callout-warning { --callout: #d97706; }
-.alice-callout-caution { --callout: #dc2626; }
+.alice-callout-note {
+  --callout: #3b82f6;
+}
+.alice-callout-tip {
+  --callout: #16a34a;
+}
+.alice-callout-important {
+  --callout: #9333ea;
+}
+.alice-callout-warning {
+  --callout: #d97706;
+}
+.alice-callout-caution {
+  --callout: #dc2626;
+}
 
 /* `[Title](alice://reply?text=…)`: a reply the person can send with one tap. */
 .alice-quick-reply {

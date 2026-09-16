@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Installs Forja, the agent that creates agents, into this Mac's Hermes.
+# Installs Agent Maker, the agent that creates agents, into this Mac's Hermes.
 #
 #   hermes-agents/forja/install.sh [--sin-atajo]
 #
@@ -22,7 +22,7 @@ install_skill() {
 
 if [[ -d $hermes_home/profiles/forja && -f $hermes_home/profiles/forja/config.yaml ]]; then
   install_skill
-  print "Forja already exists; its skill is up to date. In Alice it is under Agents → Home."
+  print "Agent Maker already exists; its skill is up to date. In Alice it is under Agents → Home."
   exit 0
 fi
 
@@ -34,8 +34,8 @@ from pathlib import Path
 soul, out = Path(sys.argv[1]), Path(sys.argv[2])
 out.write_text(json.dumps({
     "name": "forja",
-    "title": "Forja",
-    "description": "Crea agentes a medida: entiende lo que necesitas, te pregunta lo justo y deja el agente funcionando y visible en Alice.",
+    "title": "Agent Maker",
+    "description": "Creates agents to spec: understands what you need, asks only what changes the result, and leaves the agent running and visible in Alice.",
     "soul": soul.read_text(encoding="utf-8"),
     "tools": ["terminal"],
     "routines": [],
@@ -47,4 +47,4 @@ script=$here/skill/forja-crear-agentes/scripts/crear_agente.py
 "$py" "$script" "$spec" "$@"
 
 install_skill
-print "Forja is installed. In Alice it is under Agents → Home."
+print "Agent Maker is installed. In Alice it is under Agents → Home."

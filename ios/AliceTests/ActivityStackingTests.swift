@@ -170,4 +170,24 @@ final class ActivityStackingTests: XCTestCase {
         XCTAssertTrue(sections.history.isEmpty)
     }
 
+    func testAClarifyEventOpensAChatAndAPlatformsAlertDoesNot() {
+        let clarify = AliceEvent(
+            id: "clarify:req-1", kind: .needsInput, severity: .needsAttention,
+            profile: "radar-ia", title: "Needs an answer",
+            summary: "Radar IA asked you a question.",
+            occurred: Date(),
+            reference: .init(profile: "radar-ia", requestID: "req-1"),
+            standing: .waiting,
+            questions: [.init(text: "Which repository?", choices: ["alice", "hermes"])]
+        )
+        XCTAssertTrue(clarify.opensAChat)
+
+        let platforms = AliceEvent(
+            id: "component:platforms:degraded", kind: .attention, severity: .needsAttention,
+            title: "platforms", summary: "platforms needs attention.",
+            occurred: Date()
+        )
+        XCTAssertFalse(platforms.opensAChat)
+    }
+
 }

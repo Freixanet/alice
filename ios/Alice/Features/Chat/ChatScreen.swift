@@ -407,14 +407,11 @@ private struct TranscriptView: View {
     var body: some View {
         GeometryReader { area in
             ScrollView {
-                // Laid out eagerly, a page at a time — no lazy stack. A lazy
-                // stack of very tall rows (a Radar IA report runs to dozens of
-                // lines) placed rows by estimated heights: opened at its end it
-                // drew nothing until scrolled, and scrolling up re-measured rows
-                // as they arrived, so the conversation vanished and came back.
-                // Bounding the page keeps a years-long chat from laying out
-                // every message it has ever had.
-                VStack(alignment: .leading, spacing: 34) {
+                // Bounded pages of messages, laid out lazily so a Radar report
+                // does not force every visible row to measure at once. Earlier
+                // history still loads with the button below — a years-long chat
+                // is never all in the view.
+                LazyVStack(alignment: .leading, spacing: 34) {
                     if hiddenCount > 0 {
                         Button {
                             shown += Self.page

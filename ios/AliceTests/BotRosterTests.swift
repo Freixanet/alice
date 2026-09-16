@@ -151,6 +151,25 @@ final class BotRosterTests: XCTestCase {
         XCTAssertLessThanOrEqual(AppStore.botSlug(String(repeating: "A", count: 100)).count, 64)
     }
 
+    func testADeletedOrLiveSlugIsNotReusedForASimilarName() {
+        XCTAssertEqual(
+            AppStore.uniqueBotSlug("Agente Prueba", taken: []),
+            "agente-prueba"
+        )
+        XCTAssertEqual(
+            AppStore.uniqueBotSlug("Agente Prueba", taken: ["agente-prueba"]),
+            "agente-prueba-2"
+        )
+        XCTAssertEqual(
+            AppStore.uniqueBotSlug("Agente Prueba", taken: ["agente-prueba", "agente-prueba-2"]),
+            "agente-prueba-3"
+        )
+        XCTAssertEqual(
+            AppStore.uniqueBotSlug("Agente Prueba", taken: ["Agente-Prueba"]),
+            "agente-prueba-2"
+        )
+    }
+
     func testSavedBotOrderWinsWhileUnknownBotsStayStableAtTheEnd() {
         let rows = [row("a"), row("b"), row("c"), row("new-1"), row("new-2")]
         let ordered = AppStore.orderedBots(rows, using: ["c", "a", "b"])

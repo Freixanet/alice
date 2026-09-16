@@ -109,6 +109,9 @@ final class LiveEventTranslationTests: XCTestCase {
         ))
         XCTAssertEqual(event.kind, .needsInput)
         XCTAssertEqual(event.id, "clarify:req-10")
+        XCTAssertEqual(event.title, "Needs an answer")
+        XCTAssertTrue(event.opensAChat)
+        XCTAssertFalse(event.questions.isEmpty)
     }
 
     /// Without an id there is nothing to resolve against, so there is nothing

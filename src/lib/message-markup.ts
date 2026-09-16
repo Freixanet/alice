@@ -23,7 +23,8 @@ const CALLOUT_LABELS: Record<CalloutKind, string> = {
 
 export const QUICK_REPLY_EVENT = "alice:quick-reply";
 
-const CALLOUT = /^(\s*>\s?)\[!(note|tip|important|warning|caution)\][ \t]*(.*)$/i;
+const CALLOUT =
+  /^(\s*>\s?)\[!(note|tip|important|warning|caution)\][ \t]*(.*)$/i;
 const UNKNOWN_CALLOUT = /^(\s*>\s?)\[!([a-z][a-z0-9_-]*)\][ \t]*(.*)$/i;
 const QUOTE_LINE = /^(\s*>\s?)(.*)$/;
 const FENCE = /^\s*(`{3,}|~{3,})/;

@@ -2,3 +2,6 @@ src/routeTree.gen.ts
 test-results
 playwright-report
 hermes-plugin/dashboard/dist
+ios/.build
+ios/Alice.xcodeproj
+hermes-agents

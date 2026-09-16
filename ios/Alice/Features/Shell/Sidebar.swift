@@ -64,7 +64,12 @@ struct Sidebar: View {
         ) { destination in
             Group {
                 switch destination {
-                case .activity: closable { ActivityScreen() }
+                case .activity: closable {
+                    ActivityScreen(onOpenedChat: {
+                        going = nil
+                        onDismiss()
+                    })
+                }
                 case .routines: closable { RoutinesScreen() }
                 case .projects: closable { ProjectsScreen() }
                 case .git: closable { GitDevelopmentScreen() }
@@ -327,20 +332,26 @@ struct Sidebar: View {
             store.activeID = conversation.id
             onDismiss()
         } label: {
-            Text(conversation.title)
-                .lineLimit(1)
-                // A definite width, matching row and preview width exactly
-                // so the long-press preview never shrinks or stretches.
-                .frame(width: width - 48, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    conversation.id == store.activeID
-                        ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
-                        : .clear,
-                    in: .rect(cornerRadius: 10)
-                )
-                .contentShape(.rect(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(conversation.title)
+                    .lineLimit(1)
+                if let preview = Self.preview(conversation) {
+                    Text(preview)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .frame(width: width - 48, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                conversation.id == store.activeID
+                    ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
+                    : .clear,
+                in: .rect(cornerRadius: 10)
+            )
+            .contentShape(.rect(cornerRadius: 10))
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -359,6 +370,20 @@ struct Sidebar: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
+    }
+
+    /// The last spoken line in a home chat, flattened, so the drawer reads as
+    /// conversations rather than a list of titles.
+    private static func preview(_ conversation: Conversation) -> String? {
+        guard let message = conversation.messages.last(where: {
+            !$0.pending && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else { return nil }
+        let flat = message.content
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !flat.isEmpty else { return nil }
+        return flat.count > 120 ? String(flat.prefix(117)) + "…" : flat
     }
 
     @ViewBuilder

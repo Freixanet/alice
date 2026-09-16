@@ -146,10 +146,7 @@ struct ChatQuestionsCard: View {
     let conversationID: String
 
     var body: some View {
-        let waiting = store.activity.filter {
-            $0.isActionable && !$0.questions.isEmpty
-                && $0.reference.conversationID == conversationID
-        }
+        let waiting = store.pendingQuestions(in: conversationID)
         ForEach(waiting) { event in
             VStack(alignment: .leading, spacing: 12) {
                 Label(

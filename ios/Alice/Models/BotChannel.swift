@@ -91,6 +91,24 @@ extension BotChannel {
         return true
     }
 
+    /// False when the name is empty, already a section here, or not found.
+    @discardableResult
+    mutating func renameSection(from old: String, to new: String) -> Bool {
+        let trimmed = new.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != old,
+              let index = sections.firstIndex(of: old),
+              !sections.contains(trimmed)
+        else { return false }
+        sections[index] = trimmed
+        for (bot, section) in botSections where section == old {
+            botSections[bot] = trimmed
+        }
+        if let folded = collapsedSections.firstIndex(of: old) {
+            collapsedSections[folded] = trimmed
+        }
+        return true
+    }
+
     /// The section goes; its bots stay in the channel, loose.
     mutating func deleteSection(_ name: String) {
         sections.removeAll { $0 == name }

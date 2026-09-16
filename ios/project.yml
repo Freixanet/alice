@@ -3,6 +3,8 @@ options:
   bundleIdPrefix: com.freixanet
   deploymentTarget:
     iOS: "26.0"
+  developmentLanguage: en
+  knownRegions: [en, es, Base]
   createIntermediateGroups: true
   generateEmptyDirectories: false
 
@@ -27,6 +29,9 @@ targets:
         CFBundleDisplayName: Alice
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleLocalizations:
+          - en
+          - es
         AliceSourceRevision: $(ALICE_SOURCE_REVISION)
         # The pairing QR is an alice:// deep link; the scheme is what lets the
         # iPhone's own Camera app open Alice at the moment of pairing.
@@ -60,7 +65,7 @@ targets:
         # Local/private IPs and names use the explicit local-network exception.
         # Tailnet DNS names end in ts.net, while direct Tailscale IPv4 addresses
         # live in 100.64.0.0/10. Both need narrow HTTP exceptions; public Hermes
-        # addresses are accepted only over HTTPS by AppStore.normalize.
+        # addresses are accepted only over HTTPS by HermesAddress.normalize.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSExceptionDomains:
@@ -76,6 +81,8 @@ targets:
         NSSupportsLiveActivities: true
     dependencies:
       - target: AliceActivities
+        embed: true
+      - target: AliceShare
         embed: true
     settings:
       base:
@@ -113,6 +120,39 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES
+
+  # Hands a shared paragraph or link to Alice as a composer draft. It does
+  # not talk to Hermes; Alice opens and the person sends it. NSExtension has
+  # to live here: XcodeGen's Info.plist merge drops keys that are only in
+  # the source file, and a share appex without that dictionary cannot be
+  # installed on a simulator.
+  AliceShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: AliceShare
+    info:
+      path: AliceShare/Info.plist
+      properties:
+        CFBundleDisplayName: Alice
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.share
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "2"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
 
   AliceTests:
     type: bundle.unit-test

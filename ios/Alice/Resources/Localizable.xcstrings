@@ -1,0 +1,419 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lld messages · read only" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld mensajes · solo lectura"
+          }
+        }
+      }
+    },
+    "Earlier history" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historial anterior"
+          }
+        }
+      }
+    },
+    "Opens the deal in the browser" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre la oferta en el navegador"
+          }
+        }
+      }
+    },
+    "Open deal" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ver chollo"
+          }
+        }
+      }
+    },
+    "Live Activity could not start" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La Live Activity no pudo empezar"
+          }
+        }
+      }
+    },
+    "What should this agent do?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Qué debería hacer este agente?"
+          }
+        }
+      }
+    },
+    "A sentence is enough. Alice opens the new agent so it can ask anything it still needs." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basta una frase. Alice abre el agente nuevo para que pregunte lo que aún necesite."
+          }
+        }
+      }
+    },
+    "Creating agent…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creando el agente…"
+          }
+        }
+      }
+    },
+    "Writing instructions…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribiendo las instrucciones…"
+          }
+        }
+      }
+    },
+    "Opening chat…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abriendo el chat…"
+          }
+        }
+      }
+    },
+    "This can take a few seconds." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puede tardar unos segundos."
+          }
+        }
+      }
+    },
+    "Done" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listo"
+          }
+        }
+      }
+    },
+    "What this connection can do" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qué puede hacer esta conexión"
+          }
+        }
+      }
+    },
+    "Available" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible"
+          }
+        }
+      }
+    },
+    "Needs the dashboard" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hace falta el panel"
+          }
+        }
+      }
+    },
+    "Not listed yet" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay lista"
+          }
+        }
+      }
+    },
+    "Faster with a QR" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más rápido con un QR"
+          }
+        }
+      }
+    },
+    "The address and key come from whoever installed Hermes. Use HTTPS for a host that is not on your local network or tailnet." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dirección y la clave las tiene quien instaló Hermes. Usa HTTPS si el host no está en tu red local o en el tailnet."
+          }
+        }
+      }
+    },
+    "If the Alice plugin is on your Hermes dashboard, show a pairing QR and scan it here. Chat still works from the address and key above." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si el complemento Alice está en el panel de Hermes, muestra un QR de emparejamiento y escanéalo aquí. El chat también funciona con la dirección y la clave de arriba."
+          }
+        }
+      }
+    },
+    "Projects, Memory and Usage" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proyectos, memoria y uso"
+          }
+        }
+      }
+    },
+    "Advanced" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avanzado"
+          }
+        }
+      }
+    },
+    "Models, memory, skills and Hermes administration live here. Everyday use stays in the chat." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelos, memoria, skills y la administración de Hermes están aquí. El uso diario se queda en el chat."
+          }
+        }
+      }
+    },
+    "When Alice is open, or the next time iOS lets it check. It cannot wake the phone by itself, so a routine that finishes while Alice is closed may wait until you open it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuando Alice está abierta, o la próxima vez que iOS la deje comprobar. No puede despertar el teléfono por sí sola, así que una rutina que termine con Alice cerrada puede esperar hasta que la abras."
+          }
+        }
+      }
+    },
+    "Allow once" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir una vez"
+          }
+        }
+      }
+    },
+    "Don't allow" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No permitir"
+          }
+        }
+      }
+    },
+    "Something could not be kept on this phone" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algo no se pudo guardar en este iPhone"
+          }
+        }
+      }
+    },
+    "routine.quiet.noNews" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No news: the routine ran and found nothing new to report."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin novedades: la rutina se ejecutó y no encontró nada nuevo que contar."
+          }
+        }
+      }
+    },
+    "routine.failed.prefix" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ The routine could not finish: "
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ La rutina no se pudo completar: "
+          }
+        }
+      }
+    },
+    "routine.failed.rateLimit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the AI model reached its usage limit. It will try again on the next run."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "el modelo de IA ha llegado a su límite de uso. Se volverá a intentar en la próxima ejecución."
+          }
+        }
+      }
+    },
+    "routine.failed.timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it took too long and stopped."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tardó demasiado y se detuvo."
+          }
+        }
+      }
+    },
+    "routine.failed.auth" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the AI provider did not accept the key."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "el proveedor de IA no aceptó la clave."
+          }
+        }
+      }
+    },
+    "routine.failed.hermes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "something failed in Hermes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "algo falló en Hermes."
+          }
+        }
+      }
+    },
+    "routine.failed.tool" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a tool failed several times in a row."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "una herramienta falló varias veces seguidas."
+          }
+        }
+      }
+    },
+    "agent.reply.missing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ No answer came back from %@: the request ended with an error in Hermes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ No llegó la respuesta de %@: la consulta terminó con un error en Hermes."
+          }
+        }
+      }
+    },
+    "agent.reply.otherAgent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the other agent"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "el otro agente"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

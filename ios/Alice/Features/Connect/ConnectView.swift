@@ -20,17 +20,19 @@ struct ConnectView: View {
             Form {
                 if store.isConnected {
                     connectionSummary
+                    capabilityMatrix
+                } else {
+                    manualConnection
                 }
 
-                pairing
+                pairingShortcut
 
                 if store.isConnected && !store.dashboardReady {
                     limitedFeatures
                 }
 
-                advancedConnection
-
                 if store.isConnected {
+                    advancedConnection
                     disconnect
                 }
             }
@@ -47,13 +49,44 @@ struct ConnectView: View {
                     .environment(store)
                     .preferredColorScheme(store.theme.colorScheme)
             }
+            .onAppear {
+                if address.isEmpty { address = store.gatewayURL }
+                if panelAddress.isEmpty { panelAddress = store.dashboardURL }
+            }
         }
     }
 
-    /// The pairing QR is the normal path. Alice configures every connection it
-    /// can from one scan, so people don't need to learn the gateway/dashboard
-    /// split just to get started.
-    private var pairing: some View {
+    /// Address and key first. A Linux, Windows or cloud Hermes has no pairing
+    /// QR unless someone installed the Alice plugin; typing still works.
+    private var manualConnection: some View {
+        Section {
+            TextField("Address", text: $address)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+            SecureField("Connection key", text: $key)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            if let error = store.connectionError {
+                Text(error).foregroundStyle(.red)
+            }
+
+            Button {
+                Task { await store.connect(urlText: address, key: key) }
+            } label: {
+                if store.isConnecting { ProgressView() } else { Text("Connect") }
+            }
+            .disabled(address.isEmpty || key.isEmpty || store.isConnecting)
+        } header: {
+            Text("Connect to Hermes")
+        } footer: {
+            Text("The address and key come from whoever installed Hermes. Use HTTPS for a host that is not on your local network or tailnet.")
+        }
+    }
+
+    /// A QR is faster when the plugin is on the dashboard. It is not required.
+    private var pairingShortcut: some View {
         Section {
             Button {
                 showScanner = true
@@ -61,12 +94,12 @@ struct ConnectView: View {
                 Label("Scan pairing QR", systemImage: "qrcode.viewfinder")
             }
         } header: {
-            Text(store.isConnected ? "Pair or change Hermes" : "Connect to Hermes")
+            Text(store.isConnected ? "Pair or change Hermes" : "Faster with a QR")
         } footer: {
             Text(
                 store.isConnected
                     ? "Scan a pairing QR to re-pair or switch Hermes. Your current connection stays in place unless you confirm the new pairing."
-                    : "Show the pairing QR on the Mac running Hermes, then scan it here. Alice configures the connection automatically."
+                    : "If the Alice plugin is on your Hermes dashboard, show a pairing QR and scan it here. Chat still works from the address and key above."
             )
         }
     }
@@ -83,13 +116,26 @@ struct ConnectView: View {
             if let version = store.manifest?.version {
                 LabeledContent("Version", value: version)
             }
-            if !store.models.isEmpty {
-                LabeledContent("Models", value: "\(store.models.count)")
-            }
         } header: {
             Text("Connection")
         } footer: {
             Text("The connection key is stored in Keychain on this iPhone.")
+        }
+    }
+
+    private var capabilityMatrix: some View {
+        Section {
+            ForEach(ConnectionCapabilities.rows(
+                dashboardReady: store.dashboardReady,
+                modelCount: store.models.count
+            )) { row in
+                LabeledContent(row.title) {
+                    Text(row.detail)
+                        .foregroundStyle(row.available ? Color.secondary : Color.orange)
+                }
+            }
+        } header: {
+            Text("What this connection can do")
         }
     }
 
@@ -109,33 +155,9 @@ struct ConnectView: View {
         }
     }
 
-    /// One disclosure point for every uncommon connection detail. Apple
-    /// recommends keeping the common path visible and advanced functionality
-    /// hidden until it becomes relevant.
     private var advancedConnection: some View {
         Section {
             DisclosureGroup("Advanced connection settings", isExpanded: $advancedExpanded) {
-                if !store.isConnected {
-                    TextField("Address", text: $address)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    SecureField("Connection key", text: $key)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-
-                    if let error = store.connectionError {
-                        Text(error).foregroundStyle(.red)
-                    }
-
-                    Button {
-                        Task { await store.connect(urlText: address, key: key) }
-                    } label: {
-                        if store.isConnecting { ProgressView() } else { Text("Connect manually") }
-                    }
-                    .disabled(address.isEmpty || key.isEmpty || store.isConnecting)
-                }
-
                 if store.isConnected && !store.dashboardReady {
                     TextField("Dashboard address", text: $panelAddress)
                         .textInputAutocapitalization(.never)
@@ -170,30 +192,28 @@ struct ConnectView: View {
                     }
                 }
 
-                if store.isConnected {
-                    LabeledContent("Gateway", value: store.gatewayURL)
-                    if store.dashboardReady {
-                        LabeledContent("Dashboard", value: store.dashboardURL)
-                        LabeledContent("Dashboard user", value: store.dashboardUser)
-                    }
+                LabeledContent("Gateway", value: store.gatewayURL)
+                if store.dashboardReady {
+                    LabeledContent("Dashboard", value: store.dashboardURL)
+                    LabeledContent("Dashboard user", value: store.dashboardUser)
+                }
 
-                    let advertised = store.manifest?.advertised.sorted() ?? []
-                    if !advertised.isEmpty {
-                        Text("Capabilities")
-                            .font(.footnote.weight(.semibold))
-                            .padding(.top, 4)
-                        ForEach(advertised, id: \.self) { name in
-                            Text(name)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                        }
+                let advertised = store.manifest?.advertised.sorted() ?? []
+                if !advertised.isEmpty {
+                    Text("Capabilities")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.top, 4)
+                    ForEach(advertised, id: \.self) { name in
+                        Text(name)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
         } header: {
             Text("Advanced")
         } footer: {
-            Text("Manual addresses and technical details are only needed for unusual or troubleshooting setups.")
+            Text("Technical addresses and the advertised capability list.")
         }
     }
 

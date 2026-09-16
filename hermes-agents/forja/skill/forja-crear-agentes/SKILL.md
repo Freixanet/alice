@@ -11,10 +11,9 @@ Un agente nuevo, funcionando en este Hermes y visible en Alice con su nombre, di
 
 ## Antes de crear
 
-1. Reúne lo necesario: objetivo, qué entrega y en qué formato, fuentes o datos que usa, frecuencia (si es periódico), tono e idioma, y qué no debe hacer.
-2. Pregunta con clarify solo lo que cambie el diseño y no puedas deducir. Ofrece opciones concretas con una recomendada.
-3. Diseña con [guia-agentes.md](references/guia-agentes.md): nombre, instrucciones, herramientas mínimas y rutinas.
-4. Enseña el plan en lenguaje llano y confírmalo con clarify. Sin confirmación, no sigas.
+1. Reúne lo necesario con el **intake obligatorio** de tu SOUL (clarify, una ronda, cada pregunta con default). Objetivo, entrega, idioma, frecuencia, fuentes y límites.
+2. Diseña con [guia-agentes.md](references/guia-agentes.md): nombre, instrucciones **con ejemplos**, herramientas mínimas y rutinas.
+3. Enseña el plan en lenguaje llano y confírmalo con clarify. Sin confirmación, no sigas.
 
 ## Crear
 
@@ -25,7 +24,7 @@ Un agente nuevo, funcionando en este Hermes y visible en Alice con su nombre, di
   "name": "resumen-mercados",
   "title": "Resumen de Mercados",
   "description": "Resume cada mañana lo importante de los mercados para un inversor particular.",
-  "soul": "# Resumen de Mercados\n\n...instrucciones completas...",
+  "soul": "# Resumen de Mercados\n\n...instrucciones completas, incluida ## Ejemplos...",
   "tools": ["web"],
   "routines": [
     {
@@ -38,23 +37,26 @@ Un agente nuevo, funcionando en este Hermes y visible en Alice con su nombre, di
 ```
 
 - `name`: minúsculas, números y guiones; 2–40 caracteres; no puede existir ya.
-- `tools`: solo las que el objetivo necesita, además de las básicas que añade el programa (web, file, skills, memory, clarify, todo). Permitidas: browser, terminal, code_execution, vision, image_gen, tts, session_search, cronjob, delegation.
+- `soul`: debe incluir una sección `## Ejemplos` o `## Examples` con turnos de ejemplo. El programa la exige.
+- `tools`: extras besides the ones the program already adds (`web`, `file`, `skills`, `memory`, `clarify`, `todo`). Naming a base tool is fine. Allowed extras: browser, terminal, code_execution, vision, image_gen, tts, session_search, cronjob, delegation.
 - `routines`: opcional. `schedule` en formato cron o `every 2h`; entregan en el chat del agente.
 
-2. Comprueba sin crear nada:
+2. Ejecuta el script **de esta skill** (`scripts/crear_agente.py`), con el Python de Hermes. Honra `HERMES_HOME`, `HERMES_BIN`, `ALICE_AGENT_MODEL` y `ALICE_AGENT_FALLBACK` si existen; si no, usa `~/.hermes`.
+
+Comprueba sin crear nada:
 
 ```bash
-~/.hermes/hermes-agent/venv/bin/python ~/.hermes/profiles/forja/skills/productivity/forja-crear-agentes/scripts/crear_agente.py especificacion.json --comprobar
+python scripts/crear_agente.py especificacion.json --comprobar
 ```
 
-3. Si la comprobación es correcta, créalo:
+3. Si la comprobación es correcta, créalo (usa al menos 300 segundos; las habilidades incluidas tardan). El programa hace después una prueba de humo (`hermes -p NOMBRE -z`); `--sin-humo` la omite:
 
 ```bash
-~/.hermes/hermes-agent/venv/bin/python ~/.hermes/profiles/forja/skills/productivity/forja-crear-agentes/scripts/crear_agente.py especificacion.json
+python scripts/crear_agente.py especificacion.json
 ```
 
-Usa un límite de tiempo de al menos 300 segundos: añadir las habilidades incluidas tarda.
+Si Alice ya creó el perfil y solo te pide las instrucciones, no ejecutes este script: reescribe ese `SOUL.md` con ejemplos.
 
 ## Después
 
-Lee el JSON que imprime el programa. `ok: true` y todas las comprobaciones en `true` significan que el agente está listo. Si algo sale `false` o hay `error`, dilo tal cual; no lo repitas a ciegas ni borres nada. Cuenta a la persona en pocas frases qué agente tiene, que lo encontrará en Agents dentro de Alice (en Home) y qué puede pedirle.
+Lee el JSON que imprime el programa. `ok: true` y todas las comprobaciones en `true` significan que el agente está listo, incluida la prueba de humo si no se omitió. Si algo sale `false` o hay `error`, dilo tal cual; no lo repitas a ciegas ni borres nada. Cuenta a la persona en pocas frases qué agente tiene, que lo encontrará en Agents dentro de Alice (en Home) y qué puede pedirle.

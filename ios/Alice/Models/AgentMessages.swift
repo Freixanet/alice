@@ -125,8 +125,8 @@ enum AgentMessages {
 
     /// Said in the chat when a delivery ended without an answer.
     static func failure(to handle: String?) -> String {
-        let who = handle.map { "@\($0)" } ?? "el otro agente"
-        return "⚠️ No llegó la respuesta de \(who): la consulta terminó con un error en Hermes."
+        let who = handle.map { "@\($0)" } ?? String(localized: "agent.reply.otherAgent")
+        return String(format: String(localized: "agent.reply.missing"), who)
     }
 
     /// A `message_agent` target as the handle its answer is signed with:

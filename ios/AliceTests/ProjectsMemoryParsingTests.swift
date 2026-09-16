@@ -10,11 +10,11 @@ final class ProjectsMemoryParsingTests: XCTestCase {
                 "name": "Alice App",
                 "description": "Main iOS workspace",
                 "color": "#8B8FF5",
-                "primary_path": "/Users/marc/alice",
+                "primary_path": "/Users/me/alice",
                 "created_at": NSNumber(value: 1_788_000_000),
                 "archived": false,
                 "folders": [[
-                    "path": "/Users/marc/alice",
+                    "path": "/Users/me/alice",
                     "label": "main",
                     "is_primary": true,
                     "added_at": NSNumber(value: 1_788_000_000),
@@ -29,7 +29,7 @@ final class ProjectsMemoryParsingTests: XCTestCase {
         XCTAssertEqual(project.name, "Alice App")
         XCTAssertEqual(project.detail, "Main iOS workspace")
         XCTAssertEqual(project.colour, "#8B8FF5")
-        XCTAssertEqual(project.primaryPath, "/Users/marc/alice")
+        XCTAssertEqual(project.primaryPath, "/Users/me/alice")
         XCTAssertFalse(project.archived)
         XCTAssertEqual(project.folders.count, 1)
         XCTAssertTrue(try XCTUnwrap(project.folders.first).isPrimary)
@@ -39,9 +39,9 @@ final class ProjectsMemoryParsingTests: XCTestCase {
         let rows = try DashboardClient.projectRows(from: [
             "projects": [
                 [
-                    "id": "/Users/marc/repo",
+                    "id": "/Users/me/repo",
                     "label": "repo",
-                    "path": "/Users/marc/repo",
+                    "path": "/Users/me/repo",
                     "sessionCount": NSNumber(value: 3),
                     "totalTokens": NSNumber(value: 12_345),
                     "lastActive": NSNumber(value: 1_788_000_100),

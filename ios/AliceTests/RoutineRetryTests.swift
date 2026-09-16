@@ -21,7 +21,7 @@ final class RoutineRetryTests: XCTestCase {
         let row = try XCTUnwrap(HermesClient.jobRow(from: [
             "id": "6abe3aebcb41",
             "fire_claim": ["at": "2026-09-10T15:22:35.249897+02:00",
-                           "by": "MacBook-Pro-de-Marcos.local:5229:94627cf1554c4964a9709b519a5b054c"],
+                           "by": "hermes-host.local:5229:94627cf1554c4964a9709b519a5b054c"],
             "manual_run_at": "2026-09-10T15:20:35.100000+02:00",
         ]))
         var utc = Calendar(identifier: .gregorian)

@@ -54,6 +54,14 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         var detail: String?
     }
 
+    /// Hermes sometimes finishes the reply without a matching `done` for the
+    /// last tool. Those leftovers must not keep a "Reading a page…" line.
+    mutating func closeOpenTools() {
+        for i in tools.indices where tools[i].status != .done {
+            tools[i].status = .done
+        }
+    }
+
     enum RunStatus: String, Hashable, Sendable, Codable {
         case started
         case queued

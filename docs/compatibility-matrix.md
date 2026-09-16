@@ -13,7 +13,8 @@ boundaries; it is not a promise that every deployment has passed live testing.
 | MCP / skills / tools        | Native management views                  | Companion views                  | Individual management endpoints and configured integrations    |
 | Notes                       | Native                                   | No equivalent primary notes page | An agent's compatible inbox-store must exist                   |
 | Memory / projects / files   | Native management                        | Partial companion surfaces       | Dashboard/plugin contracts vary by feature                     |
-| Notifications               | Local + opportunistic background refresh | Browser/session behavior         | iOS controls background execution; no always-on guarantee      |
+| Notifications               | Local + opportunistic background refresh; Live Activity for home and bot chats while Alice runs | Browser/session behavior         | iOS controls background execution; no always-on guarantee; no APNs |
+| Share into chat             | Share extension hands Alice a paragraph or URL as a composer draft | No                               | Person sends; extension does not talk to Hermes                |
 | Encrypted conversation sync | Not a shared native sync implementation  | Account-scoped E2EE              | Do not claim iOS/web cloud-sync parity                         |
 | Account sign-in             | Direct Hermes credentials                | Alice accounts                   | Separate identity and recovery responsibilities                |
 
@@ -23,12 +24,14 @@ The web API fixtures cover Hermes **0.21.3**, **0.21.2**, **0.21.0** and **0.20.
 Source tags and commits are stored in `src/lib/hermes-contract-fixtures.ts`.
 The checked 0.21 family retains Pantheon controls across those patch versions.
 Unknown versions must continue to use independently advertised capabilities.
-See [the detailed contract checklist](../HERMES_PANTHEON.md).
+See [the detailed contract checklist](hermes-contracts.md).
 
 ## Remaining release qualifications
 
-- A clean install still needs a running, configured Hermes. QR provisioning is
-  not yet a universal installer for Windows, Linux or every cloud dashboard.
+- A clean install still needs a running, configured Hermes. Manual address
+  and key work on any reachable host. QR provisioning still expects the Alice
+  plugin and is not a universal installer for Windows, Linux or every cloud
+  dashboard.
 - Production web account recovery and verification need an operational email
   delivery flow; login tests with authentication disabled do not prove it.
 - Physical-device pairing, suspension/recovery and end-to-end agent operations
@@ -36,6 +39,8 @@ See [the detailed contract checklist](../HERMES_PANTHEON.md).
 - Broader Hermes updates may add management contracts beyond the HTTP fixtures.
   Revisit this matrix after each upstream release; do not infer total parity from
   a version string or the ability to send a chat message.
+- The iOS share extension forwards text or one URL into the composer. It has not
+  been live-tested from Safari on a physical iPhone in this change set.
 
 ## A fixture is not a client implementation
 

@@ -38,22 +38,28 @@ Alice is an independent project, not an official Nous Research product.
 
 1. Install a build of Alice using the [iOS build instructions](ios/README.md).
 2. Keep your configured Hermes running on a reachable computer or server.
-3. Open **Connect to Hermes** in Alice. Scan the pairing QR from the **Alice**
-   tab of your Hermes dashboard, or use the manual connection settings.
+3. Open **Connect** in Alice. Enter the Hermes address and key, or scan a
+   pairing QR if the Alice plugin is on the dashboard.
 
-The current QR setup uses the included [dashboard plugin](hermes-plugin/README.md),
-a Mac and Tailscale. An administrator must prepare that installation first.
-Alice does not install Hermes or provide a model subscription.
+The current QR setup uses the included [dashboard plugin](hermes-plugin/README.md)
+(`hermes-plugin/install.sh`). A Mac and Tailscale are typical; they are not
+required for a manual connection. An administrator must prepare that
+installation first. Alice does not install Hermes or provide a model
+subscription.
 
 **[Guía de conexión en español →](docs/getting-connected.md)**
+
+The iOS app is English by default, with Spanish as a second language. The
+phone's language setting chooses which one you see.
 
 ## What you can do
 
 - **Converse:** streaming replies, tool activity, Markdown, attachments and model selection.
-- **Work with agents:** agent-specific conversations and canonical Hermes sessions.
+- **Work with agents:** agent-specific conversations and canonical Hermes sessions. A sentence is enough to create one; Alice opens that agent so it can ask anything it still needs.
 - **Organize:** conversation history, pinned chats, projects, library and notes where supported.
+- **Share into chat:** the iOS share sheet hands Alice a paragraph or a link as a draft. You send it.
 - **Run routines:** manage scheduled work and review activity.
-- **Configure:** access models, providers, skills, tools and advanced administration.
+- **Configure:** everyday settings first; models, skills and Hermes administration one level deeper.
 
 Availability depends on your Hermes installation and its management endpoints.
 Chat and dashboard connections are separate. The
@@ -139,7 +145,7 @@ each suite proves. Browser fixtures do not prove production account recovery;
 simulator tests do not replace physical-device pairing and background tests.
 
 Hermes contracts are checked against versioned official sources, including
-0.21.3. [HERMES_PANTHEON.md](HERMES_PANTHEON.md) records the contract checklist.
+0.21.3. [The Hermes contract checklist](docs/hermes-contracts.md) records what was checked.
 New Hermes releases require a compatibility review; a green badge does not
 establish universal or future compatibility.
 

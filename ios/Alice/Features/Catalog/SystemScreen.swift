@@ -398,7 +398,39 @@ struct SystemScreen: View {
             operationButton("Diagnostic dump", detail: "Generate Hermes' diagnostic dump and show its output.", systemImage: "doc.text.magnifyingglass") {
                 try await store.runHermesDump()
             }
+            unknownEventsRow
         }
+    }
+
+    /// What this Hermes sends that Alice has not learnt. Empty most of the
+    /// time; after a Hermes update, the first place a new event kind shows.
+    @ViewBuilder
+    private var unknownEventsRow: some View {
+        let sightings = HermesUnknownEvents.shared.all
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: sightings.isEmpty ? "checkmark.circle" : "questionmark.circle")
+                .frame(width: 22)
+                .foregroundStyle(sightings.isEmpty ? Color.secondary : Color.orange)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Event kinds Alice does not know")
+                if sightings.isEmpty {
+                    Text("None so far. Everything this Hermes has sent is understood.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("\(sightings.count) seen since launch. Alice keeps working; these are what to add next.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(Array(sightings.enumerated()), id: \.offset) { _, sighting in
+                        Text("\(sighting.type) ×\(sighting.count) · \(sighting.keys.joined(separator: ", "))")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private var logsSection: some View {

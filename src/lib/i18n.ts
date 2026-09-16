@@ -34,7 +34,7 @@ const en = {
 
   "meta.description": "Alice: chat, skills, tools, and memory.",
 
-  "agents.kicker": "Pantheon",
+  "agents.kicker": "Hermes",
   "agents.title": "Agents",
   "agents.description":
     "Create and shape independent Hermes identities. Chats opened here stay bound to their agent.",
@@ -978,7 +978,7 @@ const es: Record<MsgKey, string> = {
 
   "meta.description": "Alice: chat, skills, tools y memoria.",
 
-  "agents.kicker": "Pantheon",
+  "agents.kicker": "Hermes",
   "agents.title": "Agentes",
   "agents.description":
     "Crea y define identidades independientes de Hermes. Los chats abiertos aquí permanecen ligados a su agente.",

@@ -1117,17 +1117,13 @@ private struct RichLinksView: View {
     private var items: some View {
         ForEach(links, id: \.self) { link in
             Link(destination: link.url) {
-                HStack(spacing: 4) {
-                    Text(link.title)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Image(systemName: "arrow.up.right")
-                        .imageScale(.small)
-                }
-                .font(.footnote.weight(.medium))
+                Text(link.title)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .font(.footnote.weight(.semibold))
             }
             .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
+            .buttonBorderShape(.roundedRectangle(radius: 7))
             .controlSize(.small)
             .tint(.primary)
             .accessibilityHint("Opens \(RichLinks.domain(link.url))")

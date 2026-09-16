@@ -1,9 +1,8 @@
-# Alice GTA6 — Anti-Slop Design Guide
+# Alice design system
 
-This is an independently authored design guide for Alice. It is not Shipper.now's
-private `gta6.md`, does not reproduce that file, and makes no claim of affiliation.
-Its purpose is to define Alice's visual system and remove common AI-generated
-interface habits without erasing the product's identity.
+Alice's visual system, and the habits it keeps out of the interface. Every
+surface — native and web — follows these rules; `npm run design:check` holds
+the web to the measurable ones.
 
 ## Identity that stays
 

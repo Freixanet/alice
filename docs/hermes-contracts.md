@@ -6,7 +6,8 @@ flags and 28 HTTP endpoints were checked against `gateway/platforms/api_server.p
 at the official `v2026.9.14` and `v2026.9.11` tags. This verifies those contracts,
 not every live configuration, integration or future release.
 
-The following is the release-delta checklist for Pantheon, based on the official
+The following is the release-delta checklist for Pantheon — Hermes' name for
+its 0.21 release line — based on the official
 [`v2026.8.31` release](https://github.com/NousResearch/hermes-agent/releases/tag/v2026.8.31)
 and the corresponding Hermes source contracts.
 

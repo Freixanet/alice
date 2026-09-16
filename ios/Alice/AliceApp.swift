@@ -15,7 +15,6 @@ struct AliceApp: App {
     @State private var speech = ReadAloud()
     @State private var notifier = Notifier()
     @State private var activities = AgentActivities()
-    @State private var showRadarBotInstaller = false
     @State private var pairingLink: PendingPairingLink?
 
     var body: some Scene {
@@ -30,11 +29,6 @@ struct AliceApp: App {
                 .environment(speech)
                 .environment(notifier)
                 .preferredColorScheme(store.theme.colorScheme)
-                .sheet(isPresented: $showRadarBotInstaller) {
-                    RadarIABotInstaller()
-                        .environment(store)
-                        .preferredColorScheme(store.theme.colorScheme)
-                }
                 .sheet(item: $pairingLink) { pending in
                     PairingSheet(link: pending.link, onDismiss: { pairingLink = nil })
                         .environment(store)
@@ -48,9 +42,12 @@ struct AliceApp: App {
                         store.open(link)
                         return
                     }
-                    guard url.scheme?.lowercased() == "alice",
-                          url.host?.lowercased() == "pair"
-                    else { return }
+                    guard url.scheme?.lowercased() == "alice" else { return }
+                    if url.host?.lowercased() == "compose" {
+                        acceptSharedCompose(url)
+                        return
+                    }
+                    guard url.host?.lowercased() == "pair" else { return }
                     pairingLink = PendingPairingLink(link: url.absoluteString)
                 }
                 .task {
@@ -72,7 +69,6 @@ struct AliceApp: App {
                     // Prime the watermarks without announcing the installation's
                     // existing state as news; the first digest only records.
                     await notifier.post(store.syncEvents())
-                    await offerRadarBotIfNeeded()
                 }
                 // Permission can be revoked in Settings while Alice is away, and
                 // work can finish while it is backgrounded. Both are worth
@@ -81,7 +77,7 @@ struct AliceApp: App {
                     guard phase == .active else {
                         store.isForeground = false
                         if phase == .background {
-                            store.persistConversations()
+                            store.persistConversationsImmediately()
                             store.stopWatchingLiveEvents()
                             scheduleRefresh()
                         }
@@ -111,6 +107,7 @@ struct AliceApp: App {
                 // Dynamic Island, and says how it ended once it stops.
                 .onChange(of: store.agentWorks, initial: true) { _, works in
                     activities.sync(working: works, ending: store.agentEnding)
+                    store.liveActivityWarning = activities.lastStartFailure
                 }
         }
         .backgroundTask(.appRefresh(Self.refreshTaskID)) {
@@ -182,50 +179,22 @@ struct AliceApp: App {
         // brought up to date — or ended — whether or not notifications are on.
         await store.refreshVisibleBotChats()
         activities.sync(working: store.agentWorks, ending: store.agentEnding)
+        store.liveActivityWarning = activities.lastStartFailure
         guard notifier.permission.canDeliver else { return }
         await notifier.post(store.syncEvents())
     }
 
-    /// Radar IA was briefly shipped as a special Jobs setup card. The corrected
-    /// representation is a normal Hermes profile. Offer that migration only
-    /// when the dashboard is actually reachable and the real bot is absent (or
-    /// was only partially created without standing instructions). A profile
-    /// created by the buggy migration can contain Hermes' generic bootstrap
-    /// SOUL; repair that in place without sending the scheduler setup twice.
-    @MainActor
-    private func offerRadarBotIfNeeded() async {
-        do {
-            let bots = try await store.bots()
-            guard bots.contains(where: { $0.name == RadarIA.botName }) else {
-                showRadarBotInstaller = true
-                return
-            }
-
-            let soul = try await store.soul(RadarIA.botName)
-            let emptySoul = !soul.exists
-                || soul.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            if emptySoul {
-                showRadarBotInstaller = true
-                return
-            }
-
-            // The first real-bot migration mistook Hermes' default profile SOUL
-            // for user-authored content. Repair only that known bootstrap text;
-            // custom instructions remain untouched.
-            if RadarIA.isGenericHermesSoul(soul.text) {
-                do {
-                    try await store.setSoul(RadarIA.botName, RadarIA.editorialPrompt)
-                    let verified = try await store.soul(RadarIA.botName)
-                    if !verified.exists || !RadarIA.ownsSoul(verified.text) {
-                        showRadarBotInstaller = true
-                    }
-                } catch {
-                    showRadarBotInstaller = true
-                }
-            }
-        } catch {
-            // No dashboard/profile management means Alice cannot truthfully
-            // create or repair a Hermes bot. Leave the existing app usable.
+    /// A share extension (or another app) handed Alice a paragraph or a link.
+    /// It lands in the composer of the chat on screen; the person sends it.
+    private func acceptSharedCompose(_ url: URL) {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        let text = items?.first(where: { $0.name == "text" })?.value?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !text.isEmpty else { return }
+        if store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            store.draft = text
+        } else {
+            store.draft += "\n" + text
         }
     }
 }

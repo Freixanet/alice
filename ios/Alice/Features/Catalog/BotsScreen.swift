@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 /// The agent's other selves.
 ///
@@ -69,9 +70,8 @@ struct BotsScreen: View {
     @State private var newSectionName = ""
     @State private var newSectionTargetBot: String?
     @State private var deletingSection: String?
-    @State private var renamingSection: String?
+    @State private var renamingSection: RenamingSection?
     @State private var renameSectionName = ""
-    @State private var showRenameSectionAlert = false
     /// The bot currently being reordered. Keeping the identity in view state lets
     /// DropDelegate advertise a real move operation instead of SwiftUI's default
     /// copy-style drop (the misleading “+” badge).
@@ -224,17 +224,26 @@ struct BotsScreen: View {
         } message: {
             Text("Enter a name for the new section.")
         }
-        .alert("Rename Section", isPresented: $showRenameSectionAlert) {
+        .alert(
+            "Rename Section",
+            isPresented: Binding(
+                get: { renamingSection != nil },
+                set: { if !$0 { renamingSection = nil } }
+            )
+        ) {
             TextField("Section Name", text: $renameSectionName)
             Button("Cancel", role: .cancel) {
-                renamingSection = nil
                 renameSectionName = ""
             }
             Button("Save") {
                 if let renamingSection {
-                    store.renameSection(from: renamingSection, to: renameSectionName)
+                    switch renamingSection.scope {
+                    case .home:
+                        store.renameSection(from: renamingSection.name, to: renameSectionName)
+                    case .channel(let id):
+                        store.renameChannelSection(id, from: renamingSection.name, to: renameSectionName)
+                    }
                 }
-                renamingSection = nil
                 renameSectionName = ""
             }
         } message: {
@@ -272,13 +281,15 @@ struct BotsScreen: View {
         ) {
             Button("Delete", role: .destructive) {
                 if let deletingBot {
+                    let name = deletingBot.name
+                    rows.removeAll { $0.name == name }
                     Task {
                         do {
-                            try await store.deleteBot(deletingBot.name)
+                            try await store.deleteBot(name)
                         } catch {
                             failure = describeBotError(error)
+                            await load()
                         }
-                        await load()
                     }
                 }
                 deletingBot = nil
@@ -295,6 +306,9 @@ struct BotsScreen: View {
             if rows.isEmpty { rows = store.cachedBots }
             await load()
             seeded = true
+        }
+        .onChange(of: store.cachedBots) { _, bots in
+            rows = store.orderedBots(bots)
         }
         .refreshable { await load() }
     }
@@ -827,13 +841,6 @@ struct BotsScreen: View {
 
             if showsUnread, let color = dotColor(bot.name) {
                 statusDot(color, size: Self.unreadDotSize)
-                    // The visible edge of a round mark crosses this badge near
-                    // its centre. A rectangular bottom-trailing alignment sits
-                    // beyond that curved edge, so pull it back into the face.
-                    .offset(
-                        x: -Self.unreadDotSize * 0.15,
-                        y: -Self.unreadDotSize * 0.15
-                    )
             }
         }
         // Slack outside the glass, not inside it: the shape is cut to the
@@ -851,14 +858,22 @@ struct BotsScreen: View {
     }
 
     private func statusDot(_ color: Color, size: CGFloat) -> some View {
-        Circle()
-            .fill(color)
-            .frame(width: size, height: size)
-            .overlay {
-                Circle().stroke(Palette.background(scheme), lineWidth: 2)
+        Group {
+            if color == .green {
+                WorkingPulseFill(color: color, size: size)
+            } else {
+                Circle()
+                    .fill(color)
+                    .frame(width: size, height: size)
             }
-            .modifier(WorkingPulse(active: color == .green))
-            .accessibilityLabel(color == .green ? "Working" : "Unread")
+        }
+        .overlay {
+            Circle()
+                .stroke(Palette.background(scheme), lineWidth: 2.5)
+        }
+        .frame(width: size, height: size)
+        .allowsHitTesting(false)
+        .accessibilityLabel(color == .green ? "Working" : "Unread")
     }
 
     private static let unreadDotSize: CGFloat = 10
@@ -980,36 +995,66 @@ struct BotsScreen: View {
     /// as it was left.
     private func folderHeader(
         _ name: String, systemImage: String, collapsed: Bool, count: Int, bots: [String],
-        identifier: String, toggle: @escaping () -> Void
+        identifier: String, reorderID: String? = nil, toggle: @escaping () -> Void
     ) -> some View {
-        Button(action: toggle) {
-            HStack(spacing: 7) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(store.accent.primary(scheme))
-                Text(name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                if collapsed {
-                    Text("\(count)")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.tertiary)
+        HStack(spacing: 0) {
+            Button(action: toggle) {
+                HStack(spacing: 7) {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(store.accent.primary(scheme))
+                    Text(name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if collapsed {
+                        Text("\(count)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.tertiary)
+                    }
+                    if collapsed { sectionDot(bots) }
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(collapsed ? -90 : 0))
+                    Spacer()
                 }
-                if collapsed { sectionDot(bots) }
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(collapsed ? -90 : 0))
-                Spacer()
+                .padding(.leading, 16)
+                .padding(.trailing, reorderID == nil ? 16 : 4)
+                .padding(.top, 18)
+                .padding(.bottom, 8)
+                .contentShape(.rect)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 18)
-            .padding(.bottom, 8)
-            .contentShape(.rect)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(identifier)
+
+            if let reorderID {
+                sectionReorderHandle(reorderID, channel: true)
+                    .padding(.trailing, 16)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
+    }
+
+    /// Drag lives on this control, not on the row that owns the context menu.
+    /// Long-pressing the header otherwise starts iOS's Move action and holds
+    /// back Rename and Delete for several seconds.
+    private func sectionReorderHandle(_ id: String, channel: Bool = false) -> some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .frame(width: 28, height: 28)
+            .contentShape(.rect)
+            .onDrag {
+                if channel {
+                    draggedChannel = id
+                    draggedSection = nil
+                } else {
+                    draggedSection = id
+                }
+                draggedBotName = nil
+                return NSItemProvider(object: id as NSString)
+            }
+            .accessibilityLabel("Reorder")
     }
 
     /// Channels: folders of bots and teams, above the general list.
@@ -1032,17 +1077,11 @@ struct BotsScreen: View {
         folderHeader(
             channel.name, systemImage: "folder.fill", collapsed: channel.collapsed,
             count: members.count + teams.count, bots: members.map(\.name),
-            identifier: "bots.channel.\(channel.name)"
+            identifier: "bots.channel.\(channel.name)", reorderID: channel.id
         ) {
             withAnimation(.snappy(duration: 0.2)) {
                 store.toggleChannelCollapsed(channel.id)
             }
-        }
-        .onDrag {
-            draggedChannel = channel.id
-            draggedSection = nil
-            draggedBotName = nil
-            return NSItemProvider(object: channel.name as NSString)
         }
         // Dropped on the channel itself: an agent leaves every section and stays
         // inside; another channel takes this one's place.
@@ -1111,32 +1150,46 @@ struct BotsScreen: View {
 
     private func channelSectionHeader(_ channel: BotChannel, section: String, bots: [BotRow]) -> some View {
         let collapsed = channel.collapsedSections.contains(section)
-        return Button {
-            withAnimation(.snappy(duration: 0.2)) {
-                store.toggleChannelSectionCollapsed(channel.id, section: section)
+        return HStack(spacing: 0) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) {
+                    store.toggleChannelSectionCollapsed(channel.id, section: section)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(section)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    if collapsed { sectionDot(bots.map(\.name)) }
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(collapsed ? -90 : 0))
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 16)
+                .padding(.trailing, 4)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+                .contentShape(.rect)
             }
-        } label: {
-            HStack(spacing: 6) {
-                Text(section)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                if collapsed { sectionDot(bots.map(\.name)) }
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(collapsed ? -90 : 0))
-                Spacer()
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button {
+                    renamingSection = RenamingSection(scope: .channel(channel.id), name: section)
+                    renameSectionName = section
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    store.deleteChannelSection(channel.id, name: section)
+                } label: {
+                    Label("Delete Section", systemImage: "trash")
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 6)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .onDrag {
-            draggedSection = section
-            draggedBotName = nil
-            return NSItemProvider(object: section as NSString)
+
+            sectionReorderHandle(section)
+                .padding(.trailing, 16)
         }
         .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
             draggedName: $draggedBotName, draggedSection: $draggedSection,
@@ -1144,13 +1197,6 @@ struct BotsScreen: View {
         ) { dragged in
             store.setChannelSection(channel.id, bot: dragged, section: section)
         })
-        .contextMenu {
-            Button(role: .destructive) {
-                store.deleteChannelSection(channel.id, name: section)
-            } label: {
-                Label("Delete Section", systemImage: "trash")
-            }
-        }
     }
 
     @ViewBuilder
@@ -1192,11 +1238,9 @@ struct BotsScreen: View {
     @ViewBuilder
     private func sectionDot(_ bots: [String]) -> some View {
         if store.isWorking(bots) {
-            Circle()
-                .fill(Color.green)
-                .frame(width: 7, height: 7)
-                .modifier(WorkingPulse(active: true))
+            WorkingPulseFill(color: .green, size: 7)
                 .accessibilityLabel("Working")
+                .accessibilityHidden(false)
         } else if store.hasUnread(bots) {
             Circle()
                 .fill(Color.blue)
@@ -1578,34 +1622,67 @@ struct BotsScreen: View {
     }
 
     private func sectionHeader(_ title: String, count: Int) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.2)) {
-                store.toggleSectionCollapsed(title)
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                if store.collapsedSections.contains(title) {
-                    sectionDot(bots(in: title).map(\.name))
+        HStack(spacing: 0) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) {
+                    store.toggleSectionCollapsed(title)
                 }
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(store.collapsedSections.contains(title) ? -90 : 0))
-                Spacer()
+            } label: {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    if store.collapsedSections.contains(title) {
+                        sectionDot(bots(in: title).map(\.name))
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(store.collapsedSections.contains(title) ? -90 : 0))
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 16)
+                .padding(.trailing, 4)
+                .padding(.top, 18)
+                .padding(.bottom, 8)
+                .contentShape(.rect)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 18)
-            .padding(.bottom, 8)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .onDrag {
-            draggedSection = title
-            draggedBotName = nil
-            return NSItemProvider(object: title as NSString)
+            .buttonStyle(.plain)
+            .contextMenu {
+                let order = store.sectionOrder
+                let isFirst = order.first == title
+                let isLast = order.last == title
+
+                Button {
+                    renamingSection = RenamingSection(scope: .home, name: title)
+                    renameSectionName = title
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+
+                Button {
+                    store.moveSectionUp(title)
+                } label: {
+                    Label("Move Up", systemImage: "arrow.up")
+                }
+                .disabled(isFirst)
+
+                Button {
+                    store.moveSectionDown(title)
+                } label: {
+                    Label("Move Down", systemImage: "arrow.down")
+                }
+                .disabled(isLast)
+
+                Button(role: .destructive) {
+                    deletingSection = title
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+
+            sectionReorderHandle(title)
+                .padding(.trailing, 16)
         }
         .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
             draggedName: $draggedBotName, draggedSection: $draggedSection,
@@ -1614,80 +1691,59 @@ struct BotsScreen: View {
             guard !store.isInAnyChannel(dragged) else { return }
             store.setBotSection(dragged, section: title)
         })
-        .contextMenu {
-            let order = store.sectionOrder
-            let isFirst = order.first == title
-            let isLast = order.last == title
-
-            Button {
-                renamingSection = title
-                renameSectionName = title
-                showRenameSectionAlert = true
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-
-            Button {
-                store.moveSectionUp(title)
-            } label: {
-                Label("Move Up", systemImage: "arrow.up")
-            }
-            .disabled(isFirst)
-
-            Button {
-                store.moveSectionDown(title)
-            } label: {
-                Label("Move Down", systemImage: "arrow.down")
-            }
-            .disabled(isLast)
-
-            Button(role: .destructive) {
-                deletingSection = title
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-        }
     }
 
     private var unassignedSectionHeader: some View {
-        Button {
-            withAnimation(.snappy(duration: 0.2)) {
-                store.unassignedExpanded.toggle()
-            }
-        } label: {
-            // Laid out like the named sections: the title, then the mark that
-            // opens it, then whatever space is left. Pushed to the far edge by
-            // a Spacer, the chevron sat a phone's width from the word it acts
-            // on and read as a separate control.
-            //
-            // The count goes with it, and only while the section is shut: open,
-            // the bots are right there to be counted, and the number is one
-            // more thing to read that says nothing new.
-            HStack(spacing: 6) {
-                Text("Unassigned")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                if !store.unassignedExpanded {
-                    Text("\(unassignedBots.count)")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.tertiary)
+        HStack(spacing: 0) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) {
+                    store.unassignedExpanded.toggle()
                 }
-                if !store.unassignedExpanded { sectionDot(unassignedBots.map(\.name)) }
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(store.unassignedExpanded ? 0 : -90))
-                Spacer()
+            } label: {
+                HStack(spacing: 6) {
+                    Text("Unassigned")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    if !store.unassignedExpanded {
+                        Text("\(unassignedBots.count)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.tertiary)
+                    }
+                    if !store.unassignedExpanded { sectionDot(unassignedBots.map(\.name)) }
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(store.unassignedExpanded ? 0 : -90))
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 16)
+                .padding(.trailing, 4)
+                .padding(.vertical, 14)
+                .contentShape(.rect)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .onDrag {
-            draggedSection = AppStore.unassignedSectionKey
-            draggedBotName = nil
-            return NSItemProvider(object: "Unassigned" as NSString)
+            .buttonStyle(.plain)
+            .contextMenu {
+                let order = store.sectionOrder
+                let isFirst = order.first == AppStore.unassignedSectionKey
+                let isLast = order.last == AppStore.unassignedSectionKey
+
+                Button {
+                    store.moveSectionUp(AppStore.unassignedSectionKey)
+                } label: {
+                    Label("Move Up", systemImage: "arrow.up")
+                }
+                .disabled(isFirst)
+
+                Button {
+                    store.moveSectionDown(AppStore.unassignedSectionKey)
+                } label: {
+                    Label("Move Down", systemImage: "arrow.down")
+                }
+                .disabled(isLast)
+            }
+
+            sectionReorderHandle(AppStore.unassignedSectionKey)
+                .padding(.trailing, 16)
         }
         .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
             draggedName: $draggedBotName, draggedSection: $draggedSection,
@@ -1696,25 +1752,6 @@ struct BotsScreen: View {
             guard !store.isInAnyChannel(dragged) else { return }
             store.setBotSection(dragged, section: nil)
         })
-        .contextMenu {
-            let order = store.sectionOrder
-            let isFirst = order.first == AppStore.unassignedSectionKey
-            let isLast = order.last == AppStore.unassignedSectionKey
-
-            Button {
-                store.moveSectionUp(AppStore.unassignedSectionKey)
-            } label: {
-                Label("Move Up", systemImage: "arrow.up")
-            }
-            .disabled(isFirst)
-
-            Button {
-                store.moveSectionDown(AppStore.unassignedSectionKey)
-            } label: {
-                Label("Move Down", systemImage: "arrow.down")
-            }
-            .disabled(isLast)
-        }
     }
 
     @ViewBuilder
@@ -2087,7 +2124,7 @@ struct BotDetail: View {
 
             let recovered = store.recoveredHistory(for: bot.name)
             if !recovered.isEmpty {
-                Section("Historial anterior") {
+                Section("Earlier history") {
                     ForEach(recovered) { chat in
                         Button {
                             store.openConversation(chat.id)
@@ -2095,7 +2132,7 @@ struct BotDetail: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(chat.title).lineLimit(1)
-                                Text("\(chat.messages.count) mensajes · sólo lectura")
+                                Text("\(chat.messages.count) messages · read only")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -2405,7 +2442,7 @@ struct BotDetail: View {
         case .allowedQuietly:
             "Notifications are allowed but set to deliver quietly, so they will not appear as banners."
         case .notAsked, .allowed:
-            "Tells you when one of this assistant’s automations finishes or fails."
+            "When Alice is open, or the next time iOS lets it check. It cannot wake the phone by itself, so a routine that finishes while Alice is closed may wait until you open it."
         }
     }
 
@@ -2598,11 +2635,14 @@ private struct SoulEditor: View {
 // MARK: - NewBotSheet
 
 private struct NewBotSheet: View {
+    private enum Field: Hashable { case name, detail }
+
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
     let onCreated: () async -> Void
 
+    @FocusState private var focusedField: Field?
     @State private var name = ""
     @State private var detail = ""
     @State private var selectedModel: HermesClient.ModelOption?
@@ -2611,7 +2651,10 @@ private struct NewBotSheet: View {
     @State private var choosingModel = false
     @State private var mark = BotMark(colour: 0, shape: 0)
     @State private var busy = false
+    @State private var progress = "Creating agent…"
     @State private var failure: String?
+
+    private var suggestedName: String { AgentDraft.name(from: detail) }
 
     var body: some View {
         NavigationStack {
@@ -2619,11 +2662,15 @@ private struct NewBotSheet: View {
                 Section {
                     VStack(spacing: 16) {
                         BotMarkView(mark: mark, size: 96)
-                        TextField("Name your agent", text: $name)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .font(.title3.weight(.medium))
-                            .multilineTextAlignment(.center)
+                        TextField(
+                            suggestedName.isEmpty ? "Name your agent" : suggestedName,
+                            text: $name
+                        )
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .font(.title3.weight(.medium))
+                        .multilineTextAlignment(.center)
+                        .focused($focusedField, equals: .name)
                     }
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity)
@@ -2631,17 +2678,19 @@ private struct NewBotSheet: View {
                 }
 
                 Section {
-                    TextField("What it is for", text: $detail, axis: .vertical)
-                        .lineLimit(2...4)
+                    TextField("What should this agent do?", text: $detail, axis: .vertical)
+                        .lineLimit(4...10)
+                        .focused($focusedField, equals: .detail)
                         .listRowBackground(Palette.card(scheme))
                 } footer: {
-                    Text("A new profile with its own memory, sessions and standing instructions.")
+                    Text("A sentence is enough. Alice opens the new agent so it can ask anything it still needs.")
                 }
 
                 Section("Character") {
                     MarkPicker(mark: $mark)
                         .listRowBackground(Palette.card(scheme))
                 }
+                .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
 
                 Section("Place") {
                     // Channel first: which sections there are depends on it.
@@ -2661,12 +2710,19 @@ private struct NewBotSheet: View {
                     }
                     .listRowBackground(Palette.card(scheme))
                 }
-                .onChange(of: selectedChannel) { selectedSection = "" }
+                .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
+                .onChange(of: selectedChannel) { _, _ in
+                    selectedSection = ""
+                    dismissKeyboard()
+                }
 
                 Section("Model") {
                     // The same model list as an agent's settings, picked here and
                     // applied when the agent is made.
-                    Button { choosingModel = true } label: {
+                    Button {
+                        dismissKeyboard()
+                        choosingModel = true
+                    } label: {
                         HStack {
                             Text("Model").foregroundStyle(.primary)
                             Spacer(minLength: 12)
@@ -2696,16 +2752,41 @@ private struct NewBotSheet: View {
                             // `control`, not `primary`: white text needs a fill that
                             // stays dark enough, and Stone's dark primary is near
                             // white — the label all but vanished into the button.
-                            .background(name.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary.opacity(0.4) : store.accent.control(scheme), in: .capsule)
+                            .background(
+                                (name.trimmingCharacters(in: .whitespaces).isEmpty
+                                 && detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                ? Color.secondary.opacity(0.4) : store.accent.control(scheme),
+                                in: .capsule
+                            )
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty
+                        && detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
                     .listRowBackground(Color.clear)
                 }
             }
             .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.immediately)
             .background(Palette.background(scheme))
             .navigationTitle("Create New Agent")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(busy)
+            .overlay {
+                if busy {
+                    ZStack {
+                        Palette.background(scheme).opacity(0.94)
+                        VStack(spacing: 14) {
+                            ProgressView()
+                            Text(LocalizedStringKey(progress))
+                                .font(.headline)
+                            Text("This can take a few seconds.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(28)
+                    }
+                    .ignoresSafeArea()
+                }
+            }
             .sheet(isPresented: $choosingModel) {
                 ModelPicker(chosen: selectedModel) { selectedModel = $0 }
                     .preferredColorScheme(store.theme.colorScheme)
@@ -2717,6 +2798,11 @@ private struct NewBotSheet: View {
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(.secondary)
                     }
+                    .disabled(busy)
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { dismissKeyboard() }
                 }
             }
         }
@@ -2728,17 +2814,32 @@ private struct NewBotSheet: View {
         return store.botChannels.first { $0.id == selectedChannel }?.sections ?? []
     }
 
+    private func dismissKeyboard() {
+        focusedField = nil
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+        )
+    }
+
     private func create() {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        let brief = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = name.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { trimmed = AgentDraft.name(from: brief) }
         guard !trimmed.isEmpty else { return }
+        dismissKeyboard()
+        failure = nil
+        progress = "Creating agent…"
         busy = true
         Task {
-            defer { busy = false }
             do {
                 let slug = try await store.createBot(
-                    displayName: trimmed, description: detail, model: selectedModel
+                    displayName: trimmed, description: brief, model: selectedModel
                 )
                 store.botMarks[slug] = mark
+                if !brief.isEmpty {
+                    progress = "Writing instructions…"
+                    try await store.setSoul(slug, AgentDraft.soul(from: brief))
+                }
                 if selectedChannel.isEmpty {
                     if !selectedSection.isEmpty {
                         store.setBotSection(slug, section: selectedSection)
@@ -2749,9 +2850,28 @@ private struct NewBotSheet: View {
                         store.setChannelSection(selectedChannel, bot: slug, section: selectedSection)
                     }
                 }
-                await onCreated()
+                progress = "Opening chat…"
+                let bot = store.cachedBots.first(where: { $0.name == slug }) ?? BotRow(
+                    name: slug, displayName: trimmed, detail: brief,
+                    model: selectedModel?.id, provider: selectedModel?.provider,
+                    skills: 0, isDefault: false, gatewayRunning: false, active: true
+                )
+                // Hide Agents and open the chat while this sheet is still the
+                // overlay, so dismissing it lands on the new chat — not back
+                // on the form for a frame.
+                store.showingBots = false
+                store.draft = ""
+                store.draftAttachments = []
+                _ = store.openBotConversation(
+                    for: bot, replacingExisting: true, refresh: false
+                )
+                if !brief.isEmpty {
+                    store.sendQuickReply(brief)
+                }
                 dismiss()
+                Task { await onCreated() }
             } catch {
+                busy = false
                 failure = describeBotError(error)
             }
         }
@@ -2765,6 +2885,25 @@ private struct ChannelSectionTarget: Identifiable {
     let id = UUID()
     let channelID: String
     let bot: String?
+}
+
+/// A section on the Agents page whose name is being edited: Home's, or one
+/// inside a channel.
+private struct RenamingSection: Identifiable {
+    enum Scope {
+        case home
+        case channel(String)
+    }
+
+    var scope: Scope
+    var name: String
+
+    var id: String {
+        switch scope {
+        case .home: return "home.\(name)"
+        case .channel(let id): return "channel.\(id).\(name)"
+        }
+    }
 }
 
 /// Ticks bots on and off, for a channel or a team.
@@ -3041,21 +3180,26 @@ private struct BotReorderDropDelegate: DropDelegate {
     }
 }
 
-/// The green "at work" dot breathes while the agent works, so a glance tells
-/// work in progress from something waiting to be read. Still under Reduce Motion.
-private struct WorkingPulse: ViewModifier {
+/// Pulses the fill only. PhaseAnimator used to wrap the badge and interpolate
+/// it across the page; a fixed overlay cannot move.
+private struct WorkingPulseFill: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let active: Bool
+    let color: Color
+    let size: CGFloat
 
-    func body(content: Content) -> some View {
-        if active && !reduceMotion {
-            PhaseAnimator([false, true]) { dimmed in
-                content.opacity(dimmed ? 0.3 : 1)
-            } animation: { _ in
-                .easeInOut(duration: 0.8)
-            }
-        } else {
-            content
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: reduceMotion)) { context in
+            let opacity: Double = {
+                guard !reduceMotion else { return 1 }
+                let t = context.date.timeIntervalSinceReferenceDate
+                let wave = (sin(t * .pi / 0.8) + 1) / 2
+                return 0.72 + 0.28 * wave
+            }()
+            Circle()
+                .fill(color.opacity(opacity))
+                .frame(width: size, height: size)
         }
+        .frame(width: size, height: size)
+        .allowsHitTesting(false)
     }
 }

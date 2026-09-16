@@ -437,26 +437,36 @@ struct Composer: View {
                 toggleDictation(listening: false)
             }
         } label: {
+            let sending = hasDraft || stopping
             Image(
                 systemName: listening
                     ? "waveform" : (stopping ? "stop.fill" : (hasDraft ? "arrow.up" : "mic"))
             )
-            .font(.system(size: 16, weight: hasDraft ? .semibold : .medium))
-            .frame(width: controlHeight, height: controlHeight)
+            .font(.system(size: 16, weight: sending ? .semibold : .medium))
+            .foregroundStyle(
+                sending
+                    ? (scheme == .dark ? Color.black : Color.white)
+                    : Color.secondary
+            )
+            .frame(width: 32, height: 32)
+            .background {
+                Circle().fill(sending ? botSendFill : Palette.muted(scheme))
+            }
             .contentTransition(.symbolEffect(.replace))
             .symbolEffect(.variableColor, isActive: listening)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(
-            listening || stopping || hasDraft
-                ? AnyShapeStyle(store.accent.primary(scheme)) : AnyShapeStyle(.secondary)
-        )
         .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
         .accessibilityLabel(
             listening ? "Stop dictating" : (stopping ? "Stop" : (hasDraft ? "Send" : "Dictate"))
         )
         .accessibilityIdentifier("composer.action")
         .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
+    }
+
+    /// `Color.primary` inside the glass field becomes a grey vibrancy fill.
+    private var botSendFill: Color {
+        scheme == .dark ? Color.white : Color(hex: 0x111110)
     }
 
     private func toggleDictation(listening: Bool) {

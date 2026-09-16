@@ -26,6 +26,38 @@ final class AgentActivityTests: XCTestCase {
             AgentActivityAttributes.ContentState.self, from: JSONEncoder().encode(state)
         )
         XCTAssertEqual(decoded, state)
-        XCTAssertFalse(decoded.isDone)
+        XCTAssertEqual(decoded.isDone, false)
+    }
+
+    func testHomeChatHasItsOwnActivityIdentity() {
+        XCTAssertEqual(AppStore.homeActivityProfile, "default")
+        XCTAssertNotEqual(AppStore.homeActivityProfile, "alice")
+    }
+
+    func testAClarifyQuestionIsNotWorking() {
+        XCTAssertFalse(
+            AppStore.isWorking(
+                sending: true, backgroundEmpty: false,
+                waitingOnPerson: true, awaitedByPeer: false
+            )
+        )
+        XCTAssertTrue(
+            AppStore.isWorking(
+                sending: true, backgroundEmpty: true,
+                waitingOnPerson: false, awaitedByPeer: false
+            )
+        )
+        XCTAssertTrue(
+            AppStore.isWorking(
+                sending: false, backgroundEmpty: true,
+                waitingOnPerson: false, awaitedByPeer: true
+            )
+        )
+        XCTAssertFalse(
+            AppStore.isWorking(
+                sending: false, backgroundEmpty: true,
+                waitingOnPerson: false, awaitedByPeer: false
+            )
+        )
     }
 }

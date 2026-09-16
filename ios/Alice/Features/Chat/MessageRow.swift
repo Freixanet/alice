@@ -35,10 +35,10 @@ struct MessageRow: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             case .assistant:
-                // When the reply was sent, for looking back through a
-                // conversation. Centred and faint so it reads as a marker
-                // between replies rather than as part of one.
-                if showsTime, let when = MessageTime.caption(message.createdAt) {
+                // Ordinary turns are a conversation, not a log. A routine
+                // delivery is dated because it arrived on its own, later.
+                if showsTime, message.routineName != nil,
+                   let when = MessageTime.caption(message.createdAt) {
                     Text(when)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -272,7 +272,7 @@ private struct ChollometroDeals: View {
                     .textSelection(.enabled)
 
                     Link(destination: deal.url) {
-                        Text("Ver chollo")
+                        Text("Open deal")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 12)
@@ -281,7 +281,7 @@ private struct ChollometroDeals: View {
                             .contentShape(.rect(cornerRadius: 7))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Abre la oferta en el navegador")
+                    .accessibilityHint("Opens the deal in the browser")
                 }
             }
         }
@@ -443,58 +443,19 @@ private struct SentAttachments: View {
 /// `terminal` standing under it for ever — a build log where a sentence was
 /// wanted. Only the step still running is shown, it is replaced by the next,
 /// and when the reply is finished nothing is left behind.
-private struct ToolList: View {
-    @Environment(AppStore.self) private var store
-    @Environment(\.colorScheme) private var scheme
-    let tools: [Message.ToolCall]
-    @State private var breathing = false
-
-    /// Whether the reply is still being written.
-    let pending: Bool
-    /// Whether any of it has arrived. Once the words are appearing the reader
-    /// can see for themselves that it is not thinking any more.
-    let hasContent: Bool
-    /// What the reply is waiting on when that is not the bot thinking: a busy
-    /// bot that has not started on it yet, or a connection being re-made.
-    var note: String? = nil
-
-    /// The last one still going. Hermes reports a tool twice — start, then
-    /// done — so anything with a later `done` is behind us.
-    private var running: Message.ToolCall? {
-        tools.last { $0.status != .done }
-    }
-
-    /// What to say. Between two tool calls there is often a real pause while
-    /// the model decides what to do next, and showing the finished step would
-    /// claim it was still running. Saying it is thinking is both true and
-    /// what the gap actually is; the line only disappears when the reply does.
-    private var caption: String? {
-        if let running { return Self.phrase(for: running) }
-        return pending && !hasContent ? (note ?? "Thinking…") : nil
-    }
-
-    var body: some View {
-        if let caption {
-            HStack(spacing: 8) {
-                // Slow enough to read as breathing rather than as blinking:
-                // this marks that something is happening, and a fast pulse
-                // beside a line of quiet text reads as an alarm.
-                Circle()
-                    .frame(width: 5, height: 5)
-                    .foregroundStyle(store.accent.primary(scheme))
-                    .opacity(breathing ? 0.28 : 1)
-                    .animation(
-                        .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
-                        value: breathing
-                    )
-                    .onAppear { breathing = true }
-                Text(caption)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .transition(.opacity)
-            .animation(.easeInOut(duration: 0.2), value: caption)
+enum ToolCaption {
+    static func line(
+        tools: [Message.ToolCall], pending: Bool, hasContent: Bool, note: String?
+    ) -> String? {
+        guard pending else { return nil }
+        if let running = tools.last(where: { $0.status != .done }) {
+            // Clarify is a question for the person, drawn as buttons in the
+            // chat. Naming the tool would leave a stuck "Clarify…" under a
+            // reply that is already waiting for an answer.
+            if running.name.lowercased().contains("clarify") { return nil }
+            return phrase(for: running)
         }
+        return hasContent ? nil : (note ?? "Thinking…")
     }
 
     /// A tool's name said as an action.
@@ -534,6 +495,54 @@ private struct ToolList: View {
                 .replacingOccurrences(of: "_", with: " ")
                 .replacingOccurrences(of: "-", with: " ")
             return words.prefix(1).uppercased() + words.dropFirst() + "…"
+        }
+    }
+}
+
+private struct ToolList: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let tools: [Message.ToolCall]
+    @State private var breathing = false
+
+    /// Whether the reply is still being written.
+    let pending: Bool
+    /// Whether any of it has arrived. Once the words are appearing the reader
+    /// can see for themselves that it is not thinking any more.
+    let hasContent: Bool
+    /// What the reply is waiting on when that is not the bot thinking: a busy
+    /// bot that has not started on it yet, or a connection being re-made.
+    var note: String? = nil
+
+    /// What to say. Between two tool calls there is often a real pause while
+    /// the model decides what to do next, and showing the finished step would
+    /// claim it was still running. Saying it is thinking is both true and
+    /// what the gap actually is; the line only disappears when the reply does.
+    private var caption: String? {
+        ToolCaption.line(tools: tools, pending: pending, hasContent: hasContent, note: note)
+    }
+
+    var body: some View {
+        if let caption {
+            HStack(spacing: 8) {
+                // Slow enough to read as breathing rather than as blinking:
+                // this marks that something is happening, and a fast pulse
+                // beside a line of quiet text reads as an alarm.
+                Circle()
+                    .frame(width: 5, height: 5)
+                    .foregroundStyle(store.accent.primary(scheme))
+                    .opacity(breathing ? 0.28 : 1)
+                    .animation(
+                        .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
+                        value: breathing
+                    )
+                    .onAppear { breathing = true }
+                Text(caption)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.2), value: caption)
         }
     }
 }
@@ -627,13 +636,14 @@ private struct RunApprovalCard: View {
     @ViewBuilder
     private var choiceButtons: some View {
         ForEach(approval.choices, id: \.self) { choice in
-            Button(label(for: choice)) {
+            ApprovalChoiceButton(
+                title: label(for: choice),
+                deny: choice == .deny,
+                disabled: approval.resolving == true,
+                tint: store.accent.control(scheme)
+            ) {
                 Task { await store.resolveApproval(messageID: messageID, choice: choice) }
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .disabled(approval.resolving == true)
-            .tint(choice == .deny ? .secondary : .primary)
         }
     }
 
@@ -673,5 +683,31 @@ private struct ModelLimitNote: View {
         return limit.kind == .quota
             ? "This model’s allowance is spent. It comes back in about \(wait) — or switch model now."
             : "This model is taking requests too fast right now. Try again in about \(wait)."
+    }
+}
+
+/// Allow is the filled button; refuse stays outlined. Mixed `ButtonStyle`
+/// types cannot share a ternary, so the two looks are two branches.
+struct ApprovalChoiceButton: View {
+    let title: String
+    var deny = false
+    var disabled = false
+    var tint: Color
+    var small = false
+    let action: () -> Void
+
+    var body: some View {
+        if deny {
+            control.buttonStyle(.bordered).tint(.secondary)
+        } else {
+            control.buttonStyle(.borderedProminent).tint(tint)
+        }
+    }
+
+    private var control: some View {
+        Button(title, action: action)
+            .buttonBorderShape(.capsule)
+            .controlSize(small ? .small : .regular)
+            .disabled(disabled)
     }
 }

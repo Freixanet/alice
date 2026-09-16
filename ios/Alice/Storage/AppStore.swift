@@ -102,6 +102,11 @@ final class AppStore {
     private let dashboard = DashboardClient()
     private let defaults: UserDefaults
     private var streamTasks: [String: Task<Void, Never>] = [:]
+    private var persistGeneration = 0
+    private var persistTask: Task<Void, Never>?
+    private var conversationFingerprints: [String: Int] = [:]
+    private var persistedConversationIDs: Set<String> = []
+    private var protectedConversationIDs: Set<String> = []
 
     private enum Keys {
         static let theme = "alice.theme"
@@ -110,7 +115,6 @@ final class AppStore {
         static let model = "alice.model"
         static let provider = "alice.model.provider"
         static let recentModels = "alice.models.recent"
-        static let conversations = "alice.conversations"
         static let dashboard = "alice.dashboard"
         static let dashboardUser = "alice.dashboard.user"
         static let marks = "alice.bot.marks"
@@ -121,6 +125,7 @@ final class AppStore {
         static let unreadBots = "alice.bot.unread"
         static let unreadBotsVersion = "alice.bot.unread.version"
         static let hiddenBots = "alice.bot.hidden"
+        static let retiredBotSlugs = "alice.bot.retiredSlugs"
         static let botModels = "alice.bot.models"
         static let recentBotModels = "alice.bot.models.recent"
         static let botNotifications = "alice.bot.notifications"
@@ -211,6 +216,12 @@ final class AppStore {
     }
     var hiddenBots: Set<String> = [] {
         didSet { defaults.set(Array(hiddenBots), forKey: Keys.hiddenBots) }
+    }
+    /// Profile ids Alice has deleted on this phone. Hermes can still hold a
+    /// live WAL on a deleted home, so a new agent with a similar name must
+    /// not reuse that slug or it inherits the old chat and can fail to write.
+    var retiredBotSlugs: Set<String> = [] {
+        didSet { defaults.set(Array(retiredBotSlugs), forKey: Keys.retiredBotSlugs) }
     }
     var botModels: [String: String] = [:] {
         didSet { defaults.set(botModels, forKey: Keys.botModels) }
@@ -336,6 +347,9 @@ final class AppStore {
         if let savedHidden = defaults.stringArray(forKey: Keys.hiddenBots) {
             hiddenBots = Set(savedHidden)
         }
+        if let savedRetired = defaults.stringArray(forKey: Keys.retiredBotSlugs) {
+            retiredBotSlugs = Set(savedRetired)
+        }
         if let savedModels = defaults.dictionary(forKey: Keys.botModels) as? [String: String] {
             botModels = savedModels
         }
@@ -447,8 +461,8 @@ final class AppStore {
 
     func connect(urlText: String, key: String, persist: Bool = true) async {
         let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = Self.normalize(trimmed) else {
-            connectionError = Self.connectionAddressError(trimmed)
+        guard let url = HermesAddress.normalize(trimmed) else {
+            connectionError = HermesAddress.connectionError(trimmed)
             return
         }
         isConnecting = true
@@ -494,7 +508,7 @@ final class AppStore {
             isConnected = true
             connectionError = nil
             gatewayURL = url.absoluteString
-            if persist { try? KeyStore.save(key) }
+            if persist { keep(key, account: KeyStore.gatewayAccount, what: "connection key") }
         } else {
             isConnected = false
             connectionError = HermesClient.describe(
@@ -583,64 +597,10 @@ final class AppStore {
         await forgetDashboard()
     }
 
-    /// Accepts what someone actually types: a bare local host, a host and port,
-    /// or a full URL. Plain HTTP is limited to local/private and Tailscale
-    /// destinations; a public host must authenticate and encrypt with HTTPS.
+    /// Address policy lives in `HermesAddress`. Kept here so existing tests
+    /// and call sites that named `AppStore.normalize` keep compiling.
     nonisolated static func normalize(_ text: String) -> URL? {
-        guard !text.isEmpty else { return nil }
-        var value = text
-        if !value.contains("://") { value = "http://" + value }
-        guard var components = URLComponents(string: value),
-              let scheme = components.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              let host = components.host, !host.isEmpty,
-              scheme == "https" || Self.allowsPrivateHTTP(host: host)
-        else { return nil }
-        if components.path.isEmpty { components.path = "/" }
-        components.query = nil
-        components.fragment = nil
-        return components.url
-    }
-
-    nonisolated static func allowsPrivateHTTP(host rawHost: String) -> Bool {
-        let host = rawHost.lowercased().trimmingCharacters(
-            in: CharacterSet(charactersIn: "[]")
-        )
-        if host == "localhost" || host.hasSuffix(".localhost")
-            || host.hasSuffix(".local") || host.hasSuffix(".ts.net")
-            || (!host.contains(".") && !host.contains(":")) {
-            return true
-        }
-
-        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
-            .compactMap { Int($0) }
-        if octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) {
-            return octets[0] == 10
-                || octets[0] == 127
-                || (octets[0] == 100 && (64...127).contains(octets[1]))
-                || (octets[0] == 169 && octets[1] == 254)
-                || (octets[0] == 172 && (16...31).contains(octets[1]))
-                || (octets[0] == 192 && octets[1] == 168)
-        }
-
-        // Loopback, link-local and unique-local IPv6. Tailscale's IPv6 range
-        // is unique-local and therefore included without accepting public IPv6.
-        guard host.contains(":") else { return false }
-        return host == "::1" || host.hasPrefix("fe8") || host.hasPrefix("fe9")
-            || host.hasPrefix("fea") || host.hasPrefix("feb")
-            || host.hasPrefix("fc") || host.hasPrefix("fd")
-    }
-
-    nonisolated private static func connectionAddressError(_ text: String) -> String {
-        var value = text
-        if !value.contains("://") { value = "http://" + value }
-        if let components = URLComponents(string: value),
-           components.scheme?.lowercased() == "http",
-           let host = components.host, !host.isEmpty,
-           !allowsPrivateHTTP(host: host) {
-            return "Use HTTPS for a Hermes address outside your local network or tailnet."
-        }
-        return "Check the address."
+        HermesAddress.normalize(text)
     }
 
     // MARK: - Catalogs
@@ -732,8 +692,8 @@ final class AppStore {
     /// goes to the Keychain beside the gateway key, never to preferences.
     func connectDashboard(urlText: String, username: String, password: String) async -> String? {
         let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = Self.normalize(trimmed) else {
-            return Self.connectionAddressError(trimmed)
+        guard let url = HermesAddress.normalize(trimmed) else {
+            return HermesAddress.connectionError(trimmed)
         }
         await resetDashboardRPC()
         await dashboard.use(
@@ -749,15 +709,28 @@ final class AppStore {
         }
         dashboardURL = url.absoluteString
         dashboardUser = username
-        try? KeyStore.save(password, account: Self.dashboardAccount)
+        keep(password, account: Self.dashboardAccount, what: "dashboard password")
         dashboardReady = true
         return nil
+    }
+
+    /// Saves a secret to Keychain, and says so when it cannot.
+    ///
+    /// The connection itself succeeded and stays usable; what fails is only
+    /// remembering it. Left silent, the next launch asked for the key again
+    /// and looked like a bug in connecting rather than in saving.
+    private func keep(_ secret: String, account: String, what: String) {
+        do {
+            try KeyStore.save(secret, account: account)
+        } catch {
+            storageWarning = "Connected, but the \(what) could not be saved to Keychain (\(HermesErrors.describe(error, fallback: "\(type(of: error))"))). You will need to enter it again after relaunching."
+        }
     }
 
     func restoreDashboard() async {
         guard !dashboardURL.isEmpty, !dashboardUser.isEmpty,
               let password = KeyStore.read(account: Self.dashboardAccount),
-              let url = Self.normalize(dashboardURL)
+              let url = HermesAddress.normalize(dashboardURL)
         else {
             dashboardReady = false
             return
@@ -838,20 +811,28 @@ final class AppStore {
     }
 
     func botCurrentName(for name: String) -> String {
+        let shown: String
         if botMetadataIsRemote,
            let found = cachedBots.first(where: { $0.name == name }), !found.displayName.isEmpty {
-            return found.displayName
+            shown = found.displayName
+        } else if let custom = botCustomNames[name], !custom.isEmpty {
+            shown = custom
+        } else if let found = cachedBots.first(where: { $0.name == name }), !found.displayName.isEmpty {
+            shown = found.displayName
+        } else {
+            shown = name
         }
-        if let custom = botCustomNames[name], !custom.isEmpty { return custom }
-        if let found = cachedBots.first(where: { $0.name == name }), !found.displayName.isEmpty {
-            return found.displayName
-        }
-        return name
+        return AgentMaker.displayIfNeeded(profile: name, shown: shown)
     }
 
     func botCurrentName(for bot: BotRow) -> String {
-        if botMetadataIsRemote { return bot.displayName.isEmpty ? bot.name : bot.displayName }
-        return botCustomNames[bot.name] ?? (bot.displayName.isEmpty ? bot.name : bot.displayName)
+        let shown: String
+        if botMetadataIsRemote {
+            shown = bot.displayName.isEmpty ? bot.name : bot.displayName
+        } else {
+            shown = botCustomNames[bot.name] ?? (bot.displayName.isEmpty ? bot.name : bot.displayName)
+        }
+        return AgentMaker.displayIfNeeded(profile: bot.name, shown: shown)
     }
 
     /// The bots, from Hermes' Bot Mode roster when the connected dashboard
@@ -868,7 +849,8 @@ final class AppStore {
                     "profiles.list", JSONObject(["include_sessions": false])
                 )
                 list = Self.botRoster(
-                    from: try DashboardClient.bots(from: result.fields, active: nil)
+                    from: try DashboardClient.bots(from: result.fields, active: nil),
+                    hiding: retiredBotSlugs
                 )
                 remoteMetadata = true
             } catch {
@@ -877,11 +859,11 @@ final class AppStore {
                 // presentation metadata. Preserve the last metadata snapshot
                 // instead of making hidden/pinned bots jump around during a
                 // transient WebSocket failure.
-                list = Self.botRoster(from: try await dashboard.bots())
+                list = Self.botRoster(from: try await dashboard.bots(), hiding: retiredBotSlugs)
                 list = Self.carryCachedMetadata(list, from: cachedBots)
             }
         } else {
-            list = Self.botRoster(from: try await dashboard.bots())
+            list = Self.botRoster(from: try await dashboard.bots(), hiding: retiredBotSlugs)
             list = Self.carryCachedMetadata(list, from: cachedBots)
         }
 
@@ -894,7 +876,7 @@ final class AppStore {
                     "profiles.list", JSONObject(["include_sessions": false])
                ),
                let parsed = try? DashboardClient.bots(from: refreshed.fields, active: nil) {
-                list = Self.botRoster(from: parsed)
+                list = Self.botRoster(from: parsed, hiding: retiredBotSlugs)
             }
         }
 
@@ -916,8 +898,10 @@ final class AppStore {
     /// if it predates Bot Mode metadata: that is Hermes Desktop's legacy
     /// compatibility rule, made explicit rather than treating metadata as a
     /// type discriminator.
-    nonisolated static func botRoster(from profiles: [BotRow]) -> [BotRow] {
-        profiles.filter { !$0.isDefault }
+    nonisolated static func botRoster(
+        from profiles: [BotRow], hiding retired: Set<String> = []
+    ) -> [BotRow] {
+        profiles.filter { !$0.isDefault && !retired.contains($0.name) }
     }
 
     nonisolated static func carryCachedMetadata(
@@ -1412,7 +1396,13 @@ final class AppStore {
 
     func renameSection(from oldName: String, to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != oldName else { return }
+        guard !trimmed.isEmpty, trimmed != oldName,
+              oldName != Self.unassignedSectionKey,
+              oldName != "Unassigned",
+              trimmed.lowercased() != "unassigned",
+              botCustomSections.contains(oldName),
+              !botCustomSections.contains(trimmed)
+        else { return }
         if let index = botCustomSections.firstIndex(of: oldName) {
             botCustomSections[index] = trimmed
         }
@@ -2375,6 +2365,23 @@ final class AppStore {
         }
     }
 
+    /// Questions Hermes is waiting on in this conversation. Matched by Alice's
+    /// conversation id, and also by the bot's profile so a request that landed
+    /// before the session was mirrored still appears in that bot's chat.
+    func pendingQuestions(in conversationID: String) -> [AliceEvent] {
+        guard let chat = conversations.first(where: { $0.id == conversationID }) else {
+            return []
+        }
+        return activity.filter { event in
+            guard event.isActionable, !event.questions.isEmpty else { return false }
+            if event.reference.conversationID == conversationID { return true }
+            if let profile = event.profile, profile == chat.routedBotName {
+                return true
+            }
+            return false
+        }
+    }
+
     /// Answers one clarify question Hermes is blocked on.
     ///
     /// A batch is not one answer: Hermes locks each member by `question_id`
@@ -2675,20 +2682,49 @@ final class AppStore {
         }
 
         routedEvent = route.eventID
-        if let id = route.conversationID,
-           conversations.contains(where: { $0.id == id }) {
+        if land(on: route) { return true }
+
+        // Missing local navigation is not evidence that the server-side request
+        // expired. Keep an actionable Activity row actionable; it may still be
+        // answerable from its saved session/request identity.
+        routeNotice = route.conversationID == nil && route.profile == nil
+            ? "This notification has no conversation to open. You can review it in Activity."
+            : "That conversation is no longer on this phone. You can review the event in Activity."
+        return false
+    }
+
+    /// Conversation id first, then the live session, then the bot the event
+    /// named. A stale local id used to stop the tap even when the profile was
+    /// still on the phone.
+    private func land(on route: Notifier.Route) -> Bool {
+        func show(_ id: String) -> Bool {
             showingBots = false
             showingNotes = false
             activeID = id
             return true
         }
 
-        // Missing local navigation is not evidence that the server-side request
-        // expired. Keep an actionable Activity row actionable; it may still be
-        // answerable from its saved session/request identity.
-        routeNotice = route.conversationID == nil
-            ? "This notification has no conversation to open. You can review it in Activity."
-            : "That conversation is no longer on this phone. You can review the event in Activity."
+        if let id = route.conversationID,
+           conversations.contains(where: { $0.id == id }) {
+            return show(id)
+        }
+        if let session = route.sessionID, !session.isEmpty,
+           let chat = conversations.first(where: { $0.hermesSessionID == session }) {
+            return show(chat.id)
+        }
+        if let profile = route.profile, !profile.isEmpty {
+            showingBots = false
+            showingNotes = false
+            let bot = cachedBots.first {
+                $0.name.caseInsensitiveCompare(profile) == .orderedSame
+            } ?? BotRow(
+                name: profile, displayName: botCurrentName(for: profile), detail: "",
+                model: nil, provider: nil, skills: 0, isDefault: false,
+                gatewayRunning: false, active: true
+            )
+            openBotConversation(for: bot)
+            return true
+        }
         return false
     }
 
@@ -2979,14 +3015,32 @@ final class AppStore {
 
     /// Whether an agent is at work: a reply under way in its chat, a turn
     /// Hermes is running there, or an answer another agent is waiting on.
+    /// A clarify question is already on screen: the bot is waiting on the
+    /// person, not working.
     func isBotWorking(_ bot: String) -> Bool {
-        let busy = conversations.contains { chat in
-            chat.routedBotName == bot && chat.isCanonicalBotChat
-                && (sendingConversations.contains(chat.id) || !backgroundWork(for: chat.id).isEmpty)
+        let chats = conversations.filter {
+            $0.routedBotName == bot && $0.isCanonicalBotChat
         }
-        return busy || backgroundWorks.values.contains { work in
+        let waitingOnPerson = chats.contains { !pendingQuestions(in: $0.id).isEmpty }
+        let sending = chats.contains { sendingConversations.contains($0.id) }
+        let backgroundEmpty = chats.allSatisfy { backgroundWork(for: $0.id).isEmpty }
+        let awaitedByPeer = backgroundWorks.values.contains { work in
             work.waitingOn.contains { $0.handle == bot }
         }
+        return Self.isWorking(
+            sending: sending,
+            backgroundEmpty: backgroundEmpty,
+            waitingOnPerson: waitingOnPerson,
+            awaitedByPeer: awaitedByPeer
+        )
+    }
+
+    nonisolated static func isWorking(
+        sending: Bool, backgroundEmpty: Bool,
+        waitingOnPerson: Bool, awaitedByPeer: Bool
+    ) -> Bool {
+        if waitingOnPerson { return false }
+        return sending || !backgroundEmpty || awaitedByPeer
     }
 
     func isWorking(_ bots: [String]) -> Bool {
@@ -3012,17 +3066,28 @@ final class AppStore {
     }
 
     nonisolated static let businessChannel = "Business (Beta)"
+    /// Live Activity identity for Alice's own chat. Distinct from any bot profile.
+    nonisolated static let homeActivityProfile = "default"
 
     /// Agent chats at work that the person set going (`AgentActivities`): a
     /// reply under way, or teammates' answers still to come. An agent another
     /// agent is waiting on is not the person's task, so it has no activity.
     var agentWorks: [AgentActivities.Work] {
         conversations.compactMap { chat in
-            guard chat.isCanonicalBotChat, let bot = chat.routedBotName else { return nil }
+            if !pendingQuestions(in: chat.id).isEmpty { return nil }
             let work = backgroundWork(for: chat.id)
             guard sendingConversations.contains(chat.id) || !work.isEmpty else { return nil }
+            if chat.isCanonicalBotChat, let bot = chat.routedBotName {
+                return AgentActivities.Work(
+                    profile: bot, name: botCurrentName(for: bot), mark: mark(for: bot),
+                    waitingOn: work.waitingOn.map { botCurrentName(for: $0.handle) }
+                )
+            }
+            guard chat.isHomeSessionChat || (!chat.isBotChat && chat.legacyBotName == nil) else { return nil }
             return AgentActivities.Work(
-                profile: bot, name: botCurrentName(for: bot), mark: mark(for: bot),
+                profile: Self.homeActivityProfile,
+                name: "Alice",
+                mark: mark(for: "alice"),
                 waitingOn: work.waitingOn.map { botCurrentName(for: $0.handle) }
             )
         }
@@ -3030,8 +3095,13 @@ final class AppStore {
 
     /// How an agent's task ended, from its last reply.
     func agentEnding(_ profile: String) -> AgentActivities.Ending {
-        guard let chat = conversations.first(where: { $0.isCanonicalBotChat && $0.routedBotName == profile }),
-              let reply = chat.messages.last(where: { $0.role == .assistant })
+        let chat: Conversation?
+        if profile == Self.homeActivityProfile {
+            chat = conversations.first(where: { $0.isHomeSessionChat || (!$0.isBotChat && $0.legacyBotName == nil) })
+        } else {
+            chat = conversations.first(where: { $0.isCanonicalBotChat && $0.routedBotName == profile })
+        }
+        guard let chat, let reply = chat.messages.last(where: { $0.role == .assistant })
         else { return .finished }
         if reply.error != nil { return .failed }
         if reply.incomplete == true { return .stopped }
@@ -3075,6 +3145,10 @@ final class AppStore {
             channel.addSection(trimmed)
             if let bot { channel.setSection(trimmed, for: bot) }
         }
+    }
+
+    func renameChannelSection(_ id: String, from old: String, to new: String) {
+        changeChannel(id) { $0.renameSection(from: old, to: new) }
     }
 
     func setChannelSection(_ id: String, bot: String, section: String?) {
@@ -3236,7 +3310,7 @@ final class AppStore {
         model: HermesClient.ModelOption? = nil
     ) async throws -> String {
         let title = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let slug = Self.botSlug(title)
+        let slug = Self.uniqueBotSlug(title, taken: takenBotSlugs())
         guard !slug.isEmpty else {
             throw HermesRPCClient.Failure(reason: "Give the bot a name with at least one letter or number.")
         }
@@ -3282,6 +3356,29 @@ final class AppStore {
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
             .prefix(64)
             .description
+    }
+
+    /// A new agent keeps the person's title, but never the profile id of one
+    /// that already exists or that this phone has deleted.
+    nonisolated static func uniqueBotSlug(_ value: String, taken: Set<String>) -> String {
+        let base = botSlug(value)
+        guard !base.isEmpty else { return base }
+        let blocked = Set(taken.map { $0.lowercased() })
+        if !blocked.contains(base) { return base }
+        var n = 2
+        while true {
+            let suffix = "-\(n)"
+            let candidate = String(base.prefix(max(1, 64 - suffix.count))) + suffix
+            if !blocked.contains(candidate) { return candidate }
+            n += 1
+        }
+    }
+
+    private func takenBotSlugs() -> Set<String> {
+        var taken = retiredBotSlugs
+        taken.formUnion(cachedBots.map(\.name))
+        taken.formUnion(conversations.compactMap(\.botName))
+        return taken
     }
 
     /// Duplicate the actual Hermes profile, not Alice's cached idea of it.
@@ -3332,9 +3429,58 @@ final class AppStore {
     }
 
     func deleteBot(_ name: String) async throws {
-        try await dashboard.deleteBot(name)
+        let snapshot = cachedBots
+        let order = botOrder
+        let chats = conversations
+        let active = activeID
+        let retired = retiredBotSlugs
+        forgetBotOnScreen(name)
+        do {
+            try await dashboard.deleteBot(name)
+        } catch {
+            cachedBots = snapshot
+            botOrder = order
+            conversations = chats
+            activeID = active
+            retiredBotSlugs = retired
+            persistConversations()
+            throw error
+        }
+        forgetBotLocalData(name)
+    }
+
+    /// Drops the row and its local chat immediately so Delete does not wait
+    /// on Hermes, and so a later agent cannot reopen that transcript.
+    private func forgetBotOnScreen(_ name: String) {
+        retiredBotSlugs.insert(name)
+        cachedBots.removeAll { $0.name == name }
         botOrder.removeAll { $0 == name || $0 == name.lowercased() }
+        let open = conversations.first { $0.id == activeID }?.botName == name
+        conversations.removeAll {
+            $0.botName?.caseInsensitiveCompare(name) == .orderedSame
+        }
+        persistConversations()
+        if open { goHome() }
+    }
+
+    private func forgetBotLocalData(_ name: String) {
         pendingBotModelSyncs.removeValue(forKey: name)
+        botMarks.removeValue(forKey: name)
+        botSections.removeValue(forKey: name)
+        botSections.removeValue(forKey: name.lowercased())
+        botModels.removeValue(forKey: name)
+        botModels.removeValue(forKey: name.lowercased())
+        recentBotModels.removeValue(forKey: name)
+        botNotifications.removeValue(forKey: name)
+        botCustomNames.removeValue(forKey: name)
+        hiddenBots.remove(name)
+        for index in botChannels.indices { botChannels[index].remove(name) }
+        let open = conversations.first { $0.id == activeID }?.botName == name
+        conversations.removeAll {
+            $0.botName?.caseInsensitiveCompare(name) == .orderedSame
+        }
+        persistConversations()
+        if open { goHome() }
     }
 
     /// Profiles are the ownership boundary for Projects and Memory. Alice/Home
@@ -4456,9 +4602,19 @@ final class AppStore {
     /// forever-chat while the app was closed shows up on this read, because
     /// this reads that chat rather than a private copy Alice kept.
     @discardableResult
-    func openBotConversation(for bot: BotRow) -> String {
+    func openBotConversation(
+        for bot: BotRow, replacingExisting: Bool = false, refresh: Bool = true
+    ) -> String {
+        if replacingExisting {
+            conversations.removeAll {
+                $0.botName?.caseInsensitiveCompare(bot.name) == .orderedSame
+            }
+        }
         let id: String
-        if let existing = conversations.first(where: { $0.botName == bot.name }) {
+        if !replacingExisting,
+           let existing = conversations.first(where: {
+               $0.botName?.caseInsensitiveCompare(bot.name) == .orderedSame
+           }) {
             activeID = existing.id
             id = existing.id
         } else {
@@ -4476,7 +4632,11 @@ final class AppStore {
             id = chat.id
         }
         markBotRead(bot.name)
-        Task { [weak self] in await self?.refreshBotChat(id) }
+        // A brand-new agent has no remote transcript. Waiting on a refresh
+        // left the chat empty for seconds before the first prompt appeared.
+        if refresh {
+            Task { [weak self] in await self?.refreshBotChat(id) }
+        }
         return id
     }
 
@@ -4557,6 +4717,9 @@ final class AppStore {
         var work = backgroundWorks[conversationID] ?? AgentMessages.BackgroundWork()
         // A turn this phone follows shows itself in the reply being written.
         if activeBotTurns[conversationID] != nil { work.running = false }
+        // Clarify is already on screen. Hermes still reports the turn as
+        // running, which would keep "is working on it" up while nobody is.
+        if !pendingQuestions(in: conversationID).isEmpty { work.running = false }
         return work
     }
 
@@ -5067,6 +5230,7 @@ final class AppStore {
         var settled = conversations[location.chat].messages[location.message]
         settled.content = answer
         settled.pending = false
+        settled.closeOpenTools()
         settled.awaitingRemote = false
         settled.deliveryNote = nil
         settled.error = nil
@@ -5116,6 +5280,7 @@ final class AppStore {
         }
         reply.content = pieces.joined(separator: "\n\n")
         reply.pending = false
+        reply.closeOpenTools()
         reply.awaitingRemote = false
         reply.deliveryNote = nil
         reply.error = cause.isEmpty ? heading : cause
@@ -5196,9 +5361,37 @@ final class AppStore {
             let message = (event.payload["message"] as? String) ?? "Hermes reported an error."
             return .failure(message: message, limit: nil)
         default:
+            // Frames the turn watcher reads for itself (session.*, message.*
+            // bookkeeping) are not unknown; only a kind nothing in Alice names.
+            if !Self.knownSocketEventTypes.contains(event.type) {
+                HermesUnknownEvents.shared.record(event.type, transport: .botSocket, payload: event.payload)
+            }
             return nil
         }
     }
+
+    /// Socket event kinds Alice either handles or knowingly lets pass.
+    ///
+    /// The first group is what `chatEvent`, `LiveEvents` and the turn watch
+    /// act on. The second is the bookkeeping Hermes' `tui_gateway` pushes
+    /// alongside a turn (read from its source at v2026.9.7: reasoning, interim
+    /// text, notices, todo and usage updates, session status) that Alice
+    /// deliberately ignores. Anything else is a kind this Hermes sends that
+    /// Alice has not learnt, and is recorded in `HermesUnknownEvents`.
+    nonisolated static let knownSocketEventTypes: Set<String> = [
+        // Handled.
+        "message.delta", "message.complete", "tool.start", "tool.complete",
+        "approval.request", "clarify.request", "error", "request.cancel",
+        "subagent.start", "subagent.complete",
+        // Known and let pass.
+        "message.start", "message.interim", "message.user", "message.react",
+        "reasoning.delta", "reasoning.available", "notification.show", "notification.clear",
+        "session.info", "session.status", "session.reclaimed", "session.redirect",
+        "session.resume_progress", "status.update", "todo.updated", "usage.bars",
+        "tool.generating", "tool.output_risk", "turn.start", "turn.end", "turn.error",
+        "subagent.text", "subagent.thinking", "subagent.tool", "subagent.tail",
+        "approval.pending", "approval.received", "model.context_length",
+    ]
 
     /// The bot-chat transport, or nil when no dashboard is connected.
     ///
@@ -5911,6 +6104,7 @@ final class AppStore {
         else { return }
         var reply = conversations[location.chat].messages[location.message]
         reply.pending = false
+        reply.closeOpenTools()
         reply.deliveryNote = nil
         if stopped {
             if reply.content.isEmpty && reply.approval == nil {
@@ -6139,6 +6333,7 @@ final class AppStore {
             if let output { conversations[chat].messages[index].content = output }
             if status.isTerminal {
                 conversations[chat].messages[index].pending = false
+                conversations[chat].messages[index].closeOpenTools()
             }
             if status == .waitingForApproval || status.isTerminal || output != nil {
                 persistConversations()
@@ -6263,6 +6458,7 @@ final class AppStore {
         let chat = location.chat
         let index = location.message
         conversations[chat].messages[index].pending = false
+        conversations[chat].messages[index].closeOpenTools()
         conversations[chat].messages[index].error = message
         conversations[chat].messages[index].errorLimit = limit
         if conversations[chat].messages[index].content.isEmpty {
@@ -6277,6 +6473,7 @@ final class AppStore {
         let chat = location.chat
         let index = location.message
         conversations[chat].messages[index].pending = false
+        conversations[chat].messages[index].closeOpenTools()
 
         let text = conversations[chat].messages[index].content
         if text.isEmpty,
@@ -6349,43 +6546,101 @@ final class AppStore {
     /// the real archive. Once a load has failed, nothing is written over it
     /// until the failure is understood.
     func persistConversations() {
-        if conversationsUnreadable != nil { return }
-        guard let data = try? JSONEncoder().encode(conversations) else { return }
-        defaults.set(data, forKey: Keys.conversations)
+        persistGeneration += 1
+        persistTask?.cancel()
+        persistTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard let self, !Task.isCancelled else { return }
+            let generation = self.persistGeneration
+            let snapshot = self.archiveSnapshot(self.conversations)
+            await self.writeConversations(snapshot, generation: generation)
+        }
     }
+
+    /// Writes now: going to the background, or a test that must reopen the
+    /// archive before the next line. Streaming uses `persistConversations()`,
+    /// which waits a beat so many deltas become one encode.
+    func persistConversationsImmediately() {
+        persistTask?.cancel()
+        persistGeneration += 1
+        writeConversationsNow(conversations)
+    }
+
+    private func archiveSnapshot(_ conversations: [Conversation]) -> ConversationArchive.Snapshot {
+        ConversationArchive.Snapshot(
+            conversations: conversations,
+            fingerprints: conversationFingerprints,
+            persistedIDs: persistedConversationIDs,
+            protectedIDs: protectedConversationIDs
+        )
+    }
+
+    private func rememberWrite(_ prepared: ConversationArchive.PreparedWrite) {
+        ConversationArchive.apply(prepared, to: defaults)
+        conversationFingerprints = prepared.fingerprints
+        persistedConversationIDs = prepared.persistedIDs
+        if storageWarning?.hasPrefix(Self.saveFailedPrefix) == true { storageWarning = nil }
+    }
+
+    private func writeConversations(
+        _ snapshot: ConversationArchive.Snapshot, generation: Int
+    ) async {
+        guard conversationsUnreadable == nil else { return }
+        let encoded = await Task.detached(priority: .utility) {
+            Result { try ConversationArchive.prepare(snapshot) }
+        }.value
+        guard generation == persistGeneration, conversationsUnreadable == nil else { return }
+        switch encoded {
+        case .success(let prepared):
+            rememberWrite(prepared)
+        case .failure(let error):
+            storageWarning = Self.saveFailedPrefix + HermesErrors.describe(error, fallback: "\(type(of: error))")
+        }
+    }
+
+    private func writeConversationsNow(_ snapshot: [Conversation]) {
+        if conversationsUnreadable != nil { return }
+        do {
+            rememberWrite(try ConversationArchive.prepare(archiveSnapshot(snapshot)))
+        } catch {
+            // Nothing was written, and the last good archive is still there.
+            // Said out loud: a phone that quietly stops saving loses today's
+            // conversations at the next relaunch with no warning at all.
+            storageWarning = Self.saveFailedPrefix + HermesErrors.describe(error, fallback: "\(type(of: error))")
+        }
+    }
+
+    private nonisolated static let saveFailedPrefix = "Conversations could not be saved: "
+
+    /// Something this phone could not keep — an archive it cannot read, a save
+    /// that failed, a secret Keychain refused — said once where the person
+    /// will see it (Settings), instead of surfacing as a silent gap later.
+    private(set) var storageWarning: String?
+
+    /// Why the last Live Activity could not start, if it could not. Shown in
+    /// Settings; the chat itself is unaffected.
+    var liveActivityWarning: String?
 
     /// Why the saved conversations could not be read, if they could not.
     ///
     /// Distinct from "there are none": an empty app and an unreadable archive
     /// look identical on screen, and only one of them is safe to write over.
-    private(set) var conversationsUnreadable: String?
+    private(set) var conversationsUnreadable: String? {
+        didSet {
+            if let conversationsUnreadable {
+                storageWarning = "Saved conversations could not be read (\(conversationsUnreadable)). They are kept aside untouched; nothing new is written over them until a build can read them again."
+            } else if storageWarning?.hasPrefix("Saved conversations could not be read") == true {
+                storageWarning = nil
+            }
+        }
+    }
 
     /// Where the unreadable bytes were set aside, so they are recoverable.
-    nonisolated static let salvageKey = "alice.conversations.salvage"
+    nonisolated static let salvageKey = ConversationArchive.salvageKey
 
     /// A description of a decode failure with nothing private in it.
-    ///
-    /// The coding path names fields and indexes, never contents, so this can
-    /// go in a diagnostic without carrying anyone's messages with it.
     nonisolated static func describe(_ error: Error) -> String {
-        guard let decoding = error as? DecodingError else { return "\(type(of: error))" }
-        func path(_ context: DecodingError.Context) -> String {
-            context.codingPath
-                .map { $0.intValue.map(String.init) ?? $0.stringValue }
-                .joined(separator: " → ")
-        }
-        switch decoding {
-        case let .keyNotFound(key, context):
-            return "keyNotFound(\"\(key.stringValue)\") at [\(path(context))]"
-        case let .typeMismatch(type, context):
-            return "typeMismatch(\(type)) at [\(path(context))]"
-        case let .valueNotFound(type, context):
-            return "valueNotFound(\(type)) at [\(path(context))]"
-        case let .dataCorrupted(context):
-            return "dataCorrupted at [\(path(context))]"
-        @unknown default:
-            return "decodingError"
-        }
+        ConversationArchive.describe(error)
     }
 
     /// Reads the saved conversations, and refuses to guess when it cannot.
@@ -6395,20 +6650,40 @@ final class AppStore {
     /// the next save wrote the empty result over it. That is how a build that
     /// merely added a field erased every conversation on the phone.
     private func loadConversations() {
-        guard let data = defaults.data(forKey: Keys.conversations), !data.isEmpty
-        else { return }  // Genuinely nothing saved. Writing is safe.
-        do {
-            let saved = try JSONDecoder().decode([Conversation].self, from: data)
-            conversationsUnreadable = nil
-            if !saved.isEmpty { conversations = saved }
-        } catch {
-            // Keep the bytes before anything else touches this key, and stop
-            // writing. The user sees an app that cannot read its history —
-            // which is true — rather than one that has none.
+        switch ConversationArchive.load(from: defaults) {
+        case .empty:
+            return
+        case .available(let loaded):
+            rememberLoaded(loaded)
+        case .unreadable(let reason, let bytes):
             if defaults.data(forKey: Self.salvageKey) == nil {
-                defaults.set(data, forKey: Self.salvageKey)
+                defaults.set(bytes, forKey: Self.salvageKey)
             }
-            conversationsUnreadable = Self.describe(error)
+            conversationsUnreadable = reason
+        }
+    }
+
+    private func rememberLoaded(_ loaded: ConversationArchive.Available) {
+        conversationsUnreadable = nil
+        if !loaded.conversations.isEmpty { conversations = loaded.conversations }
+        if loaded.source == .split {
+            conversationFingerprints = Dictionary(
+                uniqueKeysWithValues: loaded.conversations.map {
+                    ($0.id, ConversationArchive.fingerprint($0))
+                }
+            )
+            persistedConversationIDs = Set(loaded.conversations.map(\.id))
+        }
+        for item in loaded.skipped {
+            protectedConversationIDs.insert(item.id)
+            persistedConversationIDs.insert(item.id)
+            if defaults.data(forKey: Self.salvageKey) == nil {
+                defaults.set(item.bytes, forKey: Self.salvageKey)
+            }
+        }
+        if !loaded.skipped.isEmpty {
+            let names = loaded.skipped.map(\.id).joined(separator: ", ")
+            storageWarning = "Saved conversation \(names) could not be read (\(loaded.skipped[0].reason)). It is kept aside; the others were loaded."
         }
     }
 
@@ -6418,12 +6693,22 @@ final class AppStore {
     /// broken one set aside and restores them, so recovery does not depend on
     /// anyone noticing.
     func restoreSalvagedConversationsIfPossible() {
-        guard let salvaged = defaults.data(forKey: Self.salvageKey),
-              let saved = try? JSONDecoder().decode([Conversation].self, from: salvaged),
-              !saved.isEmpty
-        else { return }
-        let live = (defaults.data(forKey: Keys.conversations))
-            .flatMap { try? JSONDecoder().decode([Conversation].self, from: $0) } ?? []
+        guard let salvaged = defaults.data(forKey: Self.salvageKey) else { return }
+        let saved: [Conversation]
+        if let many = try? JSONDecoder().decode([Conversation].self, from: salvaged),
+           !many.isEmpty {
+            saved = many
+        } else if let one = try? JSONDecoder().decode(Conversation.self, from: salvaged) {
+            saved = [one]
+        } else {
+            return
+        }
+        let live: [Conversation]
+        if case let .available(loaded) = ConversationArchive.load(from: defaults) {
+            live = loaded.conversations
+        } else {
+            live = []
+        }
         let liveMessages = live.reduce(0) { $0 + $1.messages.count }
         let salvagedMessages = saved.reduce(0) { $0 + $1.messages.count }
         // Only when the salvage actually holds more than what replaced it, so

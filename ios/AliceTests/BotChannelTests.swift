@@ -36,6 +36,25 @@ final class BotChannelTests: XCTestCase {
         XCTAssertTrue(channel.collapsedSections.isEmpty)
     }
 
+    func testRenamingASectionKeepsItsBotsAndFold() {
+        var channel = BotChannel(name: "Work", bots: ["radar-ia", "chollometro"])
+        XCTAssertTrue(channel.addSection("Daily"))
+        XCTAssertTrue(channel.addSection("Weekly"))
+        channel.setSection("Daily", for: "radar-ia")
+        channel.toggleSection("Daily")
+
+        XCTAssertTrue(channel.renameSection(from: "Daily", to: "  Mornings  "))
+        XCTAssertEqual(channel.sections, ["Mornings", "Weekly"])
+        XCTAssertEqual(channel.section(for: "radar-ia"), "Mornings")
+        XCTAssertEqual(channel.collapsedSections, ["Mornings"])
+
+        XCTAssertFalse(channel.renameSection(from: "Mornings", to: "Weekly"))
+        XCTAssertFalse(channel.renameSection(from: "Mornings", to: "   "))
+        XCTAssertFalse(channel.renameSection(from: "Missing", to: "Later"))
+        XCTAssertEqual(channel.sections, ["Mornings", "Weekly"])
+        XCTAssertEqual(channel.section(for: "radar-ia"), "Mornings")
+    }
+
     func testRenamingABotCarriesItsPlaceInTheChannel() {
         var channel = BotChannel(name: "Work", bots: ["radar", "chollometro"])
         channel.addSection("Daily")

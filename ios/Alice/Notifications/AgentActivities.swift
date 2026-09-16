@@ -1,5 +1,6 @@
 import ActivityKit
 import Foundation
+import OSLog
 
 /// One Live Activity per agent chat at work (`AgentActivityAttributes`),
 /// reconciled against what the store knows each time that changes.
@@ -28,6 +29,11 @@ final class AgentActivities {
     /// How long a finished activity stays on the Lock Screen.
     static let lingers: TimeInterval = 15 * 60
 
+    /// Why the last activity could not start, if it could not. Cleared by the
+    /// next one that does.
+    private(set) var lastStartFailure: String?
+    private let log = Logger(subsystem: "com.freixanet.alice", category: "live-activity")
+
     func sync(working: [Work], ending: (String) -> Ending, now: Date = Date()) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         // Only what an activity says is read here; changing one is left to the
@@ -47,14 +53,23 @@ final class AgentActivities {
                 let state = AgentActivityAttributes.ContentState(
                     phase: phase, detail: detail, startedAt: now, endedAt: nil, updatedAt: now
                 )
-                _ = try? Activity.request(
-                    attributes: AgentActivityAttributes(
-                        profile: work.profile, name: work.name,
-                        colour: work.mark.colour, shape: work.mark.shape
-                    ),
-                    content: ActivityContent(state: state, staleDate: now + Self.staleAfter),
-                    pushType: nil
-                )
+                do {
+                    _ = try Activity.request(
+                        attributes: AgentActivityAttributes(
+                            profile: work.profile, name: work.name,
+                            colour: work.mark.colour, shape: work.mark.shape
+                        ),
+                        content: ActivityContent(state: state, staleDate: now + Self.staleAfter),
+                        pushType: nil
+                    )
+                    lastStartFailure = nil
+                } catch {
+                    // iOS refuses for reasons worth knowing — the person turned
+                    // Live Activities off, or the system is at its limit. Kept
+                    // and logged; the chat itself is unaffected.
+                    lastStartFailure = HermesErrors.describe(error, fallback: "\(type(of: error))")
+                    log.error("Live Activity for \(work.profile, privacy: .public) could not start: \(self.lastStartFailure ?? "", privacy: .public)")
+                }
                 continue
             }
             // Refreshed before it goes stale even when nothing changed, so the

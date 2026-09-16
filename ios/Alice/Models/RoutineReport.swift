@@ -31,30 +31,31 @@ extension RoutineReport {
         )
     }
 
-    /// Hermes' own notice that a routine could not finish, said in Spanish.
+    /// Hermes' own notice that a routine could not finish, in the person's
+    /// language.
     ///
     /// When a run fails, the report Hermes hands over is its English log line —
     /// "⚠️ Cron 'Radar IA' failed: provider rate limit. Fallback chain was
     /// exhausted…" — or the agent's guardrail message. Nil for a real report.
     static func failure(in body: String) -> String? {
-        let cause: String
+        let cause: String.LocalizationValue
         if body.hasPrefix("⚠️ Cron '"), let failed = body.range(of: "' failed:") {
             let reason = body[failed.upperBound...].lowercased()
             if reason.contains("rate limit") || reason.contains("429") || reason.contains("quota") {
-                cause = "el modelo de IA ha llegado a su límite de uso. Se volverá a intentar en la próxima ejecución."
+                cause = "routine.failed.rateLimit"
             } else if reason.contains("timed out") || reason.contains("timeout") {
-                cause = "tardó demasiado y se detuvo."
+                cause = "routine.failed.timeout"
             } else if reason.contains("401") || reason.contains("auth") || reason.contains("api key") {
-                cause = "el proveedor de IA no aceptó la clave."
+                cause = "routine.failed.auth"
             } else {
-                cause = "algo falló en Hermes."
+                cause = "routine.failed.hermes"
             }
         } else if body.hasPrefix("I stopped retrying") {
-            cause = "una herramienta falló varias veces seguidas."
+            cause = "routine.failed.tool"
         } else {
             return nil
         }
-        return "⚠️ La rutina no se pudo completar: " + cause
+        return String(localized: "routine.failed.prefix") + String(localized: cause)
     }
 }
 
@@ -134,7 +135,9 @@ enum ChollometroReport {
 /// again. Only the presentation changes: the transcript keeps Hermes' turns.
 enum RoutineDelivery {
     /// The card for a run that found nothing (`QuietRoutineRun`).
-    static let noNews = "Sin novedades: la rutina se ejecutó y no encontró nada nuevo que contar."
+    static var noNews: String {
+        String(localized: "routine.quiet.noNews")
+    }
 
     /// - Parameter agentAnswers: the rows of this chat that answer something it
     ///   asked another agent (`Conversation.agentAnswerIDs`).

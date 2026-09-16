@@ -177,6 +177,23 @@ struct AliceEvent: Identifiable, Hashable, Sendable {
     /// Whether this still wants an answer.
     var isActionable: Bool { standing == .waiting }
 
+    /// Whether tapping this in Activity should open a conversation.
+    ///
+    /// A platforms alert is the installation's current state, not a chat. A
+    /// question, an approval, a finished turn, or a routine that names a
+    /// session or a bot is.
+    var opensAChat: Bool {
+        if reference.conversationID != nil { return true }
+        if reference.sessionID != nil || reference.sessionKey != nil { return true }
+        guard reference.profile != nil else { return false }
+        switch kind {
+        case .needsInput, .finished, .automationSucceeded, .automationFailed:
+            return true
+        case .attention, .recovered:
+            return false
+        }
+    }
+
     /// The thing this event is *about*, as opposed to this particular
     /// occurrence of it.
     ///

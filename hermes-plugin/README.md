@@ -36,7 +36,17 @@ The agent gains one rule and nothing else (no tools or commands):
 
 ## Install
 
-From a checkout of this repository:
+From a checkout of this repository, one command:
+
+```bash
+hermes-plugin/install.sh
+```
+
+It copies the plugin to `~/.hermes/plugins/alice`, enables it, and restarts the
+macOS dashboard service when that service exists. Then restart any running
+gateway: Hermes loads plugins once per process.
+
+To do the same steps by hand:
 
 ```bash
 mkdir -p ~/.hermes/plugins/alice
@@ -45,8 +55,7 @@ hermes plugins enable alice --no-allow-tool-override
 ```
 
 Then restart the dashboard (on macOS with the launchd service:
-`launchctl kickstart -k gui/$(id -u)/ai.hermes.dashboard`) and any running gateway: Hermes
-loads plugins once per process, so the hook reaches a running agent only after a restart.
+`launchctl kickstart -k gui/$(id -u)/ai.hermes.dashboard`) and any running gateway.
 
 ## Develop
 

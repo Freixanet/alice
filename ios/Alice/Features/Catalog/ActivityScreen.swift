@@ -49,6 +49,8 @@ enum ActivityPresentation {
 struct ActivityScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    /// Closes Activity and the drawer so the opened chat is what is on screen.
+    var onOpenedChat: () -> Void = {}
 
     @State private var refreshing = false
     @State private var expanded: Set<String> = []
@@ -67,8 +69,6 @@ struct ActivityScreen: View {
     private var activitySections: (needsAttention: [AliceEvent], history: [AliceEvent]) {
         ActivityPresentation.partition(attention: store.attention, activity: store.activity)
     }
-
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
@@ -192,51 +192,7 @@ struct ActivityScreen: View {
 
     private func row(_ event: AliceEvent, stacked: ActivityGroup? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: icon(event))
-                    // Colour says "now". A row in the record keeps its shape
-                    // but not the alarm; anything still waiting keeps both.
-                    .foregroundStyle(stacked != nil && !event.isActionable ? Color.secondary : tint(event))
-                    // A fixed column, centred on the title's own line. Baseline
-                    // alignment put the glyph a little low against a two-line
-                    // block and the row read as crooked.
-                    .frame(width: 18, height: 18)
-                    .padding(.top, 2)
-                    // The icon repeats what the words say rather than being
-                    // the only thing that says it — colour alone is not a
-                    // status anybody can rely on reading.
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(displayTitle(event)).font(.body)
-                    Text(summary(for: event))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 2) {
-                    // Attention rows describe the present and are stamped with
-                    // "now", which a relative formatter renders as a countdown
-                    // — "in 0 seconds". They say so in words instead.
-                    if abs(event.occurred.timeIntervalSinceNow) < 60 {
-                        Text("Now")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(event.occurred, format: .relative(presentation: .numeric))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let stacked, stacked.count > 1 {
-                        Text("×\(stacked.count)")
-                            .font(.caption2.weight(.semibold))
-                            .monospacedDigit()
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Palette.background(scheme), in: .capsule)
-                            .accessibilityLabel("\(stacked.count) times")
-                    }
-                }
-            }
+            header(event, stacked: stacked)
 
             // Everything below lines up with the title, not with the icon.
             VStack(alignment: .leading, spacing: 4) {
@@ -264,10 +220,7 @@ struct ActivityScreen: View {
                 }
             }
 
-            if event.isActionable, !event.questions.isEmpty {
-                ClarifyQuestionsView(event: event)
-                    .padding(.top, 2)
-            } else if event.isActionable {
+            if event.isActionable, event.questions.isEmpty {
                 // What is actually being asked. The buttons used to sit under
                 // a one-line summary with no statement of what "allow" would
                 // permit, which is the one thing a person needs before they
@@ -319,15 +272,7 @@ struct ActivityScreen: View {
                     .padding(.top, 2)
             }
 
-            if event.reference.conversationID != nil {
-                Button("See this in the chat") { store.open(route(for: event)) }
-                    .font(.caption)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tint)
-                    .accessibilityIdentifier("activity.open.\(event.id)")
-            }
-
-            if let detail = event.detail, !detail.isEmpty {
+            if let detail = event.detail, !detail.isEmpty, event.questions.isEmpty {
                 // Hermes' exact words, one tap away. The human sentence never
                 // replaces them; support and expert users need the original.
                 DisclosureGroup(
@@ -352,7 +297,7 @@ struct ActivityScreen: View {
         }
         .padding(.vertical, 2)
         .listRowBackground(Palette.card(scheme))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: isApproval(event) ? .contain : .combine)
         // Only what is over. A live approval must be answered, not swiped away.
         .swipeActions(edge: .trailing, allowsFullSwipe: !event.isActionable) {
             if !event.isActionable {
@@ -370,6 +315,76 @@ struct ActivityScreen: View {
                 // swipe action in it.
                 .tint(.red)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func header(_ event: AliceEvent, stacked: ActivityGroup?) -> some View {
+        if event.opensAChat {
+            Button { openReferencedChat(event) } label: {
+                headerContent(event, stacked: stacked)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("activity.open.\(event.id)")
+            .accessibilityHint("Opens the chat")
+        } else {
+            headerContent(event, stacked: stacked)
+        }
+    }
+
+    private func headerContent(_ event: AliceEvent, stacked: ActivityGroup?) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon(event))
+                // Colour says "now". A row in the record keeps its shape
+                // but not the alarm; anything still waiting keeps both.
+                .foregroundStyle(stacked != nil && !event.isActionable ? Color.secondary : tint(event))
+                // A fixed column, centred on the title's own line. Baseline
+                // alignment put the glyph a little low against a two-line
+                // block and the row read as crooked.
+                .frame(width: 18, height: 18)
+                .padding(.top, 2)
+                // The icon repeats what the words say rather than being
+                // the only thing that says it — colour alone is not a
+                // status anybody can rely on reading.
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayTitle(event)).font(.body)
+                Text(summary(for: event))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                // Attention rows describe the present and are stamped with
+                // "now", which a relative formatter renders as a countdown
+                // — "in 0 seconds". They say so in words instead.
+                if abs(event.occurred.timeIntervalSinceNow) < 60 {
+                    Text("Now")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(event.occurred, format: .relative(presentation: .numeric))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let stacked, stacked.count > 1 {
+                    Text("×\(stacked.count)")
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Palette.background(scheme), in: .capsule)
+                        .accessibilityLabel("\(stacked.count) times")
+                }
+            }
+        }
+    }
+
+    private func openReferencedChat(_ event: AliceEvent) {
+        guard event.opensAChat else { return }
+        if store.open(route(for: event)) {
+            onOpenedChat()
         }
     }
 
@@ -448,18 +463,19 @@ struct ActivityScreen: View {
     private func choices(for event: AliceEvent) -> some View {
         let allowed = offered(event)
         ForEach(allowed, id: \.self) { choice in
-            Button(label(choice)) {
+            ApprovalChoiceButton(
+                title: label(choice),
+                deny: choice == .deny,
+                disabled: resolving.contains(event.id),
+                tint: store.accent.control(scheme),
+                small: true
+            ) {
                 Task {
                     resolving.insert(event.id)
                     defer { resolving.remove(event.id) }
                     await store.resolvePendingRequest(event, choice: choice)
                 }
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .controlSize(.small)
-            .disabled(resolving.contains(event.id))
-            .tint(choice == .deny ? .secondary : .primary)
             .accessibilityIdentifier("activity.choice.\(choice.rawValue)")
         }
     }

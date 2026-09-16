@@ -29,10 +29,13 @@ belongs only to the configured, verified owner. See [security](../SECURITY.md).
 ## Storage and lifecycle
 
 iOS stores connection secrets in Keychain and conversation archives/preferences
-in UserDefaults. Codable migrations must preserve older archives. Unreadable
-bytes are retained for recovery rather than overwritten with an empty archive.
-User edits are persisted immediately; backgrounding saves current conversation
-state. A future move to a database must include migration and recovery tests.
+in UserDefaults. Each conversation is stored under its own key after the first
+save; an older single-array blob is still read on launch and rewritten in the
+split form. Codable migrations must preserve older archives. Unreadable bytes
+are retained for recovery rather than overwritten with an empty archive. User
+edits are persisted immediately; backgrounding saves current conversation
+state. Gateway address policy lives in `HermesAddress`. A future move to a
+database must include migration and recovery tests.
 
 The web persists state per account. Persisted updates must remain immutable:
 transient input changes skip serialization when persisted field references are
@@ -43,11 +46,19 @@ different states, not a single on/off preference.
 
 ## Engineering boundaries
 
-`AppStore.swift` is currently a large coordinator. New networking, parsing and
-domain behavior should prefer focused modules with explicit inputs. Extract
-existing behavior only with regression coverage; do not split files just to hide
-coupling. The legacy web transport files need the same restraint.
+`AppStore.swift` is currently a large coordinator. Gateway address policy lives
+in `HermesAddress`; conversation archives in `ConversationArchive`; bot layout
+in `BotChannel`. New networking, parsing and domain behavior should prefer
+focused modules with explicit inputs. Extract existing behavior only with
+regression coverage; do not split files just to hide coupling. The legacy web
+transport files need the same restraint.
 
 UI components should display facts from those services, show actionable failures
 and retain useful state during retries. Capability detection must distinguish
 absence from failed detection. Test the boundary, then test the user's journey.
+
+Agent Maker is the Hermes profile `forja`. Alice mints a new profile from a
+sentence (`AgentDraft`), opens that agent's own chat, and sends the brief so
+the new agent can ask what it still needs. The creator script in
+`hermes-agents/forja` is checked against a fake Hermes CLI so those tests do
+not send prompts to a person's agent.

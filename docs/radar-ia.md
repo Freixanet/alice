@@ -1,56 +1,31 @@
 # Radar IA
 
-Radar IA is a **Hermes bot/profile**, not a special scheduled-task type. Its stable
-profile name is `radar-ia`; it owns standing editorial instructions, its normal bot
-chat and sessions, and the routine that produces the daily briefing.
+Radar IA is a **Hermes bot/profile**, not a special Alice product. Its stable
+profile name is `radar-ia`. If that profile exists on the installation, Alice
+treats it like every other agent: canonical bot chat, standing instructions,
+and whatever routines Hermes actually reports.
 
 ## Native iOS
 
-Alice no longer hard-codes Radar IA into **Jobs**. After upgrading from the old
-setup-card implementation, Alice offers to create the real `radar-ia` profile when
-the Hermes dashboard is reachable. **Create & Configure**:
+Alice does not offer, create or migrate Radar IA. There is no auto-presented
+installer and no Jobs setup card. A briefing agent is made the same way as any
+other: a sentence on **New Agent**. The new agent asks what it still needs.
 
-1. creates the profile if it does not already exist;
-2. installs or migrates Alice's versioned Radar IA SOUL without overwriting a
-   SOUL the user customized;
-3. sets and reads back the selected IANA time zone on that profile;
-4. creates or updates exactly one bot-owned daily routine through Hermes'
-   native management API, then reads it back before reporting success;
-5. opens the ordinary Radar IA bot conversation.
+An existing `radar-ia` profile is left untouched. Alice still recognises its
+editorial routine when listing work Hermes already has, so a briefing that was
+set up earlier keeps appearing under Routines. Alice does not write a Radar
+SOUL, timezone or daily job unless the person does that themselves through the
+ordinary agent and routine editors.
 
-After that, Radar IA appears in **Bots** and behaves like every other Hermes bot.
-**Jobs** shows only jobs Hermes actually reports; if Radar IA has a working daily
-routine, that routine appears there naturally instead of through a synthetic UI
-row.
+## Editorial behaviour
 
-The requested default is **10:00 Europe/Madrid**. This time is the start of
-research; delivery follows when the report is complete.
+The standing instructions that used to ship with the installer cover current
+models and capabilities, tools, agents, automation, Hermes/Alice, research,
+open models/local AI, prices, licenses and availability. They prioritise
+original sources, check event dates, qualify evidence, and produce a short
+daily Spanish briefing even when there is nothing major.
 
-## Runtime verification
-
-Alice deliberately does not manufacture a per-job timezone field. It writes the
-selected zone to the `radar-ia` profile configuration, uses the schedule syntax
-accepted by Hermes' native routine editor, and reads back the profile timezone and
-the profile-owned routine before setup can complete.
-
-It does not create a second Radar profile, duplicate an ambiguous routine, invent
-a per-job `timezone` field or `CRON_TZ` prefix, or convert Barcelona time to a fixed
-UTC offset. A conflicting custom routine is left untouched and surfaced as an
-error.
-
-The runtime also needs current web search/page reading, a working model, persistent
-history, an active scheduler and a verified path for the result to be readable from
-Alice. Saving output locally is not by itself proof of delivery to Alice.
-
-## Editorial behavior
-
-The Radar IA SOUL covers current models and capabilities, tools, agents,
-automation, Hermes/Alice, research, open models/local AI, prices, licenses and
-availability. It prioritizes original/current sources, checks event dates and
-product availability, qualifies evidence, deduplicates repeated announcements,
-recovers missed important items, and produces a short daily Spanish briefing even
-when there are no major developments.
-
-The web client may still expose an assisted setup entry under scheduled tasks, but
-that setup targets the same `radar-ia` Hermes profile. It does not change the data
-model: Radar IA is the bot; the cron entry is only one routine owned by that bot.
+The web companion may still expose an assisted setup entry under scheduled
+tasks. That path targets the same `radar-ia` Hermes profile. It does not
+change the data model: Radar IA is the bot; the cron entry is only one routine
+owned by that bot.

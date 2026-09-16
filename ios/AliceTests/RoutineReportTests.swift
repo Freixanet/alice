@@ -65,16 +65,17 @@ final class RoutineReportTests: XCTestCase {
         XCTAssertEqual(shown.map(\.id), ["1", "2"])
     }
 
-    func testHermesFailureNoticesAreSaidInSpanish() {
+    /// Hermes' English log line becomes a sentence in the person's language.
+    func testHermesFailureNoticesAreSaidInPlainWords() {
         let notice = "⚠️ Cron 'Radar IA — informe diario' failed: provider rate limit. "
             + "Fallback chain was exhausted or unavailable. Full details saved in cron output."
         XCTAssertEqual(
             RoutineReport.failure(in: notice),
-            "⚠️ La rutina no se pudo completar: el modelo de IA ha llegado a su límite de uso. Se volverá a intentar en la próxima ejecución."
+            String(localized: "routine.failed.prefix") + String(localized: "routine.failed.rateLimit")
         )
         XCTAssertEqual(
             RoutineReport.failure(in: "I stopped retrying web_search because it hit the tool-call guardrail (identical_call_streak_halt)."),
-            "⚠️ La rutina no se pudo completar: una herramienta falló varias veces seguidas."
+            String(localized: "routine.failed.prefix") + String(localized: "routine.failed.tool")
         )
         XCTAssertNil(RoutineReport.failure(in: "**Anthropic, Google y OpenAI negocian un organismo común**"))
 
@@ -83,7 +84,7 @@ final class RoutineReportTests: XCTestCase {
             message("2", .assistant, notice),
         ], botName: "radar-ia")
         XCTAssertEqual(shown.map(\.id), ["1"])
-        XCTAssertTrue(shown[0].content.hasPrefix("⚠️ La rutina no se pudo completar"))
+        XCTAssertEqual(shown[0].content, RoutineReport.failure(in: notice))
     }
 
     func testOrdinaryMessagesAreNotReports() {

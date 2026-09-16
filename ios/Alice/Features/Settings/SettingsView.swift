@@ -9,6 +9,26 @@ struct SettingsView: View {
         @Bindable var store = store
 
         Form {
+            if let warning = store.storageWarning {
+                Section {
+                    Label("Something could not be kept on this phone", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(warning)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let warning = store.liveActivityWarning {
+                Section {
+                    Label("Live Activity could not start", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(warning)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             // First: whether Alice can reach Hermes is what everything
             // below depends on, and what people come here to check.
             Section("Connection") {
@@ -62,34 +82,21 @@ struct SettingsView: View {
             }
 
             if store.isConnected || store.dashboardReady {
-                Section("Agent") {
-                    if store.dashboardReady {
-                        NavigationLink { ModelsProvidersScreen() } label: {
-                            Label("Models & Providers", systemImage: "cpu")
-                        }
-                        NavigationLink { MemoryScreen() } label: {
-                            Label("Memory", systemImage: "brain")
-                        }
+                Section {
+                    NavigationLink { AdvancedSettingsView() } label: {
+                        Label("Advanced", systemImage: "gearshape.2")
                     }
-                    if store.isConnected {
-                        NavigationLink { CatalogScreen(source: .skills) } label: {
-                            Label("Skills", systemImage: "sparkles")
-                        }
-                    }
-                    if store.dashboardReady {
-                        NavigationLink { ChannelsScreen() } label: {
-                            Label("Channels", systemImage: "bubble.left.and.bubble.right")
-                        }
-                    }
+                } footer: {
+                    Text("Models, memory, skills and Hermes administration live here. Everyday use stays in the chat.")
                 }
-            }
-
-            Section {
-                NavigationLink { AdvancedSettingsView() } label: {
-                    Label("Advanced", systemImage: "gearshape.2")
+            } else {
+                Section {
+                    NavigationLink { AdvancedSettingsView() } label: {
+                        Label("Advanced", systemImage: "gearshape.2")
+                    }
+                } footer: {
+                    Text("Technical and developer options are kept here so everyday settings stay simple.")
                 }
-            } footer: {
-                Text("Technical and developer options are kept here so everyday settings stay simple.")
             }
 
             let build = AliceBuildInfo.current
@@ -122,6 +129,26 @@ struct AdvancedSettingsView: View {
 
     var body: some View {
         Form {
+            if store.dashboardReady {
+                Section("This Hermes") {
+                    NavigationLink { ModelsProvidersScreen() } label: {
+                        Label("Models & Providers", systemImage: "cpu")
+                    }
+                    NavigationLink { MemoryScreen() } label: {
+                        Label("Memory", systemImage: "brain")
+                    }
+                    NavigationLink { ChannelsScreen() } label: {
+                        Label("Channels", systemImage: "bubble.left.and.bubble.right")
+                    }
+                }
+            }
+            if store.isConnected {
+                Section("Instructions") {
+                    NavigationLink { CatalogScreen(source: .skills) } label: {
+                        Label("Skills", systemImage: "sparkles")
+                    }
+                }
+            }
             Section("Capabilities") {
                 NavigationLink { CatalogScreen(source: .toolsets) } label: {
                     Label("Tools", systemImage: "wrench.adjustable")

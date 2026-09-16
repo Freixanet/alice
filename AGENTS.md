@@ -56,6 +56,24 @@ and other tools. Tool-specific files point here rather than duplicate policy.
   on, or restart a person's real Hermes as part of routine tests. Read-only live
   contract checks must be clearly distinguished from fixture tests.
 
+### This Mac: physical iPhone only, no simulator
+
+This Mac (Intel, 16 GB) has no iOS simulators or simulator runtimes installed, on
+purpose: booting one made the machine unusable. Do not create simulators, download
+simulator runtimes (`xcodebuild -downloadPlatform`), or run `scripts/verify-ios.sh`
+here; it depends on a simulator. To ship a change to the user's iPhone:
+
+```bash
+xcodebuild -project ios/Alice.xcodeproj -scheme Alice -configuration Debug \
+  -destination 'generic/platform=iOS' -derivedDataPath ios/.build/DeviceData \
+  -allowProvisioningUpdates build
+xcrun devicectl device install app --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B \
+  ios/.build/DeviceData/Build/Products/Debug-iphoneos/Alice.app
+```
+
+A successful device build is the local iOS check. Report that simulator unit/UI
+tests were not run; never run UI tests on the user's real iPhone (real data).
+
 Record exact commands, results and important omissions in the PR. If a check
 fails, diagnose it; do not weaken the check or update snapshots merely to turn it
 green. Do not merge, tag, deploy or claim universal compatibility from incomplete

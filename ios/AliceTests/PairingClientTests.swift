@@ -164,7 +164,7 @@ final class PairingClientTests: XCTestCase {
 
     func testTailnetTransportFailureExplainsTailscaleInsteadOfGenericTimeout() {
         for url in [
-            URL(string: "http://macbook-pro-de-marcos.tail5b6e1d.ts.net:9119/api/alice/pairing/claim")!,
+            URL(string: "http://hermes-host.tail0000.ts.net:9119/api/alice/pairing/claim")!,
             URL(string: "http://100.70.100.2:9119/api/alice/pairing/claim")!,
         ] {
             let failure = PairingClient.describe(URLError(.timedOut), claimURL: url)

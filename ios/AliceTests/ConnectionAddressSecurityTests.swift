@@ -13,7 +13,12 @@ final class ConnectionAddressSecurityTests: XCTestCase {
             "http://macbook.tail123.ts.net:9119",
             "macbook:8642",
         ] {
-            XCTAssertNotNil(AppStore.normalize(address), address)
+            XCTAssertNotNil(HermesAddress.normalize(address), address)
+            XCTAssertEqual(
+                AppStore.normalize(address)?.absoluteString,
+                HermesAddress.normalize(address)?.absoluteString,
+                address
+            )
         }
 
         for address in [
@@ -24,19 +29,29 @@ final class ConnectionAddressSecurityTests: XCTestCase {
             "http://[2606:4700:4700::1111]:8642",
             "example.com:8642",
         ] {
+            XCTAssertNil(HermesAddress.normalize(address), address)
             XCTAssertNil(AppStore.normalize(address), address)
         }
     }
 
     func testHTTPSRemainsAvailableForAnyValidHost() {
         XCTAssertEqual(
-            AppStore.normalize("https://hermes.example.com:8642")?.absoluteString,
+            HermesAddress.normalize("https://hermes.example.com:8642")?.absoluteString,
             "https://hermes.example.com:8642/"
         )
     }
 
     func testNonHTTPProtocolsAreRejected() {
-        XCTAssertNil(AppStore.normalize("ftp://192.168.1.7/resource"))
-        XCTAssertNil(AppStore.normalize("javascript:alert(1)"))
+        XCTAssertNil(HermesAddress.normalize("ftp://192.168.1.7/resource"))
+        XCTAssertNil(HermesAddress.normalize("javascript:alert(1)"))
+    }
+
+    func testAPublicHTTPAddressExplainsThatHTTPSIsRequired() {
+        XCTAssertEqual(
+            HermesAddress.connectionError("http://example.com:8642"),
+            "Use HTTPS for a Hermes address outside your local network or tailnet."
+        )
+        XCTAssertEqual(HermesAddress.connectionError("not a url ://"), "Check the address.")
     }
 }
+

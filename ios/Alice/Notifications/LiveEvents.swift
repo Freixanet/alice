@@ -51,6 +51,12 @@ enum LiveEvents {
         case "clarify.request":
             return clarify(frame.payload, session: session, now: now)
         default:
+            // Most frames are not news for anyone — deltas, tool starts, the
+            // session's own bookkeeping. A kind Alice names nowhere is kept on
+            // record so a new Hermes cannot go quiet unnoticed.
+            if !AppStore.knownSocketEventTypes.contains(frame.type) {
+                HermesUnknownEvents.shared.record(frame.type, transport: .liveEvents, payload: frame.payload)
+            }
             return nil
         }
     }

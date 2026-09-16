@@ -165,6 +165,9 @@ enum HermesRunProtocol {
             ]
 
         default:
+            // Kept on record, not acted on: a kind Alice has not learnt is
+            // news about Hermes, never a reason to misread the run.
+            HermesUnknownEvents.shared.record(event, transport: .runStream, payload: object)
             return []
         }
     }

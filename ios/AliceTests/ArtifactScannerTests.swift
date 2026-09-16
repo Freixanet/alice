@@ -16,27 +16,27 @@ final class ArtifactScannerTests: XCTestCase {
 
     func testAFileTheAgentWroteOrPatchedIsKept() {
         let found = ArtifactScanner.scan([
-            tool("write_file", #"{"success": true, "path": "/Users/marc/Documents/informe.pdf"}"#),
-            tool("patch", #"{"success": true, "path": "/Users/marc/alice/notas.md"}"#),
+            tool("write_file", #"{"success": true, "path": "/Users/me/Documents/informe.pdf"}"#),
+            tool("patch", #"{"success": true, "path": "/Users/me/alice/notas.md"}"#),
         ], session: "Informe")
         XCTAssertEqual(Set(found.map(\.value)), [
-            "/Users/marc/Documents/informe.pdf", "/Users/marc/alice/notas.md",
+            "/Users/me/Documents/informe.pdf", "/Users/me/alice/notas.md",
         ])
         XCTAssertTrue(found.allSatisfy { $0.kind == .file && $0.session == "Informe" })
     }
 
     func testAFileTheAgentOnlyReadOrSearchedIsLeftOut() {
         let found = ArtifactScanner.scan([
-            tool("read_file", "See /Users/marc/alice/README.md and /Users/marc/alice/plan.md"),
-            tool("search_files", "/Users/marc/alice/Sources/App.swift:12: func run()"),
-            tool("terminal", "wrote /Users/marc/tmp/output.csv"),
+            tool("read_file", "See /Users/me/alice/README.md and /Users/me/alice/plan.md"),
+            tool("search_files", "/Users/me/alice/Sources/App.swift:12: func run()"),
+            tool("terminal", "wrote /Users/me/tmp/output.csv"),
         ], session: "Lectura")
         XCTAssertTrue(found.isEmpty, "\(found.map(\.value))")
     }
 
     func testAnImageTheAgentGeneratedIsAnImage() {
         let found = ArtifactScanner.scan([
-            tool("image_generate", #"{"image_path": "/Users/marc/Pictures/logo.png"}"#),
+            tool("image_generate", #"{"image_path": "/Users/me/Pictures/logo.png"}"#),
         ], session: "Logo")
         XCTAssertEqual(found.map(\.kind), [.image])
     }
@@ -51,8 +51,8 @@ final class ArtifactScannerTests: XCTestCase {
 
     func testPrivateAndSystemFilesStayOutEvenWhenWritten() {
         let found = ArtifactScanner.scan([
-            tool("write_file", #"{"path": "/Users/marc/.hermes/auth.json"}"#),
-            tool("write_file", #"{"path": "/Users/marc/Library/Caches/tmp.json"}"#),
+            tool("write_file", #"{"path": "/Users/me/.hermes/auth.json"}"#),
+            tool("write_file", #"{"path": "/Users/me/Library/Caches/tmp.json"}"#),
         ], session: "Ajustes")
         XCTAssertTrue(found.isEmpty, "\(found.map(\.value))")
     }

@@ -19,7 +19,7 @@ final class NotificationLinkTests: XCTestCase {
     }
 
     func testPairingAndStrangerLinksAreNotNotifications() throws {
-        for text in ["alice://pair?code=1", "alice://open", "alice://open?bot=", "https://open?bot=x"] {
+        for text in ["alice://pair?code=1", "alice://open", "alice://open?bot=", "alice://compose?text=Hi", "https://open?bot=x"] {
             let url = try XCTUnwrap(URL(string: text))
             XCTAssertNil(NotificationLink(url: url), text)
         }
