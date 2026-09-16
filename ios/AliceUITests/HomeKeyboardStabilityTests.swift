@@ -29,24 +29,27 @@ final class HomeKeyboardStabilityTests: XCTestCase {
 
         let deltaY = focused.minY - before.minY
         print("HOME_FRAME before=\(before) focused=\(focused) deltaY=\(deltaY)")
-        // Home rides up with the composer and never drops: sliding down is how
-        // it used to end up behind the composer's glass.
-        XCTAssertLessThanOrEqual(
-            deltaY, 2,
-            "Empty Home must never move down when the software keyboard appears"
-        )
-        XCTAssertGreaterThan(focused.minY, 0, "Home title must stay on screen")
         XCTAssertLessThan(focused.maxY, keyboard.frame.minY, "Home title must remain above the keyboard")
 
-        // Everything Home says has to stay clear of the composer, not just the
-        // title: the line under it was ending up behind the glass.
+        // Home sits in the middle of the room between the header and the
+        // composer: the same air above the logo as under the last line.
+        let headerBottom = app.buttons["chat.leading"].frame.maxY
         let composerTop = app.textFields.firstMatch.frame.minY
         let subtitle = app.staticTexts["You talk to Alice. One thing at a time."]
         XCTAssertTrue(subtitle.exists, "Home's subtitle should be on screen")
-        print("HOME_CLEARANCE subtitle=\(subtitle.frame) composerTop=\(composerTop)")
-        XCTAssertLessThan(
-            subtitle.frame.maxY, composerTop,
-            "Home's subtitle must not sit under the composer once the keyboard opens"
+        let blockTop = app.images.firstMatch.exists
+            ? min(app.images.firstMatch.frame.minY, focused.minY) : focused.minY
+        let above = blockTop - headerBottom
+        let below = composerTop - subtitle.frame.maxY
+        print("HOME_CENTRED above=\(above) below=\(below) header=\(headerBottom) composerTop=\(composerTop)")
+        // Air on both sides: clear of the composer's risen glass, and never
+        // pushed up against the header. It rides a little above dead centre,
+        // which is where the resting layout has always put it.
+        XCTAssertGreaterThan(below, 0, "Home must not sit under the composer")
+        XCTAssertGreaterThan(above, 0, "Home must not run under the header")
+        XCTAssertLessThanOrEqual(
+            deltaY, 2,
+            "Home must never move down when the software keyboard appears"
         )
     }
 

@@ -150,15 +150,16 @@ struct ChatScreen: View {
                     )
                 }
         } else {
-            // Home sits above the composer, wherever the composer is. Held
-            // still while the keyboard rose, the block stayed centred on the
-            // composer's resting place and the line under the title ended up
-            // behind the risen glass; it now rides up with it and never drops.
+            // Home is centred in the room between the header and the composer,
+            // in both states: its space shrinks with the keyboard exactly as
+            // the composer's does. At rest it keeps the extra lift that has
+            // always sat it a little above centre; with the keyboard up the
+            // gap is small enough that the block takes the middle of it.
             ZStack(alignment: .bottom) {
                 Color.clear
                     .overlay {
                         EmptyChatView()
-                            .padding(.bottom, homeComposerHeight + Self.restingLift)
+                            .padding(.bottom, homeComposerHeight + (keyboardShown ? 0 : Self.restingLift))
                     }
                     .contentShape(.rect)
                     .simultaneousGesture(dismissKeyboard)
