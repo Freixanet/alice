@@ -180,7 +180,23 @@ actor HermesRPCClient: HermesRPCTransport {
         return parts.url
     }
 
+    /// How long one call may go unanswered before the socket is given up on.
+    ///
+    /// A socket that dies without a close frame — the phone locked, the Mac
+    /// slept, a proxy dropped it — leaves every waiting call hanging forever,
+    /// and the reply on screen says "Thinking…" until the person gives up.
+    /// Hermes acknowledges a prompt in well under a second and resumes even a
+    /// long chat within a few, so a call still unanswered after this long is
+    /// a connection that is gone, not a server that is slow.
+    static let callDeadline: Duration = .seconds(45)
+
     func call(_ method: String, _ params: JSONObject) async throws -> JSONObject {
+        try await call(method, params, within: Self.callDeadline)
+    }
+
+    func call(
+        _ method: String, _ params: JSONObject, within limit: Duration
+    ) async throws -> JSONObject {
         try await connectIfNeeded()
         let id = nextID
         nextID += 1
@@ -195,7 +211,23 @@ actor HermesRPCClient: HermesRPCTransport {
                     await self?.settle(id, with: .failure(error))
                 }
             }
+            Task { [weak self] in
+                try? await Task.sleep(for: limit)
+                await self?.expire(id, method: method, after: limit)
+            }
         }
+    }
+
+    /// Fails a call that outlived its deadline and drops the socket it went
+    /// over: whatever swallowed this call is not trusted with the next one,
+    /// which reconnects with a fresh ticket.
+    private func expire(_ id: Int, method: String, after limit: Duration) {
+        guard pending[id] != nil else { return }
+        let seconds = Int(limit.components.seconds)
+        settle(id, with: .failure(Failure(
+            reason: "Hermes did not answer `\(method)` within \(seconds) seconds."
+        )))
+        disconnect(Failure(reason: "The Hermes connection stopped answering; reconnecting."))
     }
 
     /// Hermes' `/api/ws` transport reads text frames (`receive_text`).

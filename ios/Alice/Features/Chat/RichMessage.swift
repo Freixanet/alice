@@ -162,8 +162,18 @@ enum RichMarkdown {
                     body.append(content)
                     index += 1
                 }
-                let kind = callout(in: &body)
-                blocks.append(.callout(kind, body: body.joined(separator: "\n")))
+                switch quoteKind(in: &body) {
+                case .callout(let kind):
+                    blocks.append(.callout(kind, body: body.joined(separator: "\n")))
+                case .unknown:
+                    // An unlisted [!KIND] is dropped, not drawn as a grey quote
+                    // with the tag still in it. What remains is ordinary prose.
+                    for run in paragraphRuns(body.joined(separator: "\n")) {
+                        blocks.append(.paragraph(run))
+                    }
+                case .quote:
+                    blocks.append(.callout(nil, body: body.joined(separator: "\n")))
+                }
                 continue
             }
 
@@ -222,8 +232,8 @@ enum RichMarkdown {
             }
             let extracted = replyButtons(in: paragraph.joined(separator: "\n"))
             let linked = RichLinks.extract(extracted.text)
-            if !linked.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                blocks.append(.paragraph(linked.text))
+            for run in paragraphRuns(linked.text) {
+                blocks.append(.paragraph(run))
             }
             if !linked.links.isEmpty {
                 blocks.append(.links(linked.links))
@@ -306,16 +316,24 @@ enum RichMarkdown {
         return values + Array(repeating: filler, count: count - values.count)
     }
 
-    private static func callout(in body: inout [String]) -> RichCallout? {
+    private enum QuoteKind {
+        case callout(RichCallout)
+        case unknown
+        case quote
+    }
+
+    /// GitHub callouts Alice draws: NOTE, TIP, IMPORTANT, WARNING, CAUTION.
+    /// Any other `[!KIND]` is discarded so it is never a half-drawn card.
+    private static func quoteKind(in body: inout [String]) -> QuoteKind {
         guard let first = body.first?.trimmingCharacters(in: .whitespaces),
               first.hasPrefix("[!"), let close = first.firstIndex(of: "]")
-        else { return nil }
-        let name = first[first.index(first.startIndex, offsetBy: 2)..<close].lowercased()
-        guard let kind = RichCallout(rawValue: name) else { return nil }
+        else { return .quote }
+        let name = String(first[first.index(first.startIndex, offsetBy: 2)..<close]).lowercased()
         let after = first[first.index(after: close)...].trimmingCharacters(in: .whitespaces)
         body.removeFirst()
         if !after.isEmpty { body.insert(after, at: 0) }
-        return kind
+        if let kind = RichCallout(rawValue: name) { return .callout(kind) }
+        return .unknown
     }
 
     private static func leadingSpaces(_ line: String) -> Int {
@@ -349,6 +367,68 @@ enum RichMarkdown {
               rest.dropFirst().first == " "
         else { return nil }
         return RichListItem(depth: depth, marker: .number(number), text: String(rest.dropFirst(2)))
+    }
+
+    /// Lines without a blank line between them are one paragraph, the way
+    /// Markdown reads them. Only a truly long wall is split at its sentences.
+    static func paragraphRuns(_ text: String) -> [String] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let joined = trimmed.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let source = joined.isEmpty ? trimmed : joined
+        return breathe(source)
+    }
+
+    private static let abbreviations: Set<String> = [
+        "sr", "sra", "srta", "dr", "dra", "etc", "ej", "vs", "n", "p", "d", "ee",
+    ]
+
+    /// A very long wall still breaks where a new sentence starts. Short text
+    /// is left alone: splitting it would read in fits and starts.
+    static func breathe(_ line: String) -> [String] {
+        guard line.count >= 280 else { return [line] }
+        var parts: [String] = []
+        var start = line.startIndex
+        var index = line.startIndex
+        while index < line.endIndex {
+            let character = line[index]
+            if ".!?".contains(character) {
+                let after = line.index(after: index)
+                if after < line.endIndex, line[after] == " " {
+                    let next = line.index(after: after)
+                    if next < line.endIndex, isSentenceStart(line[next]),
+                       !isAbbreviation(line, period: index) {
+                        let chunk = String(line[start..<after])
+                            .trimmingCharacters(in: .whitespaces)
+                        if !chunk.isEmpty { parts.append(chunk) }
+                        start = next
+                        index = next
+                        continue
+                    }
+                }
+            }
+            index = line.index(after: index)
+        }
+        let tail = String(line[start...]).trimmingCharacters(in: .whitespaces)
+        if !tail.isEmpty { parts.append(tail) }
+        return parts.count >= 2 ? parts : [line]
+    }
+
+    private static func isSentenceStart(_ character: Character) -> Bool {
+        character.isUppercase || "¿¡".contains(character)
+    }
+
+    private static func isAbbreviation(_ line: String, period: String.Index) -> Bool {
+        var start = period
+        while start > line.startIndex {
+            let previous = line.index(before: start)
+            if line[previous].isLetter { start = previous } else { break }
+        }
+        guard start < period else { return false }
+        return abbreviations.contains(String(line[start..<period]).lowercased())
     }
 
     private static func startsBlock(_ line: String, following: String?) -> Bool {
@@ -786,7 +866,7 @@ struct RichMessageView: View {
                 .accessibilityAddTraits(.isHeader)
         case let .paragraph(text):
             Text(inline(text))
-                .lineSpacing(3)
+                .lineSpacing(4)
                 .textSelection(.enabled)
                 .tint(Palette.link(scheme))
         case let .list(items):

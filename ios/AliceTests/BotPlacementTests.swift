@@ -57,7 +57,7 @@ final class BotPlacementTests: XCTestCase {
         [
             bot("biz-mercado", channel: "Business (Beta)", section: "Especialistas", order: 1),
             bot("inbox"),
-            bot("biz-director", channel: "Business (Beta)", order: 0),
+            bot("chief-of-staff", channel: "Business (Beta)", order: 0),
         ]
     }
 
@@ -65,11 +65,11 @@ final class BotPlacementTests: XCTestCase {
         let result = BotChannel.applyingPlacements(team, to: [], applied: [:])
         XCTAssertEqual(result.channels.map(\.name), ["Business (Beta)"])
         let channel = result.channels[0]
-        XCTAssertEqual(channel.bots, ["biz-director", "biz-mercado"])
+        XCTAssertEqual(channel.bots, ["chief-of-staff", "biz-mercado"])
         XCTAssertEqual(channel.sections, ["Especialistas"])
-        XCTAssertNil(channel.section(for: "biz-director"))
+        XCTAssertNil(channel.section(for: "chief-of-staff"))
         XCTAssertEqual(channel.section(for: "biz-mercado"), "Especialistas")
-        XCTAssertEqual(result.applied, ["biz-director": 1, "biz-mercado": 1])
+        XCTAssertEqual(result.applied, ["chief-of-staff": 1, "biz-mercado": 1])
     }
 
     func testAnExistingChannelAndSectionAreFoundWhateverTheirCase() {
@@ -79,7 +79,7 @@ final class BotPlacementTests: XCTestCase {
         XCTAssertEqual(result.channels.count, 1)
         XCTAssertEqual(result.channels[0].id, "b")
         XCTAssertEqual(result.channels[0].name, "business (beta)")
-        XCTAssertEqual(result.channels[0].bots, ["537", "biz-director", "biz-mercado"])
+        XCTAssertEqual(result.channels[0].bots, ["537", "chief-of-staff", "biz-mercado"])
         XCTAssertEqual(result.channels[0].sections, ["especialistas"])
         XCTAssertEqual(result.channels[0].section(for: "biz-mercado"), "especialistas")
     }
@@ -94,7 +94,7 @@ final class BotPlacementTests: XCTestCase {
 
         let revised = [bot("biz-mercado", channel: "Business (Beta)", section: "Especialistas", revision: 2)]
         let reapplied = BotChannel.applyingPlacements(revised, to: moved, applied: first.applied)
-        XCTAssertEqual(reapplied.channels[0].bots, ["biz-director", "biz-mercado"])
+        XCTAssertEqual(reapplied.channels[0].bots, ["chief-of-staff", "biz-mercado"])
         XCTAssertEqual(reapplied.applied["biz-mercado"], 2)
     }
 

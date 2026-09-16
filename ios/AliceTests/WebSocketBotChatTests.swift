@@ -80,6 +80,12 @@ final class WebSocketBotChatTests: XCTestCase {
         var errorDescription: String? { "Hermes disconnected." }
     }
 
+    /// Hermes' 4007 for a chat it holds neither stored nor live.
+    private enum Missing: Error, LocalizedError {
+        case session
+        var errorDescription: String? { "session not found" }
+    }
+
     func testRetiringDashboardRPCFinishesExistingEventStreams() async throws {
         let endpoint = try XCTUnwrap(URL(string: "http://127.0.0.1:9119"))
         let client = HermesRPCClient(endpoint: endpoint) { "unused-ticket" }
@@ -141,6 +147,8 @@ final class WebSocketBotChatTests: XCTestCase {
                 "session_id": "runtime-resumed", "stored_session_id": "stored-created", "messages": [],
             ],
         ])
+        // Nothing is live under the title yet: the first lookup is a 4007.
+        await rpc.fail("session.resume", with: Missing.session)
         let source = WebSocketBotChatSource(rpc: rpc)
 
         let chat = try await source.createCanonicalBotChat(profile: "radar-ia")
@@ -148,6 +156,53 @@ final class WebSocketBotChatTests: XCTestCase {
         XCTAssertEqual(chat.id, "stored-created")
         XCTAssertEqual(chat.resolvedID, "stored-created")
         XCTAssertNotEqual(chat.id, "runtime-resumed")
+        let methods = await rpc.methods()
+        XCTAssertEqual(methods.filter { $0 == "session.create" }.count, 1)
+    }
+
+    /// After a clear, or on a second device, the bot's chat exists live in
+    /// Hermes but has no stored row yet, so the roster does not list it. That
+    /// chat is reattached; a second one is never minted beside it.
+    func testAChatHermesStillHoldsLiveIsReusedNotMintedAgain() async throws {
+        let rpc = FakeRPC(results: [
+            "profiles.list": ["profiles": [["name": "radar-ia", "canonical_session": NSNull()]]],
+            "session.resume": [
+                "session_id": "runtime-lazy", "stored_session_id": "stored-lazy", "messages": [],
+            ],
+        ])
+        let source = WebSocketBotChatSource(rpc: rpc)
+
+        let chat = try await source.createCanonicalBotChat(profile: "radar-ia")
+
+        XCTAssertEqual(chat, CanonicalBotChat(id: "stored-lazy"))
+        let methods = await rpc.methods()
+        XCTAssertFalse(methods.contains("session.create"), "the live chat is the chat")
+        let resume = await rpc.params(of: "session.resume")
+        XCTAssertEqual(resume?["session_id"], "Bot Chat")
+        XCTAssertEqual(resume?["profile"], "radar-ia")
+    }
+
+    /// An echo of the title is not an id. Handed one, Alice makes the chat
+    /// properly instead of persisting "Bot Chat" as a session key.
+    func testTheTitleEchoedBackIsNotTakenForADurableID() async throws {
+        let rpc = FakeRPC(results: [
+            "profiles.list": ["profiles": [["name": "radar-ia", "canonical_session": NSNull()]]],
+            "session.create": ["session_id": "runtime-created", "stored_session_id": "stored-created"],
+        ])
+        await rpc.set("session.resume", ["session_id": "runtime", "session_key": "Bot Chat"])
+        let source = WebSocketBotChatSource(rpc: rpc)
+
+        do {
+            _ = try await source.createCanonicalBotChat(profile: "radar-ia")
+            XCTFail("a title is not a chat id")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("durable Bot Chat"))
+        }
+        XCTAssertNil(WebSocketBotChatSource.durableID(of: JSONObject(["session_key": "Bot Chat"])))
+        XCTAssertEqual(
+            WebSocketBotChatSource.durableID(of: JSONObject(["stored_session_id": "k1", "session_key": "k2"])),
+            "k1"
+        )
     }
 
     // MARK: - H. Compression moves the tip; Alice follows it
@@ -400,6 +455,7 @@ final class WebSocketBotChatTests: XCTestCase {
         await rpc.set("session.create", [
             "session_id": "fresh-runtime", "stored_session_id": "fresh-stored",
         ])
+        await rpc.fail("session.resume", with: Missing.session)
         let source = WebSocketBotChatSource(rpc: rpc)
 
         _ = try? await source.createCanonicalBotChat(profile: "radar-ia")

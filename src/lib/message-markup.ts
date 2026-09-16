@@ -24,26 +24,32 @@ const CALLOUT_LABELS: Record<CalloutKind, string> = {
 export const QUICK_REPLY_EVENT = "alice:quick-reply";
 
 const CALLOUT = /^(\s*>\s?)\[!(note|tip|important|warning|caution)\][ \t]*(.*)$/i;
+const UNKNOWN_CALLOUT = /^(\s*>\s?)\[!([a-z][a-z0-9_-]*)\][ \t]*(.*)$/i;
+const QUOTE_LINE = /^(\s*>\s?)(.*)$/;
 const FENCE = /^\s*(`{3,}|~{3,})/;
 const QUICK_REPLY = /^alice:\/\/reply(?:[?#]|$)/i;
 
 export function prepareMessageMarkup(text: string): string {
   if (!text.includes("[!") && !text.includes("<u>")) return text;
   let fence: string | null = null;
+  let unwrapUnknown = false;
   return text
     .split("\n")
     .map((line) => {
       if (fence) {
         if (line.trimStart().startsWith(fence)) fence = null;
+        unwrapUnknown = false;
         return line;
       }
       const open = FENCE.exec(line);
       if (open) {
         fence = open[1]!;
+        unwrapUnknown = false;
         return line;
       }
       const callout = CALLOUT.exec(line);
       if (callout) {
+        unwrapUnknown = false;
         const [, prefix = "> ", kind = "note", rest = ""] = callout;
         const label = `${prefix}**${CALLOUT_LABELS[kind.toLowerCase() as CalloutKind]}**`;
         // The label is a paragraph of its own, so the blockquote can find it.
@@ -51,6 +57,17 @@ export function prepareMessageMarkup(text: string): string {
         return rest
           ? `${label}\n${gap}\n${prefix}${underline(rest)}`
           : `${label}\n${gap}`;
+      }
+      const unknown = UNKNOWN_CALLOUT.exec(line);
+      if (unknown) {
+        unwrapUnknown = true;
+        const rest = unknown[3] ?? "";
+        return rest ? underline(rest) : "";
+      }
+      if (unwrapUnknown) {
+        const quoted = QUOTE_LINE.exec(line);
+        if (quoted) return underline(quoted[2] ?? "");
+        unwrapUnknown = false;
       }
       return underline(line);
     })

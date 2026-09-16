@@ -48,6 +48,15 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// Two devices opening a bot at once both end up pointing at whichever row
     /// the server considers canonical — one forever-chat, not two.
     func createCanonicalBotChat(profile: String) async throws -> CanonicalBotChat {
+        // A chat made moments ago — by a clear, or by another device — has no
+        // stored row until its first prompt, so the roster does not know it,
+        // while Hermes still holds it live under its title. That one is the
+        // bot's chat; making another leaves a second forever-chat behind and
+        // sends the turn into whichever Hermes happens to find first.
+        if let live = try? await resume(profile: profile, target: Self.canonicalTitle),
+           let id = Self.durableID(of: live) {
+            return CanonicalBotChat(id: id)
+        }
         _ = try? await rpc.call("session.create", JSONObject([
             "profile": profile,
             "title": Self.canonicalTitle,
@@ -58,18 +67,26 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         // exact-title registry lookup, which resolves hidden rows and
         // un-archives a canonical one a reaper had filed away.
         let resumed = try await resume(profile: profile, target: Self.canonicalTitle)
-        // `session_id` is the ephemeral runtime id. The durable chat identity
-        // is `stored_session_id` for an unpersisted draft and `session_key`
-        // once a row exists. Persisting the runtime id made a brand-new bot
-        // work once and then 4007 after that runtime was reaped.
-        let durableID = (resumed["stored_session_id"] as? String)
-            ?? (resumed["session_key"] as? String)
-        guard let durableID, !durableID.isEmpty else {
+        guard let durableID = Self.durableID(of: resumed) else {
             throw HermesRPCClient.Failure(
                 reason: "Hermes did not report a durable Bot Chat for '\(profile)'."
             )
         }
         return CanonicalBotChat(id: durableID)
+    }
+
+    /// The identity a resumed chat keeps across reconnects.
+    ///
+    /// `session_id` is the ephemeral runtime id. The durable identity is
+    /// `stored_session_id` for an unpersisted draft and `session_key` once a
+    /// row exists. Persisting the runtime id made a brand-new bot work once and
+    /// then 4007 after that runtime was reaped. The title itself is never an
+    /// id: a fake or an older Hermes echoing the lookup back is not a chat.
+    static func durableID(of resumed: JSONObject) -> String? {
+        let candidate = (resumed["stored_session_id"] as? String)
+            ?? (resumed["session_key"] as? String)
+        guard let candidate, !candidate.isEmpty, candidate != canonicalTitle else { return nil }
+        return candidate
     }
 
     // MARK: - Clearing

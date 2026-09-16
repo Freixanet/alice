@@ -38,7 +38,7 @@ final class RichMarkdownTests: XCTestCase {
 
         XCTAssertEqual(RichMarkdown.blocks(source), [
             .heading(level: 2, text: "Plan"),
-            .paragraph("Primero **esto**.\nSegundo."),
+            .paragraph("Primero **esto**. Segundo."),
             .list([
                 RichListItem(depth: 0, marker: .task(done: false), text: "Llamar"),
                 RichListItem(depth: 0, marker: .task(done: true), text: "Escribir\nsigue"),
@@ -78,7 +78,7 @@ final class RichMarkdownTests: XCTestCase {
         Usa `curl https://api.example.com` para probar.
         """
         XCTAssertEqual(RichMarkdown.blocks(source), [
-            .paragraph("Lee el anuncio oficial antes de decidir.\nUsa `curl https://api.example.com` para probar."),
+            .paragraph("Lee el anuncio oficial antes de decidir. Usa `curl https://api.example.com` para probar."),
             .links([
                 RichLink(title: "anuncio oficial", url: URL(string: "https://openai.com/blog/x")!),
                 RichLink(title: "reuters.com", url: URL(string: "https://www.reuters.com/tech/y")!),
@@ -121,6 +121,22 @@ final class RichMarkdownTests: XCTestCase {
         )
     }
 
+    func testAnUnknownCalloutKindIsDroppedNotHalfDrawn() {
+        XCTAssertEqual(
+            RichMarkdown.blocks("> [!TIMELINE]\n> Ayer, luego hoy.\n\nSigue."),
+            [.paragraph("Ayer, luego hoy."), .paragraph("Sigue.")]
+        )
+        XCTAssertEqual(
+            RichMarkdown.blocks("> [!quiz] Elige una"),
+            [.paragraph("Elige una")]
+        )
+        XCTAssertTrue(RichMarkdown.blocks("> [!stat]").isEmpty)
+        XCTAssertEqual(
+            RichMarkdown.blocks("> [!WARNING]\n> De verdad"),
+            [.callout(.warning, body: "De verdad")]
+        )
+    }
+
     func testReplyButtonsInAListOrBesideText() {
         XCTAssertEqual(
             RichMarkdown.blocks("- [Adelante](alice://reply?text=Adelante)\n- [Espera](alice://reply)"),
@@ -138,6 +154,26 @@ final class RichMarkdownTests: XCTestCase {
             RichMarkdown.blocks("[Web](https://example.com)"),
             [.links([RichLink(title: "Web", url: URL(string: "https://example.com")!)])]
         )
+    }
+
+    func testStackedLinesJoinAndOnlyAWallIsSplit() {
+        XCTAssertEqual(
+            RichMarkdown.blocks("Uno.\nDos.\nTres."),
+            [.paragraph("Uno. Dos. Tres.")]
+        )
+        XCTAssertEqual(
+            RichMarkdown.blocks("Uno.\n\nDos."),
+            [.paragraph("Uno."), .paragraph("Dos.")]
+        )
+        let wall = "La hipótesis más arriesgada es que las personas mayores no abrirán una app de pastillas porque el nieto gestiona todo. El experimento más barato esta semana es hablar con ocho nietos y preguntar quién recuerda las tomas. Si nadie lo hace por ellos, la idea vive; si el cuidador ya cubre eso, se descarta."
+        let runs = RichMarkdown.paragraphRuns(wall)
+        XCTAssertEqual(runs.count, 3)
+        XCTAssertTrue(runs[0].hasPrefix("La hipótesis"))
+        XCTAssertTrue(runs[1].hasPrefix("El experimento"))
+        XCTAssertTrue(runs[2].hasPrefix("Si nadie"))
+        let titled = "El Sr. García confirma que la clínica pequeña sí pierde citas cada semana y que el recepcionista no da abasto con las llamadas de la tarde ni con los no-shows del lunes por la mañana."
+        XCTAssertGreaterThanOrEqual(titled.count, 180)
+        XCTAssertEqual(RichMarkdown.paragraphRuns(titled), [titled])
     }
 
     func testMoneyIsNotAFormula() {

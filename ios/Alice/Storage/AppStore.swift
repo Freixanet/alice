@@ -4545,9 +4545,7 @@ final class AppStore {
             // Keep what is on screen. The reason is recorded so the chat can
             // say the transcript may be behind, rather than pretending it is
             // complete or blanking it.
-            botChatFailure[conversationID] =
-                (error as? LocalizedError)?.errorDescription
-                ?? "Hermes did not answer."
+            botChatFailure[conversationID] = HermesErrors.describe(error)
         }
     }
 
@@ -4948,8 +4946,7 @@ final class AppStore {
         } catch {
             ending = .failed
             fail(replyID, conversationID: conversationID,
-                 message: (error as? LocalizedError)?.errorDescription
-                    ?? "Hermes did not answer.",
+                 message: HermesErrors.describe(error),
                  limit: nil)
         }
 

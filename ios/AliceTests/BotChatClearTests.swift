@@ -40,6 +40,9 @@ final class BotChatClearTests: XCTestCase {
                 if let canonical { row["canonical_session"] = canonical }
                 return JSONObject(["profiles": [row]])
             case "session.resume":
+                // Nothing is live under the title once the old chat is closed;
+                // a real Hermes answers that lookup with 4007.
+                if sessionID == "Bot Chat" { throw Refusal.notFound }
                 return JSONObject(["session_id": "live-1", "session_key": sessionID ?? ""])
             case "session.delete":
                 if let sessionID, let refusal = refusals[sessionID] { throw refusal }
