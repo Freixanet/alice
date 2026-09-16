@@ -116,9 +116,12 @@ class BusinessIsolationTests(unittest.TestCase):
     def test_each_agent_is_told_whom_it_may_message(self):
         inside = self.plugin.team_prompt_for(self.root, "biz-mercado")
         self.assertIn("solo puedes escribir a: @chief-of-staff", inside)
-        self.assertIn("no están disponibles para ti", inside)
+        # Inside the team, the others are not named as unavailable: naming them
+        # is what had the lead answering with who it could not reach.
+        self.assertIn("no existen para ti", inside)
         outside = self.plugin.team_prompt_for(self.root, "radar-ia")
         self.assertIn("@biz-mercado, @chief-of-staff", outside)
+        self.assertIn("no están disponibles para ti", outside)
         self.assertIn("interno", self.plugin.team_prompt_for(self.root, "evals-sandbox"))
         empty = Path(self.tmp.name) / "vacio"
         (empty / "profiles" / "radar-ia").mkdir(parents=True)
