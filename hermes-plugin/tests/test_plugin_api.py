@@ -233,6 +233,87 @@ class PluginAPITests(unittest.TestCase):
             stored = [json.loads(line) for line in (store / "entries.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual([row["text"] for row in stored], [text])
 
+    def test_an_edited_note_is_rewritten_in_place_and_sorted_again(self):
+        import base64
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            profile, store = self.notes_profile(root)
+            (store / "entries.jsonl").write_text(
+                json.dumps({"id": "n1", "ts": "2026-09-14T09:00:00+02:00", "text": "uno"}) + "\n"
+                + json.dumps({"id": "n2", "ts": "2026-09-14T10:00:00+02:00", "text": "dos"}) + "\n",
+                encoding="utf-8")
+            (store / "enrichment.jsonl").write_text(
+                json.dumps({"id": "n2", "summary": "Dos", "processed": True}) + "\n", encoding="utf-8")
+            rich = base64.b64encode(b"{\\rtf1 dos editado}").decode()
+            with mock.patch.object(self.api, "_list_profiles", return_value=[profile]):
+                edited = self.client.put("/api/plugins/alice/notes/n2",
+                                         json={"text": "dos editado https://x.io", "rich": rich})
+                self.assertEqual(edited.status_code, 200, edited.text)
+                note = edited.json()["note"]
+                self.assertEqual(note["text"], "dos editado https://x.io")
+                self.assertEqual(note["rich"], rich)
+                self.assertFalse(note["processed"])
+                self.assertEqual(note["summary"], "Dos")
+                self.assertEqual(self.client.put("/api/plugins/alice/notes/nope", json={"text": "x"}).status_code, 404)
+                self.assertEqual(self.client.put("/api/plugins/alice/notes/n1", json={"text": " "}).status_code, 400)
+                self.assertEqual(
+                    self.client.put("/api/plugins/alice/notes/n1", json={"text": "x", "rich": "%%"}).status_code, 400)
+                read = self.client.get("/api/plugins/alice/notes").json()
+            stored = [json.loads(line) for line in (store / "entries.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([row["id"] for row in stored], ["n1", "n2"])
+        self.assertEqual(stored[0]["text"], "uno")
+        self.assertEqual(stored[1]["urls"], ["https://x.io"])
+        self.assertEqual([note["id"] for note in read["notes"]], ["n2", "n1"])
+        self.assertFalse(read["notes"][0]["processed"])
+
+    def test_a_deleted_note_goes_with_its_reading_and_relations(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            profile, store = self.notes_profile(root)
+            (store / "entries.jsonl").write_text(
+                json.dumps({"id": "n1", "text": "uno"}) + "\n" + json.dumps({"id": "n2", "text": "dos"}) + "\n",
+                encoding="utf-8")
+            (store / "enrichment.jsonl").write_text(
+                json.dumps({"id": "n1", "processed": True}) + "\n" + json.dumps({"id": "n2", "processed": True}) + "\n",
+                encoding="utf-8")
+            (store / "relations.jsonl").write_text(
+                json.dumps({"id": "r1", "a": "n1", "b": "n2", "type": "similar"}) + "\n", encoding="utf-8")
+            with mock.patch.object(self.api, "_list_profiles", return_value=[profile]):
+                deleted = self.client.delete("/api/plugins/alice/notes/n2")
+                self.assertEqual(deleted.status_code, 200, deleted.text)
+                self.assertEqual(self.client.delete("/api/plugins/alice/notes/n2").status_code, 404)
+                read = self.client.get("/api/plugins/alice/notes").json()
+            entries = (store / "entries.jsonl").read_text(encoding="utf-8")
+            enrichment = (store / "enrichment.jsonl").read_text(encoding="utf-8")
+            relations = (store / "relations.jsonl").read_text(encoding="utf-8")
+        self.assertEqual([note["id"] for note in read["notes"]], ["n1"])
+        self.assertNotIn("n2", entries)
+        self.assertNotIn("n2", enrichment)
+        self.assertEqual(relations, "")
+
+    def test_notes_come_with_their_folders_and_tags(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            profile, store = self.notes_profile(root)
+            (store / "folders.json").write_text(json.dumps(
+                {"folders": [{"id": "salud-1", "name": "Salud"}]}), encoding="utf-8")
+            (store / "entries.jsonl").write_text(
+                json.dumps({"id": "n1", "text": "magnesio"}) + "\n"
+                + json.dumps({"id": "n2", "text": "viaje"}) + "\n", encoding="utf-8")
+            (store / "enrichment.jsonl").write_text(
+                json.dumps({"id": "n1", "folder": "salud-1", "tags": ["suplementos"]}) + "\n"
+                + json.dumps({"id": "n2", "folder": "gone-9", "tags": []}) + "\n", encoding="utf-8")
+            with mock.patch.object(self.api, "_list_profiles", return_value=[profile]):
+                read = self.client.get("/api/plugins/alice/notes").json()
+        self.assertEqual(read["folders"], [{"id": "salud-1", "name": "Salud"}])
+        notes = {note["id"]: note for note in read["notes"]}
+        self.assertEqual(notes["n1"]["folder"], "salud-1")
+        self.assertEqual(notes["n1"]["tags"], ["suplementos"])
+        self.assertIsNone(notes["n2"]["folder"], "a deleted folder's notes are Quick Notes")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

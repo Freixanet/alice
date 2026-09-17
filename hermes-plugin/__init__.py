@@ -9,7 +9,11 @@ The agent gains one rule: the Business team talks only among itself. A
 it may message, so it does not try the others. A profile filed in the Business channel (``ui_meta['alice']``, written by
 ``hermes-agents/business-team/instalar.py``) can message only teammates in that channel,
 and nobody outside it can message them. Internal profiles (Evals' sandbox) neither send
-nor receive messages. No tools, commands or changes to Hermes' own code.
+nor receive messages.
+
+A note-taking profile also gains a ``notes`` toolset for the store it keeps in
+``workspace/inbox-store``, so capturing a note is a tool call instead of a shell command.
+No changes to Hermes' own code.
 """
 from pathlib import Path
 
@@ -138,8 +142,194 @@ def _pre_tool_call(tool_name=None, args=None, **_):
         reason = "No enviado: no se pudo comprobar si el mensaje respeta el equipo de Business."
     return {"action": "block", "message": reason} if reason else None
 
+# ── Notes tools ──────────────────────────────────────────────────────────────
+# A note-taking profile keeps its notes in its own ``workspace/inbox-store``, driven by
+# ``inbox.py``. Reaching it through the terminal tool is what made Hermes ask permission
+# before every capture: the note's text arrives as a heredoc piped into an interpreter,
+# which is exactly what the security scanner is there to stop. The commands are the same
+# here, as tools: no shell to scan, no quoting to get wrong, no approval to wait for, and
+# no interpreter to start. A profile without that store sees none of these tools.
+
+NOTES_STORE = Path("workspace") / "inbox-store"
+NOTES_TOOLSET = "notes"
+
+
+def _notes_root() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return Path(get_hermes_home()) / NOTES_STORE
+
+
+def _store_module():
+    """The store's own ``inbox.py``, imported from the running profile's workspace."""
+    import importlib.util
+
+    root = _notes_root()
+    script = root / "inbox.py"
+    if not script.is_file():
+        return None, None
+    spec = importlib.util.spec_from_file_location("alice_inbox_store", script)
+    if spec is None or spec.loader is None:
+        return None, None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module, root
+
+
+def _store_call(work) -> str:
+    """Runs ``work(module, root)`` and returns what the store printed, as its commands do."""
+    import io
+    import json
+    from contextlib import redirect_stdout
+
+    module, root = _store_module()
+    if module is None:
+        return json.dumps({"ok": False, "error": "este perfil no tiene un almacén de notas"},
+                          ensure_ascii=False)
+    printed = io.StringIO()
+    try:
+        with redirect_stdout(printed):
+            work(module, root)
+    except SystemExit:
+        pass  # `inbox.py` reports a refusal by printing it and exiting; the text is the answer.
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False)
+    return printed.getvalue().strip() or json.dumps({"ok": True}, ensure_ascii=False)
+
+
+def _has_notes_store(**_) -> bool:
+    try:
+        return (_notes_root() / "inbox.py").is_file()
+    except Exception:
+        return False
+
+
+_TEXT = {"type": "string"}
+_IDS = {"type": "array", "items": {"type": "string"}}
+_TAGS = {"type": "string", "description": "De 1 a 3 etiquetas separadas por comas."}
+_FOLDER = {"type": "string", "description": "Nombre o id de una carpeta que ya exista."}
+_LIMIT = {"type": "integer", "description": "Cuántas notas devolver como máximo."}
+
+
+def _ids(args) -> list:
+    return [str(i) for i in (args.get("ids") or []) if str(i)]
+
+
+# name, emoji, description, (properties, required), call
+NOTE_TOOLS = (
+    ("note_add", "📥",
+     "Guarda una nota en el almacén, tal cual, y la archiva en una carpeta que ya exista. "
+     "Devuelve su id, su carpeta y sus etiquetas.",
+     ({"text": dict(_TEXT, description="El texto exacto de la nota, sin reescribir."),
+       "folder": dict(_FOLDER, description="Carpeta existente; omítela para dejarla en Quick Notes."),
+       "tags": _TAGS}, ["text"]),
+     lambda a, m, root: m.cmd_add(root, str(a.get("text") or ""), a.get("folder"), a.get("tags"))),
+
+    ("note_file", "🗂",
+     "Archiva notas ya guardadas en una carpeta, y opcionalmente cambia sus etiquetas.",
+     ({"ids": dict(_IDS, description="Ids de las notas a archivar."),
+       "folder": dict(_FOLDER, description="Carpeta existente; «none» las devuelve a Quick Notes."),
+       "tags": dict(_TAGS, description="De 1 a 3 etiquetas; omítelas para conservar las suyas.")},
+      ["ids"]),
+     lambda a, m, root: m.cmd_file(root, _ids(a), a.get("folder") or "none", a.get("tags"))),
+
+    ("note_folders", "📁",
+     "Las carpetas del almacén con cuántas notas tiene cada una, las etiquetas en uso y "
+     "cuántas notas siguen sin archivar.",
+     ({}, []),
+     lambda a, m, root: m.cmd_folders(root)),
+
+    ("note_folder_create", "➕",
+     "Crea una carpeta. Solo después de que la persona haya aprobado esa carpeta concreta.",
+     ({"name": dict(_TEXT, description="Nombre de la carpeta, como lo aprobó la persona.")},
+      ["name"]),
+     lambda a, m, root: m.cmd_folder_create(root, str(a.get("name") or ""))),
+
+    ("note_folder_rename", "✏️",
+     "Cambia el nombre de una carpeta. Sus notas se quedan dentro.",
+     ({"folder": _FOLDER, "name": dict(_TEXT, description="El nombre nuevo.")}, ["folder", "name"]),
+     lambda a, m, root: m.cmd_folder_rename(root, str(a.get("folder") or ""),
+                                            str(a.get("name") or ""))),
+
+    ("note_folder_delete", "🗑",
+     "Borra una carpeta. Sus notas vuelven a Quick Notes; ninguna nota se pierde.",
+     ({"folder": _FOLDER}, ["folder"]),
+     lambda a, m, root: m.cmd_folder_delete(root, str(a.get("folder") or ""))),
+
+    ("note_get", "🔎",
+     "Una nota entera por su id, con su enriquecimiento.",
+     ({"id": _TEXT}, ["id"]),
+     lambda a, m, root: m.cmd_get(root, str(a.get("id") or ""))),
+
+    ("note_search", "🔍",
+     "Busca notas por texto, con filtros opcionales de fecha y de tipo.",
+     ({"query": dict(_TEXT, description="Qué buscar."),
+       "start": dict(_TEXT, description="Fecha ISO desde la que buscar (AAAA-MM-DD)."),
+       "end": dict(_TEXT, description="Fecha ISO hasta la que buscar (AAAA-MM-DD)."),
+       "type": dict(_TEXT, description="Solo notas de este tipo."),
+       "limit": _LIMIT}, ["query"]),
+     lambda a, m, root: m.cmd_search(root, str(a.get("query") or ""), a.get("start"), a.get("end"),
+                                     a.get("type"), int(a.get("limit") or 20))),
+
+    ("note_recent", "🕒",
+     "Las notas de los últimos días, de la más nueva a la más vieja.",
+     ({"days": {"type": "integer", "description": "Cuántos días atrás mirar."}, "limit": _LIMIT}, []),
+     lambda a, m, root: m.cmd_recent(root, int(a.get("days") or 7), int(a.get("limit") or 50))),
+
+    ("note_similar", "🪞",
+     "Notas parecidas a un texto. Para no duplicar lo que ya está guardado.",
+     ({"text": _TEXT, "limit": _LIMIT}, ["text"]),
+     lambda a, m, root: m.cmd_similar(root, str(a.get("text") or ""), int(a.get("limit") or 5))),
+
+    ("note_unprocessed", "📌",
+     "Las notas que aún no se han enriquecido.",
+     ({"limit": _LIMIT}, []),
+     lambda a, m, root: m.cmd_unprocessed(root, int(a.get("limit") or 50))),
+
+    ("note_enrich", "✨",
+     "Guarda el enriquecimiento de una nota (types, topics, entities, actions, "
+     "open_questions, implicit_important, summary). Conserva su carpeta y sus etiquetas.",
+     ({"id": _TEXT,
+       "payload": {"type": "object", "description": "Los campos del enriquecimiento."}},
+      ["id", "payload"]),
+     lambda a, m, root: m.cmd_enrich(root, str(a.get("id") or ""), a.get("payload") or {})),
+
+    ("note_mark_processed", "✅",
+     "Marca notas como ya procesadas, para que la rutina no las vuelva a mirar.",
+     ({"ids": _IDS}, ["ids"]),
+     lambda a, m, root: m.cmd_mark_processed(root, _ids(a))),
+
+    ("note_digest_week", "📰",
+     "Los datos de los últimos días agrupados para el resumen semanal.",
+     ({"days": {"type": "integer", "description": "Cuántos días cubre el resumen."}}, []),
+     lambda a, m, root: m.cmd_digest_week(root, int(a.get("days") or 7))),
+
+    ("note_relate", "🔗",
+     "Relaciona dos notas, solo cuando la relación es clara.",
+     ({"a": dict(_TEXT, description="Id de la primera nota."),
+       "b": dict(_TEXT, description="Id de la segunda nota."),
+       "kind": dict(_TEXT, description="Qué tipo de relación es (duplica, continúa, contradice…)."),
+       "note": dict(_TEXT, description="Una línea explicando la relación.")},
+      ["a", "b", "kind"]),
+     lambda a, m, root: m.cmd_relate(root, str(a.get("a") or ""), str(a.get("b") or ""),
+                                     str(a.get("kind") or ""), str(a.get("note") or ""))),
+)
+
+
+def _register_notes_tools(ctx) -> None:
+    for name, emoji, description, (properties, required), call in NOTE_TOOLS:
+        schema = {"name": name, "description": description,
+                  "parameters": {"type": "object", "properties": properties, "required": required}}
+        ctx.register_tool(
+            name=name, toolset=NOTES_TOOLSET, schema=schema,
+            handler=lambda args, _call=call, **_: _store_call(
+                lambda m, root, _a=args or {}: _call(_a, m, root)),
+            check_fn=_has_notes_store, description=description, emoji=emoji,
+        )
+
 
 def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
+    _register_notes_tools(ctx)

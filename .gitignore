@@ -28,3 +28,6 @@ __pycache__/
 *.pyc
 *.log
 .prettierrc
+
+# Xcode build output: xcodebuild -derivedDataPath ios/build writes here.
+ios/build/

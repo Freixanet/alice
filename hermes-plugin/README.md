@@ -21,7 +21,23 @@ What it adds, all in the dashboard:
   own `inbox.py add`, so the store stays append-only; `GET` reports `available: false`
   when no agent keeps one.
 
-The agent gains one rule and nothing else (no tools or commands):
+It also gives a note-taking agent a **`notes` toolset** for the store it keeps in
+`workspace/inbox-store`: `note_add`, `note_file`, `note_folders`, `note_folder_create`,
+`note_folder_rename`, `note_folder_delete`, `note_get`, `note_search`, `note_recent`,
+`note_similar`, `note_unprocessed`, `note_enrich`, `note_mark_processed`,
+`note_digest_week` and `note_relate`. Each one is the `inbox.py` command of the same name,
+called in-process. The agent used to reach the store through the terminal, which meant a
+note's text arrived as a heredoc piped into an interpreter — exactly what the security
+scanner stops, so every capture waited for approval. As tools there is no shell to scan,
+no quoting to get wrong and no interpreter to start. A profile without that store sees
+none of these tools (`check_fn`), so enable the `notes` toolset only where the store is:
+
+```yaml
+platform_toolsets:
+  cli: [web, file, skills, memory, clarify, todo, notes]   # `terminal` is no longer needed
+```
+
+The agent gains one rule:
 
 - **The Business team talks only among itself.** A `pre_tool_call` hook on `message_agent`
   lets a profile filed in the Business channel (`ui_meta['alice'].channel`, written by

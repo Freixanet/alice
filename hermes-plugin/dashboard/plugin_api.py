@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import fcntl
 import http.client
 import ipaddress
 import json
@@ -760,6 +761,9 @@ async def mutate_memory(body: _MemoryMutation) -> Dict[str, Any]:
 NOTES_STORE = Path("workspace") / "inbox-store"
 NOTE_MAX_BYTES = 64_000
 NOTES_LIMIT_MAX = 2000
+# The styled copy of an edited note, as base64 RTF. Generous for formatting, not for media.
+NOTE_RICH_MAX_BYTES = 2_000_000
+_URL = re.compile(r"https?://[^\s<>\"')\]]+")
 
 
 def _notes_store() -> Optional[Tuple[str, Path]]:
@@ -815,6 +819,12 @@ def _note_payload(entry: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any
         "summary": str(extra.get("summary") or ""),
         "status": str(extra.get("status") or ""),
         "processed": bool(extra.get("processed")),
+        # Where it is filed and what it is about, as its agent or the person set.
+        "folder": str(extra.get("folder") or "") or None,
+        "tags": strings(extra.get("tags")),
+        # Written in Alice's editor: the styled copy, and when it was last changed.
+        "rich": str(entry.get("rich_rtf") or "") or None,
+        "edited_ts": str(entry.get("edited_ts") or "") or None,
     }
 
 
@@ -830,8 +840,54 @@ def _notes_snapshot(limit: int) -> Dict[str, Any]:
     entries = [row for row in _read_jsonl(root / "entries.jsonl")
                if row.get("id") and isinstance(row.get("text"), str)]
     entries.reverse()
+    folders = _note_folders(root)
+    known = {folder["id"] for folder in folders}
+    notes = [_note_payload(row, enrichment.get(str(row["id"]), {})) for row in entries[:limit]]
+    for note in notes:
+        # A folder that is gone leaves its notes in Quick Notes.
+        if note["folder"] not in known:
+            note["folder"] = None
     return {"available": True, "profile": profile, "total": len(entries),
-            "notes": [_note_payload(row, enrichment.get(str(row["id"]), {})) for row in entries[:limit]]}
+            "folders": folders, "notes": notes}
+
+
+def _note_folders(root: Path) -> List[Dict[str, Any]]:
+    """The store's folders, in the order they were made."""
+    try:
+        data = json.loads((root / "folders.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    rows = data.get("folders") if isinstance(data, dict) else None
+    return [{"id": str(row["id"]), "name": str(row["name"])}
+            for row in rows or [] if isinstance(row, dict) and row.get("id") and row.get("name")]
+
+
+def _run_store(root: Path, *args: str) -> Dict[str, Any]:
+    """One `inbox.py` command against the store, so folders keep the store's own rules and locks."""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(root / "inbox.py"), *args],
+            capture_output=True, text=True, timeout=20,
+            env={**os.environ, "INBOX_STORE": str(root)},
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise HTTPException(status_code=502, detail="The notes store did not answer.") from exc
+    try:
+        reply = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        reply = {}
+    if result.returncode != 0 or not isinstance(reply, dict) or not reply.get("ok"):
+        detail = reply.get("error") if isinstance(reply, dict) else None
+        status = 404 if result.returncode == 2 else 502
+        raise HTTPException(status_code=status, detail=str(detail or "The notes store refused that."))
+    return reply
+
+
+def _store_or_404() -> Tuple[str, Path]:
+    store = _notes_store()
+    if store is None:
+        raise HTTPException(status_code=404, detail="No agent on this Hermes keeps a notes store.")
+    return store
 
 
 class _NewNote(BaseModel):
@@ -872,6 +928,130 @@ def _add_note(text: str) -> Dict[str, Any]:
     return {"ok": True, "profile": profile, "note": _note_payload(entry, {})}
 
 
+class _EditedNote(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    rich: Optional[str] = None
+
+
+def _edit_note(note_id: str, text: str, rich: Optional[str]) -> Dict[str, Any]:
+    """Rewrites one note in place: its plain text, which agents read, and its styled copy.
+
+    Deliberately not append-only — the person chose to edit notes rather than keep versions. The
+    file is rewritten under the same ``flock`` that ``inbox.py`` takes to append, and in place
+    rather than swapped for a new file, so an append waiting on the lock lands in the file that
+    stays. The note's enrichment is carried forward unprocessed, so its agent sorts it again."""
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="A note needs some text.")
+    if len(text.encode("utf-8")) > NOTE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="That note is too long.")
+    if rich is not None:
+        if len(rich) > NOTE_RICH_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="That note's formatting is too large.")
+        try:
+            base64.b64decode(rich, validate=True)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="The note's formatting is not readable.") from exc
+    store = _notes_store()
+    if store is None:
+        raise HTTPException(status_code=404, detail="No agent on this Hermes keeps a notes store.")
+    profile, root = store
+    path = root / "entries.jsonl"
+    # The store's own shape: local time with its offset, `2026-09-14T09:00:00+02:00`.
+    from datetime import datetime
+    edited = datetime.now().astimezone().isoformat(timespec="seconds")
+    try:
+        with path.open("r+", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            lines = handle.read().splitlines(keepends=True)
+            updated: Optional[Dict[str, Any]] = None
+            for index, line in enumerate(lines):
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict) or str(row.get("id")) != note_id:
+                    continue
+                row["text"] = text
+                row["urls"] = _URL.findall(text)
+                row["bytes"] = len(text.encode("utf-8"))
+                row["edited_ts"] = edited
+                if rich:
+                    row["rich_rtf"] = rich
+                else:
+                    row.pop("rich_rtf", None)
+                lines[index] = json.dumps(row, ensure_ascii=False) + "\n"
+                updated = row
+                break
+            if updated is None:
+                raise HTTPException(status_code=404, detail="That note is no longer in the store.")
+            handle.seek(0)
+            handle.write("".join(lines))
+            handle.truncate()
+            handle.flush()
+            os.fsync(handle.fileno())
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="That note is no longer in the store.") from exc
+    enrichment: Dict[str, Any] = {}
+    for row in _read_jsonl(root / "enrichment.jsonl"):
+        if str(row.get("id")) == note_id:
+            enrichment = row
+    if enrichment.get("processed"):
+        carried = {**enrichment, "id": note_id, "processed": False, "edited_ts": edited}
+        with (root / "enrichment.jsonl").open("a", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            handle.write(json.dumps(carried, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        enrichment = carried
+    return {"ok": True, "profile": profile, "note": _note_payload(updated, enrichment)}
+
+
+def _rewrite_jsonl(path: Path, keep) -> int:
+    """Rewrites a JSONL file in place under ``flock`` with only the rows ``keep`` accepts; lines
+    that are not JSON objects are kept as they are. Returns how many rows were dropped."""
+    try:
+        handle = path.open("r+", encoding="utf-8")
+    except FileNotFoundError:
+        return 0
+    with handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        kept: List[str] = []
+        dropped = 0
+        for line in handle.read().splitlines(keepends=True):
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                kept.append(line)
+                continue
+            if isinstance(row, dict) and not keep(row):
+                dropped += 1
+            else:
+                kept.append(line)
+        if dropped:
+            handle.seek(0)
+            handle.write("".join(kept))
+            handle.truncate()
+            handle.flush()
+            os.fsync(handle.fileno())
+        return dropped
+
+
+def _delete_note(note_id: str) -> Dict[str, Any]:
+    """Deletes one note for good: its entry, its agent's reading of it and its relations."""
+    store = _notes_store()
+    if store is None:
+        raise HTTPException(status_code=404, detail="No agent on this Hermes keeps a notes store.")
+    profile, root = store
+    if not _rewrite_jsonl(root / "entries.jsonl", lambda row: str(row.get("id")) != note_id):
+        raise HTTPException(status_code=404, detail="That note is no longer in the store.")
+    _rewrite_jsonl(root / "enrichment.jsonl", lambda row: str(row.get("id")) != note_id)
+    _rewrite_jsonl(root / "relations.jsonl",
+                   lambda row: note_id not in (str(row.get("a")), str(row.get("b"))))
+    return {"ok": True, "profile": profile, "deleted": note_id}
+
+
 @router.get("/notes")
 async def get_notes(limit: int = 500) -> Dict[str, Any]:
     return await asyncio.to_thread(_notes_snapshot, max(1, min(limit, NOTES_LIMIT_MAX)))
@@ -880,6 +1060,67 @@ async def get_notes(limit: int = 500) -> Dict[str, Any]:
 @router.post("/notes")
 async def add_note(body: _NewNote) -> Dict[str, Any]:
     return await asyncio.to_thread(_add_note, body.text)
+
+
+class _FolderName(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+
+
+class _NoteFolder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    folder: Optional[str] = None
+
+
+@router.post("/notes/folders")
+async def create_note_folder(body: _FolderName) -> Dict[str, Any]:
+    def run() -> Dict[str, Any]:
+        _, root = _store_or_404()
+        if not body.name.strip():
+            raise HTTPException(status_code=400, detail="A folder needs a name.")
+        return {"ok": True, "folder": _run_store(root, "folder-create", body.name)["folder"]}
+    return await asyncio.to_thread(run)
+
+
+@router.put("/notes/folders/{folder_id}")
+async def rename_note_folder(folder_id: str, body: _FolderName) -> Dict[str, Any]:
+    def run() -> Dict[str, Any]:
+        _, root = _store_or_404()
+        if not body.name.strip():
+            raise HTTPException(status_code=400, detail="A folder needs a name.")
+        _run_store(root, "folder-rename", folder_id, body.name)
+        return {"ok": True}
+    return await asyncio.to_thread(run)
+
+
+@router.delete("/notes/folders/{folder_id}")
+async def delete_note_folder(folder_id: str) -> Dict[str, Any]:
+    def run() -> Dict[str, Any]:
+        _, root = _store_or_404()
+        _run_store(root, "folder-delete", folder_id)
+        return {"ok": True}
+    return await asyncio.to_thread(run)
+
+
+@router.put("/notes/{note_id}/folder")
+async def file_note(note_id: str, body: _NoteFolder) -> Dict[str, Any]:
+    def run() -> Dict[str, Any]:
+        _, root = _store_or_404()
+        reply = _run_store(root, "file", note_id, "--folder", body.folder or "none")
+        return {"ok": True, "folder": reply.get("folder")}
+    return await asyncio.to_thread(run)
+
+
+@router.delete("/notes/{note_id}")
+async def delete_note(note_id: str) -> Dict[str, Any]:
+    return await asyncio.to_thread(_delete_note, note_id)
+
+
+@router.put("/notes/{note_id}")
+async def edit_note(note_id: str, body: _EditedNote) -> Dict[str, Any]:
+    return await asyncio.to_thread(_edit_note, note_id, body.text, body.rich)
 
 
 _register_claim_auth()
