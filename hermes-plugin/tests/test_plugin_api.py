@@ -314,6 +314,55 @@ class PluginAPITests(unittest.TestCase):
         self.assertEqual(notes["n1"]["tags"], ["suplementos"])
         self.assertIsNone(notes["n2"]["folder"], "a deleted folder's notes are Quick Notes")
 
+    def test_agent_create_and_rename_go_through_the_engine(self):
+        import os
+        import tempfile
+
+        soul = (
+            "# Radar\n\nWatch the news.\n\n## Examples\n\n"
+            "Person: What happened?\nYou: **This.** Two sentences.\n\n"
+            "Person: Invent it.\nYou: No.\n"
+        )
+        fake = Path(__file__).resolve().parents[2] / "hermes-agents" / "forja" / "tests" / "fake_hermes.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            wrapper = home / "hermes"
+            wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n', encoding="utf-8")
+            wrapper.chmod(0o755)
+            old = {k: os.environ.get(k) for k in ("HERMES_HOME", "HERMES_BIN", "ALICE_FAKE_AUTH")}
+            os.environ["HERMES_HOME"] = str(home)
+            os.environ["HERMES_BIN"] = str(wrapper)
+            os.environ["ALICE_FAKE_AUTH"] = "1"
+            try:
+                with mock.patch.object(self.api, "_engine_home", return_value=home):
+                    created = self.client.post("/api/plugins/alice/agents", json={
+                        "title": "Resumen de Mercados",
+                        "description": "Mornings.",
+                        "soul": soul,
+                        "tools": ["web"],
+                        "model": "kept-model",
+                        "provider": "kept-provider",
+                        "source": "form",
+                    })
+                    self.assertEqual(created.status_code, 200, created.text)
+                    payload = created.json()
+                    self.assertEqual(payload["status"], "completed", payload)
+                    self.assertEqual(payload["profile_id"], "resumen-de-mercados")
+                    renamed = self.client.post("/api/plugins/alice/agents/rename", json={
+                        "from": "resumen-de-mercados",
+                        "to": "Radar IA",
+                    })
+                    self.assertEqual(renamed.status_code, 200, renamed.text)
+                    self.assertEqual(renamed.json()["to_id"], "radar-ia", renamed.text)
+                    self.assertTrue((home / "profiles" / "radar-ia").is_dir())
+                    self.assertFalse((home / "profiles" / "resumen-de-mercados").exists())
+            finally:
+                for key, value in old.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

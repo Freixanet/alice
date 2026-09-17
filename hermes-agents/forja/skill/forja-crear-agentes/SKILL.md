@@ -7,17 +7,17 @@ description: Diseña y crea de principio a fin un agente de Hermes a medida (per
 
 ## Resultado
 
-Un agente nuevo, funcionando en este Hermes y visible en Alice con su nombre, diseñado para el objetivo real de la persona. Se crea con los comandos oficiales de Hermes a través de `scripts/crear_agente.py`; no se crea nada a mano.
+Un agente nuevo, funcionando en este Hermes y visible en Alice con su nombre, diseñado para el objetivo real de la persona. Se crea con el motor compartido de Alice (`agent_create` o `scripts/crear_agente.py`); no se crea nada a mano ni con una cadena de comandos inventada.
 
 ## Antes de crear
 
-1. Reúne lo necesario con el **intake obligatorio** de tu SOUL (clarify, una ronda, cada pregunta con default). Objetivo, entrega, idioma, frecuencia, fuentes y límites.
+1. Reúne lo necesario con el **intake obligatorio** de tu SOUL (clarify, una ronda, cada pregunta con default). Objetivo, entrega, idioma, frecuencia, fuentes y límites. No vuelvas a preguntar lo que ya está cerrado.
 2. Diseña con [guia-agentes.md](references/guia-agentes.md): nombre, instrucciones **con ejemplos**, herramientas mínimas y rutinas.
 3. Enseña el plan en lenguaje llano y confírmalo con clarify. Sin confirmación, no sigas.
 
 ## Crear
 
-1. Escribe la especificación en un archivo JSON dentro de tu espacio de trabajo:
+Usa la herramienta nativa **`agent_create`** cuando esté disponible. Si no, escribe la especificación en un JSON y ejecuta el script de esta skill. Ambos llaman al mismo motor.
 
 ```json
 {
@@ -26,6 +26,8 @@ Un agente nuevo, funcionando en este Hermes y visible en Alice con su nombre, di
   "description": "Resume cada mañana lo importante de los mercados para un inversor particular.",
   "soul": "# Resumen de Mercados\n\n...instrucciones completas, incluida ## Ejemplos...",
   "tools": ["web"],
+  "model": "muse-spark-1.3-contributor-free",
+  "provider": "opencode-free",
   "routines": [
     {
       "name": "Resumen diario",
@@ -36,27 +38,32 @@ Un agente nuevo, funcionando en este Hermes y visible en Alice con su nombre, di
 }
 ```
 
-- `name`: minúsculas, números y guiones; 2–40 caracteres; no puede existir ya.
-- `soul`: debe incluir una sección `## Ejemplos` o `## Examples` con turnos de ejemplo. El programa la exige.
-- `tools`: extras besides the ones the program already adds (`web`, `file`, `skills`, `memory`, `clarify`, `todo`). Naming a base tool is fine. Allowed extras: browser, terminal, code_execution, vision, image_gen, tts, session_search, cronjob, delegation.
-- `routines`: opcional. `schedule` en formato cron o `every 2h`; entregan en el chat del agente.
+- `title`: el nombre visible. Hermes lo normaliza a un identificador (`Agent Maker` → `agent-maker`). Si el identificador ya existe, elige otro nombre; no se inventa un `-2`.
+- `name`: opcional si `title` basta. Minúsculas, números y guiones.
+- `soul`: debe incluir `## Ejemplos` o `## Examples` con turnos de ejemplo.
+- `tools`: solo las que el diseño necesita. El motor añade `clarify` y no añade browser, terminal ni code_execution por defecto.
+- `model` y `provider`: juntos, si la persona eligió uno. Sin proveedor no se escribe el modelo. No hay reserva silenciosa.
+- `routines`: opcional, y solo con horario confirmado. Entregan en el chat del agente (`bot-chat`).
+- `reuse_profile`: si Alice ya creó el perfil para este encargo, pásalo. No se crea un segundo perfil.
+- `job_id`: el mismo trabajo reanuda y no duplica perfiles ni rutinas.
+- `copy_memory`: obligatorio y explícito si vas a escribir `memory`. No copies USER.md ni la memoria personal entera.
 
-2. Ejecuta el script **de esta skill** (`scripts/crear_agente.py`), con el Python de Hermes. Honra `HERMES_HOME`, `HERMES_BIN`, `ALICE_AGENT_MODEL` y `ALICE_AGENT_FALLBACK` si existen; si no, usa `~/.hermes`.
-
-Comprueba sin crear nada:
+Comprobar sin crear:
 
 ```bash
 python scripts/crear_agente.py especificacion.json --comprobar
 ```
 
-3. Si la comprobación es correcta, créalo (usa al menos 300 segundos; las habilidades incluidas tardan). El programa hace después una prueba de humo (`hermes -p NOMBRE -z`); `--sin-humo` la omite:
+Crear (al menos 300 segundos si hay habilidades incluidas):
 
 ```bash
 python scripts/crear_agente.py especificacion.json
 ```
 
-Si Alice ya creó el perfil y solo te pide las instrucciones, no ejecutes este script: reescribe ese `SOUL.md` con ejemplos.
+`--sin-humo` omite la pregunta mínima. `--sin-atajo` no crea el wrapper de terminal.
 
 ## Después
 
-Lee el JSON que imprime el programa. `ok: true` y todas las comprobaciones en `true` significan que el agente está listo, incluida la prueba de humo si no se omitió. Si algo sale `false` o hay `error`, dilo tal cual; no lo repitas a ciegas ni borres nada. Cuenta a la persona en pocas frases qué agente tiene, que lo encontrará en Agents dentro de Alice (en Home) y qué puede pedirle.
+Lee el JSON. `status: completed` y `ok: true` significan que el agente está listo. `needs_auth` quiere decir que el perfil existe pero falta autenticación del proveedor: dilo tal cual, no lo presentes como acabado. Si `status` es `partial` o `failed`, cuenta `confirmed` y `error`; no borres nada y no lo repitas a ciegas.
+
+Cuenta a la persona en pocas frases qué agente tiene, que lo encontrará en Agents dentro de Alice (en Home), el identificador Hermes si difiere del nombre visible, y qué puede pedirle.

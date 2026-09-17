@@ -57,8 +57,13 @@ UI components should display facts from those services, show actionable failures
 and retain useful state during retries. Capability detection must distinguish
 absence from failed detection. Test the boundary, then test the user's journey.
 
-Agent Maker is the Hermes profile `forja`. Alice mints a new profile from a
-sentence (`AgentDraft`), opens that agent's own chat, and sends the brief so
-the new agent can ask what it still needs. The creator script in
-`hermes-agents/forja` is checked against a fake Hermes CLI so those tests do
-not send prompts to a person's agent.
+Agent Maker is identified by `ui_meta.alice.role = agent-maker`, with a legacy
+fallback to the profile `forja`. Alice mints a new profile from a sentence
+(`AgentDraft`) through the same engine Agent Maker uses
+(`hermes-plugin/agent_engine.py`): a validated spec, structured result, and
+official Hermes CLI (`profile create` / `profile rename`). The iPhone form and
+the Agent Maker conversation stay as they are; they no longer diverge on
+collision, model, or tools. Renaming an agent also renames its Hermes profile.
+`hermes-agents/forja` and `hermes-plugin/tests/test_agent_engine.py` check the
+engine against a fake Hermes CLI so those tests do not send prompts to a
+person's agent.

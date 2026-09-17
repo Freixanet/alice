@@ -1123,4 +1123,101 @@ async def edit_note(note_id: str, body: _EditedNote) -> Dict[str, Any]:
     return await asyncio.to_thread(_edit_note, note_id, body.text, body.rich)
 
 
+# --- Shared agent create / rename (Alice form and Agent Maker) -----------------------------
+
+def _agent_engine():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "agent_engine.py"
+    name = "alice_agent_engine"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _engine_home() -> Path:
+    try:
+        from hermes_cli.config import get_process_hermes_home
+        return Path(get_process_hermes_home())
+    except Exception:
+        return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+
+
+class _AgentCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    title: Optional[str] = None
+    name: Optional[str] = None
+    description: str = ""
+    soul: Optional[str] = None
+    tools: Optional[List[str]] = None
+    routines: Optional[List[Dict[str, Any]]] = None
+    model: Optional[Any] = None
+    provider: Optional[str] = None
+    fallback: Optional[List[Any]] = None
+    reuse_profile: Optional[str] = None
+    job_id: Optional[str] = None
+    memory: Optional[str] = None
+    copy_memory: bool = False
+    source: Optional[str] = None
+    smoke: bool = False
+
+
+class _AgentRenameBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    from_profile: str = Field(alias="from")
+    to: str
+    job_id: Optional[str] = None
+    busy: bool = False
+
+
+def _create_agent_payload(body: Dict[str, Any]) -> Dict[str, Any]:
+    engine = _agent_engine()
+    try:
+        return engine.create_agent(
+            body,
+            home=_engine_home(),
+            require_soul=bool(str(body.get("soul") or "").strip()),
+            job_id=str(body.get("job_id") or "") or None,
+        )
+    except engine.SpecError as exc:
+        return engine.result(engine.STATUS_FAILED, error=str(exc))
+
+
+def _rename_agent_payload(body: _AgentRenameBody) -> Dict[str, Any]:
+    engine = _agent_engine()
+    return engine.rename_agent(
+        body.from_profile,
+        body.to,
+        home=_engine_home(),
+        job_id=body.job_id,
+        busy_profiles=[body.from_profile] if body.busy else None,
+    )
+
+
+@router.post("/agents")
+async def create_agent(body: _AgentCreateBody) -> Dict[str, Any]:
+    payload = await asyncio.to_thread(_create_agent_payload, body.model_dump(exclude_none=True))
+    return payload
+
+
+@router.post("/agents/rename")
+async def rename_agent(body: _AgentRenameBody) -> Dict[str, Any]:
+    return await asyncio.to_thread(_rename_agent_payload, body)
+
+
+@router.get("/agents/jobs/{job_id}")
+async def agent_job(job_id: str) -> Dict[str, Any]:
+    engine = _agent_engine()
+    found = engine.load_journal(job_id, _engine_home())
+    if not found:
+        raise HTTPException(status_code=404, detail="No agent operation with that id.")
+    return found
+
+
 _register_claim_auth()

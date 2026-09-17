@@ -20,6 +20,12 @@ What it adds, all in the dashboard:
   first profile with one), behind the dashboard login. Notes are added through the store's
   own `inbox.py add`, so the store stays append-only; `GET` reports `available: false`
   when no agent keeps one.
+- `POST /api/plugins/alice/agents` and `POST /api/plugins/alice/agents/rename` — the shared
+  agent engine Alice's form and Agent Maker both use. Create and rename go through official
+  Hermes profile commands, with a structured result (`completed`, `partial`, `needs_auth`,
+  `failed`). A taken name is left unchanged. Agent Maker also gets `agent_create` and
+  `agent_rename` tools, visible only on the stamped `agent-maker` role (legacy `forja`
+  included).
 
 It also gives a note-taking agent a **`notes` toolset** for the store it keeps in
 `workspace/inbox-store`: `note_add`, `note_file`, `note_folders`, `note_folder_create`,
