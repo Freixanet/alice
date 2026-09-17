@@ -75,7 +75,7 @@ struct PairingAdminScreen: View {
         .background(Palette.background(scheme))
         .task { await loadProfiles(); await load() }
         .onChange(of: profile) { _, _ in snapshot = nil; Task { await load() } }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
         .confirmationDialog("Revoke this user?", isPresented: Binding(get: { revoke != nil }, set: { if !$0 { revoke = nil } }), titleVisibility: .visible) {
             Button("Revoke", role: .destructive) { if let revoke { Task { await revokeUser(revoke) } } }
             Button("Cancel", role: .cancel) { revoke = nil }

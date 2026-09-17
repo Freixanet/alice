@@ -68,7 +68,7 @@ struct LearningScreen: View {
         .background(Palette.background(scheme))
         .task { await loadProfiles(); await load() }
         .onChange(of: profile) { _, _ in graph = nil; Task { await load() } }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
         .sheet(item: $selected) { node in
             LearningNodeSheet(node: node, profile: profile) { await load() }
                 .environment(store)

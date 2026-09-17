@@ -238,6 +238,7 @@ struct SearchScreen: View {
                     .font(.system(size: 16, weight: .medium))
                     .imageScale(.large)
                     .frame(width: 44, height: 44)
+                    .contentShape(.circle)
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)

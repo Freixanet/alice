@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import UIKit
 
 struct ChatScreen: View {
@@ -7,6 +8,8 @@ struct ChatScreen: View {
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
     let onOpenBots: () -> Void
+    /// How far the drawer is open, 0 to 1, as it moves.
+    var drawerProgress: CGFloat = 0
 
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
@@ -17,6 +20,8 @@ struct ChatScreen: View {
     /// Whether an on-screen keyboard is taking room. Not the composer's focus:
     /// a hardware keyboard focuses it without taking any.
     @State private var keyboardShown = false
+    /// The transcript is scrolled to its top, where Alice's mark belongs.
+    @State private var transcriptAtTop = true
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -85,7 +90,18 @@ struct ChatScreen: View {
             // controls and reserves their height, which is the half the
             // navigation bar was quietly doing. As an overlay the first
             // message sat underneath the new-chat button.
-            .safeAreaInset(edge: .top, spacing: 0) { topControls }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 8) {
+                    topControls
+                    // In the page, not floating over it: a popover tip is
+                    // presented, and while it is, a tap anywhere else only
+                    // dismisses it — the header's buttons stopped answering.
+                    if bot == nil {
+                        TipView(SwipeNavigationTip())
+                            .padding(.horizontal, 16)
+                    }
+                }
+            }
         }
         // Paint the window, not just the keyboard-resized chat content. The
         // software keyboard is translucent in places; without this full-screen
@@ -184,6 +200,12 @@ struct ChatScreen: View {
         _ = try? await store.bots()
     }
 
+    /// Home has no transcript to scroll; a conversation shows the mark only
+    /// while it is at its top.
+    private var showsAliceMark: Bool {
+        store.activeConversation.map { $0.messages.isEmpty } ?? true || transcriptAtTop
+    }
+
     private var topControls: some View {
         HStack(spacing: 0) {
             Button(action: bot == nil ? onOpenDrawer : onBack) {
@@ -198,10 +220,23 @@ struct ChatScreen: View {
                 // A bot's conversation is somewhere you arrived at from the
                 // list of bots, not a place the drawer leads anywhere useful
                 // from — so from here the same disc goes back instead.
-                Image(systemName: bot == nil ? "equal" : "chevron.left")
-                    .font(.system(size: 20, weight: bot == nil ? .regular : .medium))
-                    .imageScale(.large)
-                    .frame(width: discSize, height: discSize)
+                Group {
+                    if bot == nil {
+                        // The two bars turn into an X as the drawer opens,
+                        // following the finger rather than switching at the end.
+                        DrawerGlyph(progress: drawerProgress)
+                            .stroke(style: StrokeStyle(lineWidth: 1.9, lineCap: .round))
+                            .frame(width: 17, height: 17)
+                    } else {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 20, weight: .medium))
+                            .imageScale(.large)
+                    }
+                }
+                .frame(width: discSize, height: discSize)
+                // The whole disc takes the tap. A stroked shape is hit only
+                // where it is drawn, and the two thin bars were missed.
+                .contentShape(.circle)
             }
             .glassEffect(.regular.interactive(), in: .circle)
             .accessibilityLabel(bot == nil ? "Chats" : "Agents")
@@ -262,6 +297,10 @@ struct ChatScreen: View {
                     // Its ink sits 0.75pt above the two glyphs either side,
                     // the flags being lighter than the body they sit over.
                     .offset(y: 0.75)
+                    // Only at the top of the conversation: once reading down
+                    // it, the mark would sit over the words.
+                    .opacity(showsAliceMark ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.2), value: showsAliceMark)
                     .accessibilityHidden(true)
             }
 
@@ -287,6 +326,7 @@ struct ChatScreen: View {
                         ink: scheme == .dark ? .white : .black
                     )
                     .frame(width: discSize, height: discSize)
+                    .contentShape(.circle)
                 }
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Agents")
@@ -340,7 +380,9 @@ struct ChatScreen: View {
             // offset: a bot chat opened blank until the reader moved it.
             TranscriptView(
                 conversation: conversation,
-                quietRuns: store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? []
+                quietRuns: store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? [],
+                keyboardShown: keyboardShown,
+                atTop: $transcriptAtTop
             )
                 .id(conversation.id)
         } else {
@@ -356,11 +398,45 @@ struct ChatScreen: View {
 /// hand. The hand-driven version reasserted a far anchor over several frames
 /// while lazy rows were still measuring; on a phone it could land short, and
 /// a press on the jump button during a flick took several tries.
+/// The drawer button's two bars, and the X they become.
+///
+/// At 0 the bars of the `equal` sign it replaced: level, a little apart. At 1
+/// they meet in the middle, turned 45° either way. Animatable, so the drawer's
+/// own animation carries it when it opens or closes without a finger on it.
+private struct DrawerGlyph: Shape {
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let t = min(max(progress, 0), 1)
+        let centre = CGPoint(x: rect.midX, y: rect.midY)
+        // Bars 15pt long, 6.5pt apart, as `equal` draws at 20pt.
+        let half: CGFloat = 7.5 + 1 * t
+        let gap: CGFloat = 3.25 * (1 - t)
+        var path = Path()
+        for (sign, angle) in [(-1.0, Double.pi / 4), (1.0, -Double.pi / 4)] {
+            let turn = CGFloat(angle) * t
+            let dx = cos(turn) * half
+            let dy = sin(turn) * half
+            let y = centre.y + CGFloat(sign) * gap
+            path.move(to: CGPoint(x: centre.x - dx, y: y - dy))
+            path.addLine(to: CGPoint(x: centre.x + dx, y: y + dy))
+        }
+        return path
+    }
+}
+
 private struct TranscriptView: View {
     @Environment(AppStore.self) private var store
     let conversation: Conversation
     /// This bot's routine runs that found nothing, shown as cards.
     var quietRuns: [QuietRoutineRun] = []
+    var keyboardShown = false
+    @Binding var atTop: Bool
 
     @State private var position = ScrollPosition(edge: .bottom)
     /// Whether the transcript keeps to its live edge as it grows. Only the
@@ -441,22 +517,31 @@ private struct TranscriptView: View {
                             message: message,
                             showsActions: (position?.isLast ?? true) && !busy,
                             showsTime: (position?.isFirst ?? true) && !busy,
+                            showsAuthor: position?.isFirst ?? true,
                             actionsContent: position?.text
                         )
                         // Parts of one task sit closer than separate messages.
                         .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
                         .id(message.id)
                     }
+                    if conversation.messages.contains(where: { $0.role == .user }) {
+                        TipView(MessageActionsTip())
+                    }
                     BackgroundWorkCard(conversationID: conversation.id)
                     // A question the agent is waiting on, where the reply
                     // it holds up would appear.
                     ChatQuestionsCard(conversationID: conversation.id)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 28)
+                // The composer's own side inset, so the conversation and the
+                // field it is written in share one column.
+                .padding(.horizontal, store.activeBotProfileForModelSelection != nil ? 20 : 18)
+                // Clear of the header's buttons, not tucked under them.
+                .padding(.top, 44)
                 // Air between the last reply and the composer, so the
-                // conversation ends rather than stopping against the glass.
-                .padding(.bottom, 34)
+                // conversation ends rather than stopping against the glass —
+                // more with the keyboard up, where the composer sits higher and
+                // the last line otherwise ran right into it.
+                .padding(.bottom, keyboardShown ? 52 : 34)
                 // At least a screenful, aligned to the top, so a short
                 // conversation is not pinned to the foot of the view.
                 .frame(minHeight: area.size.height, alignment: .top)
@@ -477,6 +562,12 @@ private struct TranscriptView: View {
                 if Self.isReader(oldPhase), !readerScrolling, let lastTail {
                     following = lastTail.near
                 }
+            }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                // At the top while the first message is still clear of the header.
+                geometry.contentOffset.y + geometry.contentInsets.top < 12
+            } action: { _, top in
+                atTop = top
             }
             .onScrollGeometryChange(for: Tail.self) { geometry in
                 // The visible rect runs under the top controls and the
@@ -601,6 +692,10 @@ private struct EmptyChatView: View {
                     .scaledToFit()
                     .frame(width: 88, height: 88)
                     .accessibilityHidden(true)
+                    // After the launch logo has faded, not alongside it.
+                    .opacity(store.launchRevealed ? 1 : 0)
+                    .scaleEffect(store.launchRevealed ? 1 : 0.92)
+                    .animation(.easeOut(duration: 0.35), value: store.launchRevealed)
                     .padding(.bottom, 8)
 
                 Text("What are we working on?")

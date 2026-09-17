@@ -85,7 +85,7 @@ struct MCPScreen: View {
         .onChange(of: selectedProfile) { _, _ in resetAndReload() }
         .onChange(of: pane) { _, _ in query = "" }
         .onDisappear { stopInstallPolls() }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
         .toolbar {
             if pane == .servers {
                 ToolbarItem(placement: .primaryAction) {

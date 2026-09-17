@@ -224,6 +224,7 @@ actor HermesRPCClient: HermesRPCTransport {
     private func expire(_ id: Int, method: String, after limit: Duration) {
         guard pending[id] != nil else { return }
         let seconds = Int(limit.components.seconds)
+        DiagnosticsLog.write("rpc.timeout method=\(method) after=\(seconds)s")
         settle(id, with: .failure(Failure(
             reason: "Hermes did not answer `\(method)` within \(seconds) seconds."
         )))
@@ -324,6 +325,10 @@ actor HermesRPCClient: HermesRPCTransport {
     /// listeners attached. Retiring a dashboard finishes them so an old
     /// observer cannot keep a dead client alive or block a later watcher.
     func disconnect(_ reason: Error? = nil, finishingListeners: Bool = false) {
+        DiagnosticsLog.write(
+            "rpc.disconnect pending=\(pending.count) listeners=\(listeners.count) "
+                + "finishing=\(finishingListeners) reason=\(reason.map { "\($0.localizedDescription)" } ?? "none")"
+        )
         pump?.cancel()
         pump = nil
         openingSocket?.cancel(with: .goingAway, reason: nil)

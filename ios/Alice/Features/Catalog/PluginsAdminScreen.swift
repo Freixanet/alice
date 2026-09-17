@@ -42,7 +42,7 @@ struct PluginsAdminScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Search plugins")
         .scrollContentBackground(.hidden).background(Palette.background(scheme))
-        .task { await load() }.refreshable { await load() }
+        .task { await load() }.refreshableWithFeedback { await load() }
         .toolbar { ToolbarItemGroup(placement: .primaryAction) {
             Button { Task { await rescan() } } label: { Image(systemName: "arrow.triangle.2.circlepath") }.disabled(loading).accessibilityLabel("Rescan plugins")
             Button { installing = true } label: { Image(systemName: "plus") }.accessibilityLabel("Install plugin")

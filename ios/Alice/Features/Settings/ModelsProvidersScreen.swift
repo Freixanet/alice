@@ -190,7 +190,7 @@ struct ModelsProvidersScreen: View {
             guard ready else { return }
             Task { await loadProfiles(); await load() }
         }
-        .refreshable { await load(refreshing: true) }
+        .refreshableWithFeedback { await load(refreshing: true) }
     }
 
     private func loadProfiles() async {

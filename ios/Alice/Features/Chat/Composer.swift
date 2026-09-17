@@ -55,6 +55,7 @@ struct Composer: View {
             } else {
                 if !commands.isEmpty { commandList }
                 else if !matchingBots.isEmpty { botMentionList }
+                if store.editingMessageID != nil { editingBanner }
                 if isBotChat { botComposer }
                 else { aliceComposer }
             }
@@ -104,7 +105,16 @@ struct Composer: View {
                 }
             }
         }
-        .onChange(of: store.draft) { commandsDismissed = false }
+        .onChange(of: store.draft) { old, new in
+            commandsDismissed = false
+            if let whole = store.draftDeletingMention(old: old, new: new) {
+                store.draft = whole
+            }
+        }
+        .onChange(of: store.editingMessageID) { _, editing in
+            if editing != nil { focused.wrappedValue = true }
+        }
+        .animation(.snappy(duration: 0.2), value: store.editingMessageID)
         .animation(.snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
         .task(id: store.dashboardReady) {
             _ = try? await store.bots()
@@ -288,6 +298,32 @@ struct Composer: View {
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
+    /// Says that sending replaces the message being edited, and lets go of it.
+    private var editingBanner: some View {
+        HStack(spacing: 8) {
+            Label(
+                store.isSending ? "Stop the reply to send your edit" : "Editing message",
+                systemImage: "pencil"
+            )
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Button("Cancel Editing", systemImage: "xmark") {
+                store.cancelEditing()
+            }
+            .labelStyle(.iconOnly)
+            .font(.footnote.weight(.semibold))
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(width: 28, height: 28)
+            .contentShape(.rect)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
+        .glassEffect(.regular, in: .capsule)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+
     private var aliceComposer: some View {
         @Bindable var store = store
 
@@ -299,10 +335,14 @@ struct Composer: View {
                     }
                 }
 
-                TextField(placeholder, text: $store.draft, axis: .vertical)
+                TextField(
+                    "", text: $store.draft,
+                    prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
+                )
                     .lineLimit(1...7)
                     .textFieldStyle(.plain)
                     .font(.body)
+                    .mentionColoured(store.draft, styled: { store.mentionStyled($0, bold: false) })
                     .focused(focused)
                     .padding(.horizontal, 4)
                     // The field only claims the height of its own text, so a
@@ -319,7 +359,6 @@ struct Composer: View {
                     attachButton
                     modelChip
                     Spacer(minLength: 4)
-                    micButton
                     actionButton
                 }
             }
@@ -360,9 +399,13 @@ struct Composer: View {
                     botAttachButton
 
                     HStack(alignment: .bottom, spacing: 6) {
-                        TextField(placeholder, text: $store.draft, axis: .vertical)
+                        TextField(
+                            "", text: $store.draft,
+                            prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
+                        )
                             .textFieldStyle(.plain)
                             .font(.body)
+                            .mentionColoured(store.draft, styled: { store.mentionStyled($0, bold: false) })
                             .focused(focused)
                             .lineLimit(1...7)
                             .padding(.vertical, 6)
@@ -410,6 +453,7 @@ struct Composer: View {
             Image(systemName: "plus")
                 .font(.system(size: 20, weight: .regular))
                 .frame(width: 44, height: 44)
+                .contentShape(.circle)
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .circle)
@@ -424,7 +468,7 @@ struct Composer: View {
         let listening = pendingListen ?? dictation.isListening
         let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !store.draftAttachments.isEmpty
-        let stopping = store.isSending && !hasDraft && !listening
+        let stopping = store.canStop && !hasDraft && !listening
 
         Button {
             if listening {
@@ -544,78 +588,95 @@ struct Composer: View {
             ?? (store.isConnected ? "Model" : "Not connected")
     }
 
-    /// Dictation writes into the draft rather than sending, so a misheard word
-    /// can be fixed before the agent ever sees it.
-    @ViewBuilder
-    private var micButton: some View {
-        // What the finger asked for, until the recogniser catches up. Starting
-        // dictation sets up an audio session and a speech recogniser before
-        // `isListening` turns over, and the icon was waiting for all of it —
-        // long enough on a cold start to look like the tap had missed. The
-        // symbol now changes on the tap and the real state takes over when it
-        // arrives.
-        let listening = pendingListen ?? dictation.isListening
-        Button {
-            micTaps += 1
-            pendingListen = !listening
-            let draft = store.draft
-            // Off this run loop turn, so the button redraws first.
-            Task {
-                dictation.prime(with: draft)
-                dictation.toggle { store.draft = $0 }
-            }
-        } label: {
-            Image(systemName: listening ? "waveform" : "mic")
-                .font(.system(size: 16, weight: .medium))
-                .frame(width: controlHeight, height: controlHeight)
-                .contentTransition(.symbolEffect(.replace))
-                .symbolEffect(.variableColor, isActive: listening)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(listening ? AnyShapeStyle(store.accent.primary(scheme)) : AnyShapeStyle(.secondary))
-        .glassEffect(.regular.interactive(), in: .circle)
-        // Dictation starts listening before there is anything to see. The tap
-        // has to be felt, or the reader is left talking at a button they are
-        // not sure they pressed.
-        .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
-        .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
-        .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
-    }
-
-    /// One button holds the trailing slot: send when idle, stop while a reply is
-    /// streaming, and back to send as soon as there is something new to say.
+    /// One button holds the trailing slot, as in a bot's chat: dictation while
+    /// the field is empty, Send as soon as there is something written, and
+    /// Stop while a reply is streaming.
     @ViewBuilder
     private var actionButton: some View {
-        let sending = store.isSending
+        // What the finger asked for, until the recogniser catches up: starting
+        // dictation sets up audio before `isListening` turns over.
+        let listening = pendingListen ?? dictation.isListening
+        // Held on questions, a turn is delivered rather than streaming.
+        let sending = store.canStop
         let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !store.draftAttachments.isEmpty
-        let stopping = sending && !hasDraft
+        let stopping = sending && !hasDraft && !listening
+        let acting = listening || stopping || hasDraft
 
         Button {
-            if stopping { store.stop() } else { store.send() }
+            if listening {
+                toggleDictation(listening: true)
+            } else if stopping {
+                store.stop()
+            } else if hasDraft {
+                store.send()
+            } else {
+                toggleDictation(listening: false)
+            }
         } label: {
-            Image(systemName: stopping ? "stop.fill" : "arrow.up")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: controlHeight, height: controlHeight)
-                .contentTransition(.symbolEffect(.replace))
+            Image(
+                systemName: listening
+                    ? "waveform" : (stopping ? "stop.fill" : (hasDraft ? "arrow.up" : "mic"))
+            )
+            .font(.system(size: 16, weight: acting ? .semibold : .medium))
+            .frame(width: controlHeight, height: controlHeight)
+            .contentTransition(.symbolEffect(.replace))
+            .symbolEffect(.variableColor, isActive: listening)
         }
         // `.glassProminent` sizes itself, adding about 10pt of its own padding
         // around the label — measured at 44pt tall next to a 34pt chip. Applying
         // the material to an exact frame instead keeps the row one height.
         .buttonStyle(.plain)
-        // The accent's clearest home: the one control that acts. With Stone
-        // it resolves to the same near-black and near-white the button always
-        // had, so the default look is unchanged and every other choice shows.
+        // The accent's clearest home: the one control that acts.
         .foregroundStyle(
-            store.isConnected && (sending || hasDraft)
+            acting && (store.isConnected || listening)
                 ? store.accent.primary(scheme) : Color.secondary
         )
         .glassEffect(.regular.interactive(), in: .circle)
         .glassEffectID("send", in: glass)
-        // Not disabled while the connection is being re-made: `send()`
-        // reconnects first. Disabled, a press did nothing at all.
-        .disabled(!sending && !hasDraft)
-        .accessibilityLabel(stopping ? "Stop" : "Send")
+        // Dictation starts listening before there is anything to see; the tap
+        // has to be felt.
+        .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
+        .accessibilityLabel(
+            listening ? "Stop dictating" : (stopping ? "Stop" : (hasDraft ? "Send" : "Dictate"))
+        )
         .accessibilityIdentifier("composer.action")
+        .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
+    }
+}
+
+/// While a draft names an agent with `@`, the name shows in that agent's colour
+/// as it is typed, as it will once sent.
+///
+/// A text field draws one colour, so the draft is always drawn a second time
+/// behind it — styled when it names an agent, plain when not — and the field's
+/// own glyphs are always clear. Always, not only while there is a mention: a
+/// field turned clear and back kept drawing clear, and whatever was typed after
+/// a mention was deleted could not be seen. Both lay the same text out at the
+/// same size in the same box, so they wrap alike; caret and selection stay the
+/// field's, and the placeholder is the field's prompt, coloured on its own.
+private struct MentionColoured: ViewModifier {
+    let text: String
+    let styled: (String) -> AttributedString
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(.clear)
+            .background(alignment: .topLeading) {
+                if !text.isEmpty {
+                    Text(text.contains("@") ? styled(text) : AttributedString(text))
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+    }
+}
+
+private extension View {
+    func mentionColoured(_ text: String, styled: @escaping (String) -> AttributedString) -> some View {
+        modifier(MentionColoured(text: text, styled: styled))
     }
 }

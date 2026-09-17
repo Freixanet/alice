@@ -147,7 +147,7 @@ struct HermesFilesScreen: View {
                 Task { await loadWorkspaceInitial() }
             }
         }
-        .refreshable {
+        .refreshableWithFeedback {
             if mode == .managed { await loadManaged(managedListing?.path) }
             else { await loadWorkspace(workspacePath) }
         }
@@ -770,9 +770,9 @@ struct HermesRemoteFileDetail: View {
     private func preview(_ file: HermesFSTextSnapshot) -> some View {
         if file.binary {
             if let image {
-                ScrollView([.horizontal, .vertical]) {
-                    Image(uiImage: image).resizable().scaledToFit().padding()
-                }
+                // Tap for the image full screen, pinch to zoom.
+                Image(uiImage: image).resizable().scaledToFit().padding()
+                    .opensImageViewer(image)
             } else {
                 binaryUnavailable(file)
             }

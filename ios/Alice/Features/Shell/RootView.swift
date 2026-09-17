@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import UIKit
 
 /// Chat is the app; everything else is somewhere you go from it.
@@ -50,7 +51,8 @@ struct RootView: View {
                 ChatScreen(
                     onOpenDrawer: { setDrawer(true) },
                     onBack: goBackToBots,
-                    onOpenBots: openBots
+                    onOpenBots: openBots,
+                    drawerProgress: progress
                 )
                     .overlay {
                         // Grows with the gesture rather than appearing at the end,
@@ -184,7 +186,7 @@ struct RootView: View {
                 // and never closed by a downward swipe through the notes.
                 if store.showingNotes {
                     NavigationStack {
-                        NotesScreen(onClose: closeNotes)
+                        NotesFoldersScreen(onClose: closeNotes)
                             .containerBackground(Palette.background(scheme), for: .navigation)
                     }
                     // Painted under the keyboard too, as the conversation is:
@@ -197,7 +199,9 @@ struct RootView: View {
                     .overlay {
                         DrawerPan(
                             shouldBegin: { velocity in
-                                velocity.x > 0 && abs(velocity.x) > abs(velocity.y) * 1.5
+                                !store.editingNote && !store.noteRowOpen && !store.notesFolderOpen
+                                    && Date.now.timeIntervalSince(store.noteRowTouchedAt) > 0.8
+                                    && velocity.x > 0 && abs(velocity.x) > abs(velocity.y) * 1.5
                             },
                             onChange: { _ in },
                             onEnd: { translation, predicted in
@@ -237,6 +241,13 @@ struct RootView: View {
             .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingBots)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingNotes)
+            // Leaving a screen puts its keyboard away. Kept up on a page with
+            // no field — Agents, Notes, another chat's header — nothing on it
+            // could take the focus back, so there was no way to close it.
+            .onChange(of: store.showingBots) { dismissKeyboard() }
+            .onChange(of: store.showingNotes) { dismissKeyboard() }
+            .onChange(of: store.activeID) { dismissKeyboard() }
+            .onChange(of: drawerOpen) { _, open in if open { dismissKeyboard() } }
             // The drawer answers a sideways swipe from anywhere, not just from a
             // strip at the edge. `DrawerPan` only claims a drag that starts out
             // sideways, so scrolling the conversation is untouched.
@@ -279,8 +290,14 @@ struct RootView: View {
                             return
                         }
                         if !drawerOpen, translation < 0 {
-                            if travelled || flicked { openBots() }
+                            if travelled || flicked {
+                                SwipeNavigationTip().invalidate(reason: .actionPerformed)
+                                openBots()
+                            }
                             return
+                        }
+                        if !drawerOpen, travelled || flicked {
+                            SwipeNavigationTip().invalidate(reason: .actionPerformed)
                         }
                         setDrawer(drawerOpen ? !(travelled || flicked) : (travelled || flicked))
                     }
@@ -412,6 +429,12 @@ struct RootView: View {
             .compactMap { ($0 as? UIWindowScene)?.screen }
             .first
         return (screen?.value(forKey: "_displayCornerRadius") as? CGFloat) ?? 55
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+        )
     }
 
     private func setDrawer(_ open: Bool) {

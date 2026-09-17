@@ -49,7 +49,7 @@ struct WebhooksScreen: View {
         .searchable(text: $query, prompt: "Search webhooks")
         .task { await load() }
         .task(id: restartAction?.name) { await pollRestart() }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { showCreate = true } label: { Label("New webhook", systemImage: "plus") }

@@ -2327,6 +2327,48 @@ extension DashboardClient {
         return note
     }
 
+    /// Makes a folder in the notes store; one of that name already there is returned.
+    func createNoteFolder(named name: String) async throws -> NoteFolder {
+        let object = try await send("POST", "api/plugins/alice/notes/folders", ["name": name])
+        guard let row = object["folder"] as? [String: Any],
+              let id = row["id"] as? String, let saved = row["name"] as? String
+        else { throw Failure.unreadable }
+        return NoteFolder(id: id, name: saved)
+    }
+
+    func renameNoteFolder(id: String, to name: String) async throws {
+        try await send("PUT", "api/plugins/alice/notes/folders/\(Self.pathSegment(id))", ["name": name])
+    }
+
+    func deleteNoteFolder(id: String) async throws {
+        try await send("DELETE", "api/plugins/alice/notes/folders/\(Self.pathSegment(id))")
+    }
+
+    /// Files a note in a folder; nil puts it back in Quick Notes.
+    func fileNote(id: String, folder: String?) async throws {
+        var body: [String: Any] = [:]
+        if let folder { body["folder"] = folder }
+        try await send("PUT", "api/plugins/alice/notes/\(Self.pathSegment(id))/folder", body)
+    }
+
+    /// Deletes a note from its agent's store, with that agent's reading of it.
+    func deleteNote(id: String) async throws {
+        try await send("DELETE", "api/plugins/alice/notes/\(Self.pathSegment(id))")
+    }
+
+    /// Rewrites a note in its agent's store: the plain words, and the styled
+    /// copy as base64 RTF (nil drops it).
+    func editNote(id: String, text: String, rich: String?) async throws -> Note {
+        var body: [String: Any] = ["text": text]
+        if let rich { body["rich"] = rich }
+        let object = try await send(
+            "PUT", "api/plugins/alice/notes/\(Self.pathSegment(id))", body
+        )
+        guard let row = object["note"] as? [String: Any], let note = NotesFeed.note(from: row)
+        else { throw Failure.unreadable }
+        return note
+    }
+
     func memory() async throws -> [MemoryProvider] {
         try await memoryProviderStatus().providers
     }

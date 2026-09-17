@@ -36,7 +36,7 @@ struct SavedEndpointsScreen: View {
         }
         .navigationTitle("Saved Endpoints").navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden).background(Palette.background(scheme))
-        .task { await load() }.refreshable { await load() }
+        .task { await load() }.refreshableWithFeedback { await load() }
         .toolbar { ToolbarItem(placement:.primaryAction) { Button { adding=true } label:{Image(systemName:"plus")}.accessibilityLabel("Add custom endpoint") } }
         .sheet(isPresented:$adding){ EndpointEditor(profile:profile, endpoint:nil){await load()}.environment(store).preferredColorScheme(store.theme.colorScheme) }
         .sheet(item:$editing){ endpoint in EndpointEditor(profile:profile, endpoint:endpoint){await load()}.environment(store).preferredColorScheme(store.theme.colorScheme) }

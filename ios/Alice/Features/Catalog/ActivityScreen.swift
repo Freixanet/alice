@@ -59,6 +59,9 @@ struct ActivityScreen: View {
     @State private var fixNotes: [String: String] = [:]
     @State private var confirming: PendingFix?
     @State private var confirmingClear = false
+    /// The routine a tapped routine event is about, open on its own page.
+    @State private var openedRoutine: JobRow?
+    @State private var routineNotice: String?
 
     private struct PendingFix: Identifiable {
         let id = UUID()
@@ -155,7 +158,19 @@ struct ActivityScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
-        .refreshable { await refresh() }
+        .refreshableWithFeedback { await refresh() }
+        .sheet(item: $openedRoutine) { routine in
+            RoutineDetailSheet(routine: routine) {}
+                .preferredColorScheme(store.theme.colorScheme)
+        }
+        .alert(
+            "Couldn’t open routine",
+            isPresented: Binding(get: { routineNotice != nil }, set: { if !$0 { routineNotice = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(routineNotice ?? "")
+        }
         .task {
             // Seen the moment it opens. Marked only after the refresh, the
             // drawer's number stayed for as long as Hermes took to answer.
@@ -320,7 +335,15 @@ struct ActivityScreen: View {
 
     @ViewBuilder
     private func header(_ event: AliceEvent, stacked: ActivityGroup?) -> some View {
-        if event.opensAChat {
+        if event.reference.routineKey != nil {
+            Button { Task { await openRoutine(event) } } label: {
+                headerContent(event, stacked: stacked)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("activity.open.\(event.id)")
+            .accessibilityHint("Opens the routine")
+        } else if event.opensAChat {
             Button { openReferencedChat(event) } label: {
                 headerContent(event, stacked: stacked)
                     .contentShape(.rect)
@@ -378,6 +401,27 @@ struct ActivityScreen: View {
                         .accessibilityLabel("\(stacked.count) times")
                 }
             }
+        }
+    }
+
+    /// A routine's report or failure opens that routine — its schedule, runs
+    /// and controls — rather than the chat it reported into.
+    private func openRoutine(_ event: AliceEvent) async {
+        guard let key = event.reference.routineKey,
+              let slash = key.lastIndex(of: "/")
+        else { return }
+        let profile = String(key[..<slash])
+        let id = String(key[key.index(after: slash)...])
+        do {
+            let routines = try await store.routines(for: profile)
+            if let routine = routines.first(where: { $0.id == id }) {
+                openedRoutine = routine
+            } else {
+                routineNotice = "That routine no longer exists."
+            }
+        } catch {
+            routineNotice = (error as? LocalizedError)?.errorDescription
+                ?? "Hermes did not send the routine."
         }
     }
 

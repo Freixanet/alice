@@ -88,7 +88,7 @@ struct SystemScreen: View {
         .onChange(of: selectedLog) { _, _ in
             Task { await loadLogs() }
         }
-        .refreshable { await refreshAll() }
+        .refreshableWithFeedback { await refreshAll() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { Task { await refreshAll() } } label: {
@@ -635,6 +635,7 @@ struct SystemScreen: View {
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
             }
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(activeAction?.name != nil && actionStatus?.running != false)

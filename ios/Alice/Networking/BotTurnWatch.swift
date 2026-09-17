@@ -149,7 +149,11 @@ struct BotTurnWatch: Sendable {
 
     mutating func receive(_ frame: HermesRPCEvent, now: Date) -> FrameStep {
         guard frame.sessionID.isEmpty || frame.sessionID == liveSessionID else { return .ignore }
-        lastHeard = now
+        // Only this turn's own frames prove it is alive. A frame with no
+        // session is any traffic at all — a foreground refresh of every bot
+        // sends plenty — and counting it kept a finished turn from ever being
+        // asked about.
+        if !frame.sessionID.isEmpty { lastHeard = now }
         // Only a real turn outcome ends a turn. The subagent mirror emits
         // `message.complete` with no `status`, on the parent's session id,
         // when a child finishes — breaking on that abandoned the parent.

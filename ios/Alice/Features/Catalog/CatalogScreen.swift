@@ -101,7 +101,7 @@ struct CatalogScreen: View {
         .navigationTitle(source.title)
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
         .task { await load() }
         .overlay {
             ScrollView {
@@ -109,7 +109,7 @@ struct CatalogScreen: View {
             }
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
-            .refreshable { await load() }
+            .refreshableWithFeedback { await load() }
             .opacity(showsOverlay ? 1 : 0)
             .allowsHitTesting(showsOverlay)
         }

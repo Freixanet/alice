@@ -42,7 +42,12 @@ targets:
         UIAppFonts:
           - InstrumentSerif-Regular.ttf
           - InstrumentSerif-Italic.ttf
-        UILaunchScreen: {}
+        # The app's own background and logo, so opening it is not a white
+        # flash before a warm off-white one. RootView fades the same logo out.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchLogo
+          UIImageRespectsSafeAreaInsets: false
         # Opportunistic background catch-up. iOS decides whether and when this
         # runs; Alice's notification copy is written to match that, and never
         # promises delivery while the app is closed.
@@ -55,6 +60,9 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         # The key is read back only for the user who put it there.
+        NSFaceIDUsageDescription: >-
+          Alice uses Face ID to unlock the app and your locked notes, when you
+          turn that on in Settings.
         NSCameraUsageDescription: >-
           Alice uses the camera to scan a Hermes pairing QR code and when you
           attach a photo you take from the composer.

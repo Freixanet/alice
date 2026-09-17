@@ -181,9 +181,12 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// canonical chat is addressed. No profile is Alice's own: the profile the
     /// dashboard runs as.
     @discardableResult
-    func resume(profile: String?, target: String) async throws -> JSONObject {
+    func resume(
+        profile: String?, target: String, omitMessages: Bool = false
+    ) async throws -> JSONObject {
         var params: [String: Any] = ["session_id": target]
         if let profile { params["profile"] = profile }
+        if omitMessages { params["omit_messages"] = true }
         return try await rpc.call("session.resume", JSONObject(params))
     }
 
@@ -270,6 +273,10 @@ struct WebSocketBotChatSource: BotChatSessionSource {
                   let text = row["text"] as? String
             else { return nil }
             guard let rowID = Self.rowID(row) else { return nil }
+            // Hermes hands a background delegation's results back to the agent
+            // as a user turn. The person did not write it, and its raw JSON
+            // showed in the chat as if they had.
+            if role == .user, Self.isDelegationReport(text) { return nil }
             // Hermes persists assistant rows whose only payload is a tool call.
             // The projected history exposes those as assistant + empty text, while
             // the tool rows themselves are intentionally hidden. Rendering the
@@ -289,6 +296,12 @@ struct WebSocketBotChatSource: BotChatSessionSource {
                     ?? Date(timeIntervalSince1970: 0)
             )
         }
+    }
+
+    /// `[ASYNC DELEGATION BATCH COMPLETE — …]`, `[ASYNC DELEGATION COMPLETE — …]`
+    /// and `[ASYNC DELEGATION TASK FAILED — …]`, as Hermes writes them.
+    static func isDelegationReport(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("[ASYNC DELEGATION ")
     }
 
     private static func rowID(_ row: [String: Any]) -> String? {
@@ -439,7 +452,14 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     private func resumedState(
         profile: String?, storedSessionID: String
     ) async throws -> BotTurnState {
-        let resumed = try await resume(profile: profile, target: storedSessionID)
+        // Only the runtime is wanted, not the transcript. Reading a long chat
+        // back just to learn whether a turn is running made this check slower
+        // than the watch's deadline on a busy Mac, so it failed, the socket was
+        // dropped, and a reply that had long finished said "Reconnecting to
+        // Hermes…" until the watch gave up.
+        let resumed = try await resume(
+            profile: profile, target: storedSessionID, omitMessages: true
+        )
         guard let state = BotTurnState(resumed) else {
             throw HermesRPCClient.Failure(
                 reason: "Hermes resumed the chat without a live session id."

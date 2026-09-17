@@ -62,6 +62,23 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         }
     }
 
+    /// The reply has stopped: nothing is still running, and how long it took is
+    /// written down before `pending` is cleared.
+    ///
+    /// Measured from when the turn was made, which is when the person sent it.
+    /// A reply recovered hours later — the phone slept mid-answer, and the
+    /// answer was found on the next read — would otherwise be stamped with the
+    /// length of the nap, so anything past an hour is left unsaid rather than
+    /// reported as thinking time.
+    mutating func settle(at moment: Date = Date()) {
+        if pending, thoughtSeconds == nil {
+            let took = moment.timeIntervalSince(createdAt)
+            if took >= 0, took <= 3600 { thoughtSeconds = Int(took.rounded()) }
+        }
+        pending = false
+        closeOpenTools()
+    }
+
     enum RunStatus: String, Hashable, Sendable, Codable {
         case started
         case queued
@@ -122,6 +139,10 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var createdAt: Date
     var pending: Bool = false
     var tools: [ToolCall] = []
+    /// How long the agent worked on this reply, in whole seconds, measured when
+    /// it stopped. Kept with the message so the trace above it still says what
+    /// it took after the app is relaunched.
+    var thoughtSeconds: Int? = nil
     var error: String?
     /// Set when the failure was a model limit, so the bubble can say whether
     /// waiting is worth it rather than showing one generic apology.
@@ -170,6 +191,11 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// (for example, gateway-side @file: refs). Used only to correlate the
     /// canonical transcript back to this local message.
     var remoteMatchContent: String? = nil
+    /// A reply from an agent named with `@` in another chat. The turn went into
+    /// that agent's own Hermes session — the one its chat uses — kept here so
+    /// the reply can be found there if this device stops watching it.
+    var mentionProfile: String? = nil
+    var mentionSessionID: String? = nil
 
     /// Decoded field by field, every optional one at a time.
     ///
@@ -187,6 +213,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         createdAt = try box.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         pending = try box.decodeIfPresent(Bool.self, forKey: .pending) ?? false
         tools = try box.decodeIfPresent([ToolCall].self, forKey: .tools) ?? []
+        thoughtSeconds = try box.decodeIfPresent(Int.self, forKey: .thoughtSeconds)
         error = try box.decodeIfPresent(String.self, forKey: .error)
         errorLimit = try box.decodeIfPresent(ModelLimit.self, forKey: .errorLimit)
         incomplete = try box.decodeIfPresent(Bool.self, forKey: .incomplete) ?? false
@@ -201,6 +228,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         awaitingRemote = try box.decodeIfPresent(Bool.self, forKey: .awaitingRemote) ?? false
         replyToMessageID = try box.decodeIfPresent(String.self, forKey: .replyToMessageID)
         remoteMatchContent = try box.decodeIfPresent(String.self, forKey: .remoteMatchContent)
+        mentionProfile = try box.decodeIfPresent(String.self, forKey: .mentionProfile)
+        mentionSessionID = try box.decodeIfPresent(String.self, forKey: .mentionSessionID)
     }
 
     init(
@@ -212,8 +241,10 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         approval: Approval? = nil, remoteID: String? = nil,
         localOnly: Bool = false, deliveryNote: String? = nil,
         awaitingRemote: Bool = false, replyToMessageID: String? = nil,
-        remoteMatchContent: String? = nil
+        remoteMatchContent: String? = nil,
+        mentionProfile: String? = nil
     ) {
+        self.mentionProfile = mentionProfile
         self.deliveryNote = deliveryNote
         self.awaitingRemote = awaitingRemote
         self.replyToMessageID = replyToMessageID

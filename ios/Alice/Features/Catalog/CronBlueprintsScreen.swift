@@ -35,7 +35,7 @@ struct CronBlueprintsScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Search blueprints")
         .scrollContentBackground(.hidden).background(Palette.background(scheme))
-        .task { await loadProfiles(); await load() }.refreshable { await load() }
+        .task { await loadProfiles(); await load() }.refreshableWithFeedback { await load() }
         .sheet(item: $selected) { row in BlueprintForm(blueprint: row, profile: profile) { selected = nil }.environment(store).preferredColorScheme(store.theme.colorScheme) }
     }
     private var filtered: [CronBlueprint] { let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(); guard !q.isEmpty else { return rows }; return rows.filter { $0.title.lowercased().contains(q) || $0.detail.lowercased().contains(q) || $0.tags.contains(where: { $0.lowercased().contains(q) }) } }

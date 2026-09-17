@@ -49,6 +49,85 @@ final class NotesFeedTests: XCTestCase {
         XCTAssertEqual(groups[0].notes.map(\.id), ["today-later", "today"])
     }
 
+    // MARK: - Sort By, and Group By Date
+
+    private func stamped(_ id: String, created: String, edited: String? = nil, text: String? = nil) -> Note {
+        var note = Note(id: id, createdAt: NotesFeed.date(created), text: text ?? id)
+        note.editedAt = NotesFeed.date(edited)
+        return note
+    }
+
+    func testSortByTitleReadsTheWayNamesAreSorted() {
+        let notes = [
+            stamped("1", created: "2026-09-01T10:00:00+02:00", text: "banco"),
+            stamped("2", created: "2026-09-02T10:00:00+02:00", text: "Árbol"),
+            stamped("3", created: "2026-09-03T10:00:00+02:00", text: "Casa"),
+        ]
+        XCTAssertEqual(
+            NotesFeed.ordered(notes, by: .title).map { NotesFeed.title(of: $0) },
+            ["Árbol", "banco", "Casa"]
+        )
+    }
+
+    func testSortByDateEditedPutsAnOldNoteJustEditedFirst() {
+        let notes = [
+            stamped("new", created: "2026-09-14T10:00:00+02:00"),
+            stamped("old-but-edited", created: "2026-08-01T10:00:00+02:00",
+                    edited: "2026-09-15T10:00:00+02:00"),
+        ]
+        XCTAssertEqual(NotesFeed.ordered(notes, by: .dateEdited).map(\.id),
+                       ["old-but-edited", "new"])
+        XCTAssertEqual(NotesFeed.ordered(notes, by: .dateCreated).map(\.id),
+                       ["new", "old-but-edited"])
+    }
+
+    func testGroupByDateOffIsOneRunOfNotesWithNoHeading() {
+        let notes = [
+            stamped("old", created: "2026-08-01T10:00:00+02:00"),
+            stamped("today", created: "2026-09-15T08:00:00+02:00"),
+        ]
+        let groups = NotesFeed.groups(notes, grouped: false)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].title, "")
+        XCTAssertEqual(groups[0].notes.map(\.id), ["today", "old"])
+    }
+
+    func testPinnedNotesStayOnTopWhateverTheOrderAndGrouping() {
+        let notes = [
+            stamped("a", created: "2026-09-15T10:00:00+02:00", text: "zulo"),
+            stamped("pinned", created: "2026-08-01T10:00:00+02:00", text: "aaa"),
+        ]
+        for grouped in [true, false] {
+            for sort in NotesSort.allCases {
+                let groups = NotesFeed.groups(
+                    notes, pinned: ["pinned"], sort: sort, grouped: grouped
+                )
+                XCTAssertEqual(groups.first?.title, "Pinned", "\(sort) grouped=\(grouped)")
+                XCTAssertEqual(groups.first?.notes.map(\.id), ["pinned"])
+                // And only there: a pinned note is not repeated below.
+                XCTAssertFalse(groups.dropFirst().flatMap(\.notes).contains { $0.id == "pinned" })
+            }
+        }
+    }
+
+    func testGroupingFollowsTheDateItIsSortedBy() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Madrid")!
+        let now = NotesFeed.date("2026-09-15T12:00:00+02:00")!
+        let note = stamped("edited-today", created: "2026-07-01T10:00:00+02:00",
+                           edited: "2026-09-15T09:00:00+02:00")
+        // Sorted by when it was edited, it belongs under Today, not under the
+        // day it was written.
+        XCTAssertEqual(
+            NotesFeed.groups([note], sort: .dateEdited, now: now, calendar: calendar).map(\.title),
+            ["Today"]
+        )
+        XCTAssertEqual(
+            NotesFeed.groups([note], sort: .dateCreated, now: now, calendar: calendar).map(\.title),
+            ["Earlier"]
+        )
+    }
+
     func testSearchFindsWordsAndHowANoteWasSorted() {
         let note = Note(id: "1", createdAt: nil, text: "Comprar pan", types: ["tarea"], topics: ["casa"])
         XCTAssertTrue(NotesFeed.matches(note, query: "pan"))

@@ -81,7 +81,7 @@ struct MemoryProvidersScreen: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
         .sheet(item: $inspecting) { provider in
             MemoryProviderDetailSheet(
                 profile: profile,

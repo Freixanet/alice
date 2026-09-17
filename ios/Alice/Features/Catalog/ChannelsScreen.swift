@@ -91,7 +91,7 @@ struct ChannelsScreen: View {
             restartNeeded = false
             Task { await load() }
         }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {

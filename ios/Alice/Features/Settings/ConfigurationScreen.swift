@@ -120,7 +120,7 @@ struct ConfigurationScreen: View {
             guard ready else { return }
             Task { await loadProfiles(); await load() }
         }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
     }
 
     private func loadProfiles() async {

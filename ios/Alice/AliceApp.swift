@@ -17,6 +17,10 @@ struct AliceApp: App {
     @State private var activities = AgentActivities()
     @State private var pairingLink: PendingPairingLink?
 
+    init() {
+        GestureTips.configure()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -25,6 +29,15 @@ struct AliceApp: App {
                 // translucent region beneath the keyboard never falls back to
                 // UIKit's default white, especially in dark mode.
                 .background(WindowSurface())
+                // Locked, or showing in the app switcher with the lock on:
+                // nothing of Alice is visible until the owner is in.
+                .overlay {
+                    if store.appLocked || (store.requireUnlock && scenePhase != .active) {
+                        AppLockView(onUnlock: drainPendingRoute)
+                            .transition(.opacity)
+                    }
+                }
+                .overlay { LaunchCurtain() }
                 .environment(store)
                 .environment(speech)
                 .environment(notifier)
@@ -58,6 +71,8 @@ struct AliceApp: App {
                     #endif
                     await store.restoreConnection()
                     await store.restoreDashboard()
+                    // Notes brought up to date alongside, so the page opens on them.
+                    Task { try? await store.refreshNotes() }
                     // Hydrate canonical Bot Chat session ids before the watcher
                     // starts. Existing installs may predate remote Bot Chat and
                     // therefore have cached bot conversations with no server id;
@@ -77,12 +92,21 @@ struct AliceApp: App {
                     guard phase == .active else {
                         store.isForeground = false
                         if phase == .background {
+                            // Locked notes close with the app, as in Notes.
+                            store.lockedNotesOpen = false
+                            if store.leftForegroundAt == nil { store.leftForegroundAt = Date() }
                             store.persistConversationsImmediately()
                             store.stopWatchingLiveEvents()
                             scheduleRefresh()
                         }
                         return
                     }
+                    // Away longer than the grace period: locked again.
+                    if store.requireUnlock, let left = store.leftForegroundAt,
+                       Date().timeIntervalSince(left) >= TimeInterval(store.lockGrace) {
+                        store.appLocked = true
+                    }
+                    store.leftForegroundAt = nil
                     Task {
                         store.isForeground = true
                         await notifier.refreshPermission()
@@ -92,6 +116,7 @@ struct AliceApp: App {
                         // label from reporting yesterday's state.
                         await store.restoreConnection()
                         await store.restoreDashboard()
+                        Task { try? await store.refreshNotes() }
                         // Re-resolve the canonical tips before listening again:
                         // compression can advance a bot to a new session while
                         // Alice is suspended, and events must route by that live id.
@@ -154,7 +179,8 @@ struct AliceApp: App {
 
     /// Acts on a tap once there is something on screen to act with.
     private func drainPendingRoute() {
-        guard let route = notifier.pendingRoute else { return }
+        // A notification tapped while locked opens once Alice is unlocked.
+        guard !store.appLocked, let route = notifier.pendingRoute else { return }
         notifier.pendingRoute = nil
         _ = store.open(route)
     }

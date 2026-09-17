@@ -79,10 +79,14 @@ extension WebSocketBotChatSource {
     /// default and every other chat keep theirs. A model Hermes wants
     /// confirmed first is refused with Hermes' reason rather than confirmed
     /// on somebody's behalf.
+    ///
+    /// `force` sets it even when the session says it already runs that model.
+    /// A resumed session reports the configured model rather than the one its
+    /// runtime was rebuilt on, which after a provider fallback is the fallback.
     func useModel(
-        _ model: String, provider: String?, in session: HomeChatSession
+        _ model: String, provider: String?, in session: HomeChatSession, force: Bool = false
     ) async throws -> HomeChatSession {
-        guard !Self.session(session, runs: model, provider: provider) else { return session }
+        guard force || !Self.session(session, runs: model, provider: provider) else { return session }
         var value = model
         if let provider, !provider.isEmpty { value += " --provider \(provider)" }
         let result = try await rpc.call("config.set", JSONObject([
@@ -112,7 +116,21 @@ extension WebSocketBotChatSource {
 
     /// The persisted turns of a home chat.
     func homeTranscript(_ storedID: String) async throws -> [BotChatTurn] {
-        Self.turns(from: try await resume(profile: nil, target: storedID).rows)
+        try await homeState(storedID).turns
+    }
+
+    /// The persisted turns of a home chat, and whether a turn is still running
+    /// in it: one read answers both.
+    func homeState(_ storedID: String) async throws -> (turns: [BotChatTurn], running: Bool) {
+        try await sessionState(profile: nil, storedID: storedID)
+    }
+
+    /// The same for any agent's session: `profile` nil is Alice's own.
+    func sessionState(
+        profile: String?, storedID: String
+    ) async throws -> (turns: [BotChatTurn], running: Bool) {
+        let resumed = try await resume(profile: profile, target: storedID)
+        return (Self.turns(from: resumed.rows), BotTurnState(resumed)?.running == true)
     }
 
     /// The conversation so far, as the text history a new session opens with.
@@ -135,11 +153,22 @@ extension WebSocketBotChatSource {
     /// The answer a turn left in Hermes while nobody was watching it finish:
     /// the last row, when it is the assistant's and answers a message sent
     /// then — not the reply before it, when this message never arrived.
-    static func finishedReply(in turns: [BotChatTurn], sentAt: Date) -> String? {
+    ///
+    /// `asking` is the text Hermes was sent, when known. With it the answer
+    /// must follow that exact message, so a reply to the message before —
+    /// sent under a minute earlier — is never taken for this one.
+    static func finishedReply(
+        in turns: [BotChatTurn], sentAt: Date, asking: String? = nil
+    ) -> String? {
         guard let last = turns.last, last.role == .assistant,
               let asked = turns.dropLast().last(where: { $0.role == .user }),
               asked.createdAt >= sentAt.addingTimeInterval(-BotChatSync.copyClockSlack)
         else { return nil }
+        if let asking,
+           asked.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            != asking.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return nil
+        }
         return last.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? nil : last.content
     }

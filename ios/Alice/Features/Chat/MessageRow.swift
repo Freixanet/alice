@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 struct MessageRow: View {
     @Environment(AppStore.self) private var store
@@ -10,8 +11,23 @@ struct MessageRow: View {
     /// Off for replies after the first of a task (`ChatTasks`), and while the
     /// task is under way: one task has one time.
     var showsTime = true
+    /// On for the first reply of a task, busy or not: who is answering is
+    /// known from the start, so the name comes in with the words, not after.
+    var showsAuthor = true
     /// What copying, sharing and reading aloud take: the whole task.
     var actionsContent: String? = nil
+    @State private var selectingText = false
+
+    /// The agent this reply is from when it was asked by name in a chat that
+    /// is not its own.
+    private var invokedAgent: String? {
+        if let profile = message.mentionProfile, !profile.isEmpty { return profile }
+        guard let bot = message.botName, !bot.isEmpty,
+              store.activeConversation?.routedBotName == nil,
+              store.activeConversation?.isChannel != true
+        else { return nil }
+        return bot
+    }
 
     private var actionsMessage: Message {
         var whole = message
@@ -28,11 +44,28 @@ struct MessageRow: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 if !message.content.isEmpty {
-                    Text(message.content)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    // A tap opens the same actions as a long press: a menu
+                    // only a long press reaches is one most people never find.
+                    Menu {
+                        SentMessageMenu(message: message, selecting: $selectingText)
+                    } label: {
+                        // An agent named with `@` shows in its own colour.
+                        Text(store.mentionStyled(message.content))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
+                            .contentShape(.rect(cornerRadius: 18))
+                    }
+                    .buttonStyle(.plain)
+                    .menuStyle(.button)
+                    .contentShape(.contextMenuPreview, .rect(cornerRadius: 18))
+                    .contextMenu { SentMessageMenu(message: message, selecting: $selectingText) }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                        .sheet(isPresented: $selectingText) {
+                            SelectableTextSheet(text: message.content)
+                        }
                 }
             case .assistant:
                 // Ordinary turns are a conversation, not a log. A routine
@@ -50,11 +83,36 @@ struct MessageRow: View {
                     // mark. The conversation already says whose it is, and a
                     // reply still being written says "Thinking…" in its tool
                     // list. Alice's own replies keep their label.
-                    if showsTime, message.botName?.isEmpty ?? true {
+                    if showsAuthor, let agent = invokedAgent {
+                        // An agent named with `@` in Alice's chat answers under
+                        // its own face and name, not hers.
+                        HStack(spacing: 6) {
+                            BotMarkView(mark: store.mark(for: agent), size: 18)
+                            Text(store.botCurrentName(for: agent))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                    } else if showsAuthor, message.botName?.isEmpty ?? true {
                         Text("ALICE")
                             .font(.caption2.weight(.medium))
                             .tracking(1.4)
                             .foregroundStyle(.secondary)
+                    }
+
+                    // Above the answer, where the work happened: the steps run
+                    // there while the reply is written and settle into one line
+                    // over it. Questions waiting on the person end the turn as
+                    // far as the chat shows — nothing is "Thinking" meanwhile.
+                    if (message.pending && !store.activeAwaitsAnswers)
+                        || !ToolCaption.steps(in: message.tools).isEmpty {
+                        ThinkingTrace(
+                            steps: message.tools,
+                            pending: message.pending && message.approval == nil
+                                && !store.activeAwaitsAnswers,
+                            note: message.deliveryNote,
+                            thoughtSeconds: message.thoughtSeconds
+                        )
                     }
 
                     if let routine = message.routineName {
@@ -91,14 +149,6 @@ struct MessageRow: View {
                         RichMessageView(content: message.content, failed: message.error != nil)
                     }
 
-                    if message.pending || !message.tools.isEmpty {
-                        ToolList(
-                            tools: message.tools,
-                            pending: message.pending && message.approval == nil,
-                            hasContent: !message.content.isEmpty,
-                            note: message.deliveryNote
-                        )
-                    }
                     // A reply this device stopped watching. The bot may still
                     // be working, and saying so beats a spinner that never
                     // ends or a failure that did not happen.
@@ -406,6 +456,81 @@ private struct ActionIcon: View {
     }
 }
 
+/// Holding a message you sent: copy it, rewrite it, pick out part of it, or
+/// pass the prompt on.
+private struct SentMessageMenu: View {
+    @Environment(AppStore.self) private var store
+    let message: Message
+    @Binding var selecting: Bool
+
+    var body: some View {
+        Button("Copy", systemImage: "doc.on.doc") {
+            UIPasteboard.general.string = message.content
+            MessageActionsTip().invalidate(reason: .actionPerformed)
+        }
+        // Only the latest message: Hermes can replace the last exchange and
+        // nothing before it.
+        if store.canEdit(message) {
+            Button("Edit", systemImage: "pencil") {
+                store.beginEditing(message)
+                MessageActionsTip().invalidate(reason: .actionPerformed)
+            }
+        }
+        Button("Select Text", systemImage: "selection.pin.in.out") {
+            selecting = true
+            MessageActionsTip().invalidate(reason: .actionPerformed)
+        }
+        ShareLink(
+            item: message.content,
+            preview: SharePreview("Prompt")
+        ) {
+            Label("Share Prompt", systemImage: "square.and.arrow.up")
+        }
+    }
+}
+
+/// The message in a read-only text view, so any part of it can be selected
+/// with the system handles and its menu: Copy, Look Up, Translate, Share and
+/// whatever else iOS offers for selected text.
+private struct SelectableTextSheet: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SelectableText(text: text)
+                .navigationTitle("Select Text")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done", systemImage: "checkmark") { dismiss() }
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+private struct SelectableText: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.backgroundColor = .clear
+        view.font = .preferredFont(forTextStyle: .body)
+        view.adjustsFontForContentSizeCategory = true
+        view.textContainerInset = UIEdgeInsets(top: 12, left: 16, bottom: 24, right: 16)
+        view.dataDetectorTypes = [.link]
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        if view.text != text { view.text = text }
+    }
+}
+
 /// What went out with a message, shown so the conversation is a record of
 /// what was actually sent rather than only of what was typed.
 private struct SentAttachments: View {
@@ -413,6 +538,8 @@ private struct SentAttachments: View {
     let attachments: [Attachment]
 
     var body: some View {
+        // Every image in the message, so the viewer can swipe between them.
+        let images = attachments.compactMap { $0.kind == .image ? UIImage(data: $0.data) : nil }
         HStack(spacing: 8) {
             ForEach(attachments) { attachment in
                 if attachment.kind == .image, let image = UIImage(data: attachment.data) {
@@ -421,6 +548,11 @@ private struct SentAttachments: View {
                         .scaledToFill()
                         .frame(width: 84, height: 84)
                         .clipShape(.rect(cornerRadius: 14))
+                        .opensImageViewer(
+                            images,
+                            at: attachments.filter { $0.kind == .image }
+                                .firstIndex { $0.id == attachment.id } ?? 0
+                        )
                 } else {
                     HStack(spacing: 6) {
                         Image(systemName: "doc")
@@ -436,26 +568,32 @@ private struct SentAttachments: View {
     }
 }
 
-/// What the agent is doing, while it is doing it.
+/// What the agent is doing, said in words a reader wants.
 ///
-/// Every tool call used to be listed and kept, so a reply that searched, read
-/// a page and ran a command left a tower of `web_search`, `web_extract`,
-/// `terminal` standing under it for ever — a build log where a sentence was
-/// wanted. Only the step still running is shown, it is replaced by the next,
-/// and when the reply is finished nothing is left behind.
+/// The words of `ThinkingTrace`, kept out of the view so they can be tested
+/// without one.
 enum ToolCaption {
-    static func line(
-        tools: [Message.ToolCall], pending: Bool, hasContent: Bool, note: String?
-    ) -> String? {
-        guard pending else { return nil }
-        if let running = tools.last(where: { $0.status != .done }) {
-            // Clarify is a question for the person, drawn as buttons in the
-            // chat. Naming the tool would leave a stuck "Clarify…" under a
-            // reply that is already waiting for an answer.
-            if running.name.lowercased().contains("clarify") { return nil }
-            return phrase(for: running)
-        }
-        return hasContent ? nil : (note ?? "Thinking…")
+    /// The steps worth showing a reader.
+    ///
+    /// Clarify is a question for the person, drawn as buttons in the chat.
+    /// Listing it as a step would leave "Asking a question" standing in the
+    /// trace under an answer they have already given.
+    static func steps(in tools: [Message.ToolCall]) -> [Message.ToolCall] {
+        tools.filter { !$0.name.lowercased().contains("clarify") }
+    }
+
+    /// The line above the reply: what it is doing, or what it took.
+    static func headline(pending: Bool, note: String?, thoughtSeconds: Int?) -> String {
+        if pending { return note ?? "Thinking" }
+        guard let thoughtSeconds, thoughtSeconds >= 1 else { return "Thought for a moment" }
+        return "Thought for \(thoughtSeconds) second\(thoughtSeconds == 1 ? "" : "s")"
+    }
+
+    /// A step, named. Still running it keeps its "…"; done, it does not — by
+    /// the time a reader opens a settled trace, nothing in it is happening.
+    static func phrase(for tool: Message.ToolCall, running: Bool) -> String {
+        let said = phrase(for: tool)
+        return running ? said : said.trimmingCharacters(in: CharacterSet(charactersIn: "…"))
     }
 
     /// A tool's name said as an action.
@@ -495,54 +633,6 @@ enum ToolCaption {
                 .replacingOccurrences(of: "_", with: " ")
                 .replacingOccurrences(of: "-", with: " ")
             return words.prefix(1).uppercased() + words.dropFirst() + "…"
-        }
-    }
-}
-
-private struct ToolList: View {
-    @Environment(AppStore.self) private var store
-    @Environment(\.colorScheme) private var scheme
-    let tools: [Message.ToolCall]
-    @State private var breathing = false
-
-    /// Whether the reply is still being written.
-    let pending: Bool
-    /// Whether any of it has arrived. Once the words are appearing the reader
-    /// can see for themselves that it is not thinking any more.
-    let hasContent: Bool
-    /// What the reply is waiting on when that is not the bot thinking: a busy
-    /// bot that has not started on it yet, or a connection being re-made.
-    var note: String? = nil
-
-    /// What to say. Between two tool calls there is often a real pause while
-    /// the model decides what to do next, and showing the finished step would
-    /// claim it was still running. Saying it is thinking is both true and
-    /// what the gap actually is; the line only disappears when the reply does.
-    private var caption: String? {
-        ToolCaption.line(tools: tools, pending: pending, hasContent: hasContent, note: note)
-    }
-
-    var body: some View {
-        if let caption {
-            HStack(spacing: 8) {
-                // Slow enough to read as breathing rather than as blinking:
-                // this marks that something is happening, and a fast pulse
-                // beside a line of quiet text reads as an alarm.
-                Circle()
-                    .frame(width: 5, height: 5)
-                    .foregroundStyle(store.accent.primary(scheme))
-                    .opacity(breathing ? 0.28 : 1)
-                    .animation(
-                        .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
-                        value: breathing
-                    )
-                    .onAppear { breathing = true }
-                Text(caption)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .transition(.opacity)
-            .animation(.easeInOut(duration: 0.2), value: caption)
         }
     }
 }

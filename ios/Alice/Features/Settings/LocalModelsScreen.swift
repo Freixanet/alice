@@ -66,7 +66,7 @@ struct LocalModelsScreen: View {
         .searchable(text: $search, prompt: "Search curated models")
         .task { await refreshAll() }
         .task(id: runningJobKey) { await pollRunningJobs() }
-        .refreshable { await refreshAll() }
+        .refreshableWithFeedback { await refreshAll() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { Task { await refreshAll() } } label: {

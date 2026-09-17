@@ -55,7 +55,7 @@ struct ArtifactsScreen: View {
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .task { await load() }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
         .sheet(item: $opened) { selection in
             HermesRemoteFileDetail(selection: selection)
                 .environment(store)

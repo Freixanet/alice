@@ -41,7 +41,7 @@ struct InsightsScreen: View {
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .task { await load() }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
     }
 
     private var list: some View {

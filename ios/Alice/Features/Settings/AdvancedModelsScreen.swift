@@ -48,7 +48,7 @@ struct AdvancedModelsScreen: View {
         .background(Palette.background(scheme))
         .overlay { if loading && aux == nil { ProgressView() } }
         .task { await load(refreshing: false) }
-        .refreshable { await load(refreshing: true) }
+        .refreshableWithFeedback { await load(refreshing: true) }
         .onChange(of: recommendationProvider) { _, _ in
             Task { await loadRecommendation() }
         }

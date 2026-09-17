@@ -208,6 +208,72 @@ final class HomeChatSessionTests: XCTestCase {
         XCTAssertNil(WebSocketBotChatSource.finishedReply(in: Array(answered.prefix(3)), sentAt: sent))
     }
 
+    func testAFinishedReplyMustAnswerTheExactTextSent() {
+        let sent = Date(timeIntervalSince1970: 10_000)
+        // The message before was sent seconds earlier, inside the clock slack.
+        let justBefore = sent.addingTimeInterval(-20)
+        let previous = [
+            BotChatTurn(id: "1", role: .user, content: "first", createdAt: justBefore),
+            BotChatTurn(id: "2", role: .assistant, content: "first answer", createdAt: justBefore),
+        ]
+        // Without the text, time alone takes the previous answer for this one.
+        XCTAssertEqual(
+            WebSocketBotChatSource.finishedReply(in: previous, sentAt: sent), "first answer"
+        )
+        XCTAssertNil(
+            WebSocketBotChatSource.finishedReply(in: previous, sentAt: sent, asking: "second")
+        )
+        XCTAssertEqual(
+            WebSocketBotChatSource.finishedReply(in: previous, sentAt: sent, asking: " first\n"),
+            "first answer"
+        )
+    }
+
+    func testAMentionedAgentIsSentTheMessageWithoutItsName() {
+        let names = ["inbox", "Inbox", "Mi Inbox"]
+        XCTAssertEqual(AppStore.withoutMention("@inbox apunta esto", of: "inbox", names: names), "apunta esto")
+        XCTAssertEqual(AppStore.withoutMention("@Inbox, apunta esto", of: "inbox", names: names), "apunta esto")
+        XCTAssertEqual(AppStore.withoutMention("apunta esto @inbox", of: "inbox", names: names), "apunta esto")
+        XCTAssertEqual(AppStore.withoutMention("oye @Mi Inbox guarda", of: "inbox", names: names), "oye guarda")
+        // Part of a longer word is not the mention.
+        XCTAssertEqual(AppStore.withoutMention("@inboxes y @inbox", of: "inbox", names: names), "@inboxes y")
+        XCTAssertEqual(AppStore.withoutMention("@inbox", of: "inbox", names: names), "")
+    }
+
+    func testAMutedRoutineLosesItsReportsButNotItsFailures() {
+        let key = "chollometro/abc123"
+        func event(_ kind: AliceEvent.Kind) -> AliceEvent {
+            AliceEvent(
+                id: UUID().uuidString, kind: kind, severity: .informational, title: "Chollos",
+                summary: "", occurred: Date(),
+                reference: AliceEvent.Reference(profile: "chollometro", routineKey: key)
+            )
+        }
+        XCTAssertTrue(AppStore.isMutedReport(event(.automationSucceeded), muted: [key]))
+        XCTAssertFalse(AppStore.isMutedReport(event(.automationFailed), muted: [key]))
+        XCTAssertFalse(AppStore.isMutedReport(event(.automationSucceeded), muted: []))
+    }
+
+    func testANoteReadsAsATitleAndWhatFollows() {
+        func note(_ text: String) -> Note { Note(id: "n", createdAt: nil, text: text) }
+        XCTAssertEqual(NotesFeed.title(of: note("\n  Compra \nleche\n\nhuevos")), "Compra")
+        XCTAssertEqual(NotesFeed.body(of: note("\n  Compra \nleche\n\nhuevos")), "leche huevos")
+        XCTAssertNil(NotesFeed.body(of: note("Solo título\n\n")))
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let today = Note(id: "t", createdAt: now.addingTimeInterval(-60), text: "x")
+        let older = Note(id: "o", createdAt: now.addingTimeInterval(-3 * 86_400), text: "x")
+        let label = try? XCTUnwrap(NotesFeed.whenLabel(today, now: now))
+        XCTAssertNotNil(label?.wholeMatch(of: /\d\d:\d\d/))
+        XCTAssertEqual(NotesFeed.whenLabel(older, now: now),
+                       older.createdAt!.formatted(date: .numeric, time: .omitted))
+    }
+
+    func testAMultiSelectAnswerReadsAsAList() {
+        XCTAssertEqual(ClarifyQuestionsView.readable(#"["Red","Blue, dark"]"#), "Red, Blue, dark")
+        XCTAssertEqual(ClarifyQuestionsView.readable("Just this"), "Just this")
+    }
+
     func testOnlyAHomeChatWithASessionIsHeldInHermes() {
         let now = Date()
         var home = Conversation(id: "c", title: "Chat", createdAt: now, updatedAt: now)

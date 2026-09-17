@@ -310,7 +310,7 @@ struct BotsScreen: View {
         .onChange(of: store.cachedBots) { _, bots in
             rows = store.orderedBots(bots)
         }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
     }
 
     private func importBotArchive(_ url: URL) async {
@@ -393,6 +393,7 @@ struct BotsScreen: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.primary)
                         .frame(width: 44, height: 44)
+                        .contentShape(.circle)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
@@ -438,6 +439,7 @@ struct BotsScreen: View {
                         .font(.system(size: 19, weight: .medium))
                         .foregroundStyle(.primary)
                         .frame(width: 44, height: 44)
+                        .contentShape(.circle)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
@@ -455,6 +457,7 @@ struct BotsScreen: View {
                         .imageScale(.large)
                         .foregroundStyle(.primary)
                         .frame(width: 44, height: 44)
+                        .contentShape(.circle)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
@@ -1020,7 +1023,7 @@ struct BotsScreen: View {
                     Spacer()
                 }
                 .padding(.leading, 16)
-                .padding(.trailing, reorderID == nil ? 16 : 4)
+                .padding(.trailing, 16)
                 .padding(.top, 18)
                 .padding(.bottom, 8)
                 .contentShape(.rect)
@@ -1028,33 +1031,7 @@ struct BotsScreen: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier(identifier)
 
-            if let reorderID {
-                sectionReorderHandle(reorderID, channel: true)
-                    .padding(.trailing, 16)
-            }
         }
-    }
-
-    /// Drag lives on this control, not on the row that owns the context menu.
-    /// Long-pressing the header otherwise starts iOS's Move action and holds
-    /// back Rename and Delete for several seconds.
-    private func sectionReorderHandle(_ id: String, channel: Bool = false) -> some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.tertiary)
-            .frame(width: 28, height: 28)
-            .contentShape(.rect)
-            .onDrag {
-                if channel {
-                    draggedChannel = id
-                    draggedSection = nil
-                } else {
-                    draggedSection = id
-                }
-                draggedBotName = nil
-                return NSItemProvider(object: id as NSString)
-            }
-            .accessibilityLabel("Reorder")
     }
 
     /// Channels: folders of bots and teams, above the general list.
@@ -1168,13 +1145,32 @@ struct BotsScreen: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 16)
-                .padding(.trailing, 4)
+                .padding(.trailing, 16)
                 .padding(.top, 10)
                 .padding(.bottom, 6)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .contextMenu {
+                // Order changes here: a drag handle beside each header read as
+                // a mystery control.
+                let order = channel.sections
+                if let at = order.firstIndex(of: section) {
+                    if at > 0 {
+                        Button {
+                            store.moveChannelSection(channel.id, section: section, to: order[at - 1])
+                        } label: {
+                            Label("Move Up", systemImage: "arrow.up")
+                        }
+                    }
+                    if at < order.count - 1 {
+                        Button {
+                            store.moveChannelSection(channel.id, section: section, to: order[at + 1])
+                        } label: {
+                            Label("Move Down", systemImage: "arrow.down")
+                        }
+                    }
+                }
                 Button {
                     renamingSection = RenamingSection(scope: .channel(channel.id), name: section)
                     renameSectionName = section
@@ -1188,8 +1184,6 @@ struct BotsScreen: View {
                 }
             }
 
-            sectionReorderHandle(section)
-                .padding(.trailing, 16)
         }
         .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
             draggedName: $draggedBotName, draggedSection: $draggedSection,
@@ -1201,6 +1195,23 @@ struct BotsScreen: View {
 
     @ViewBuilder
     private func channelMenu(_ channel: BotChannel, hasBots: Bool) -> some View {
+        let order = store.botChannels.map(\.id)
+        if let at = order.firstIndex(of: channel.id) {
+            if at > 0 {
+                Button {
+                    store.moveChannel(channel.id, to: order[at - 1])
+                } label: {
+                    Label("Move Up", systemImage: "arrow.up")
+                }
+            }
+            if at < order.count - 1 {
+                Button {
+                    store.moveChannel(channel.id, to: order[at + 1])
+                } label: {
+                    Label("Move Down", systemImage: "arrow.down")
+                }
+            }
+        }
         Button {
             channelNameDraft = channel.name
             renamingChannel = channel
@@ -1642,7 +1653,7 @@ struct BotsScreen: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 16)
-                .padding(.trailing, 4)
+                .padding(.trailing, 16)
                 .padding(.top, 18)
                 .padding(.bottom, 8)
                 .contentShape(.rect)
@@ -1681,8 +1692,6 @@ struct BotsScreen: View {
                 }
             }
 
-            sectionReorderHandle(title)
-                .padding(.trailing, 16)
         }
         .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
             draggedName: $draggedBotName, draggedSection: $draggedSection,
@@ -1717,7 +1726,7 @@ struct BotsScreen: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 16)
-                .padding(.trailing, 4)
+                .padding(.trailing, 16)
                 .padding(.vertical, 14)
                 .contentShape(.rect)
             }
@@ -1742,8 +1751,6 @@ struct BotsScreen: View {
                 .disabled(isLast)
             }
 
-            sectionReorderHandle(AppStore.unassignedSectionKey)
-                .padding(.trailing, 16)
         }
         .onDrop(of: [UTType.text], delegate: SectionDropDelegate(
             draggedName: $draggedBotName, draggedSection: $draggedSection,

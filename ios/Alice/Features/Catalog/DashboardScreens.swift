@@ -201,7 +201,7 @@ struct ProjectsScreen: View {
                 await load()
             }
         }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
     }
 
     private func projectRow(_ project: NamedProject) -> some View {
@@ -756,7 +756,7 @@ struct MemoryScreen: View {
             await load()
         }
         .onChange(of: selectedProfile) { _, _ in Task { await load() } }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
     }
 
     private func memoryEntry(_ entry: String) -> some View {
@@ -1012,7 +1012,7 @@ struct UsageScreen: View {
             guard ready else { return }
             Task { await loadProfiles(); await load() }
         }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
     }
 
     private func row(_ label: String, _ value: String) -> some View {

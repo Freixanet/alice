@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
+    @State private var tipsReset = false
 
     var body: some View {
         @Bindable var store = store
@@ -47,6 +48,39 @@ struct SettingsView: View {
                 }
             }
 
+            Section {
+                Toggle(isOn: Binding(
+                    get: { store.requireUnlock },
+                    set: { on in
+                        // Turned on only by someone who can unlock it, so the
+                        // app is never locked against its own owner.
+                        guard on else { store.requireUnlock = false; return }
+                        Task {
+                            if await Biometrics.authenticate(reason: "Turn on locking for Alice.") {
+                                store.requireUnlock = true
+                            }
+                        }
+                    }
+                )) {
+                    Label("Require \(Biometrics.name)", systemImage: Biometrics.symbol)
+                }
+                .disabled(!Biometrics.available && !store.requireUnlock)
+                if store.requireUnlock {
+                    Picker("Lock", selection: $store.lockGrace) {
+                        Text("Immediately").tag(0)
+                        Text("After 1 minute").tag(60)
+                        Text("After 5 minutes").tag(300)
+                        Text("After 15 minutes").tag(900)
+                    }
+                }
+            } header: {
+                Text("Privacy")
+            } footer: {
+                Text(Biometrics.available
+                     ? "Alice asks for \(Biometrics.name) when it opens and when you come back to it, and hides its content in the app switcher. Notifications still arrive."
+                     : "Set a passcode for this iPhone in the Settings app to lock Alice.")
+            }
+
             Section("General") {
                 Picker("Theme", selection: $store.theme) {
                     ForEach(ThemeChoice.allCases) { choice in
@@ -78,6 +112,16 @@ struct SettingsView: View {
                             .accessibilityLabel(accent.label)
                         }
                     }
+                }
+
+                Button("Show Gesture Tips Again") {
+                    GestureTips.showAgainNextLaunch()
+                    tipsReset = true
+                }
+                .alert("Tips reset", isPresented: $tipsReset) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("They show again the next time Alice opens. Close Alice from the app switcher and open it.")
                 }
             }
 

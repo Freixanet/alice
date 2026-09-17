@@ -69,6 +69,9 @@ final class AppStore {
     var conversations: [Conversation] = [.blank()]
     var activeID: String? {
         didSet {
+            // An edit belongs to the chat it was started in.
+            if activeID != oldValue, editingMessageID != nil { cancelEditing() }
+            if activeID != oldValue { markMentionRepliesSeen(in: activeID) }
             guard activeID != oldValue,
                   let index = conversations.firstIndex(where: { $0.id == activeID })
             else { return }
@@ -144,6 +147,18 @@ final class AppStore {
         static let pendingBotModelSyncs = "alice.bot.model.pendingSyncs"
         static let eventWatermarks = "alice.events.watermarks"
         static let activity = "alice.events.activity"
+        static let notesSnapshot = "alice.notes.snapshot"
+        static let mutedRoutines = "alice.routines.muted"
+        static let pinnedNotes = "alice.notes.pinned"
+        static let noteFolders = "alice.notes.folders"
+        static let lockedNotes = "alice.notes.locked"
+        static let requireUnlock = "alice.lock.required"
+        static let lockGrace = "alice.lock.graceSeconds"
+        static let noteFolderOf = "alice.notes.folderOf"
+        static let notesSort = "alice.notes.sort"
+        static let notesGroupByDate = "alice.notes.groupByDate"
+        static let noteFolderParent = "alice.notes.folderParent"
+        static let recentlyDeleted = "alice.notes.recentlyDeleted"
         static let activitySeen = "alice.events.activitySeen"
         static let dismissedAttention = "alice.events.dismissedAttention"
     }
@@ -202,6 +217,26 @@ final class AppStore {
     /// Notes as cards rather than as a list, the way they were last left.
     var notesAsCards = false {
         didSet { defaults.set(notesAsCards, forKey: Keys.notesAsCards) }
+    }
+    /// How notes are ordered, and whether they sit under dates.
+    ///
+    /// One setting for every folder, not one per folder: a person who wants
+    /// their notes by title wants them by title, and a folder that quietly
+    /// disagreed with the one beside it would read as a bug.
+    var notesSort: NotesSort = .dateCreated {
+        didSet { defaults.set(notesSort.rawValue, forKey: Keys.notesSort) }
+    }
+    var notesGroupByDate = true {
+        didSet { defaults.set(notesGroupByDate, forKey: Keys.notesGroupByDate) }
+    }
+    /// Which folder a folder sits inside, by id.
+    ///
+    /// Kept on the phone. The notes store an agent keeps is a flat set of
+    /// folders — it files a note under one name and reads it back under that
+    /// name — so nesting here is an arrangement of this screen, not a change to
+    /// the store: a note in a subfolder is filed exactly as it was.
+    var noteFolderParent: [String: String] = [:] {
+        didSet { defaults.set(noteFolderParent, forKey: Keys.noteFolderParent) }
     }
     /// When each agent's chat was last cleared, so routine cards from before
     /// it do not come back into the empty chat.
@@ -325,6 +360,11 @@ final class AppStore {
         hiddenExpanded = defaults.bool(forKey: Keys.hiddenExpanded)
         homeCollapsed = defaults.bool(forKey: Keys.homeCollapsed)
         notesAsCards = defaults.bool(forKey: Keys.notesAsCards)
+        notesSort = (defaults.string(forKey: Keys.notesSort).flatMap(NotesSort.init(rawValue:))) ?? .dateCreated
+        // Grouped unless it was turned off: `bool(forKey:)` is false for a key
+        // nobody has written, which would start everyone ungrouped.
+        notesGroupByDate = defaults.object(forKey: Keys.notesGroupByDate) as? Bool ?? true
+        noteFolderParent = (defaults.dictionary(forKey: Keys.noteFolderParent) as? [String: String]) ?? [:]
         botChatClearedAt = (defaults.dictionary(forKey: Keys.botChatClearedAt) as? [String: Date]) ?? [:]
         activitySeen = defaults.object(forKey: Keys.activitySeen) as? Date ?? .distantPast
         if let savedCollapsed = defaults.stringArray(forKey: Keys.collapsedSections) {
@@ -346,6 +386,19 @@ final class AppStore {
         }
         if let savedHidden = defaults.stringArray(forKey: Keys.hiddenBots) {
             hiddenBots = Set(savedHidden)
+        }
+        loadNoteFolders()
+        lockedNotes = Set(defaults.stringArray(forKey: Keys.lockedNotes) ?? [])
+        requireUnlock = defaults.bool(forKey: Keys.requireUnlock)
+        if defaults.object(forKey: Keys.lockGrace) != nil {
+            lockGrace = defaults.integer(forKey: Keys.lockGrace)
+        }
+        appLocked = requireUnlock
+        if let savedPinned = defaults.stringArray(forKey: Keys.pinnedNotes) {
+            pinnedNotes = Set(savedPinned)
+        }
+        if let savedMuted = defaults.stringArray(forKey: Keys.mutedRoutines) {
+            mutedRoutines = Set(savedMuted)
         }
         if let savedRetired = defaults.stringArray(forKey: Keys.retiredBotSlugs) {
             retiredBotSlugs = Set(savedRetired)
@@ -387,6 +440,9 @@ final class AppStore {
         recentModels = defaults.stringArray(forKey: Keys.recentModels) ?? []
         loadConversations()
         loadActivity()
+        if let data = defaults.data(forKey: Keys.notesSnapshot) {
+            notesSnapshot = try? JSONDecoder().decode(NotesSnapshot.self, from: data)
+        }
         restoreSalvagedConversationsIfPossible()
         migrateLegacyChannels()
         activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
@@ -774,6 +830,8 @@ final class AppStore {
         dashboardURL = ""
         dashboardUser = ""
         dashboardReady = false
+        // Another Hermes' notes are not this one's.
+        notesSnapshot = nil
     }
 
     static let dashboardAccount = "dashboard-password"
@@ -1489,6 +1547,31 @@ final class AppStore {
         persistConversations()
     }
 
+    /// Replies from agents named with `@` in the chat being read are read:
+    /// the same exchange sits in the agent's own chat, and marking that one
+    /// unread asked for a second reading of something already seen.
+    func markMentionRepliesSeen(in conversationID: String?) {
+        guard isForeground, let conversationID, conversationID == activeID,
+              let chat = conversations.first(where: { $0.id == conversationID })
+        else { return }
+        let agents = Set(chat.messages.compactMap { message -> String? in
+            guard message.role == .assistant, !message.pending else { return nil }
+            return message.mentionProfile
+        })
+        guard !agents.isEmpty else { return }
+        let now = Date()
+        var changed = false
+        for index in conversations.indices {
+            guard let bot = conversations[index].routedBotName, agents.contains(bot),
+                  conversations[index].isCanonicalBotChat,
+                  (conversations[index].openedAt ?? .distantPast) < now
+            else { continue }
+            conversations[index].openedAt = now
+            changed = true
+        }
+        if changed { persistConversations() }
+    }
+
     func markActiveBotRead() {
         guard let bot = activeConversation?.routedBotName else { return }
         markBotRead(bot)
@@ -1782,6 +1865,35 @@ final class AppStore {
     /// before Alice was watching would be fabricating a record. It starts
     /// empty and fills as Alice runs, which is the truth about what it knows.
     private(set) var activity: [AliceEvent] = []
+
+    /// Routines whose successful runs are not worth a notice, by
+    /// `EventDigest.key(for:)`. A failure is still said: that is news.
+    private(set) var mutedRoutines: Set<String> = [] {
+        didSet { defaults.set(Array(mutedRoutines), forKey: Keys.mutedRoutines) }
+    }
+
+    func isMuted(_ routine: JobRow) -> Bool {
+        mutedRoutines.contains(EventDigest.key(for: routine))
+    }
+
+    /// Mutes or unmutes a routine's reports. Muting also clears the reports
+    /// already in Activity.
+    func setMuted(_ routine: JobRow, _ muted: Bool) {
+        let key = EventDigest.key(for: routine)
+        if muted { mutedRoutines.insert(key) } else { mutedRoutines.remove(key) }
+        guard muted else { return }
+        let before = activity.count
+        activity.removeAll { Self.isMutedReport($0, muted: mutedRoutines) }
+        if activity.count != before {
+            persistActivity()
+            refreshAttention()
+        }
+    }
+
+    nonisolated static func isMutedReport(_ event: AliceEvent, muted: Set<String>) -> Bool {
+        guard let key = event.reference.routineKey, muted.contains(key) else { return false }
+        return event.kind == .automationSucceeded || event.kind == .finished
+    }
 
     /// Bounded on purpose: this is a phone, and the useful window is recent.
     static let activityLimit = 200
@@ -2091,7 +2203,7 @@ final class AppStore {
         let knownWaiting = Set(activity.filter(\.isActionable).map(\.id))
         reconcilePending(against: pending)
         await reconcileRunApprovals()
-        let changed = tagged(result.events)
+        let changed = tagged(result.events).filter { !Self.isMutedReport($0, muted: mutedRoutines) }
         let currentPending = tagged(pending.events)
         let newlyPending = currentPending.filter { !knownWaiting.contains($0.id) }
         // Record every current snapshot so partially answered clarify batches
@@ -2368,6 +2480,39 @@ final class AppStore {
     /// Questions Hermes is waiting on in this conversation. Matched by Alice's
     /// conversation id, and also by the bot's profile so a request that landed
     /// before the session was mirrored still appears in that bot's chat.
+    /// The active chat's agent asked and is waiting on the answers. Its turn
+    /// reads as delivered: nothing to stop, and what is sent next answers.
+    var activeAwaitsAnswers: Bool {
+        activeID.map { !pendingQuestions(in: $0).isEmpty } ?? false
+    }
+
+    /// A reply is under way that Stop applies to — not one held on questions.
+    var canStop: Bool { isSending && !activeAwaitsAnswers }
+
+    /// What is written in the composer while questions wait answers the one
+    /// being asked, as "Something else" would.
+    private func answerWaitingQuestion(with text: String) -> Bool {
+        guard let activeID,
+              let event = pendingQuestions(in: activeID).first,
+              let question = event.questions.first(where: { $0.answer == nil })
+        else { return false }
+        var answer = text
+        if question.allowsMultiple,
+           let data = try? JSONSerialization.data(withJSONObject: [text]),
+           let encoded = String(data: data, encoding: .utf8) {
+            answer = encoded
+        }
+        draft = ""
+        Task { [weak self] in
+            guard let self else { return }
+            if await !self.answerClarification(event, questionID: question.id, answer: answer),
+               self.draft.isEmpty {
+                self.draft = text
+            }
+        }
+        return true
+    }
+
     func pendingQuestions(in conversationID: String) -> [AliceEvent] {
         guard let chat = conversations.first(where: { $0.id == conversationID }) else {
             return []
@@ -2389,12 +2534,14 @@ final class AppStore {
     /// actionable until that list is empty. Sending a batch without a qid is
     /// refused locally because Hermes would treat it as a cancel/whole-request
     /// answer and the first question would falsely resolve the rest.
+    ///
+    /// `skip` sends an empty answer, which Hermes reads as a deliberate skip.
     @discardableResult
     func answerClarification(
-        _ event: AliceEvent, questionID: String? = nil, answer: String
+        _ event: AliceEvent, questionID: String? = nil, answer: String, skip: Bool = false
     ) async -> Bool {
-        let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard event.standing == .waiting, !text.isEmpty,
+        let text = skip ? "" : answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard event.standing == .waiting, skip || !text.isEmpty,
               !resolving.contains(event.id),
               let requestID = event.reference.requestID
         else { return false }
@@ -2430,7 +2577,8 @@ final class AppStore {
                     lockClarificationAnswer(event.id, questionID: questionID, answer: text)
                     settle(event.id, as: .resolved, summary: "You answered all questions.")
                 } else {
-                    settle(event.id, as: .resolved, summary: "You answered: \(text)")
+                    settle(event.id, as: .resolved,
+                           summary: skip ? "You skipped the question." : "You answered: \(text)")
                 }
                 return true
             case .partial:
@@ -2687,6 +2835,11 @@ final class AppStore {
         // Missing local navigation is not evidence that the server-side request
         // expired. Keep an actionable Activity row actionable; it may still be
         // answerable from its saved session/request identity.
+        if let profile = route.profile,
+           retiredBotSlugs.contains(where: { $0.caseInsensitiveCompare(profile) == .orderedSame }) {
+            routeNotice = "That agent was deleted."
+            return false
+        }
         routeNotice = route.conversationID == nil && route.profile == nil
             ? "This notification has no conversation to open. You can review it in Activity."
             : "That conversation is no longer on this phone. You can review the event in Activity."
@@ -2713,6 +2866,15 @@ final class AppStore {
             return show(chat.id)
         }
         if let profile = route.profile, !profile.isEmpty {
+            // A deleted agent is not opened again: a fresh chat under its name
+            // looked like the agent had survived its deletion.
+            let known = cachedBots.contains {
+                $0.name.caseInsensitiveCompare(profile) == .orderedSame
+            }
+            if retiredBotSlugs.contains(where: { $0.caseInsensitiveCompare(profile) == .orderedSame })
+                || (!known && !cachedBots.isEmpty) {
+                return false
+            }
             showingBots = false
             showingNotes = false
             let bot = cachedBots.first {
@@ -2882,7 +3044,14 @@ final class AppStore {
         guard let data = defaults.data(forKey: Keys.activity),
               let stored = try? JSONDecoder().decode([StoredEvent].self, from: data)
         else { return }
-        activity = stored.map(\.event)
+        activity = stored.map(\.event).filter { event in
+            // Left behind by agents deleted before their Activity went with them.
+            !retiredBotSlugs.contains { slug in
+                [event.profile, event.reference.profile].contains {
+                    $0?.caseInsensitiveCompare(slug) == .orderedSame
+                }
+            }
+        }
             .filter { !Self.isChannelRollupRecord($0) }
             .map(Self.withoutMisplacedError)
             .map(Self.withCurrentWording)
@@ -2961,11 +3130,28 @@ final class AppStore {
 
     /// The notes an agent keeps on Hermes, as last read. Nil until read once,
     /// so Notes opens on what it had while it asks again.
-    private(set) var notesSnapshot: NotesSnapshot?
+    /// Kept on the phone between launches, so Notes opens on what was there
+    /// last time and is brought up to date behind it, instead of opening on a
+    /// spinner for as long as the round trip to Hermes takes.
+    private(set) var notesSnapshot: NotesSnapshot? {
+        didSet {
+            guard notesSnapshot != oldValue else { return }
+            guard let notesSnapshot else {
+                defaults.removeObject(forKey: Keys.notesSnapshot)
+                return
+            }
+            // Notes still on their way are not kept: Hermes has not got them.
+            let settled = notesSnapshot.with(notes: notesSnapshot.notes.filter { !$0.sending })
+            if let data = try? JSONEncoder().encode(settled) {
+                defaults.set(data, forKey: Keys.notesSnapshot)
+            }
+        }
+    }
 
     func refreshNotes() async throws {
         do {
             notesSnapshot = try await dashboard.notes()
+            await moveLegacyFoldersToStore()
         } catch DashboardClient.Failure.http(404, _) {
             throw HermesRPCClient.Failure(
                 reason: "Notes need the latest Alice plugin on your Hermes."
@@ -2973,30 +3159,75 @@ final class AppStore {
         }
     }
 
+    /// Deletes a note, gone from the list at once. One Hermes did not delete
+    /// comes back where it was, and the error is thrown.
+    func deleteNote(_ note: Note) async throws {
+        guard let current = notesSnapshot,
+              let index = current.notes.firstIndex(where: { $0.id == note.id })
+        else { return }
+        var remaining = current.notes
+        remaining.remove(at: index)
+        notesSnapshot = current.with(notes: remaining)
+        do {
+            try await dashboard.deleteNote(id: note.id)
+            // Kept here to recover for a while; gone from the store already.
+            recentlyDeleted.insert(
+                DeletedNote(note: note, deletedAt: Date(), folderID: noteFolderOf[note.id]), at: 0
+            )
+            pinnedNotes.remove(note.id)
+        } catch {
+            if let now = notesSnapshot, !now.notes.contains(where: { $0.id == note.id }) {
+                var restored = now.notes
+                restored.insert(note, at: min(index, restored.count))
+                notesSnapshot = now.with(notes: restored)
+            }
+            throw error
+        }
+    }
+
+    /// Saves an edited note, shown at once. A save Hermes refuses puts the
+    /// note back as it was and throws, so the editor can say so.
+    func editNote(_ note: Note, text: String, rich: String?) async throws {
+        func put(_ replacement: Note) {
+            guard let current = notesSnapshot else { return }
+            notesSnapshot = current.with(notes: current.notes.map { $0.id == replacement.id ? replacement : $0 })
+        }
+        let optimistic = Note(
+            id: note.id, createdAt: note.createdAt, text: text, urls: note.urls,
+            types: note.types, topics: note.topics, actions: note.actions,
+            openQuestions: note.openQuestions, summary: note.summary,
+            processed: note.processed, rich: rich, editedAt: Date()
+        )
+        put(optimistic)
+        do {
+            put(try await dashboard.editNote(id: note.id, text: text, rich: rich))
+        } catch {
+            put(note)
+            throw error
+        }
+    }
+
     /// Shows a note at once and saves it in the agent's store. One Hermes did
     /// not take is taken off the list again, and the error thrown so the words
     /// go back into the field.
-    func addNote(_ text: String) async throws {
+    @discardableResult
+    func addNote(_ text: String) async throws -> Note {
         let placeholder = Note(
             id: "local-\(UUID().uuidString)", createdAt: Date(), text: text, sending: true
         )
         if let current = notesSnapshot {
-            notesSnapshot = NotesSnapshot(
-                available: current.available, agent: current.agent,
-                notes: [placeholder] + current.notes
-            )
+            notesSnapshot = current.with(notes: [placeholder] + current.notes)
         }
         func replacing(_ note: Note?) {
             guard let current = notesSnapshot else { return }
             var notes = current.notes.filter { $0.id != placeholder.id }
             if let note { notes.insert(note, at: 0) }
-            notesSnapshot = NotesSnapshot(
-                available: current.available, agent: current.agent, notes: notes
-            )
+            notesSnapshot = current.with(notes: notes)
         }
         do {
             let saved = try await dashboard.addNote(text)
             replacing(saved)
+            return saved
         } catch {
             replacing(nil)
             throw error
@@ -3447,6 +3678,21 @@ final class AppStore {
             throw error
         }
         forgetBotLocalData(name)
+        forgetBotActivity(name)
+    }
+
+    /// A deleted agent's Activity goes with it: its reports, questions and
+    /// alerts point at an agent that no longer exists.
+    private func forgetBotActivity(_ name: String) {
+        func belongs(_ event: AliceEvent) -> Bool {
+            [event.profile, event.reference.profile].contains {
+                $0?.caseInsensitiveCompare(name) == .orderedSame
+            }
+        }
+        guard activity.contains(where: belongs) else { return }
+        activity.removeAll(where: belongs)
+        persistActivity()
+        refreshAttention()
     }
 
     /// Drops the row and its local chat immediately so Delete does not wait
@@ -4577,6 +4823,283 @@ final class AppStore {
     var showingBots = false
     /// Notes is a page as well, reached sideways from the drawer.
     var showingNotes = false
+    /// A note is open in its editor, on top of Notes. The Notes page's own
+    /// swipe to close stands down so the swipe goes back to the list instead.
+    var editingNote = false
+    /// A note row is swiped open, so a rightward swipe closes it rather than Notes.
+    var noteRowOpen = false
+    /// When a finger last came down on a note row: a rightward swipe begun
+    /// there pins the note, and must not also close Notes.
+    var noteRowTouchedAt = Date.distantPast
+
+    /// Notes kept at the top, by id. Kept on this phone.
+    private(set) var pinnedNotes: Set<String> = [] {
+        didSet { defaults.set(Array(pinnedNotes), forKey: Keys.pinnedNotes) }
+    }
+
+    func togglePinned(_ note: Note) {
+        if pinnedNotes.contains(note.id) { pinnedNotes.remove(note.id) } else { pinnedNotes.insert(note.id) }
+    }
+
+    // MARK: - Locking
+
+    /// Face ID (or the passcode) before Alice shows anything.
+    var requireUnlock = false {
+        didSet {
+            defaults.set(requireUnlock, forKey: Keys.requireUnlock)
+            if !requireUnlock { appLocked = false }
+        }
+    }
+    /// How long Alice may be away before it locks again, in seconds.
+    var lockGrace: Int = 60 {
+        didSet { defaults.set(lockGrace, forKey: Keys.lockGrace) }
+    }
+    /// The app's content is covered until the owner unlocks it.
+    var appLocked = false
+    /// When Alice last left the foreground, for the grace period.
+    var leftForegroundAt: Date?
+
+    /// Notes that ask for Face ID before they open. Their words stay in the
+    /// notes store, where agents still read them: this locks the phone's view.
+    private(set) var lockedNotes: Set<String> = [] {
+        didSet { defaults.set(Array(lockedNotes), forKey: Keys.lockedNotes) }
+    }
+    /// Locked notes were unlocked once; they stay open until Alice leaves the
+    /// foreground, as in Notes.
+    var lockedNotesOpen = false
+
+    func isLocked(_ note: Note) -> Bool { lockedNotes.contains(note.id) }
+
+    func setLocked(_ note: Note, _ locked: Bool) {
+        if locked { lockedNotes.insert(note.id) } else { lockedNotes.remove(note.id) }
+    }
+
+    /// Asks for Face ID when a locked note is to be opened, once per visit.
+    func unlockNotes() async -> Bool {
+        if lockedNotesOpen { return true }
+        let ok = await Biometrics.authenticate(reason: "Unlock your locked notes.")
+        if ok { lockedNotesOpen = true }
+        return ok
+    }
+
+    /// A copy of a note, styling and folder included.
+    func duplicate(_ note: Note) async throws {
+        var copy = try await addNote(note.text)
+        if let rich = note.rich {
+            try await editNote(copy, text: note.text, rich: rich)
+            copy.rich = rich
+        }
+        if let folder = noteFolderOf[note.id] { await put(copy.id, in: .folder(folder)) }
+        if lockedNotes.contains(note.id) { lockedNotes.insert(copy.id) }
+    }
+
+    // MARK: - Note folders
+
+    /// The folders in the notes store, in the order made — shared with the
+    /// agent that keeps the notes, which files them there. Quick Notes and
+    /// Recently Deleted are not among them: they are always there (the second
+    /// only when it holds something).
+    var noteFolders: [NoteFolder] { notesSnapshot?.folders ?? [] }
+
+    /// The folders shown at the top level: the ones not put inside another.
+    var rootNoteFolders: [NoteFolder] {
+        NoteFolderTree.roots(noteFolders, parent: noteFolderParent)
+    }
+
+    /// The folders inside one, in the order they were made.
+    func subfolders(of id: String) -> [NoteFolder] {
+        NoteFolderTree.children(of: id, in: noteFolders, parent: noteFolderParent)
+    }
+
+    /// Whether a folder is inside another, at any depth.
+    func noteFolder(_ id: String, isInside ancestor: String) -> Bool {
+        NoteFolderTree.isInside(id, ancestor, parent: noteFolderParent)
+    }
+
+    /// Puts a folder inside another, or back at the top level.
+    func moveNoteFolder(_ id: String, into parent: String?) {
+        noteFolderParent = NoteFolderTree.moving(id, into: parent, parent: noteFolderParent)
+    }
+
+    /// The folder each note is filed in, by note id.
+    var noteFolderOf: [String: String] {
+        let known = Set(noteFolders.map(\.id))
+        var map: [String: String] = [:]
+        for note in notesSnapshot?.notes ?? [] {
+            if let folder = note.folder, known.contains(folder) { map[note.id] = folder }
+        }
+        return map
+    }
+
+    /// Folders made on this phone before they lived in the store, moved there
+    /// once and then forgotten.
+    private var legacyFolders: [NoteFolder] = []
+    private var legacyFolderOf: [String: String] = [:]
+
+    private(set) var recentlyDeleted: [DeletedNote] = [] {
+        didSet { save(recentlyDeleted, as: Keys.recentlyDeleted) }
+    }
+    /// A folder's page is open over the folders, so swiping right goes back to
+    /// them rather than closing Notes.
+    var notesFolderOpen = false
+    /// Why the last change to a folder did not take, for the folders page.
+    var noteFolderFailure: String?
+
+    private func save<T: Encodable>(_ value: T, as key: String) {
+        if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: key) }
+    }
+
+    private func loadNoteFolders() {
+        func read<T: Decodable>(_ type: T.Type, _ key: String) -> T? {
+            defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(type, from: $0) }
+        }
+        legacyFolders = read([NoteFolder].self, Keys.noteFolders) ?? []
+        legacyFolderOf = read([String: String].self, Keys.noteFolderOf) ?? [:]
+        let cutoff = Date().addingTimeInterval(-DeletedNote.kept)
+        recentlyDeleted = (read([DeletedNote].self, Keys.recentlyDeleted) ?? []).filter { $0.deletedAt > cutoff }
+    }
+
+    /// Folders made on this phone go to the store with their notes, once.
+    private func moveLegacyFoldersToStore() async {
+        guard !legacyFolders.isEmpty, notesSnapshot?.available == true else { return }
+        for folder in legacyFolders {
+            guard let made = try? await dashboard.createNoteFolder(named: folder.name) else { return }
+            for (note, id) in legacyFolderOf where id == folder.id {
+                try? await dashboard.fileNote(id: note, folder: made.id)
+            }
+        }
+        legacyFolders = []
+        legacyFolderOf = [:]
+        defaults.removeObject(forKey: Keys.noteFolders)
+        defaults.removeObject(forKey: Keys.noteFolderOf)
+        if let fresh = try? await dashboard.notes() { notesSnapshot = fresh }
+    }
+
+    private func replaceNote(_ id: String, _ change: (inout Note) -> Void) {
+        guard let current = notesSnapshot else { return }
+        notesSnapshot = current.with(notes: current.notes.map { note in
+            guard note.id == id else { return note }
+            var changed = note
+            change(&changed)
+            return changed
+        })
+    }
+
+    func notes(in scope: NotesScope) -> [Note] {
+        let all = notesSnapshot?.notes ?? []
+        switch scope {
+        case .all:
+            return all
+        case .quick:
+            let folders = Set(noteFolders.map(\.id))
+            return all.filter { note in note.folder.map { !folders.contains($0) } ?? true }
+        case let .folder(id):
+            return all.filter { $0.folder == id }
+        case .deleted:
+            return recentlyDeleted.sorted { $0.deletedAt > $1.deletedAt }.map(\.note)
+        }
+    }
+
+    func name(of scope: NotesScope) -> String {
+        switch scope {
+        case .all: "All Notes"
+        case .quick: "Quick Notes"
+        case let .folder(id): noteFolders.first { $0.id == id }?.name ?? "Folder"
+        case .deleted: "Recently Deleted"
+        }
+    }
+
+    /// Makes a folder in the notes store, shown at once.
+    func createNoteFolder(named name: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let current = notesSnapshot else { return }
+        let placeholder = NoteFolder(id: "local-\(UUID().uuidString)", name: trimmed)
+        notesSnapshot = current.with(folders: noteFolders + [placeholder])
+        do {
+            let made = try await dashboard.createNoteFolder(named: trimmed)
+            let others = noteFolders.filter { $0.id != placeholder.id && $0.id != made.id }
+            notesSnapshot = notesSnapshot?.with(folders: others + [made])
+        } catch {
+            notesSnapshot = notesSnapshot?.with(folders: noteFolders.filter { $0.id != placeholder.id })
+            noteFolderFailure = HermesErrors.describe(error)
+        }
+    }
+
+    func renameNoteFolder(_ id: String, to name: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let before = noteFolders
+        notesSnapshot = notesSnapshot?.with(folders: before.map { $0.id == id ? NoteFolder(id: id, name: trimmed) : $0 })
+        do {
+            try await dashboard.renameNoteFolder(id: id, to: trimmed)
+        } catch {
+            notesSnapshot = notesSnapshot?.with(folders: before)
+            noteFolderFailure = HermesErrors.describe(error)
+        }
+    }
+
+    /// Makes a folder inside another. The store keeps its folders flat, so this
+    /// is the same folder as any other, remembered here as sitting inside one.
+    func createNoteFolder(named name: String, inside parent: String?) async {
+        let before = Set(noteFolders.map(\.id))
+        await createNoteFolder(named: name)
+        guard let parent,
+              let made = noteFolders.first(where: { !before.contains($0.id) })
+        else { return }
+        noteFolderParent[made.id] = parent
+    }
+
+    /// The folder goes; its notes go back to Quick Notes, not with it.
+    func deleteNoteFolder(_ id: String) async {
+        let before = noteFolders
+        // Whatever was inside it comes back to the top level, with its notes.
+        noteFolderParent = NoteFolderTree.removing(id, from: noteFolderParent)
+        notesSnapshot = notesSnapshot?.with(folders: before.filter { $0.id != id })
+        do {
+            try await dashboard.deleteNoteFolder(id: id)
+        } catch {
+            notesSnapshot = notesSnapshot?.with(folders: before)
+            noteFolderFailure = HermesErrors.describe(error)
+        }
+    }
+
+    /// Files a note in a folder of the store, or back in Quick Notes.
+    func put(_ noteID: String, in scope: NotesScope) async {
+        let folder: String? = if case let .folder(id) = scope { id } else { nil }
+        let before = notesSnapshot?.notes.first { $0.id == noteID }?.folder
+        guard before != folder else { return }
+        replaceNote(noteID) { $0.folder = folder }
+        do {
+            try await dashboard.fileNote(id: noteID, folder: folder)
+        } catch {
+            replaceNote(noteID) { $0.folder = before }
+            noteFolderFailure = HermesErrors.describe(error)
+        }
+    }
+
+    /// A deleted note back in its store and its folder. The store gives it a
+    /// new identity and today's date: it is written again, not undeleted.
+    func recover(_ deleted: DeletedNote) async throws {
+        var created = try await addNote(deleted.note.text)
+        if let rich = deleted.note.rich {
+            try await editNote(created, text: deleted.note.text, rich: rich)
+            created.rich = rich
+        }
+        if let folder = deleted.folderID, noteFolders.contains(where: { $0.id == folder }) {
+            await put(created.id, in: .folder(folder))
+        }
+        recentlyDeleted.removeAll { $0.id == deleted.id }
+    }
+
+    func deleteForever(_ deleted: DeletedNote) {
+        recentlyDeleted.removeAll { $0.id == deleted.id }
+    }
+
+    func deleteAllForever() {
+        recentlyDeleted.removeAll()
+    }
+    /// The launch logo has left, so home's own may come in.
+    var launchRevealed = false
 
     /// Which side the bots page comes from and leaves by.
     ///
@@ -4682,6 +5205,12 @@ final class AppStore {
                 watching: Set(activeBotTurns.values.map(\.replyID)),
                 note: Self.lostTouchNote(label: botCurrentName(for: profile))
             )
+            // The answer landed while the watch had lost its socket: the
+            // placeholder is gone, and so is anything left to follow.
+            if let turn = activeBotTurns[conversationID], turn.disposition != nil,
+               !conversations[current].messages.contains(where: { $0.id == turn.replyID }) {
+                releaseBotWatcher(conversationID, expectedToken: turn.token)
+            }
             _ = index
             let roster = cachedBots
             let delegations = AgentMessages.delegations(in: resumed.rows) { handle in
@@ -4869,13 +5398,67 @@ final class AppStore {
     /// foreground. Not a poll: a cron report lands while the phone is asleep,
     /// and this is the moment it becomes worth asking for.
     func refreshVisibleBotChats() async {
+        // Replies first: they are what someone coming back from a notification
+        // opened the app to read. Refreshing every bot takes the better part of
+        // a minute on a busy Mac, and the socket was often gone again before
+        // Alice's own reply was ever looked for.
+        await recoverWaitingReplies()
         let ids = conversations.filter(\.isCanonicalBotChat).map(\.id)
         for id in ids { await refreshBotChat(id) }
-        // Alice's own chats: a reply that finished while nobody was watching.
-        for conversation in conversations
-        where conversation.isHomeSessionChat && !sendingConversations.contains(conversation.id)
-            && Self.awaitsReply(conversation) {
-            await settleHomeReply(conversation.id)
+        markMentionRepliesSeen(in: activeID)
+        startReplyRecovery()
+    }
+
+    /// Replies still drawn as on their way — being written, or left waiting by
+    /// a watch that lost its socket — that Hermes may already have finished.
+    private var waitingReplyChats: [String] {
+        conversations.compactMap { conversation in
+            guard let reply = conversation.messages.last(where: { $0.role == .assistant }),
+                  reply.pending || reply.awaitingRemote,
+                  conversation.isHomeSessionChat || conversation.isCanonicalBotChat
+                    || reply.mentionSessionID != nil
+            else { return nil }
+            let followed = activeBotTurns[conversation.id]
+            // Not yet accepted by Hermes: there is nothing there to find.
+            if followed == nil, sendingConversations.contains(conversation.id) { return nil }
+            if let followed, followed.disposition == nil { return nil }
+            return conversation.id
+        }
+    }
+
+    /// Reads each waiting reply's chat back from Hermes, the way the Bark
+    /// notifier knows a reply is done: by what Hermes has stored.
+    private func recoverWaitingReplies() async {
+        let waiting = waitingReplyChats
+        if !waiting.isEmpty { DiagnosticsLog.write("recover.start chats=\(waiting.count)") }
+        for id in waiting {
+            guard let conversation = conversations.first(where: { $0.id == id }) else { continue }
+            if conversation.messages.last(where: { $0.role == .assistant })?.mentionSessionID != nil {
+                await settleMentionReply(id)
+            } else if conversation.isHomeSessionChat {
+                await settleHomeReply(id)
+            } else {
+                await refreshBotChat(id)
+            }
+        }
+    }
+
+    private var replyRecovery: Task<Void, Never>?
+
+    /// Keeps looking for waiting replies while the app is open, every twelve
+    /// seconds for up to ten minutes, whatever became of the watch following
+    /// them — ended by a suspension, stalled, or never started after a relaunch.
+    func startReplyRecovery() {
+        guard replyRecovery == nil, !waitingReplyChats.isEmpty else { return }
+        replyRecovery = Task { [weak self] in
+            defer { self?.replyRecovery = nil }
+            for _ in 0..<50 {
+                try? await Task.sleep(for: .seconds(12))
+                guard let self, !Task.isCancelled else { return }
+                guard self.isForeground else { continue }
+                if self.waitingReplyChats.isEmpty { return }
+                await self.recoverWaitingReplies()
+            }
         }
     }
 
@@ -4889,7 +5472,7 @@ final class AppStore {
     /// chat, or, with no profile, Alice's own chat.
     private func sendToBotChat(
         profile: String?, conversationID: String, replyID: String, text: String,
-        attachments: [Attachment], earlier: [Message] = []
+        attachments: [Attachment], earlier: [Message] = [], mention: Bool = false
     ) async {
         guard let source = await botChatSource() else {
             if profile == nil {
@@ -4917,7 +5500,14 @@ final class AppStore {
             if let profile {
                 let chat = try await BotChatSync(source: source).resolve(profile: profile)
                 storedSessionID = chat.resolvedID
-                if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+                if mention {
+                    // This chat keeps its own session; the reply remembers the agent's.
+                    if let location = messageLocation(replyID, conversationID: conversationID) {
+                        conversations[location.chat].messages[location.message].mentionSessionID = storedSessionID
+                    }
+                    activeBotTurns[conversationID]?.mentionProfile = profile
+                    activeBotTurns[conversationID]?.storedSessionID = storedSessionID
+                } else if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
                     conversations[index].hermesSessionID = storedSessionID
                 }
                 submission = try await source.submit(
@@ -4950,6 +5540,10 @@ final class AppStore {
             if activeBotTurns[conversationID]?.token == token {
                 activeBotTurns[conversationID]?.disposition = submission.disposition
             }
+            DiagnosticsLog.write(
+                "turn.submitted reply=\(replyID) profile=\(profile ?? "alice") mention=\(mention) "
+                    + "live=\(submission.liveSessionID) disposition=\(submission.disposition)"
+            )
             track(liveSessionID: submission.liveSessionID, for: conversationID)
             // Stop may have been tapped while prompt.submit itself was still
             // awaiting its ACK. In that window interrupting first would race
@@ -4972,6 +5566,9 @@ final class AppStore {
             // Frames end the reply only when they say the turn is over, and a
             // silence is asked about rather than waited on forever.
             watching: for await signal in BotTurnWatch.signals(from: events, every: .seconds(15)) {
+                // Let go meanwhile — settled from the transcript, stopped, or
+                // superseded — so nothing here may touch the reply again.
+                guard activeBotTurns[conversationID]?.token == token else { break watching }
                 switch signal {
                 case let .frame(event):
                     if let withdrawn = GatewayServerRequests.cancelledRequestID(event) {
@@ -4991,6 +5588,20 @@ final class AppStore {
                         // what follows the turn ahead of it is its own.
                         watch.confirmQueuedOrigin(now: Date())
                         setDeliveryNote(nil, on: replyID, conversationID: conversationID)
+                        continue
+                    }
+                    if step == .queuedTurnEnded, mention, let profile {
+                        // Asked from another chat, there is no transcript of
+                        // the agent's here to find this message in: look in
+                        // its session instead.
+                        if await mentionOriginLanded(
+                            source: source, profile: profile, storedID: storedSessionID,
+                            submitted: submission.submittedText, replyID: replyID,
+                            conversationID: conversationID
+                        ) {
+                            watch.confirmQueuedOrigin(now: Date())
+                            setDeliveryNote(nil, on: replyID, conversationID: conversationID)
+                        }
                         continue
                     }
                     if step == .queuedTurnEnded {
@@ -5055,7 +5666,16 @@ final class AppStore {
                     }
                 case .tick:
                     guard watch.shouldCheck(now: Date()) else { continue }
-                    if watch.needsTranscriptCorrelation {
+                    if watch.needsTranscriptCorrelation, mention, let profile {
+                        if await mentionOriginLanded(
+                            source: source, profile: profile, storedID: storedSessionID,
+                            submitted: submission.submittedText, replyID: replyID,
+                            conversationID: conversationID
+                        ) {
+                            watch.confirmQueuedOrigin(now: Date())
+                            setDeliveryNote(nil, on: replyID, conversationID: conversationID)
+                        }
+                    } else if watch.needsTranscriptCorrelation {
                         await refreshBotChat(conversationID)
                         if messageLocation(replyID, conversationID: conversationID) == nil {
                             ending = .outcome
@@ -5086,6 +5706,7 @@ final class AppStore {
                     }
                     switch watch.checked(state, now: Date()) {
                     case let .keepWaiting(liveSessionIDChanged):
+                        DiagnosticsLog.write("watch.keepWaiting reply=\(replyID) changed=\(liveSessionIDChanged)")
                         if liveSessionIDChanged {
                             track(liveSessionID: watch.liveSessionID, for: conversationID)
                         }
@@ -5094,19 +5715,24 @@ final class AppStore {
                             on: replyID, conversationID: conversationID
                         )
                     case .reconnecting:
+                        DiagnosticsLog.write("watch.reconnecting reply=\(replyID)")
                         setDeliveryNote(
                             "Reconnecting to Hermes…", on: replyID, conversationID: conversationID
                         )
+                        startReplyRecovery()
                     case let .endedUnseen(failure):
+                        DiagnosticsLog.write("watch.endedUnseen reply=\(replyID) failure=\(failure != nil)")
                         ending = .endedUnseen(failure)
                         break watching
                     case .lostTouch:
+                        DiagnosticsLog.write("watch.lostTouch reply=\(replyID)")
                         ending = .lostTouch
                         break watching
                     }
                 }
             }
         } catch {
+            DiagnosticsLog.write("turn.failed reply=\(replyID) error=\(error.localizedDescription)")
             ending = .failed
             fail(replyID, conversationID: conversationID,
                  message: HermesErrors.describe(error),
@@ -5115,6 +5741,9 @@ final class AppStore {
 
         // Stopped, or superseded by a newer message: whoever let go of this
         // reply has already settled it, and may be watching another.
+        DiagnosticsLog.write(
+            "turn.end reply=\(replyID) profile=\(profile ?? "alice") mention=\(mention) ending=\(ending)"
+        )
         guard activeBotTurns[conversationID]?.token == token else { return }
         activeBotTurns[conversationID] = nil
         switch ending {
@@ -5122,6 +5751,10 @@ final class AppStore {
             setDeliveryNote(nil, on: replyID, conversationID: conversationID)
             finish(replyID, conversationID: conversationID)
             await refreshBotChat(conversationID)
+            if mention, let profile {
+                await refreshOwnChat(of: profile)
+                markMentionRepliesSeen(in: conversationID)
+            }
         case let .endedUnseen(retainedFailure):
             // Nothing is running and no ending was seen. A disconnected client
             // can miss Hermes' terminal frame; session.activate/resume retains
@@ -5131,6 +5764,10 @@ final class AppStore {
             await refreshBotChat(conversationID)
             if profile == nil,
                await settleHomeReply(conversationID, replyID: replyID) {
+                return
+            }
+            if mention, await settleMentionReply(conversationID, replyID: replyID) {
+                if let profile { await refreshOwnChat(of: profile) }
                 return
             }
             if botChatFailure[conversationID] == nil,
@@ -5167,6 +5804,8 @@ final class AppStore {
             await refreshBotChat(conversationID)
             if profile == nil {
                 await settleHomeReply(conversationID, replyID: replyID)
+            } else if mention {
+                await settleMentionReply(conversationID, replyID: replyID)
             }
         }
     }
@@ -5194,13 +5833,26 @@ final class AppStore {
         }
         guard let model, !model.isEmpty else { return session }
         let wanted = "\(model)|\(provider ?? "")"
-        guard homeChatModels[session.storedID] != wanted else { return session }
-        let switched = try await source.useModel(model, provider: provider, in: session)
-        homeChatModels[session.storedID] = wanted
+        guard homeChatModels[session.liveID] != wanted else { return session }
+        // Always set on a runtime this app has not set it on: what a resumed
+        // session reports is not what it runs.
+        let switched = try await source.useModel(
+            model, provider: provider, in: session, force: true
+        )
+        homeChatModels[session.liveID] = wanted
         return switched
     }
 
-    /// The model each of Alice's sessions was last put on from this app.
+    /// The model each of Alice's live session runtimes was last put on from
+    /// this app.
+    ///
+    /// Keyed by the runtime, not the stored chat. When a provider fails, Hermes
+    /// answers with a fallback and saves that model on the chat; once the
+    /// runtime is reaped, resuming rebuilds it on the saved fallback. Keyed by
+    /// the chat, Alice believed her pick was still applied and never asked
+    /// again, so a chat on Union Alpha carried on as GPT-5.6 Terra. Nor can
+    /// the model a resumed session reports be trusted — it names the configured
+    /// one — so every new runtime is set explicitly.
     private var homeChatModels: [String: String] = [:]
 
     /// A reply in Alice's own chat that is still outstanding.
@@ -5221,16 +5873,105 @@ final class AppStore {
         let messages = conversations[chat].messages
         let candidate = replyID.flatMap { id in messages.first { $0.id == id } }
             ?? messages.last { $0.role == .assistant }
-        guard let reply = candidate, reply.pending || reply.awaitingRemote == true,
-              let source = await botChatSource(),
-              let turns = try? await source.homeTranscript(storedID),
-              let answer = WebSocketBotChatSource.finishedReply(in: turns, sentAt: reply.createdAt),
-              let location = messageLocation(reply.id, conversationID: conversationID)
+        // A reply from an agent named with `@` lives in that agent's session.
+        guard let reply = candidate, reply.mentionProfile == nil else { return false }
+        return await settleReply(reply, in: conversationID, profile: nil, storedID: storedID)
+    }
+
+    /// Settles a reply from an agent named with `@` in another chat from that
+    /// agent's own session, the way `settleHomeReply` does Alice's.
+    @discardableResult
+    private func settleMentionReply(_ conversationID: String, replyID: String? = nil) async -> Bool {
+        guard let chat = conversations.firstIndex(where: { $0.id == conversationID }) else { return false }
+        let messages = conversations[chat].messages
+        let candidate = replyID.flatMap { id in messages.first { $0.id == id } }
+            ?? messages.last { $0.role == .assistant }
+        guard let reply = candidate, let profile = reply.mentionProfile,
+              let storedID = reply.mentionSessionID
         else { return false }
+        let settled = await settleReply(reply, in: conversationID, profile: profile, storedID: storedID)
+        if settled {
+            await refreshOwnChat(of: profile)
+            markMentionRepliesSeen(in: conversationID)
+        }
+        return settled
+    }
+
+    /// The agent's own chat on this phone, brought up to date with a turn that
+    /// was sent to it from somewhere else.
+    private func refreshOwnChat(of profile: String) async {
+        guard let own = conversations.first(where: {
+            $0.routedBotName?.caseInsensitiveCompare(profile) == .orderedSame && $0.isCanonicalBotChat
+        }) else { return }
+        await refreshBotChat(own.id)
+    }
+
+    /// Whether Hermes has written the message sent to a busy agent from
+    /// another chat into that agent's session, so what streams next is its answer.
+    private func mentionOriginLanded(
+        source: WebSocketBotChatSource, profile: String, storedID: String,
+        submitted: String, replyID: String, conversationID: String
+    ) async -> Bool {
+        guard let location = messageLocation(replyID, conversationID: conversationID),
+              let state = try? await source.sessionState(profile: profile, storedID: storedID)
+        else { return false }
+        let sentAt = conversations[location.chat].messages[location.message].createdAt
+        let wanted = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
+        return state.turns.contains { turn in
+            turn.role == .user
+                && turn.createdAt >= sentAt.addingTimeInterval(-BotChatSync.copyClockSlack)
+                && turn.content.trimmingCharacters(in: .whitespacesAndNewlines) == wanted
+        }
+    }
+
+    /// Fills a reply nobody saw finish with the answer its session kept.
+    private func settleReply(
+        _ reply: Message, in conversationID: String, profile: String?, storedID: String
+    ) async -> Bool {
+        guard reply.pending || reply.awaitingRemote == true else { return false }
+        guard let source = await botChatSource() else {
+            DiagnosticsLog.write("settle.noSource reply=\(reply.id) dashboardReady=\(dashboardReady)")
+            return false
+        }
+        let state: (turns: [BotChatTurn], running: Bool)
+        do {
+            state = try await source.sessionState(profile: profile, storedID: storedID)
+        } catch {
+            DiagnosticsLog.write("settle.readFailed reply=\(reply.id) error=\(error.localizedDescription)")
+            return false
+        }
+        let asking = reply.replyToMessageID.flatMap { origin in
+            conversations.first(where: { $0.id == conversationID })?
+                .messages.first(where: { $0.id == origin })
+        }.map { $0.remoteMatchContent ?? $0.content }
+        DiagnosticsLog.write(
+            "settle.read reply=\(reply.id) profile=\(profile ?? "alice") running=\(state.running) "
+                + "turns=\(state.turns.count) last=\(state.turns.last?.role.rawValue ?? "none") "
+                + "asking=\(asking != nil)"
+        )
+        guard !state.running,
+              let answer = WebSocketBotChatSource.finishedReply(
+                  in: state.turns, sentAt: reply.createdAt, asking: asking
+              ),
+              let location = messageLocation(reply.id, conversationID: conversationID)
+        else {
+            // Restored from a suspended or relaunched app, a reply nobody
+            // follows any more would say "Thinking…" for ever. Say instead
+            // that it will show here, and look again on the next return.
+            if activeBotTurns[conversationID] == nil,
+               !sendingConversations.contains(conversationID),
+               let location = messageLocation(reply.id, conversationID: conversationID),
+               conversations[location.chat].messages[location.message].pending {
+                awaitRemote(
+                    reply.id, conversationID: conversationID,
+                    note: Self.lostTouchNote(label: profile.map { botCurrentName(for: $0) } ?? "Alice")
+                )
+            }
+            return false
+        }
         var settled = conversations[location.chat].messages[location.message]
         settled.content = answer
-        settled.pending = false
-        settled.closeOpenTools()
+        settled.settle()
         settled.awaitingRemote = false
         settled.deliveryNote = nil
         settled.error = nil
@@ -5238,6 +5979,10 @@ final class AppStore {
         settled.incomplete = false
         conversations[location.chat].messages[location.message] = settled
         persistConversations()
+        // A watch that lost its socket is still waiting on this reply.
+        if let turn = activeBotTurns[conversationID], turn.replyID == reply.id {
+            releaseBotWatcher(conversationID, expectedToken: turn.token)
+        }
         return true
     }
 
@@ -5279,8 +6024,7 @@ final class AppStore {
             pieces.append(detail)
         }
         reply.content = pieces.joined(separator: "\n\n")
-        reply.pending = false
-        reply.closeOpenTools()
+        reply.settle()
         reply.awaitingRemote = false
         reply.deliveryNote = nil
         reply.error = cause.isEmpty ? heading : cause
@@ -5444,7 +6188,15 @@ final class AppStore {
         // Offline, `send` reconnects and then sends whatever is in the
         // composer — which would be the person's own draft by then.
         guard isConnected || !keepsDraft else { return }
-        draft = reply
+        // A button in the reply of an agent asked with `@` in Alice's chat
+        // answers that agent, not Alice: approving Inbox's folder went to her.
+        var addressed = reply
+        if let chat = activeConversation, chat.routedBotName == nil,
+           let agent = chat.messages.last(where: { $0.role == .assistant })?.mentionProfile,
+           mentions(in: reply).isEmpty {
+            addressed = "@\(agent) " + reply
+        }
+        draft = addressed
         draftAttachments = []
         send()
         if keepsDraft {
@@ -5457,6 +6209,11 @@ final class AppStore {
         guard !activeIsRecoveredHistory else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !draftAttachments.isEmpty else { return }
+        if let editing = editingMessageID {
+            editingMessageID = nil
+            if sendEdit(of: editing, text: text) { return }
+        }
+        if activeAwaitsAnswers, !text.isEmpty, answerWaitingQuestion(with: text) { return }
         // Hermes stop clears the active turn AND its server-side queue. Do not
         // accept another local send while that destructive RPC is unresolved.
         guard let activeID, botStopsInFlight[activeID] == nil else { return }
@@ -5557,6 +6314,19 @@ final class AppStore {
         // talk to, and it must never fall through to Alice.
         if conversations[index].isChannel == true, invokedBot == nil { return }
 
+        // An agent named with `@` in Alice's chat is talked to as in its own
+        // chat: the words, without the name, go into its own Hermes session,
+        // with its instructions, memory, tools, model and history, and the
+        // exchange is there when its chat is opened. The gateway run used
+        // before only borrowed the name.
+        var mentionText: String?
+        if let invokedBot, conversations[index].routedBotName == nil,
+           conversations[index].isChannel != true, dashboardReady,
+           !HermesSelfUpdateIntent.matches(text) {
+            let stripped = Self.withoutMention(text, of: invokedBot, names: mentionNames(for: invokedBot))
+            if !stripped.isEmpty || !draftAttachments.isEmpty { mentionText = stripped }
+        }
+
         let attachments = draftAttachments
         draft = ""
         draftAttachments = []
@@ -5572,7 +6342,8 @@ final class AppStore {
             Message(
                 id: replyID, role: .assistant, content: "",
                 createdAt: Date(), pending: true, botName: invokedBot,
-                replyToMessageID: user.id
+                replyToMessageID: user.id,
+                mentionProfile: mentionText == nil ? nil : invokedBot
             )
         )
         if conversations[index].title == "New chat" {
@@ -5603,6 +6374,20 @@ final class AppStore {
             return
         }
 
+        if let invokedBot, let mentionText {
+            streamTasks[conversationID] = Task { [weak self] in
+                await self?.sendToBotChat(
+                    profile: invokedBot,
+                    conversationID: conversationID,
+                    replyID: replyID,
+                    text: mentionText,
+                    attachments: attachments,
+                    mention: true
+                )
+            }
+            return
+        }
+
         // Alice's own chat goes through the dashboard socket when there is
         // one: there Hermes can stop and ask a question, which a gateway run
         // cannot. A mention keeps the gateway, since that turn speaks as a
@@ -5628,6 +6413,102 @@ final class AppStore {
         streamThroughGateway(
             conversationID: conversationID, replyID: replyID, invokedBot: invokedBot
         )
+    }
+
+    /// A sent message with each `@agent` in it drawn in that agent's colour.
+    /// `bold` off keeps each glyph as wide as plain text, for drawing behind a
+    /// field whose caret must stay on its letters.
+    func mentionStyled(_ text: String, bold: Bool = true) -> AttributedString {
+        var styled = AttributedString(text)
+        for (range, slug) in mentions(in: text) {
+            guard let lower = AttributedString.Index(range.lowerBound, within: styled),
+                  let upper = AttributedString.Index(range.upperBound, within: styled)
+            else { continue }
+            styled[lower..<upper].foregroundColor = mark(for: slug).color
+            if bold { styled[lower..<upper].font = .body.weight(.semibold) }
+        }
+        return styled
+    }
+
+    /// A draft after one character was deleted from the end of an `@agent` in
+    /// it: the whole name goes, as a mention is one thing, not letters.
+    func draftDeletingMention(old: String, new: String) -> String? {
+        guard old.count == new.count + 1 else { return nil }
+        for (range, _) in mentions(in: old) {
+            var trimmed = old
+            trimmed.remove(at: old.index(before: range.upperBound))
+            if trimmed == new {
+                var whole = old
+                whole.removeSubrange(range)
+                return whole
+            }
+        }
+        return nil
+    }
+
+    /// Each `@agent` in a text, with the agent it names.
+    func mentions(in text: String) -> [(Range<String.Index>, String)] {
+        var slugs = Set(cachedBots.map(\.name))
+        slugs.formUnion(knownBotNames)
+        slugs.formUnion(botCustomNames.keys)
+        // Longest names first, so "@Mi Inbox" is not taken as "@Mi".
+        let names = slugs.flatMap { slug in mentionNames(for: slug).map { ($0, slug) } }
+            .sorted { $0.0.count > $1.0.count }
+        var taken: [Range<String.Index>] = []
+        var found: [(Range<String.Index>, String)] = []
+        for (name, slug) in names {
+            var from = text.startIndex
+            while let range = text.range(of: "@" + name, options: .caseInsensitive, range: from..<text.endIndex) {
+                from = range.upperBound
+                let startsWord = range.lowerBound == text.startIndex
+                    || text[text.index(before: range.lowerBound)].isWhitespace
+                let endsWord = range.upperBound == text.endIndex
+                    || !(text[range.upperBound].isLetter || text[range.upperBound].isNumber
+                         || text[range.upperBound] == "-" || text[range.upperBound] == "_")
+                guard startsWord, endsWord, !taken.contains(where: { $0.overlaps(range) })
+                else { continue }
+                taken.append(range)
+                found.append((range, slug))
+            }
+        }
+        return found
+    }
+
+    /// Every name an agent can be mentioned by.
+    private func mentionNames(for slug: String) -> [String] {
+        var names = [slug, botCurrentName(for: slug)]
+        if let bot = cachedBots.first(where: { $0.name == slug }) { names.append(bot.displayName) }
+        if let custom = botCustomNames[slug] { names.append(custom) }
+        return names.filter { !$0.isEmpty }
+    }
+
+    /// The message as the agent would have been sent it in its own chat: the
+    /// first `@name` for it taken out, and the space it leaves tidied.
+    nonisolated static func withoutMention(_ text: String, of slug: String, names: [String]) -> String {
+        for name in Set(names + [slug]).sorted(by: { $0.count > $1.count }) {
+            var searchFrom = text.startIndex
+            while let range = text.range(of: "@" + name, options: .caseInsensitive, range: searchFrom..<text.endIndex) {
+                let startsWord = range.lowerBound == text.startIndex
+                    || text[text.index(before: range.lowerBound)].isWhitespace
+                let endsWord = range.upperBound == text.endIndex
+                    || !(text[range.upperBound].isLetter || text[range.upperBound].isNumber
+                         || text[range.upperBound] == "-" || text[range.upperBound] == "_")
+                if startsWord && endsWord {
+                    var rest = text
+                    rest.removeSubrange(range)
+                    // "@inbox, apunta esto" reads as "apunta esto".
+                    if range.lowerBound < rest.endIndex,
+                       [",", ":"].contains(rest[range.lowerBound]) {
+                        rest.remove(at: range.lowerBound)
+                    }
+                    return rest
+                        .replacingOccurrences(of: "  ", with: " ")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                searchFrom = range.upperBound
+            }
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// A turn as a gateway run, with the conversation sent along with it.
@@ -5725,13 +6606,81 @@ final class AppStore {
         }
     }
 
+    // MARK: - Editing a sent message
+
+    /// The sent message the composer is rewriting. Sending replaces that
+    /// exchange instead of adding a new one.
+    var editingMessageID: String?
+
+    /// Only the latest message can be rewritten: Hermes rewinds the last
+    /// exchange, and nothing before it, so an earlier one could only be
+    /// changed on this phone while the agent kept the original.
+    ///
+    /// Decided by the message alone, not by whether a reply is streaming or a
+    /// refresh is under way: the menu re-reads this while it is open, and Edit
+    /// vanished from under the finger when either changed a second later. A
+    /// refresh also swaps a sent message for Hermes' copy under Hermes' id.
+    func canEdit(_ message: Message) -> Bool {
+        guard message.role == .user, !message.content.isEmpty, !activeIsRecoveredHistory,
+              let chat = conversations.first(where: { $0.id == activeID }),
+              let last = chat.messages.last(where: { $0.role == .user })
+        else { return false }
+        return last.id == message.id
+            || (message.remoteID != nil && last.remoteID == message.remoteID)
+            || (last.content == message.content
+                && abs(last.createdAt.timeIntervalSince(message.createdAt)) < 120)
+    }
+
+    func beginEditing(_ message: Message) {
+        guard canEdit(message),
+              let last = conversations.first(where: { $0.id == activeID })?
+                .messages.last(where: { $0.role == .user })
+        else { return }
+        editingMessageID = last.id
+        draft = message.content
+    }
+
+    func cancelEditing() {
+        editingMessageID = nil
+        draft = ""
+    }
+
+    /// Replaces the edited exchange: the reply goes the way Try Again takes it,
+    /// with the new words. Returns false when there was nothing to replace, so
+    /// the text is sent as it is.
+    private func sendEdit(of messageID: String, text: String) -> Bool {
+        // A reply still coming belongs to the exchange being replaced; it has
+        // to end first. The edit is kept meanwhile.
+        if isSending {
+            editingMessageID = messageID
+            return true
+        }
+        guard !text.isEmpty,
+              let chat = conversations.firstIndex(where: { $0.id == activeID }),
+              let index = conversations[chat].messages.firstIndex(where: { $0.id == messageID }),
+              conversations[chat].messages[index].role == .user,
+              !conversations[chat].messages[(index + 1)...].contains(where: { $0.role == .user })
+        else { return false }
+        guard let reply = conversations[chat].messages[(index + 1)...]
+            .first(where: { $0.role == .assistant })
+        else {
+            // Never answered: the old words go and the new ones are sent.
+            conversations[chat].messages.remove(at: index)
+            persistConversations()
+            return false
+        }
+        draft = ""
+        retry(reply.id, text: text)
+        return true
+    }
+
     /// Runs the last exchange again.
     ///
     /// Drops the reply and everything after it, then resends the user turn that
     /// prompted it — so a failed or unsatisfying answer is replaced rather than
     /// piled on top of, and the model sees the same history it saw the first
     /// time.
-    func retry(_ messageID: String) {
+    func retry(_ messageID: String, text: String? = nil) {
         guard !isSending,
               let chat = conversations.firstIndex(where: { $0.id == activeID }),
               let index = conversations[chat].messages.firstIndex(where: { $0.id == messageID }),
@@ -5777,6 +6726,8 @@ final class AppStore {
                 } catch {
                     self.botRetryInFlight = false
                     guard self.activeID == conversationID else { return }
+                    // An edit that could not be applied keeps its new words.
+                    if let text, self.draft.isEmpty { self.draft = text }
                     self.fail(
                         messageID,
                         conversationID: conversationID,
@@ -5788,7 +6739,7 @@ final class AppStore {
                 }
                 self.botRetryInFlight = false
                 guard self.activeID == conversationID, !self.isSending else { return }
-                self.resend(priorUser, replacing: messageID, in: conversationID)
+                self.resend(priorUser, replacing: messageID, in: conversationID, text: text)
             }
             return
         }
@@ -5797,7 +6748,7 @@ final class AppStore {
             // opens with the conversation as it now stands does not.
             conversations[chat].hermesSessionID = nil
         }
-        resend(priorUser, replacing: messageID, in: conversations[chat].id)
+        resend(priorUser, replacing: messageID, in: conversations[chat].id, text: text)
     }
 
     /// A bot chat's Retry is waiting on Hermes to rewind the exchange.
@@ -5907,7 +6858,10 @@ final class AppStore {
         return nil
     }
 
-    private func resend(_ priorUser: Message, replacing replyID: String, in conversationID: String) {
+    private func resend(
+        _ priorUser: Message, replacing replyID: String, in conversationID: String,
+        text: String? = nil
+    ) {
         guard let chat = conversations.firstIndex(where: { $0.id == conversationID }),
               let index = conversations[chat].messages.firstIndex(where: { $0.id == replyID })
         else { return }
@@ -5915,7 +6869,7 @@ final class AppStore {
         if let userIndex = conversations[chat].messages.firstIndex(where: { $0.id == priorUser.id }) {
             conversations[chat].messages.remove(at: userIndex)
         }
-        draft = priorUser.content
+        draft = text ?? priorUser.content
         send()
     }
 
@@ -5927,10 +6881,12 @@ final class AppStore {
         // when the RPC failed, then a new send could be erased by the late stop.
         guard let activeID else { return }
         if let index = conversations.firstIndex(where: { $0.id == activeID }),
-           let sessionID = conversations[index].hermesSessionID,
-           conversations[index].isCanonicalBotChat || conversations[index].isHomeSessionChat,
-           let turn = activeBotTurns[activeID] {
-            let profile = conversations[index].routedBotName
+           let turn = activeBotTurns[activeID],
+           let sessionID = turn.storedSessionID ?? conversations[index].hermesSessionID,
+           turn.mentionProfile != nil
+            || conversations[index].isCanonicalBotChat || conversations[index].isHomeSessionChat {
+            // A turn sent to an agent named with `@` stops in that agent's session.
+            let profile = turn.mentionProfile ?? conversations[index].routedBotName
             guard botStopsInFlight[activeID] == nil else { return }
             let token = turn.token
             botStopsInFlight[activeID] = token
@@ -5969,6 +6925,10 @@ final class AppStore {
         let conversationID: String
         let replyID: String
         var disposition: BotChatSubmission.Disposition? = nil
+        /// The agent and stored session the turn went to, when that is not the
+        /// chat's own — an agent named with `@` in another chat.
+        var mentionProfile: String? = nil
+        var storedSessionID: String? = nil
     }
 
     private enum BotTurnEnding {
@@ -6103,8 +7063,7 @@ final class AppStore {
         guard let location = messageLocation(turn.replyID, conversationID: turn.conversationID)
         else { return }
         var reply = conversations[location.chat].messages[location.message]
-        reply.pending = false
-        reply.closeOpenTools()
+        reply.settle()
         reply.deliveryNote = nil
         if stopped {
             if reply.content.isEmpty && reply.approval == nil {
@@ -6192,10 +7151,20 @@ final class AppStore {
         // different server and identity domain.
         if conversations[location.chat].isCanonicalBotChat || approval.viaSocket == true {
             let requestID = approval.requestID ?? approval.runID
-            guard let sessionID = conversations[location.chat].hermesSessionID,
-                  let source = await botChatSource()
-            else {
+            // The session the question came from: an agent asked with `@` in
+            // Alice's chat asks from its own session, which this chat does not
+            // hold — looking only at the chat's session reported the dashboard
+            // as disconnected while it was not.
+            let sessionID = botLiveSessionIDs[conversationID]
+                ?? activeBotTurns[conversationID]?.storedSessionID
+                ?? conversations[location.chat].hermesSessionID
+                ?? ""
+            guard let source = await botChatSource() else {
                 setApprovalFailure(messageID, "The Hermes dashboard is not connected.")
+                return
+            }
+            guard !sessionID.isEmpty || GatewayServerRequests.isServerRequestID(requestID) else {
+                setApprovalFailure(messageID, "Hermes no longer holds the session that asked this.")
                 return
             }
             do {
@@ -6332,8 +7301,7 @@ final class AppStore {
             }
             if let output { conversations[chat].messages[index].content = output }
             if status.isTerminal {
-                conversations[chat].messages[index].pending = false
-                conversations[chat].messages[index].closeOpenTools()
+                conversations[chat].messages[index].settle()
             }
             if status == .waitingForApproval || status.isTerminal || output != nil {
                 persistConversations()
@@ -6457,8 +7425,7 @@ final class AppStore {
         guard let location = messageLocation(id, conversationID: conversationID) else { return }
         let chat = location.chat
         let index = location.message
-        conversations[chat].messages[index].pending = false
-        conversations[chat].messages[index].closeOpenTools()
+        conversations[chat].messages[index].settle()
         conversations[chat].messages[index].error = message
         conversations[chat].messages[index].errorLimit = limit
         if conversations[chat].messages[index].content.isEmpty {
@@ -6472,8 +7439,7 @@ final class AppStore {
         guard let location = messageLocation(id, conversationID: conversationID) else { return }
         let chat = location.chat
         let index = location.message
-        conversations[chat].messages[index].pending = false
-        conversations[chat].messages[index].closeOpenTools()
+        conversations[chat].messages[index].settle()
 
         let text = conversations[chat].messages[index].content
         if text.isEmpty,

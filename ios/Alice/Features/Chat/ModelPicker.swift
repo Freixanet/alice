@@ -53,13 +53,57 @@ struct ModelPicker: View {
     /// A typed id worth offering: it looks like a model name, and nothing in
     /// the catalogue already matches it exactly.
     private var customCandidate: String? {
-        // A typed id is chosen for Alice's own chat on the spot; picking for an
-        // agent that does not exist yet has nowhere to send it.
-        guard targetProfile == nil, onChoose == nil else { return nil }
+        // Offered for agents as well as Alice: a model Hermes does not list —
+        // OpenRouter's `stealth/union-alpha`, say — was out of every agent's
+        // reach once it had been typed for Alice.
         let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard typed.count >= 3, !typed.contains(" ") else { return nil }
         guard !store.models.contains(where: { $0.id == typed }) else { return nil }
         return typed
+    }
+
+    /// The providers models are listed under, in the order they first appear.
+    private var typedProviders: [(slug: String, name: String)] {
+        var seen = Set<String>()
+        return store.models.compactMap { option in
+            guard let slug = option.provider, !slug.isEmpty, seen.insert(slug).inserted
+            else { return nil }
+            return (slug, option.providerName ?? slug)
+        }
+    }
+
+    private func typedOption(_ id: String, provider: String?, name: String?) -> HermesClient.ModelOption {
+        HermesClient.ModelOption(
+            id: id, label: HermesClient.prettify(id), provider: provider, providerName: name
+        )
+    }
+
+    /// Alice's current model, for an agent's picker, when the list has not got it.
+    private var aliceModelOption: HermesClient.ModelOption? {
+        guard targetProfile != nil || onChoose != nil,
+              query.isEmpty,
+              let id = store.selectedModel, !id.isEmpty
+        else { return nil }
+        let provider = store.selectedProvider
+        guard !store.models.contains(where: {
+            $0.id == id && (provider == nil || $0.provider == provider)
+        }) else { return nil }
+        let name = typedProviders.first { $0.slug == provider }?.name
+        return typedOption(id, provider: provider, name: name)
+    }
+
+    private func customRow(_ typed: String, via provider: String?) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(typed).foregroundStyle(.primary)
+                if let provider {
+                    Text(provider).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Image(systemName: "arrow.turn.down.left")
+                .foregroundStyle(.secondary)
+        }
     }
 
     var body: some View {
@@ -73,19 +117,33 @@ struct ModelPicker: View {
                 // the catalogue has left out.
                 if let typed = customCandidate {
                     Section("Use anyway") {
-                        Button {
-                            // Typed by hand: no section to take a provider
-                            // from, so the agent routes it.
-                            store.chooseModel(typed, provider: nil)
-                            dismiss()
-                        } label: {
-                            HStack {
-                                Text(typed).foregroundStyle(.primary)
-                                Spacer()
-                                Image(systemName: "arrow.turn.down.left")
-                                    .foregroundStyle(.secondary)
+                        // One row per provider this Hermes has. Left to route
+                        // it, Hermes keeps the current provider: Union Alpha
+                        // typed as OpenRouter's `stealth/union-alpha` went on
+                        // asking OpenCode Zen, which was failing, and the chat
+                        // answered on a fallback model.
+                        ForEach(typedProviders, id: \.slug) { provider in
+                            Button {
+                                choose(typedOption(typed, provider: provider.slug, name: provider.name))
+                            } label: {
+                                customRow(typed, via: provider.name)
                             }
                         }
+                        if typedProviders.isEmpty {
+                            Button {
+                                choose(typedOption(typed, provider: nil, name: nil))
+                            } label: {
+                                customRow(typed, via: nil)
+                            }
+                        }
+                    }
+                }
+
+                // Picking for an agent, Alice's own model is offered even when
+                // Hermes' list leaves it out — typed by hand, it is in no list.
+                if let alice = aliceModelOption {
+                    Section("Alice’s model") {
+                        row(alice)
                     }
                 }
 
@@ -164,7 +222,7 @@ struct ModelPicker: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .refreshable { await store.loadModels(refreshing: true) }
+            .refreshableWithFeedback { await store.loadModels(refreshing: true) }
             .task {
                 // A Bot Chat's model is profile state owned by Hermes. Refresh
                 // it when this sheet opens so the checkmark reflects the
@@ -224,8 +282,16 @@ struct ModelPicker: View {
                             }
                         }
                     }
-                } else if groups.isEmpty {
-                    ContentUnavailableView.search(text: query)
+                } else if groups.isEmpty, customCandidate == nil, query.count >= 3 {
+                    // Small and out of the way: a full-screen "No results"
+                    // covered the list with every letter typed, and the
+                    // "Use anyway" rows with it.
+                    Text("No models match “\(query)”")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .padding(.top, 24)
+                        .allowsHitTesting(false)
                 }
             }
         }

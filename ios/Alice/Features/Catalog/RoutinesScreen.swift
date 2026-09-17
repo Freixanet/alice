@@ -83,7 +83,7 @@ struct RoutinesScreen: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .refreshableWithFeedback { await load() }
         .sheet(item: $selected) { routine in
             RoutineDetailSheet(routine: routine) { await load() }
                 .preferredColorScheme(store.theme.colorScheme)
@@ -269,6 +269,18 @@ struct RoutineDetailSheet: View {
                 .disabled(busy)
                 .listRowBackground(Palette.card(scheme))
 
+                Section {
+                    Toggle(isOn: Binding(
+                        get: { store.isMuted(routine) },
+                        set: { store.setMuted(routine, $0) }
+                    )) {
+                        Label("Mute Notifications", systemImage: "bell.slash")
+                    }
+                } footer: {
+                    Text("Runs that go well stop appearing in Activity. A run that fails is still reported.")
+                }
+                .listRowBackground(Palette.card(scheme))
+
                 if !routine.prompt.isEmpty {
                     Section("Instructions") {
                         // A routine's prompt can run to paragraphs, and all of
@@ -351,7 +363,7 @@ struct RoutineDetailSheet: View {
             }
         }
         .task { await loadRuns() }
-        .refreshable { await loadRuns() }
+        .refreshableWithFeedback { await loadRuns() }
         .sheet(isPresented: $editing) {
             RoutineEditorSheet(profiles: [(routine.profile ?? "default", profileLabel)], routine: routine) {
                 _, name, prompt, schedule, deliver in

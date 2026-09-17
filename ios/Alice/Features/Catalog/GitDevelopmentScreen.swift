@@ -127,7 +127,7 @@ struct GitDevelopmentScreen: View {
             if !repoPath.isEmpty { await refreshAll() }
         }
         .onChange(of: reviewScope) { _, _ in Task { await refreshReview() } }
-        .refreshable { await refreshAll() }
+        .refreshableWithFeedback { await refreshAll() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { Task { await refreshAll() } } label: {
