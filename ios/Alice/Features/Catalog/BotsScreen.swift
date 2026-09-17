@@ -2041,6 +2041,15 @@ struct BotDetail: View {
     @State private var clearFailure: String?
     @State private var confirmingClear = false
 
+    private var renameSlugNote: String? {
+        let shown = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let id = try? AgentProfileID.parse(shown) else { return nil }
+        if id == bot.name {
+            return AgentProfileID.note(display: shown, id: id)
+        }
+        return "Hermes will also rename the profile to `\(id)`. Conversations and routines stay with it."
+    }
+
     var body: some View {
         Form {
             Section {
@@ -2060,6 +2069,10 @@ struct BotDetail: View {
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity)
                 .listRowBackground(Palette.card(scheme))
+            } footer: {
+                if let note = renameSlugNote {
+                    Text(note)
+                }
             }
 
             Section {
@@ -2527,10 +2540,7 @@ struct BotDetail: View {
         guard !trimmed.isEmpty else { return }
         let current = store.botCurrentName(for: bot)
         guard trimmed != current else { return }
-        // A visible bot name is Bot Mode metadata. The canonical profile id is
-        // stable routing identity and must not change just because somebody
-        // edits the label shown in the app.
-        act { try await store.setBotTitle(bot, title: trimmed) }
+        act { try await store.renameBot(bot.name, to: trimmed) }
     }
 
     private func commitDetail() {
@@ -2663,6 +2673,13 @@ private struct NewBotSheet: View {
 
     private var suggestedName: String { AgentDraft.name(from: detail) }
 
+    private var creationSlugNote: String? {
+        let shown = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = shown.isEmpty ? suggestedName : shown
+        guard let id = try? AgentProfileID.parse(source) else { return nil }
+        return AgentProfileID.note(display: source, id: id)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -2682,6 +2699,10 @@ private struct NewBotSheet: View {
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity)
                     .listRowBackground(Palette.card(scheme))
+                } footer: {
+                    if let note = creationSlugNote {
+                        Text(note)
+                    }
                 }
 
                 Section {
@@ -2840,13 +2861,10 @@ private struct NewBotSheet: View {
         Task {
             do {
                 let slug = try await store.createBot(
-                    displayName: trimmed, description: brief, model: selectedModel
+                    displayName: trimmed, description: brief, model: selectedModel,
+                    soul: brief.isEmpty ? nil : AgentDraft.soul(from: brief)
                 )
                 store.botMarks[slug] = mark
-                if !brief.isEmpty {
-                    progress = "Writing instructions…"
-                    try await store.setSoul(slug, AgentDraft.soul(from: brief))
-                }
                 if selectedChannel.isEmpty {
                     if !selectedSection.isEmpty {
                         store.setBotSection(slug, section: selectedSection)

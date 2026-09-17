@@ -506,9 +506,28 @@ struct BotRow: Identifiable, Hashable, Sendable, Codable {
     var active: Bool
     var metadata: BotMetadata = .init()
     var placement: AlicePlacement? = nil
+    /// Stamped on `ui_meta.alice.role`. Agent Maker uses `agent-maker`.
+    var aliceRole: String? = nil
 
     var hidden: Bool { metadata.hidden ?? false }
     var pinned: Bool { metadata.pinned ?? false }
+
+    func withName(_ newName: String, displayName: String? = nil) -> BotRow {
+        BotRow(
+            name: newName,
+            displayName: displayName ?? self.displayName,
+            detail: detail,
+            model: model,
+            provider: provider,
+            skills: skills,
+            isDefault: isDefault,
+            gatewayRunning: gatewayRunning,
+            active: active,
+            metadata: metadata,
+            placement: placement,
+            aliceRole: aliceRole
+        )
+    }
 }
 
 /// One folder that belongs to a first-class Hermes project.
@@ -1294,6 +1313,7 @@ extension DashboardClient {
             // A technical profile the agents run on (Evals' sandbox): not an agent
             // anyone talks to, so it is not in the roster at all, hidden or not.
             if rawPlacement?["internal"] as? Bool == true { return nil }
+            let aliceRole = Self.nonEmpty(rawPlacement?["role"] as? String)
             let placement = Self.nonEmpty(rawPlacement?["channel"] as? String).map { channel in
                 AlicePlacement(
                     channel: channel,
@@ -1335,7 +1355,8 @@ extension DashboardClient {
                     revision: revision,
                     present: rawMeta != nil
                 ),
-                placement: placement
+                placement: placement,
+                aliceRole: aliceRole
             )
         }
         // Rows arrived and none of them had a name: a shape problem, not an
@@ -1722,6 +1743,21 @@ extension DashboardClient {
 
     func rename(_ name: String, to newName: String) async throws {
         try await send("PATCH", "api/profiles/\(Self.pathSegment(name))", ["new_name": newName])
+    }
+
+    /// Shared create engine on the Alice plugin. A missing plugin is a 404.
+    func createAgent(_ spec: AgentSpec) async throws -> AgentOperationResult {
+        try AgentOperationResult.parse(await send("POST", "api/plugins/alice/agents", spec.body))
+    }
+
+    func renameAgent(
+        from: String, to: String, jobID: String? = nil, busy: Bool = false
+    ) async throws -> AgentOperationResult {
+        var body: [String: Any] = ["from": from, "to": to, "busy": busy]
+        if let jobID { body["job_id"] = jobID }
+        return try AgentOperationResult.parse(
+            await send("POST", "api/plugins/alice/agents/rename", body)
+        )
     }
 
     static func projectRows(

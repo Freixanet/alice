@@ -27,7 +27,19 @@ final class BotRosterTests: XCTestCase {
         ["profiles": rows]
     }
 
-    func testRosterExcludesTheMainProfile() {
+    func testRosterReadsAgentMakerRole() throws {
+        let bots = try DashboardClient.bots(
+            from: profilesBody([
+                ["name": "taller", "display_name": "Taller",
+                 "ui_meta": ["alice": ["role": "agent-maker"], "hermes-bots": ["title": "Taller"]]],
+                ["name": "evals-sandbox", "ui_meta": ["alice": ["internal": true]]],
+            ]),
+            active: nil
+        )
+        XCTAssertEqual(bots.map(\.name), ["taller"])
+        XCTAssertEqual(bots.first?.aliceRole, "agent-maker")
+        XCTAssertTrue(AgentMaker.matches(profile: bots[0].name, role: bots[0].aliceRole))
+    }
         let roster = AppStore.botRoster(from: [
             row("default", isDefault: true, displayName: "Alice"),
             row("radar-ia"),
