@@ -3172,7 +3172,7 @@ final class AppStore {
             try await dashboard.deleteNote(id: note.id)
             // Kept here to recover for a while; gone from the store already.
             recentlyDeleted.insert(
-                DeletedNote(note: note, deletedAt: Date(), folderID: noteFolderOf[note.id]), at: 0
+                DeletedNote(note: note, deletedAt: Date(), folderID: note.folder), at: 0
             )
             pinnedNotes.remove(note.id)
         } catch {
@@ -3196,7 +3196,8 @@ final class AppStore {
             id: note.id, createdAt: note.createdAt, text: text, urls: note.urls,
             types: note.types, topics: note.topics, actions: note.actions,
             openQuestions: note.openQuestions, summary: note.summary,
-            processed: note.processed, rich: rich, editedAt: Date()
+            processed: note.processed, rich: rich, editedAt: Date(),
+            folder: note.folder, tags: note.tags
         )
         put(optimistic)
         do {
@@ -4963,13 +4964,31 @@ final class AppStore {
     private func moveLegacyFoldersToStore() async {
         guard !legacyFolders.isEmpty, notesSnapshot?.available == true else { return }
         for folder in legacyFolders {
-            guard let made = try? await dashboard.createNoteFolder(named: folder.name) else { return }
-            for (note, id) in legacyFolderOf where id == folder.id {
-                try? await dashboard.fileNote(id: note, folder: made.id)
+            do {
+                // Reuse a folder already created by an interrupted migration.
+                let made: NoteFolder
+                if let existing = noteFolders.first(where: { $0.id == folder.id || $0.name == folder.name }) {
+                    made = existing
+                } else {
+                    made = try await dashboard.createNoteFolder(named: folder.name)
+                    notesSnapshot = notesSnapshot?.with(folders: noteFolders + [made])
+                }
+                let pending = legacyFolderOf.filter { $0.value == folder.id }
+                for note in pending.keys {
+                    try await dashboard.fileNote(id: note, folder: made.id)
+                    replaceNote(note) { $0.folder = made.id }
+                    legacyFolderOf.removeValue(forKey: note)
+                    save(legacyFolderOf, as: Keys.noteFolderOf)
+                }
+                legacyFolders.removeAll { $0.id == folder.id }
+                save(legacyFolders, as: Keys.noteFolders)
+            } catch {
+                // Keep unfinished assignments for the next refresh; a failed
+                // remote write must never discard the phone's migration data.
+                noteFolderFailure = HermesErrors.describe(error)
+                return
             }
         }
-        legacyFolders = []
-        legacyFolderOf = [:]
         defaults.removeObject(forKey: Keys.noteFolders)
         defaults.removeObject(forKey: Keys.noteFolderOf)
         if let fresh = try? await dashboard.notes() { notesSnapshot = fresh }
@@ -5052,12 +5071,14 @@ final class AppStore {
     /// The folder goes; its notes go back to Quick Notes, not with it.
     func deleteNoteFolder(_ id: String) async {
         let before = noteFolders
+        let parentsBefore = noteFolderParent
         // Whatever was inside it comes back to the top level, with its notes.
         noteFolderParent = NoteFolderTree.removing(id, from: noteFolderParent)
         notesSnapshot = notesSnapshot?.with(folders: before.filter { $0.id != id })
         do {
             try await dashboard.deleteNoteFolder(id: id)
         } catch {
+            noteFolderParent = parentsBefore
             notesSnapshot = notesSnapshot?.with(folders: before)
             noteFolderFailure = HermesErrors.describe(error)
         }

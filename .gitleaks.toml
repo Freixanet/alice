@@ -38,3 +38,8 @@ regexes = ['''^default/job1$''']
 [[allowlists]]
 description = "Production configuration test fixture (not a credential)"
 regexes = ['''^test-fixture-secret-with-32-characters$''']
+
+# This is a profile/routine identifier in a muted-report fixture, not a key.
+[[allowlists]]
+description = "Routine identifier in muted-report test"
+regexes = ['''^chollometro/abc123$''']
