@@ -133,6 +133,17 @@ struct ClarifyQuestionsView: View {
         }
     }
 
+    /// What a row reads. Hermes marks the first choice "(Recommended)" —
+    /// which is advice on a question with one answer, and noise on one where
+    /// every row can be ticked: nothing is recommended over the others when
+    /// the reader is picking several. The value sent back keeps the label.
+    static func label(_ option: String, multiple: Bool) -> String {
+        guard multiple else { return option }
+        let mark = "(Recommended)"
+        guard option.hasSuffix(mark) else { return option }
+        return String(option.dropLast(mark.count)).trimmingCharacters(in: .whitespaces)
+    }
+
     private func choiceRow(
         _ option: String, number: Int, question: AliceEvent.Question, key: String
     ) -> some View {
@@ -150,7 +161,7 @@ struct ClarifyQuestionsView: View {
                         isSelected ? AnyShapeStyle(tint) : AnyShapeStyle(Palette.background(scheme)),
                         in: .rect(cornerRadius: 8)
                     )
-                Text(option)
+                Text(Self.label(option, multiple: question.allowsMultiple))
                     .font(.body)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
