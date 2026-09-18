@@ -843,11 +843,9 @@ struct RichMessageView: View {
     var failed = false
 
     var body: some View {
-        let blocks = RichMarkdown.cached(content)
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(RichMarkdown.cached(content).enumerated()), id: \.offset) { _, block in
                 view(for: block)
-                    .padding(.top, Self.space(before: index, in: blocks))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -863,15 +861,14 @@ struct RichMessageView: View {
         case let .heading(level, text):
             Text(inline(text))
                 .font(Self.headingFont(level))
+                .padding(.top, level <= 2 ? 4 : 0)
                 .textSelection(.enabled)
                 .accessibilityAddTraits(.isHeader)
-                .aliceProseMeasure()
         case let .paragraph(text):
             Text(inline(text))
-                .aliceProseLeading()
+                .lineSpacing(4)
                 .textSelection(.enabled)
                 .tint(Palette.link(scheme))
-                .aliceProseMeasure()
         case let .list(items):
             RichListView(items: items, inline: inline)
         case let .callout(kind, body):
@@ -900,22 +897,10 @@ struct RichMessageView: View {
 
     static func headingFont(_ level: Int) -> Font {
         switch level {
-        case 1: .title3.weight(.semibold)
-        case 2: .body.weight(.semibold)
-        default: .subheadline.weight(.medium)
+        case 1: .title3.weight(.bold)
+        case 2: .headline
+        default: .subheadline.weight(.semibold)
         }
-    }
-
-    private static func space(before index: Int, in blocks: [RichBlock]) -> CGFloat {
-        guard index > 0 else { return 0 }
-        if isHeading(blocks[index]) { return 20 }
-        if isHeading(blocks[index - 1]) { return 6 }
-        return 12
-    }
-
-    private static func isHeading(_ block: RichBlock) -> Bool {
-        if case .heading = block { return true }
-        return false
     }
 }
 
@@ -932,7 +917,6 @@ private struct RichListView: View {
                     marker(item)
                         .frame(minWidth: 16, alignment: .trailing)
                     Text(inline(item.text))
-                        .aliceProseLeading()
                         .textSelection(.enabled)
                         .tint(Palette.link(scheme))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -940,7 +924,6 @@ private struct RichListView: View {
                 .padding(.leading, CGFloat(item.depth) * 18)
             }
         }
-        .aliceProseMeasure()
     }
 
     @ViewBuilder
@@ -981,7 +964,7 @@ private struct RichCalloutView: View {
             }
         }
         .padding(12)
-        .aliceProseMeasure()
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
         .accessibilityElement(children: .contain)
     }
@@ -1020,15 +1003,9 @@ private struct RichCalloutView: View {
 
 private struct RichCodeView: View {
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let language: String?
     let code: String
     @State private var copied = false
-
-    private var codeText: AttributedString {
-        _ = dynamicTypeSize
-        return AliceReading.monospacedCode(code)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1052,7 +1029,8 @@ private struct RichCodeView: View {
                 .foregroundStyle(.secondary)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(codeText)
+                Text(code)
+                    .font(.system(.footnote, design: .monospaced))
                     .textSelection(.enabled)
             }
         }

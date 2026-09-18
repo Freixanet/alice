@@ -43,9 +43,7 @@ the web to the measurable ones.
 - Spacing: use a 4px base rhythm; lists are denser than prose and settings.
 - Typography: preserve the current families; use serif sparingly for page identity.
   On iOS, SF is the content and chrome face. Instrument Serif is Alice's voice
-  only (home empty state, sidebar wordmark) — never Markdown headings in a reply.
-  Assistant prose uses a Dynamic Type–scaled reading measure on wide layouts;
-  code is SF Mono with ligatures off.
+  only (home empty state, sidebar wordmark).
 - Color: one accent at a time; neutral surfaces carry structure. Meet WCAG AA.
 - Motion: 150–300ms only to clarify continuity or state. Respect reduced motion.
 
