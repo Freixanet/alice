@@ -17,6 +17,7 @@ struct NotesScreen: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
     @State private var loadFailure: String?
@@ -39,6 +40,8 @@ struct NotesScreen: View {
     /// Choosing where something goes: this folder, or the notes ticked.
     @State private var moving: NoteMove?
     @State private var showingAttachments = false
+    /// A folder inside this one, opened from the Folders section.
+    @State private var openedSubfolder: NotesScope?
     @State private var deletingSelection = false
 
     private enum Naming: Identifiable {
@@ -50,6 +53,12 @@ struct NotesScreen: View {
     private var showsCapture: Bool { snapshot?.available != false }
     private var shown: [Note] {
         store.notes(in: scope).filter { NotesFeed.matches($0, query: query) }
+    }
+
+    /// The folders inside this one, when it is a folder and has any.
+    private var subfolders: [NoteFolder] {
+        guard case let .folder(id) = scope, query.isEmpty else { return [] }
+        return store.subfolders(of: id)
     }
 
     /// The notes in sections, in the order and grouping the folder's menu is set to.
@@ -83,6 +92,19 @@ struct NotesScreen: View {
                 list
             }
         }
+        // Back to the folders without reaching for the screen's edge. The
+        // rows take a sideways pan of their own first — a note's is Pin — so
+        // this only ever gets the ones that start on empty space, which is
+        // exactly where a swipe means "leave" and nothing else.
+        .gesture(SidewaysPan(
+            allowsRightward: true,
+            onTouch: {},
+            onChange: { _ in },
+            onEnd: { translation, predicted in
+                guard !selecting, translation > 90 || predicted > 220 else { return }
+                dismiss()
+            }
+        ))
         .navigationTitle(store.name(of: scope))
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
@@ -181,6 +203,9 @@ struct NotesScreen: View {
         }
         .navigationDestination(isPresented: $showingAttachments) {
             NoteAttachmentsScreen(scope: scope)
+        }
+        .navigationDestination(item: $openedSubfolder) { inner in
+            NotesScreen(scope: inner)
         }
         .sheet(item: $moving) { what in
             NoteFolderPicker(moving: what, from: scope, onDone: endSelecting)
@@ -290,6 +315,17 @@ struct NotesScreen: View {
                 Section { TipView(NoteActionsTip()) }
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
+            }
+            // What is inside this folder, above what is in it: a subfolder is
+            // a place, and places come before their contents. Only when there
+            // is one — an empty "Folders" heading is a heading about nothing.
+            if !subfolders.isEmpty {
+                Section("Folders") {
+                    ForEach(subfolders) { folder in
+                        subfolderRow(folder)
+                    }
+                }
+                .listRowBackground(Palette.card(scheme))
             }
             ForEach(groups, id: \.title) { group in
                 Section {
@@ -425,6 +461,35 @@ struct NotesScreen: View {
         }
         .listRowInsets(EdgeInsets())
         .listRowBackground(Palette.card(scheme))
+    }
+
+    /// A folder inside this one, as the folders page draws it: its name, how
+    /// many notes it holds, and the way in.
+    private func subfolderRow(_ folder: NoteFolder) -> some View {
+        Button {
+            openedSubfolder = .folder(folder.id)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "folder")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(store.accent.primary(scheme))
+                    .frame(width: 26)
+                Text(folder.name)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text("\(store.notes(in: .folder(folder.id)).count)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 20)
+            .frame(height: 50)
+            .contentShape(.rect)
+        }
+        .buttonStyle(NoteRowPressStyle())
+        .listRowInsets(EdgeInsets())
     }
 
     /// As Notes lists them: the first line as a title, then when it was last

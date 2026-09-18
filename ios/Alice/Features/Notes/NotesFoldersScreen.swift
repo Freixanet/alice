@@ -18,6 +18,16 @@ struct NotesFoldersScreen: View {
     @State private var deletingFolder: NoteFolder?
     @State private var opened: NoteEditor.Target?
     @State private var openedFolder: NotesScope?
+    /// The one folder swiped open on its buttons, and when the swipe ended, so
+    /// the tap that closes it does not also open the folder.
+    @State private var swipedFolder: String?
+    @State private var lastSwipe = Date.distantPast
+    @State private var movingFolder: String?
+    /// Folders closed by hand. Absent means open: a folder just put inside
+    /// another must not look as if it had been lost.
+    @State private var collapsed: Set<String> = []
+    /// Where a folder is being moved to, when one is.
+    @State private var moving: NoteMove?
 
     /// Making a folder, or renaming one.
     private enum Naming: Identifiable {
@@ -38,17 +48,6 @@ struct NotesFoldersScreen: View {
     var body: some View {
         List {
             if query.isEmpty {
-                // All Notes first, above everything: it is not a folder but
-                // the whole store, and the one row that is never empty while
-                // there is a single note anywhere.
-                Section {
-                    folderRow(.all, systemImage: "tray.full")
-                        .contextMenu {} preview: {
-                            FolderPreview(name: store.name(of: .all), notes: store.notes(in: .all))
-                        }
-                        .listRowInsets(EdgeInsets())
-                }
-                .listRowBackground(Palette.card(scheme))
                 // Quick Notes on its own: every note starts there, and it is
                 // not one folder among the person's own.
                 Section {
@@ -63,25 +62,41 @@ struct NotesFoldersScreen: View {
                         .listRowInsets(EdgeInsets())
                 }
                 .listRowBackground(Palette.card(scheme))
-                if !store.noteFolders.isEmpty || !store.recentlyDeleted.isEmpty {
-                    Section {
-                        // Top-level folders, each followed by what is inside
-                        // it, one step indented. The store keeps its folders
-                        // flat; the nesting is this phone's arrangement.
-                        ForEach(store.rootNoteFolders) { folder in
-                            customFolderRow(folder)
-                            ForEach(store.subfolders(of: folder.id)) { child in
+                Section {
+                    // All Notes heads the folders, as the whole store rather
+                    // than a folder of it: it is where everything can be found
+                    // at once, so it belongs with the places, not above them.
+                    folderRow(.all, systemImage: "tray.full")
+                        .contextMenu {} preview: {
+                            FolderPreview(name: store.name(of: .all), notes: store.notes(in: .all))
+                        }
+                        .listRowInsets(EdgeInsets())
+                    // Then the person's own, each followed by what is inside
+                    // it, one step indented. The store keeps its folders flat;
+                    // the nesting is this phone's arrangement.
+                    ForEach(store.rootNoteFolders) { folder in
+                        let children = store.subfolders(of: folder.id)
+                        customFolderRow(folder, expanded: children.isEmpty ? nil : Binding(
+                            get: { !collapsed.contains(folder.id) },
+                            set: { open in
+                                if open { collapsed.remove(folder.id) } else { collapsed.insert(folder.id) }
+                            }
+                        ))
+                        if !collapsed.contains(folder.id) {
+                            ForEach(children) { child in
                                 customFolderRow(child, depth: 1)
                             }
                         }
-                        if !store.recentlyDeleted.isEmpty {
-                            folderRow(.deleted, systemImage: "trash")
-                                .contextMenu {} preview: { FolderPreview(name: store.name(of: .deleted), notes: store.notes(in: .deleted)) }
-                                .listRowInsets(EdgeInsets())
-                        }
                     }
-                    .listRowBackground(Palette.card(scheme))
+                    if !store.recentlyDeleted.isEmpty {
+                        folderRow(.deleted, systemImage: "trash")
+                            .contextMenu {} preview: {
+                                FolderPreview(name: store.name(of: .deleted), notes: store.notes(in: .deleted))
+                            }
+                            .listRowInsets(EdgeInsets())
+                    }
                 }
+                .listRowBackground(Palette.card(scheme))
             } else {
                 Section {
                     if found.isEmpty {
@@ -168,6 +183,9 @@ struct NotesFoldersScreen: View {
         .navigationDestination(item: $opened) { target in
             NoteEditor(target: target, agent: store.notesSnapshot?.agent, folder: .quick)
         }
+        .sheet(item: $moving) { what in
+            NoteFolderPicker(moving: what)
+        }
         .alert(
             namingTitle,
             isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })
@@ -223,8 +241,10 @@ struct NotesFoldersScreen: View {
 
     /// A folder the person made: opened by a tap, and swiped or held for Share,
     /// Move and Delete, and Rename.
-    private func customFolderRow(_ folder: NoteFolder, depth: Int = 0) -> some View {
-        folderRow(.folder(folder.id), systemImage: "folder", depth: depth)
+    private func customFolderRow(
+        _ folder: NoteFolder, depth: Int = 0, expanded: Binding<Bool>? = nil
+    ) -> some View {
+        folderRow(.folder(folder.id), systemImage: "folder", depth: depth, expanded: expanded)
             .contextMenu {
                 // Share, Move and Delete side by side at the top, as in Notes;
                 // solid glyphs, Delete's red.
@@ -232,8 +252,7 @@ struct NotesFoldersScreen: View {
                     ShareLink(item: shareText(.folder(folder.id))) {
                         Label("Share", systemImage: "square.and.arrow.up.fill")
                     }
-                    // Not wired to anything yet.
-                    Button("Move", systemImage: "folder.fill") {}
+                    Button("Move", systemImage: "folder.fill") { moving = .folder(folder.id) }
                     Button(role: .destructive) {
                         deletingFolder = folder
                     } label: {
@@ -255,21 +274,37 @@ struct NotesFoldersScreen: View {
             } preview: {
                 FolderPreview(name: store.name(of: .folder(folder.id)), notes: store.notes(in: .folder(folder.id)))
             }
-            // The system's own swipe buttons for folders: Delete, Move, Share.
-            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                Button("Delete", systemImage: "trash", role: .destructive) {
-                    deletingFolder = folder
-                }
-                // Stated: the app's accent tint otherwise paints it black.
-                .tint(.red)
-                // Not wired to anything yet.
-                Button("Move", systemImage: "folder") {}
-                    .tint(.purple)
-                ShareLink(item: shareText(.folder(folder.id))) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-                .tint(.blue)
-            }
+            // The same swipe a note has, so a folder darkens under the finger
+            // and stays darkened while it is left open on its buttons — the
+            // system's own swipe actions draw the buttons but never touch the
+            // row, which is what made folders feel like a different app.
+            // Nothing to pin: a folder opens to the left only.
+            .modifier(SwipeToDelete(
+                openSide: Binding(
+                    get: { swipedFolder == folder.id ? .trailing : nil },
+                    set: { side in
+                        if side != nil {
+                            swipedFolder = folder.id
+                        } else if swipedFolder == folder.id {
+                            swipedFolder = nil
+                        }
+                        store.noteRowOpen = swipedFolder != nil
+                    }
+                ),
+                shareText: shareText(.folder(folder.id)),
+                pinned: false,
+                onPin: {},
+                lastSwipe: $lastSwipe,
+                moving: Binding(
+                    get: { movingFolder == folder.id },
+                    set: { now in
+                        movingFolder = now ? folder.id : (movingFolder == folder.id ? nil : movingFolder)
+                    }
+                ),
+                onDelete: { deletingFolder = folder },
+                onMove: { moving = .folder(folder.id) },
+                allowsPin: false
+            ))
             .listRowInsets(EdgeInsets())
     }
 
@@ -280,13 +315,28 @@ struct NotesFoldersScreen: View {
 
     private static let rowHeight: CGFloat = 50
 
-    private func folderRow(_ scope: NotesScope, systemImage: String, depth: Int = 0) -> some View {
+    /// A folder as a row. `expanded` is given only to a folder with folders
+    /// inside it: its chevron then opens and closes them instead of being the
+    /// arrow every row has.
+    private func folderRow(
+        _ scope: NotesScope, systemImage: String, depth: Int = 0, expanded: Binding<Bool>? = nil
+    ) -> some View {
         Button {
+            // The end of a swipe is not a tap on the folder, and a tap while
+            // one is open closes it rather than opening a page.
+            guard Date.now.timeIntervalSince(lastSwipe) > 0.35 else { return }
+            guard swipedFolder == nil else {
+                withAnimation(.snappy(duration: 0.25)) { swipedFolder = nil }
+                store.noteRowOpen = false
+                return
+            }
             openedFolder = scope
         } label: {
             HStack(spacing: 12) {
                 if depth > 0 {
-                    Spacer().frame(width: CGFloat(depth) * 22)
+                    // Enough to read as "inside the one above", no more: a deep
+                    // indent pushed the name away from every other row's.
+                    Spacer().frame(width: CGFloat(depth) * 12)
                 }
                 Image(systemName: systemImage)
                     .font(.system(size: 18, weight: .medium))
@@ -298,9 +348,11 @@ struct NotesFoldersScreen: View {
                 Text("\(store.notes(in: scope).count)")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                // The arrow's place. It is drawn over the row rather than in
+                // it, so that a folder with folders inside can give it its own
+                // tap without nesting a button inside a button — which SwiftUI
+                // resolves by giving the tap to the outer one.
+                Color.clear.frame(width: 10, height: 14)
             }
             // Exactly the row's height, so the press darkens all of it: shorter
             // than the list's minimum row, it left light bands above and below.
@@ -310,6 +362,33 @@ struct NotesFoldersScreen: View {
         }
         // Darkens under the finger, as a note does.
         .buttonStyle(NoteRowPressStyle())
+        .overlay(alignment: .trailing) { chevron(expanded) }
+    }
+
+    /// The arrow at the end of a folder's row: a plain one, or the control that
+    /// shows and hides what is inside.
+    @ViewBuilder
+    private func chevron(_ expanded: Binding<Bool>?) -> some View {
+        let arrow = Image(systemName: "chevron.right")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.tertiary)
+        if let expanded {
+            Button {
+                withAnimation(.snappy(duration: 0.28)) { expanded.wrappedValue.toggle() }
+            } label: {
+                arrow
+                    .rotationEffect(.degrees(expanded.wrappedValue ? 90 : 0))
+                    // A 14pt glyph is not a target; the padding is.
+                    .padding(.vertical, 12)
+                    .padding(.leading, 16)
+                    .padding(.trailing, 20)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(expanded.wrappedValue ? "Hide folders inside" : "Show folders inside")
+        } else {
+            arrow.padding(.trailing, 20)
+        }
     }
 }
 
