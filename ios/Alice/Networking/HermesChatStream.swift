@@ -64,6 +64,19 @@ extension HermesClient {
         func isExhausted(at now: Date) -> Bool { now >= deadline }
     }
 
+    /// Which side of the stream hedge — the live SSE stream or the
+    /// non-streaming fallback — got a usable answer first. Claimed atomically
+    /// under the Mutex, so a response can never be half-streamed.
+    enum StreamWinner: Sendable {
+        case none, stream, hedge
+
+        /// The first caller wins; the same side keeps winning on every frame.
+        mutating func claim(by side: StreamWinner) -> Bool {
+            if self == .none { self = side; return true }
+            return self == side
+        }
+    }
+
     private enum RunStartOutcome {
         case started(HermesRunProtocol.Start)
         case unsupported
@@ -617,16 +630,16 @@ extension HermesClient {
         // stream gets three seconds; if it has produced nothing by then the
         // single request goes out alongside it, and whichever speaks first
         // wins while the other is cancelled.
-        // Shared hedge state lives behind a Mutex: the Task captures it by
-        // reference, which is allowed because Mutex is Sendable — a captured
-        // `var` is not.
-        let hedgeState = Mutex((heard: false, answered: false))
+        // A single winner, claimed atomically under the lock: separate
+        // heard/answered flags could let the stream emit one frame between
+        // the hedge marking itself winner and the stream noticing. Mutex is
+        // Sendable, so the Task may capture it where a `var` may not be.
+        let winner = Mutex(StreamWinner.none)
         let hedge = Task { [body] () -> String? in
             try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, !hedgeState.withLock({ $0.heard }) else { return nil }
+            guard !Task.isCancelled, winner.withLock({ $0 == .none }) else { return nil }
             let text = try? await self.completeWithoutStreaming(body, profile: profile)
-            guard !hedgeState.withLock({ $0.heard }) else { return nil }
-            if text != nil { hedgeState.withLock { $0.answered = true } }
+            guard let text, winner.withLock({ $0.claim(by: .hedge) }) else { return nil }
             return text
         }
         defer { hedge.cancel() }
@@ -636,15 +649,17 @@ extension HermesClient {
             guard line.hasPrefix("data:") else { continue }
             let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
             if payload == "[DONE]" { break }
-            if hedgeState.withLock({ $0.answered }) { break }   // the hedge got there first
             guard let event = Self.decodeFrame(payload) else { continue }
-            hedgeState.withLock { $0.heard = true }
+            // The first decodable frame wins the race for the stream — but
+            // only if the hedge has not already finished. Both sides claim
+            // under the same lock, so there is exactly one winner.
+            guard winner.withLock({ $0.claim(by: .stream) }) else { break }
             hedge.cancel()
             continuation.yield(event)
             if case .failure = event { break }
         }
 
-        if !hedgeState.withLock({ $0.heard }), !Task.isCancelled {
+        if winner.withLock({ $0 != .stream }), !Task.isCancelled {
             // The hedge may still be in flight; wait on the same answer
             // rather than opening a third request.
             var text = await hedge.value
