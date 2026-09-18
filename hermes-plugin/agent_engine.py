@@ -946,6 +946,29 @@ def stamp_maker_role(profile: Path, title: str = MAKER_TITLE) -> None:
     _merge_ui_meta(profile, title=title, role=MAKER_ROLE)
 
 
+AGENT_TOOLSET = "alice_agents"
+
+
+def ensure_agent_toolset(name: str, home: Optional[Path] = None) -> bool:
+    """Let a profile see ``agent_create`` and ``agent_rename``. True when it changed.
+
+    Registering the tools is not enough for an agent to have them: Hermes hands a
+    session the toolsets named in ``platform_toolsets``, so one missing from that
+    list is one the agent never sees. The skill then falls back to the script and
+    nothing looks broken from outside, which is why this belongs in the installer
+    rather than in whoever notices the tool was never used.
+    """
+    profile = profile_dir_for(name, home)
+    if not (profile / "config.yaml").is_file():
+        return False
+    tools = _read_tools(profile)
+    if AGENT_TOOLSET in tools:
+        return False
+    hermes("-p", name, "config", "set", "platform_toolsets.cli",
+           json.dumps(tools + [AGENT_TOOLSET]), home=home)
+    return True
+
+
 def _jobs(profile: Path) -> list:
     jobs_file = profile / "cron" / "jobs.json"
     if not jobs_file.is_file():

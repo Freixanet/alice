@@ -719,5 +719,29 @@ class LegacyCLI(EngineCase):
         self.assertEqual(payload["status"], eng.STATUS_COMPLETED)
 
 
+class AgentToolset(EngineCase):
+    """A profile only gets the native tools if its config lists the toolset."""
+
+    def test_the_toolset_is_added_once_and_not_again(self):
+        self.seed("agent-maker")
+        self.assertTrue(eng.ensure_agent_toolset("agent-maker", home=self.home))
+        self.assertIn(eng.AGENT_TOOLSET, eng._read_tools(self.profile("agent-maker")))
+        # Running the installer twice must not list it twice.
+        self.assertFalse(eng.ensure_agent_toolset("agent-maker", home=self.home))
+        tools = eng._read_tools(self.profile("agent-maker"))
+        self.assertEqual(tools.count(eng.AGENT_TOOLSET), 1)
+
+    def test_the_toolsets_it_already_had_are_kept(self):
+        self.seed("agent-maker")
+        eng.hermes("-p", "agent-maker", "config", "set", "platform_toolsets.cli",
+                   json.dumps(["terminal", "clarify"]), home=self.home)
+        eng.ensure_agent_toolset("agent-maker", home=self.home)
+        self.assertEqual(eng._read_tools(self.profile("agent-maker")),
+                         ["terminal", "clarify", eng.AGENT_TOOLSET])
+
+    def test_a_profile_that_is_not_there_is_left_alone(self):
+        self.assertFalse(eng.ensure_agent_toolset("no-such-agent", home=self.home))
+
+
 if __name__ == "__main__":
     unittest.main()

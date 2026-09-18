@@ -41,9 +41,24 @@ agent_engine.stamp_maker_role(Path(sys.argv[2]))
 EOF
 }
 
+# The native tools are registered by the plugin, but an agent only gets the
+# toolsets its profile lists: without this the skill silently falls back to the
+# script and `agent_create` is never used.
+enable_tools() {
+  "$py" - "$plugin" "$hermes_home" "$1" <<'EOF'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import agent_engine
+if agent_engine.ensure_agent_toolset(sys.argv[3], home=Path(sys.argv[2])):
+    print(f"  toolset {agent_engine.AGENT_TOOLSET} enabled for {sys.argv[3]}")
+EOF
+}
+
 if [[ -n $profile ]]; then
   install_skill "$profile"
   stamp_role "$profile"
+  enable_tools "$profile"
   print "Agent Maker already exists as \`$profile\`; its skill is up to date. In Alice it is under Agents → Home."
   print "Renaming it to Agent Maker (profile \`agent-maker\`) is a separate, explicit step."
   exit 0
@@ -60,7 +75,7 @@ out.write_text(json.dumps({
     "title": "Agent Maker",
     "description": "Creates agents to spec: understands what you need, asks only what changes the result, and leaves the agent running and visible in Alice.",
     "soul": soul.read_text(encoding="utf-8"),
-    "tools": ["terminal", "clarify"],
+    "tools": ["terminal", "clarify", "alice_agents"],
     "routines": [],
     "role": "agent-maker",
     "source": "maker",
@@ -73,4 +88,5 @@ script=$here/skill/forja-crear-agentes/scripts/crear_agente.py
 
 install_skill agent-maker
 stamp_role agent-maker
+enable_tools agent-maker
 print "Agent Maker is installed as \`agent-maker\`. In Alice it is under Agents → Home."
