@@ -94,9 +94,8 @@ struct MessageRow: View {
                         }
                         .accessibilityElement(children: .combine)
                     } else if showsAuthor, message.botName?.isEmpty ?? true {
-                        Text("ALICE")
-                            .font(.caption2.weight(.medium))
-                            .tracking(1.4)
+                        Text("Alice")
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
 
@@ -240,13 +239,15 @@ struct MessageRow: View {
     /// `.full` understood lists and paragraphs and then welded them together,
     /// "…en renovación.Amazon: Cupón directo…", with nowhere to put them.
     static func parsed(_ content: String) -> AttributedString {
-        (try? AttributedString(
+        var parsed = (try? AttributedString(
             markdown: content,
             options: .init(
                 interpretedSyntax: .inlineOnlyPreservingWhitespace,
                 failurePolicy: .returnPartiallyParsedIfPossible
             )
         )) ?? AttributedString(content)
+        AliceTypography.applyPresentation(to: &parsed)
+        return parsed
     }
 }
 

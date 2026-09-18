@@ -252,9 +252,14 @@ struct ActivityScreen: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if event.smartDenied {
-                        Label(ApprovalExplainer.smartDeniedWarning, systemImage: "exclamationmark.shield")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                        Label {
+                            Text(ApprovalExplainer.smartDeniedWarning)
+                                .foregroundStyle(.secondary)
+                        } icon: {
+                            Image(systemName: "exclamationmark.shield")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.caption)
                     }
                 }
                 .padding(.top, 2)
@@ -281,10 +286,15 @@ struct ActivityScreen: View {
             }
 
             if let note = event.note, !note.isEmpty {
-                Label(note, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .padding(.top, 2)
+                Label {
+                    Text(note)
+                        .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+                .font(.caption)
+                .padding(.top, 2)
             }
 
             if let detail = event.detail, !detail.isEmpty, event.questions.isEmpty {
@@ -372,7 +382,7 @@ struct ActivityScreen: View {
                 // status anybody can rely on reading.
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayTitle(event)).font(.body)
+                Text(displayTitle(event)).font(.body.weight(.semibold))
                 Text(summary(for: event))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -385,11 +395,11 @@ struct ActivityScreen: View {
                 if abs(event.occurred.timeIntervalSinceNow) < 60 {
                     Text("Now")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
                 } else {
                     Text(event.occurred, format: .relative(presentation: .numeric))
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
                 }
                 if let stacked, stacked.count > 1 {
                     Text("×\(stacked.count)")

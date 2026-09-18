@@ -1824,16 +1824,14 @@ struct BotsScreen: View {
                         .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
+                        .layoutPriority(1)
 
                     let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
                     if !liveDetail.isEmpty {
                         Text(liveDetail)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                             .lineLimit(1)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2.5)
-                            .background(Color.secondary.opacity(0.16), in: .rect(cornerRadius: 5))
                     }
 
                     if store.isBotPinned(bot) {
@@ -1846,7 +1844,7 @@ struct BotsScreen: View {
 
                     Text(timestamp(for: bot))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
                 }
 
                 Text(snippet(for: bot))
