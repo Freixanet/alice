@@ -39,7 +39,8 @@
     "check": "npm run check:static && npm run test:e2e",
     "slash:check": "node scripts/check-slash-parity.mjs",
     "ci:local": "bash scripts/ci-local.sh",
-    "ci:local:verify": "bash scripts/ci-local.sh verify"
+    "ci:local:verify": "bash scripts/ci-local.sh verify",
+    "prepare": "git config core.hooksPath .githooks || exit 0"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

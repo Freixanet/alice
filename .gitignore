@@ -7,6 +7,7 @@ dist
 .tanstack
 .vercel
 .grok
+.alice
 .env
 .env.*
 .env*
@@ -24,10 +25,11 @@ attachments
 test-results
 playwright-report
 coverage
+coverage.json
 __pycache__/
 *.pyc
 *.log
-.prettierrc
+# Prettier config is committed: .prettierrc
 
 # Xcode build output: xcodebuild -derivedDataPath ios/build writes here.
 ios/build/
