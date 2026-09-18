@@ -335,9 +335,10 @@ struct NotesFoldersScreen: View {
         } label: {
             HStack(spacing: 12) {
                 if depth > 0 {
-                    // Enough to read as "inside the one above", no more: a deep
-                    // indent pushed the name away from every other row's.
-                    Spacer().frame(width: CGFloat(depth) * 12)
+                    // A nudge, not a step. All it has to do is break the line
+                    // the other folders' icons make down the left edge; any
+                    // more and the name drifts away from every other name.
+                    Spacer().frame(width: CGFloat(depth) * 7)
                 }
                 Image(systemName: systemImage)
                     .font(.system(size: 18, weight: .medium))
@@ -370,9 +371,17 @@ struct NotesFoldersScreen: View {
     /// shows and hides what is inside.
     @ViewBuilder
     private func chevron(_ expanded: Binding<Bool>?) -> some View {
+        // Two arrows that do different things should not look the same. The
+        // one that opens and closes folders is a control, in the accent every
+        // other control on this page is in; the one on a folder with nothing
+        // inside it is only pointing at the page, and is faded to say so.
         let arrow = Image(systemName: "chevron.right")
             .font(.footnote.weight(.semibold))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(
+                expanded == nil
+                    ? AnyShapeStyle(HierarchicalShapeStyle.quaternary)
+                    : AnyShapeStyle(store.accent.primary(scheme))
+            )
         if let expanded {
             Button {
                 withAnimation(.snappy(duration: 0.28)) { expanded.wrappedValue.toggle() }
