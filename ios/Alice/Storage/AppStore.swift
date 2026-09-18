@@ -6336,6 +6336,10 @@ final class AppStore {
     /// has: no second credential store, no second login screen, and the
     /// password never leaves `DashboardClient`.
     private func botChatSource() async -> WebSocketBotChatSource? {
+        // A send just after launch can arrive before the foreground probe.
+        // Restore the saved dashboard instead of treating gateway access as
+        // permission to run a named agent under the main profile.
+        if !dashboardReady { await restoreDashboard() }
         guard let rpcClient = await dashboardRPC() else { return nil }
         return WebSocketBotChatSource(rpc: rpcClient)
     }
@@ -6506,17 +6510,15 @@ final class AppStore {
         // talk to, and it must never fall through to Alice.
         if conversations[index].isChannel == true, invokedBot == nil { return }
 
-        // An agent named with `@` in Alice's chat is talked to as in its own
-        // chat: the words, without the name, go into its own Hermes session,
-        // with its instructions, memory, tools, model and history, and the
-        // exchange is there when its chat is opened. The gateway run used
-        // before only borrowed the name.
+        guard let route = ChatTurnRoute.resolve(
+            in: conversations[index], invokedBot: invokedBot,
+            dashboardReady: dashboardReady, updatingHermes: HermesSelfUpdateIntent.matches(text)
+        ) else { return }
+
         var mentionText: String?
-        if let invokedBot, conversations[index].routedBotName == nil,
-           conversations[index].isChannel != true, dashboardReady,
-           !HermesSelfUpdateIntent.matches(text) {
-            let stripped = Self.withoutMention(text, of: invokedBot, names: mentionNames(for: invokedBot))
-            if !stripped.isEmpty || !draftAttachments.isEmpty { mentionText = stripped }
+        if case .agent(let profile, true) = route {
+            mentionText = Self.withoutMention(text, of: profile, names: mentionNames(for: profile))
+            guard mentionText?.isEmpty == false || !draftAttachments.isEmpty else { return }
         }
 
         let attachments = draftAttachments
@@ -6544,48 +6546,19 @@ final class AppStore {
         }
         conversations[index].updatedAt = Date()
 
-        // A direct bot chat is the bot's own canonical session, so the turn
-        // goes into it as that bot — not to the default profile wearing a
-        // "you are <bot>" directive, which is what made one assistant answer
-        // in another's voice and kept cron's reports somewhere Alice never
-        // looked. Mentions inside ordinary chats and channels are a different
-        // thing and keep the path below.
-        // `routedBotName`, never `botName` and never ownership: a recovered
-        // legacy thread is filed under a bot but has no session to send into.
-        if let directBot = conversations[index].routedBotName,
-           conversations[index].isChannel != true {
+        switch route {
+        case .agent(let profile, let mention):
             streamTasks[conversationID] = Task { [weak self] in
                 await self?.sendToBotChat(
-                    profile: directBot,
+                    profile: profile,
                     conversationID: conversationID,
                     replyID: replyID,
-                    text: text,
-                    attachments: attachments
-                )
-            }
-            return
-        }
-
-        if let invokedBot, let mentionText {
-            streamTasks[conversationID] = Task { [weak self] in
-                await self?.sendToBotChat(
-                    profile: invokedBot,
-                    conversationID: conversationID,
-                    replyID: replyID,
-                    text: mentionText,
+                    text: mentionText ?? text,
                     attachments: attachments,
-                    mention: true
+                    mention: mention
                 )
             }
-            return
-        }
-
-        // Alice's own chat goes through the dashboard socket when there is
-        // one: there Hermes can stop and ask a question, which a gateway run
-        // cannot. A mention keeps the gateway, since that turn speaks as a
-        // bot, and so does /update, which the gateway answers itself.
-        if invokedBot == nil, conversations[index].isChannel != true,
-           dashboardReady, !HermesSelfUpdateIntent.matches(text) {
+        case .home:
             let earlier = conversations[index].messages.filter {
                 $0.id != user.id && $0.id != replyID
             }
@@ -6599,12 +6572,11 @@ final class AppStore {
                     earlier: earlier
                 )
             }
-            return
+        case .gateway:
+            streamThroughGateway(
+                conversationID: conversationID, replyID: replyID, invokedBot: nil
+            )
         }
-
-        streamThroughGateway(
-            conversationID: conversationID, replyID: replyID, invokedBot: invokedBot
-        )
     }
 
     /// A sent message with each `@agent` in it drawn in that agent's colour.
@@ -6707,6 +6679,14 @@ final class AppStore {
     private func streamThroughGateway(
         conversationID: String, replyID: String, invokedBot: String?
     ) {
+        // Also fence retries/edits using older call paths. A gateway request
+        // cannot load a named profile by borrowing its visible name.
+        guard invokedBot == nil else {
+            fail(replyID, conversationID: conversationID,
+                 message: "Connect the Hermes dashboard to talk to this agent.", limit: nil)
+            finish(replyID, conversationID: conversationID)
+            return
+        }
         guard let index = conversations.firstIndex(where: { $0.id == conversationID })
         else { return }
 
@@ -6717,7 +6697,7 @@ final class AppStore {
         let history = conversations[index].messages
             .filter { !$0.pending && $0.error == nil }
         let newestWithAttachments = history.lastIndex { !$0.attachments.isEmpty }
-        var turns = history.enumerated().map { offset, message in
+        let turns = history.enumerated().map { offset, message in
             HermesClient.Turn(
                 role: message.role.rawValue,
                 content: Self.content(
@@ -6726,48 +6706,8 @@ final class AppStore {
             )
         }
 
-        var model = selectedModel
-        let invokedBotInfo = invokedBot.flatMap { name in
-            cachedBots.first(where: { $0.name == name })
-        }
-        if let invokedBot, let specificModel = botModel(for: invokedBot) {
-            model = specificModel
-        }
-        // The emergency direct-gateway bot fallback must use the bot profile's
-        // provider with its model. Reusing Alice's selectedProvider can route a
-        // perfectly valid bot model through the wrong account/provider.
-        let provider: String?
-        if botMetadataIsRemote, let botProvider = invokedBotInfo?.provider, !botProvider.isEmpty {
-            provider = botProvider
-        } else {
-            provider = Self.provider(for: model, among: models, chosen: selectedProvider)
-        }
-
-        if let invokedBot {
-            let botInfo = invokedBotInfo
-            let botTitle = botCurrentName(for: invokedBot)
-            let botDesc = botInfo?.detail ?? ""
-            // Said this firmly because it is arguing with something. The
-            // gateway answers every request as the default profile, so the
-            // assistant's own standing prompt — its name, its warmth, the way
-            // it addresses this particular reader — is already in force by the
-            // time a bot's turn starts. "Respond in character" was too polite
-            // to displace it, and a bot asked about deals answered in another
-            // assistant's terms of endearment.
-            var directive = """
-                You are '\(botTitle)', a separate assistant with a voice of your own. \
-                Any persona, name, personality or form of address established earlier \
-                in this system prompt belongs to a different assistant and does not \
-                apply to you: do not use its name for yourself, do not use terms of \
-                endearment or a warm companion's register, and do not carry over its \
-                habits of speech. Speak plainly as yourself unless your own \
-                description below says otherwise.
-                """
-            if !botDesc.isEmpty {
-                directive += "\n\nWhat you are for: \(botDesc)"
-            }
-            turns.insert(HermesClient.Turn(role: "system", content: .text(directive)), at: 0)
-        }
+        let model = selectedModel
+        let provider = Self.provider(for: model, among: models, chosen: selectedProvider)
 
         let preferRuns = manifest?.supportsRuns ?? true
         let useRunIdempotency = manifest?.supportsRunIdempotency ?? false
@@ -6777,7 +6717,7 @@ final class AppStore {
                 messages: turns,
                 model: model,
                 provider: provider,
-                profile: invokedBot,
+                profile: nil,
                 conversationID: conversationID,
                 preferRuns: preferRuns,
                 runIdempotency: useRunIdempotency

@@ -26,6 +26,10 @@ An `@agent` reply retains its own profile and session on the message. Pending
 questions and approvals are recovered from that session, even when there is no
 separate agent chat, and belong to the chat that sent the mention. Recovery
 deduplicates by profile and session without changing the home chat's identity.
+Agent mentions and team turns always use the agent's canonical dashboard session,
+including during reconnect. Sending probes the saved dashboard connection when
+needed; if it remains unavailable, the turn fails visibly. The main-profile
+gateway cannot impersonate an agent or substitute for its tools and instructions.
 
 The web supports an authenticated server proxy and a direct browser transport.
 Keep operation semantics and profile scoping equivalent. Local machine access
