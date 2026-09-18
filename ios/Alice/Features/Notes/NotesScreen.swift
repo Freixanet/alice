@@ -810,6 +810,11 @@ struct SwipeToDelete: ViewModifier {
     var onMove: () -> Void = {}
     /// Off for rows that cannot be pinned: nothing opens to the right.
     var allowsPin = true
+    /// How tall the row is, when it is a fixed height. Given rather than
+    /// measured: a stack is as tall as its tallest child, so the buttons
+    /// decided the height of a short row and it grew the moment it was
+    /// swiped. Nil keeps a note's behaviour, where the row is the taller one.
+    var rowHeight: CGFloat? = nil
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -859,16 +864,26 @@ struct SwipeToDelete: ViewModifier {
         return min(1, max(0, uncovered / (Self.slot * 0.66)))
     }
 
+    /// True for a row too short to hold a button with its name under it — a
+    /// folder's, at 50pt. A note's is 74 and keeps both.
+    private var compact: Bool { (rowHeight ?? 74) < 72 }
+
     private func actionFace(_ title: String, symbol: String, tint: Color) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 50, height: 50)
-                .background(tint, in: .circle)
-            Text(title)
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.primary)
+        let circle = Image(systemName: symbol)
+            .font(.system(size: compact ? 15 : 18, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: compact ? 38 : 50, height: compact ? 38 : 50)
+            .background(tint, in: .circle)
+        return VStack(spacing: 6) {
+            circle
+            // The name is what made the buttons taller than a folder's row,
+            // and a row that grew when swiped was the bug. The glyph says it
+            // on its own at this size; the held menu still spells it out.
+            if !compact {
+                Text(title)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.primary)
+            }
         }
         .frame(width: Self.slot)
         .contentShape(.rect)
@@ -954,6 +969,10 @@ struct SwipeToDelete: ViewModifier {
                 .padding(.trailing, 4)
                 .allowsHitTesting(openSide == .trailing && drag == 0)
             }
+            // Never taller than the row it sits behind: a stack is as tall as
+            // its tallest child, and the buttons were making short rows grow
+            // the moment they were swiped.
+            .frame(height: rowHeight)
 
             content
                 // Darkened while out of place, as a held row is: a pan takes

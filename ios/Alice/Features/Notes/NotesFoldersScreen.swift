@@ -303,7 +303,8 @@ struct NotesFoldersScreen: View {
                 ),
                 onDelete: { deletingFolder = folder },
                 onMove: { moving = .folder(folder.id) },
-                allowsPin: false
+                allowsPin: false,
+                rowHeight: Self.rowHeight
             ))
             .listRowInsets(EdgeInsets())
     }
