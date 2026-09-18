@@ -77,31 +77,45 @@ extension WebSocketBotChatSource {
     ///
     /// Hermes' own `/model` switch, scoped to this session: the profile's
     /// default and every other chat keep theirs. A model Hermes wants
-    /// confirmed first is refused with Hermes' reason rather than confirmed
-    /// on somebody's behalf.
+    /// confirmed first is returned as `ModelConfirmation.Needed` rather than
+    /// confirmed on somebody's behalf, or applied when `confirm` is already
+    /// the person's answer.
     ///
     /// `force` sets it even when the session says it already runs that model.
     /// A resumed session reports the configured model rather than the one its
     /// runtime was rebuilt on, which after a provider fallback is the fallback.
     func useModel(
-        _ model: String, provider: String?, in session: HomeChatSession, force: Bool = false
+        _ model: String, provider: String?, in session: HomeChatSession,
+        force: Bool = false, confirm: Bool = false
     ) async throws -> HomeChatSession {
         guard force || !Self.session(session, runs: model, provider: provider) else { return session }
         var value = model
         if let provider, !provider.isEmpty { value += " --provider \(provider)" }
-        let result = try await rpc.call("config.set", JSONObject([
+        // `--session` is a real `/model` flag and keeps this chat's runtime.
+        // `--confirm` is not: Hermes would take it as part of the model name
+        // ("Model names cannot contain spaces"). Confirmation is the JSON flag.
+        value += " --session"
+        var params: [String: Any] = [
             "session_id": session.liveID,
             "key": "model",
             "value": value,
-        ]))
+        ]
+        if confirm { params["confirm_expensive_model"] = true }
+        let result = try await rpc.call("config.set", JSONObject(params))
         if (result["confirm_required"] as? Bool) == true {
-            throw HermesRPCClient.Failure(
-                reason: Self.text(result["confirm_message"])
-                    ?? "Hermes wants confirmation before using \(model)."
-            )
+            let message = Self.text(result["confirm_message"])
+                ?? "Hermes wants confirmation before using \(model)."
+            if confirm {
+                throw HermesRPCClient.Failure(reason: message)
+            }
+            throw ModelConfirmation.Needed(message: message)
         }
+        // Same live session the switch landed on. Resuming here minted a
+        // fresh runtime that never received the confirmed model, so the
+        // prompt walked the profile fallback chain until Hermes stopped.
         return HomeChatSession(
-            storedID: session.storedID, liveID: session.liveID,
+            storedID: session.storedID,
+            liveID: Self.text(result["session_id"]) ?? session.liveID,
             model: model, provider: provider ?? session.provider
         )
     }

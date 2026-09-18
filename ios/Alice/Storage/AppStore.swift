@@ -4996,6 +4996,56 @@ final class AppStore {
         var recent = recentModels.filter { $0 != id }
         recent.insert(id, at: 0)
         recentModels = Array(recent.prefix(6))
+        if let pending = pendingHomeModelConfirmation {
+            pendingHomeModelConfirmation = nil
+            retryHeldHomeSend(pending, confirmModel: false)
+        }
+    }
+
+    /// The person agreed the current model may train on this chat. The original
+    /// question is sent; it was never submitted while Hermes was waiting.
+    func confirmHomeModel() {
+        guard let pending = pendingHomeModelConfirmation else { return }
+        pendingHomeModelConfirmation = nil
+        retryHeldHomeSend(pending, confirmModel: true)
+    }
+
+    /// The person refused. The question stays; Alice did not answer it.
+    func declineHomeModel() {
+        guard let pending = pendingHomeModelConfirmation else { return }
+        pendingHomeModelConfirmation = nil
+        fail(
+            pending.replyID, conversationID: pending.conversationID,
+            message: "Alice did not send that. This model needs your OK first — it may train on what you write. Choose another model, then send again.",
+            limit: nil
+        )
+        finish(pending.replyID, conversationID: pending.conversationID)
+    }
+
+    /// Sends a question that was held for a model policy. The placeholder
+    /// stays the same reply, so the card is replaced by the real answer.
+    private func retryHeldHomeSend(_ pending: ModelConfirmation.Pending, confirmModel: Bool) {
+        sendingConversations.insert(pending.conversationID)
+        if let location = messageLocation(pending.replyID, conversationID: pending.conversationID) {
+            conversations[location.chat].messages[location.message].content = ""
+            conversations[location.chat].messages[location.message].error = nil
+            conversations[location.chat].messages[location.message].pending = true
+            conversations[location.chat].messages[location.message].awaitingRemote = false
+            conversations[location.chat].messages[location.message].deliveryNote = nil
+            conversations[location.chat].messages[location.message].incomplete = false
+        }
+        persistConversations()
+        streamTasks[pending.conversationID] = Task { [weak self] in
+            await self?.sendToBotChat(
+                profile: nil,
+                conversationID: pending.conversationID,
+                replyID: pending.replyID,
+                text: pending.text,
+                attachments: pending.attachments,
+                earlier: pending.earlier,
+                confirmModel: confirmModel
+            )
+        }
     }
 
     func newChat() {
@@ -5697,6 +5747,10 @@ final class AppStore {
             // Not yet accepted by Hermes: there is nothing there to find.
             if followed == nil, sendingConversations.contains(conversation.id) { return nil }
             if let followed, followed.disposition == nil { return nil }
+            // Waiting on the person, not on Hermes. Treating it as a lost
+            // turn wrote "Lost touch" over the confirmation card, then
+            // finish() turned the empty bubble into "Couldn't reply."
+            if pendingHomeModelConfirmation?.conversationID == conversation.id { return nil }
             return conversation.id
         }
     }
@@ -5707,6 +5761,7 @@ final class AppStore {
         let waiting = waitingReplyChats
         if !waiting.isEmpty { DiagnosticsLog.write("recover.start chats=\(waiting.count)") }
         for id in waiting {
+            guard pendingHomeModelConfirmation?.conversationID != id else { continue }
             guard let conversation = conversations.first(where: { $0.id == id }) else { continue }
             if conversation.messages.last(where: { $0.role == .assistant })?.mentionSessionID != nil {
                 await settleMentionReply(id)
@@ -5747,7 +5802,8 @@ final class AppStore {
     /// chat, or, with no profile, Alice's own chat.
     private func sendToBotChat(
         profile: String?, conversationID: String, replyID: String, text: String,
-        attachments: [Attachment], earlier: [Message] = [], mention: Bool = false
+        attachments: [Attachment], earlier: [Message] = [], mention: Bool = false,
+        confirmModel: Bool = false
     ) async {
         guard let source = await botChatSource() else {
             if profile == nil {
@@ -5791,7 +5847,8 @@ final class AppStore {
                 )
             } else {
                 guard let session = try await openHomeSession(
-                    source: source, conversationID: conversationID, earlier: earlier
+                    source: source, conversationID: conversationID, earlier: earlier,
+                    confirmModel: confirmModel
                 ) else {
                     // Hermes could not open the chat and nothing was sent, so
                     // the gateway can still take the turn — unless it was
@@ -6022,6 +6079,16 @@ final class AppStore {
             }
         } catch {
             DiagnosticsLog.write("turn.failed reply=\(replyID) error=\(error.localizedDescription)")
+            if profile == nil, let needed = ModelConfirmation.needed(from: error) {
+                holdHomeModelConfirmation(
+                    conversationID: conversationID, replyID: replyID, text: text,
+                    attachments: attachments, earlier: earlier, message: needed.message
+                )
+                activeBotTurns[conversationID] = nil
+                sendingConversations.remove(conversationID)
+                streamTasks[conversationID] = nil
+                return
+            }
             ending = .failed
             fail(replyID, conversationID: conversationID,
                  message: HermesErrors.describe(error),
@@ -6036,7 +6103,25 @@ final class AppStore {
         guard activeBotTurns[conversationID]?.token == token else { return }
         activeBotTurns[conversationID] = nil
         switch ending {
-        case .outcome, .failed, .stopped:
+        case .outcome:
+            if profile == nil,
+               holdHomeModelConfirmationIfBanner(
+                   conversationID: conversationID, replyID: replyID,
+                   text: text, attachments: attachments, earlier: earlier
+               ) {
+                sendingConversations.remove(conversationID)
+                streamTasks[conversationID] = nil
+                return
+            }
+            fallthrough
+        case .failed, .stopped:
+            if profile == nil,
+               await adoptHomeTranscriptIfEmpty(
+                   replyID: replyID, conversationID: conversationID,
+                   text: text, attachments: attachments, earlier: earlier
+               ) {
+                return
+            }
             setDeliveryNote(nil, on: replyID, conversationID: conversationID)
             finish(replyID, conversationID: conversationID)
             await refreshBotChat(conversationID)
@@ -6102,9 +6187,10 @@ final class AppStore {
     /// The Hermes session Alice's own chat continues in, on the model her
     /// picker names. Nil when Hermes could not open it: nothing was sent then,
     /// and the gateway can still take the turn. A model Hermes will not switch
-    /// to without confirmation is thrown, to be said in the reply.
+    /// to without confirmation is thrown as `ModelConfirmation.Needed`.
     private func openHomeSession(
-        source: WebSocketBotChatSource, conversationID: String, earlier: [Message]
+        source: WebSocketBotChatSource, conversationID: String, earlier: [Message],
+        confirmModel: Bool = false
     ) async throws -> HomeChatSession? {
         guard let index = conversations.firstIndex(where: { $0.id == conversationID })
         else { return nil }
@@ -6122,13 +6208,13 @@ final class AppStore {
         }
         guard let model, !model.isEmpty else { return session }
         let wanted = "\(model)|\(provider ?? "")"
-        guard homeChatModels[session.liveID] != wanted else { return session }
+        guard confirmModel || homeChatModels[session.liveID] != wanted else { return session }
         // Always set on a runtime this app has not set it on: what a resumed
         // session reports is not what it runs.
         let switched = try await source.useModel(
-            model, provider: provider, in: session, force: true
+            model, provider: provider, in: session, force: true, confirm: confirmModel
         )
-        homeChatModels[session.liveID] = wanted
+        homeChatModels[switched.liveID] = wanted
         return switched
     }
 
@@ -6143,6 +6229,72 @@ final class AppStore {
     /// the model a resumed session reports be trusted — it names the configured
     /// one — so every new runtime is set explicitly.
     private var homeChatModels: [String: String] = [:]
+
+    /// Home chat is waiting on the person to accept a model policy, not on Hermes.
+    private(set) var pendingHomeModelConfirmation: ModelConfirmation.Pending?
+
+    private func holdHomeModelConfirmation(
+        conversationID: String, replyID: String, text: String,
+        attachments: [Attachment], earlier: [Message], message: String
+    ) {
+        if let location = messageLocation(replyID, conversationID: conversationID) {
+            conversations[location.chat].messages[location.message].content = ""
+            conversations[location.chat].messages[location.message].error = nil
+            conversations[location.chat].messages[location.message].pending = true
+            conversations[location.chat].messages[location.message].deliveryNote = nil
+        }
+        pendingHomeModelConfirmation = ModelConfirmation.Pending(
+            conversationID: conversationID, replyID: replyID, text: text,
+            attachments: attachments, earlier: earlier, message: message
+        )
+        persistConversations()
+    }
+
+    /// An empty turn ending is not proof Hermes said nothing: some models
+    /// only put the body on the complete frame, which we now read, and others
+    /// only persist it. Finishing those as "Couldn't reply." hid both.
+    private func adoptHomeTranscriptIfEmpty(
+        replyID: String, conversationID: String,
+        text: String, attachments: [Attachment], earlier: [Message]
+    ) async -> Bool {
+        guard let location = messageLocation(replyID, conversationID: conversationID)
+        else { return false }
+        let reply = conversations[location.chat].messages[location.message]
+        guard reply.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              reply.error == nil, reply.approval == nil
+        else { return false }
+        guard await settleHomeReply(conversationID, replyID: replyID) else { return false }
+        if holdHomeModelConfirmationIfBanner(
+            conversationID: conversationID, replyID: replyID,
+            text: text, attachments: attachments, earlier: earlier
+        ) {
+            sendingConversations.remove(conversationID)
+            streamTasks[conversationID] = nil
+            return true
+        }
+        sendingConversations.remove(conversationID)
+        streamTasks[conversationID] = nil
+        return true
+    }
+
+    /// Hermes sometimes writes the policy notice as the completion itself.
+    @discardableResult
+    private func holdHomeModelConfirmationIfBanner(
+        conversationID: String, replyID: String, text: String,
+        attachments: [Attachment], earlier: [Message]
+    ) -> Bool {
+        guard let location = messageLocation(replyID, conversationID: conversationID)
+        else { return false }
+        let reply = conversations[location.chat].messages[location.message]
+        guard let notice = ModelConfirmation.notice(in: reply.content)
+            ?? ModelConfirmation.notice(in: reply.error ?? "")
+        else { return false }
+        holdHomeModelConfirmation(
+            conversationID: conversationID, replyID: replyID, text: text,
+            attachments: attachments, earlier: earlier, message: notice
+        )
+        return true
+    }
 
     /// A reply in Alice's own chat that is still outstanding.
     nonisolated static func awaitsReply(_ conversation: Conversation) -> Bool {
@@ -6217,6 +6369,7 @@ final class AppStore {
     private func settleReply(
         _ reply: Message, in conversationID: String, profile: String?, storedID: String
     ) async -> Bool {
+        guard pendingHomeModelConfirmation?.replyID != reply.id else { return false }
         guard reply.pending || reply.awaitingRemote == true else { return false }
         guard let source = await botChatSource() else {
             DiagnosticsLog.write("settle.noSource reply=\(reply.id) dashboardReady=\(dashboardReady)")
@@ -6333,6 +6486,20 @@ final class AppStore {
         persistConversations()
     }
 
+    /// The body to keep when a turn ends. Hermes' parent `message.complete`
+    /// often repeats only the last delta; replacing the streamed reply with
+    /// that would drop what was said before a tool. An empty bubble with a
+    /// complete-frame body is the other case: some models never stream deltas.
+    nonisolated static func replyBody(current: String, completion: String?) -> String {
+        guard let completion else { return current }
+        let incoming = completion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !incoming.isEmpty else { return current }
+        if current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return completion
+        }
+        return completion.count > current.count ? completion : current
+    }
+
     /// One pushed frame as the event this app already knows how to draw.
     ///
     /// An adapter rather than a second renderer: deltas, tools and approvals
@@ -6359,11 +6526,15 @@ final class AppStore {
             case "interrupted": status = .interrupted
             default: return nil
             }
-            // The stream already delivered the body as deltas; the completion
-            // frame only says how the turn ended.
+            // Deltas usually already hold the body. Some models skip them and
+            // only put the reply on this frame — finishing without it became
+            // "Couldn't reply."
+            let output = (event.payload["text"] as? String)
+                ?? (event.payload["content"] as? String)
+            let trimmed = output?.trimmingCharacters(in: .whitespacesAndNewlines)
             return .run(
                 id: (event.payload["id"] as? String) ?? event.sessionID,
-                status: status, output: nil
+                status: status, output: (trimmed?.isEmpty == false) ? output : nil
             )
         case "tool.start":
             guard let name = event.payload["name"] as? String else { return nil }
@@ -6519,6 +6690,7 @@ final class AppStore {
         // Hermes stop clears the active turn AND its server-side queue. Do not
         // accept another local send while that destructive RPC is unresolved.
         guard let activeID, botStopsInFlight[activeID] == nil else { return }
+        if pendingHomeModelConfirmation?.conversationID == activeID { return }
         if isSending {
             // A busy bot still takes a message — Hermes folds it into the task
             // it is running or queues it — so the chat following that bot lets
@@ -7537,7 +7709,10 @@ final class AppStore {
             if status != .waitingForApproval {
                 conversations[chat].messages[index].approval = nil
             }
-            if let output { conversations[chat].messages[index].content = output }
+            conversations[chat].messages[index].content = Self.replyBody(
+                current: conversations[chat].messages[index].content,
+                completion: output
+            )
             if status.isTerminal {
                 conversations[chat].messages[index].settle()
             }
@@ -7736,8 +7911,16 @@ final class AppStore {
         let openings = [
             "api call failed", "⚠️ provider", "provider authentication failed",
             "request failed", "all providers failed",
+            "⚠️ no reply:", "no reply:",
         ]
         return openings.contains(where: lowered.hasPrefix) ? trimmed : nil
+    }
+
+    /// Hermes' own "the turn ended without an answer" notice, not a provider
+    /// error string. `continue` retries that turn; another model does not.
+    nonisolated static func isNoReply(_ text: String) -> Bool {
+        let lowered = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return lowered.hasPrefix("⚠️ no reply:") || lowered.hasPrefix("no reply:")
     }
 
     // MARK: - Persistence

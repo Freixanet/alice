@@ -139,7 +139,7 @@ final class HomeChatSessionTests: XCTestCase {
         let params = try XCTUnwrap(sent)
         XCTAssertEqual(params["session_id"] as? String, "live-1")
         XCTAssertEqual(params["key"] as? String, "model")
-        XCTAssertEqual(params["value"] as? String, "gpt-5.6-luna --provider openai-codex")
+        XCTAssertEqual(params["value"] as? String, "gpt-5.6-luna --provider openai-codex --session")
     }
 
     func testAModelHermesWantsConfirmedIsNotConfirmedOnSomebodysBehalf() async {
@@ -150,11 +150,36 @@ final class HomeChatSessionTests: XCTestCase {
         do {
             _ = try await WebSocketBotChatSource(rpc: hermes).useModel("b", provider: nil, in: session)
             XCTFail("expected Hermes' confirmation to be surfaced")
+        } catch let needed as ModelConfirmation.Needed {
+            XCTAssertEqual(needed.message, "This model is expensive.")
         } catch {
-            XCTAssertEqual(error.localizedDescription, "This model is expensive.")
+            XCTFail("expected ModelConfirmation.Needed, got \(error)")
         }
         let params = await hermes.params(of: "config.set")
         XCTAssertNil(params?["confirm_expensive_model"])
+    }
+
+    func testConfirmingAModelSendsHermesTheHandshake() async throws {
+        let hermes = FakeHermes()
+        let session = HomeChatSession(storedID: "s", liveID: "live-1", model: "a", provider: nil)
+        _ = try await WebSocketBotChatSource(rpc: hermes).useModel(
+            "b", provider: nil, in: session, confirm: true
+        )
+        let params = await hermes.params(of: "config.set")
+        XCTAssertEqual(params?["confirm_expensive_model"] as? Bool, true)
+        XCTAssertEqual(params?["value"] as? String, "b --session")
+        XCTAssertFalse((params?["value"] as? String)?.contains("--confirm") == true)
+    }
+
+    func testConfirmingAModelKeepsTheLiveSessionItJustSwitched() async throws {
+        let hermes = FakeHermes()
+        let session = HomeChatSession(storedID: "stored-1", liveID: "live-old", model: "a", provider: nil)
+        let switched = try await WebSocketBotChatSource(rpc: hermes).useModel(
+            "b", provider: nil, in: session, confirm: true
+        )
+        XCTAssertEqual(switched.liveID, "live-old")
+        let methods = await hermes.methods()
+        XCTAssertEqual(methods, ["config.set"])
     }
 
     func testASessionAlreadyLiveTakesThePromptWithoutAResume() async throws {

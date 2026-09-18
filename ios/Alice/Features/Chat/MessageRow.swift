@@ -104,7 +104,8 @@ struct MessageRow: View {
                     // there while the reply is written and settle into one line
                     // over it. Questions waiting on the person end the turn as
                     // far as the chat shows — nothing is "Thinking" meanwhile.
-                    if (message.pending && !store.activeAwaitsAnswers)
+                    if store.pendingHomeModelConfirmation?.replyID != message.id,
+                       (message.pending && !store.activeAwaitsAnswers)
                         || !ToolCaption.steps(in: message.tools).isEmpty {
                         ThinkingTrace(
                             steps: message.tools,
@@ -137,6 +138,8 @@ struct MessageRow: View {
                         AgentMessageCard(handle: agent) {
                             RichMessageView(content: message.content, failed: message.error != nil)
                         }
+                    } else if store.pendingHomeModelConfirmation?.replyID == message.id {
+                        ModelConfirmationCard()
                     } else if !message.content.isEmpty {
                         // Markdown as blocks — headings, lists, tables, code,
                         // callouts, formulas and reply buttons — the way
@@ -164,9 +167,18 @@ struct MessageRow: View {
                     if let limit = message.errorLimit {
                         ModelLimitNote(limit: limit)
                     } else if AppStore.agentFailure(in: message.error ?? "") != nil {
-                        Text("This is what the last provider Hermes tried said — it may not be the model you picked. Its own fallbacks are tried in order, and only the final failure comes back.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        if AppStore.isNoReply(message.error ?? "") {
+                            Text("Hermes stopped after every model it tried failed. Continue retries the same question; picking another model avoids this chain.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            Button("Continue") { store.sendQuickReply("continue") }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                        } else {
+                            Text("This is what the last provider Hermes tried said — it may not be the model you picked. Its own fallbacks are tried in order, and only the final failure comes back.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     // Only once the reply has finished: acting on half an
                     // answer copies or shares something that is still changing.
@@ -739,6 +751,49 @@ private struct RunApprovalCard: View {
 
     private func label(for choice: Message.ApprovalChoice) -> String {
         ApprovalExplainer.label(choice)
+    }
+}
+
+/// Hermes will not use this model until the person agrees. Not an answer.
+private struct ModelConfirmationCard: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("This model needs your OK", systemImage: "exclamationmark.shield")
+                .font(.subheadline.weight(.semibold))
+            Text(store.pendingHomeModelConfirmation?.message ?? "")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            Text("Alice has not sent your question yet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { buttons }
+                VStack(alignment: .leading, spacing: 8) { buttons }
+            }
+        }
+        .padding(12)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Palette.border(scheme), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("This model needs confirmation before Alice sends your question")
+    }
+
+    @ViewBuilder
+    private var buttons: some View {
+        Button("Use this model") { store.confirmHomeModel() }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        Button("Not now", role: .cancel) { store.declineHomeModel() }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
     }
 }
 
