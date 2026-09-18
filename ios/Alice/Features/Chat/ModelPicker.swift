@@ -17,19 +17,28 @@ struct ModelPicker: View {
     /// Supplied by a bot's settings page. When absent, Alice's own model is
     /// being chosen (the chat composer never opens this sheet for a bot).
     var bot: BotRow?
+    /// When true, this picker writes the profile's first `fallback_providers`
+    /// hop rather than its primary model.
+    var selectsFallback = false
     /// Set when a model is only being picked, not applied — for an agent that
     /// does not exist yet. The same list, recents and search as settings; the
     /// tap hands the choice back instead of writing it to a profile.
     var chosen: HermesClient.ModelOption?
     var onChoose: ((HermesClient.ModelOption) -> Void)?
+    /// Create-agent fallback: "None" is a real choice, not a missing pick.
+    var onClear: (() -> Void)?
 
     init(
         bot: BotRow? = nil, chosen: HermesClient.ModelOption? = nil,
-        onChoose: ((HermesClient.ModelOption) -> Void)? = nil
+        selectsFallback: Bool = false,
+        onChoose: ((HermesClient.ModelOption) -> Void)? = nil,
+        onClear: (() -> Void)? = nil
     ) {
         self.bot = bot
         self.chosen = chosen
+        self.selectsFallback = selectsFallback
         self.onChoose = onChoose
+        self.onClear = onClear
     }
 
     private var targetBot: BotRow? {
@@ -46,9 +55,15 @@ struct ModelPicker: View {
     private var currentModelLabel: String? {
         if onChoose != nil { return chosen?.label }
         guard let targetBot else { return store.currentChatModelLabel }
+        if selectsFallback {
+            return store.botFallbackOption(for: targetBot)?.label
+                ?? store.cachedBotFallbacks[targetBot.name]?.first.map { HermesClient.prettify($0.model) }
+        }
         return store.botModelOption(for: targetBot)?.label
             ?? targetBot.model.map(HermesClient.prettify)
     }
+
+    private var allowsNone: Bool { selectsFallback }
 
     /// A typed id worth offering: it looks like a model name, and nothing in
     /// the catalogue already matches it exactly.
@@ -109,6 +124,26 @@ struct ModelPicker: View {
     var body: some View {
         NavigationStack {
             List {
+                if allowsNone {
+                    Section {
+                        Button {
+                            chooseNone()
+                        } label: {
+                            HStack {
+                                Text("None").foregroundStyle(.primary)
+                                Spacer()
+                                if usesNone {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(store.accent.primary(scheme))
+                                }
+                            }
+                        }
+                        .disabled(applyingModel)
+                    } footer: {
+                        Text("Used when the agent’s model is unavailable or at its limit.")
+                    }
+                }
+
                 // Hermes does not always list everything it can serve. Its
                 // catalogue for Nous, for one, holds only that provider's paid
                 // models, so the free ones — which answer perfectly well —
@@ -201,7 +236,7 @@ struct ModelPicker: View {
                 }
             }
             .searchable(text: $query, prompt: "Search models")
-            .navigationTitle("Model")
+            .navigationTitle(selectsFallback ? "Fallback" : "Model")
             .navigationBarTitleDisplayMode(.inline)
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
@@ -227,8 +262,12 @@ struct ModelPicker: View {
                 // A Bot Chat's model is profile state owned by Hermes. Refresh
                 // it when this sheet opens so the checkmark reflects the
                 // server rather than a stale phone-side roster snapshot.
-                if targetProfile != nil, store.dashboardReady {
-                    _ = try? await store.bots()
+                if let profile = targetProfile, store.dashboardReady {
+                    if selectsFallback {
+                        _ = try? await store.refreshBotFallback(profile)
+                    } else {
+                        _ = try? await store.bots()
+                    }
                 }
             }
             .alert(
@@ -308,7 +347,12 @@ struct ModelPicker: View {
     private var recents: [HermesClient.ModelOption] {
         if let profile = targetProfile {
             var result = store.recentBotModelOptions(for: profile)
-            if let current = targetBot.flatMap({ store.botModelOption(for: $0) }),
+            if selectsFallback {
+                if let current = targetBot.flatMap({ store.botFallbackOption(for: $0) }),
+                   !result.contains(where: { sameModel($0, current) }) {
+                    result.insert(current, at: 0)
+                }
+            } else if let current = targetBot.flatMap({ store.botModelOption(for: $0) }),
                !result.contains(where: { sameModel($0, current) }) {
                 result.insert(current, at: 0)
             }
@@ -328,9 +372,20 @@ struct ModelPicker: View {
     private func uses(_ model: HermesClient.ModelOption) -> Bool {
         if onChoose != nil { return chosen.map { sameModel($0, model) } ?? false }
         guard let targetBot else { return store.currentChatUses(model) }
+        if selectsFallback {
+            guard let first = store.cachedBotFallbacks[targetBot.name]?.first else { return false }
+            guard first.model == model.id else { return false }
+            return first.provider == model.provider || model.provider == nil
+        }
         guard targetBot.model == model.id else { return false }
         guard let provider = targetBot.provider, !provider.isEmpty else { return true }
         return provider == model.provider
+    }
+
+    private var usesNone: Bool {
+        if onChoose != nil { return chosen == nil }
+        guard selectsFallback, let profile = targetProfile else { return false }
+        return store.cachedBotFallbacks[profile]?.isEmpty == true
     }
 
     private func row(_ model: HermesClient.ModelOption) -> some View {
@@ -362,6 +417,14 @@ struct ModelPicker: View {
             dismiss()
             return
         }
+        if selectsFallback {
+            if uses(model) {
+                dismiss()
+                return
+            }
+            applyBotFallback(model)
+            return
+        }
         // An already-selected model normally has nothing to write. A partial
         // routine/chat sync is the exception: tapping it resumes the saved,
         // idempotent follow-up instead of silently dismissing the picker.
@@ -372,6 +435,40 @@ struct ModelPicker: View {
             return
         }
         applyBotModel(model)
+    }
+
+    private func chooseNone() {
+        if let onClear {
+            onClear()
+            dismiss()
+            return
+        }
+        if usesNone {
+            dismiss()
+            return
+        }
+        applyBotFallback(nil)
+    }
+
+    private func applyBotFallback(_ model: HermesClient.ModelOption?) {
+        guard !applyingModel else { return }
+        guard let bot = targetBot else {
+            failure = "Hermes did not return this bot’s current profile."
+            return
+        }
+        applyingModel = true
+        pendingBotModel = model
+        Task {
+            defer { applyingModel = false }
+            do {
+                try await store.setBotFallback(bot, to: model)
+                pendingBotModel = nil
+                dismiss()
+            } catch {
+                pendingBotModel = nil
+                failure = error.localizedDescription
+            }
+        }
     }
 
     private func applyBotModel(

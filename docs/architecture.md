@@ -88,7 +88,11 @@ A journal whose directory move already landed can finish rebinding. The
 operations journal is rewritten to the status that is actually returned
 (`completed` is never left behind after a `partial`). A client `busy` flag is
 not enough. The iPhone form and the Agent Maker conversation stay as they are; they
-no longer diverge on collision, model, or tools.
+no longer diverge on collision, model, or tools. An agent’s page can change
+both its primary model (`profiles.configure` / PUT `/api/profiles/{name}/model`)
+and its first `fallback_providers` hop (GET/PUT `/api/config?profile=`). Clearing
+the fallback writes an empty list so a leftover Codex chain is not still billed
+when the chosen model hits a limit.
 
 `hermes-agents/forja` and `hermes-plugin/tests/test_agent_engine.py` check the
 engine against a fake Hermes CLI so those tests do not send prompts to a

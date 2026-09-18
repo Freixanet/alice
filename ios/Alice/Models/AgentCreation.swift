@@ -103,6 +103,7 @@ struct AgentSpec: Equatable, Sendable {
     var tools: [String]?
     var model: String?
     var provider: String?
+    var fallback: [BotFallbackEntry]?
     var reuseProfile: String?
     var jobID: String
     var source: String
@@ -113,6 +114,7 @@ struct AgentSpec: Equatable, Sendable {
         description: String,
         soul: String? = nil,
         model: HermesClient.ModelOption? = nil,
+        fallback: HermesClient.ModelOption? = nil,
         reuseProfile: String? = nil
     ) throws -> AgentSpec {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -124,6 +126,13 @@ struct AgentSpec: Equatable, Sendable {
                 throw AgentOperationError.invalidName("A model needs its provider. Alice will not pick one.")
             }
         }
+        var fallbackChain: [BotFallbackEntry]?
+        if let fallback {
+            guard let entry = BotFallbackEntry.from(option: fallback) else {
+                throw AgentOperationError.invalidName("A fallback needs its provider. Alice will not pick one.")
+            }
+            fallbackChain = [entry]
+        }
         return AgentSpec(
             title: trimmed,
             profileID: id,
@@ -132,6 +141,7 @@ struct AgentSpec: Equatable, Sendable {
             tools: nil,
             model: modelID?.isEmpty == false ? modelID : nil,
             provider: provider?.isEmpty == false ? provider : nil,
+            fallback: fallbackChain,
             reuseProfile: reuseProfile,
             jobID: try AgentJobID.parse(
                 UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
@@ -154,6 +164,9 @@ struct AgentSpec: Equatable, Sendable {
         if let tools { payload["tools"] = tools }
         if let model { payload["model"] = model }
         if let provider { payload["provider"] = provider }
+        if let fallback, !fallback.isEmpty {
+            payload["fallback"] = fallback.map(\.payload)
+        }
         if let reuseProfile { payload["reuse_profile"] = reuseProfile }
         return payload
     }

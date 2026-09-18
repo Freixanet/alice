@@ -48,6 +48,7 @@ with technical administration progressively disclosed under Advanced.
 | Screen                    | State                                                   |
 | ------------------------- | ------------------------------------------------------- |
 | Chat                      | Streaming replies, tool calls, Markdown, model picker   |
+| Agents                    | Roster, create, model and fallback, routines, soul      |
 | Connect                   | Pairing-first connection; manual details under Advanced |
 | Settings                  | General, connection, agent options, Advanced            |
 | Skills                    | List, search, filter, enable/disable against Hermes     |
