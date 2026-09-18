@@ -314,6 +314,75 @@ class PluginAPITests(unittest.TestCase):
         self.assertEqual(notes["n1"]["tags"], ["suplementos"])
         self.assertIsNone(notes["n2"]["folder"], "a deleted folder's notes are Quick Notes")
 
+    def test_agent_create_and_rename_go_through_the_engine(self):
+        import os
+        import tempfile
+
+        soul = (
+            "# Radar\n\nWatch the news.\n\n## Examples\n\n"
+            "Person: What happened?\nYou: **This.** Two sentences.\n\n"
+            "Person: Invent it.\nYou: No.\n"
+        )
+        fake = Path(__file__).resolve().parents[2] / "hermes-agents" / "forja" / "tests" / "fake_hermes.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            wrapper = home / "hermes"
+            wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n', encoding="utf-8")
+            wrapper.chmod(0o755)
+            old = {k: os.environ.get(k) for k in ("HERMES_HOME", "HERMES_BIN", "ALICE_FAKE_AUTH")}
+            os.environ["HERMES_HOME"] = str(home)
+            os.environ["HERMES_BIN"] = str(wrapper)
+            os.environ["ALICE_FAKE_AUTH"] = "1"
+            try:
+                with mock.patch.object(self.api, "_engine_home", return_value=home):
+                    created = self.client.post("/api/plugins/alice/agents", json={
+                        "title": "Resumen de Mercados",
+                        "description": "Mornings.",
+                        "soul": soul,
+                        "tools": ["web"],
+                        "model": "kept-model",
+                        "provider": "kept-provider",
+                        "source": "form",
+                    })
+                    self.assertEqual(created.status_code, 200, created.text)
+                    payload = created.json()
+                    self.assertEqual(payload["status"], "completed", payload)
+                    self.assertEqual(payload["profile_id"], "resumen-de-mercados")
+                    renamed = self.client.post("/api/plugins/alice/agents/rename", json={
+                        "from": "resumen-de-mercados",
+                        "to": "Radar IA",
+                    })
+                    self.assertEqual(renamed.status_code, 200, renamed.text)
+                    body = renamed.json()
+                    self.assertEqual(body["to_id"], "radar-ia", body)
+                    self.assertEqual(body["status"], "failed", body)
+                    self.assertIn("registry_home", (body.get("error") or "").lower())
+                    self.assertTrue((home / "profiles" / "resumen-de-mercados").is_dir())
+                    self.assertFalse((home / "profiles" / "radar-ia").exists())
+                    traversal = self.client.get("/api/plugins/alice/agents/jobs/../etc/passwd")
+                    self.assertIn(traversal.status_code, {400, 404, 422})
+                    encoded = self.client.get("/api/plugins/alice/agents/jobs/%2e%2e%2fetc%2fpasswd")
+                    self.assertIn(encoded.status_code, {400, 404, 422})
+                    missing = self.client.get("/api/plugins/alice/agents/jobs/job-missing")
+                    self.assertEqual(missing.status_code, 404)
+                    rejected = self.client.post("/api/plugins/alice/agents", json={
+                        "title": "Intruso",
+                        "description": "No.",
+                        "soul": soul,
+                        "job_id": "../etc/passwd",
+                    })
+                    self.assertEqual(rejected.status_code, 200, rejected.text)
+                    self.assertEqual(rejected.json()["status"], "failed")
+                    self.assertIn("job_id", (rejected.json().get("error") or "").lower())
+                    self.assertFalse((home / "etc").exists())
+                    self.assertFalse((home / "profiles" / "intruso").exists())
+            finally:
+                for key, value in old.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

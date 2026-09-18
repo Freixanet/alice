@@ -3,7 +3,7 @@
 ## Nombre
 
 - `title`: corto, claro y en el idioma de la persona («Radar IA», «Chollos», «Resumen de Mercados»).
-- `name`: la versión en minúsculas con guiones («radar-ia»). Si ya existe, propón una variante.
+- `name`: la versión en minúsculas con guiones («radar-ia»). Si ese identificador ya existe, propón otro nombre. El programa no inventa un `-2`.
 
 ## Instrucciones (SOUL.md)
 

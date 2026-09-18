@@ -31,16 +31,19 @@ final class AgentDraftTests: XCTestCase {
 
     func testAgentMakerIsAskedAboutTheProfileThatAlreadyExists() {
         let text = AgentMaker.request(
-            name: "Cuba watch", profile: "cuba-watch", brief: "Sanctions news."
+            name: "Cuba watch", profile: "cuba-watch", brief: "Sanctions news.", jobID: "job-form-1"
         )
         XCTAssertTrue(text.contains("`cuba-watch`"))
         XCTAssertTrue(text.contains("Cuba watch"))
         XCTAssertTrue(text.contains("Sanctions news."))
+        XCTAssertTrue(text.contains("reuse_profile=cuba-watch"))
+        XCTAssertTrue(text.contains("job_id=job-form-1"))
         XCTAssertTrue(text.contains("Do not create a second profile"))
         XCTAssertTrue(text.contains("intake"))
         XCTAssertTrue(text.contains("## Examples"))
-        XCTAssertEqual(AgentMaker.botName, "forja")
+        XCTAssertEqual(AgentMaker.legacyProfileID, "forja")
         XCTAssertEqual(AgentMaker.displayName, "Agent Maker")
+        XCTAssertEqual(AgentMaker.preferredProfileID, "agent-maker")
     }
 
     func testAnEmptyBriefMakesNoStandingInstructions() {

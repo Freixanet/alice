@@ -20,11 +20,15 @@ final class AgentMakerNameTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = AppStore(defaults: defaults)
-        XCTAssertEqual(store.botCurrentName(for: AgentMaker.botName), "Agent Maker")
-        store.botCustomNames[AgentMaker.botName] = "Mi forja"
-        XCTAssertEqual(store.botCurrentName(for: AgentMaker.botName), "Mi forja")
+        XCTAssertEqual(store.botCurrentName(for: AgentMaker.legacyProfileID), "Agent Maker")
+        store.botCustomNames[AgentMaker.legacyProfileID] = "Mi forja"
+        XCTAssertEqual(store.botCurrentName(for: AgentMaker.legacyProfileID), "Mi forja")
         XCTAssertEqual(AgentMaker.displayIfNeeded(profile: "forja", shown: "Forja"), "Agent Maker")
         XCTAssertEqual(AgentMaker.displayIfNeeded(profile: "forja", shown: "Taller"), "Taller")
         XCTAssertEqual(AgentMaker.displayIfNeeded(profile: "radar-ia", shown: "Forja"), "Forja")
+        XCTAssertEqual(
+            AgentMaker.displayIfNeeded(profile: "taller", shown: "Taller", role: AgentMaker.role),
+            "Taller"
+        )
     }
 }

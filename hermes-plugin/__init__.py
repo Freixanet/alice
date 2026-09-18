@@ -1,8 +1,8 @@
 """Alice for Hermes.
 
 Most of this plugin lives in the dashboard: ``dashboard/plugin_api.py`` serves pairing,
-memory and notes under ``/api/plugins/alice/``, and ``dashboard/dist/index.js`` is the
-Alice tab.
+memory, notes and the shared agent-create/rename engine under ``/api/plugins/alice/``,
+and ``dashboard/dist/index.js`` is the Alice tab.
 
 The agent gains one rule: the Business team talks only among itself. A
 ``pre_tool_call`` hook enforces it, and a system prompt section tells each agent whom
@@ -328,8 +328,74 @@ def _register_notes_tools(ctx) -> None:
         )
 
 
+def _agent_engine():
+    import importlib.util
+    import sys
+
+    path = Path(__file__).resolve().parent / "agent_engine.py"
+    name = "alice_agent_engine"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _is_agent_maker(**_) -> bool:
+    """Agent Maker's tools follow the stamped role, including after a rename."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        root, me = _root_and_sender(Path(get_hermes_home()))
+        return _agent_engine().is_agent_maker(root, me)
+    except Exception:
+        return False
+
+
+def _agent_json(payload: dict) -> str:
+    import json
+
+    return json.dumps(payload, ensure_ascii=False)
+
+
+AGENT_TOOLS = (
+    ("agent_create", "🛠️",
+     "Crea o configura un agente de Hermes a partir de una especificación validada. "
+     "No inventes otros comandos. Si Alice ya creó el perfil para ESTE encargo, "
+     "pasa reuse_profile y el mismo job_id. Un perfil de otro trabajo no se reutiliza.",
+     ({"spec": {"type": "object", "description":
+                "title o name, description, soul con ## Ejemplos, tools, routines, "
+                "model y provider. reuse_profile solo con el job_id que creó ese perfil."},
+       "job_id": dict(_TEXT, description="El mismo trabajo reanuda y no duplica.")},
+      ["spec"]),
+     lambda a: _agent_engine().create_from_tool(a or {})),
+    ("agent_rename", "✏️",
+     "Renombra un agente y su perfil Hermes, conservando conversaciones, instrucciones, "
+     "rutinas y credenciales. No elige otro identificador si el nombre está ocupado.",
+     ({"from": dict(_TEXT, description="Identificador actual del perfil."),
+       "to": dict(_TEXT, description="Nombre visible nuevo (Agent Maker → agent-maker)."),
+       "job_id": dict(_TEXT, description="El mismo trabajo reanuda y no duplica.")},
+      ["from", "to"]),
+     lambda a: _agent_engine().rename_from_tool(a or {})),
+)
+
+
+def _register_agent_tools(ctx) -> None:
+    for name, emoji, description, (properties, required), call in AGENT_TOOLS:
+        schema = {"name": name, "description": description,
+                  "parameters": {"type": "object", "properties": properties, "required": required}}
+        ctx.register_tool(
+            name=name, toolset="alice_agents", schema=schema,
+            handler=lambda args, _call=call, **_: _agent_json(_call(args or {})),
+            check_fn=_is_agent_maker, description=description, emoji=emoji,
+        )
+
+
 def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     _register_notes_tools(ctx)
+    _register_agent_tools(ctx)

@@ -880,7 +880,7 @@ final class AppStore {
         } else {
             shown = name
         }
-        return AgentMaker.displayIfNeeded(profile: name, shown: shown)
+        return AgentMaker.displayIfNeeded(profile: name, shown: shown, role: cachedBots.first(where: { $0.name == name })?.aliceRole)
     }
 
     func botCurrentName(for bot: BotRow) -> String {
@@ -890,7 +890,7 @@ final class AppStore {
         } else {
             shown = botCustomNames[bot.name] ?? (bot.displayName.isEmpty ? bot.name : bot.displayName)
         }
-        return AgentMaker.displayIfNeeded(profile: bot.name, shown: shown)
+        return AgentMaker.displayIfNeeded(profile: bot.name, shown: shown, role: bot.aliceRole)
     }
 
     /// The bots, from Hermes' Bot Mode roster when the connected dashboard
@@ -1078,20 +1078,166 @@ final class AppStore {
     }
 
     func setBotTitle(_ bot: BotRow, title: String) async throws {
+        try await renameBot(bot.name, to: title)
+    }
+
+    /// Whether a turn is in flight for this profile, so a rename would strand it.
+    func isProfileBusy(_ name: String) -> Bool {
+        conversations.contains { conversation in
+            conversation.botName == name && sendingConversations.contains(conversation.id)
+        }
+    }
+
+    /// Asks the plugin engine to rename. A Hermes directory identity change is
+    /// refused until Hermes can coordinate it; a same-id title update still runs.
+    func renameBot(_ name: String, to newName: String) async throws {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != botCurrentName(for: name) else { return }
+        let newID = try AgentProfileID.parse(trimmed)
+        if isProfileBusy(name) || isProfileBusy(newID) {
+            throw AgentOperationError.active(
+                "This agent is in the middle of a request. Wait for it to finish, then rename."
+            )
+        }
+
+        if newID == name {
+            try await applyDisplayTitle(name, title: trimmed)
+            return
+        }
+
+        let blocked = Set(takenBotSlugs().map { $0.lowercased() })
+        if blocked.contains(newID) {
+            throw AgentOperationError.occupied(
+                "`\(newID)` already exists. The original agent was left unchanged."
+            )
+        }
+
+        do {
+            let result = try await dashboard.renameAgent(
+                from: name, to: trimmed, busy: isProfileBusy(name)
+            )
+            let renamed = try result.requireRenamed()
+            if renamed.sameID {
+                try await applyDisplayTitle(name, title: trimmed)
+                return
+            }
+            rebindLocalProfile(from: renamed.from, to: renamed.to, title: trimmed)
+            if result.status != .completed {
+                throw AgentOperationError.remote(
+                    result.error ?? "The rename finished only in part. Alice will keep both names visible until it can verify."
+                )
+            }
+            return
+        } catch let failure as DashboardClient.Failure {
+            switch failure {
+            case .http(404, _), .http(405, _), .notConfigured:
+                break
+            default:
+                throw failure
+            }
+        }
+
+        // Official dashboard PATCH, with the already-normalized id — never a
+        // display-only rename presented as a profile migration.
+        do {
+            try await dashboard.rename(name, to: newID)
+        } catch {
+            throw AgentOperationError.remote(
+                (error as? LocalizedError)?.errorDescription
+                ?? "Hermes could not rename this agent. The original was left unchanged."
+            )
+        }
+        rebindLocalProfile(from: name, to: newID, title: trimmed)
+        try? await applyDisplayTitle(newID, title: trimmed)
+    }
+
+    private func applyDisplayTitle(_ name: String, title: String) async throws {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if botMetadataIsRemote {
-            try await mutateBotMetadata(bot.name) { meta in
+            try await mutateBotMetadata(name) { meta in
                 var meta = meta
                 if trimmed.isEmpty { meta.removeValue(forKey: "title") }
                 else { meta["title"] = trimmed }
                 return meta
             }
-            botCustomNames.removeValue(forKey: bot.name)
+            botCustomNames.removeValue(forKey: name)
         } else if trimmed.isEmpty {
-            botCustomNames.removeValue(forKey: bot.name)
+            botCustomNames.removeValue(forKey: name)
         } else {
-            botCustomNames[bot.name] = trimmed
+            botCustomNames[name] = trimmed
         }
+    }
+
+    /// Moves Alice's structured references after Hermes has already renamed
+    /// the profile. Does not rewrite message text or chat history prose.
+    func rebindLocalProfile(from old: String, to new: String, title: String? = nil) {
+        guard old != new else { return }
+        let previousTitle = botCurrentName(for: old)
+        move(&botMarks, from: old, to: new)
+        move(&botSections, from: old, to: new)
+        move(&botModels, from: old, to: new)
+        move(&recentBotModels, from: old, to: new)
+        move(&botNotifications, from: old, to: new)
+        if let index = botOrder.firstIndex(of: old) { botOrder[index] = new }
+        botOrder.removeAll { $0 == old.lowercased() && $0 != new }
+        for index in botChannels.indices { botChannels[index].rename(bot: old, to: new) }
+        if let custom = botCustomNames.removeValue(forKey: old) {
+            botCustomNames[new] = title ?? custom
+        } else if let title {
+            botCustomNames[new] = title
+        }
+        if let index = cachedBots.firstIndex(where: { $0.name == old }) {
+            cachedBots[index] = cachedBots[index].withName(new, displayName: title ?? cachedBots[index].displayName)
+        }
+        for index in conversations.indices {
+            if conversations[index].botName == old {
+                conversations[index].botName = new
+                if conversations[index].title == old || conversations[index].title == previousTitle {
+                    conversations[index].title = title ?? new
+                }
+            }
+            if conversations[index].legacyBotName == old {
+                conversations[index].legacyBotName = new
+            }
+            if let bots = conversations[index].channelBots, bots.contains(old) {
+                conversations[index].channelBots = bots.map { $0 == old ? new : $0 }
+            }
+            for messageIndex in conversations[index].messages.indices {
+                if conversations[index].messages[messageIndex].botName == old {
+                    conversations[index].messages[messageIndex].botName = new
+                }
+                if conversations[index].messages[messageIndex].fromAgent == old {
+                    conversations[index].messages[messageIndex].fromAgent = new
+                }
+                if conversations[index].messages[messageIndex].mentionProfile == old {
+                    conversations[index].messages[messageIndex].mentionProfile = new
+                }
+            }
+        }
+        for index in activity.indices {
+            if activity[index].profile == old { activity[index].profile = new }
+            if activity[index].reference.profile == old {
+                activity[index].reference.profile = new
+            }
+            if let key = activity[index].reference.routineKey, key.hasPrefix("\(old)/") {
+                activity[index].reference.routineKey = "\(new)/" + key.dropFirst(old.count + 1)
+            }
+        }
+        mutedRoutines = Set(mutedRoutines.map { key in
+            key.hasPrefix("\(old)/") ? "\(new)/" + key.dropFirst(old.count + 1) : key
+        })
+        persistConversations()
+        persistActivity()
+    }
+
+    /// Carries one entry to a new key and leaves nothing behind at the old one.
+    private func move<Value>(
+        _ table: inout [String: Value], from old: String, to new: String
+    ) {
+        if let value = table.removeValue(forKey: old) {
+            table[new] = value
+        }
+        table.removeValue(forKey: old.lowercased())
     }
 
     /// Move the old phone-only title/pin/hidden preferences into Hermes only
@@ -1224,72 +1370,6 @@ final class AppStore {
 
     func exportBot(_ name: String) async throws -> String? {
         try await dashboard.exportBot(name)
-    }
-    /// Renames the bot on the agent, then moves everything this app keeps
-    /// under the old slug to the new one.
-    ///
-    /// The agent goes first on purpose. Applying the change locally and
-    /// firing the request with `try?` meant a rejected rename still showed
-    /// the new name, and the aliases it left behind — including a key that
-    /// mapped a name to itself — made a second rename resolve through the
-    /// first one's stale value.
-    func renameBot(_ name: String, to newName: String) async throws {
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != name else { return }
-
-        // The name is changed here first, and kept whatever the agent says.
-        // Renaming a profile is `PATCH /api/profiles/<name>`, and this Hermes
-        // has no PATCH route for it at all — its patch handler knows only MCP
-        // servers and kanban, and answers everything else with a 404. So the
-        // rename was being sent, refused, and the new name thrown away: the
-        // field simply snapped back with nothing said.
-        //
-        // A bot's shown name is already the app's to decide — `botCustomNames`
-        // exists for exactly this — so it is set regardless, and the server is
-        // still asked in case it is a build that can oblige. Only then are the
-        // per-bot settings moved onto the new id.
-        botCustomNames[name] = trimmed
-
-        do {
-            try await dashboard.rename(name, to: trimmed)
-        } catch {
-            return
-        }
-
-        move(&botMarks, from: name, to: trimmed)
-        move(&botSections, from: name, to: trimmed)
-        move(&botModels, from: name, to: trimmed)
-        move(&recentBotModels, from: name, to: trimmed)
-        move(&botNotifications, from: name, to: trimmed)
-        if let index = botOrder.firstIndex(of: name) { botOrder[index] = trimmed }
-        for index in botChannels.indices { botChannels[index].rename(bot: name, to: trimmed) }
-        botOrder.removeAll { $0 == name.lowercased() && $0 != trimmed }
-        botCustomNames.removeValue(forKey: name)
-
-        if let index = cachedBots.firstIndex(where: { $0.name == name }) {
-            cachedBots.remove(at: index)
-        }
-        for index in conversations.indices where conversations[index].botName == name {
-            conversations[index].botName = trimmed
-            conversations[index].title = trimmed
-        }
-        for index in conversations.indices {
-            for messageIndex in conversations[index].messages.indices
-            where conversations[index].messages[messageIndex].botName == name {
-                conversations[index].messages[messageIndex].botName = trimmed
-            }
-        }
-        persistConversations()
-    }
-
-    /// Carries one entry to a new key and leaves nothing behind at the old one.
-    private func move<Value>(
-        _ table: inout [String: Value], from old: String, to new: String
-    ) {
-        if let value = table.removeValue(forKey: old) {
-            table[new] = value
-        }
-        table.removeValue(forKey: old.lowercased())
     }
 
     func section(for bot: String) -> String? {
@@ -3533,51 +3613,89 @@ final class AppStore {
         }
     }
 
-    /// Create a real Hermes bot with a stable canonical profile id and a
-    /// separate presentation title, matching Hermes Desktop Bot Mode.
+    /// Create a Hermes agent through the shared engine. The visible name and
+    /// the profile id correspond; a taken name fails instead of minting `-2`.
     @discardableResult
     func createBot(
         displayName: String,
         description: String,
-        model: HermesClient.ModelOption? = nil
+        model: HermesClient.ModelOption? = nil,
+        soul: String? = nil,
+        reuseProfile: String? = nil
     ) async throws -> String {
-        let title = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let slug = Self.uniqueBotSlug(title, taken: takenBotSlugs())
-        guard !slug.isEmpty else {
-            throw HermesRPCClient.Failure(reason: "Give the bot a name with at least one letter or number.")
+        let spec = try AgentSpec.form(
+            title: displayName,
+            description: description,
+            soul: soul,
+            model: model,
+            reuseProfile: reuseProfile
+        )
+        let blocked = Set(takenBotSlugs().map { $0.lowercased() })
+        if blocked.contains(spec.profileID), reuseProfile != spec.profileID {
+            if retiredBotSlugs.contains(where: { $0.caseInsensitiveCompare(spec.profileID) == .orderedSame }) {
+                throw AgentOperationError.retired(
+                    "`\(spec.profileID)` belonged to an agent this phone deleted. Choose another name."
+                )
+            }
+            throw AgentOperationError.occupied(
+                "`\(spec.profileID)` already exists. The original agent was left unchanged."
+            )
+        }
+
+        do {
+            let result = try await dashboard.createAgent(spec)
+            if result.didCreateProfile, let slug = result.profileID, !slug.isEmpty {
+                if let index = cachedBots.firstIndex(where: { $0.name == slug }) {
+                    cachedBots[index].displayName = spec.title
+                } else {
+                    cachedBots.append(
+                        BotRow(
+                            name: slug, displayName: spec.title, detail: spec.description,
+                            model: spec.model, provider: spec.provider,
+                            skills: 0, isDefault: false, gatewayRunning: false, active: true
+                        )
+                    )
+                }
+            }
+            return try result.requireReady()
+        } catch let failure as DashboardClient.Failure {
+            switch failure {
+            case .http(404, _), .http(405, _), .notConfigured:
+                break
+            default:
+                throw failure
+            }
         }
 
         if let rpc = await dashboardRPC() {
             var payload: [String: Any] = [
-                "name": slug,
-                "description": description.trimmingCharacters(in: .whitespacesAndNewlines),
+                "name": spec.profileID,
+                "description": spec.description,
                 "share_auth": true,
                 "mirror_credentials": true,
             ]
-            if let model, let provider = model.provider, !provider.isEmpty {
-                payload["model"] = model.id
+            if let model = spec.model, let provider = spec.provider {
+                payload["model"] = model
                 payload["provider"] = provider
             }
             _ = try await rpc.call("profiles.create", JSONObject(payload))
-
-            // Title + created are Bot Mode presentation metadata, not profile
-            // identity. Always write the title: `my-research-bot` and “My
-            // Research Bot” should remain distinct concepts on every device.
-            try await mutateBotMetadata(slug) { meta in
+            try await mutateBotMetadata(spec.profileID) { meta in
                 var meta = meta
-                meta["title"] = title
+                meta["title"] = spec.title
                 meta["created"] = Date().timeIntervalSince1970 * 1000
                 return meta
             }
         } else {
-            try await dashboard.createBot(name: slug, description: description)
-            if let model, let provider = model.provider, !provider.isEmpty {
-                try await dashboard.setModel(slug, provider: provider, model: model.id)
+            try await dashboard.createBot(name: spec.profileID, description: spec.description)
+            if let model = spec.model, let provider = spec.provider {
+                try await dashboard.setModel(spec.profileID, provider: provider, model: model)
             }
-            // Old Hermes has nowhere to persist Bot Mode presentation fields.
-            botCustomNames[slug] = title
+            botCustomNames[spec.profileID] = spec.title
         }
-        return slug
+        if let soul = spec.soul, !soul.isEmpty {
+            try await setSoul(spec.profileID, soul)
+        }
+        return spec.profileID
     }
 
     nonisolated static func botSlug(_ value: String) -> String {

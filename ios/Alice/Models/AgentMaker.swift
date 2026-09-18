@@ -1,29 +1,37 @@
 import Foundation
 
-/// The agent that writes standing instructions for other agents.
+/// The agent that designs other agents.
 ///
-/// Hermes still knows it as `forja`. Alice shows **Agent Maker**. The slug is
-/// the wire identity; the display name is what a person reads.
+/// Identity is the stamped Hermes role `agent-maker`, not a fixed slug. Older
+/// installs still live at `forja`; Alice keeps finding them after a rename.
 enum AgentMaker {
-    static let botName = "forja"
+    static let role = "agent-maker"
+    static let legacyProfileID = "forja"
+    static let preferredProfileID = "agent-maker"
     static let displayName = "Agent Maker"
 
-    /// Hermes still stores the profile as `forja`. Alice shows Agent Maker
+    static func matches(profile: String, role: String? = nil) -> Bool {
+        if role == Self.role { return true }
+        return profile == legacyProfileID
+    }
+
+    /// Hermes may still store the profile as `forja`. Alice shows Agent Maker
     /// unless the person (or Hermes) already chose a different title.
-    static func displayIfNeeded(profile: String, shown: String) -> String {
-        guard profile == botName else { return shown }
+    static func displayIfNeeded(profile: String, shown: String, role: String? = nil) -> String {
+        guard matches(profile: profile, role: role) else { return shown }
         if shown.caseInsensitiveCompare("Forja") == .orderedSame
-            || shown.caseInsensitiveCompare(botName) == .orderedSame {
+            || shown.caseInsensitiveCompare(legacyProfileID) == .orderedSame
+            || shown.caseInsensitiveCompare(preferredProfileID) == .orderedSame {
             return displayName
         }
         return shown
     }
 
     /// What Agent Maker is asked, so it can shape an agent the person already made.
-    static func request(name: String, profile: String, brief: String) -> String {
+    static func request(name: String, profile: String, brief: String, jobID: String) -> String {
         let what = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         return """
-        Please write standing instructions for the Hermes profile `\(profile)` (“\(name)”). Do not create a second profile.
+        Please write standing instructions for the Hermes profile `\(profile)` (“\(name)”). Do not create a second profile. If you use agent_create, pass reuse_profile=\(profile) and job_id=\(jobID). Do not reuse a profile that belongs to another job.
 
         What they asked for:
         \(what)

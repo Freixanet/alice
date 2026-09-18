@@ -190,8 +190,11 @@ class NotesToolsTests(unittest.TestCase):
                 registered.append(kw)
 
         self.plugin.register(Ctx())
-        self.assertEqual([t["name"] for t in registered], [t[0] for t in self.plugin.NOTE_TOOLS])
-        for tool in registered:
+        notes = [t for t in registered if t["toolset"] == "notes"]
+        agents = [t for t in registered if t["toolset"] == "alice_agents"]
+        self.assertEqual([t["name"] for t in notes], [t[0] for t in self.plugin.NOTE_TOOLS])
+        self.assertEqual([t["name"] for t in agents], [t[0] for t in self.plugin.AGENT_TOOLS])
+        for tool in notes:
             with self.subTest(tool=tool["name"]):
                 self.assertEqual(tool["toolset"], "notes")
                 self.assertIs(tool["check_fn"], self.plugin._has_notes_store)
@@ -199,13 +202,19 @@ class NotesToolsTests(unittest.TestCase):
                 self.assertEqual(tool["schema"]["parameters"]["type"], "object")
                 for name in tool["schema"]["parameters"]["required"]:
                     self.assertIn(name, tool["schema"]["parameters"]["properties"])
+        for tool in agents:
+            with self.subTest(tool=tool["name"]):
+                self.assertEqual(tool["toolset"], "alice_agents")
+                self.assertIs(tool["check_fn"], self.plugin._is_agent_maker)
 
     def test_the_manifest_declares_the_tools_it_provides(self):
         import yaml
 
         manifest = yaml.safe_load((PLUGIN_INIT.parent / "plugin.yaml").read_text(encoding="utf-8"))
-        self.assertEqual(sorted(manifest["provides_tools"]),
-                         sorted(t[0] for t in self.plugin.NOTE_TOOLS))
+        self.assertEqual(
+            sorted(manifest["provides_tools"]),
+            sorted([t[0] for t in self.plugin.NOTE_TOOLS] + [t[0] for t in self.plugin.AGENT_TOOLS]),
+        )
 
     def test_each_handler_passes_its_arguments_through(self):
         """The registered handler is what the registry calls: ``handler(args)``."""
