@@ -51,10 +51,22 @@ enum AttachmentLoader {
         // Read nothing the app cannot afford to keep: attachment data is held
         // in the message and archived with the conversation, so a multi-hundred
         // MB pick would blow memory and the archive both.
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-        guard size <= Self.maxFileBytes else { return nil }
+        let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        guard size ?? 0 <= Self.maxFileBytes else { return nil }
 
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        let data: Data
+        if let size {
+            guard let read = try? Data(contentsOf: url) else { return nil }
+            data = read
+        } else {
+            // The provider gave no size; read with a cap so an oversized or
+            // growing file still stops at the limit.
+            guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+            defer { try? handle.close() }
+            guard let read = try? handle.read(upToCount: Self.maxFileBytes + 1),
+                  read.count <= Self.maxFileBytes else { return nil }
+            data = read
+        }
         let type = UTType(filenameExtension: url.pathExtension)
         let mime = type?.preferredMIMEType ?? "application/octet-stream"
 

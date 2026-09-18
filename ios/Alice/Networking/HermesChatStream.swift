@@ -644,8 +644,11 @@ extension HermesClient {
         if !heardSomething, !Task.isCancelled {
             // The hedge may still be in flight; wait on the same answer
             // rather than opening a third request.
-            if let text = await hedge.value
-                ?? (try? await completeWithoutStreaming(body, profile: profile)) {
+            var text = await hedge.value
+            if text == nil {
+                text = try? await completeWithoutStreaming(body, profile: profile)
+            }
+            if let text {
                 continuation.yield(.delta(text))
             }
         }
