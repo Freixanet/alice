@@ -1,0 +1,30 @@
+services:
+  cobalt:
+    image: ghcr.io/imputnet/cobalt:11
+    init: true
+    read_only: true
+    restart: unless-stopped
+    container_name: cobalt
+    ports:
+      - 9000:9000/tcp
+    environment:
+      # IP/nombre LAN del Mac para que los enlaces funcionen desde el iPhone.
+      # (Si cambia la IP del Mac, actualizar aqui y reiniciar el contenedor)
+      API_URL: "http://MacBook-Pro-de-Marcos.local:9000/"
+      # API_AUTH_REQUIRED: 1          # activa si expones fuera de localhost
+      # API_KEY_URL: "file:///keys.json"
+      DURATION_LIMIT: 10800           # 3h max por archivo
+      TUNNEL_LIFESPAN: 1800           # 30 min de validez del enlace de descarga
+    labels:
+      - com.centurylinklabs.watchtower.scope=cobalt
+    # volumes:
+    #   - ./keys.json:/keys.json:ro
+    #   - ./cookies.json:/cookies.json:ro
+
+  watchtower:
+    image: ghcr.io/containrrr/watchtower
+    restart: unless-stopped
+    container_name: cobalt-watchtower
+    command: --cleanup --scope cobalt --interval 900 --include-restarting
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
