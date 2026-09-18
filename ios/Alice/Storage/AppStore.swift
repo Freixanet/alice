@@ -6536,7 +6536,11 @@ final class AppStore {
                         } else if knownBotNames.contains(where: { $0.localizedCaseInsensitiveCompare(candidate) == .orderedSame }) {
                             invokedBot = candidate.lowercased()
                         } else {
-                            invokedBot = candidate
+                            // An unknown mention still routes to an agent, but
+                            // by its slug — "@My Bot" means profile `my-bot`,
+                            // not the display text verbatim.
+                            let slug = AgentProfileID.slugify(candidate)
+                            if !slug.isEmpty { invokedBot = slug }
                         }
                     }
                 } else if let channelBots = conversations[index].channelBots, !channelBots.isEmpty {

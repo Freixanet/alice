@@ -11,6 +11,11 @@ enum AttachmentLoader {
     /// is comfortably more than any vision model reads at.
     private static let maxEdge: CGFloat = 1024
 
+    /// Largest file the picker will read. Attachments live in memory and in
+    /// the conversation archive; only the first 50,000 UTF-8 characters of a
+    /// text file are ever sent anyway.
+    private static let maxFileBytes = 20 * 1024 * 1024
+
     static func image(from item: PhotosPickerItem) async -> Attachment? {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let source = UIImage(data: data)
@@ -42,6 +47,12 @@ enum AttachmentLoader {
         // sandbox; without this the read fails with a permission error.
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        // Read nothing the app cannot afford to keep: attachment data is held
+        // in the message and archived with the conversation, so a multi-hundred
+        // MB pick would blow memory and the archive both.
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        guard size <= Self.maxFileBytes else { return nil }
 
         guard let data = try? Data(contentsOf: url) else { return nil }
         let type = UTType(filenameExtension: url.pathExtension)

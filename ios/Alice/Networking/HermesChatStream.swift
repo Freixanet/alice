@@ -616,15 +616,15 @@ extension HermesClient {
         // stream gets three seconds; if it has produced nothing by then the
         // single request goes out alongside it, and whichever speaks first
         // wins while the other is cancelled.
-        var carriedSomething = false
-        let hedge = Task { [body] in
+        var heardSomething = false
+        var hedgeAnswered = false
+        let hedge = Task { [body] () -> String? in
             try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, !carriedSomething else { return }
-            if let text = try? await self.completeWithoutStreaming(body, profile: profile),
-               !carriedSomething {
-                carriedSomething = true
-                continuation.yield(.delta(text))
-            }
+            guard !Task.isCancelled, !heardSomething else { return nil }
+            let text = try? await self.completeWithoutStreaming(body, profile: profile)
+            guard !heardSomething else { return nil }
+            if text != nil { hedgeAnswered = true }
+            return text
         }
         defer { hedge.cancel() }
 
@@ -633,18 +633,19 @@ extension HermesClient {
             guard line.hasPrefix("data:") else { continue }
             let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
             if payload == "[DONE]" { break }
+            if hedgeAnswered { break }   // the hedge got there first
             guard let event = Self.decodeFrame(payload) else { continue }
-            if carriedSomething { break }   // the hedge got there first
-            carriedSomething = true
+            heardSomething = true
             hedge.cancel()
             continuation.yield(event)
             if case .failure = event { break }
         }
 
-        if !carriedSomething, !Task.isCancelled {
+        if !heardSomething, !Task.isCancelled {
             // The hedge may still be in flight; wait on the same answer
             // rather than opening a third request.
-            if let text = try await completeWithoutStreaming(body, profile: profile) {
+            if let text = await hedge.value
+                ?? (try? await completeWithoutStreaming(body, profile: profile)) {
                 continuation.yield(.delta(text))
             }
         }
