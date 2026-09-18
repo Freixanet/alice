@@ -1,12 +1,142 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "#\\(pr.number) \\(pr.title.isEmpty ? pr.branch : pr.title)": {
+    "#%lld %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "#\\(pr.number) \\(pr.title.isEmpty ? pr.branch : pr.title)"
+            "value": "#%lld %@"
+          }
+        }
+      }
+    },
+    "%@ asked it %@ ago. Its answer will appear here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ se lo preguntó hace %@. Su respuesta aparecerá aquí."
+          }
+        }
+      }
+    },
+    "%@ of %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ de %@"
+          }
+        }
+      }
+    },
+    "%@ of %@ used": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ de %@ usados"
+          }
+        }
+      }
+    },
+    "%@ · %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %@"
+          }
+        }
+      }
+    },
+    "%@ · %lld": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld"
+          }
+        }
+      }
+    },
+    "%@ ×%lld · %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ×%lld · %@"
+          }
+        }
+      }
+    },
+    "%@%": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@%"
+          }
+        }
+      }
+    },
+    "%@% used": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld% usado"
+          }
+        }
+      }
+    },
+    "%@%@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@%@"
+          }
+        }
+      }
+    },
+    "%lld": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        }
+      }
+    },
+    "%lld active agents · %lld active sessions": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld agentes activos · %lld sesiones activas"
+          }
+        }
+      }
+    },
+    "%lld files · %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld archivos · %@"
+          }
+        }
+      }
+    },
+    "%lld listed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld en la lista"
           }
         }
       }
@@ -21,12 +151,142 @@
         }
       }
     },
-    "+\\(file.added) −\\(file.removed)": {
+    "%lld more": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "+\\(file.added) −\\(file.removed)"
+            "value": "%lld más"
+          }
+        }
+      }
+    },
+    "%lld of %lld": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld de %lld"
+          }
+        }
+      }
+    },
+    "%lld of %lld channels configured.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld de %lld canales configurados."
+          }
+        }
+      }
+    },
+    "%lld prompts · %lld resources": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld prompts · %lld recursos"
+          }
+        }
+      }
+    },
+    "%lld seen since launch. Alice keeps working; these are what to add next.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld vistos desde el arranque. Alice sigue trabajando; estos son los siguientes que añadir."
+          }
+        }
+      }
+    },
+    "%lld sessions": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sesiones"
+          }
+        }
+      }
+    },
+    "%lld times": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld veces"
+          }
+        }
+      }
+    },
+    "%lld tok": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld tok"
+          }
+        }
+      }
+    },
+    "%lld unread": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sin leer"
+          }
+        }
+      }
+    },
+    "%lld · %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld · %@"
+          }
+        }
+      }
+    },
+    "%lld.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld."
+          }
+        }
+      }
+    },
+    "%lld. %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld. %@"
+          }
+        }
+      }
+    },
+    "%lld/%lld": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld/%lld"
+          }
+        }
+      }
+    },
+    "+%lld −%lld": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld −%lld"
           }
         }
       }
@@ -101,12 +361,12 @@
         }
       }
     },
-    "@\\(store.botCurrentName(for: bot))": {
+    "@%@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "@\\(store.botCurrentName(for: bot))"
+            "value": "@%@"
           }
         }
       }
@@ -901,22 +1161,22 @@
         }
       }
     },
-    "Are you sure you want to delete '\\(deletingBot.displayName)'? This cannot be undone.": {
+    "Are you sure you want to delete '%@'? The agents inside will become Unassigned.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "¿Seguro que quieres eliminar «\\(deletingBot.displayName)»? No se puede deshacer."
+            "value": "¿Seguro que quieres eliminar «%@»? Los agentes que contiene pasarán a Sin asignar."
           }
         }
       }
     },
-    "Are you sure you want to delete '\\(deletingSection)'? The agents inside will become Unassigned.": {
+    "Are you sure you want to delete '%@'? This cannot be undone.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "¿Seguro que quieres eliminar «\\(deletingSection)»? Los agentes que contiene pasarán a Sin asignar."
+            "value": "¿Seguro que quieres eliminar «%@»? No se puede deshacer."
           }
         }
       }
@@ -1001,12 +1261,12 @@
         }
       }
     },
-    "Authenticate \\(server.name)": {
+    "Authenticate %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Autenticar \\(server.name)"
+            "value": "Autenticar %@"
           }
         }
       }
@@ -1291,12 +1551,12 @@
         }
       }
     },
-    "Branches (\\(branches.count))": {
+    "Branches (%lld)": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ramas (\\(branches.count))"
+            "value": "Ramas (%lld)"
           }
         }
       }
@@ -1421,12 +1681,12 @@
         }
       }
     },
-    "Catalog · \\(filteredCatalog.count)": {
+    "Catalog · %lld": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Catálogo · \\(filteredCatalog.count)"
+            "value": "Catálogo · %lld"
           }
         }
       }
@@ -1831,6 +2091,16 @@
         }
       }
     },
+    "Configure %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configurar %@"
+          }
+        }
+      }
+    },
     "Configure MoA presets": {
       "localizations": {
         "es": {
@@ -1841,22 +2111,12 @@
         }
       }
     },
-    "Configure \\(platform.name)": {
+    "Configure a home channel for %@ in Hermes before using it for scheduled delivery.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Configurar \\(platform.name)"
-          }
-        }
-      }
-    },
-    "Configure a home channel for \\(target.name) in Hermes before using it for scheduled delivery.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Configura un canal principal para \\(target.name) en Hermes antes de usarlo para entregas programadas."
+            "value": "Configura un canal principal para %@ en Hermes antes de usarlo para entregas programadas."
           }
         }
       }
@@ -1891,12 +2151,12 @@
         }
       }
     },
-    "Connect \\(oauth.name)": {
+    "Connect %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conectar \\(oauth.name)"
+            "value": "Conectar %@"
           }
         }
       }
@@ -2291,12 +2551,12 @@
         }
       }
     },
-    "Credentials: \\(snapshot.envPath)": {
+    "Credentials: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Credenciales: \\(snapshot.envPath)"
+            "value": "Credenciales: %@"
           }
         }
       }
@@ -2361,12 +2621,12 @@
         }
       }
     },
-    "Current: \\(redacted)": {
+    "Current: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Actual: \\(redacted)"
+            "value": "Actual: %@"
           }
         }
       }
@@ -2881,22 +3141,22 @@
         }
       }
     },
+    "Disconnect %@?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Desconectar %@?"
+          }
+        }
+      }
+    },
     "Disconnect OAuth": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Desconectar OAuth"
-          }
-        }
-      }
-    },
-    "Disconnect \\(destination.name)?": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "¿Desconectar \\(destination.name)?"
           }
         }
       }
@@ -2981,12 +3241,12 @@
         }
       }
     },
-    "Download \\(item.displayName) (\\(item.sizeLabel)) to this Hermes host?": {
+    "Download %@ (%@) to this Hermes host?": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "¿Descargar \\(item.displayName) (\\(item.sizeLabel)) en este host de Hermes?"
+            "value": "¿Descargar %@ (%@) en este host de Hermes?"
           }
         }
       }
@@ -3211,22 +3471,22 @@
         }
       }
     },
+    "Every %lld %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada %lld %@"
+          }
+        }
+      }
+    },
     "Every Hermes has at least a default profile.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Todo Hermes tiene al menos un perfil predeterminado."
-          }
-        }
-      }
-    },
-    "Every \\(intervalValue) \\(unitLabel)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cada \\(intervalValue) \\(unitLabel)"
           }
         }
       }
@@ -3281,12 +3541,12 @@
         }
       }
     },
-    "Expires \\(expiryText(session.expiresAt))": {
+    "Expires %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Caduca \\(expiryText(session.expiresAt))"
+            "value": "Caduca %@"
           }
         }
       }
@@ -3401,12 +3661,12 @@
         }
       }
     },
-    "Filter: \\(selectedFilter.rawValue)": {
+    "Filter: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Filtro: \\(selectedFilter.rawValue)"
+            "value": "Filtro: %@"
           }
         }
       }
@@ -3511,12 +3771,12 @@
         }
       }
     },
-    "From \\(store.botCurrentName(for: handle))": {
+    "From %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "De \\(store.botCurrentName(for: handle))"
+            "value": "De %@"
           }
         }
       }
@@ -3891,12 +4151,12 @@
         }
       }
     },
-    "Hermes says: \\(said)": {
+    "Hermes says: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hermes dice: \\(said)"
+            "value": "Hermes dice: %@"
           }
         }
       }
@@ -3921,12 +4181,12 @@
         }
       }
     },
-    "Hermes will download \\(file.label) (\\(bytes(file.totalBytes))) into its managed models directory.": {
+    "Hermes will download %@ (%@) into its managed models directory.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hermes descargará \\(file.label) (\\(bytes(file.totalBytes))) en su directorio gestionado de modelos."
+            "value": "Hermes descargará %@ (%@) en su directorio gestionado de modelos."
           }
         }
       }
@@ -3951,12 +4211,12 @@
         }
       }
     },
-    "Hermes will install the runtime if needed, download \\(item.displayName) (\\(item.sizeLabel)), start the server and make it the host default for new chats.": {
+    "Hermes will install the runtime if needed, download %@ (%@), start the server and make it the host default for new chats.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hermes instalará el runtime si hace falta, descargará \\(item.displayName) (\\(item.sizeLabel)), iniciará el servidor y lo hará predeterminado del host para chats nuevos."
+            "value": "Hermes instalará el runtime si hace falta, descargará %@ (%@), iniciará el servidor y lo hará predeterminado del host para chats nuevos."
           }
         }
       }
@@ -3991,12 +4251,12 @@
         }
       }
     },
-    "Hermes will remove every GGUF part and private asset belonging to \\(model.id). This cannot be undone without downloading or sideloading it again.": {
+    "Hermes will remove every GGUF part and private asset belonging to %@. This cannot be undone without downloading or sideloading it again.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hermes eliminará todas las partes GGUF y los recursos privados de \\(model.id). No se puede deshacer sin descargarlo o cargarlo de nuevo."
+            "value": "Hermes eliminará todas las partes GGUF y los recursos privados de %@. No se puede deshacer sin descargarlo o cargarlo de nuevo."
           }
         }
       }
@@ -4031,12 +4291,12 @@
         }
       }
     },
-    "Hermes will stop scheduling “\\(routine.name)”. Its existing run history is not rewritten.": {
+    "Hermes will stop scheduling “%@”. Its existing run history is not rewritten.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hermes dejará de programar «\\(routine.name)». Su historial de ejecuciones existente no se reescribe."
+            "value": "Hermes dejará de programar «%@». Su historial de ejecuciones existente no se reescribe."
           }
         }
       }
@@ -4051,12 +4311,12 @@
         }
       }
     },
-    "Hermes wrote the archive to \\(exported)": {
+    "Hermes wrote the archive to %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hermes escribió el archivo en \\(exported)"
+            "value": "Hermes escribió el archivo en %@"
           }
         }
       }
@@ -4071,12 +4331,12 @@
         }
       }
     },
-    "Hermes' own accounting for this profile over the last \\(report.days) days.": {
+    "Hermes' own accounting for this profile over the last %lld days.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "La contabilidad propia de Hermes para este perfil en los últimos \\(report.days) días."
+            "value": "La contabilidad propia de Hermes para este perfil en los últimos %lld días."
           }
         }
       }
@@ -4141,12 +4401,12 @@
         }
       }
     },
-    "Home: \\(home.name.isEmpty ? home.chatID : home.name)": {
+    "Home: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Inicio: \\(home.name.isEmpty ? home.chatID : home.name)"
+            "value": "Inicio: %@"
           }
         }
       }
@@ -4311,12 +4571,12 @@
         }
       }
     },
-    "In: \\(match.conversation.title)": {
+    "In: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "En: \\(match.conversation.title)"
+            "value": "En: %@"
           }
         }
       }
@@ -4361,6 +4621,16 @@
         }
       }
     },
+    "Install %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalar %@"
+          }
+        }
+      }
+    },
     "Install & use": {
       "localizations": {
         "es": {
@@ -4377,16 +4647,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Instalar plugin"
-          }
-        }
-      }
-    },
-    "Install \\(entry.name)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Instalar \\(entry.name)"
           }
         }
       }
@@ -4971,12 +5231,12 @@
         }
       }
     },
-    "Locked root: \\(locked)": {
+    "Locked root: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Raíz bloqueada: \\(locked)"
+            "value": "Raíz bloqueada: %@"
           }
         }
       }
@@ -5171,12 +5431,12 @@
         }
       }
     },
-    "Matcher: \\(m)": {
+    "Matcher: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Matcher: \\(m)"
+            "value": "Matcher: %@"
           }
         }
       }
@@ -5271,12 +5531,12 @@
         }
       }
     },
-    "Mode: \\(status.gatewayMode)": {
+    "Mode: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Modo: \\(status.gatewayMode)"
+            "value": "Modo: %@"
           }
         }
       }
@@ -5331,12 +5591,12 @@
         }
       }
     },
-    "Model: \\(currentModel)": {
+    "Model: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Modelo: \\(currentModel)"
+            "value": "Modelo: %@"
           }
         }
       }
@@ -5371,12 +5631,12 @@
         }
       }
     },
-    "Models: \\(validation.models.prefix(8).joined(separator: \", \"))": {
+    "Models: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Models: \\(validation.models.prefix(8).joined(separator: \", \"))"
+            "value": "Models: %@"
           }
         }
       }
@@ -5721,22 +5981,22 @@
         }
       }
     },
+    "Next %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Siguiente %@"
+          }
+        }
+      }
+    },
     "Next Question": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Pregunta siguiente"
-          }
-        }
-      }
-    },
-    "Next \\(next.formatted(.relative(presentation: .named)))": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Siguiente \\(next.formatted(.relative(presentation: .named)))"
           }
         }
       }
@@ -5821,12 +6081,12 @@
         }
       }
     },
-    "No models match “\\(query)”": {
+    "No models match “%@”": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ningún modelo coincide con «\\(query)»"
+            "value": "Ningún modelo coincide con «%@»"
           }
         }
       }
@@ -6281,12 +6541,12 @@
         }
       }
     },
-    "Opens \\(RichLinks.domain(link.url))": {
+    "Opens %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abre \\(RichLinks.domain(link.url))"
+            "value": "Abre %@"
           }
         }
       }
@@ -6391,12 +6651,12 @@
         }
       }
     },
-    "PR #\\(current.number)": {
+    "PR #%lld": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "PR #\\(current.number)"
+            "value": "PR #%lld"
           }
         }
       }
@@ -6901,12 +7161,12 @@
         }
       }
     },
-    "Quickstart \\(item.displayName)": {
+    "Quickstart %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Inicio rápido \\(item.displayName)"
+            "value": "Inicio rápido %@"
           }
         }
       }
@@ -7051,12 +7311,12 @@
         }
       }
     },
-    "Reference \\(index + 1)": {
+    "Reference %lld": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Referencia \\(index + 1)"
+            "value": "Referencia %lld"
           }
         }
       }
@@ -7191,22 +7451,22 @@
         }
       }
     },
+    "Remove %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar %@"
+          }
+        }
+      }
+    },
     "Remove Folder": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Quitar carpeta"
-          }
-        }
-      }
-    },
-    "Remove \\(attachment.name)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quitar \\(attachment.name)"
           }
         }
       }
@@ -7231,22 +7491,12 @@
         }
       }
     },
-    "Remove from \\(channel.name)": {
+    "Remove from %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quitar de \\(channel.name)"
-          }
-        }
-      }
-    },
-    "Remove from \\(current)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quitar de \\(current)"
+            "value": "Quitar de %@"
           }
         }
       }
@@ -7331,12 +7581,12 @@
         }
       }
     },
-    "Repository pull requests (\\(prs.pullRequests.count))": {
+    "Repository pull requests (%lld)": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pull requests del repositorio (\\(prs.pullRequests.count))"
+            "value": "Pull requests del repositorio (%lld)"
           }
         }
       }
@@ -7381,22 +7631,22 @@
         }
       }
     },
-    "Requested \\(Int(age)) min ago": {
+    "Requested %lld min ago": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Solicitado hace \\(Int(age)) min"
+            "value": "Solicitado hace %lld min"
           }
         }
       }
     },
-    "Require \\(Biometrics.name)": {
+    "Require %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Requerir \\(Biometrics.name)"
+            "value": "Requerir %@"
           }
         }
       }
@@ -7411,12 +7661,12 @@
         }
       }
     },
-    "Required environment: \\(setup.requiredEnvironment.joined(separator: \", \"))": {
+    "Required environment: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Entorno requerido: \\(setup.requiredEnvironment.joined(separator: \", \"))"
+            "value": "Entorno requerido: %@"
           }
         }
       }
@@ -7431,12 +7681,12 @@
         }
       }
     },
-    "Requires llama.cpp \\(minimum) or newer.": {
+    "Requires llama.cpp %@ or newer.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Requiere llama.cpp \\(minimum) o más reciente."
+            "value": "Requiere llama.cpp %@ o más reciente."
           }
         }
       }
@@ -7621,12 +7871,12 @@
         }
       }
     },
-    "Review every \\(Int(h)) hours": {
+    "Review every %lld hours": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Revisar cada \\(Int(h)) horas"
+            "value": "Revisar cada %lld horas"
           }
         }
       }
@@ -7701,12 +7951,12 @@
         }
       }
     },
-    "Routine: \\(name)": {
+    "Routine: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rutina: \\(name)"
+            "value": "Rutina: %@"
           }
         }
       }
@@ -7901,22 +8151,22 @@
         }
       }
     },
+    "Search %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar en %@"
+          }
+        }
+      }
+    },
     "Search Hugging Face": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Buscar en Hugging Face"
-          }
-        }
-      }
-    },
-    "Search \\(source.title.lowercased())": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Buscar en \\(source.title.lowercased())"
           }
         }
       }
@@ -8141,22 +8391,22 @@
         }
       }
     },
-    "Sends “\\(button.reply)”": {
+    "Sends “%@”": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Envía «\\(button.reply)»"
+            "value": "Envía «%@»"
           }
         }
       }
     },
-    "Sent \\(when)": {
+    "Sent %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enviado \\(when)"
+            "value": "Enviado %@"
           }
         }
       }
@@ -8331,22 +8581,22 @@
         }
       }
     },
+    "Show %lld earlier messages": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar %lld mensajes anteriores"
+          }
+        }
+      }
+    },
     "Show Gesture Tips Again": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Mostrar los gestos de nuevo"
-          }
-        }
-      }
-    },
-    "Show \\(min(hiddenCount, Self.page)) earlier messages": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mostrar \\(min(hiddenCount, Self.page)) mensajes anteriores"
           }
         }
       }
@@ -8591,12 +8841,12 @@
         }
       }
     },
-    "Starting \\(action.name)…": {
+    "Starting %@…": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Iniciando \\(action.name)…"
+            "value": "Iniciando %@…"
           }
         }
       }
@@ -8721,12 +8971,12 @@
         }
       }
     },
-    "Subscriptions · \\(filtered.count)": {
+    "Subscriptions · %lld": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Suscripciones · \\(filtered.count)"
+            "value": "Suscripciones · %lld"
           }
         }
       }
@@ -8741,12 +8991,12 @@
         }
       }
     },
-    "Suggestions: \\(field.options.joined(separator: \", \"))": {
+    "Suggestions: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sugerencias: \\(field.options.joined(separator: \", \"))"
+            "value": "Sugerencias: %@"
           }
         }
       }
@@ -8801,12 +9051,12 @@
         }
       }
     },
-    "Switch this worktree to `\\(branch.name)`. Git will refuse if local changes cannot be preserved safely.": {
+    "Switch this worktree to `%@`. Git will refuse if local changes cannot be preserved safely.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cambia este worktree a `\\(branch.name)`. Git lo rechazará si los cambios locales no pueden preservarse de forma segura."
+            "value": "Cambia este worktree a `%@`. Git lo rechazará si los cambios locales no pueden preservarse de forma segura."
           }
         }
       }
@@ -8881,12 +9131,12 @@
         }
       }
     },
-    "Team in \\(channel.name)": {
+    "Team in %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Equipo en \\(channel.name)"
+            "value": "Equipo en %@"
           }
         }
       }
@@ -9041,12 +9291,12 @@
         }
       }
     },
-    "The whole conversation with \\(store.botCurrentName(for: bot)) is deleted and can’t be recovered. Its instructions, memory, skills and routines stay.": {
+    "The whole conversation with %@ is deleted and can’t be recovered. Its instructions, memory, skills and routines stay.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toda la conversación con \\(store.botCurrentName(for: bot)) se elimina y no puede recuperarse. Sus instrucciones, memoria, skills y rutinas se conservan."
+            "value": "Toda la conversación con %@ se elimina y no puede recuperarse. Sus instrucciones, memoria, skills y rutinas se conservan."
           }
         }
       }
@@ -9391,12 +9641,12 @@
         }
       }
     },
-    "Tools · \\(tools.count)": {
+    "Tools · %lld": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Herramientas · \\(tools.count)"
+            "value": "Herramientas · %lld"
           }
         }
       }
@@ -9531,12 +9781,12 @@
         }
       }
     },
-    "Unlock with \\(Biometrics.name)": {
+    "Unlock with %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Desbloquear con \\(Biometrics.name)"
+            "value": "Desbloquear con %@"
           }
         }
       }
@@ -9831,12 +10081,12 @@
         }
       }
     },
-    "Wants to \\(explanation.action)": {
+    "Wants to %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quiere \\(explanation.action)"
+            "value": "Quiere %@"
           }
         }
       }
@@ -10051,12 +10301,12 @@
         }
       }
     },
-    "You can also schedule in chat: mention a bot, then ask naturally — for example, \\(chatExample). The request runs as that bot, so Hermes creates the routine in the correct profile.": {
+    "You can also schedule in chat: mention a bot, then ask naturally — for example, %@. The request runs as that bot, so Hermes creates the routine in the correct profile.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "También puedes programar en el chat: menciona un bot y luego pídelo con naturalidad — por ejemplo, \\(chatExample). La solicitud se ejecuta como ese bot, así que Hermes crea la rutina en el perfil correcto."
+            "value": "También puedes programar en el chat: menciona un bot y luego pídelo con naturalidad — por ejemplo, %@. La solicitud se ejecuta como ese bot, así que Hermes crea la rutina en el perfil correcto."
           }
         }
       }
@@ -10077,376 +10327,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hablas con Alice. Una cosa cada vez."
-          }
-        }
-      }
-    },
-    "\\(ByteCountFormatter.string(fromByteCount: resource.used, countStyle: .memory)) of \\(ByteCountFormatter.string(fromByteCount: resource.total, countStyle: .memory)) used": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(ByteCountFormatter.string(fromByteCount: resource.used, countStyle: .memory)) de \\(ByteCountFormatter.string(fromByteCount: resource.total, countStyle: .memory)) usados"
-          }
-        }
-      }
-    },
-    "\\(Text(deal.title).bold())\\(Text(detail))": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(Text(deal.title).bold())\\(Text(detail))"
-          }
-        }
-      }
-    },
-    "\\(backend.label) · \\(backend.status)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(backend.label) · \\(backend.status)"
-          }
-        }
-      }
-    },
-    "\\(badge)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(badge)"
-          }
-        }
-      }
-    },
-    "\\(badge) unread": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(badge) sin leer"
-          }
-        }
-      }
-    },
-    "\\(bytes(job.doneBytes)) of \\(bytes(total))": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(bytes(job.doneBytes)) de \\(bytes(total))"
-          }
-        }
-      }
-    },
-    "\\(chat.messages.count) messages · read only": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(chat.messages.count) mensajes · solo lectura"
-          }
-        }
-      }
-    },
-    "\\(checkpoints.sessions.count) · \\(ByteCountFormatter.string(fromByteCount: checkpoints.totalBytes, countStyle: .file))": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(checkpoints.sessions.count) · \\(ByteCountFormatter.string(fromByteCount: checkpoints.totalBytes, countStyle: .file))"
-          }
-        }
-      }
-    },
-    "\\(cluster.category) · \\(cluster.count)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(cluster.category) · \\(cluster.count)"
-          }
-        }
-      }
-    },
-    "\\(configured) of \\(snapshot.platforms.count) channels configured.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(configured) de \\(snapshot.platforms.count) canales configurados."
-          }
-        }
-      }
-    },
-    "\\(count)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(count)"
-          }
-        }
-      }
-    },
-    "\\(file.mimeType) · \\(ByteCountFormatter.string(fromByteCount: file.byteSize, countStyle: .file))": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(file.mimeType) · \\(ByteCountFormatter.string(fromByteCount: file.byteSize, countStyle: .file))"
-          }
-        }
-      }
-    },
-    "\\(hidden.count)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(hidden.count)"
-          }
-        }
-      }
-    },
-    "\\(index + 1) of \\(questions.count)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(index + 1) de \\(questions.count)"
-          }
-        }
-      }
-    },
-    "\\(item.files) files · \\(ByteCountFormatter.string(fromByteCount: item.bytes, countStyle: .file))": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(item.files) archivos · \\(ByteCountFormatter.string(fromByteCount: item.bytes, countStyle: .file))"
-          }
-        }
-      }
-    },
-    "\\(model.sessions) sessions": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(model.sessions) sesiones"
-          }
-        }
-      }
-    },
-    "\\(modelCount) listed": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(modelCount) en la lista"
-          }
-        }
-      }
-    },
-    "\\(name) asked it \\(Text(delegation.sentAt, style: .relative)) ago. Its answer will appear here.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(name) se lo preguntó hace \\(Text(delegation.sentAt, style: .relative)). Su respuesta aparecerá aquí."
-          }
-        }
-      }
-    },
-    "\\(notes.count - 6) more": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(notes.count - 6) más"
-          }
-        }
-      }
-    },
-    "\\(number)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(number)"
-          }
-        }
-      }
-    },
-    "\\(number).": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(number)."
-          }
-        }
-      }
-    },
-    "\\(number). \\(option)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(number). \\(option)"
-          }
-        }
-      }
-    },
-    "\\(pr.branch) · \\(pr.state)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(pr.branch) · \\(pr.state)"
-          }
-        }
-      }
-    },
-    "\\(provider.provider) · \\(provider.entries.count)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(provider.provider) · \\(provider.entries.count)"
-          }
-        }
-      }
-    },
-    "\\(resource.percent.formatted(.number.precision(.fractionLength(1))))%": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(resource.percent.formatted(.number.precision(.fractionLength(1))))%"
-          }
-        }
-      }
-    },
-    "\\(result.prompts) prompts · \\(result.resources) resources": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(result.prompts) prompts · \\(result.resources) recursos"
-          }
-        }
-      }
-    },
-    "\\(run.tokens) tok": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(run.tokens) tok"
-          }
-        }
-      }
-    },
-    "\\(sighting.type) ×\\(sighting.count) · \\(sighting.keys.joined(separator: \", \"))": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(sighting.type) ×\\(sighting.count) · \\(sighting.keys.joined(separator: \", \"))"
-          }
-        }
-      }
-    },
-    "\\(sightings.count) seen since launch. Alice keeps working; these are what to add next.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(sightings.count) vistos desde el arranque. Alice sigue trabajando; estos son los siguientes que añadir."
-          }
-        }
-      }
-    },
-    "\\(stacked.count) times": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(stacked.count) veces"
-          }
-        }
-      }
-    },
-    "\\(status.activeAgents) active agents · \\(status.activeSessions) active sessions": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(status.activeAgents) agentes activos · \\(status.activeSessions) sesiones activas"
-          }
-        }
-      }
-    },
-    "\\(store.notes(in: .folder(folder.id)).count)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(store.notes(in: .folder(folder.id)).count)"
-          }
-        }
-      }
-    },
-    "\\(store.notes(in: scope).count)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(store.notes(in: scope).count)"
-          }
-        }
-      }
-    },
-    "\\(target.used)/\\(target.limit)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(target.used)/\\(target.limit)"
-          }
-        }
-      }
-    },
-    "\\(unassignedBots.count)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(unassignedBots.count)"
-          }
-        }
-      }
-    },
-    "\\(used.formatted(.number.precision(.fractionLength(1))))% used": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(used.formatted(.number.precision(.fractionLength(1))))% usado"
-          }
-        }
-      }
-    },
-    "\\(user.platform) · \\(user.userID)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\\(user.platform) · \\(user.userID)"
           }
         }
       }
@@ -10495,12 +10375,12 @@
         }
       }
     },
-    "default: \\(defaultBranch)": {
+    "default: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "predeterminada: \\(defaultBranch)"
+            "value": "predeterminada: %@"
           }
         }
       }
@@ -10694,12 +10574,12 @@
         }
       }
     },
-    "v\\(plugin.version)": {
+    "v%@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "v\\(plugin.version)"
+            "value": "v%@"
           }
         }
       }
@@ -10714,52 +10594,52 @@
         }
       }
     },
-    "· \\(model.calls) calls": {
+    "· %lld calls": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "· \\(model.calls) llamadas"
+            "value": "· %lld llamadas"
           }
         }
       }
     },
-    "· used \\(node.useCount)×": {
+    "· used %lld×": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "· usado \\(node.useCount)×"
+            "value": "· usado %lld×"
           }
         }
       }
     },
-    "×\\(stacked.count)": {
+    "×%lld": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "×\\(stacked.count)"
+            "value": "×%lld"
           }
         }
       }
     },
-    "“\\(team.title)” and its messages will be removed from this iPhone. The agents are not affected.": {
+    "“%@” and its messages will be removed from this iPhone. The agents are not affected.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "«\\(team.title)» y sus mensajes se eliminarán de este iPhone. Los agentes no se ven afectados."
+            "value": "«%@» y sus mensajes se eliminarán de este iPhone. Los agentes no se ven afectados."
           }
         }
       }
     },
-    "↑ \\(status.ahead)  ↓ \\(status.behind)": {
+    "↑ %lld  ↓ %lld": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "↑ \\(status.ahead)  ↓ \\(status.behind)"
+            "value": "↑ %lld  ↓ %lld"
           }
         }
       }
