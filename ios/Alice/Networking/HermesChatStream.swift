@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Synchronization
 
 extension HermesClient {
     struct Turn: Sendable {
@@ -616,14 +617,16 @@ extension HermesClient {
         // stream gets three seconds; if it has produced nothing by then the
         // single request goes out alongside it, and whichever speaks first
         // wins while the other is cancelled.
-        var heardSomething = false
-        var hedgeAnswered = false
+        // Shared hedge state lives behind a Mutex: the Task captures it by
+        // reference, which is allowed because Mutex is Sendable — a captured
+        // `var` is not.
+        let hedgeState = Mutex((heard: false, answered: false))
         let hedge = Task { [body] () -> String? in
             try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, !heardSomething else { return nil }
+            guard !Task.isCancelled, !hedgeState.withLock({ $0.heard }) else { return nil }
             let text = try? await self.completeWithoutStreaming(body, profile: profile)
-            guard !heardSomething else { return nil }
-            if text != nil { hedgeAnswered = true }
+            guard !hedgeState.withLock({ $0.heard }) else { return nil }
+            if text != nil { hedgeState.withLock { $0.answered = true } }
             return text
         }
         defer { hedge.cancel() }
@@ -633,15 +636,15 @@ extension HermesClient {
             guard line.hasPrefix("data:") else { continue }
             let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
             if payload == "[DONE]" { break }
-            if hedgeAnswered { break }   // the hedge got there first
+            if hedgeState.withLock({ $0.answered }) { break }   // the hedge got there first
             guard let event = Self.decodeFrame(payload) else { continue }
-            heardSomething = true
+            hedgeState.withLock { $0.heard = true }
             hedge.cancel()
             continuation.yield(event)
             if case .failure = event { break }
         }
 
-        if !heardSomething, !Task.isCancelled {
+        if !hedgeState.withLock({ $0.heard }), !Task.isCancelled {
             // The hedge may still be in flight; wait on the same answer
             // rather than opening a third request.
             var text = await hedge.value
