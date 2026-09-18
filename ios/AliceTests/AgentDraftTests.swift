@@ -15,6 +15,12 @@ final class AgentDraftTests: XCTestCase {
             AgentDraft.name(from: "I want an agent that summarizes markets every morning"),
             "Markets Morning"
         )
+        // A lead-in turns the verb third-person; the name is still what the
+        // agent is about, not the verb.
+        XCTAssertEqual(
+            AgentDraft.name(from: "An agent that watches hotel prices in Blanes"),
+            "Hotel Prices"
+        )
         XCTAssertEqual(AgentDraft.name(from: "  Radar\nsecond line"), "Radar")
         XCTAssertEqual(AgentDraft.name(from: "Radar IA"), "Radar IA")
         XCTAssertEqual(AgentDraft.name(from: "   "), "")

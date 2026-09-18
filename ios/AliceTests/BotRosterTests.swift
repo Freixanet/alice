@@ -40,6 +40,8 @@ final class BotRosterTests: XCTestCase {
         XCTAssertEqual(bots.first?.aliceRole, "agent-maker")
         XCTAssertTrue(AgentMaker.matches(profile: bots[0].name, role: bots[0].aliceRole))
     }
+
+    func testRosterExcludesTheMainProfile() {
         let roster = AppStore.botRoster(from: [
             row("default", isDefault: true, displayName: "Alice"),
             row("radar-ia"),

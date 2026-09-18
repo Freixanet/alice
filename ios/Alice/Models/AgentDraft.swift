@@ -101,9 +101,23 @@ enum AgentDraft {
         return text
     }
 
+    /// Whether a word is the opening verb, in any form a brief writes it in.
+    ///
+    /// A lead-in turns the verb third-person — "I want an agent that
+    /// **summarizes** markets every morning" — and matching only the bare form
+    /// left the verb in the name: "Summarizes Markets" for an agent that is
+    /// about markets in the morning.
+    private static func isLeadingVerb(_ word: String) -> Bool {
+        let lower = word.lowercased()
+        if verbs.contains(lower) { return true }
+        if lower.hasSuffix("es"), verbs.contains(String(lower.dropLast(2))) { return true }
+        if lower.hasSuffix("s"), verbs.contains(String(lower.dropLast())) { return true }
+        return false
+    }
+
     private static func stripLeadingVerb(_ text: String) -> String {
         var words = text.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard let first = words.first, verbs.contains(first.lowercased()) else { return text }
+        guard let first = words.first, isLeadingVerb(first) else { return text }
         words.removeFirst()
         if words.first?.lowercased() == "me" { words.removeFirst() }
         return words.joined(separator: " ")
