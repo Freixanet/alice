@@ -39,6 +39,9 @@ jobs:
       - run: npm run check:static
       - run: npm run security:check
       - run: npm run deps:check
+      # bundles:check reads .vercel/output/static/assets, so it needs the build.
+      - run: npm run build
+      - run: npm run bundles:check
       - name: Test Hermes plugin and Mac notifier
         run: |
           set -euo pipefail
