@@ -29,6 +29,9 @@ STATE = Path.home() / 'Library' / 'Application Support' / 'AliceNotifier' / 'sta
 BARK_PUSH = 'https://api.day.app/push'
 KEYCHAIN_SERVICE = 'alice-bark'
 POLL_SECONDS = 5
+# How often to re-ask the Keychain while no key is cached (the common case is
+# "key set once at install", so don't spawn `security` on every poll).
+KEYCHAIN_RETRY_SECONDS = 60
 # Chats a person is in. `cron` sessions are a routine's own working transcript;
 # its result reaches the person as a delivery row in the bot's chat instead.
 REPLY_SOURCES = {'tui', 'cli', 'desktop', 'api_server'}
@@ -249,8 +252,16 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     state = load_state(STATE)
     warned = False
+    key = None
+    key_checked_at = 0.0
     while True:
-        key = keychain_key()
+        # A found key is cached for the process lifetime; only re-ask the
+        # Keychain while it is missing, at a slower cadence, so a key added
+        # later is still picked up without spawning `security` every poll.
+        now = time.monotonic()
+        if key is None and now - key_checked_at >= KEYCHAIN_RETRY_SECONDS:
+            key = keychain_key()
+            key_checked_at = now
         if key is None and not warned:
             log.warning('No Bark key in the Keychain (service %s); watching without sending.', KEYCHAIN_SERVICE)
             warned = True
