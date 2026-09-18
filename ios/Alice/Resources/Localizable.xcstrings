@@ -71,22 +71,22 @@
         }
       }
     },
-    "%@%": {
+    "%@%%": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@%"
+            "value": "%@%%"
           }
         }
       }
     },
-    "%@% used": {
+    "%@%% used": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld% usado"
+            "value": "%@%% usado"
           }
         }
       }
