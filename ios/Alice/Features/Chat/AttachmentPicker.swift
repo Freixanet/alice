@@ -55,7 +55,7 @@ enum AttachmentLoader {
         guard size ?? 0 <= Self.maxFileBytes else { return nil }
 
         let data: Data
-        if let size {
+        if size != nil {
             guard let read = try? Data(contentsOf: url) else { return nil }
             data = read
         } else {
