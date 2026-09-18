@@ -168,6 +168,17 @@ struct BotTurnWatch: Sendable {
 
     var needsTranscriptCorrelation: Bool { waitingForQueuedOrigin }
 
+    /// Questions cannot depend on the app-wide observer having started.
+    /// A queued turn may still need an answer for the task ahead of it.
+    func request(
+        from frame: HermesRPCEvent, session: LiveEvents.SessionIdentity
+    ) -> AliceEvent? {
+        guard frame.sessionID == liveSessionID,
+              frame.type == "clarify.request" || frame.type == "approval.request"
+        else { return nil }
+        return LiveEvents.event(from: frame, session: session)
+    }
+
     /// The canonical transcript now contains the exact persisted user row for
     /// this queued submission. From this point, frames on the live session are
     /// ours and can stream normally.

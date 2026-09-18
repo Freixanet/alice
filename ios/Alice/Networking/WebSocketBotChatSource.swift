@@ -438,15 +438,35 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     func turnState(
         profile: String?, storedSessionID: String, liveSessionID: String?
     ) async throws -> BotTurnState {
+        let snapshot = try await turnSnapshot(
+            profile: profile, storedSessionID: storedSessionID, liveSessionID: liveSessionID
+        )
+        guard let state = BotTurnState(snapshot) else {
+            throw HermesRPCClient.Failure(reason: "Hermes returned no live session id.")
+        }
+        return state
+    }
+
+    /// Retains the open requests as well as the running flag. A resumed turn
+    /// can be blocked on a question whose original frame the phone missed.
+    func turnSnapshot(
+        profile: String?, storedSessionID: String, liveSessionID: String?
+    ) async throws -> JSONObject {
         if let liveSessionID, !liveSessionID.isEmpty,
            let active = try? await rpc.call("session.activate", JSONObject([
                "session_id": liveSessionID,
                "omit_messages": true,
            ])),
-           let state = BotTurnState(active) {
-            return state
+           BotTurnState(active) != nil {
+            return active
         }
-        return try await resumedState(profile: profile, storedSessionID: storedSessionID)
+        let resumed = try await resume(
+            profile: profile, target: storedSessionID, omitMessages: true
+        )
+        guard BotTurnState(resumed) != nil else {
+            throw HermesRPCClient.Failure(reason: "Hermes resumed the chat without a live session id.")
+        }
+        return resumed
     }
 
     private func resumedState(

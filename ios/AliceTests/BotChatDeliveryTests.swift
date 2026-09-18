@@ -16,6 +16,7 @@ final class BotChatDeliveryTests: XCTestCase {
         struct Call: Equatable, Sendable {
             let method: String
             let sessionID: String?
+            let profile: String?
             let omitMessages: Bool
         }
 
@@ -33,6 +34,7 @@ final class BotChatDeliveryTests: XCTestCase {
             calls.append(Call(
                 method: method,
                 sessionID: params["session_id"] as? String,
+                profile: params["profile"] as? String,
                 omitMessages: (params["omit_messages"] as? Bool) == true
             ))
             if let left = failures[method], left > 0 {
@@ -148,6 +150,100 @@ final class BotChatDeliveryTests: XCTestCase {
     }
 
     // MARK: - Asking about a quiet turn
+
+    private var requestIdentity: LiveEvents.SessionIdentity {
+        .init(profile: "inbox", sessionID: "stored-inbox", sessionKey: "stored-inbox",
+              conversationID: "home", label: "Inbox")
+    }
+
+    func testLiveQuestionAppearsWithoutTheGlobalObserver() throws {
+        let watch = BotTurnWatch(submission: .init(liveSessionID: "live-1", disposition: .started), now: Self.at(0))
+        let frame = try XCTUnwrap(GatewayServerRequests.event(
+            id: "srq-question", method: "clarify",
+            params: ["session_id": "live-1", "question": "Create folders?", "choices": ["Yes", "No"]]
+        ))
+        let request = try XCTUnwrap(watch.request(from: frame, session: requestIdentity))
+        XCTAssertEqual(request.questions.first?.text, "Create folders?")
+        XCTAssertEqual(request.reference.sessionID, "stored-inbox")
+        XCTAssertEqual(request.reference.conversationID, "home")
+        XCTAssertEqual(request.profile, "inbox")
+    }
+
+    func testQueuedTurnStillShowsTheQuestionBlockingItsAgent() throws {
+        var watch = BotTurnWatch(submission: .init(liveSessionID: "live-1", disposition: .queued), now: Self.at(0))
+        let frame = try XCTUnwrap(GatewayServerRequests.event(
+            id: "srq-batch", method: "clarify", params: ["session_id": "live-1", "questions": [
+                ["qid": "q1", "question": "Which folders?", "choices": ["Health", "Shopping"], "multi_select": true]
+            ]]
+        ))
+        XCTAssertEqual(watch.receive(frame, now: Self.at(1)), .ignore)
+        let request = try XCTUnwrap(watch.request(from: frame, session: requestIdentity))
+        XCTAssertEqual(request.questions.first?.id, "q1")
+        XCTAssertEqual(request.questions.first?.allowsMultiple, true)
+    }
+
+    func testAnotherSessionsQuestionIsNotClaimed() {
+        let watch = BotTurnWatch(submission: .init(liveSessionID: "live-1", disposition: .started), now: Self.at(0))
+        for sessionID in ["live-other", ""] {
+            XCTAssertNil(watch.request(from: .init(
+                type: "clarify.request", sessionID: sessionID,
+                payload: ["request_id": "srq-other", "question": "Other task?"]
+            ), session: requestIdentity))
+        }
+    }
+
+    func testLiveApprovalIsRecordedWithItsActualRequestID() throws {
+        let watch = BotTurnWatch(submission: .init(liveSessionID: "live-1", disposition: .started), now: Self.at(0))
+        let frame = try XCTUnwrap(GatewayServerRequests.event(
+            id: "srq-approval", method: "approval", params: ["session_id": "live-1",
+                "request_id": "queue-1", "description": "Run a command", "choices": ["once", "deny"]]
+        ))
+        let request = try XCTUnwrap(watch.request(from: frame, session: requestIdentity))
+        XCTAssertEqual(request.reference.requestID, "srq-approval")
+        XCTAssertEqual(request.reference.conversationID, "home")
+        XCTAssertEqual(request.reference.transport, .socket)
+    }
+
+    func testQuestionUsesTheRuntimeRecoveredByTheWatch() throws {
+        var watch = BotTurnWatch(submission: .init(liveSessionID: "live-old", disposition: .started), now: Self.at(0))
+        _ = watch.checked(.success(.init(liveSessionID: "live-new", running: true)), now: Self.at(30))
+        let frame = try XCTUnwrap(GatewayServerRequests.event(
+            id: "srq-new", method: "clarify", params: ["session_id": "live-new", "question": "Continue?"]
+        ))
+        XCTAssertEqual(watch.request(from: frame, session: requestIdentity)?.reference.sessionKey, "stored-inbox")
+    }
+
+    func testQuietTurnSnapshotRetainsTheMissedQuestion() async throws {
+        let rpc = FakeRPC(["session.activate": ["session_id": "live-1", "running": true, "open_requests": [
+            ["id": "srq-missed", "method": "clarify", "params": ["session_id": "live-1", "question": "Create folders?"]]
+        ]]])
+        let snapshot = try await WebSocketBotChatSource(rpc: rpc).turnSnapshot(
+            profile: "inbox", storedSessionID: "stored-inbox", liveSessionID: "live-1"
+        )
+        let requests = LiveEvents.pendingEvents(from: snapshot, session: requestIdentity)
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.first?.reference.requestID, "srq-missed")
+        XCTAssertEqual(requests.first?.reference.conversationID, "home")
+        XCTAssertEqual(BotTurnState(snapshot)?.running, true)
+        let calls = await rpc.calls
+        XCTAssertEqual(calls.map(\.method), ["session.activate"])
+        XCTAssertEqual(calls.first?.omitMessages, true)
+    }
+
+    func testResumedSnapshotRetainsLegacyQuestionAndExactStoredSession() async throws {
+        let rpc = FakeRPC(["session.resume": ["session_id": "live-new", "running": true,
+            "pending_clarify": ["request_id": "old-question", "question": "Continue?"]]])
+        let snapshot = try await WebSocketBotChatSource(rpc: rpc).turnSnapshot(
+            profile: "inbox", storedSessionID: "stored-inbox", liveSessionID: "live-gone"
+        )
+        XCTAssertEqual(LiveEvents.pendingEvents(from: snapshot, session: requestIdentity).first?.questions.first?.text, "Continue?")
+        XCTAssertEqual(BotTurnState(snapshot)?.liveSessionID, "live-new")
+        let calls = await rpc.calls
+        XCTAssertEqual(calls.map(\.method), ["session.activate", "session.resume"])
+        XCTAssertEqual(calls.last?.sessionID, "stored-inbox")
+        XCTAssertEqual(calls.last?.profile, "inbox")
+        XCTAssertEqual(calls.last?.omitMessages, true)
+    }
 
     func testAQuietTurnIsAskedAboutWithoutItsTranscript() async throws {
         let rpc = FakeRPC(["session.activate": ["session_id": "live-1", "running": true]])

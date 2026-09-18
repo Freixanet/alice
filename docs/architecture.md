@@ -30,6 +30,10 @@ Agent mentions and team turns always use the agent's canonical dashboard session
 including during reconnect. Sending probes the saved dashboard connection when
 needed; if it remains unavailable, the turn fails visibly. The main-profile
 gateway cannot impersonate an agent or substitute for its tools and instructions.
+The per-turn watcher also records its agent's live questions and approvals,
+independently of the app-wide observer. Quiet-turn checks retain open requests
+from the activation/resume snapshot so a missed question can become visible
+without another prompt or a new session.
 
 The web supports an authenticated server proxy and a direct browser transport.
 Keep operation semantics and profile scoping equivalent. Local machine access

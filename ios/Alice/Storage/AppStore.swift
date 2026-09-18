@@ -5751,6 +5751,10 @@ final class AppStore {
                 if ended || activeBotTurns[conversationID]?.token != token { return }
             }
             var watch = BotTurnWatch(submission: submission, now: Date())
+            let requestIdentity = LiveEvents.SessionIdentity(
+                profile: profile, sessionID: storedSessionID, sessionKey: storedSessionID,
+                conversationID: conversationID, label: label
+            )
             // Said while it is true: a busy bot has not started on this yet.
             let waitingNote = Self.deliveryNote(for: submission.disposition, label: label)
             setDeliveryNote(waitingNote, on: replyID, conversationID: conversationID)
@@ -5768,6 +5772,9 @@ final class AppStore {
                         continue
                     }
                     let step = watch.receive(event, now: Date())
+                    if let request = watch.request(from: event, session: requestIdentity) {
+                        observe(request)
+                    }
                     if step == .ignore { continue }
                     if step == .finish,
                        let failure = Self.botTerminalFailure(from: event) {
@@ -5881,15 +5888,22 @@ final class AppStore {
                     let state: Result<BotTurnState, Error>
                     let liveSessionID = watch.liveSessionID
                     do {
-                        state = .success(try await BotTurnWatch.answer(
+                        let snapshot = try await BotTurnWatch.answer(
                             within: BotTurnWatch.checkDeadline
                         ) {
-                            try await source.turnState(
+                            try await source.turnSnapshot(
                                 profile: profile,
                                 storedSessionID: storedSessionID,
                                 liveSessionID: liveSessionID
                             )
-                        })
+                        }
+                        guard let current = BotTurnState(snapshot) else {
+                            throw HermesRPCClient.Failure(reason: "Hermes returned no live session id.")
+                        }
+                        for request in LiveEvents.pendingEvents(from: snapshot, session: requestIdentity) {
+                            observe(request)
+                        }
+                        state = .success(current)
                     } catch {
                         // A socket that died without saying so leaves the call
                         // hanging. Drop it, so the next check reconnects.
