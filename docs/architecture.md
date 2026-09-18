@@ -22,6 +22,11 @@ conversation retains its explicit profile and canonical session; navigating to
 another chat must not retarget an in-flight turn. `HomeChatSession`,
 `BotChatSession`, `HermesRPC` and `GatewayServerRequests` hold these contracts.
 
+An `@agent` reply retains its own profile and session on the message. Pending
+questions and approvals are recovered from that session, even when there is no
+separate agent chat, and belong to the chat that sent the mention. Recovery
+deduplicates by profile and session without changing the home chat's identity.
+
 The web supports an authenticated server proxy and a direct browser transport.
 Keep operation semantics and profile scoping equivalent. Local machine access
 belongs only to the configured, verified owner. See [security](../SECURITY.md).

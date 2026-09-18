@@ -2176,6 +2176,25 @@ final class AppStore {
     /// telling someone about work they cannot reach is worse than silence.
     private func sessionIdentity(for sessionID: String) -> LiveEvents.SessionIdentity? {
         guard !sessionID.isEmpty else { return nil }
+        let mentions = pendingRequestSessions.filter(\.isMention)
+        let liveMention = liveBotSessions[sessionID].flatMap { conversationID in
+            guard let turn = activeBotTurns[conversationID],
+                  let profile = turn.mentionProfile, let storedID = turn.storedSessionID
+            else { return nil as PendingRequestSessions.Target? }
+            return mentions.first {
+                $0.conversationID == conversationID && $0.address.profile == profile
+                    && $0.address.sessionID == storedID
+            }
+        }
+        let mention = mentions.first { $0.address.sessionID == sessionID }
+            ?? liveMention
+        if let mention {
+            return LiveEvents.SessionIdentity(
+                profile: mention.address.profile, sessionID: mention.address.sessionID,
+                sessionKey: mention.address.sessionID, conversationID: mention.conversationID,
+                label: mention.address.profile.map { botCurrentName(for: $0) } ?? "Alice"
+            )
+        }
         let conversation: Conversation?
         // A bot's chat, or Alice's own chat held as a session: both can ask.
         let holdsSession = { (chat: Conversation) in
@@ -2300,25 +2319,34 @@ final class AppStore {
         }
     }
 
-    /// What every mirrored bot chat is currently waiting on.
+    private var pendingRequestSessions: [PendingRequestSessions.Target] {
+        let waiting = activity.filter {
+            $0.isActionable && $0.reference.transport == .socket
+                && $0.reference.belongs(to: currentInstallationFingerprint)
+        }
+        let sessions = Set(waiting.compactMap { event -> PendingRequestSessions.Address? in
+            guard let sessionID = event.reference.sessionKey ?? event.reference.sessionID else { return nil }
+            return PendingRequestSessions.Address(profile: event.profile, sessionID: sessionID)
+        })
+        return PendingRequestSessions.targets(
+            in: conversations, waitingConversations: Set(waiting.compactMap(\.reference.conversationID)),
+            waitingSessions: sessions
+        )
+    }
+
+    /// What mirrored chats and outstanding mentions are currently waiting on.
     ///
-    /// One `session.resume` per canonical bot chat, once per sync — not once
-    /// per row drawn. `session.resume` is the call that returns
-    /// `pending_approval` and `pending_clarify` alongside the transcript, so
-    /// this costs nothing beyond what refreshing a chat already does.
+    /// One `session.resume` per distinct profile/session, once per sync.
+    /// Mentions retain the sending chat as their owner; idle home chats are
+    /// not opened. The same snapshot recovers approvals and clarify requests.
     private func pendingRequests() async -> (events: [AliceEvent], checked: Set<String>) {
         guard let source = await botChatSource() else { return ([], []) }
         var events: [AliceEvent] = []
         var checked: Set<String> = []
 
-        // Alice's own chats only while one could be waiting: a question blocks
-        // a turn, and resuming every chat she ever had would open a session
-        // per conversation on each sync.
-        for conversation in conversations where conversation.isCanonicalBotChat
-            || (conversation.isHomeSessionChat && (Self.awaitsReply(conversation)
-                || activity.contains { $0.isActionable && $0.reference.conversationID == conversation.id })) {
-            guard let sessionID = conversation.hermesSessionID else { continue }
-            let profile = conversation.routedBotName
+        for target in pendingRequestSessions {
+            let sessionID = target.address.sessionID
+            let profile = target.address.profile
             guard let resumed = try? await source.resume(
                 profile: profile, target: sessionID
             ) else { continue }
@@ -2327,7 +2355,7 @@ final class AppStore {
             let identity = LiveEvents.SessionIdentity(
                 profile: profile, sessionID: sessionID,
                 sessionKey: (resumed["session_key"] as? String) ?? sessionID,
-                conversationID: conversation.id,
+                conversationID: target.conversationID,
                 label: profile.map { botCurrentName(for: $0) } ?? "Alice"
             )
             events += LiveEvents.pendingEvents(from: resumed, session: identity)
