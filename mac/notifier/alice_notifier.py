@@ -253,7 +253,9 @@ def main():
     state = load_state(STATE)
     warned = False
     key = None
-    key_checked_at = 0.0
+    # -inf so the first pass always checks: monotonic() starts at boot, and a
+    # 0 baseline could defer the first Keychain read by the retry interval.
+    key_checked_at = float('-inf')
     while True:
         # A found key is cached for the process lifetime; only re-ask the
         # Keychain while it is missing, at a slower cadence, so a key added
