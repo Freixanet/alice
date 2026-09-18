@@ -2625,39 +2625,55 @@ final class AppStore {
         guard let chat = conversations.first(where: { $0.id == conversationID }) else {
             return []
         }
-        // The agents this chat is waiting on by name. A turn sent with `@name`
-        // runs in that agent's own session, so its question comes back under
-        // that profile and that session — never under this conversation.
-        let awaited = Set(chat.messages.compactMap { message -> String? in
-            guard message.pending || message.awaitingRemote else { return nil }
-            return message.mentionProfile
+        // A mention is identified by both profile and durable Hermes session.
+        // Matching only by profile lets an older unresolved question from the
+        // same agent jump into a newer turn in another session.
+        let awaited = Set(chat.messages.compactMap { message -> PendingRequestSessions.Address? in
+            guard message.pending || message.awaitingRemote,
+                  let profile = message.mentionProfile, !profile.isEmpty,
+                  let sessionID = message.mentionSessionID, !sessionID.isEmpty
+            else { return nil }
+            return PendingRequestSessions.Address(profile: profile, sessionID: sessionID)
         })
         return activity.filter { event in
             Self.claimsQuestions(
                 event, conversationID: conversationID,
-                routedBot: chat.routedBotName, awaitedProfiles: awaited
+                routedBot: chat.routedBotName, routedSessionID: chat.hermesSessionID,
+                awaitedSessions: awaited
             )
         }
     }
 
     /// Whether a chat is where a question should be asked.
     ///
-    /// Three ways, and the third is the one a mention needs: the question
-    /// belongs to this conversation, or to the bot whose chat this is, or to
-    /// an agent this chat has an unanswered turn with. Without it, a `@bot`
-    /// turn sent from Alice's chat left its question in the bot's own chat,
-    /// and the reader — sitting in front of the chat they typed it in — was
-    /// shown "Thinking…" while the agent waited on them. The agent was not
-    /// slow and the app was not stuck: the question had been asked somewhere
-    /// nobody was looking.
+    /// A direct conversation id wins. Otherwise a bot chat or `@bot` mention
+    /// must match the exact Hermes session whenever both sides know it. This
+    /// keeps a previous turn's still-live clarify card from being presented as
+    /// the answer to a newly submitted turn merely because both use Inbox (or
+    /// any other same-profile agent).
     nonisolated static func claimsQuestions(
         _ event: AliceEvent, conversationID: String, routedBot: String?,
-        awaitedProfiles: Set<String>
+        routedSessionID: String?, awaitedSessions: Set<PendingRequestSessions.Address>
     ) -> Bool {
         guard event.isActionable, !event.questions.isEmpty else { return false }
         if event.reference.conversationID == conversationID { return true }
         guard let profile = event.profile else { return false }
-        return profile == routedBot || awaitedProfiles.contains(profile)
+
+        let eventSessionID = event.reference.sessionID ?? event.reference.sessionKey
+        if profile == routedBot {
+            guard let routedSessionID, let eventSessionID else { return true }
+            if eventSessionID == routedSessionID { return true }
+        }
+
+        guard let eventSessionID else {
+            // Legacy records may predate persisted session identity. Preserve
+            // their old profile fallback only while this chat is actively
+            // waiting on that profile.
+            return awaitedSessions.contains { $0.profile == profile }
+        }
+        return awaitedSessions.contains(
+            PendingRequestSessions.Address(profile: profile, sessionID: eventSessionID)
+        )
     }
 
     /// Answers one clarify question Hermes is blocked on.
