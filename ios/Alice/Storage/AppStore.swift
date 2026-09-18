@@ -287,6 +287,11 @@ final class AppStore {
         }
     }
 
+    /// First-hop fallback chain per profile, from GET `/api/config`. Not
+    /// persisted: Hermes is the source of truth, and `BotRow` archives must
+    /// not grow a new Codable field.
+    var cachedBotFallbacks: [String: [BotFallbackEntry]] = [:]
+
     /// A profile model was saved, but one or more routines or its live chat
     /// have not caught up yet. Persist the old model too: without it, a retry
     /// after relaunch cannot tell a deliberate pin from one that should move
@@ -1178,6 +1183,7 @@ final class AppStore {
         move(&botModels, from: old, to: new)
         move(&recentBotModels, from: old, to: new)
         move(&botNotifications, from: old, to: new)
+        move(&cachedBotFallbacks, from: old, to: new)
         if let index = botOrder.firstIndex(of: old) { botOrder[index] = new }
         botOrder.removeAll { $0 == old.lowercased() && $0 != new }
         for index in botChannels.indices { botChannels[index].rename(bot: old, to: new) }
@@ -1809,6 +1815,54 @@ final class AppStore {
         // bot, or the picker shows one model while the bot runs another.
         pendingBotModelSyncs[bot.name] = transition
         return await completeBotModelSync(transition, botName: bot.name)
+    }
+
+    /// The catalogue option for a bot's first fallback hop, when Hermes has one.
+    func botFallbackOption(for bot: BotRow) -> HermesClient.ModelOption? {
+        guard let first = cachedBotFallbacks[bot.name]?.first else { return nil }
+        if let exact = models.first(where: { $0.id == first.model && $0.provider == first.provider }) {
+            return exact
+        }
+        return first.option
+    }
+
+    @discardableResult
+    func refreshBotFallback(_ profile: String) async throws -> [BotFallbackEntry] {
+        let chain = try await dashboard.fallbackProviders(profile: profile)
+        cachedBotFallbacks[profile] = chain
+        return chain
+    }
+
+    /// Persist the first fallback hop on the Hermes profile. Clearing sends
+    /// an empty `fallback_providers` list so routines stop billing a leftover
+    /// Codex (or similar) chain. Extra hops after the first stay when a new
+    /// first hop is chosen.
+    func setBotFallback(
+        _ bot: BotRow, to option: HermesClient.ModelOption?
+    ) async throws {
+        if let option {
+            guard option.provider?.isEmpty == false else {
+                throw HermesRPCClient.Failure(
+                    reason: "Hermes did not identify the provider for this model."
+                )
+            }
+        }
+        let current = try await {
+            if let cached = cachedBotFallbacks[bot.name] { return cached }
+            return try await dashboard.fallbackProviders(profile: bot.name)
+        }()
+        guard BotFallbackChain.isChange(option, from: current) else {
+            cachedBotFallbacks[bot.name] = current
+            return
+        }
+        let next = BotFallbackChain.replacingFirst(
+            current, with: option.flatMap(BotFallbackEntry.from(option:))
+        )
+        try await dashboard.setFallbackProviders(next, profile: bot.name)
+        cachedBotFallbacks[bot.name] = next
+        if let option {
+            rememberBotModel(id: option.id, provider: option.provider, for: bot.name)
+        }
     }
 
     private func completeBotModelSync(
@@ -3689,6 +3743,7 @@ final class AppStore {
         displayName: String,
         description: String,
         model: HermesClient.ModelOption? = nil,
+        fallback: HermesClient.ModelOption? = nil,
         soul: String? = nil,
         reuseProfile: String? = nil
     ) async throws -> String {
@@ -3697,6 +3752,7 @@ final class AppStore {
             description: description,
             soul: soul,
             model: model,
+            fallback: fallback,
             reuseProfile: reuseProfile
         )
         let blocked = Set(takenBotSlugs().map { $0.lowercased() })
@@ -3724,6 +3780,9 @@ final class AppStore {
                             skills: 0, isDefault: false, gatewayRunning: false, active: true
                         )
                     )
+                }
+                if let fallback = spec.fallback {
+                    cachedBotFallbacks[slug] = fallback
                 }
             }
             return try result.requireReady()
@@ -3760,6 +3819,10 @@ final class AppStore {
                 try await dashboard.setModel(spec.profileID, provider: provider, model: model)
             }
             botCustomNames[spec.profileID] = spec.title
+        }
+        if let fallback = spec.fallback {
+            try await dashboard.setFallbackProviders(fallback, profile: spec.profileID)
+            cachedBotFallbacks[spec.profileID] = fallback
         }
         if let soul = spec.soul, !soul.isEmpty {
             try await setSoul(spec.profileID, soul)
@@ -3837,6 +3900,9 @@ final class AppStore {
             if let option = botModelOption(for: bot), let provider = option.provider {
                 try await dashboard.setModel(newName, provider: provider, model: option.id)
             }
+            let chain = try await dashboard.fallbackProviders(profile: bot.name)
+            try await dashboard.setFallbackProviders(chain, profile: newName)
+            cachedBotFallbacks[newName] = chain
             let originalSoul = try await soul(bot.name).text
             if !originalSoul.isEmpty { try await setSoul(newName, originalSoul) }
             botCustomNames[newName] = "\(baseTitle(for: bot)) (copy)"
@@ -3905,6 +3971,7 @@ final class AppStore {
         botModels.removeValue(forKey: name)
         botModels.removeValue(forKey: name.lowercased())
         recentBotModels.removeValue(forKey: name)
+        cachedBotFallbacks.removeValue(forKey: name)
         botNotifications.removeValue(forKey: name)
         botCustomNames.removeValue(forKey: name)
         hiddenBots.remove(name)

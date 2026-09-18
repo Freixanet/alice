@@ -32,8 +32,39 @@ final class AgentCreationTests: XCTestCase {
         XCTAssertEqual(spec.profileID, "resumen-de-mercados")
         XCTAssertNil(spec.tools)
         XCTAssertNil(spec.model)
+        XCTAssertNil(spec.fallback)
+        XCTAssertNil(spec.body["fallback"])
         XCTAssertEqual(spec.source, "form")
         XCTAssertNotNil(spec.soul)
+    }
+
+    func testFormSpecKeepsAChosenFallbackWithItsProvider() throws {
+        let spec = try AgentSpec.form(
+            title: "Radar IA",
+            description: "News.",
+            fallback: HermesClient.ModelOption(
+                id: "muse-spark-1.3-contributor-free",
+                label: "Muse Spark",
+                provider: "opencode-free",
+                providerName: nil
+            )
+        )
+        XCTAssertEqual(spec.fallback?.first?.provider, "opencode-free")
+        XCTAssertEqual(spec.fallback?.first?.model, "muse-spark-1.3-contributor-free")
+        let rows = spec.body["fallback"] as? [[String: Any]]
+        XCTAssertEqual(rows?.count, 1)
+        XCTAssertEqual(rows?.first?["provider"] as? String, "opencode-free")
+        XCTAssertEqual(rows?.first?["model"] as? String, "muse-spark-1.3-contributor-free")
+    }
+
+    func testFormSpecRejectsAFallbackWithoutAProvider() {
+        XCTAssertThrowsError(try AgentSpec.form(
+            title: "Radar IA",
+            description: "News.",
+            fallback: HermesClient.ModelOption(
+                id: "gpt-5.6-luna", label: "Luna", provider: nil, providerName: nil
+            )
+        ))
     }
 
     func testOccupiedAndFailedResultsAreNotSuccess() throws {

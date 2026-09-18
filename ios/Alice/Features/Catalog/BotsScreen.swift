@@ -2022,6 +2022,7 @@ struct BotDetail: View {
     @State private var name = ""
     @State private var detail = ""
     @State private var choosingModel = false
+    @State private var choosingFallback = false
     @State private var selectedSection = ""
     @State private var notifications = false
     @Environment(Notifier.self) private var notifier
@@ -2220,18 +2221,30 @@ struct BotDetail: View {
                 .listRowBackground(Palette.card(scheme))
             }
 
-            Section("Configuration") {
+            Section {
                 Button { choosingModel = true } label: {
                     HStack {
                         Text("Model").foregroundStyle(.primary)
                         Spacer(minLength: 12)
-                        Text(
-                            store.botModelOption(for: liveBot)?.label
-                                ?? liveBot.model.map(HermesClient.prettify)
-                                ?? "Not configured"
-                        )
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        Text(modelCaption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Palette.card(scheme))
+
+                Button { choosingFallback = true } label: {
+                    HStack {
+                        Text("Fallback").foregroundStyle(.primary)
+                        Spacer(minLength: 12)
+                        Text(fallbackCaption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.tertiary)
@@ -2274,6 +2287,10 @@ struct BotDetail: View {
                     "Gateway", value: bot.gatewayRunning ? "Running" : "Shared / idle"
                 )
                 .listRowBackground(Palette.card(scheme))
+            } header: {
+                Text("Configuration")
+            } footer: {
+                Text("The fallback is used when this model is unavailable or at its limit.")
             }
 
             Section {
@@ -2381,6 +2398,10 @@ struct BotDetail: View {
             ModelPicker(bot: liveBot)
                 .preferredColorScheme(store.theme.colorScheme)
         }
+        .sheet(isPresented: $choosingFallback) {
+            ModelPicker(bot: liveBot, selectsFallback: true)
+                .preferredColorScheme(store.theme.colorScheme)
+        }
         .sheet(isPresented: $addingRoutine) {
             RoutineEditorSheet(
                 profiles: [(bot.name, store.botCurrentName(for: bot))]
@@ -2428,6 +2449,7 @@ struct BotDetail: View {
                 store.setBotNotifications(bot.name, enabled: false)
             }
             setupCommand = try? await store.profileSetupCommand(bot.name)
+            _ = try? await store.refreshBotFallback(bot.name)
             routines = await .resolving(
                 { try await store.routines(for: bot.name) },
                 describe: describeBotError
@@ -2505,6 +2527,25 @@ struct BotDetail: View {
     /// opened with, and goes stale the moment a model is saved.
     private var liveBot: BotRow {
         store.cachedBots.first { $0.name == bot.name } ?? bot
+    }
+
+    private var modelCaption: String {
+        store.botModelOption(for: liveBot)?.label
+            ?? liveBot.model.map(HermesClient.prettify)
+            ?? "Not configured"
+    }
+
+    private var fallbackCaption: String {
+        if let option = store.botFallbackOption(for: liveBot) {
+            return option.label
+        }
+        if let first = store.cachedBotFallbacks[liveBot.name]?.first {
+            return HermesClient.prettify(first.model)
+        }
+        if store.cachedBotFallbacks[liveBot.name] != nil {
+            return "None"
+        }
+        return "…"
     }
 
     /// Whether a model picked for a bot changes what Hermes has pinned.
@@ -2661,9 +2702,11 @@ private struct NewBotSheet: View {
     @State private var name = ""
     @State private var detail = ""
     @State private var selectedModel: HermesClient.ModelOption?
+    @State private var selectedFallback: HermesClient.ModelOption?
     @State private var selectedChannel = ""
     @State private var selectedSection = ""
     @State private var choosingModel = false
+    @State private var choosingFallback = false
     @State private var mark = BotMark(colour: 0, shape: 0)
     @State private var busy = false
     @State private var progress = "Creating agent…"
@@ -2742,7 +2785,7 @@ private struct NewBotSheet: View {
                     dismissKeyboard()
                 }
 
-                Section("Model") {
+                Section {
                     // The same model list as an agent's settings, picked here and
                     // applied when the agent is made.
                     Button {
@@ -2761,6 +2804,27 @@ private struct NewBotSheet: View {
                         }
                     }
                     .listRowBackground(Palette.card(scheme))
+
+                    Button {
+                        dismissKeyboard()
+                        choosingFallback = true
+                    } label: {
+                        HStack {
+                            Text("Fallback").foregroundStyle(.primary)
+                            Spacer(minLength: 12)
+                            Text(selectedFallback?.label ?? "None")
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                } header: {
+                    Text("Model")
+                } footer: {
+                    Text("The fallback is used when this model is unavailable or at its limit.")
                 }
 
                 if let failure {
@@ -2817,6 +2881,15 @@ private struct NewBotSheet: View {
                 ModelPicker(chosen: selectedModel) { selectedModel = $0 }
                     .preferredColorScheme(store.theme.colorScheme)
             }
+            .sheet(isPresented: $choosingFallback) {
+                ModelPicker(
+                    chosen: selectedFallback,
+                    selectsFallback: true,
+                    onChoose: { selectedFallback = $0 },
+                    onClear: { selectedFallback = nil }
+                )
+                    .preferredColorScheme(store.theme.colorScheme)
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: {
@@ -2860,6 +2933,7 @@ private struct NewBotSheet: View {
             do {
                 let slug = try await store.createBot(
                     displayName: trimmed, description: brief, model: selectedModel,
+                    fallback: selectedFallback,
                     soul: brief.isEmpty ? nil : AgentDraft.soul(from: brief)
                 )
                 store.botMarks[slug] = mark

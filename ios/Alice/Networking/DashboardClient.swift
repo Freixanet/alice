@@ -2292,6 +2292,26 @@ extension DashboardClient {
         Self.hermesConfiguration(from: try await get("api/config?profile=\(Self.queryValue(profile))"))
     }
 
+    /// A profile's effective fallback chain from GET `/api/config?profile=`.
+    /// `GET /api/profiles` does not include it.
+    func fallbackProviders(profile: String) async throws -> [BotFallbackEntry] {
+        Self.fallbackProviders(from: try await get("api/config?profile=\(Self.queryValue(profile))"))
+    }
+
+    static func fallbackProviders(from object: [String: Any]) -> [BotFallbackEntry] {
+        BotFallbackChain.parse(from: object)
+    }
+
+    /// Writes `fallback_providers` (and clears leftover `fallback_model`) on
+    /// that profile. An empty list is a real clear: Hermes replaces lists on
+    /// PUT rather than merging them.
+    func setFallbackProviders(_ entries: [BotFallbackEntry], profile: String) async throws {
+        _ = try await send(
+            "PUT", "api/config?profile=\(Self.queryValue(profile))",
+            BotFallbackChain.putBody(entries)
+        )
+    }
+
     static func hermesConfiguration(from object: [String: Any]) -> HermesConfiguration {
         let approvals = object["approvals"] as? [String: Any] ?? [:]
         let agent = object["agent"] as? [String: Any] ?? [:]
