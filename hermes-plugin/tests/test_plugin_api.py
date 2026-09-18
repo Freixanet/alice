@@ -353,9 +353,29 @@ class PluginAPITests(unittest.TestCase):
                         "to": "Radar IA",
                     })
                     self.assertEqual(renamed.status_code, 200, renamed.text)
-                    self.assertEqual(renamed.json()["to_id"], "radar-ia", renamed.text)
-                    self.assertTrue((home / "profiles" / "radar-ia").is_dir())
-                    self.assertFalse((home / "profiles" / "resumen-de-mercados").exists())
+                    body = renamed.json()
+                    self.assertEqual(body["to_id"], "radar-ia", body)
+                    self.assertEqual(body["status"], "failed", body)
+                    self.assertIn("registry_home", (body.get("error") or "").lower())
+                    self.assertTrue((home / "profiles" / "resumen-de-mercados").is_dir())
+                    self.assertFalse((home / "profiles" / "radar-ia").exists())
+                    traversal = self.client.get("/api/plugins/alice/agents/jobs/../etc/passwd")
+                    self.assertIn(traversal.status_code, {400, 404, 422})
+                    encoded = self.client.get("/api/plugins/alice/agents/jobs/%2e%2e%2fetc%2fpasswd")
+                    self.assertIn(encoded.status_code, {400, 404, 422})
+                    missing = self.client.get("/api/plugins/alice/agents/jobs/job-missing")
+                    self.assertEqual(missing.status_code, 404)
+                    rejected = self.client.post("/api/plugins/alice/agents", json={
+                        "title": "Intruso",
+                        "description": "No.",
+                        "soul": soul,
+                        "job_id": "../etc/passwd",
+                    })
+                    self.assertEqual(rejected.status_code, 200, rejected.text)
+                    self.assertEqual(rejected.json()["status"], "failed")
+                    self.assertIn("job_id", (rejected.json().get("error") or "").lower())
+                    self.assertFalse((home / "etc").exists())
+                    self.assertFalse((home / "profiles" / "intruso").exists())
             finally:
                 for key, value in old.items():
                     if value is None:

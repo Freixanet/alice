@@ -363,10 +363,11 @@ def _agent_json(payload: dict) -> str:
 AGENT_TOOLS = (
     ("agent_create", "🛠️",
      "Crea o configura un agente de Hermes a partir de una especificación validada. "
-     "No inventes otros comandos. Si Alice ya creó el perfil, pasa reuse_profile.",
+     "No inventes otros comandos. Si Alice ya creó el perfil para ESTE encargo, "
+     "pasa reuse_profile y el mismo job_id. Un perfil de otro trabajo no se reutiliza.",
      ({"spec": {"type": "object", "description":
                 "title o name, description, soul con ## Ejemplos, tools, routines, "
-                "model y provider. reuse_profile si el perfil ya existe para este encargo."},
+                "model y provider. reuse_profile solo con el job_id que creó ese perfil."},
        "job_id": dict(_TEXT, description="El mismo trabajo reanuda y no duplica.")},
       ["spec"]),
      lambda a: _agent_engine().create_from_tool(a or {})),

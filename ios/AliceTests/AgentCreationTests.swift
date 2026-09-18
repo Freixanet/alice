@@ -50,12 +50,55 @@ final class AgentCreationTests: XCTestCase {
             "ok": false,
             "status": "needs_auth",
             "profile_id": "radar-ia",
+            "job_id": "job-auth-1",
             "confirmed": ["perfil"],
             "checks": ["autenticacion": false, "perfil_creado": true],
         ])
         XCTAssertEqual(try auth.requireCreated(), "radar-ia")
         XCTAssertFalse(auth.ok)
         XCTAssertEqual(auth.status, .needsAuth)
+        XCTAssertFalse(auth.isReady)
+        XCTAssertFalse(auth.shouldSendBrief)
+        XCTAssertThrowsError(try auth.requireReady()) { error in
+            guard case let AgentOperationError.incomplete(status, jobID, _) = error else {
+                return XCTFail("expected incomplete, got \(error)")
+            }
+            XCTAssertEqual(status, .needsAuth)
+            XCTAssertEqual(jobID, "job-auth-1")
+        }
+    }
+
+    func testPartialKeepsJobAndDoesNotSendTheBrief() throws {
+        let partial = try AgentOperationResult.parse([
+            "ok": false,
+            "status": "partial",
+            "profile_id": "radar-ia",
+            "job_id": "job-partial-1",
+            "error": "Creation finished with unverified steps.",
+            "confirmed": ["perfil"],
+        ])
+        XCTAssertTrue(partial.didCreateProfile)
+        XCTAssertFalse(partial.isReady)
+        XCTAssertFalse(partial.shouldSendBrief)
+        XCTAssertEqual(try partial.requireCreated(), "radar-ia")
+        XCTAssertThrowsError(try partial.requireReady()) { error in
+            let text = (error as? LocalizedError)?.errorDescription ?? ""
+            XCTAssertTrue(text.contains("job-partial-1"), text)
+            XCTAssertTrue(text.contains("partial"), text)
+        }
+    }
+
+    func testJobIDRejectsPathsAndTraversal() {
+        XCTAssertThrowsError(try AgentJobID.parse("../etc/passwd"))
+        XCTAssertThrowsError(try AgentJobID.parse("/tmp/job"))
+        XCTAssertThrowsError(try AgentJobID.parse("foo/bar"))
+        XCTAssertThrowsError(try AgentJobID.parse("..\\windows"))
+        XCTAssertThrowsError(try AgentJobID.parse(""))
+        XCTAssertEqual(try AgentJobID.parse("job-resume-1"), "job-resume-1")
+        XCTAssertEqual(
+            try AgentJobID.parse("maker-migrate-forja-to-agent-maker"),
+            "maker-migrate-forja-to-agent-maker"
+        )
     }
 
     func testOldOperationPayloadsStillDecode() throws {
@@ -109,9 +152,13 @@ final class AgentMakerIdentityTests: XCTestCase {
     }
 
     func testReuseInstructionNamesTheExistingProfile() {
-        let text = AgentMaker.request(name: "Cuba watch", profile: "cuba-watch", brief: "Sanctions news.")
+        let text = AgentMaker.request(
+            name: "Cuba watch", profile: "cuba-watch", brief: "Sanctions news.", jobID: "job-form-1"
+        )
         XCTAssertTrue(text.contains("reuse_profile=cuba-watch"))
+        XCTAssertTrue(text.contains("job_id=job-form-1"))
         XCTAssertTrue(text.contains("Do not create a second profile"))
+        XCTAssertTrue(text.contains("another job"))
     }
 }
 

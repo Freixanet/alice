@@ -61,9 +61,20 @@ Agent Maker is identified by `ui_meta.alice.role = agent-maker`, with a legacy
 fallback to the profile `forja`. Alice mints a new profile from a sentence
 (`AgentDraft`) through the same engine Agent Maker uses
 (`hermes-plugin/agent_engine.py`): a validated spec, structured result, and
-official Hermes CLI (`profile create` / `profile rename`). The iPhone form and
-the Agent Maker conversation stay as they are; they no longer diverge on
-collision, model, or tools. Renaming an agent also renames its Hermes profile.
+official Hermes CLI (`profile create` / `profile rename`). `reuse_profile`
+requires the same `job_id` that created the profile; a foreign profile is left
+intact. `job_id` is a journal stem only (no paths). Partial results keep their
+error and `job_id` for recovery; Alice does not send the person's brief until
+`status` is `completed`. Rename checks Hermes session leases and in-flight writes on the server.
+Alice will not start a Hermes directory rename: sessions keep `registry_home` on
+the old profile path, and Hermes has no coordination outside that directory and
+no identity check those sessions respect. A same-id title update still runs.
+A journal whose directory move already landed can finish rebinding. The
+operations journal is rewritten to the status that is actually returned
+(`completed` is never left behind after a `partial`). A client `busy` flag is
+not enough. The iPhone form and the Agent Maker conversation stay as they are; they
+no longer diverge on collision, model, or tools.
+
 `hermes-agents/forja` and `hermes-plugin/tests/test_agent_engine.py` check the
 engine against a fake Hermes CLI so those tests do not send prompts to a
 person's agent.

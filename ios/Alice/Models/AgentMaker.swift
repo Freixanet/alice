@@ -28,10 +28,10 @@ enum AgentMaker {
     }
 
     /// What Agent Maker is asked, so it can shape an agent the person already made.
-    static func request(name: String, profile: String, brief: String) -> String {
+    static func request(name: String, profile: String, brief: String, jobID: String) -> String {
         let what = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         return """
-        Please write standing instructions for the Hermes profile `\(profile)` (“\(name)”). Do not create a second profile. If you use agent_create, pass reuse_profile=\(profile).
+        Please write standing instructions for the Hermes profile `\(profile)` (“\(name)”). Do not create a second profile. If you use agent_create, pass reuse_profile=\(profile) and job_id=\(jobID). Do not reuse a profile that belongs to another job.
 
         What they asked for:
         \(what)

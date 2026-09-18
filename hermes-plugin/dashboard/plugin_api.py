@@ -1214,7 +1214,10 @@ async def rename_agent(body: _AgentRenameBody) -> Dict[str, Any]:
 @router.get("/agents/jobs/{job_id}")
 async def agent_job(job_id: str) -> Dict[str, Any]:
     engine = _agent_engine()
-    found = engine.load_journal(job_id, _engine_home())
+    try:
+        found = engine.load_journal(job_id, _engine_home())
+    except engine.SpecError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     if not found:
         raise HTTPException(status_code=404, detail="No agent operation with that id.")
     return found

@@ -7,8 +7,10 @@ you confirm creates the agent and makes it appear in Alice.
 
 Alice identifies it by a stamped role (`ui_meta.alice.role = agent-maker`), not
 a fixed slug. Older installs still live at `forja`. A fresh install creates
-`agent-maker`. Renaming Agent Maker also renames its Hermes profile; Alice keeps
-finding it. That migration is never run automatically.
+`agent-maker`. Alice still finds Agent Maker after a title change that keeps
+the same Hermes id. Changing the profile directory is refused until Hermes can
+coordinate that identity change with in-flight sessions. That migration is
+never run automatically.
 
 ## What is here
 
@@ -50,5 +52,7 @@ examples, chosen model and provider (no silent fallback), tools and skills the
 design asked for, optional authorized memory, confirmed routines, Alice
 metadata, and a journalled result (`completed`, `partial`, `needs_auth`,
 `verification_failed`, `failed`). A taken name fails; a retry with the same
-`job_id` does not mint a second profile. Rename uses official
-`hermes profile rename`.
+`job_id` does not mint a second profile. `reuse_profile` is only accepted when
+that job minted the profile. A same-id title change still goes through the
+engine. Alice will not start `hermes profile rename` until Hermes can coordinate
+the directory identity change with in-flight sessions.

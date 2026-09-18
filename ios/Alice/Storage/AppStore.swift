@@ -1088,8 +1088,8 @@ final class AppStore {
         }
     }
 
-    /// Renames the Hermes profile (official `hermes profile rename` / plugin
-    /// engine), then moves the structured references this app keeps.
+    /// Asks the plugin engine to rename. A Hermes directory identity change is
+    /// refused until Hermes can coordinate it; a same-id title update still runs.
     func renameBot(_ name: String, to newName: String) async throws {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != botCurrentName(for: name) else { return }
@@ -3644,19 +3644,20 @@ final class AppStore {
 
         do {
             let result = try await dashboard.createAgent(spec)
-            let slug = try result.requireCreated()
-            if let index = cachedBots.firstIndex(where: { $0.name == slug }) {
-                cachedBots[index].displayName = spec.title
-            } else {
-                cachedBots.append(
-                    BotRow(
-                        name: slug, displayName: spec.title, detail: spec.description,
-                        model: spec.model, provider: spec.provider,
-                        skills: 0, isDefault: false, gatewayRunning: false, active: true
+            if result.didCreateProfile, let slug = result.profileID, !slug.isEmpty {
+                if let index = cachedBots.firstIndex(where: { $0.name == slug }) {
+                    cachedBots[index].displayName = spec.title
+                } else {
+                    cachedBots.append(
+                        BotRow(
+                            name: slug, displayName: spec.title, detail: spec.description,
+                            model: spec.model, provider: spec.provider,
+                            skills: 0, isDefault: false, gatewayRunning: false, active: true
+                        )
                     )
-                )
+                }
             }
-            return slug
+            return try result.requireReady()
         } catch let failure as DashboardClient.Failure {
             switch failure {
             case .http(404, _), .http(405, _), .notConfigured:

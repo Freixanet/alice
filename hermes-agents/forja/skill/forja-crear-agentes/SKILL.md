@@ -44,8 +44,8 @@ Usa la herramienta nativa **`agent_create`** cuando esté disponible. Si no, esc
 - `tools`: solo las que el diseño necesita. El motor añade `clarify` y no añade browser, terminal ni code_execution por defecto.
 - `model` y `provider`: juntos, si la persona eligió uno. Sin proveedor no se escribe el modelo. No hay reserva silenciosa.
 - `routines`: opcional, y solo con horario confirmado. Entregan en el chat del agente (`bot-chat`).
-- `reuse_profile`: si Alice ya creó el perfil para este encargo, pásalo. No se crea un segundo perfil.
-- `job_id`: el mismo trabajo reanuda y no duplica perfiles ni rutinas.
+- `reuse_profile`: si Alice ya creó el perfil para este encargo, pásalo junto con el mismo `job_id`. Un perfil de otro trabajo no se reutiliza.
+- `job_id`: el mismo trabajo reanuda y no duplica perfiles ni rutinas. No es una ruta.
 - `copy_memory`: obligatorio y explícito si vas a escribir `memory`. No copies USER.md ni la memoria personal entera.
 
 Comprobar sin crear:

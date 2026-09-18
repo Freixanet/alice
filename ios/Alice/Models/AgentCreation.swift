@@ -64,6 +64,28 @@ enum AgentProfileID {
     }
 }
 
+enum AgentJobID {
+    /// Journal stem only. Absolute paths and `..` never leave the phone as a path.
+    static func parse(_ raw: String) throws -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw AgentOperationError.invalidName("A job_id is required.")
+        }
+        if trimmed.hasPrefix("/") || trimmed.hasPrefix("\\") || trimmed.contains("/")
+            || trimmed.contains("\\") || trimmed.contains("..") {
+            throw AgentOperationError.invalidName("job_id cannot contain a path.")
+        }
+        let allowed = try NSRegularExpression(pattern: "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$")
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
+        guard allowed.firstMatch(in: trimmed, range: range) != nil else {
+            throw AgentOperationError.invalidName(
+                "job_id must start with a letter or number and use only letters, numbers, hyphens and underscores."
+            )
+        }
+        return trimmed
+    }
+}
+
 enum AgentOperationStatus: String, Sendable, Codable, Equatable {
     case completed
     case partial
@@ -111,7 +133,9 @@ struct AgentSpec: Equatable, Sendable {
             model: modelID?.isEmpty == false ? modelID : nil,
             provider: provider?.isEmpty == false ? provider : nil,
             reuseProfile: reuseProfile,
-            jobID: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
+            jobID: try AgentJobID.parse(
+                UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            ),
             source: "form",
             slugNote: AgentProfileID.note(display: trimmed, id: id)
         )
@@ -185,10 +209,15 @@ struct AgentOperationResult: Equatable, Sendable {
         )
     }
 
-    /// The profile exists enough to open. Complete success is `status == .completed`.
+    /// The profile exists enough to list. Complete success is `status == .completed`.
     var didCreateProfile: Bool {
-        confirmed.contains("perfil") || status == .completed || status == .needsAuth
+        confirmed.contains("perfil") || status == .completed || status == .needsAuth || status == .partial
     }
+
+    var isReady: Bool { status == .completed && ok }
+
+    /// Only a completed agent should receive the person's brief.
+    var shouldSendBrief: Bool { isReady }
 
     func requireCreated() throws -> String {
         guard let profileID, !profileID.isEmpty else {
@@ -198,6 +227,14 @@ struct AgentOperationResult: Equatable, Sendable {
             throw AgentOperationError.remote(error ?? "Hermes could not create the agent.")
         }
         return profileID
+    }
+
+    func requireReady() throws -> String {
+        let slug = try requireCreated()
+        guard isReady else {
+            throw AgentOperationError.incomplete(status: status, jobID: jobID, detail: error)
+        }
+        return slug
     }
 
     func requireRenamed() throws -> (from: String, to: String, sameID: Bool) {
@@ -225,12 +262,22 @@ enum AgentOperationError: Error, LocalizedError, Equatable {
     case active(String)
     case remote(String)
     case retired(String)
+    case incomplete(status: AgentOperationStatus, jobID: String?, detail: String?)
 
     var errorDescription: String? {
         switch self {
         case let .invalidName(text), let .occupied(text), let .active(text),
              let .remote(text), let .retired(text):
-            text
+            return text
+        case let .incomplete(status, jobID, detail):
+            var parts = ["The agent is not ready yet (\(status.rawValue))."]
+            if let jobID, !jobID.isEmpty {
+                parts.append("Keep job \(jobID) to recover this operation.")
+            }
+            if let detail, !detail.isEmpty {
+                parts.append(detail)
+            }
+            return parts.joined(separator: " ")
         }
     }
 }
