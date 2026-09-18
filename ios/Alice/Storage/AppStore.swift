@@ -6141,7 +6141,16 @@ final class AppStore {
         }
         let state: (turns: [BotChatTurn], running: Bool)
         do {
-            state = try await source.sessionState(profile: profile, storedID: storedID)
+            let snapshot = try await source.resume(profile: profile, target: storedID)
+            state = (WebSocketBotChatSource.turns(from: snapshot.rows), BotTurnState(snapshot)?.running == true)
+            let identity = LiveEvents.SessionIdentity(
+                profile: profile, sessionID: storedID, sessionKey: storedID,
+                conversationID: conversationID,
+                label: profile.map { botCurrentName(for: $0) } ?? "Alice"
+            )
+            for request in LiveEvents.pendingEvents(from: snapshot, session: identity) {
+                observe(request)
+            }
         } catch {
             DiagnosticsLog.write("settle.readFailed reply=\(reply.id) error=\(error.localizedDescription)")
             return false

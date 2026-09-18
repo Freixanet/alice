@@ -34,6 +34,8 @@ The per-turn watcher also records its agent's live questions and approvals,
 independently of the app-wide observer. Quiet-turn checks retain open requests
 from the activation/resume snapshot so a missed question can become visible
 without another prompt or a new session.
+Foreground reply recovery records these requests before refreshing the remaining
+agent chats, so waiting on other profiles cannot hide the current question.
 
 The web supports an authenticated server proxy and a direct browser transport.
 Keep operation semantics and profile scoping equivalent. Local machine access
