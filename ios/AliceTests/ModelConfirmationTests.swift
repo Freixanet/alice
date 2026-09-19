@@ -1,6 +1,9 @@
 import XCTest
 @testable import Alice
 
+/// Which replies are a model-policy notice and which are a fallback failure:
+/// both decide what the home chat shows instead of an answer.
+@MainActor
 final class ModelConfirmationTests: XCTestCase {
     func testTheMetaContributorBannerIsANoticeNotAnAnswer() {
         let banner = """

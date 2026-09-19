@@ -81,7 +81,20 @@ struct RichMedia: Equatable, Hashable {
     /// Unknown extensions fall back to `title:url` pairs, which keeps
     /// paragraphs intact when a host serves media with no suffix.
     static func kind(for url: URL) -> Kind {
-        switch url.pathExtension.lowercased() {
+        kind(forExtension: url.pathExtension)
+    }
+
+    /// Classifies by the *visible* name when the address has no suffix of its
+    /// own. cobalt's tunnel links are `/tunnel?id=…`: the extension lives in
+    /// the filename the bot shows, never in the URL.
+    static func kind(forTitle title: String?, url: URL) -> Kind {
+        let byURL = kind(for: url)
+        guard byURL == .file else { return byURL }
+        return kind(forExtension: ((title ?? "") as NSString).pathExtension)
+    }
+
+    private static func kind(forExtension ext: String) -> Kind {
+        switch ext.lowercased() {
         case "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif", "svg", "avif":
             return .image
         case "mp4", "mov", "m4v", "webm", "mkv", "avi":
@@ -98,40 +111,53 @@ struct RichMedia: Equatable, Hashable {
         return RichMedia(
             title: label.isEmpty ? RichLinks.domain(url) : label,
             url: url,
-            kind: kind(for: url)
+            kind: kind(forTitle: label.isEmpty ? nil : label, url: url)
         )
     }
 
-    /// A line that is only media: `![title](url)` or a bare media URL.
-    /// Inline images elsewhere stay links — a picture mid-sentence is a
-    /// gesture (`see this`), never a player card.
+    /// A line that is only media: `![title](url)`, `[filename.mp4](url)` or a
+    /// bare media URL. Inline media elsewhere stays a link — a picture
+    /// mid-sentence is a gesture (`see this`), never a player card.
+    ///
+    /// A link is only promoted when its label reads as a filename with a media
+    /// extension; `[Watch](…)` and `[Descargar vídeo](…)` keep their button.
     /// Returns nil so ordinary paragraphs (and their links) parse as before.
     static func standalone(_ line: String) -> RichMedia? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        if trimmed.hasPrefix("!") {
-            let rest = String(trimmed.dropFirst())
-            guard rest.hasPrefix("["),
-                  let closeBracket = rest.firstIndex(of: "]"),
-                  rest[rest.index(after: closeBracket)...].hasPrefix("("),
-                  rest.hasSuffix(")"),
-                  let openParen = rest.lastIndex(of: "(")
-            else { return nil }
-            let title = String(rest[rest.index(after: rest.startIndex)..<closeBracket])
-            let raw = String(rest[rest.index(after: openParen)..<rest.index(before: rest.endIndex)])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
-            let media = labeled(title: title.isEmpty ? nil : title, url: url)
-            guard media.kind != .file else { return nil }
-            return media
+
+        if trimmed.hasPrefix("!") || trimmed.hasPrefix("[") {
+            guard let parsed = markdownMedia(trimmed) else { return nil }
+            let media = labeled(title: parsed.title, url: parsed.url)
+            return media.kind == .file ? nil : media
         }
+
         guard !trimmed.contains(" "),
               let url = URL(string: trimmed),
               ["http", "https"].contains(url.scheme?.lowercased() ?? "")
         else { return nil }
         let media = labeled(title: nil, url: url)
-        guard media.kind != .file else { return nil }
-        return media
+        return media.kind == .file ? nil : media
+    }
+
+    /// `![title](url)` or `[title](url)` — the whole line, nothing else.
+    private static func markdownMedia(_ line: String) -> (title: String, url: URL)? {
+        var rest = Substring(line)
+        if rest.hasPrefix("!") { rest = rest.dropFirst() }
+        guard rest.hasPrefix("["), rest.hasSuffix(")") else { return nil }
+        guard let closeBracket = rest.firstIndex(of: "]"),
+              let openParen = rest[closeBracket...].firstIndex(of: "(")
+        else { return nil }
+        // A second `]` after the bracket means this is two links, not one line.
+        let after = rest[rest.index(after: closeBracket)...]
+        guard after.hasPrefix("(") else { return nil }
+        let title = String(rest[rest.index(after: rest.startIndex)..<closeBracket])
+        let raw = String(rest[rest.index(after: openParen)..<rest.index(before: rest.endIndex)])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: raw),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        else { return nil }
+        return (title, url)
     }
 }
 
