@@ -854,6 +854,7 @@ final class AppStore {
         liveBotSessions.removeAll()
         botLiveSessionIDs.removeAll()
         canonicalBotChats.removeAll()
+        warmHomeSessions.removeAll()
         botMetadataIsRemote = false
     }
 
@@ -6356,11 +6357,21 @@ final class AppStore {
         else { return nil }
         let model = selectedModel
         let provider = Self.provider(for: model, among: models, chosen: selectedProvider)
-        guard let session = try? await source.openHomeChat(
-            storedID: conversations[index].hermesSessionID,
-            model: model, provider: provider,
-            history: WebSocketBotChatSource.openingHistory(earlier)
-        ) else { return nil }
+        let session: HomeChatSession
+        if let warm = warmHomeSessions[conversationID],
+           warm.session.storedID == conversations[index].hermesSessionID,
+           Date().timeIntervalSince(warm.at) < Self.warmHomeSessionLifetime {
+            // Resumed while the person was still typing.
+            session = warm.session
+        } else {
+            guard let opened = try? await source.openHomeChat(
+                storedID: conversations[index].hermesSessionID,
+                model: model, provider: provider,
+                history: WebSocketBotChatSource.openingHistory(earlier)
+            ) else { return nil }
+            session = opened
+        }
+        warmHomeSessions[conversationID] = nil
         if let current = conversations.firstIndex(where: { $0.id == conversationID }),
            conversations[current].hermesSessionID != session.storedID {
             conversations[current].hermesSessionID = session.storedID
@@ -6377,6 +6388,40 @@ final class AppStore {
         homeChatModels[switched.liveID] = wanted
         return switched
     }
+
+    /// Resumes Alice's chat as the person opens it, so the send that follows
+    /// does not first wait on `session.resume`. Only a chat Hermes already
+    /// has: creating one here would open an empty session for a chat the
+    /// person may never write in, and the create path needs the opening
+    /// history the send assembles.
+    func prepareHomeChatIfNeeded(conversationID: String) async {
+        guard let conversation = conversations.first(where: { $0.id == conversationID }),
+              conversation.routedBotName == nil, !conversation.isRecoveredHistory,
+              let storedID = conversation.hermesSessionID, !storedID.isEmpty
+        else { return }
+        if let warm = warmHomeSessions[conversationID], warm.session.storedID == storedID,
+           Date().timeIntervalSince(warm.at) < Self.warmHomeSessionLifetime {
+            return
+        }
+        guard let source = await botChatSource() else { return }
+        guard let session = try? await source.openHomeChat(
+            storedID: storedID, model: nil, provider: nil, history: []
+        ) else { return }
+        // A chat deleted in Hermes came back as a fresh one; nothing was sent
+        // to it, and the send finds it by the id kept here.
+        warmHomeSessions[conversationID] = (session, Date())
+        if let current = conversations.firstIndex(where: { $0.id == conversationID }),
+           conversations[current].hermesSessionID != session.storedID {
+            conversations[current].hermesSessionID = session.storedID
+            persistConversations()
+        }
+    }
+
+    /// Home sessions resumed ahead of a send, by conversation. Short-lived:
+    /// Hermes reaps idle runtimes, and a send on one that is gone is answered
+    /// "not found" and opened again the slow way.
+    private var warmHomeSessions: [String: (session: HomeChatSession, at: Date)] = [:]
+    private static let warmHomeSessionLifetime: TimeInterval = 120
 
     /// The model each of Alice's live session runtimes was last put on from
     /// this app.

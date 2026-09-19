@@ -128,6 +128,13 @@ struct ChatScreen: View {
             await refreshBots()
             if let bot { await store.prepareBotChatIfNeeded(profile: bot) }
         }
+        // Alice's own chat is resumed as it opens, keyed by the conversation
+        // so moving between two home chats warms each. The task above keys
+        // on the bot and would not fire again for a second home chat.
+        .task(id: store.activeID) {
+            guard bot == nil, let id = store.activeID else { return }
+            await store.prepareHomeChatIfNeeded(conversationID: id)
+        }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification
         )) { note in
