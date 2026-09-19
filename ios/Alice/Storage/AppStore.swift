@@ -6188,13 +6188,14 @@ final class AppStore {
                     }
                     let state: Result<BotTurnState, Error>
                     let liveSessionID = watch.liveSessionID
+                    let sessionID = storedSessionID
                     do {
                         let snapshot = try await BotTurnWatch.answer(
                             within: BotTurnWatch.checkDeadline
                         ) {
                             try await source.turnSnapshot(
                                 profile: profile,
-                                storedSessionID: storedSessionID,
+                                storedSessionID: sessionID,
                                 liveSessionID: liveSessionID
                             )
                         }
