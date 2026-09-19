@@ -59,7 +59,7 @@ struct ProjectsScreen: View {
                     Section {
                         ContentUnavailableView(
                             "No named projects", systemImage: "folder.badge.plus",
-                            description: Text("Create one, or promote a workspace Hermes already found.")
+                            description: Text("Projects group an agent’s work by folder. Create one here, or promote a workspace Hermes already found.")
                         )
                         .listRowBackground(Color.clear)
                     }
@@ -299,7 +299,7 @@ struct ProjectsScreen: View {
         do {
             resolvedListing = try await store.projectListing(profile: selectedProfile)
         } catch {
-            failure = "Could not load Projects: \(diagnosticMessage(error))"
+            failure = PlainWords.describe(error, doing: "load projects")
             return
         }
 
@@ -307,7 +307,7 @@ struct ProjectsScreen: View {
         do {
             resolvedTree = try await store.projects(profile: selectedProfile)
         } catch {
-            failure = "Could not load Project workspaces: \(diagnosticMessage(error))"
+            failure = PlainWords.describe(error, doing: "load project folders")
             return
         }
 
@@ -323,7 +323,7 @@ struct ProjectsScreen: View {
                 try await work()
                 await load()
             } catch {
-                failure = message(error)
+                failure = PlainWords.describe(error, doing: "update the project")
             }
         }
     }
@@ -403,7 +403,7 @@ private struct NewHermesProjectSheet: View {
                 onCreated()
                 dismiss()
             } catch {
-                failure = message(error)
+                failure = PlainWords.describe(error, doing: "create the project")
             }
         }
     }
@@ -550,7 +550,7 @@ private struct ProjectDetailSheet: View {
                             try await store.deleteProject(project.id, profile: profile)
                             onChange()
                             dismiss()
-                        } catch { failure = message(error) }
+                        } catch { failure = PlainWords.describe(error, doing: "delete the project") }
                     }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -573,7 +573,7 @@ private struct ProjectDetailSheet: View {
                 )
                 await reload()
                 onChange()
-            } catch { failure = message(error) }
+            } catch { failure = PlainWords.describe(error, doing: "save the project") }
         }
     }
 
@@ -583,7 +583,7 @@ private struct ProjectDetailSheet: View {
                 try await work()
                 await reload()
                 onChange()
-            } catch { failure = message(error) }
+            } catch { failure = PlainWords.describe(error, doing: "update the project") }
         }
     }
 

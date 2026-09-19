@@ -18,7 +18,6 @@ struct ArtifactsScreen: View {
     @State private var found: [Artifact] = []
     @State private var kind: Shelf = .files
     @State private var failure: String?
-    @State private var loading = false
     @State private var opened: RemoteFileSelection?
 
     /// Images are files too: one shelf for what was made, one for what was shared.
@@ -29,22 +28,14 @@ struct ArtifactsScreen: View {
 
     var body: some View {
         Group {
-            if loading && found.isEmpty {
-                VStack(spacing: 10) {
-                    ProgressView()
-                    Text("Looking through your recent chats…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let failure {
+            if let failure, found.isEmpty {
                 ContentUnavailableView(
                     title, systemImage: "tray", description: Text(failure)
                 )
             } else if found.isEmpty {
                 ContentUnavailableView(
                     "Nothing here yet", systemImage: "tray",
-                    description: Text("When your agents create a file or share a link in a chat with Alice, it appears here.")
+                    description: Text("Files and links your agents share in a chat with Alice appear here. Start a chat and ask an agent to make or send something.")
                 )
             } else {
                 list
@@ -178,8 +169,6 @@ struct ArtifactsScreen: View {
     }
 
     private func load() async {
-        loading = true
-        defer { loading = false }
         do {
             found = try await store.artifacts()
             failure = nil
@@ -190,8 +179,7 @@ struct ArtifactsScreen: View {
                 kind = other
             }
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription
-                ?? "Hermes did not answer."
+            failure = PlainWords.describe(error, doing: "load the library")
         }
     }
 }

@@ -174,12 +174,12 @@ struct NotesScreen: View {
         .refreshableWithFeedback { await load() }
         // Deleting is for good, and asked once more.
         .confirmationDialog(
-            "Delete this note?",
+            deleting.map(Self.deleteTitle(for:)) ?? "Delete this note?",
             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
             titleVisibility: .visible,
             presenting: deleting
         ) { note in
-            Button("Delete Note", role: .destructive) { delete(note) }
+            Button("Delete", role: .destructive) { delete(note) }
         } message: { _ in
             Text("It leaves the notes store, with what its agent made of it. Recently Deleted keeps a copy on this iPhone for 30 days.")
         }
@@ -221,7 +221,7 @@ struct NotesScreen: View {
             Text(naming == .add ? "A name for the folder inside this one." : "A name for this folder.")
         }
         .confirmationDialog(
-            selected.count == 1 ? "Delete this note?" : "Delete these \(selected.count) notes?",
+            selectionDeleteTitle,
             isPresented: $deletingSelection, titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) { deleteSelection() }
@@ -639,7 +639,7 @@ struct NotesScreen: View {
         case .loading:
             ProgressView().frame(maxWidth: .infinity)
         case .nothingYet:
-            Text("Nothing written down yet.")
+            Text("No notes yet. Tap + to write one; it is kept by the notes agent and shows up here.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         case .noResults:
@@ -737,6 +737,20 @@ struct NotesScreen: View {
                 deleteFailure = PlainWords.describe(error, doing: "copy the note")
             }
         }
+    }
+
+    private var selectionDeleteTitle: String {
+        if selected.count == 1,
+           let id = selected.first,
+           let note = store.notes(in: scope).first(where: { $0.id == id }) {
+            return Self.deleteTitle(for: note)
+        }
+        return selected.count <= 1 ? "Delete this note?" : "Delete these \(selected.count) notes?"
+    }
+
+    private static func deleteTitle(for note: Note) -> String {
+        let name = NotesFeed.title(of: note)
+        return name.isEmpty ? "Delete this note?" : "Delete the note “\(name)”?"
     }
 
     private func delete(_ note: Note) {

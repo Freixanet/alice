@@ -208,12 +208,12 @@ struct NotesFoldersScreen: View {
             Text(store.noteFolderFailure ?? "")
         }
         .confirmationDialog(
-            "Delete this folder?",
+            deletingFolder.map { "Delete the folder “\($0.name)”?" } ?? "Delete this folder?",
             isPresented: Binding(get: { deletingFolder != nil }, set: { if !$0 { deletingFolder = nil } }),
             titleVisibility: .visible,
             presenting: deletingFolder
         ) { folder in
-            Button("Delete Folder", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 Task { await store.deleteNoteFolder(folder.id) }
             }
         } message: { _ in
@@ -418,7 +418,7 @@ private struct FolderPreview: View {
             Text(name)
                 .font(.headline)
             if notes.isEmpty {
-                Text("No notes")
+                Text("No notes in this folder yet. Open it and tap + to write one.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

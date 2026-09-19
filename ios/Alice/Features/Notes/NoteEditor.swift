@@ -108,9 +108,13 @@ struct NoteEditor: View {
             }
         }
         .confirmationDialog(
-            "Delete this note?", isPresented: $confirmingDelete, titleVisibility: .visible
+            currentNote.map { note in
+                let name = NotesFeed.title(of: note)
+                return name.isEmpty ? "Delete this note?" : "Delete the note “\(name)”?"
+            } ?? "Delete this note?",
+            isPresented: $confirmingDelete, titleVisibility: .visible
         ) {
-            Button("Delete Note", role: .destructive) { deleteNote() }
+            Button("Delete", role: .destructive) { deleteNote() }
         } message: {
             Text("It is removed from the notes store, with what its agent made of it. This can’t be undone.")
         }

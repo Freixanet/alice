@@ -97,8 +97,9 @@ struct ActivityScreen: View {
                         Text("Nothing yet")
                             .font(.body)
                         Text(
-                            "Alice records what it sees while it is running — "
-                            + "automations finishing, connections dropping. It "
+                            "No routines have run yet. Create one in Routines and its results will show here. "
+                            + "Alice also records what it sees while it is running — "
+                            + "connections dropping, answers finishing. It "
                             + "cannot show work that happened before it was watching."
                         )
                         .font(.caption)
@@ -143,11 +144,11 @@ struct ActivityScreen: View {
                     // Attached here rather than to the list, which already
                     // carries the fix confirmation.
                     .confirmationDialog(
-                        "Clear activity history?",
+                        "Clear Alice’s activity record?",
                         isPresented: $confirmingClear,
                         titleVisibility: .visible
                     ) {
-                        Button("Clear history", role: .destructive) {
+                        Button("Clear", role: .destructive) {
                             withAnimation { store.clearActivityHistory() }
                         }
                         Button("Cancel", role: .cancel) {}
@@ -430,8 +431,7 @@ struct ActivityScreen: View {
                 routineNotice = "That routine no longer exists."
             }
         } catch {
-            routineNotice = (error as? LocalizedError)?.errorDescription
-                ?? "Hermes did not send the routine."
+            routineNotice = PlainWords.describe(error, doing: "open the routine")
         }
     }
 
