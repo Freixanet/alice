@@ -466,7 +466,7 @@ struct ModelPicker: View {
                 dismiss()
             } catch {
                 pendingBotModel = nil
-                failure = error.localizedDescription
+                failure = PlainWords.describe(error, doing: "change the fallback model")
             }
         }
     }
@@ -495,7 +495,7 @@ struct ModelPicker: View {
                 }
             } catch {
                 pendingBotModel = nil
-                failure = error.localizedDescription
+                failure = PlainWords.describe(error, doing: "change the model")
             }
         }
     }
