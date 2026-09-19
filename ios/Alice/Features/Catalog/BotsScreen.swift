@@ -2708,6 +2708,8 @@ private struct NewBotSheet: View {
     @State private var choosingModel = false
     @State private var choosingFallback = false
     @State private var mark = BotMark(colour: 0, shape: 0)
+    @State private var selectedTemplate: AgentBrief.Template?
+    @State private var cheapModelPicked = false
     @State private var busy = false
     @State private var progress = "Creating agent…"
     @State private var failure: String?
@@ -2747,6 +2749,26 @@ private struct NewBotSheet: View {
                 }
 
                 Section {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(AgentBrief.templates) { template in
+                                Button {
+                                    apply(template)
+                                } label: {
+                                    Label(template.title, systemImage: template.symbol)
+                                        .font(.footnote.weight(.medium))
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Palette.background(scheme), in: .capsule)
+                                        .overlay(Capsule().stroke(Palette.border(scheme), lineWidth: 0.5))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .listRowBackground(Palette.card(scheme))
+
                     TextField("What should this agent do?", text: $detail, axis: .vertical)
                         .lineLimit(4...10)
                         .focused($focusedField, equals: .detail)
@@ -2760,30 +2782,6 @@ private struct NewBotSheet: View {
                         .listRowBackground(Palette.card(scheme))
                 }
                 .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
-
-                Section("Place") {
-                    // Channel first: which sections there are depends on it.
-                    Picker("Channel", selection: $selectedChannel) {
-                        Text("Home").tag("")
-                        ForEach(store.botChannels) { channel in
-                            Text(channel.name).tag(channel.id)
-                        }
-                    }
-                    .listRowBackground(Palette.card(scheme))
-
-                    Picker("Section", selection: $selectedSection) {
-                        Text(selectedChannel.isEmpty ? "Unassigned" : "No Section").tag("")
-                        ForEach(sectionChoices, id: \.self) { sec in
-                            Text(sec).tag(sec)
-                        }
-                    }
-                    .listRowBackground(Palette.card(scheme))
-                }
-                .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
-                .onChange(of: selectedChannel) { _, _ in
-                    selectedSection = ""
-                    dismissKeyboard()
-                }
 
                 Section {
                     // The same model list as an agent's settings, picked here and
@@ -2804,27 +2802,50 @@ private struct NewBotSheet: View {
                         }
                     }
                     .listRowBackground(Palette.card(scheme))
-
-                    Button {
-                        dismissKeyboard()
-                        choosingFallback = true
-                    } label: {
-                        HStack {
-                            Text("Fallback").foregroundStyle(.primary)
-                            Spacer(minLength: 12)
-                            Text(selectedFallback?.label ?? "None")
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .listRowBackground(Palette.card(scheme))
                 } header: {
                     Text("Model")
                 } footer: {
-                    Text("The fallback is used when this model is unavailable or at its limit.")
+                    if cheapModelPicked {
+                        Text("A fast, low-cost model. You can change it later.")
+                    }
+                }
+
+                Section {
+                    DisclosureGroup("More options") {
+                        Picker("Channel", selection: $selectedChannel) {
+                            Text("Home").tag("")
+                            ForEach(store.botChannels) { channel in
+                                Text(channel.name).tag(channel.id)
+                            }
+                        }
+                        Picker("Section", selection: $selectedSection) {
+                            Text(selectedChannel.isEmpty ? "Unassigned" : "No Section").tag("")
+                            ForEach(sectionChoices, id: \.self) { sec in
+                                Text(sec).tag(sec)
+                            }
+                        }
+                        Button {
+                            dismissKeyboard()
+                            choosingFallback = true
+                        } label: {
+                            HStack {
+                                Text("Fallback").foregroundStyle(.primary)
+                                Spacer(minLength: 12)
+                                Text(selectedFallback?.label ?? "None")
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                }
+                .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
+                .onChange(of: selectedChannel) { _, _ in
+                    selectedSection = ""
+                    dismissKeyboard()
                 }
 
                 if let failure {
@@ -2860,6 +2881,8 @@ private struct NewBotSheet: View {
             .navigationTitle("Create New Agent")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(busy)
+            .onAppear { preferCheapModel() }
+            .onChange(of: store.models) { _, _ in preferCheapModel() }
             .overlay {
                 if busy {
                     ZStack {
@@ -2878,7 +2901,10 @@ private struct NewBotSheet: View {
                 }
             }
             .sheet(isPresented: $choosingModel) {
-                ModelPicker(chosen: selectedModel) { selectedModel = $0 }
+                ModelPicker(chosen: selectedModel) {
+                    selectedModel = $0
+                    cheapModelPicked = Self.isCheap($0)
+                }
                     .preferredColorScheme(store.theme.colorScheme)
             }
             .sheet(isPresented: $choosingFallback) {
@@ -2920,6 +2946,26 @@ private struct NewBotSheet: View {
         )
     }
 
+    private func apply(_ template: AgentBrief.Template) {
+        if name.trimmingCharacters(in: .whitespaces).isEmpty {
+            name = template.name
+        }
+        detail = template.brief
+        selectedTemplate = template
+    }
+
+    private func preferCheapModel() {
+        guard selectedModel == nil else { return }
+        guard let cheap = store.models.first(where: { Self.isCheap($0) }) else { return }
+        selectedModel = cheap
+        cheapModelPicked = true
+    }
+
+    private static func isCheap(_ option: HermesClient.ModelOption) -> Bool {
+        let id = option.id.lowercased()
+        return id.contains("flash-lite") || id.contains("mini")
+    }
+
     private func create() {
         let brief = detail.trimmingCharacters(in: .whitespacesAndNewlines)
         var trimmed = name.trimmingCharacters(in: .whitespaces)
@@ -2931,10 +2977,14 @@ private struct NewBotSheet: View {
         busy = true
         Task {
             do {
+                var soul = brief.isEmpty ? nil : AgentDraft.soul(from: brief)
+                if let extra = selectedTemplate?.soulExtra, !extra.isEmpty {
+                    soul = (soul.map { $0 + "\n\n" } ?? "") + extra
+                }
                 let slug = try await store.createBot(
                     displayName: trimmed, description: brief, model: selectedModel,
                     fallback: selectedFallback,
-                    soul: brief.isEmpty ? nil : AgentDraft.soul(from: brief)
+                    soul: soul
                 )
                 store.botMarks[slug] = mark
                 if selectedChannel.isEmpty {
@@ -2969,7 +3019,7 @@ private struct NewBotSheet: View {
                 Task { await onCreated() }
             } catch {
                 busy = false
-                failure = describeBotError(error)
+                failure = PlainWords.describe(error, doing: "create the agent")
             }
         }
     }

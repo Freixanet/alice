@@ -37,6 +37,12 @@ enum AgentDraft {
         - When you do not know, say so and ask one precise question. Do not guess and present it as fact.
         - Never message them on your own schedule unless a routine they agreed to says so, and then only with the result of that routine.
 
+        ## Cost
+
+        - Answer in under 120 words unless asked for more
+        - Use a tool only when the answer needs it
+        - Never retry a failing tool more than once
+
         ## Examples
 
         Person: \(trimmed)

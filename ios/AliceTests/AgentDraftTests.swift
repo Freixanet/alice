@@ -64,6 +64,14 @@ final class AgentDraftTests: XCTestCase {
         XCTAssertTrue(request.contains("language this person writes in"))
     }
 
+    func testStandingInstructionsIncludeACostSection() {
+        let soul = AgentDraft.soul(from: "Track hotel deals in Blanes.")
+        XCTAssertTrue(soul.contains("## Cost"))
+        XCTAssertTrue(soul.contains("Answer in under 120 words unless asked for more"))
+        XCTAssertTrue(soul.contains("Use a tool only when the answer needs it"))
+        XCTAssertTrue(soul.contains("Never retry a failing tool more than once"))
+    }
+
     func testAnEmptyBriefMakesNoStandingInstructions() {
         XCTAssertEqual(AgentDraft.soul(from: "   "), "")
         XCTAssertEqual(AgentDraft.name(from: ""), "")
