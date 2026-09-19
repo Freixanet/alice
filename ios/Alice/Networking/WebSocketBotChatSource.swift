@@ -350,37 +350,29 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         // Hermes Desktop's remote-client contract. Images become attached
         // image bytes; files return workspace-relative @file: refs that must be
         // included in the prompt text the agent sees.
+        //
+        // They go up together, not one after another: three photos over
+        // Wi-Fi were three full round trips before the first letter reached
+        // the model. Refs keep the order the person attached them in.
         var fileRefs: [String] = []
         var hasImage = false
-        for attachment in attachments {
-            switch attachment.kind {
-            case .image:
-                let attached = try await rpc.call("image.attach_bytes", JSONObject([
-                    "session_id": liveID,
-                    "content_base64": attachment.data.base64EncodedString(),
-                    "filename": attachment.name,
-                ]))
-                guard (attached["attached"] as? Bool) == true else {
-                    throw HermesRPCClient.Failure(
-                        reason: (attached["message"] as? String)
-                            ?? "Hermes could not attach \(attachment.name)."
-                    )
+        if !attachments.isEmpty {
+            let staged: [(index: Int, ref: String?)] = try await withThrowingTaskGroup(
+                of: (Int, String?).self
+            ) { group in
+                for (index, attachment) in attachments.enumerated() {
+                    group.addTask { (index, try await self.stage(attachment, on: liveID)) }
                 }
-                hasImage = true
-            case .file:
-                let attached = try await rpc.call("file.attach", JSONObject([
-                    "session_id": liveID,
-                    "name": attachment.name,
-                    "data_url": attachment.dataURL,
-                ]))
-                guard (attached["attached"] as? Bool) == true,
-                      let ref = attached["ref_text"] as? String, !ref.isEmpty else {
-                    throw HermesRPCClient.Failure(
-                        reason: (attached["message"] as? String)
-                            ?? "Hermes could not attach \(attachment.name)."
-                    )
+                var results: [(Int, String?)] = []
+                for try await result in group { results.append(result) }
+                return results.sorted { $0.0 < $1.0 }.map { (index: $0.0, ref: $0.1) }
+            }
+            for entry in staged {
+                if let ref = entry.ref {
+                    fileRefs.append(ref)
+                } else {
+                    hasImage = true
                 }
-                fileRefs.append(ref)
             }
         }
 
@@ -397,6 +389,41 @@ struct WebSocketBotChatSource: BotChatSessionSource {
             disposition: .init(status: result["status"] as? String),
             submittedText: submittedText
         )
+    }
+
+    /// Puts one attachment on the live runtime. A file answers with the
+    /// `@file:` ref the prompt must carry; an image answers nil, having been
+    /// attached as bytes.
+    private func stage(_ attachment: Attachment, on liveID: String) async throws -> String? {
+        switch attachment.kind {
+        case .image:
+            let attached = try await rpc.call("image.attach_bytes", JSONObject([
+                "session_id": liveID,
+                "content_base64": attachment.data.base64EncodedString(),
+                "filename": attachment.name,
+            ]))
+            guard (attached["attached"] as? Bool) == true else {
+                throw HermesRPCClient.Failure(
+                    reason: (attached["message"] as? String)
+                        ?? "Hermes could not attach \(attachment.name)."
+                )
+            }
+            return nil
+        case .file:
+            let attached = try await rpc.call("file.attach", JSONObject([
+                "session_id": liveID,
+                "name": attachment.name,
+                "data_url": attachment.dataURL,
+            ]))
+            guard (attached["attached"] as? Bool) == true,
+                  let ref = attached["ref_text"] as? String, !ref.isEmpty else {
+                throw HermesRPCClient.Failure(
+                    reason: (attached["message"] as? String)
+                        ?? "Hermes could not attach \(attachment.name)."
+                )
+            }
+            return ref
+        }
     }
 
     /// Stops the turn running in a bot's chat.
