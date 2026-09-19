@@ -178,7 +178,7 @@ private struct CredentialAddSheet: View {
             let cleanLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
             try await save(provider.trimmingCharacters(in: .whitespacesAndNewlines), key, cleanLabel.isEmpty ? nil : cleanLabel)
             dismiss()
-        } catch { failure = (error as? LocalizedError)?.errorDescription ?? "Hermes rejected the credential." }
+        } catch { failure = PlainWords.describe(error, doing: "save the credential") }
     }
 }
 
@@ -237,6 +237,6 @@ private struct HookAddSheet: View {
         do {
             try await save(event, command, matcher.isEmpty ? nil : matcher, Int(timeout), approve)
             dismiss()
-        } catch { failure = (error as? LocalizedError)?.errorDescription ?? "Hermes rejected the hook." }
+        } catch { failure = PlainWords.describe(error, doing: "save the hook") }
     }
 }

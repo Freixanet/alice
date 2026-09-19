@@ -734,7 +734,7 @@ struct NotesScreen: View {
             do {
                 try await store.duplicate(note)
             } catch {
-                deleteFailure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not copy the note."
+                deleteFailure = PlainWords.describe(error, doing: "copy the note")
             }
         }
     }
@@ -745,7 +745,7 @@ struct NotesScreen: View {
             do {
                 try await store.deleteNote(note)
             } catch {
-                deleteFailure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not delete the note."
+                deleteFailure = PlainWords.describe(error, doing: "delete the note")
             }
         }
     }
@@ -757,7 +757,7 @@ struct NotesScreen: View {
             try await store.refreshNotes()
             loadFailure = nil
         } catch {
-            loadFailure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not send the notes."
+            loadFailure = PlainWords.describe(error, doing: "load the notes")
         }
     }
 

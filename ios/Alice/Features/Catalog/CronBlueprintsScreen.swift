@@ -88,5 +88,5 @@ private struct BlueprintForm: View {
         }
     }
     private var valid: Bool { blueprint.fields.allSatisfy { $0.optional || !(values[$0.name] ?? $0.defaultValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } }
-    private func create() async { busy = true; defer { busy = false }; var filled: [String:String] = [:]; for field in blueprint.fields { let value = values[field.name] ?? field.defaultValue ?? ""; if !value.isEmpty { filled[field.name] = value } }; do { try await store.instantiateCronBlueprint(blueprint.key, values: filled, profile: profile); onCreated(); dismiss() } catch { failure = (error as? LocalizedError)?.errorDescription ?? "Hermes rejected this blueprint." } }
+    private func create() async { busy = true; defer { busy = false }; var filled: [String:String] = [:]; for field in blueprint.fields { let value = values[field.name] ?? field.defaultValue ?? ""; if !value.isEmpty { filled[field.name] = value } }; do { try await store.instantiateCronBlueprint(blueprint.key, values: filled, profile: profile); onCreated(); dismiss() } catch { failure = PlainWords.describe(error, doing: "create the routine") } }
 }

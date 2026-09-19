@@ -587,7 +587,7 @@ private struct ChannelConfigurationSheet: View {
             onSaved()
             dismiss()
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not save the channel."
+            failure = PlainWords.describe(error, doing: "save the channel")
         }
     }
 }
@@ -775,7 +775,7 @@ private struct TelegramChannelSetup: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "Telegram setup failed."
+        PlainWords.describe(error, doing: "set up Telegram")
     }
 }
 
@@ -961,7 +961,7 @@ private struct WhatsAppChannelSetup: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "WhatsApp setup failed."
+        PlainWords.describe(error, doing: "set up WhatsApp")
     }
 }
 

@@ -149,7 +149,7 @@ struct NoteEditor: View {
             do {
                 try await store.deleteNote(existing)
             } catch {
-                failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not delete the note."
+                failure = PlainWords.describe(error, doing: "delete the note")
             }
         }
     }
@@ -211,7 +211,7 @@ struct NoteEditor: View {
                 }
             } catch {
                 saved = NSAttributedString()
-                failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not save the note."
+                failure = PlainWords.describe(error, doing: "save the note")
             }
         }
     }

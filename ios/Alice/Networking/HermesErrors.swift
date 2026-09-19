@@ -36,7 +36,7 @@ enum HermesErrors {
         case .timedOut: return "Hermes took too long to answer."
         case .cannotConnectToHost, .cannotFindHost: return "Hermes could not be reached."
         case .secureConnectionFailed, .serverCertificateUntrusted: return "The secure connection to Hermes failed."
-        default: return "The connection to Hermes failed (\(code.rawValue))."
+        default: return PlainWords.transport(code)
         }
     }
 }

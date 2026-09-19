@@ -432,7 +432,7 @@ struct RoutineDetailSheet: View {
         loadingRuns = true
         defer { loadingRuns = false }
         do { runs = try await store.routineRuns(routine); runsFailure = nil }
-        catch { runsFailure = (error as? LocalizedError)?.errorDescription ?? "Run history unavailable." }
+        catch { runsFailure = PlainWords.describe(error, doing: "load run history") }
     }
 
     private func runNow() {
@@ -446,7 +446,7 @@ struct RoutineDetailSheet: View {
                 await loadRuns()
                 await onChanged()
             } catch {
-                actionMessage = (error as? LocalizedError)?.errorDescription ?? "Hermes could not run it."
+                actionMessage = PlainWords.describe(error, doing: "run the routine")
             }
         }
     }
@@ -460,7 +460,7 @@ struct RoutineDetailSheet: View {
                 await onChanged()
                 dismiss()
             } catch {
-                actionMessage = (error as? LocalizedError)?.errorDescription ?? "Hermes refused the change."
+                actionMessage = PlainWords.describe(error, doing: "change the routine")
                 busy = false
             }
         }

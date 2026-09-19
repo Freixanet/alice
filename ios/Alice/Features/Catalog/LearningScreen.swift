@@ -115,7 +115,7 @@ struct LearningScreen: View {
         loading = true
         defer { loading = false }
         do { graph = try await store.learningGraph(profile: profile); failure = nil }
-        catch { failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not return the learning graph." }
+        catch { failure = PlainWords.describe(error, doing: "load the learning graph") }
     }
 }
 
@@ -207,7 +207,7 @@ private struct LearningNodeSheet: View {
         do {
             let value = try await store.learningNode(node.id, profile: profile)
             detail = value; draft = value.content; failure = nil
-        } catch { failure = (error as? LocalizedError)?.errorDescription ?? "Could not load node." }
+        } catch { failure = PlainWords.describe(error, doing: "load the node") }
     }
 
     private func save() async {
@@ -216,13 +216,13 @@ private struct LearningNodeSheet: View {
         do {
             try await store.saveLearningNode(node.id, content: draft, profile: profile)
             await load(); editing = false; await changed()
-        } catch { failure = (error as? LocalizedError)?.errorDescription ?? "Could not save node." }
+        } catch { failure = PlainWords.describe(error, doing: "save the node") }
     }
 
     private func remove() async {
         busy = true
         defer { busy = false }
         do { try await store.deleteLearningNode(node.id, profile: profile); await changed(); dismiss() }
-        catch { failure = (error as? LocalizedError)?.errorDescription ?? "Could not delete node." }
+        catch { failure = PlainWords.describe(error, doing: "delete the node") }
     }
 }

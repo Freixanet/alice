@@ -2569,7 +2569,7 @@ struct BotDetail: View {
                 try await store.clearBotChat(bot.name)
                 clearFailure = nil
             } catch {
-                clearFailure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not clear the chat."
+                clearFailure = PlainWords.describe(error, doing: "clear the chat")
             }
         }
     }
@@ -3238,7 +3238,7 @@ private struct TeamSheet: View {
 }
 
 private func describeBotError(_ error: Error) -> String {
-    (error as? LocalizedError)?.errorDescription ?? "The dashboard did not answer."
+    PlainWords.describe(error, doing: "talk to the dashboard")
 }
 
 

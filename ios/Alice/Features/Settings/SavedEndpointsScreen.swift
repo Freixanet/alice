@@ -75,5 +75,5 @@ private struct EndpointEditor: View {
     private var context:Int?{Int(contextLength.trimmingCharacters(in:.whitespacesAndNewlines))}
     private func validate()async{busy=true;defer{busy=false};do{validation=try await store.validateCustomEndpoint(name:name,baseURL:baseURL,model:model,apiKey:apiKey.isEmpty ? nil:apiKey,contextLength:context,discoverModels:discover);failure=nil}catch{failure=reason(error)}}
     private func save()async{busy=true;defer{busy=false};do{_ = try await store.saveCustomEndpoint(id:endpoint?.id ?? "",name:name,baseURL:baseURL,model:model,apiKey:apiKey.isEmpty ? nil:apiKey,contextLength:context,discoverModels:discover,makeDefault:makeDefault,profile:profile);await saved();dismiss()}catch{failure=reason(error)}}
-    private func reason(_ error:Error)->String{(error as? LocalizedError)?.errorDescription ?? "Hermes rejected this endpoint."}
+    private func reason(_ error:Error)->String{PlainWords.describe(error, doing: "save the endpoint")}
 }

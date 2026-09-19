@@ -740,7 +740,7 @@ struct GitDevelopmentScreen: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "Hermes did not complete the Git operation."
+        PlainWords.describe(error, doing: "run the Git command")
     }
 }
 
@@ -838,7 +838,7 @@ private struct GitDiffSheet: View {
             }
             failure = nil
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not return this diff."
+            failure = PlainWords.describe(error, doing: "load the diff")
         }
     }
 }
@@ -910,7 +910,7 @@ private struct GitCommitSheet: View {
         loading = true
         defer { loading = false }
         do { context = try await store.gitCommitContext(path: repoPath) }
-        catch { failure = (error as? LocalizedError)?.errorDescription ?? "Could not read commit context." }
+        catch { failure = PlainWords.describe(error, doing: "read the commit") }
     }
 
     private func commit() {
@@ -924,7 +924,7 @@ private struct GitCommitSheet: View {
                 onCommitted()
                 dismiss()
             } catch {
-                failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not create the commit."
+                failure = PlainWords.describe(error, doing: "create the commit")
             }
         }
     }
@@ -1031,7 +1031,7 @@ private struct GitWorktreeAddSheet: View {
                 onCreated(created)
                 dismiss()
             } catch {
-                failure = (error as? LocalizedError)?.errorDescription ?? "Hermes could not create the worktree."
+                failure = PlainWords.describe(error, doing: "create the worktree")
             }
         }
     }

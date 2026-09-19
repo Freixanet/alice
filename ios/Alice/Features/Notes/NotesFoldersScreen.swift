@@ -549,7 +549,7 @@ struct RecentlyDeletedScreen: View {
             do {
                 try await store.recover(item)
             } catch {
-                failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not take the note back."
+                failure = PlainWords.describe(error, doing: "restore the note")
             }
         }
     }
