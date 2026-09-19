@@ -3514,33 +3514,48 @@ final class AppStore {
             guard sendingConversations.contains(chat.id) || !work.isEmpty else { return nil }
             if chat.isCanonicalBotChat, let bot = chat.routedBotName {
                 return AgentActivities.Work(
+                    conversationID: chat.id,
                     profile: bot, name: botCurrentName(for: bot), mark: mark(for: bot),
-                    waitingOn: work.waitingOn.map { botCurrentName(for: $0.handle) }
+                    waitingOn: work.waitingOn.map { botCurrentName(for: $0.handle) },
+                    headline: Self.activityHeadline(for: chat)
                 )
             }
             guard chat.isHomeSessionChat || (!chat.isBotChat && chat.legacyBotName == nil) else { return nil }
             return AgentActivities.Work(
+                conversationID: chat.id,
                 profile: Self.homeActivityProfile,
                 name: "Alice",
                 mark: mark(for: "alice"),
-                waitingOn: work.waitingOn.map { botCurrentName(for: $0.handle) }
+                waitingOn: work.waitingOn.map { botCurrentName(for: $0.handle) },
+                headline: Self.activityHeadline(for: chat)
             )
         }
     }
 
     /// How an agent's task ended, from its last reply.
-    func agentEnding(_ profile: String) -> AgentActivities.Ending {
-        let chat: Conversation?
-        if profile == Self.homeActivityProfile {
-            chat = conversations.first(where: { $0.isHomeSessionChat || (!$0.isBotChat && $0.legacyBotName == nil) })
-        } else {
-            chat = conversations.first(where: { $0.isCanonicalBotChat && $0.routedBotName == profile })
-        }
+    func agentEnding(_ conversationID: String) -> AgentActivities.Ending {
+        let chat = conversations.first(where: { $0.id == conversationID })
+            ?? (conversationID == Self.homeActivityProfile
+                ? conversations.first(where: { $0.isHomeSessionChat || (!$0.isBotChat && $0.legacyBotName == nil) })
+                : conversations.first(where: { $0.isCanonicalBotChat && $0.routedBotName == conversationID }))
         guard let chat, let reply = chat.messages.last(where: { $0.role == .assistant })
         else { return .finished }
         if reply.error != nil { return .failed }
         if reply.incomplete == true { return .stopped }
         return .finished
+    }
+
+    /// Same words the chat row shows while this reply is under way.
+    nonisolated static func activityHeadline(for chat: Conversation, now: Date = Date()) -> String {
+        let reply = chat.messages.last(where: { $0.role == .assistant })
+        return ToolCaption.headline(
+            pending: true,
+            note: reply?.deliveryNote,
+            thoughtSeconds: reply?.thoughtSeconds,
+            steps: reply?.tools ?? [],
+            elapsed: reply.map { now.timeIntervalSince($0.createdAt) },
+            seed: ToolCaption.seed(reply?.id ?? chat.id)
+        )
     }
 
     @discardableResult
@@ -5564,6 +5579,9 @@ final class AppStore {
                 watching: Set(activeBotTurns.values.map(\.replyID)),
                 note: Self.lostTouchNote(label: botCurrentName(for: profile))
             )
+            if conversations[current].messages.last(where: { $0.role == .assistant })?.pending != true {
+                closeAgentActivity(for: conversationID)
+            }
             // The answer landed while the watch had lost its socket: the
             // placeholder is gone, and so is anything left to follow.
             if let turn = activeBotTurns[conversationID], turn.disposition != nil,
@@ -6464,6 +6482,7 @@ final class AppStore {
         settled.incomplete = false
         conversations[location.chat].messages[location.message] = settled
         persistConversations()
+        closeAgentActivity(for: conversationID)
         // A watch that lost its socket is still waiting on this reply.
         if let turn = activeBotTurns[conversationID], turn.replyID == reply.id {
             releaseBotWatcher(conversationID, expectedToken: turn.token)
@@ -6518,6 +6537,7 @@ final class AppStore {
         reply.runStatus = .failed
         conversations[location.chat].messages[location.message] = reply
         persistConversations()
+        closeAgentActivity(for: conversationID)
     }
 
     /// The body to keep when a turn ends. Hermes' parent `message.complete`
@@ -7519,12 +7539,16 @@ final class AppStore {
         } else if reply.content.isEmpty && reply.approval == nil {
             conversations[location.chat].messages.remove(at: location.message)
             persistConversations()
+            closeAgentActivity(for: conversationID)
             return
         } else {
             reply.awaitingRemote = true
         }
         conversations[location.chat].messages[location.message] = reply
         persistConversations()
+        if stopped || !reply.pending {
+            closeAgentActivity(for: conversationID)
+        }
     }
 
     private func releaseBotWatcher(_ conversationID: String, expectedToken: UUID) {
@@ -7751,6 +7775,7 @@ final class AppStore {
             )
             if status.isTerminal {
                 conversations[chat].messages[index].settle()
+                closeAgentActivity(for: conversationID)
             }
             if status == .waitingForApproval || status.isTerminal || output != nil {
                 persistConversations()
@@ -7885,6 +7910,7 @@ final class AppStore {
     private func finish(_ id: String, conversationID: String) {
         sendingConversations.remove(conversationID)
         streamTasks[conversationID] = nil
+        closeAgentActivity(for: conversationID)
         guard let location = messageLocation(id, conversationID: conversationID) else { return }
         let chat = location.chat
         let index = location.message
@@ -8043,6 +8069,12 @@ final class AppStore {
     /// Why the last Live Activity could not start, if it could not. Shown in
     /// Settings; the chat itself is unaffected.
     var liveActivityWarning: String?
+    /// Last chat whose reply just settled. AliceApp ends that Live Activity.
+    var finishedActivityConversationID: String?
+
+    private func closeAgentActivity(for conversationID: String) {
+        finishedActivityConversationID = conversationID
+    }
 
     /// Why the saved conversations could not be read, if they could not.
     ///

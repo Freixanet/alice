@@ -34,6 +34,55 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertNotEqual(AppStore.homeActivityProfile, "alice")
     }
 
+    func testTheActivityLineMatchesTheChatHeadline() {
+        let download = Message.ToolCall(id: "t1", name: "cobalt_download", status: .start)
+        XCTAssertEqual(
+            ToolCaption.headline(pending: true, note: nil, thoughtSeconds: nil, steps: [download]),
+            "Downloading"
+        )
+        XCTAssertEqual(
+            ToolCaption.headline(pending: true, note: "Reconnecting to Hermes…", thoughtSeconds: nil),
+            "Reconnecting to Hermes…"
+        )
+    }
+
+    func testTwoChatsNeverShareOneActivitySlot() {
+        let mark = BotMark(colour: 0, shape: 0)
+        let home = AgentActivities.Work(
+            conversationID: "home", profile: "default", name: "Alice", mark: mark,
+            waitingOn: [], headline: "Thinking"
+        )
+        let other = AgentActivities.Work(
+            conversationID: "bot-1", profile: "default", name: "Alice", mark: mark,
+            waitingOn: [], headline: "Downloading"
+        )
+        let map = AgentActivities.uniqueWorks([home, other])
+        XCTAssertEqual(Set(map.keys), ["home", "bot-1"])
+        XCTAssertEqual(map["home"]?.headline, "Thinking")
+        XCTAssertEqual(map["bot-1"]?.headline, "Downloading")
+    }
+
+    func testEndingOneConversationLeavesTheOthers() {
+        let mark = BotMark(colour: 0, shape: 0)
+        let home = AgentActivities.Work(
+            conversationID: "home", profile: "default", name: "Alice", mark: mark,
+            waitingOn: [], headline: "Thinking"
+        )
+        let other = AgentActivities.Work(
+            conversationID: "bot-1", profile: "news", name: "News", mark: mark,
+            waitingOn: [], headline: "Searching the web"
+        )
+        let after = AgentActivities.removing(
+            AgentActivities.uniqueWorks([home, other]), conversationID: "home"
+        )
+        XCTAssertNil(after["home"])
+        XCTAssertEqual(after["bot-1"]?.conversationID, "bot-1")
+        XCTAssertEqual(
+            AgentActivities.removing(after, conversationID: "missing")["bot-1"]?.conversationID,
+            "bot-1"
+        )
+    }
+
     func testAClarifyQuestionIsNotWorking() {
         XCTAssertFalse(
             AppStore.isWorking(

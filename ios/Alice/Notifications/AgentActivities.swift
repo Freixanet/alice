@@ -13,11 +13,27 @@ import OSLog
 @MainActor
 final class AgentActivities {
     struct Work: Equatable, Sendable {
+        let conversationID: String
         let profile: String
         let name: String
         let mark: BotMark
         /// Display names of the agents it is waiting on.
         let waitingOn: [String]
+        /// Same line the chat shows (`ToolCaption.headline`).
+        let headline: String
+    }
+
+    /// One work item per conversation. A later item for the same chat replaces
+    /// the earlier one; two chats never share a slot.
+    nonisolated static func uniqueWorks(_ works: [Work]) -> [String: Work] {
+        Dictionary(works.map { ($0.conversationID, $0) }, uniquingKeysWith: { _, last in last })
+    }
+
+    /// Removes that conversation from a map. Safe when it is already gone.
+    nonisolated static func removing(_ works: [String: Work], conversationID: String) -> [String: Work] {
+        var next = works
+        next.removeValue(forKey: conversationID)
+        return next
     }
 
     enum Ending: Sendable {
@@ -25,7 +41,7 @@ final class AgentActivities {
     }
 
     /// How long an update is trusted before the activity shows it may be old.
-    static let staleAfter: TimeInterval = 15 * 60
+    static let staleAfter: TimeInterval = 10 * 60
     /// How long a finished activity stays on the Lock Screen.
     static let lingers: TimeInterval = 15 * 60
 
@@ -40,16 +56,17 @@ final class AgentActivities {
         // bridge below, which finds it again in its own context. ActivityKit's
         // handle is not safe to hand across isolation, and every decision here
         // needs nothing but its state.
+        let requested = Self.uniqueWorks(working)
         let showing = Activity<AgentActivityAttributes>.activities
             .filter { $0.activityState == .active && !$0.content.state.isDone }
             .reduce(into: [String: AgentActivityAttributes.ContentState]()) { found, activity in
-                found[activity.attributes.profile] = activity.content.state
+                found[Self.key(activity.attributes)] = activity.content.state
             }
 
-        for work in working {
+        for work in requested.values {
             let phase: AgentActivityAttributes.ContentState.Phase = work.waitingOn.isEmpty ? .working : .waiting
-            let detail = AgentActivityText.waiting(for: work.waitingOn)
-            guard let shown = showing[work.profile] else {
+            let detail = work.headline
+            guard let shown = showing[work.conversationID] else {
                 let state = AgentActivityAttributes.ContentState(
                     phase: phase, detail: detail, startedAt: now, endedAt: nil, updatedAt: now
                 )
@@ -57,7 +74,8 @@ final class AgentActivities {
                     _ = try Activity.request(
                         attributes: AgentActivityAttributes(
                             profile: work.profile, name: work.name,
-                            colour: work.mark.colour, shape: work.mark.shape
+                            colour: work.mark.colour, shape: work.mark.shape,
+                            conversationID: work.conversationID
                         ),
                         content: ActivityContent(state: state, staleDate: now + Self.staleAfter),
                         pushType: nil
@@ -79,26 +97,50 @@ final class AgentActivities {
             let state = AgentActivityAttributes.ContentState(
                 phase: phase, detail: detail, startedAt: shown.startedAt, endedAt: nil, updatedAt: now
             )
-            let profile = work.profile
+            let conversationID = work.conversationID
             let staleDate = now + Self.staleAfter
-            Task { await AgentActivityBridge.update(profile: profile, to: state, staleDate: staleDate) }
+            Task { await AgentActivityBridge.update(conversationID: conversationID, to: state, staleDate: staleDate) }
         }
 
-        let busy = Set(working.map(\.profile))
-        for (profile, shown) in showing where !busy.contains(profile) {
-            var state = shown
-            state.phase = switch ending(profile) {
-            case .finished: .finished
-            case .failed: .failed
-            case .stopped: .stopped
-            }
-            state.detail = AgentActivityText.ended(state.phase)
-            state.endedAt = now
-            state.updatedAt = now
-            let finished = state
-            let dismissAt = now + Self.lingers
-            Task { await AgentActivityBridge.end(profile: profile, with: finished, at: dismissAt) }
+        let busy = Set(requested.keys)
+        for (conversationID, shown) in showing where !busy.contains(conversationID) {
+            end(conversationID: conversationID, as: ending(conversationID), shown: shown, now: now)
         }
+    }
+
+    /// The single close path: success, error, cancel, timeout, or the app
+    /// going to the background after the reply has already settled.
+    func end(conversationID: String, as ending: Ending = .finished, now: Date = Date()) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let shown = Activity<AgentActivityAttributes>.activities.first {
+            Self.key($0.attributes) == conversationID
+                && $0.activityState == .active && !$0.content.state.isDone
+        }?.content.state
+        end(conversationID: conversationID, as: ending, shown: shown, now: now)
+    }
+
+    private func end(
+        conversationID: String, as ending: Ending,
+        shown: AgentActivityAttributes.ContentState?, now: Date
+    ) {
+        var state = shown ?? AgentActivityAttributes.ContentState(
+            phase: .finished, detail: "", startedAt: now, endedAt: nil, updatedAt: now
+        )
+        state.phase = switch ending {
+        case .finished: .finished
+        case .failed: .failed
+        case .stopped: .stopped
+        }
+        state.detail = AgentActivityText.ended(state.phase)
+        state.endedAt = now
+        state.updatedAt = now
+        let finished = state
+        let dismissAt = now + Self.lingers
+        Task { await AgentActivityBridge.end(conversationID: conversationID, with: finished, at: dismissAt) }
+    }
+
+    nonisolated static func key(_ attributes: AgentActivityAttributes) -> String {
+        attributes.conversationID.isEmpty ? attributes.profile : attributes.conversationID
     }
 }
 
@@ -106,25 +148,26 @@ final class AgentActivities {
 /// isolation: it is found and used in the same place.
 private enum AgentActivityBridge {
     nonisolated static func update(
-        profile: String, to state: AgentActivityAttributes.ContentState, staleDate: Date
+        conversationID: String, to state: AgentActivityAttributes.ContentState, staleDate: Date
     ) async {
-        guard let activity = current(profile) else { return }
+        guard let activity = current(conversationID) else { return }
         await activity.update(ActivityContent(state: state, staleDate: staleDate))
     }
 
     nonisolated static func end(
-        profile: String, with state: AgentActivityAttributes.ContentState, at dismissAt: Date
+        conversationID: String, with state: AgentActivityAttributes.ContentState, at dismissAt: Date
     ) async {
-        guard let activity = current(profile) else { return }
+        guard let activity = current(conversationID) else { return }
         await activity.end(
             ActivityContent(state: state, staleDate: nil),
             dismissalPolicy: .after(dismissAt)
         )
     }
 
-    nonisolated private static func current(_ profile: String) -> Activity<AgentActivityAttributes>? {
+    nonisolated private static func current(_ conversationID: String) -> Activity<AgentActivityAttributes>? {
         Activity<AgentActivityAttributes>.activities.first {
-            $0.attributes.profile == profile && $0.activityState == .active && !$0.content.state.isDone
+            AgentActivities.key($0.attributes) == conversationID
+                && $0.activityState == .active && !$0.content.state.isDone
         }
     }
 }

@@ -30,6 +30,9 @@ struct AgentActivityAttributes: ActivityAttributes {
     /// The agent's mark (`BotMark`): its colour and silhouette.
     let colour: Int
     let shape: Int
+    /// The chat this activity belongs to. Empty on activities started before
+    /// conversation identity existed; those are matched by profile instead.
+    var conversationID: String = ""
 }
 
 enum AgentActivityText {

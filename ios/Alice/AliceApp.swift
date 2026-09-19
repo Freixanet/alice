@@ -98,6 +98,17 @@ struct AliceApp: App {
                             store.persistConversationsImmediately()
                             store.stopWatchingLiveEvents()
                             scheduleRefresh()
+                            // A reply that already settled must not keep a
+                            // Live Activity running after Alice leaves.
+                            for chat in store.conversations {
+                                let last = chat.messages.last(where: { $0.role == .assistant })
+                                if last?.pending != true {
+                                    activities.end(
+                                        conversationID: chat.id,
+                                        as: store.agentEnding(chat.id)
+                                    )
+                                }
+                            }
                         }
                         return
                     }
@@ -133,6 +144,10 @@ struct AliceApp: App {
                 .onChange(of: store.agentWorks, initial: true) { _, works in
                     activities.sync(working: works, ending: store.agentEnding)
                     store.liveActivityWarning = activities.lastStartFailure
+                }
+                .onChange(of: store.finishedActivityConversationID) { _, id in
+                    guard let id else { return }
+                    activities.end(conversationID: id, as: store.agentEnding(id))
                 }
         }
         .backgroundTask(.appRefresh(Self.refreshTaskID)) {
