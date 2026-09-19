@@ -22,6 +22,8 @@ final class RichMediaModel {
     private(set) var phase: Phase
     private(set) var player: AVPlayer?
     private(set) var image: UIImage?
+    /// A frame from the video, so the card shows what it holds before play.
+    private(set) var poster: UIImage?
     private(set) var bytes: Int64?
     private(set) var isPlaying = false
     private(set) var elapsed: Double = 0
@@ -37,6 +39,7 @@ final class RichMediaModel {
             phase = .ready(cached.file)
             bytes = Self.size(of: cached.file)
             if media.kind == .image { image = UIImage(contentsOfFile: cached.file.path) }
+            if media.kind == .video { Task { await makePoster(from: cached.file) } }
         } else {
             phase = .idle
         }
@@ -72,6 +75,7 @@ final class RichMediaModel {
                 }
                 phase = .ready(loaded.file)
                 then?(loaded.file)
+                if media.kind == .video { await makePoster(from: loaded.file) }
             } catch is CancellationError {
                 phase = .idle
             } catch let failure as RichMediaLoader.Failure {
@@ -196,6 +200,19 @@ final class RichMediaModel {
         }
     }
 
+    /// One frame near the start, small enough for a chat row. A file with
+    /// no readable video track simply keeps the plain poster.
+    private func makePoster(from file: URL) async {
+        guard poster == nil else { return }
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 1280, height: 1280)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = CMTime(seconds: 2, preferredTimescale: 600)
+        let frame = try? await generator.image(at: CMTime(seconds: 1, preferredTimescale: 600)).image
+        if let frame { poster = UIImage(cgImage: frame) }
+    }
+
     private static func size(of file: URL) -> Int64? {
         let attrs = try? FileManager.default.attributesOfItem(atPath: file.path)
         return (attrs?[.size] as? NSNumber)?.int64Value
@@ -275,6 +292,9 @@ struct RichMediaView: View {
             .aspectRatio(16 / 9, contentMode: .fit)
             .clipped()
             .transaction { $0.animation = nil }
+            // The bytes are fetched as soon as the card is seen, so the frame
+            // shows before any tap and play starts the moment it is asked.
+            .onAppear { model.fetch(with: fetchers) }
 
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -315,10 +335,24 @@ struct RichMediaView: View {
 
     private func poster(symbol: String?, caption: String?) -> some View {
         ZStack {
-            LinearGradient(
-                colors: [Color(white: 0.16), Color(white: 0.06)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
+            if let frame = model.poster {
+                GeometryReader { box in
+                    Image(uiImage: frame)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: box.size.width, height: box.size.height)
+                        .clipped()
+                }
+                LinearGradient(
+                    colors: [.black.opacity(0.05), .black.opacity(0.35)],
+                    startPoint: .top, endPoint: .bottom
+                )
+            } else {
+                LinearGradient(
+                    colors: [Color(white: 0.16), Color(white: 0.06)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+            }
             VStack(spacing: 10) {
                 if let symbol {
                     Image(systemName: symbol)

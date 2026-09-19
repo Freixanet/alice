@@ -474,6 +474,7 @@ struct RoutineEditorSheet: View {
     enum ScheduleMode: String, CaseIterable, Identifiable {
         case daily = "Daily"
         case weekdays = "Weekdays"
+        case weekly = "Some days"
         case interval = "Interval"
         case custom = "Custom"
         var id: String { rawValue }
@@ -495,6 +496,8 @@ struct RoutineEditorSheet: View {
     @State private var time = Date()
     @State private var intervalValue = 1
     @State private var intervalUnit = "h"
+    @State private var weekDays: Set<Int> = [1]
+    @State private var brief = ""
     @State private var customSchedule: String
     @State private var targets: [RoutineDeliveryTarget] = [
         RoutineDeliveryTarget(id: "local", name: "Local (save only)", homeTargetSet: true)
@@ -513,9 +516,13 @@ struct RoutineEditorSheet: View {
         _profile = State(initialValue: routine?.profile ?? profiles.first?.id ?? "default")
         _name = State(initialValue: routine?.name ?? "")
         _prompt = State(initialValue: routine?.prompt ?? "")
-        _deliver = State(initialValue: routine?.deliver ?? "local")
+        _deliver = State(initialValue: routine?.deliver ?? "bot-chat")
         _scheduleMode = State(initialValue: routine == nil ? .daily : .custom)
         _customSchedule = State(initialValue: routine?.schedule ?? "")
+        var start = DateComponents()
+        start.hour = 9
+        start.minute = 0
+        _time = State(initialValue: Calendar.current.date(from: start) ?? Date())
     }
 
     var body: some View {
@@ -530,18 +537,85 @@ struct RoutineEditorSheet: View {
                     .listRowBackground(Palette.card(scheme))
                 }
 
+                if routine == nil {
+                    Section {
+                        TextField(
+                            "e.g. every morning at 8 tell me the weather in Blanes",
+                            text: $brief, axis: .vertical
+                        )
+                        .lineLimit(2...4)
+                        .onChange(of: brief) { _, text in applyBrief(text) }
+                        if let cadence = RoutineBrief.read(brief).cadence {
+                            Label(RoutineBrief.describe(cadence), systemImage: "clock")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text("Say it in one sentence")
+                    } footer: {
+                        Text("Alice reads when and what from the sentence and fills in the fields below. You can change any of them.")
+                    }
+                    .listRowBackground(Palette.card(scheme))
+
+                    Section("Or start from an idea") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(RoutineBrief.templates) { template in
+                                    Button {
+                                        apply(template)
+                                    } label: {
+                                        Label(template.title, systemImage: template.symbol)
+                                            .font(.footnote.weight(.medium))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Palette.background(scheme), in: .capsule)
+                                            .overlay(Capsule().stroke(Palette.border(scheme), lineWidth: 0.5))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                }
+
                 Section("Routine") {
                     TextField("Name", text: $name)
                     TextField("What should it do?", text: $prompt, axis: .vertical).lineLimit(3...8)
+                    if prompt.contains("[") {
+                        Text("Replace the parts in [brackets] with your own details.")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                 }
                 .listRowBackground(Palette.card(scheme))
 
-                Section("Schedule") {
+                Section {
                     Picker("Type", selection: $scheduleMode) {
                         ForEach(ScheduleMode.allCases) { Text($0.rawValue).tag($0) }
                     }
                     switch scheduleMode {
                     case .daily, .weekdays:
+                        DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
+                    case .weekly:
+                        HStack(spacing: 6) {
+                            ForEach(1...7, id: \.self) { day in
+                                let on = weekDays.contains(day)
+                                Button {
+                                    if on { if weekDays.count > 1 { weekDays.remove(day) } } else { weekDays.insert(day) }
+                                } label: {
+                                    Text(["M", "T", "W", "T", "F", "S", "S"][day - 1])
+                                        .font(.footnote.weight(.semibold))
+                                        .frame(width: 34, height: 34)
+                                        .background(on ? store.accent.primary(scheme) : Palette.background(scheme), in: .circle)
+                                        .foregroundStyle(on ? .white : .primary)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][day - 1])
+                                .accessibilityAddTraits(on ? .isSelected : [])
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
                         DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
                     case .interval:
                         Stepper("Every \(intervalValue) \(unitLabel)", value: $intervalValue, in: 1...999)
@@ -555,14 +629,14 @@ struct RoutineEditorSheet: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
-                    Text(hermesTimezone.isEmpty
-                         ? "Hermes timezone: Mac local time. After saving, the exact next run is shown in your iPhone's local time."
-                         : "Hermes timezone: \(hermesTimezone). After saving, the exact next run is shown in your iPhone's local time.")
-                        .font(.caption).foregroundStyle(.secondary)
+                } header: {
+                    Text("When")
+                } footer: {
+                    Text(scheduleSummary)
                 }
                 .listRowBackground(Palette.card(scheme))
 
-                Section("Result") {
+                Section {
                     Picker("Deliver to", selection: $deliver) {
                         ForEach(targets) { target in
                             Text(target.homeTargetSet ? target.name : "\(target.name) — needs home channel")
@@ -570,9 +644,13 @@ struct RoutineEditorSheet: View {
                         }
                     }
                     if let target = targets.first(where: { $0.id == deliver }), !target.homeTargetSet {
-                        Text("Configure a home channel for \(target.name) in Hermes before using it for scheduled delivery.")
+                        Text("\(target.name) has no home channel yet. Set one in Hermes, or pick another destination.")
                             .font(.caption).foregroundStyle(.orange)
                     }
+                } header: {
+                    Text("Where the result goes")
+                } footer: {
+                    Text("The agent's chat is the simplest: the result appears there like any other reply.")
                 }
                 .listRowBackground(Palette.card(scheme))
 
@@ -595,6 +673,12 @@ struct RoutineEditorSheet: View {
         .task {
             if let found = try? await store.routineDeliveryTargets(), !found.isEmpty {
                 targets = found
+                // A new routine lands in the agent's chat when Hermes offers
+                // it; otherwise the first destination that is ready.
+                if routine == nil, !found.contains(where: { $0.id == deliver && $0.homeTargetSet }) {
+                    deliver = found.first(where: { $0.id == "bot-chat" && $0.homeTargetSet })?.id
+                        ?? found.first(where: \.homeTargetSet)?.id ?? "local"
+                }
                 if !found.contains(where: { $0.id == deliver }), deliver != "local" {
                     // Never silently change an existing routine's destination.
                     // A target Hermes no longer advertises stays visible as a
@@ -628,22 +712,74 @@ struct RoutineEditorSheet: View {
         }
     }
 
-    private var compiledSchedule: String {
+    private var clockParts: (hour: Int, minute: Int) {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: time)
+        return (c.hour ?? 9, c.minute ?? 0)
+    }
+
+    /// The schedule as Hermes reads it, from whatever the controls say.
+    private var chosenCadence: RoutineBrief.Cadence? {
+        let (hour, minute) = clockParts
         switch scheduleMode {
-        case .daily:
-            return "every day at \(clockString)"
-        case .weekdays:
-            return "weekdays at \(clockString)"
-        case .interval:
-            return "every \(intervalValue)\(intervalUnit)"
-        case .custom:
-            return customSchedule.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .daily: return .daily(hour: hour, minute: minute)
+        case .weekdays: return .weekdays(hour: hour, minute: minute)
+        case .weekly: return .weekly(days: Array(weekDays), hour: hour, minute: minute)
+        case .interval: return .interval(value: intervalValue, unit: intervalUnit)
+        case .custom: return nil
         }
     }
 
-    private var clockString: String {
-        let c = Calendar.current.dateComponents([.hour, .minute], from: time)
-        return String(format: "%02d:%02d", c.hour ?? 9, c.minute ?? 0)
+    private var compiledSchedule: String {
+        if let chosenCadence { return RoutineBrief.schedule(for: chosenCadence) }
+        return customSchedule.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var scheduleSummary: String {
+        let zone = hermesTimezone.isEmpty ? "the computer running Hermes" : hermesTimezone
+        if let chosenCadence {
+            return "\(RoutineBrief.describe(chosenCadence)), in the time of \(zone). After saving, the next run is shown in your iPhone's time."
+        }
+        return "Written the way Hermes reads it, e.g. “every monday 9am” or “0 9 * * *”. Times are in the time of \(zone)."
+    }
+
+    /// One sentence fills the controls; the person still sees and can change
+    /// every one of them before anything is saved.
+    private func applyBrief(_ text: String) {
+        let reading = RoutineBrief.read(text)
+        if let cadence = reading.cadence { set(cadence) }
+        if !reading.task.isEmpty { prompt = reading.task }
+        if !reading.name.isEmpty { name = reading.name }
+    }
+
+    private func apply(_ template: RoutineBrief.Template) {
+        name = template.name
+        prompt = template.prompt
+        set(template.cadence)
+    }
+
+    private func set(_ cadence: RoutineBrief.Cadence) {
+        func clock(_ hour: Int, _ minute: Int) {
+            var parts = DateComponents()
+            parts.hour = hour
+            parts.minute = minute
+            if let date = Calendar.current.date(from: parts) { time = date }
+        }
+        switch cadence {
+        case let .daily(hour, minute):
+            scheduleMode = .daily
+            clock(hour, minute)
+        case let .weekdays(hour, minute):
+            scheduleMode = .weekdays
+            clock(hour, minute)
+        case let .weekly(days, hour, minute):
+            scheduleMode = .weekly
+            weekDays = Set(days)
+            clock(hour, minute)
+        case let .interval(value, unit):
+            scheduleMode = .interval
+            intervalValue = value
+            intervalUnit = unit
+        }
     }
 
     private func save() {
@@ -659,7 +795,7 @@ struct RoutineEditorSheet: View {
                 try await onSave(profile, name, prompt, schedule, deliver)
                 dismiss()
             } catch {
-                failure = (error as? LocalizedError)?.errorDescription ?? "Hermes refused the routine."
+                failure = PlainWords.describe(error, doing: "save this routine")
             }
         }
     }
