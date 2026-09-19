@@ -86,6 +86,8 @@ final class AppStore {
     private(set) var sendingConversations: Set<String> = []
     /// Whether the chat on screen has a reply under way.
     var isSending: Bool { activeID.map { sendingConversations.contains($0) } ?? false }
+    @ObservationIgnored private var latencyStartedAt: [String: Date] = [:]
+    @ObservationIgnored private var latencyLogged: [String: Set<String>] = [:]
 
     private let client = HermesClient()
     /// One socket for the whole app, built lazily once the dashboard is
@@ -5771,6 +5773,26 @@ final class AppStore {
         }
     }
 
+    /// Opens a bot's canonical session as soon as its chat appears, so Send
+    /// is not the first `BotChatSync.resolve`.
+    func prepareBotChatIfNeeded(profile: String) async {
+        let open = conversations.first(where: {
+            $0.isCanonicalBotChat && $0.routedBotName == profile
+        })
+        if let sessionID = open?.hermesSessionID, !sessionID.isEmpty { return }
+        guard let source = await botChatSource() else { return }
+        do {
+            let chat = try await BotChatSync(source: source).resolve(profile: profile)
+            if let index = conversations.firstIndex(where: {
+                $0.isCanonicalBotChat && $0.routedBotName == profile
+            }) {
+                conversations[index].hermesSessionID = chat.resolvedID
+            }
+        } catch {
+            // Warm-up only. Send still opens the session and says if it fails.
+        }
+    }
+
     /// Re-reads every bot chat the app is showing, once, on returning to the
     /// foreground. Not a poll: a cron report lands while the phone is asleep,
     /// and this is the moment it becomes worth asking for.
@@ -6732,6 +6754,15 @@ final class AppStore {
         }
     }
 
+    private func markLatency(_ conversationID: String, phase: String) {
+        var logged = latencyLogged[conversationID] ?? []
+        guard logged.insert(phase).inserted else { return }
+        latencyLogged[conversationID] = logged
+        let started = latencyStartedAt[conversationID] ?? Date()
+        let ms = phase == "send" ? 0 : max(0, Int((Date().timeIntervalSince(started) * 1000).rounded()))
+        DiagnosticsLog.write("latency \(conversationID) \(phase) \(ms)")
+    }
+
     func send() {
         guard !activeIsRecoveredHistory else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -6857,6 +6888,9 @@ final class AppStore {
         draft = ""
         draftAttachments = []
         sendingConversations.insert(conversationID)
+        latencyStartedAt[conversationID] = Date()
+        latencyLogged[conversationID] = []
+        markLatency(conversationID, phase: "send")
 
         let user = Message(
             id: UUID().uuidString, role: .user, content: text, createdAt: Date(),
@@ -7743,6 +7777,7 @@ final class AppStore {
         approvalSessionKey: String? = nil
     ) {
         guard let location = messageLocation(id, conversationID: conversationID) else { return }
+        markLatency(conversationID, phase: "firstEvent")
         let chat = location.chat
         let index = location.message
         let eventProfile = conversations[chat].messages[index].botName
@@ -7828,6 +7863,9 @@ final class AppStore {
                     )
                 ))
             }
+        }
+        if !conversations[chat].messages[index].content.isEmpty {
+            markLatency(conversationID, phase: "firstRender")
         }
     }
 

@@ -124,7 +124,10 @@ struct ChatScreen: View {
         }
         // The list is where these are normally read, and a conversation can
         // be opened without ever going through it.
-        .task(id: bot) { await refreshBots() }
+        .task(id: bot) {
+            await refreshBots()
+            if let bot { await store.prepareBotChatIfNeeded(profile: bot) }
+        }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification
         )) { note in
