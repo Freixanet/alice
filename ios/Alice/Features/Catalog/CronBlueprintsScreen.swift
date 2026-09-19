@@ -40,7 +40,7 @@ struct CronBlueprintsScreen: View {
     }
     private var filtered: [CronBlueprint] { let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(); guard !q.isEmpty else { return rows }; return rows.filter { $0.title.lowercased().contains(q) || $0.detail.lowercased().contains(q) || $0.tags.contains(where: { $0.lowercased().contains(q) }) } }
     private func loadProfiles() async { do { profiles = try await store.routineProfiles().map { ($0.id, $0.label) } } catch { profiles = [("default", "Alice")] } }
-    private func load() async { loading = true; defer { loading = false }; do { rows = try await store.cronBlueprints(); failure = nil } catch { failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer." } }
+    private func load() async { loading = true; defer { loading = false }; do { rows = try await store.cronBlueprints(); failure = nil } catch { failure = PlainWords.describe(error) } }
 }
 
 private struct BlueprintForm: View {

@@ -1,0 +1,19 @@
+{
+  "name": "cobalt-mcp",
+  "version": "0.3.0",
+  "private": true,
+  "description": "MCP server wrapping a local cobalt API instance (media downloads for Hermes, players in Alice)",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test lib.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "zod": "^3.25.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

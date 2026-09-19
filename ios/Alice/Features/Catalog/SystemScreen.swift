@@ -849,7 +849,7 @@ struct SystemScreen: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer."
+        PlainWords.describe(error)
     }
 }
 

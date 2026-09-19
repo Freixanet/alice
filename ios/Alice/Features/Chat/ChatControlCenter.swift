@@ -274,8 +274,9 @@ extension AppStore {
         conversations[chatIndex].messages.append(
             Message(id: replyID, role: .assistant, content: "", createdAt: Date(), pending: true)
         )
-        if conversations[chatIndex].title == "New chat" {
-            conversations[chatIndex].title = String(text.prefix(40))
+        if ConversationTitle.isPlaceholder(conversations[chatIndex].title),
+           let title = ConversationTitle.from(text) {
+            conversations[chatIndex].title = title
         }
         conversations[chatIndex].updatedAt = Date()
         persistConversations()

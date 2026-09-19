@@ -6852,9 +6852,11 @@ final class AppStore {
                 mentionProfile: mentionText == nil ? nil : invokedBot
             )
         )
-        if conversations[index].title == "New chat" {
-            let name = text.isEmpty ? (attachments.first?.name ?? "New chat") : text
-            conversations[index].title = String(name.prefix(40))
+        // Named by its subject, not its first forty keystrokes; a bare
+        // greeting names nothing and the chat waits for the real question.
+        if ConversationTitle.isPlaceholder(conversations[index].title),
+           let title = ConversationTitle.from(text, attachmentName: attachments.first?.name) {
+            conversations[index].title = title
         }
         conversations[index].updatedAt = Date()
 

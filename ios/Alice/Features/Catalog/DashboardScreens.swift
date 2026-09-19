@@ -1108,12 +1108,10 @@ private struct DashboardList<Content: View>: View {
     }
 }
 
+/// What went wrong, for the person reading the screen: cause first, and a
+/// domain or code only when nothing else explains it. See `PlainWords`.
 func diagnosticMessage(_ error: Error) -> String {
-    if let description = (error as? LocalizedError)?.errorDescription, !description.isEmpty {
-        return description
-    }
-    let ns = error as NSError
-    return "\(ns.localizedDescription) [\(ns.domain) \(ns.code)]"
+    PlainWords.describe(error)
 }
 
 func message(_ error: Error) -> String {

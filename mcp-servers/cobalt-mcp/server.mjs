@@ -3,13 +3,17 @@
  * cobalt-mcp — MCP server wrapping a self-hosted cobalt API instance.
  *
  * Exposes three tools to the agent:
- *   - cobalt_download: process a media URL and get a download link
+ *   - cobalt_download: process a media URL, save the file(s) to the Hermes
+ *     workspace and return the saved path plus a ready-to-paste
+ *     `media_markdown` line that Alice draws as a player in the chat
  *   - cobalt_services: list services the instance supports
  *   - cobalt_instance_info: instance version/status
  *
  * Config via env vars:
- *   COBALT_API_URL  (default: http://localhost:9000/)
- *   COBALT_API_KEY  (optional, sent as "Authorization: Api-Key <key>")
+ *   COBALT_API_URL   (default: http://localhost:9000/)
+ *   COBALT_API_KEY   (optional, sent as "Authorization: Api-Key <key>")
+ *   COBALT_SAVE_DIR  (required: where files land; Alice's Files → Workspace)
+ *   COBALT_PICKER_MAX (default 10: how many picker items are saved)
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -18,12 +22,21 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
+import {
+  describeCobaltError,
+  extensionFor,
+  mediaMarkdown,
+  safeFileName,
+  savedReport,
+  uniquePath,
+} from "./lib.mjs";
 
-const API_URL = (process.env.COBALT_API_URL || "http://localhost:9000/").replace(
-  /\/?$/,
-  "/",
-);
+const API_URL = (process.env.COBALT_API_URL || "http://localhost:9000/").replace(/\/?$/, "/");
 const API_KEY = process.env.COBALT_API_KEY || "";
+const SAVE_DIR = process.env.COBALT_SAVE_DIR || "";
+const PICKER_MAX = Math.max(1, Number(process.env.COBALT_PICKER_MAX) || 10);
+const PROCESS_TIMEOUT_MS = 120_000;
+const FILE_TIMEOUT_MS = 900_000;
 
 function headers() {
   const h = { Accept: "application/json", "Content-Type": "application/json" };
@@ -35,17 +48,52 @@ function fail(message) {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
-const server = new McpServer({
-  name: "cobalt",
-  version: "0.1.0",
-});
+function ok(text) {
+  return { content: [{ type: "text", text }] };
+}
+
+function unreachable(err) {
+  return fail(
+    `Cannot reach cobalt at ${API_URL}. Is the docker container running? (${err?.message ?? err})`,
+  );
+}
+
+/** Streams `url` into a fresh file under SAVE_DIR; never overwrites. */
+async function saveFromUrl(url, preferredName, { type } = {}) {
+  await fs.mkdir(SAVE_DIR, { recursive: true });
+  const res = await fetch(url, { signal: AbortSignal.timeout(FILE_TIMEOUT_MS) });
+  if (!res.ok || !res.body) {
+    throw new Error(`HTTP ${res.status} while downloading the file`);
+  }
+  let name = safeFileName(preferredName);
+  if (!path.extname(name)) {
+    name += extensionFor({ type, contentType: res.headers.get("content-type"), url });
+  }
+  const dest = uniquePath(SAVE_DIR, name);
+  const partial = `${dest}.part`;
+  try {
+    await pipeline(res.body, fsSync.createWriteStream(partial));
+    await fs.rename(partial, dest);
+  } catch (err) {
+    await fs.rm(partial, { force: true }).catch(() => {});
+    throw err;
+  }
+  const stat = await fs.stat(dest);
+  if (stat.size === 0) {
+    await fs.rm(dest, { force: true }).catch(() => {});
+    throw new Error("the download was empty");
+  }
+  return { dest, bytes: stat.size };
+}
+
+const server = new McpServer({ name: "cobalt", version: "0.3.0" });
 
 server.registerTool(
   "cobalt_download",
   {
     title: "Download media",
     description:
-      "Process a media URL (YouTube, TikTok, Instagram, Twitter/X, Reddit, SoundCloud, Vimeo and ~15 more) through the local cobalt instance, SAVE the file to the Hermes workspace and return the saved path plus a fallback download link. Use this when the user asks to download or save media from a link.",
+      "Process a media URL (YouTube, TikTok, Instagram, Twitter/X, Reddit, SoundCloud, Vimeo and ~15 more) through the local cobalt instance, SAVE the file to the Hermes workspace and return the saved path plus a `media_markdown` line. Paste that line verbatim, on its own paragraph, so Alice shows a player in the chat. Use this when the user asks to download or save media from a link.",
     inputSchema: {
       url: z.string().url().describe("Source media URL"),
       downloadMode: z
@@ -63,18 +111,20 @@ server.registerTool(
     },
   },
   async ({ url, downloadMode, audioFormat, videoQuality }) => {
+    if (!SAVE_DIR) return fail("COBALT_SAVE_DIR is not set — cannot save the file.");
+
     let res;
     try {
       res = await fetch(API_URL, {
         method: "POST",
         headers: headers(),
-        body: JSON.stringify({ url, downloadMode, audioFormat, videoQuality }),
-        signal: AbortSignal.timeout(120_000),
+        // Server-side processing: one finished file per request. Local
+        // processing would hand back raw streams this tool cannot merge.
+        body: JSON.stringify({ url, downloadMode, audioFormat, videoQuality, localProcessing: "disabled" }),
+        signal: AbortSignal.timeout(PROCESS_TIMEOUT_MS),
       });
     } catch (err) {
-      return fail(
-        `Cannot reach cobalt at ${API_URL}. Is the docker container running? (${err.message})`,
-      );
+      return unreachable(err);
     }
 
     let data;
@@ -85,47 +135,69 @@ server.registerTool(
     }
 
     if (data.status === "error") {
-      return fail(`cobalt error: ${data.error?.code ?? JSON.stringify(data)}`);
+      return fail(describeCobaltError(data.error?.code, data.error?.context));
     }
 
-    // Handle pickers (multiple items) by listing them; single tunnel/redirect gets saved.
-    if (Array.isArray(data.picker)) {
-      const lines = [`status: picker (${data.picker.length} items, saved none — tell the user to pick)`];
-      for (const [i, item] of data.picker.entries()) {
-        lines.push(`  [${i}] ${item.type}: ${item.url}`);
+    // A post with several pieces: save each one, report each one.
+    if (data.status === "picker" && Array.isArray(data.picker)) {
+      const items = data.picker.slice(0, PICKER_MAX);
+      const lines = [`status: picker (${data.picker.length} items, ${items.length} saved)`];
+      const failures = [];
+      const stem = safeFileName(data.audioFilename || data.filename || `cobalt-${Date.now()}`)
+        .replace(/\.[a-z0-9]{2,5}$/i, "");
+      for (const [i, item] of items.entries()) {
+        try {
+          const saved = await saveFromUrl(item.url, `${stem} ${i + 1}`, { type: item.type });
+          lines.push(`SAVED: ${saved.dest}`);
+          lines.push(`media_markdown: ${mediaMarkdown(saved.dest, item.url)}`);
+        } catch (err) {
+          failures.push(`  [${i + 1}] ${item.type}: ${err.message}`);
+        }
       }
-      return { content: [{ type: "text", text: lines.join("\n") }] };
+      if (data.audio) {
+        try {
+          const saved = await saveFromUrl(data.audio, data.audioFilename || `${stem} audio`, { type: "audio" });
+          lines.push(`SAVED: ${saved.dest}`);
+          lines.push(`media_markdown: ${mediaMarkdown(saved.dest, data.audio)}`);
+        } catch (err) {
+          failures.push(`  [audio] ${err.message}`);
+        }
+      }
+      if (failures.length) lines.push("failed:", ...failures);
+      if (data.picker.length > items.length) {
+        lines.push(`note: only the first ${items.length} of ${data.picker.length} items were saved`);
+      }
+      return lines.length > 1 && !lines.some((l) => l.startsWith("SAVED"))
+        ? fail(lines.join("\n"))
+        : ok(lines.join("\n"));
+    }
+
+    // Raw streams for the client to merge. One stream is a finished file;
+    // several would need ffmpeg here, which this tool does not have.
+    if (data.status === "local-processing") {
+      const tunnels = Array.isArray(data.tunnel) ? data.tunnel : [];
+      if (tunnels.length !== 1) {
+        return fail(
+          `cobalt asked for local processing (${data.type ?? "merge"}, ${tunnels.length} streams), which this tool cannot do. Set FORCE_LOCAL_PROCESSING=never on the cobalt instance.`,
+        );
+      }
+      try {
+        const saved = await saveFromUrl(tunnels[0], data.output?.filename || `cobalt-${Date.now()}`);
+        return ok(savedReport({ ...saved, mirrorUrl: tunnels[0], status: data.status }));
+      } catch (err) {
+        return fail(`File save failed: ${err.message}. The link still works: ${tunnels[0]}`);
+      }
     }
 
     const downloadUrl = data.url || data.audio;
     if (!downloadUrl) {
       return fail(`cobalt answered ${data.status} but no download URL: ${JSON.stringify(data).slice(0, 300)}`);
     }
-
-    // Save the file locally so it shows up in Alice's Files screen.
-    const name = data.filename || data.audioFilename || `cobalt-${Date.now()}`;
-    const saveDir = process.env.COBALT_SAVE_DIR || "";
-    if (!saveDir) {
-      return fail("COBALT_SAVE_DIR is not set — cannot save the file.");
-    }
-
-    const safeName = name.replace(/[/\\:*?"<>|]/g, "_").slice(0, 180) || `cobalt-${Date.now()}`;
-    const dest = path.join(saveDir, safeName);
     try {
-      await fs.mkdir(saveDir, { recursive: true });
-      const fileRes = await fetch(downloadUrl, { signal: AbortSignal.timeout(600_000) });
-      if (!fileRes.ok) {
-        return fail(`Downloading the file failed: HTTP ${fileRes.status} from ${downloadUrl}`);
-      }
-      await pipeline(fileRes.body, fsSync.createWriteStream(dest));
-      const stat = await fs.stat(dest);
-      const mb = (stat.size / 1_048_576).toFixed(1);
-      return {
-        content: [{
-          type: "text",
-          text: `SAVED: ${dest}\nsize: ${mb} MB\nfilename: ${safeName}\nstatus: ${data.status}\nfallback link (expires): ${downloadUrl}`,
-        }],
-      };
+      const saved = await saveFromUrl(downloadUrl, data.filename || data.audioFilename || `cobalt-${Date.now()}`, {
+        type: downloadMode === "audio" ? "audio" : "video",
+      });
+      return ok(savedReport({ ...saved, mirrorUrl: downloadUrl, status: data.status }));
     } catch (err) {
       return fail(`File save failed: ${err.message}. The link still works: ${downloadUrl}`);
     }
@@ -141,26 +213,16 @@ server.registerTool(
   },
   async () => {
     try {
-      const res = await fetch(API_URL, {
-        headers: headers(),
-        signal: AbortSignal.timeout(15_000),
-      });
+      const res = await fetch(API_URL, { headers: headers(), signal: AbortSignal.timeout(15_000) });
       const data = await res.json();
       const services = data?.cobalt?.services ?? [];
-      return {
-        content: [
-          {
-            type: "text",
-            text: services.length
-              ? `Supported services (${services.length}): ${services.join(", ")}`
-              : "Could not read the services list from the cobalt instance.",
-          },
-        ],
-      };
-    } catch (err) {
-      return fail(
-        `Cannot reach cobalt at ${API_URL}. Is the docker container running? (${err.message})`,
+      return ok(
+        services.length
+          ? `Supported services (${services.length}): ${services.join(", ")}`
+          : "Could not read the services list from the cobalt instance.",
       );
+    } catch (err) {
+      return unreachable(err);
     }
   },
 );
@@ -174,24 +236,14 @@ server.registerTool(
   },
   async () => {
     try {
-      const res = await fetch(API_URL, {
-        headers: headers(),
-        signal: AbortSignal.timeout(15_000),
-      });
+      const res = await fetch(API_URL, { headers: headers(), signal: AbortSignal.timeout(15_000) });
       const data = await res.json();
       const c = data?.cobalt ?? {};
-      return {
-        content: [
-          {
-            type: "text",
-            text: `cobalt ${c.version ?? "?"} @ ${c.url ?? API_URL}\nservices: ${(c.services ?? []).join(", ") || "unknown"}`,
-          },
-        ],
-      };
-    } catch (err) {
-      return fail(
-        `Cannot reach cobalt at ${API_URL}. Is the docker container running? (${err.message})`,
+      return ok(
+        `cobalt ${c.version ?? "?"} @ ${c.url ?? API_URL}\nservices: ${(c.services ?? []).join(", ") || "unknown"}\nsave dir: ${SAVE_DIR || "(unset)"}`,
       );
+    } catch (err) {
+      return unreachable(err);
     }
   },
 );

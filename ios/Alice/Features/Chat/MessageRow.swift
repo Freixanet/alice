@@ -112,7 +112,9 @@ struct MessageRow: View {
                             pending: message.pending && message.approval == nil
                                 && !store.activeAwaitsAnswers,
                             note: message.deliveryNote,
-                            thoughtSeconds: message.thoughtSeconds
+                            thoughtSeconds: message.thoughtSeconds,
+                            startedAt: message.createdAt,
+                            seed: ToolCaption.seed(message.id)
                         )
                     }
 
@@ -595,10 +597,54 @@ enum ToolCaption {
     }
 
     /// The line above the reply: what it is doing, or what it took.
-    static func headline(pending: Bool, note: String?, thoughtSeconds: Int?) -> String {
-        if pending { return note ?? "Thinking" }
+    ///
+    /// While a tool runs the line says what that tool does — "Downloading",
+    /// "Searching the web" — because that is the honest answer to "what is it
+    /// doing". Between tools the agent is thinking, and a wait that always
+    /// says "Thinking" feels stuck; the word changes every few seconds, from
+    /// a place chosen by `seed` so two replies on screen do not move in step.
+    static func headline(
+        pending: Bool, note: String?, thoughtSeconds: Int?,
+        steps: [Message.ToolCall] = [], elapsed: TimeInterval? = nil, seed: Int = 0
+    ) -> String {
+        if pending {
+            if let note { return note }
+            if let running = Self.steps(in: steps).last, running.status != .done {
+                return phrase(for: running, running: false)
+            }
+            guard let elapsed else { return "Thinking" }
+            return musing(elapsed: elapsed, seed: seed)
+        }
         guard let thoughtSeconds, thoughtSeconds >= 1 else { return "Thought for a moment" }
         return "Thought for \(thoughtSeconds) second\(thoughtSeconds == 1 ? "" : "s")"
+    }
+
+    /// Ways of saying "thinking" that a person waiting can smile at. Plain
+    /// first, so a short wait reads plainly; the rest arrive with time.
+    static let musings: [String] = [
+        "Thinking", "Pondering", "Mulling it over", "Connecting the dots", "Cogitating",
+        "Brewing", "Percolating", "Noodling", "Ruminating", "Weighing it up",
+        "Puzzling", "Deliberating", "Musing", "Marinating", "Untangling",
+        "Simmering", "Sharpening the pencil", "Consulting the oracle", "Chewing on it", "Warming up the neurons",
+    ]
+
+    /// How long one word stays before the next one.
+    static let musingBeat: TimeInterval = 6
+
+    /// The word for this moment of the wait. The first beat is always
+    /// "Thinking": a reply that lands in two seconds never needs a joke.
+    static func musing(elapsed: TimeInterval, seed: Int) -> String {
+        let beats = Int(max(elapsed, 0) / musingBeat)
+        guard beats > 0 else { return musings[0] }
+        let others = musings.dropFirst()
+        let index = (abs(seed) + beats - 1) % others.count
+        return others[others.startIndex + index]
+    }
+
+    /// A stable number for a reply, so its wait keeps its own rhythm across
+    /// redraws and no two replies say the same word at the same time.
+    static func seed(_ id: String) -> Int {
+        id.utf8.reduce(7) { ($0 &* 31 &+ Int($1)) & 0x7fff_ffff }
     }
 
     /// A step, named. Still running it keeps its "…"; done, it does not — by
@@ -617,6 +663,13 @@ enum ToolCaption {
     static func phrase(for tool: Message.ToolCall) -> String {
         let name = tool.name.lowercased()
         switch true {
+        // Media first: `cobalt_download` must not fall into "Reading a file".
+        case name.contains("cobalt"),
+             name.contains("download"):     return "Downloading…"
+        case name.contains("upload"):       return "Uploading…"
+        case name.contains("message_agent"),
+             name.contains("send_message"),
+             name.contains("delegate"):     return "Asking a teammate…"
         case name.contains("search"):       return "Searching the web…"
         case name.contains("browser"),
              name.contains("playwright"):   return "Opening a page…"
@@ -638,8 +691,14 @@ enum ToolCaption {
         case name.contains("calendar"):     return "Checking the calendar…"
         case name.contains("image"),
              name.contains("vision"):       return "Looking at an image…"
+        case name.contains("audio"),
+             name.contains("video"),
+             name.contains("transcri"):     return "Working on the media…"
         case name.contains("cron"),
-             name.contains("job"):          return "Checking its routines…"
+             name.contains("job"),
+             name.contains("schedule"):     return "Checking its routines…"
+        case name.contains("http"),
+             name.contains("request"):      return "Calling a service…"
         default:
             let words = name
                 .replacingOccurrences(of: "_", with: " ")

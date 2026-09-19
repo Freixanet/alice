@@ -30,6 +30,11 @@ struct ThinkingTrace: View {
     var note: String? = nil
     /// How long the agent worked, once it has stopped.
     var thoughtSeconds: Int? = nil
+    /// When the wait began. With it the headline can change its word every
+    /// few seconds, so a long wait never looks stuck on one.
+    var startedAt: Date? = nil
+    /// Where in the list of words this reply starts; see `ToolCaption.seed`.
+    var seed: Int = 0
 
     @State private var manual: Bool?
 
@@ -44,10 +49,15 @@ struct ThinkingTrace: View {
 
     private var expanded: Bool { manual ?? pending }
 
-    private var headline: String {
-        if pending { return note ?? "Thinking" }
-        guard let thoughtSeconds, thoughtSeconds >= 1 else { return "Thought for a moment" }
-        return "Thought for \(thoughtSeconds) second\(thoughtSeconds == 1 ? "" : "s")"
+    private var headline: String { headline(at: Date()) }
+
+    /// What the line says right now: the running tool, or a word for
+    /// thinking that moves on with the clock.
+    private func headline(at now: Date) -> String {
+        ToolCaption.headline(
+            pending: pending, note: note, thoughtSeconds: thoughtSeconds,
+            steps: steps, elapsed: startedAt.map { now.timeIntervalSince($0) }, seed: seed
+        )
     }
 
     var body: some View {
@@ -109,15 +119,13 @@ struct ThinkingTrace: View {
     /// nothing, so nothing can inherit it, and it stops dead when the reply
     /// lands.
     @ViewBuilder private var headlineText: some View {
-        let label = Text(headline)
-            .font(.footnote.weight(.medium))
-            .lineLimit(1)
-
         if pending, !reduceMotion {
             TimelineView(.animation(minimumInterval: 1 / 30)) { timeline in
                 let phase = timeline.date.timeIntervalSinceReferenceDate
                     .truncatingRemainder(dividingBy: 1.7) / 1.7
+                let label = headlineLabel(headline(at: timeline.date))
                 label
+                    .lineLimit(1)
                     .foregroundStyle(.secondary)
                     .overlay {
                         GeometryReader { box in
@@ -136,9 +144,19 @@ struct ThinkingTrace: View {
                     }
             }
             .fixedSize()
+        } else if pending {
+            // No shimmer, but the word still moves on: a redraw every beat.
+            TimelineView(.periodic(from: .now, by: ToolCaption.musingBeat)) { timeline in
+                headlineLabel(headline(at: timeline.date)).lineLimit(1).foregroundStyle(.secondary)
+            }
         } else {
-            label.foregroundStyle(pending ? .secondary : .tertiary)
+            headlineLabel(headline).lineLimit(1).foregroundStyle(.tertiary)
         }
+    }
+
+    private func headlineLabel(_ text: String) -> Text {
+        Text(text)
+            .font(.footnote.weight(.medium))
     }
 
     // ── steps ────────────────────────────────────────────────────────────────

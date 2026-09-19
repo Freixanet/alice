@@ -384,7 +384,7 @@ struct ChannelsScreen: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer."
+        PlainWords.describe(error)
     }
 
     private func symbol(for platform: MessagingPlatform) -> String {

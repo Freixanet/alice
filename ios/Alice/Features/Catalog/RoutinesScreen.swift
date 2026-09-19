@@ -181,7 +181,7 @@ struct RoutinesScreen: View {
             failure = nil
             if !partial, let found = try? await store.routineProfiles() { profiles = found }
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer."
+            failure = PlainWords.describe(error)
         }
     }
 }

@@ -96,5 +96,5 @@ struct PairingAdminScreen: View {
     private func approveCode() async { let c = code.trimmingCharacters(in: .whitespacesAndNewlines); do { try await store.approvePairing(platform: codePlatform, code: c, profile: profile); code = ""; await load() } catch { failure = reason(error) } }
     private func revokeUser(_ user: PairingUser) async { revoke = nil; do { try await store.revokePairing(platform: user.platform, userID: user.userID, profile: profile); await load() } catch { failure = reason(error) } }
     private func clearPending() async { do { _ = try await store.clearPendingPairing(profile: profile); await load() } catch { failure = reason(error) } }
-    private func reason(_ error: Error) -> String { (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer." }
+    private func reason(_ error: Error) -> String { PlainWords.describe(error) }
 }

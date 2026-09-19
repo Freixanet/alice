@@ -1,7 +1,5 @@
 import SwiftUI
 import UIKit
-import AVKit
-import AVFoundation
 
 // MARK: - What a reply is made of
 
@@ -61,9 +59,15 @@ struct RichReplyButton: Equatable {
     let reply: String
 }
 
-/// Media attached to a reply: images preview inline, everything else
-/// (video, audio, files) renders as a play/download button. The address
-/// itself never shows; same rule as web links.
+/// Media attached to a reply: images preview inline, video and audio play
+/// in the chat, other files get a save button. The address itself never
+/// shows; same rule as web links.
+///
+/// A file that lives on the Hermes machine is written by the bot as
+/// `![name.mp4](alice://file?path=/abs/path&url=https://mirror)`. The bytes
+/// come over the authenticated dashboard connection — the same one the chat
+/// uses, so it works from anywhere and never expires — and `url`, when
+/// given, is a plain web mirror (a cobalt tunnel) kept as a fallback.
 struct RichMedia: Equatable, Hashable {
     enum Kind: Equatable, Hashable {
         case image
@@ -73,8 +77,55 @@ struct RichMedia: Equatable, Hashable {
     }
 
     let title: String
+    /// The web address: a CDN, a cobalt tunnel… For a Hermes file with no
+    /// mirror this is the `alice://file` address itself; see `webURL`.
     let url: URL
     let kind: Kind
+    /// Absolute path on the Hermes machine, when the bot pointed there.
+    var hermesPath: String? = nil
+
+    /// The address a browser could open, if there is one.
+    var webURL: URL? {
+        Self.isWeb(url) ? url : nil
+    }
+
+    /// What identifies the bytes, wherever they are fetched from.
+    var cacheKey: String {
+        hermesPath.map { "hermes:" + $0 } ?? url.absoluteString
+    }
+
+    /// A name with the media's extension, for the file saved on the phone.
+    /// The extension can live in the title, in the Hermes path or in the URL;
+    /// whichever one classified the media is the one the file gets.
+    var fileName: String {
+        let clean = (title.split(separator: "/").last.map(String.init) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = clean.isEmpty ? "media" : clean
+        guard kind != .file, Self.kind(forExtension: (name as NSString).pathExtension) == .file else { return name }
+        let borrowed = [hermesPath.map { ($0 as NSString).pathExtension }, url.pathExtension]
+            .compactMap { $0 }
+            .first { !$0.isEmpty && Self.kind(forExtension: $0) == kind }
+        return borrowed.map { name + "." + $0.lowercased() } ?? name
+    }
+
+    static func isWeb(_ url: URL) -> Bool {
+        ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+    }
+
+    /// `alice://file?path=…&url=…`: a file on the Hermes machine, with an
+    /// optional web mirror. Anything else — including `alice://reply` — is nil.
+    static func hermesFile(_ url: URL) -> (path: String, mirror: URL?)? {
+        guard url.scheme?.lowercased() == "alice", url.host?.lowercased() == "file",
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        else { return nil }
+        let path = items.first { $0.name == "path" }?.value?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !path.isEmpty, !path.contains("\n") else { return nil }
+        let raw = items.first { $0.name == "url" }?.value?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let mirror = URL(string: raw).flatMap { isWeb($0) ? $0 : nil }
+        return (path, mirror)
+    }
 
     /// File extension → kind, so a bot can mark media with a markdown image
     /// and the chat draws it as what it is instead of a broken picture.
@@ -88,9 +139,23 @@ struct RichMedia: Equatable, Hashable {
     /// own. cobalt's tunnel links are `/tunnel?id=…`: the extension lives in
     /// the filename the bot shows, never in the URL.
     static func kind(forTitle title: String?, url: URL) -> Kind {
-        let byURL = kind(for: url)
-        guard byURL == .file else { return byURL }
-        return kind(forExtension: ((title ?? "") as NSString).pathExtension)
+        kind(title: title, path: nil, url: url)
+    }
+
+    /// The first of title, Hermes path and URL that carries a media
+    /// extension decides. The title is what the bot meant; the path is what
+    /// was saved; the URL is the last resort because tunnels have no suffix.
+    static func kind(title: String?, path: String?, url: URL) -> Kind {
+        let candidates = [
+            ((title ?? "") as NSString).pathExtension,
+            ((path ?? "") as NSString).pathExtension,
+            url.pathExtension,
+        ]
+        for ext in candidates where !ext.isEmpty {
+            let found = kind(forExtension: ext)
+            if found != .file { return found }
+        }
+        return .file
     }
 
     private static func kind(forExtension ext: String) -> Kind {
@@ -108,10 +173,22 @@ struct RichMedia: Equatable, Hashable {
 
     static func labeled(title: String?, url: URL) -> RichMedia {
         let label = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "`", with: "")
+        if let file = hermesFile(url) {
+            let name = label.isEmpty ? (file.path as NSString).lastPathComponent : label
+            let address = file.mirror ?? url
+            return RichMedia(
+                title: name.isEmpty ? "File" : name,
+                url: address,
+                kind: kind(title: name, path: file.path, url: address),
+                hermesPath: file.path
+            )
+        }
         return RichMedia(
             title: label.isEmpty ? RichLinks.domain(url) : label,
             url: url,
-            kind: kind(forTitle: label.isEmpty ? nil : label, url: url)
+            kind: kind(title: label.isEmpty ? nil : label, path: nil, url: url)
         )
     }
 
@@ -119,8 +196,10 @@ struct RichMedia: Equatable, Hashable {
     /// bare media URL. Inline media elsewhere stays a link — a picture
     /// mid-sentence is a gesture (`see this`), never a player card.
     ///
-    /// A link is only promoted when its label reads as a filename with a media
-    /// extension; `[Watch](…)` and `[Descargar vídeo](…)` keep their button.
+    /// A web link is only promoted when its label reads as a filename with a
+    /// media extension; `[Watch](…)` and `[Descargar vídeo](…)` keep their
+    /// button. A Hermes file is always a card, whatever its kind: there is no
+    /// browser to hand it to, so the card is the only way to reach it.
     /// Returns nil so ordinary paragraphs (and their links) parse as before.
     static func standalone(_ line: String) -> RichMedia? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -128,34 +207,48 @@ struct RichMedia: Equatable, Hashable {
 
         if trimmed.hasPrefix("!") || trimmed.hasPrefix("[") {
             guard let parsed = markdownMedia(trimmed) else { return nil }
-            let media = labeled(title: parsed.title, url: parsed.url)
-            return media.kind == .file ? nil : media
+            return promoted(labeled(title: parsed.title, url: parsed.url))
         }
 
         guard !trimmed.contains(" "),
               let url = URL(string: trimmed),
-              ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+              isMediaAddress(url)
         else { return nil }
-        let media = labeled(title: nil, url: url)
+        return promoted(labeled(title: nil, url: url))
+    }
+
+    private static func promoted(_ media: RichMedia) -> RichMedia? {
+        if media.hermesPath != nil { return media }
         return media.kind == .file ? nil : media
     }
 
+    /// Web, or a Hermes file. `alice://reply` and friends are not media.
+    private static func isMediaAddress(_ url: URL) -> Bool {
+        isWeb(url) || hermesFile(url) != nil
+    }
+
     /// `![title](url)` or `[title](url)` — the whole line, nothing else.
+    ///
+    /// The address runs to the closing parenthesis of the line, so a file
+    /// name with brackets of its own (`clip (1080p).mp4`) survives inside it.
+    /// A trailing `"title"` in the parentheses, as Markdown allows, is dropped.
     private static func markdownMedia(_ line: String) -> (title: String, url: URL)? {
         var rest = Substring(line)
         if rest.hasPrefix("!") { rest = rest.dropFirst() }
         guard rest.hasPrefix("["), rest.hasSuffix(")") else { return nil }
-        guard let closeBracket = rest.firstIndex(of: "]"),
-              let openParen = rest[closeBracket...].firstIndex(of: "(")
-        else { return nil }
-        // A second `]` after the bracket means this is two links, not one line.
+        guard let closeBracket = rest.firstIndex(of: "]") else { return nil }
         let after = rest[rest.index(after: closeBracket)...]
         guard after.hasPrefix("(") else { return nil }
         let title = String(rest[rest.index(after: rest.startIndex)..<closeBracket])
-        let raw = String(rest[rest.index(after: openParen)..<rest.index(before: rest.endIndex)])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: raw),
-              ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        var raw = String(after.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.hasSuffix("\""), let quote = raw.dropLast().lastIndex(of: "\"") {
+            let candidate = raw[..<quote].trimmingCharacters(in: .whitespaces)
+            if !candidate.isEmpty, !candidate.contains(" ") { raw = candidate }
+        }
+        // A second `]` in the title means two links on one line, not one
+        // card. A space in the address means the parentheses are prose.
+        guard !title.contains("]"), !raw.contains(" ") || raw.hasPrefix("alice://"),
+              let url = URL(string: raw), isMediaAddress(url)
         else { return nil }
         return (title, url)
     }
@@ -1002,7 +1095,9 @@ struct RichMessageView: View {
         case let .links(links):
             RichLinksView(links: links)
         case let .media(media):
-            RichMediaView(media: media)
+            // Blocks are keyed by position; a different file landing in the
+            // same slot (a reply still streaming) must not keep the old card.
+            RichMediaView(media: media).id(media)
         }
     }
 
@@ -1211,153 +1306,6 @@ private struct RichTableView: View {
         case .trailing: .trailing
         }
     }
-}
-
-/// Media from a reply, drawn as what it is: images preview inline with a
-/// tap-to-fullscreen viewer, video and audio get an inline player card,
-/// other files a save button. The address itself never shows.
-private struct RichMediaView: View {
-    @Environment(\.colorScheme) private var scheme
-    @Environment(AppStore.self) private var store
-    let media: RichMedia
-
-    @State private var player: AVPlayer?
-    @State private var failed = false
-    @State private var shareItem: MediaShareItem?
-
-    var body: some View {
-        switch media.kind {
-        case .image:
-            mediaImage
-        case .video:
-            mediaCard(symbol: "play.circle.fill", action: "Watch")
-        case .audio:
-            mediaCard(symbol: "waveform.circle.fill", action: "Listen")
-        case .file:
-            mediaLinkButton
-        }
-    }
-
-    private var mediaImage: some View {
-        AsyncImage(url: media.url) { phase in
-            switch phase {
-            case .empty:
-                ProgressView()
-                    .frame(maxWidth: .infinity, minHeight: 120)
-                    .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
-            case .success(let image):
-                image
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(.rect(cornerRadius: 12))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Palette.border(scheme), lineWidth: 0.5)
-                    }
-            case .failure:
-                mediaLinkButton
-            @unknown default:
-                mediaLinkButton
-            }
-        }
-        .accessibilityLabel(media.title)
-    }
-
-    private func mediaCard(symbol: String, action: String) -> some View {
-        Button {
-            player = AVPlayer(url: media.url)
-            player?.play()
-        } label: {
-            mediaCardLabel(symbol: symbol, action: action)
-        }
-        .buttonStyle(.plain)
-        .tint(.primary)
-        .accessibilityLabel("\(action): \(media.title)")
-        .onChange(of: player?.error != nil) { _, hasError in
-            failed = hasError
-        }
-        .contextMenu {
-            Button {
-                Task { await saveToFiles() }
-            } label: {
-                Label("Save to Files", systemImage: "square.and.arrow.down")
-            }
-            Button {
-                UIPasteboard.general.url = media.url
-            } label: {
-                Label("Copy link", systemImage: "link")
-            }
-        }
-        .sheet(item: $shareItem) { item in
-            ShareSheet(activityItems: [item.url])
-                .ignoresSafeArea()
-        }
-    }
-
-    private func mediaCardLabel(symbol: String, action: String) -> some View {
-        HStack(spacing: 10) {
-            mediaCardIcon(symbol: symbol)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(media.title)
-                    .font(.footnote.weight(.semibold))
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                Text(action)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            if failed {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Palette.border(scheme), lineWidth: 0.5)
-        }
-    }
-
-    private func mediaCardIcon(symbol: String) -> some View {
-        Group {
-            if player == nil {
-                Image(systemName: symbol)
-            } else {
-                Image(systemName: "stop.circle.fill")
-            }
-        }
-        .imageScale(.large)
-    }
-
-    private var mediaLinkButton: some View {
-        RichLinksView(links: [RichLink(title: media.title, url: media.url)])
-    }
-
-    private func saveToFiles() async {
-        if let file = try? await store.downloadRemoteMedia(url: media.url, name: media.title) {
-            shareItem = MediaShareItem(url: file.url)
-        } else {
-            failed = true
-        }
-    }
-}
-
-private struct MediaShareItem: Identifiable {
-    let id = UUID()
-    let url: URL
-}
-
-private struct ShareSheet: UIViewControllerRepresentable {
-    let activityItems: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 /// Web links as buttons that open them, never as addresses in the text.

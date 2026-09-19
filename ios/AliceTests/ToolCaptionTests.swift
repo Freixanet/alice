@@ -26,6 +26,59 @@ final class ToolCaptionTests: XCTestCase {
         )
     }
 
+    func testARunningToolNamesItselfInTheHeadline() {
+        XCTAssertEqual(
+            ToolCaption.headline(
+                pending: true, note: nil, thoughtSeconds: nil,
+                steps: [call("web_search", .done), call("mcp__cobalt__cobalt_download")], elapsed: 40
+            ),
+            "Downloading"
+        )
+    }
+
+    func testAFinishedToolHandsTheHeadlineBackToThinking() {
+        XCTAssertEqual(
+            ToolCaption.headline(
+                pending: true, note: nil, thoughtSeconds: nil,
+                steps: [call("mcp__cobalt__cobalt_download", .done)], elapsed: 1
+            ),
+            "Thinking"
+        )
+    }
+
+    func testAClarifyStepNeverHeadsTheLine() {
+        XCTAssertEqual(
+            ToolCaption.headline(pending: true, note: nil, thoughtSeconds: nil, steps: [call("clarify")], elapsed: 1),
+            "Thinking"
+        )
+    }
+
+    func testAShortWaitIsPlainAndALongOneMovesOn() {
+        XCTAssertEqual(ToolCaption.musing(elapsed: 0, seed: 3), "Thinking")
+        XCTAssertEqual(ToolCaption.musing(elapsed: ToolCaption.musingBeat - 0.1, seed: 3), "Thinking")
+        let later = ToolCaption.musing(elapsed: ToolCaption.musingBeat, seed: 3)
+        XCTAssertNotEqual(later, "Thinking")
+        XCTAssertTrue(ToolCaption.musings.contains(later))
+        XCTAssertNotEqual(later, ToolCaption.musing(elapsed: ToolCaption.musingBeat * 2, seed: 3), "the word changes each beat")
+    }
+
+    func testTwoRepliesStartTheirWaitInDifferentPlaces() {
+        let a = ToolCaption.seed("reply-a"), b = ToolCaption.seed("reply-b")
+        XCTAssertNotEqual(a, b)
+        XCTAssertEqual(a, ToolCaption.seed("reply-a"), "stable across redraws")
+        XCTAssertNotEqual(
+            ToolCaption.musing(elapsed: ToolCaption.musingBeat, seed: 0),
+            ToolCaption.musing(elapsed: ToolCaption.musingBeat, seed: 1)
+        )
+    }
+
+    func testEveryMusingIsShortEnoughForOneLine() {
+        for word in ToolCaption.musings {
+            XCTAssertLessThanOrEqual(word.count, 24, word)
+            XCTAssertFalse(word.hasSuffix("…"), word)
+        }
+    }
+
     func testWhatItIsWaitingOnBeatsThinking() {
         XCTAssertEqual(
             ToolCaption.headline(pending: true, note: "Reconnecting to Hermes…", thoughtSeconds: 2),
@@ -64,6 +117,12 @@ final class ToolCaptionTests: XCTestCase {
 
     func testAFinishedStepDropsTheEllipsis() {
         XCTAssertEqual(ToolCaption.phrase(for: call("web_extract"), running: false), "Reading a page")
+    }
+
+    func testMediaToolsSayWhatTheyDo() {
+        XCTAssertEqual(ToolCaption.phrase(for: call("mcp__cobalt__cobalt_download"), running: true), "Downloading…")
+        XCTAssertEqual(ToolCaption.phrase(for: call("file_upload"), running: true), "Uploading…")
+        XCTAssertEqual(ToolCaption.phrase(for: call("message_agent"), running: true), "Asking a teammate…")
     }
 
     func testAnUnknownToolIsNamedInItsOwnWords() {

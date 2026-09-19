@@ -332,17 +332,13 @@ struct Sidebar: View {
             store.activeID = conversation.id
             onDismiss()
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(conversation.title)
-                    .lineLimit(1)
-                if let preview = Self.preview(conversation) {
-                    Text(preview)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            }
-            .frame(width: width - 48, alignment: .leading)
+            // The title alone: it already says what the chat is about, and
+            // a line of the last reply under it made the drawer a wall of
+            // half-sentences.
+            Text(conversation.title)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: width - 48, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
@@ -370,20 +366,6 @@ struct Sidebar: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-    }
-
-    /// The last spoken line in a home chat, flattened, so the drawer reads as
-    /// conversations rather than a list of titles.
-    private static func preview(_ conversation: Conversation) -> String? {
-        guard let message = conversation.messages.last(where: {
-            !$0.pending && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }) else { return nil }
-        let flat = message.content
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !flat.isEmpty else { return nil }
-        return flat.count > 120 ? String(flat.prefix(117)) + "…" : flat
     }
 
     @ViewBuilder

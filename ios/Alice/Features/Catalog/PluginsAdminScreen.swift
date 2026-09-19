@@ -77,7 +77,7 @@ struct PluginsAdminScreen: View {
     private func perform(_ action: PluginMutation) async { pendingMutation=nil; busyName=action.plugin.name; defer { busyName=nil }; do { switch action { case let .toggle(p,e): try await store.setAgentPlugin(p.name, enabled:e); case let .update(p): message=try await store.updateAgentPlugin(p.name) ?? "Updated \(p.name)."; case let .remove(p): try await store.removeAgentPlugin(p.name); case let .visibility(p,h): try await store.setPluginHidden(p.name, hidden:h) }; hub=try await store.pluginHub(); failure=nil } catch { failure=reason(error) } }
     private var mutationTitle: String { pendingMutation?.title ?? "Change plugin?" }
     private var mutationMessage: String { pendingMutation?.message ?? "" }
-    private func reason(_ error: Error) -> String { (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer." }
+    private func reason(_ error: Error) -> String { PlainWords.describe(error) }
 }
 
 private enum PluginMutation: Identifiable {

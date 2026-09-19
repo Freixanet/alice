@@ -130,7 +130,7 @@ struct SystemExtrasScreen: View {
     private func deleteHook(_ h:HermesHook)async{removeHook=nil;do{try await store.deleteHook(event:h.event,command:h.command);await loadHooks()}catch{failure=reason(error)}}
     private func shareDebug()async{do{debugResult=try await store.debugShare(lines:500,redact:true);failure=nil}catch{failure=reason(error)}}
     private func resetMemory(_ target:String)async{memoryReset=nil;do{let deleted=try await store.resetBuiltinMemory(target:target);failure=deleted.isEmpty ? "No matching built-in memory files existed." : nil}catch{failure=reason(error)}}
-    private func reason(_ error:Error)->String{(error as? LocalizedError)?.errorDescription ?? "Hermes did not answer."}
+    private func reason(_ error:Error)->String{PlainWords.describe(error)}
 }
 
 private struct CredentialRemoval:Identifiable{var id:String{"\(provider)|\(entry.index)"};var provider:String;var entry:CredentialPoolEntry}

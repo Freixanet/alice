@@ -40,7 +40,7 @@ enum RemoteFileProblem {
             default: break
             }
         }
-        return (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer."
+        return PlainWords.describe(error)
     }
 }
 
@@ -612,7 +612,7 @@ struct HermesFilesScreen: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "Hermes did not answer."
+        PlainWords.describe(error)
     }
 
     private func symbol(mime: String?, name: String) -> String {

@@ -54,3 +54,20 @@ and the corresponding Hermes source contracts.
 - Catalog credentials are bounded, sent only for installation and cleared from
   the UI on completion or close. OAuth authorization is explicit and polled by
   opaque flow ID; Alice never opens a provider URL without a user action.
+
+## Media in replies (`alice://file`)
+
+A bot that saved a file on the Hermes machine writes one line, alone in its
+paragraph: `![name.ext](alice://file?path=<percent-encoded absolute path>&url=<percent-encoded web mirror>)`.
+iOS parses it in `RichMedia` (`ios/Alice/Features/Chat/RichMessage.swift`):
+
+- The extension in the label decides video, audio or image; the Hermes path
+  and the URL are tried next. Any other extension is a file card with Save.
+- Bytes come first over the authenticated dashboard `api/fs/download`, then
+  from the `url` mirror; one download per media per session
+  (`RichMediaLoader`). Playback is from the local file, so seeking and replay
+  do not depend on the mirror supporting ranges or still being valid.
+- `alice://reply` and any `alice://` address without a `path` are never media.
+- `mcp-servers/cobalt-mcp` emits this line as `media_markdown:`; its helpers
+  are covered by `node --test mcp-servers/cobalt-mcp/lib.test.mjs`. The web
+  client does not render `alice://file` yet.

@@ -45,7 +45,7 @@ struct SavedEndpointsScreen: View {
     private func load() async { do { snapshot=try await store.savedCustomEndpoints(profile:profile); failure=nil } catch { failure=reason(error) } }
     private func activate(_ endpoint:SavedCustomEndpoint) async { busy=endpoint.id;defer{busy=nil};do{try await store.activateCustomEndpoint(endpoint.id,profile:profile);await load()}catch{failure=reason(error)} }
     private func remove(_ endpoint:SavedCustomEndpoint) async { deleting=nil;busy=endpoint.id;defer{busy=nil};do{try await store.deleteCustomEndpoint(endpoint.id,profile:profile);await load()}catch{failure=reason(error)} }
-    private func reason(_ error:Error)->String{(error as? LocalizedError)?.errorDescription ?? "Hermes did not answer."}
+    private func reason(_ error:Error)->String{PlainWords.describe(error)}
 }
 
 private struct EndpointEditor: View {

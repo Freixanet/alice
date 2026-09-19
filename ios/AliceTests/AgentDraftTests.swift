@@ -52,6 +52,18 @@ final class AgentDraftTests: XCTestCase {
         XCTAssertEqual(AgentMaker.preferredProfileID, "agent-maker")
     }
 
+    func testStandingInstructionsKeepEveryAgentOnItsRoleAndInThePersonsLanguage() {
+        let soul = AgentDraft.soul(from: "Track hotel deals in Blanes.")
+        XCTAssertTrue(soul.contains("## How you treat this person"))
+        XCTAssertTrue(soul.contains("language they write in"))
+        XCTAssertTrue(soul.contains("Never show raw tool output"))
+        XCTAssertTrue(soul.contains("if you have nothing useful to say, say nothing"))
+        XCTAssertTrue(soul.contains("Never message them on your own schedule"))
+        let request = AgentMaker.request(name: "X", profile: "x", brief: "Y", jobID: "job-1")
+        XCTAssertTrue(request.contains("never show raw tool output"))
+        XCTAssertTrue(request.contains("language this person writes in"))
+    }
+
     func testAnEmptyBriefMakesNoStandingInstructions() {
         XCTAssertEqual(AgentDraft.soul(from: "   "), "")
         XCTAssertEqual(AgentDraft.name(from: ""), "")
