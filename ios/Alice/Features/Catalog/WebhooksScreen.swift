@@ -438,7 +438,7 @@ struct WebhooksScreen: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        PlainWords.describe(error, doing: "talk to the webhook service")
     }
 
     private func badge(_ text: String, tint: Color) -> some View {
@@ -686,7 +686,7 @@ private struct CreateWebhookSheet: View {
             secret = ""
             onCreated()
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            failure = PlainWords.describe(error, doing: "create the webhook")
         }
     }
 

@@ -356,7 +356,7 @@ struct CatalogScreen: View {
         do {
             rows = try await store.catalog(source)
         } catch {
-            self.error = error.localizedDescription
+            self.error = PlainWords.describe(error, doing: "load \(source.title.lowercased())")
         }
     }
 
@@ -371,7 +371,7 @@ struct CatalogScreen: View {
                     rows[index].enabled = enabled
                 }
             } catch {
-                self.error = error.localizedDescription
+                self.error = PlainWords.describe(error, doing: enabled ? "enable \(row.name)" : "disable \(row.name)")
             }
         }
     }

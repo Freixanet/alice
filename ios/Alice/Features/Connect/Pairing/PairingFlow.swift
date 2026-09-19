@@ -87,7 +87,7 @@ final class PairingFlow {
             let failure = error as? PairingClient.Failure
             stage = .failed(
                 message: failure?.errorDescription
-                    ?? HermesClient.describe(error).localizedDescription,
+                    ?? PlainWords.describe(error, doing: "pair with Hermes"),
                 retryable: Self.claimCanRetry(failure)
             )
         }

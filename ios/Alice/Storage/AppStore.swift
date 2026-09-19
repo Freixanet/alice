@@ -569,9 +569,9 @@ final class AppStore {
             if persist { keep(key, account: KeyStore.gatewayAccount, what: "connection key") }
         } else {
             isConnected = false
-            connectionError = HermesClient.describe(
-                firstFailure ?? HermesClient.Failure.unreachable
-            ).localizedDescription
+            connectionError = PlainWords.describe(
+                firstFailure ?? HermesClient.Failure.unreachable, doing: "connect to Hermes"
+            )
             await client.disconnect()
         }
     }
@@ -633,7 +633,7 @@ final class AppStore {
             modelList = .init()
             models = []
             modelListIsPartial = false
-            modelsError = HermesClient.describe(error).localizedDescription
+            modelsError = PlainWords.describe(error, doing: "load the model list")
             return false
         }
     }
@@ -1756,7 +1756,7 @@ final class AppStore {
                 throw HermesRPCClient.Failure(
                     reason: "Finish syncing \(botCurrentName(for: bot.name)) to "
                         + "\(HermesClient.prettify(pending.model)) before choosing another model. "
-                        + error.localizedDescription
+                        + PlainWords.describe(error, doing: "finish the sync")
                 )
             }
         }
@@ -1878,7 +1878,7 @@ final class AppStore {
         } catch {
             // Keep the recovery record: the operation is idempotent and can be
             // resumed from the picker now or after the app is relaunched.
-            return .applied(warning: error.localizedDescription)
+            return .applied(warning: PlainWords.describe(error, doing: "finish the model change"))
         }
     }
 
@@ -1926,7 +1926,7 @@ final class AppStore {
         model: String, provider: String
     ) async throws {
         func reason(_ error: Error) -> String {
-            (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            PlainWords.describe(error, doing: "carry the model change")
         }
         var problems: [String] = []
         do {
@@ -2507,7 +2507,7 @@ final class AppStore {
                 attention.removeAll { $0.id == event.id }
             }
         } catch {
-            return .failed("That didn't work: \(error.localizedDescription)")
+            return .failed(PlainWords.describe(error, doing: "send that answer"))
         }
         _ = await syncEvents()
         return outcome
@@ -2942,8 +2942,7 @@ final class AppStore {
         // Recorded beside the request, not over it. Writing this into `detail`
         // replaced the command the card is asking about, so the buttons ended
         // up offering Once/Always over the text of a network error.
-        let reason = (error as? LocalizedError)?.errorDescription
-            ?? error.localizedDescription
+        let reason = PlainWords.describe(error, doing: "send the reply")
         let who = activity[index].profile.map(botCurrentName(for:)) ?? "the assistant"
         activity[index].note =
             "That reply didn't reach Hermes (\(reason)), so \(who) is still waiting. Try again."
@@ -7096,7 +7095,7 @@ final class AppStore {
                 self.fail(
                     replyID,
                     conversationID: conversationID,
-                    message: error.localizedDescription,
+                    message: PlainWords.describe(error, doing: "get the reply"),
                     limit: nil
                 )
             }
@@ -7230,7 +7229,7 @@ final class AppStore {
                         messageID,
                         conversationID: conversationID,
                         message: "Couldn’t retry safely without risking a duplicate. "
-                            + error.localizedDescription,
+                            + PlainWords.describe(error, doing: "retry the message"),
                         limit: nil
                     )
                     return
@@ -7685,7 +7684,7 @@ final class AppStore {
                 settleRequest(matching: requestID, summary: "You answered this.")
                 return
             } catch {
-                setApprovalFailure(messageID, error.localizedDescription)
+                setApprovalFailure(messageID, PlainWords.describe(error, doing: "send your answer"))
                 return
             }
         }
@@ -7714,7 +7713,7 @@ final class AppStore {
                 )
             }
         } catch {
-            setApprovalFailure(messageID, error.localizedDescription)
+            setApprovalFailure(messageID, PlainWords.describe(error, doing: "send your answer"))
         }
     }
 
@@ -7758,7 +7757,7 @@ final class AppStore {
                 self.fail(
                     replyID,
                     conversationID: conversationID,
-                    message: error.localizedDescription,
+                    message: PlainWords.describe(error, doing: "get the reply"),
                     limit: nil
                 )
             }

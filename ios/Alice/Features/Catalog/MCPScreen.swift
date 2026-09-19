@@ -556,7 +556,7 @@ struct MCPScreen: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        PlainWords.describe(error, doing: "talk to the MCP server")
     }
 
     private func badge(_ text: String, tint: Color) -> some View {
@@ -721,7 +721,7 @@ private struct AddMCPServerSheet: View {
             onAdded()
             dismiss()
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            failure = PlainWords.describe(error, doing: "add the MCP server")
         }
     }
 
@@ -845,7 +845,7 @@ private struct InstallMCPCatalogSheet: View {
             onStarted(result)
             dismiss()
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            failure = PlainWords.describe(error, doing: "install \(entry.name)")
         }
     }
 }
@@ -978,7 +978,7 @@ private struct MCPOAuthSheet: View {
                 flow = current
             }
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            failure = PlainWords.describe(error, doing: "finish the OAuth sign-in")
         }
     }
 

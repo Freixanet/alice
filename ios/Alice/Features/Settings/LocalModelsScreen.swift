@@ -605,7 +605,7 @@ struct LocalModelsScreen: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        PlainWords.describe(error, doing: "talk to the local model server")
     }
 }
 
@@ -819,6 +819,6 @@ private struct LocalModelBrowserSheet: View {
     }
 
     private func reason(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        PlainWords.describe(error, doing: "talk to the local model server")
     }
 }
