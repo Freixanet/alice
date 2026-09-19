@@ -542,6 +542,13 @@ final class AppStore {
         // second from being ready, a packet lost on the tailnet — any of them
         // used to drop the connection outright and leave the address and key
         // to be typed again for something that was momentary.
+        //
+        // The model list is read at the same time, not after. On a cold
+        // gateway the catalogue is the slow call — the comment on loadModels
+        // has seen it take twenty seconds — and connecting used to sit
+        // through the manifest first and only then start it. Neither needs
+        // the other's answer.
+        let modelsTask = Task { [weak self] in await self?.loadModels() ?? false }
         for attempt in 0..<3 {
             do {
                 manifest = try await client.capabilities()
@@ -560,7 +567,7 @@ final class AppStore {
             }
         }
 
-        if await loadModels() { reachedSomething = true }
+        if await modelsTask.value { reachedSomething = true }
 
         if reachedSomething {
             isConnected = true
@@ -1738,11 +1745,25 @@ final class AppStore {
 
         if let pending = pendingBotModelSyncs[bot.name] {
             if pending.model == option.id, pending.provider == provider {
-                return await completeBotModelSync(pending, botName: bot.name)
+                // The same choice again is a retry of its follow-up: this
+                // one is waited on, so the person sees whether it landed.
+                botModelSyncTasks[bot.name]?.cancel()
+                botModelSyncTasks.removeValue(forKey: bot.name)
+                let outcome = await completeBotModelSync(pending, botName: bot.name)
+                if case let .applied(warning) = outcome, let warning {
+                    botModelSyncWarnings[bot.name] = warning
+                } else {
+                    botModelSyncWarnings.removeValue(forKey: bot.name)
+                }
+                return outcome
             }
             // Do not lose the old model needed to repair routines that only
             // partly followed the previous change. Finish that repair before
             // allowing another transition to replace its recovery record.
+            // A follow-up still running behind the last choice is stopped
+            // first so two carries do not write the same routines at once.
+            botModelSyncTasks[bot.name]?.cancel()
+            botModelSyncTasks.removeValue(forKey: bot.name)
             do {
                 try await carryModelChange(
                     to: bot.name,
@@ -1810,8 +1831,42 @@ final class AppStore {
         // a routine whose record no longer matches refuses to run; a chat already
         // open keeps the model its runtime was built with. Both move with the
         // bot, or the picker shows one model while the bot runs another.
+        //
+        // That follow-up is another half-dozen round trips — the routine list,
+        // a pin and a release per routine, a resume and a config.set on the
+        // chat — and the picker used to stay up through all of them. The
+        // profile is saved, which is the change the person made; the picker
+        // may close now. The follow-up runs behind it, its record is kept
+        // until it lands, and the bot's page says so while it is still going
+        // or if it stopped short.
         pendingBotModelSyncs[bot.name] = transition
-        return await completeBotModelSync(transition, botName: bot.name)
+        botModelSyncWarnings.removeValue(forKey: bot.name)
+        botModelSyncTasks[bot.name]?.cancel()
+        botModelSyncTasks[bot.name] = Task { [weak self] in
+            guard let self else { return }
+            let outcome = await self.completeBotModelSync(transition, botName: bot.name)
+            guard !Task.isCancelled else { return }
+            if case let .applied(warning) = outcome, let warning {
+                self.botModelSyncWarnings[bot.name] = warning
+            }
+            self.botModelSyncTasks.removeValue(forKey: bot.name)
+        }
+        return .applied(warning: nil)
+    }
+
+    /// Model follow-ups still running, by bot. Cancelled when a newer choice
+    /// for the same bot replaces them; the record in `pendingBotModelSyncs`
+    /// outlives the task so a cancelled follow-up is still retried.
+    @ObservationIgnored private var botModelSyncTasks: [String: Task<Void, Never>] = [:]
+
+    /// What the last model follow-up for a bot could not finish, in words for
+    /// the bot's page. Cleared when a follow-up completes or a new one starts.
+    private(set) var botModelSyncWarnings: [String: String] = [:]
+
+    /// True while a bot's routines and chat are still being moved onto the
+    /// model just chosen for it.
+    func botModelSyncRunning(_ bot: String) -> Bool {
+        botModelSyncTasks[bot] != nil
     }
 
     /// The catalogue option for a bot's first fallback hop, when Hermes has one.
@@ -3976,6 +4031,9 @@ final class AppStore {
 
     private func forgetBotLocalData(_ name: String) {
         pendingBotModelSyncs.removeValue(forKey: name)
+        botModelSyncTasks[name]?.cancel()
+        botModelSyncTasks.removeValue(forKey: name)
+        botModelSyncWarnings.removeValue(forKey: name)
         botMarks.removeValue(forKey: name)
         botSections.removeValue(forKey: name)
         botSections.removeValue(forKey: name.lowercased())

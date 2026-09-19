@@ -2254,10 +2254,26 @@ struct BotDetail: View {
                 .buttonStyle(.plain)
                 .listRowBackground(Palette.card(scheme))
 
-                if store.botModelSyncPending(bot.name) {
+                if let warning = store.botModelSyncWarnings[bot.name] {
+                    // The profile changed; its routines or chat did not all
+                    // follow. Said here, where the model is, not in the picker
+                    // that has already closed.
+                    Text(warning)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .listRowBackground(Palette.card(scheme))
                     Button("Retry model sync", systemImage: "arrow.clockwise") {
                         choosingModel = true
                     }
+                    .listRowBackground(Palette.card(scheme))
+                } else if store.botModelSyncPending(bot.name) {
+                    Label {
+                        Text("Moving routines and chat to the new model…")
+                            .foregroundStyle(.secondary)
+                    } icon: {
+                        ProgressView().controlSize(.small)
+                    }
+                    .font(.footnote)
                     .listRowBackground(Palette.card(scheme))
                 }
 
@@ -2382,7 +2398,9 @@ struct BotDetail: View {
                         if !bot.isDefault {
                             Divider()
                             Button("Delete Bot", systemImage: "trash", role: .destructive) {
-                                act { try await store.deleteBot(bot.name) } then: { dismiss() }
+                                let name = bot.name
+                                dismiss()
+                                Task { try? await store.deleteBot(name) }
                             }
                         }
                     } label: {
