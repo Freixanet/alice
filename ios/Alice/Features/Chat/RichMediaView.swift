@@ -229,7 +229,6 @@ struct RichMediaView: View {
     @Environment(AppStore.self) private var store
     let media: RichMedia
     @State private var model: RichMediaModel
-    @State private var fullscreen = false
     @State private var shareItem: MediaShareItem?
 
     init(media: RichMedia) {
@@ -253,17 +252,10 @@ struct RichMediaView: View {
             case .file: fileCard
             }
         }
-        // Presenting the full-screen player is not leaving the chat: the
-        // player must survive it.
-        .onDisappear { if !fullscreen { model.tearDown() } }
+        .onDisappear { model.tearDown() }
         .sheet(item: $shareItem) { item in
             ShareSheet(activityItems: [item.url])
                 .ignoresSafeArea()
-        }
-        .fullScreenCover(isPresented: $fullscreen) {
-            if let player = model.player {
-                FullscreenVideo(player: player, title: media.title)
-            }
         }
     }
 
@@ -307,18 +299,8 @@ struct RichMediaView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                if model.player != nil {
-                    Button {
-                        fullscreen = true
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.footnote.weight(.semibold))
-                            .frame(width: 30, height: 30)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Full screen")
-                }
+                // Full screen lives in the player itself: its own glass button,
+                // its own way back. A second one here only doubled it.
                 actionsMenu
             }
             .padding(.horizontal, 12)
@@ -561,14 +543,15 @@ struct RichMediaView: View {
         Menu {
             menuItems
         } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.footnote.weight(.semibold))
-                .frame(width: 30, height: 30)
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 44, height: 44)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .tint(.primary)
-        .accessibilityLabel("More")
+        .accessibilityLabel("Save, copy or open")
     }
 
     @ViewBuilder
@@ -653,35 +636,6 @@ private struct NativeVideoPlayer: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         if controller.player !== player { controller.player = player }
-    }
-}
-
-/// The same player, over the whole screen, with a way back.
-private struct FullscreenVideo: View {
-    @Environment(\.dismiss) private var dismiss
-    let player: AVPlayer
-    let title: String
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            Color.black.ignoresSafeArea()
-            NativeVideoPlayer(player: player)
-                .ignoresSafeArea()
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(.black.opacity(0.45), in: .circle)
-            }
-            .padding(16)
-            .accessibilityLabel("Close")
-        }
-        .preferredColorScheme(.dark)
-        .statusBarHidden()
-        .accessibilityLabel(title)
     }
 }
 
