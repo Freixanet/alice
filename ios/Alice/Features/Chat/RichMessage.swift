@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import AVKit
+import AVFoundation
 
 // MARK: - What a reply is made of
 
@@ -19,6 +21,7 @@ enum RichBlock: Equatable {
     case math(String)
     case buttons([RichReplyButton])
     case links([RichLink])
+    case media(RichMedia)
 }
 
 struct RichListItem: Equatable {
@@ -56,6 +59,80 @@ struct RichLink: Equatable, Hashable {
 struct RichReplyButton: Equatable {
     let title: String
     let reply: String
+}
+
+/// Media attached to a reply: images preview inline, everything else
+/// (video, audio, files) renders as a play/download button. The address
+/// itself never shows; same rule as web links.
+struct RichMedia: Equatable, Hashable {
+    enum Kind: Equatable, Hashable {
+        case image
+        case video
+        case audio
+        case file
+    }
+
+    let title: String
+    let url: URL
+    let kind: Kind
+
+    /// File extension → kind, so a bot can mark media with a markdown image
+    /// and the chat draws it as what it is instead of a broken picture.
+    /// Unknown extensions fall back to `title:url` pairs, which keeps
+    /// paragraphs intact when a host serves media with no suffix.
+    static func kind(for url: URL) -> Kind {
+        switch url.pathExtension.lowercased() {
+        case "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif", "svg", "avif":
+            return .image
+        case "mp4", "mov", "m4v", "webm", "mkv", "avi":
+            return .video
+        case "mp3", "m4a", "wav", "ogg", "opus", "flac", "aac":
+            return .audio
+        default:
+            return .file
+        }
+    }
+
+    static func labeled(title: String?, url: URL) -> RichMedia {
+        let label = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return RichMedia(
+            title: label.isEmpty ? RichLinks.domain(url) : label,
+            url: url,
+            kind: kind(for: url)
+        )
+    }
+
+    /// A line that is only media: `![title](url)` or a bare media URL.
+    /// Inline images elsewhere stay links — a picture mid-sentence is a
+    /// gesture (`see this`), never a player card.
+    /// Returns nil so ordinary paragraphs (and their links) parse as before.
+    static func standalone(_ line: String) -> RichMedia? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("!") {
+            let rest = String(trimmed.dropFirst())
+            guard rest.hasPrefix("["),
+                  let closeBracket = rest.firstIndex(of: "]"),
+                  rest[rest.index(after: closeBracket)...].hasPrefix("("),
+                  rest.hasSuffix(")"),
+                  let openParen = rest.lastIndex(of: "(")
+            else { return nil }
+            let title = String(rest[rest.index(after: rest.startIndex)..<closeBracket])
+            let raw = String(rest[rest.index(after: openParen)..<rest.index(before: rest.endIndex)])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+            let media = labeled(title: title.isEmpty ? nil : title, url: url)
+            guard media.kind != .file else { return nil }
+            return media
+        }
+        guard !trimmed.contains(" "),
+              let url = URL(string: trimmed),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        else { return nil }
+        let media = labeled(title: nil, url: url)
+        guard media.kind != .file else { return nil }
+        return media
+    }
 }
 
 // MARK: - Parsing
@@ -229,6 +306,12 @@ enum RichMarkdown {
                 }
                 paragraph.append(next.trimmingCharacters(in: .whitespaces))
                 index += 1
+            }
+            // A lone media line (`![title](url)` or a bare media URL) is its
+            // own block — the player card — instead of a link button.
+            if paragraph.count == 1, let media = RichMedia.standalone(paragraph[0]) {
+                blocks.append(.media(media))
+                continue
             }
             let extracted = replyButtons(in: paragraph.joined(separator: "\n"))
             let linked = RichLinks.extract(extracted.text)
@@ -892,6 +975,8 @@ struct RichMessageView: View {
             RichReplyButtonsView(buttons: buttons)
         case let .links(links):
             RichLinksView(links: links)
+        case let .media(media):
+            RichMediaView(media: media)
         }
     }
 
@@ -1100,6 +1185,153 @@ private struct RichTableView: View {
         case .trailing: .trailing
         }
     }
+}
+
+/// Media from a reply, drawn as what it is: images preview inline with a
+/// tap-to-fullscreen viewer, video and audio get an inline player card,
+/// other files a save button. The address itself never shows.
+private struct RichMediaView: View {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(AppStore.self) private var store
+    let media: RichMedia
+
+    @State private var player: AVPlayer?
+    @State private var failed = false
+    @State private var shareItem: MediaShareItem?
+
+    var body: some View {
+        switch media.kind {
+        case .image:
+            mediaImage
+        case .video:
+            mediaCard(symbol: "play.circle.fill", action: "Watch")
+        case .audio:
+            mediaCard(symbol: "waveform.circle.fill", action: "Listen")
+        case .file:
+            mediaLinkButton
+        }
+    }
+
+    private var mediaImage: some View {
+        AsyncImage(url: media.url) { phase in
+            switch phase {
+            case .empty:
+                ProgressView()
+                    .frame(maxWidth: .infinity, minHeight: 120)
+                    .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
+            case .success(let image):
+                image
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(.rect(cornerRadius: 12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Palette.border(scheme), lineWidth: 0.5)
+                    }
+            case .failure:
+                mediaLinkButton
+            @unknown default:
+                mediaLinkButton
+            }
+        }
+        .accessibilityLabel(media.title)
+    }
+
+    private func mediaCard(symbol: String, action: String) -> some View {
+        Button {
+            player = AVPlayer(url: media.url)
+            player?.play()
+        } label: {
+            mediaCardLabel(symbol: symbol, action: action)
+        }
+        .buttonStyle(.plain)
+        .tint(.primary)
+        .accessibilityLabel("\(action): \(media.title)")
+        .onChange(of: player?.error != nil) { _, hasError in
+            failed = hasError
+        }
+        .contextMenu {
+            Button {
+                Task { await saveToFiles() }
+            } label: {
+                Label("Save to Files", systemImage: "square.and.arrow.down")
+            }
+            Button {
+                UIPasteboard.general.url = media.url
+            } label: {
+                Label("Copy link", systemImage: "link")
+            }
+        }
+        .sheet(item: $shareItem) { item in
+            ShareSheet(activityItems: [item.url])
+                .ignoresSafeArea()
+        }
+    }
+
+    private func mediaCardLabel(symbol: String, action: String) -> some View {
+        HStack(spacing: 10) {
+            mediaCardIcon(symbol: symbol)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(media.title)
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                Text(action)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if failed {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Palette.border(scheme), lineWidth: 0.5)
+        }
+    }
+
+    private func mediaCardIcon(symbol: String) -> some View {
+        Group {
+            if player == nil {
+                Image(systemName: symbol)
+            } else {
+                Image(systemName: "stop.circle.fill")
+            }
+        }
+        .imageScale(.large)
+    }
+
+    private var mediaLinkButton: some View {
+        RichLinksView(links: [RichLink(title: media.title, url: media.url)])
+    }
+
+    private func saveToFiles() async {
+        if let file = try? await store.downloadRemoteMedia(url: media.url, name: media.title) {
+            shareItem = MediaShareItem(url: file.url)
+        } else {
+            failed = true
+        }
+    }
+}
+
+private struct MediaShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 /// Web links as buttons that open them, never as addresses in the text.

@@ -4318,6 +4318,40 @@ final class AppStore {
         try await dashboard.downloadManagedFile(path: path)
     }
 
+    /// Saves remote media (HTTP/HTTPS) into a temp file and hands it to the
+    /// share sheet. Used by chat media cards: streaming plays straight from
+    /// the source URL, saving is the only thing that needs bytes on disk.
+    func downloadRemoteMedia(url: URL, name: String) async throws -> HermesDownloadedFile {
+        let (temporaryURL, response) = try await URLSession.shared.download(from: url)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw DashboardClient.Failure.unreadable
+        }
+        return try persistRemoteDownload(temporaryURL, name: name, response: http)
+    }
+
+    private func persistRemoteDownload(
+        _ temporaryURL: URL, name: String, response: HTTPURLResponse
+    ) throws -> HermesDownloadedFile {
+        let sanitized = name.split(separator: "/").last.map(String.init) ?? "media"
+        let folder = FileManager.default.temporaryDirectory
+            .appending(path: "alice-remote-downloads", directoryHint: .isDirectory)
+            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = folder.appending(path: sanitized.isEmpty ? "media" : sanitized)
+        do {
+            try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+        let attrs = try FileManager.default.attributesOfItem(atPath: destination.path)
+        let bytes = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+        let mime = response.value(forHTTPHeaderField: "Content-Type")?
+            .split(separator: ";", maxSplits: 1).first.map(String.init)
+            ?? "application/octet-stream"
+        return .init(url: destination, name: sanitized, mimeType: mime, size: bytes)
+    }
+
     func deleteHermesFile(path: String, recursive: Bool = false) async throws {
         try await dashboard.deleteManagedFile(path: path, recursive: recursive)
     }
