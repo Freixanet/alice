@@ -853,6 +853,7 @@ final class AppStore {
         rpcClient = nil
         liveBotSessions.removeAll()
         botLiveSessionIDs.removeAll()
+        canonicalBotChats.removeAll()
         botMetadataIsRemote = false
     }
 
@@ -1182,6 +1183,9 @@ final class AppStore {
     func rebindLocalProfile(from old: String, to new: String, title: String? = nil) {
         guard old != new else { return }
         let previousTitle = botCurrentName(for: old)
+        // The chat is looked up again under its new profile name.
+        forgetCanonicalBotChat(old)
+        forgetCanonicalBotChat(new)
         move(&botMarks, from: old, to: new)
         move(&botSections, from: old, to: new)
         move(&botModels, from: old, to: new)
@@ -2029,7 +2033,7 @@ final class AppStore {
         guard let conversation = conversations.first(where: {
             $0.isCanonicalBotChat && $0.routedBotName == botName
         }), let source = await botChatSource() else { return }
-        let chat = try await BotChatSync(source: source).resolve(profile: botName)
+        let chat = try await resolveBotChat(botName, source: source)
         let resumed = try await source.resume(profile: botName, target: chat.resolvedID)
         guard let liveID = resumed["session_id"] as? String, !liveID.isEmpty else { return }
         track(liveSessionID: liveID, for: conversation.id)
@@ -4030,6 +4034,7 @@ final class AppStore {
     }
 
     private func forgetBotLocalData(_ name: String) {
+        forgetCanonicalBotChat(name)
         pendingBotModelSyncs.removeValue(forKey: name)
         botModelSyncTasks[name]?.cancel()
         botModelSyncTasks.removeValue(forKey: name)
@@ -5613,11 +5618,20 @@ final class AppStore {
             return
         }
         do {
-            let chat = try await BotChatSync(source: source).resolve(profile: profile)
+            var chat = try await resolveBotChat(profile, source: source)
             // One read gives both the transcript and what is still going on in
             // it: tool calls and whether a turn is running are in the same
             // projection, and are what the transcript alone leaves out.
-            let resumed = try await source.resume(profile: profile, target: chat.resolvedID)
+            let resumed: JSONObject
+            do {
+                resumed = try await source.resume(profile: profile, target: chat.resolvedID)
+            } catch let error where WebSocketBotChatSource.isNotFound(error) {
+                // The chat moved — cleared or compressed elsewhere — since it
+                // was cached. One fresh lookup, then the read goes on.
+                forgetCanonicalBotChat(profile)
+                chat = try await resolveBotChat(profile, source: source, fresh: true)
+                resumed = try await source.resume(profile: profile, target: chat.resolvedID)
+            }
             guard let current = conversations.firstIndex(where: { $0.id == conversationID })
             else { return }
             conversations[current].hermesSessionID = chat.resolvedID
@@ -5756,6 +5770,8 @@ final class AppStore {
         defer { clearingBotChats.remove(profile) }
         botChatClearedAt[profile] = Date()
         quietRoutineRuns[profile] = nil
+        // Nothing may send into the chat being thrown away.
+        forgetCanonicalBotChat(profile)
         for index in conversations.indices where cleared.contains(conversations[index].id) {
             conversations[index].messages = []
             conversations[index].updatedAt = Date()
@@ -5779,6 +5795,7 @@ final class AppStore {
             && cleared.contains(event.reference.conversationID ?? "") {
             settle(event.id, as: .gone, summary: "The chat was cleared.")
         }
+        canonicalBotChats[profile] = (fresh, Date())
         for index in conversations.indices where cleared.contains(conversations[index].id) {
             conversations[index].hermesSessionID = fresh.resolvedID
         }
@@ -5833,7 +5850,7 @@ final class AppStore {
         if let sessionID = open?.hermesSessionID, !sessionID.isEmpty { return }
         guard let source = await botChatSource() else { return }
         do {
-            let chat = try await BotChatSync(source: source).resolve(profile: profile)
+            let chat = try await resolveBotChat(profile, source: source)
             if let index = conversations.firstIndex(where: {
                 $0.isCanonicalBotChat && $0.routedBotName == profile
             }) {
@@ -5950,11 +5967,11 @@ final class AppStore {
         let label = profile.map { botCurrentName(for: $0) } ?? "Alice"
         var ending = BotTurnEnding.stopped
         do {
-            let storedSessionID: String
+            var storedSessionID: String
             let events = source.rpc.events()
             let submission: BotChatSubmission
             if let profile {
-                let chat = try await BotChatSync(source: source).resolve(profile: profile)
+                var chat = try await resolveBotChat(profile, source: source)
                 storedSessionID = chat.resolvedID
                 if mention {
                     // This chat keeps its own session; the reply remembers the agent's.
@@ -5966,10 +5983,28 @@ final class AppStore {
                 } else if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
                     conversations[index].hermesSessionID = storedSessionID
                 }
-                submission = try await source.submit(
-                    profile: profile, sessionID: storedSessionID, text: text,
-                    attachments: attachments
-                )
+                do {
+                    submission = try await source.submit(
+                        profile: profile, sessionID: storedSessionID, text: text,
+                        attachments: attachments
+                    )
+                } catch let error where WebSocketBotChatSource.isNotFound(error)
+                    && canonicalBotChats[profile] != nil {
+                    // The cached chat was cleared or compressed away since it
+                    // was looked up. Ask Hermes again once, then send there.
+                    forgetCanonicalBotChat(profile)
+                    chat = try await resolveBotChat(profile, source: source, fresh: true)
+                    storedSessionID = chat.resolvedID
+                    if mention {
+                        activeBotTurns[conversationID]?.storedSessionID = storedSessionID
+                    } else if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+                        conversations[index].hermesSessionID = storedSessionID
+                    }
+                    submission = try await source.submit(
+                        profile: profile, sessionID: storedSessionID, text: text,
+                        attachments: attachments
+                    )
+                }
             } else {
                 guard let session = try await openHomeSession(
                     source: source, conversationID: conversationID, earlier: earlier,
@@ -7260,7 +7295,7 @@ final class AppStore {
                     guard let source = await self.botChatSource() else {
                         throw HermesRPCClient.Failure(reason: "Hermes is not connected.")
                     }
-                    let target = try await BotChatSync(source: source).resolve(profile: profile)
+                    let target = try await self.resolveBotChat(profile, source: source)
                     guard let current = self.conversations.first(where: { $0.id == conversationID })
                     else { throw HermesRPCClient.Failure(reason: "This chat is no longer open.") }
                     if let turnID = try await self.remoteTurnIDForRetry(
@@ -7500,6 +7535,32 @@ final class AppStore {
     /// The runtime id each bot chat was last reached under, which is what
     /// `session.interrupt` needs. It dies with the socket; `interrupt` recovers.
     private var botLiveSessionIDs: [String: String] = [:]
+
+    /// The canonical chat each bot resolved to, and when. Resolving is a
+    /// `profiles.list` of every profile with its sessions, and it ran before
+    /// every send, every refresh and every retry — one whole round trip the
+    /// person waited through with nothing on screen. The answer barely
+    /// changes: only a clear or a compression moves the chat, and a stale
+    /// row answers "not found" on resume, which is when it is looked up again.
+    private var canonicalBotChats: [String: (chat: CanonicalBotChat, at: Date)] = [:]
+    private static let canonicalBotChatLifetime: TimeInterval = 45
+
+    /// A bot's canonical chat, from the cache when it is fresh.
+    private func resolveBotChat(
+        _ profile: String, source: WebSocketBotChatSource, fresh: Bool = false
+    ) async throws -> CanonicalBotChat {
+        if !fresh, let cached = canonicalBotChats[profile],
+           Date().timeIntervalSince(cached.at) < Self.canonicalBotChatLifetime {
+            return cached.chat
+        }
+        let chat = try await BotChatSync(source: source).resolve(profile: profile)
+        canonicalBotChats[profile] = (chat, Date())
+        return chat
+    }
+
+    private func forgetCanonicalBotChat(_ profile: String) {
+        canonicalBotChats.removeValue(forKey: profile)
+    }
 
     private func track(liveSessionID: String, for conversationID: String) {
         liveBotSessions[liveSessionID] = conversationID
