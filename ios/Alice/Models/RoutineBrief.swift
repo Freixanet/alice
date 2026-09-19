@@ -38,6 +38,53 @@ enum RoutineBrief {
         }
     }
 
+    /// The cadence Hermes already stored, read back so the editor can show
+    /// Daily / Weekdays / Some days instead of a raw Custom string.
+    static func cadence(fromHermesSchedule text: String) -> Cadence? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let match = firstMatch(#"(?i)^every day at (\d{2}):(\d{2})$"#, in: trimmed),
+           let hour = Int(match.groups[1]), let minute = Int(match.groups[2]),
+           (0...23).contains(hour), (0...59).contains(minute) {
+            return .daily(hour: hour, minute: minute)
+        }
+        if let match = firstMatch(#"(?i)^weekdays at (\d{2}):(\d{2})$"#, in: trimmed),
+           let hour = Int(match.groups[1]), let minute = Int(match.groups[2]),
+           (0...23).contains(hour), (0...59).contains(minute) {
+            return .weekdays(hour: hour, minute: minute)
+        }
+        if let match = firstMatch(#"(?i)^every ([a-z,]+) at (\d{2}):(\d{2})$"#, in: trimmed),
+           let hour = Int(match.groups[2]), let minute = Int(match.groups[3]),
+           (0...23).contains(hour), (0...59).contains(minute) {
+            let days = match.groups[1].split(separator: ",").compactMap { dayNumber(String($0)) }
+            if !days.isEmpty {
+                return .weekly(days: Array(Set(days)).sorted(), hour: hour, minute: minute)
+            }
+        }
+        if let match = firstMatch(#"(?i)^every (\d+)([mhd])$"#, in: trimmed),
+           let value = Int(match.groups[1]), value >= 1 {
+            return .interval(value: value, unit: match.groups[2].lowercased())
+        }
+
+        let parts = trimmed.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard parts.count == 5, parts[2] == "*", parts[3] == "*",
+              let minute = Int(parts[0]), let hour = Int(parts[1]),
+              (0...59).contains(minute), (0...23).contains(hour)
+        else { return nil }
+        switch parts[4] {
+        case "*":
+            return .daily(hour: hour, minute: minute)
+        case "1-5":
+            return .weekdays(hour: hour, minute: minute)
+        default:
+            let tokens = parts[4].split(separator: ",")
+            let days = tokens.compactMap { Int($0) }.filter { (1...7).contains($0) }
+            guard days.count == tokens.count, !days.isEmpty else { return nil }
+            return .weekly(days: Array(Set(days)).sorted(), hour: hour, minute: minute)
+        }
+    }
+
     /// The cadence, said back so the person can check it.
     static func describe(_ cadence: Cadence) -> String {
         switch cadence {

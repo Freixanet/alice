@@ -517,12 +517,22 @@ struct RoutineEditorSheet: View {
         _name = State(initialValue: routine?.name ?? "")
         _prompt = State(initialValue: routine?.prompt ?? "")
         _deliver = State(initialValue: routine?.deliver ?? "bot-chat")
-        _scheduleMode = State(initialValue: routine == nil ? .daily : .custom)
         _customSchedule = State(initialValue: routine?.schedule ?? "")
-        var start = DateComponents()
-        start.hour = 9
-        start.minute = 0
-        _time = State(initialValue: Calendar.current.date(from: start) ?? Date())
+        if let schedule = routine?.schedule,
+           let cadence = RoutineBrief.cadence(fromHermesSchedule: schedule) {
+            let applied = Self.values(for: cadence)
+            _scheduleMode = State(initialValue: applied.mode)
+            _time = State(initialValue: applied.time)
+            _weekDays = State(initialValue: applied.weekDays)
+            _intervalValue = State(initialValue: applied.intervalValue)
+            _intervalUnit = State(initialValue: applied.intervalUnit)
+        } else {
+            _scheduleMode = State(initialValue: routine == nil ? .daily : .custom)
+            var start = DateComponents()
+            start.hour = 9
+            start.minute = 0
+            _time = State(initialValue: Calendar.current.date(from: start) ?? Date())
+        }
     }
 
     var body: some View {
@@ -757,29 +767,42 @@ struct RoutineEditorSheet: View {
         set(template.cadence)
     }
 
-    private func set(_ cadence: RoutineBrief.Cadence) {
-        func clock(_ hour: Int, _ minute: Int) {
+    private struct CadenceValues {
+        var mode: ScheduleMode
+        var time: Date
+        var weekDays: Set<Int>
+        var intervalValue: Int
+        var intervalUnit: String
+    }
+
+    /// The same mapping `set(_:)` uses, so opening an existing routine lands
+    /// on Daily / Weekdays / Some days instead of Custom.
+    private static func values(for cadence: RoutineBrief.Cadence) -> CadenceValues {
+        func clock(_ hour: Int, _ minute: Int) -> Date {
             var parts = DateComponents()
             parts.hour = hour
             parts.minute = minute
-            if let date = Calendar.current.date(from: parts) { time = date }
+            return Calendar.current.date(from: parts) ?? Date()
         }
         switch cadence {
         case let .daily(hour, minute):
-            scheduleMode = .daily
-            clock(hour, minute)
+            return CadenceValues(mode: .daily, time: clock(hour, minute), weekDays: [1], intervalValue: 1, intervalUnit: "h")
         case let .weekdays(hour, minute):
-            scheduleMode = .weekdays
-            clock(hour, minute)
+            return CadenceValues(mode: .weekdays, time: clock(hour, minute), weekDays: [1], intervalValue: 1, intervalUnit: "h")
         case let .weekly(days, hour, minute):
-            scheduleMode = .weekly
-            weekDays = Set(days)
-            clock(hour, minute)
+            return CadenceValues(mode: .weekly, time: clock(hour, minute), weekDays: Set(days), intervalValue: 1, intervalUnit: "h")
         case let .interval(value, unit):
-            scheduleMode = .interval
-            intervalValue = value
-            intervalUnit = unit
+            return CadenceValues(mode: .interval, time: clock(9, 0), weekDays: [1], intervalValue: value, intervalUnit: unit)
         }
+    }
+
+    private func set(_ cadence: RoutineBrief.Cadence) {
+        let applied = Self.values(for: cadence)
+        scheduleMode = applied.mode
+        time = applied.time
+        weekDays = applied.weekDays
+        intervalValue = applied.intervalValue
+        intervalUnit = applied.intervalUnit
     }
 
     private func save() {

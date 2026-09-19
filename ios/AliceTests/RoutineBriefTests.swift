@@ -59,6 +59,58 @@ final class RoutineBriefTests: XCTestCase {
         XCTAssertEqual(RoutineBrief.describe(.interval(value: 1, unit: "m")), "Every 1 minute")
     }
 
+    func testADailyScheduleReadsBackTheSameCadence() {
+        let cadence = RoutineBrief.Cadence.daily(hour: 8, minute: 5)
+        XCTAssertEqual(
+            RoutineBrief.cadence(fromHermesSchedule: RoutineBrief.schedule(for: cadence)),
+            cadence
+        )
+    }
+
+    func testAWeekdaysScheduleReadsBackTheSameCadence() {
+        let cadence = RoutineBrief.Cadence.weekdays(hour: 9, minute: 0)
+        XCTAssertEqual(
+            RoutineBrief.cadence(fromHermesSchedule: RoutineBrief.schedule(for: cadence)),
+            cadence
+        )
+    }
+
+    func testAWeeklyScheduleReadsBackTheSameCadence() {
+        let cadence = RoutineBrief.Cadence.weekly(days: [1, 4], hour: 9, minute: 0)
+        XCTAssertEqual(RoutineBrief.schedule(for: cadence), "every mon,thu at 09:00")
+        XCTAssertEqual(
+            RoutineBrief.cadence(fromHermesSchedule: RoutineBrief.schedule(for: cadence)),
+            cadence
+        )
+    }
+
+    func testAnIntervalScheduleReadsBackTheSameCadence() {
+        XCTAssertEqual(
+            RoutineBrief.cadence(fromHermesSchedule: RoutineBrief.schedule(for: .interval(value: 2, unit: "h"))),
+            .interval(value: 2, unit: "h")
+        )
+        XCTAssertEqual(
+            RoutineBrief.cadence(fromHermesSchedule: RoutineBrief.schedule(for: .interval(value: 30, unit: "m"))),
+            .interval(value: 30, unit: "m")
+        )
+        XCTAssertEqual(
+            RoutineBrief.cadence(fromHermesSchedule: RoutineBrief.schedule(for: .interval(value: 3, unit: "d"))),
+            .interval(value: 3, unit: "d")
+        )
+    }
+
+    func testAFiveFieldDailyCronReadsAsDaily() {
+        XCTAssertEqual(RoutineBrief.cadence(fromHermesSchedule: "5 8 * * *"), .daily(hour: 8, minute: 5))
+    }
+
+    func testSimpleWeekdayCronsReadAsWeekdaysOrNamedDays() {
+        XCTAssertEqual(RoutineBrief.cadence(fromHermesSchedule: "0 9 * * 1-5"), .weekdays(hour: 9, minute: 0))
+        XCTAssertEqual(
+            RoutineBrief.cadence(fromHermesSchedule: "0 9 * * 1,4"),
+            .weekly(days: [1, 4], hour: 9, minute: 0)
+        )
+    }
+
     func testEveryTemplateIsCompleteAndCheap() {
         for template in RoutineBrief.templates {
             XCTAssertFalse(template.name.isEmpty, template.id)
