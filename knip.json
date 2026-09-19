@@ -3,7 +3,6 @@
   "entry": [
     "scripts/*.mjs",
     "src/lib/auth/isolation.server.ts",
-    "src/lib/auth/popup.server.ts",
     "src/routes/**/*.{ts,tsx}",
     "tests/**/*.ts"
   ],

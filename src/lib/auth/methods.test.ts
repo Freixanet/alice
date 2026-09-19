@@ -29,13 +29,7 @@ describe("available sign-in methods", () => {
       }),
     ).toEqual(["apple"]);
   });
-  it("does not offer the disabled broker on Vercel", () => {
-    expect(
-      configuredSignInMethods({
-        VERCEL: "1",
-        GROK_AUTH_CLIENT_ID: "id",
-        GROK_AUTH_CLIENT_SECRET: "secret",
-      }),
-    ).toEqual([]);
+  it("offers no provider without complete native credentials", () => {
+    expect(configuredSignInMethods({ VERCEL: "1" })).toEqual([]);
   });
 });

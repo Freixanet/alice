@@ -106,6 +106,9 @@ final class AppStore {
     private var judgedRoutineRuns: [String: Set<String>] = [:]
     private let dashboard = DashboardClient()
     private let defaults: UserDefaults
+    /// The Face ID gate and per-note locks. Public surface is forwarded below
+    /// so call sites keep `store.requireUnlock`-style access.
+    let lock: AppLock
     private var streamTasks: [String: Task<Void, Never>] = [:]
     private var persistGeneration = 0
     private var persistTask: Task<Void, Never>?
@@ -153,9 +156,6 @@ final class AppStore {
         static let mutedRoutines = "alice.routines.muted"
         static let pinnedNotes = "alice.notes.pinned"
         static let noteFolders = "alice.notes.folders"
-        static let lockedNotes = "alice.notes.locked"
-        static let requireUnlock = "alice.lock.required"
-        static let lockGrace = "alice.lock.graceSeconds"
         static let noteFolderOf = "alice.notes.folderOf"
         static let notesSort = "alice.notes.sort"
         static let notesGroupByDate = "alice.notes.groupByDate"
@@ -354,6 +354,7 @@ final class AppStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.lock = AppLock(defaults: defaults)
         botMarks = (defaults.data(forKey: Keys.marks))
             .flatMap { try? JSONDecoder().decode([String: BotMark].self, from: $0) } ?? [:]
         botCustomSections = defaults.stringArray(forKey: Keys.botCustomSections) ?? []
@@ -395,12 +396,6 @@ final class AppStore {
             hiddenBots = Set(savedHidden)
         }
         loadNoteFolders()
-        lockedNotes = Set(defaults.stringArray(forKey: Keys.lockedNotes) ?? [])
-        requireUnlock = defaults.bool(forKey: Keys.requireUnlock)
-        if defaults.object(forKey: Keys.lockGrace) != nil {
-            lockGrace = defaults.integer(forKey: Keys.lockGrace)
-        }
-        appLocked = requireUnlock
         if let savedPinned = defaults.stringArray(forKey: Keys.pinnedNotes) {
             pinnedNotes = Set(savedPinned)
         }
@@ -5200,42 +5195,41 @@ final class AppStore {
     // MARK: - Locking
 
     /// Face ID (or the passcode) before Alice shows anything.
-    var requireUnlock = false {
-        didSet {
-            defaults.set(requireUnlock, forKey: Keys.requireUnlock)
-            if !requireUnlock { appLocked = false }
-        }
+    var requireUnlock: Bool {
+        get { lock.requireUnlock }
+        set { lock.requireUnlock = newValue }
     }
     /// How long Alice may be away before it locks again, in seconds.
-    var lockGrace: Int = 60 {
-        didSet { defaults.set(lockGrace, forKey: Keys.lockGrace) }
+    var lockGrace: Int {
+        get { lock.lockGrace }
+        set { lock.lockGrace = newValue }
     }
     /// The app's content is covered until the owner unlocks it.
-    var appLocked = false
+    var appLocked: Bool {
+        get { lock.appLocked }
+        set { lock.appLocked = newValue }
+    }
     /// When Alice last left the foreground, for the grace period.
-    var leftForegroundAt: Date?
-
-    /// Notes that ask for Face ID before they open. Their words stay in the
-    /// notes store, where agents still read them: this locks the phone's view.
-    private(set) var lockedNotes: Set<String> = [] {
-        didSet { defaults.set(Array(lockedNotes), forKey: Keys.lockedNotes) }
+    var leftForegroundAt: Date? {
+        get { lock.leftForegroundAt }
+        set { lock.leftForegroundAt = newValue }
     }
     /// Locked notes were unlocked once; they stay open until Alice leaves the
     /// foreground, as in Notes.
-    var lockedNotesOpen = false
+    var lockedNotesOpen: Bool {
+        get { lock.lockedNotesOpen }
+        set { lock.lockedNotesOpen = newValue }
+    }
 
-    func isLocked(_ note: Note) -> Bool { lockedNotes.contains(note.id) }
+    func isLocked(_ note: Note) -> Bool { lock.isLocked(note) }
 
     func setLocked(_ note: Note, _ locked: Bool) {
-        if locked { lockedNotes.insert(note.id) } else { lockedNotes.remove(note.id) }
+        lock.setLocked(note, locked)
     }
 
     /// Asks for Face ID when a locked note is to be opened, once per visit.
     func unlockNotes() async -> Bool {
-        if lockedNotesOpen { return true }
-        let ok = await Biometrics.authenticate(reason: "Unlock your locked notes.")
-        if ok { lockedNotesOpen = true }
-        return ok
+        await lock.unlockNotes()
     }
 
     /// A copy of a note, styling and folder included.
@@ -5246,7 +5240,7 @@ final class AppStore {
             copy.rich = rich
         }
         if let folder = noteFolderOf[note.id] { await put(copy.id, in: .folder(folder)) }
-        if lockedNotes.contains(note.id) { lockedNotes.insert(copy.id) }
+        if lock.lockedNotes.contains(note.id) { lock.setLocked(copy, true) }
     }
 
     // MARK: - Note folders
@@ -6860,7 +6854,11 @@ final class AppStore {
                         } else if knownBotNames.contains(where: { $0.localizedCaseInsensitiveCompare(candidate) == .orderedSame }) {
                             invokedBot = candidate.lowercased()
                         } else {
-                            invokedBot = candidate
+                            // An unknown mention still routes to an agent, but
+                            // by its slug — "@My Bot" means profile `my-bot`,
+                            // not the display text verbatim.
+                            let slug = AgentProfileID.slugify(candidate)
+                            if !slug.isEmpty { invokedBot = slug }
                         }
                     }
                 } else if let channelBots = conversations[index].channelBots, !channelBots.isEmpty {

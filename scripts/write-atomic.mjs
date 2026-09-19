@@ -43,7 +43,7 @@ export function handOver(staged, target, { rename = renameSync } = {}) {
     if (err?.code === "EXDEV") {
       throw new Error(
         `${staged} is on another filesystem than ${target}, so the hand-over cannot be a ` +
-          "rename — stage under /workspace/.grok/ instead",
+          "rename — stage under a directory on the target filesystem instead",
       );
     }
     throw err;

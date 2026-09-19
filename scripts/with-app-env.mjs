@@ -5,7 +5,10 @@ import { constants as osConstants } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const APP_ENV_REL_PATH = ".grok/app-env.json";
+// Prefer `.alice/app-env.json`; `.grok/app-env.json` remains as the legacy
+// location so existing local setups keep working.
+export const APP_ENV_REL_PATHS = [".alice/app-env.json", ".grok/app-env.json"];
+export const APP_ENV_REL_PATH = APP_ENV_REL_PATHS[0];
 const VITE_PREFIX = "VITE_";
 
 export function parseAppEnv(text) {
@@ -27,11 +30,14 @@ export function parseAppEnv(text) {
 }
 
 export function readAppEnv(root) {
-  try {
-    return parseAppEnv(readFileSync(join(root, APP_ENV_REL_PATH), "utf8"));
-  } catch {
-    return {};
+  for (const relPath of APP_ENV_REL_PATHS) {
+    try {
+      return parseAppEnv(readFileSync(join(root, relPath), "utf8"));
+    } catch {
+      /* try the next location */
+    }
   }
+  return {};
 }
 
 export function mergeAppEnv(appEnv, processEnv) {

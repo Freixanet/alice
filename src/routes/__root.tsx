@@ -4,7 +4,6 @@ import {
   Outlet,
   Scripts,
 } from "@tanstack/react-router";
-import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { OperationalTelemetry } from "@/components/operational-telemetry";
 import appCss from "../styles.css?url";
 
@@ -43,8 +42,8 @@ export const Route = createRootRoute({
         href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&display=swap",
       },
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/__grok/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
+      { rel: "manifest", href: "/__pwa/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/icon-180.png" },
     ],
   }),
   component: () => (
@@ -58,7 +57,6 @@ export const Route = createRootRoute({
         <HeadContent />
       </head>
       <body className="antialiased">
-        <PreviewHostBridge />
         <OperationalTelemetry />
         <Outlet />
         <Scripts />
