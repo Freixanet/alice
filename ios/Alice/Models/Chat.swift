@@ -196,6 +196,10 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// the reply can be found there if this device stops watching it.
     var mentionProfile: String? = nil
     var mentionSessionID: String? = nil
+    /// Narration the model said on the way to a tool call, kept as its own
+    /// bubble so the tool does not wipe it. Optional so archives written
+    /// before this field existed still decode.
+    var interim: Bool = false
 
     /// Decoded field by field, every optional one at a time.
     ///
@@ -230,6 +234,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         remoteMatchContent = try box.decodeIfPresent(String.self, forKey: .remoteMatchContent)
         mentionProfile = try box.decodeIfPresent(String.self, forKey: .mentionProfile)
         mentionSessionID = try box.decodeIfPresent(String.self, forKey: .mentionSessionID)
+        interim = try box.decodeIfPresent(Bool.self, forKey: .interim) ?? false
     }
 
     init(
@@ -242,7 +247,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         localOnly: Bool = false, deliveryNote: String? = nil,
         awaitingRemote: Bool = false, replyToMessageID: String? = nil,
         remoteMatchContent: String? = nil,
-        mentionProfile: String? = nil
+        mentionProfile: String? = nil,
+        interim: Bool = false
     ) {
         self.mentionProfile = mentionProfile
         self.deliveryNote = deliveryNote
@@ -265,6 +271,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         self.approval = approval
         self.remoteID = remoteID
         self.localOnly = localOnly
+        self.interim = interim
     }
 }
 
@@ -418,4 +425,21 @@ enum ChatEvent: Sendable {
     case run(id: String, status: Message.RunStatus, output: String?)
     case approval(Message.Approval)
     case failure(message: String, limit: ModelLimit?)
+    /// Commentary beside a tool, when Hermes did not already stream it.
+    case interim(String)
+}
+
+/// Whether two stretches of a turn are the same words, so an interim
+/// frame that repeats streamed deltas is not sealed as a second bubble.
+enum TurnNarration {
+    static func normalized(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func isDuplicate(_ text: String, of existing: String) -> Bool {
+        let incoming = normalized(text)
+        let have = normalized(existing)
+        guard !incoming.isEmpty else { return true }
+        return incoming == have || have.hasPrefix(incoming) || incoming.hasPrefix(have)
+    }
 }

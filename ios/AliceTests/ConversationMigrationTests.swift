@@ -51,6 +51,7 @@ final class ConversationMigrationTests: XCTestCase {
         XCTAssertEqual(message.content, "hola")
         XCTAssertNil(message.remoteID)
         XCTAssertFalse(message.localOnly, "a missing key must fall back, not throw")
+        XCTAssertFalse(message.interim, "a missing interim key must fall back, not throw")
     }
 
     /// The exact failure that erased the phone, as a standing guard.

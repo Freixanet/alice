@@ -5957,10 +5957,11 @@ final class AppStore {
     /// A turn in a Hermes session over the dashboard socket: a bot's canonical
     /// chat, or, with no profile, Alice's own chat.
     private func sendToBotChat(
-        profile: String?, conversationID: String, replyID: String, text: String,
+        profile: String?, conversationID: String, replyID startingReplyID: String, text: String,
         attachments: [Attachment], earlier: [Message] = [], mention: Bool = false,
         confirmModel: Bool = false
     ) async {
+        var replyID = startingReplyID
         guard let source = await botChatSource() else {
             if profile == nil {
                 streamThroughGateway(
@@ -6133,12 +6134,12 @@ final class AppStore {
                         }
                         continue
                     }
-                    // What streamed before a tool call was the model narrating
-                    // its way to that call. The answer comes after the last
-                    // tool, and the transcript drops the narration too.
-                    if event.type == "tool.start",
-                       let location = messageLocation(replyID, conversationID: conversationID) {
-                        conversations[location.chat].messages[location.message].content = ""
+                    // Narration before a tool is its own bubble. Clearing it
+                    // used to drop the words the model had already said.
+                    if event.type == "tool.start" {
+                        replyID = sealOpenNarration(
+                            replyID: replyID, conversationID: conversationID
+                        )
                     }
                     // Asking another agent: said at once, not only once the
                     // turn has ended and the transcript is read.
@@ -6734,10 +6735,15 @@ final class AppStore {
     /// all reach `apply` the way the HTTP path's do.
     nonisolated static func chatEvent(from event: HermesRPCEvent) -> ChatEvent? {
         switch event.type {
-        // `message.interim` is not taken: it is the model's commentary beside a
-        // tool call, not its answer, and when that commentary was streamed it
-        // repeats text the deltas already delivered. A free model's
-        // "Required parameters (if any): query" showed up twice as the reply.
+        case "message.interim":
+            // Already streamed as deltas: sealing it again doubled a free
+            // model's "Required parameters (if any): query" as the reply.
+            if event.payload["already_streamed"] as? Bool == true { return nil }
+            guard let text = (event.payload["text"] as? String)
+                ?? (event.payload["content"] as? String),
+                  !TurnNarration.normalized(text).isEmpty
+            else { return nil }
+            return .interim(text)
         case "message.delta":
             guard let text = (event.payload["text"] as? String)
                 ?? (event.payload["delta"] as? String), !text.isEmpty
@@ -7647,7 +7653,7 @@ final class AppStore {
     private struct ActiveBotTurn {
         let token: UUID
         let conversationID: String
-        let replyID: String
+        var replyID: String
         var disposition: BotChatSubmission.Disposition? = nil
         /// The agent and stored session the turn went to, when that is not the
         /// chat's own — an agent named with `@` in another chat.
@@ -8038,6 +8044,27 @@ final class AppStore {
         case let .delta(text):
             conversations[chat].messages[index].content += text
 
+        case let .interim(text):
+            if TurnNarration.isDuplicate(text, of: conversations[chat].messages[index].content) {
+                return
+            }
+            let replyTo = conversations[chat].messages[index].replyToMessageID
+            if conversations[chat].messages.contains(where: { other in
+                other.id != id && other.interim && other.replyToMessageID == replyTo
+                    && TurnNarration.isDuplicate(text, of: other.content)
+            }) {
+                return
+            }
+            if conversations[chat].messages[index].content
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                conversations[chat].messages[index].content = text
+            }
+            let next = sealOpenNarration(replyID: id, conversationID: conversationID)
+            if next != id, var turn = activeBotTurns[conversationID], turn.replyID == id {
+                turn.replyID = next
+                activeBotTurns[conversationID] = turn
+            }
+
         case let .tool(toolID, name, status, detail):
             var tools = conversations[chat].messages[index].tools
             if let existing = tools.firstIndex(where: { $0.id == toolID }) {
@@ -8223,6 +8250,37 @@ final class AppStore {
             conversations[chat].messages[index].errorLimit = nil
         }
         persistConversations()
+    }
+
+    /// Keeps streamed narration as its own bubble and opens a fresh
+    /// placeholder for whatever comes after the tool. Same conversation,
+    /// same reply-to, same mention — never another chat.
+    @discardableResult
+    private func sealOpenNarration(replyID: String, conversationID: String) -> String {
+        guard let location = messageLocation(replyID, conversationID: conversationID)
+        else { return replyID }
+        let current = conversations[location.chat].messages[location.message]
+        guard current.role == .assistant,
+              !TurnNarration.normalized(current.content).isEmpty
+        else { return replyID }
+        conversations[location.chat].messages[location.message].interim = true
+        conversations[location.chat].messages[location.message].pending = false
+        conversations[location.chat].messages[location.message].deliveryNote = nil
+        let nextID = UUID().uuidString
+        var next = Message(
+            id: nextID, role: .assistant, content: "", createdAt: Date(),
+            pending: true, botName: current.botName,
+            replyToMessageID: current.replyToMessageID,
+            mentionProfile: current.mentionProfile
+        )
+        next.mentionSessionID = current.mentionSessionID
+        conversations[location.chat].messages.insert(next, at: location.message + 1)
+        if var turn = activeBotTurns[conversationID], turn.replyID == replyID {
+            turn.replyID = nextID
+            activeBotTurns[conversationID] = turn
+        }
+        persistConversations()
+        return nextID
     }
 
     private func messageLocation(

@@ -291,4 +291,5 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 |--------|--------|--------|--------------|
 | 1 WIP | hecho | 28bbf48 | build device + install |
 | 2 Notas | hecho | 45add6b | build device + install; unit tests escritos, no corridos aquí |
-| 3 Reconnecting | hecho | fix(ios): wait out a single Hermes timeout | build device + install; unit tests escritos, no corridos aquí |
+| 3 Reconnecting | hecho | ee2ed06 | build device + install; unit tests escritos, no corridos aquí |
+| 4 Interim | hecho | fix(ios): keep tool narration as its own bubble | build device + install; unit tests escritos, no corridos aquí |

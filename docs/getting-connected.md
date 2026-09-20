@@ -64,6 +64,13 @@ Abre **Connect**, introduce la dirección y la clave. En el modo directo, Hermes
 también debe permitir el origen de Alice mediante CORS. La pantalla incluye el
 diagnóstico correspondiente.
 
+## Comentarios entre herramientas
+
+Hermes puede emitir `message.interim` cuando
+`display.interim_assistant_messages` es `true` en su `config.yaml`. Alice
+también guarda lo que el modelo ya escribió al empezar una herramienta, así
+que la narración se ve aunque esa opción esté apagada.
+
 ## Funciones que no aparecen o no están disponibles
 
 El chat y las funciones de administración pueden usar servicios diferentes de

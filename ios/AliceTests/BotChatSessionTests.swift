@@ -323,6 +323,22 @@ final class BotChatSessionTests: XCTestCase {
         XCTAssertEqual(merged.map(\.id), ["211"])
     }
 
+    /// Narration sealed before a tool call has text and no remote id. Hermes
+    /// drops that row from the transcript; the phone must still keep it.
+    func testSealedNarrationSurvivesATranscriptWithoutIt() {
+        let narration = Message(
+            id: "local-narration", role: .assistant,
+            content: "Voy a buscar el precio", createdAt: Self.at(20),
+            botName: "radar-ia", interim: true
+        )
+        let merged = BotChatSync.merge(
+            [Self.turn("211", .assistant, "El precio es 12", 30)],
+            into: [narration]
+        )
+        XCTAssertTrue(merged.contains(where: { $0.id == "local-narration" }))
+        XCTAssertTrue(merged.contains(where: { $0.id == "211" }))
+    }
+
     /// A message just sent, not yet persisted, must not vanish on the refresh
     /// that races it.
     func testAnUnacknowledgedSendSurvives() {

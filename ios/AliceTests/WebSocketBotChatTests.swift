@@ -281,6 +281,23 @@ final class WebSocketBotChatTests: XCTestCase {
         XCTAssertNil(AppStore.chatEvent(from: interim))
     }
 
+    func testInterimCommentaryIsTakenWhenItWasNotStreamed() {
+        let interim = HermesRPCEvent(
+            type: "message.interim", sessionID: "s",
+            payload: ["text": "Voy a buscarlo"]
+        )
+        guard case let .interim(text) = AppStore.chatEvent(from: interim) else {
+            return XCTFail("unstreamed commentary should become its own event")
+        }
+        XCTAssertEqual(text, "Voy a buscarlo")
+    }
+
+    func testInterimThatRepeatsStreamedTextIsADuplicate() {
+        XCTAssertTrue(TurnNarration.isDuplicate("hola", of: "hola mundo"))
+        XCTAssertTrue(TurnNarration.isDuplicate("hola mundo", of: "hola"))
+        XCTAssertFalse(TurnNarration.isDuplicate("otra cosa", of: "hola"))
+    }
+
     // MARK: - Retry rewinds the exchange it replaces
 
     func testRetryRewindsTheExchangeItRepeats() async throws {
