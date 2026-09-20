@@ -289,4 +289,6 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 
 | Bloque | Estado | Commit | Verificación |
 |--------|--------|--------|--------------|
-| 1 WIP | pendiente | | |
+| 1 WIP | hecho | 28bbf48 | build device + install |
+| 2 Notas | hecho | 45add6b | build device + install; unit tests escritos, no corridos aquí |
+| 3 Reconnecting | hecho | fix(ios): wait out a single Hermes timeout | build device + install; unit tests escritos, no corridos aquí |

@@ -379,24 +379,59 @@ final class BotChatDeliveryTests: XCTestCase {
         XCTAssertTrue(failure.recoverable)
     }
 
+    func testASingleFailedCheckKeepsWaiting() {
+        var watch = Self.watch()
+        let step = watch.checked(.failure(Dropped()), now: Self.at(30))
+        XCTAssertEqual(step, .keepWaiting(liveSessionIDChanged: false))
+    }
+
+    func testReconnectingNeedsTwoFailuresAndALongSilence() {
+        var watch = Self.watch()
+        XCTAssertEqual(
+            watch.checked(.failure(Dropped()), now: Self.at(30)),
+            .keepWaiting(liveSessionIDChanged: false)
+        )
+        XCTAssertEqual(
+            watch.checked(.failure(Dropped()), now: Self.at(40)),
+            .keepWaiting(liveSessionIDChanged: false),
+            "two failures still wait if the turn has not been silent long enough"
+        )
+        XCTAssertEqual(
+            watch.checked(.failure(Dropped()), now: Self.at(BotTurnWatch.reconnectSilence)),
+            .reconnecting
+        )
+    }
+
     func testRepeatedlyFailingToReachHermesEndsTheWait() {
         var watch = Self.watch()
-        for _ in 1..<BotTurnWatch.attemptsBeforeLosingTouch {
-            let step = watch.checked(.failure(Dropped()), now: Self.at(60))
+        XCTAssertEqual(
+            watch.checked(.failure(Dropped()), now: Self.at(30)),
+            .keepWaiting(liveSessionIDChanged: false)
+        )
+        for i in 2..<BotTurnWatch.attemptsBeforeLosingTouch {
+            let step = watch.checked(
+                .failure(Dropped()), now: Self.at(BotTurnWatch.reconnectSilence + TimeInterval(i))
+            )
             XCTAssertEqual(step, .reconnecting)
         }
-        let last = watch.checked(.failure(Dropped()), now: Self.at(60))
+        let last = watch.checked(.failure(Dropped()), now: Self.at(90))
         XCTAssertEqual(last, .lostTouch)
     }
 
     func testReachingHermesAgainStartsTheCountOver() {
         var watch = Self.watch()
-        for _ in 1..<BotTurnWatch.attemptsBeforeLosingTouch {
-            _ = watch.checked(.failure(Dropped()), now: Self.at(60))
-        }
+        _ = watch.checked(.failure(Dropped()), now: Self.at(30))
+        _ = watch.checked(.failure(Dropped()), now: Self.at(BotTurnWatch.reconnectSilence))
         _ = watch.checked(.success(BotTurnState(liveSessionID: "live-1", running: true)), now: Self.at(60))
-        let step = watch.checked(.failure(Dropped()), now: Self.at(90))
-        XCTAssertEqual(step, .reconnecting)
+        XCTAssertEqual(
+            watch.checked(.failure(Dropped()), now: Self.at(90)),
+            .keepWaiting(liveSessionIDChanged: false),
+            "a recovered check forgets the earlier misses"
+        )
+        XCTAssertEqual(
+            watch.checked(.failure(Dropped()), now: Self.at(60 + BotTurnWatch.reconnectSilence)),
+            .reconnecting
+        )
     }
 
     func testACheckThatNeverHearsBackGivesUp() async {

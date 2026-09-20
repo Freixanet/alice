@@ -133,8 +133,14 @@ struct BotTurnWatch: Sendable {
     /// pushes nothing while it waits out a provider's rate limit — ten minutes
     /// at a time for a free model — so silence alone is not an ending.
     static let quietInterval: TimeInterval = 30
+    /// How long a turn may stay silent, after more than one failed check,
+    /// before the reply is told Hermes is being reached again. One missed
+    /// snapshot is a slow dashboard, not a dropped socket.
+    static let reconnectSilence: TimeInterval = 45
     /// Failed checks in a row before the reply is left to arrive on its own.
     static let attemptsBeforeLosingTouch = 4
+    /// Failed checks before a reconnecting note is worth showing.
+    static let attemptsBeforeReconnecting = 2
 
     private(set) var liveSessionID: String
     private var waitingForQueuedOrigin: Bool
@@ -204,7 +210,16 @@ struct BotTurnWatch: Sendable {
                 : .endedUnseen(failure: state.failure)
         case .failure:
             failedChecks += 1
-            return failedChecks >= Self.attemptsBeforeLosingTouch ? .lostTouch : .reconnecting
+            if failedChecks >= Self.attemptsBeforeLosingTouch { return .lostTouch }
+            // A single timeout after thirty quiet seconds is still a live
+            // turn: rate limits and a slow snapshot look the same. Say
+            // reconnecting only once two checks have failed and nothing has
+            // been heard for longer than a missed beat.
+            if failedChecks >= Self.attemptsBeforeReconnecting,
+               now.timeIntervalSince(lastHeard) >= Self.reconnectSilence {
+                return .reconnecting
+            }
+            return .keepWaiting(liveSessionIDChanged: false)
         }
     }
 

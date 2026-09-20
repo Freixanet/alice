@@ -6075,6 +6075,7 @@ final class AppStore {
 
             // Frames end the reply only when they say the turn is over, and a
             // silence is asked about rather than waited on forever.
+            var unansweredChecks = 0
             watching: for await signal in BotTurnWatch.signals(from: events, every: .seconds(15)) {
                 // Let go meanwhile — settled from the transcript, stopped, or
                 // superseded — so nothing here may touch the reply again.
@@ -6218,11 +6219,17 @@ final class AppStore {
                         for request in LiveEvents.pendingEvents(from: snapshot, session: requestIdentity) {
                             observe(request)
                         }
+                        unansweredChecks = 0
                         state = .success(current)
                     } catch {
                         // A socket that died without saying so leaves the call
-                        // hanging. Drop it, so the next check reconnects.
-                        if error is BotTurnWatch.NoAnswer { await rpcClient?.disconnect() }
+                        // hanging. One missed snapshot is not that: drop the
+                        // socket only after a second unanswered check, so a
+                        // slow dashboard does not look like a reconnect.
+                        if error is BotTurnWatch.NoAnswer {
+                            unansweredChecks += 1
+                            if unansweredChecks >= 2 { await rpcClient?.disconnect() }
+                        }
                         state = .failure(error)
                     }
                     switch watch.checked(state, now: Date()) {
