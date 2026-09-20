@@ -1757,44 +1757,25 @@ final class AppStore {
             )
         }
 
-        if let pending = pendingBotModelSyncs[bot.name] {
-            if pending.model == option.id, pending.provider == provider {
-                // The same choice again is a retry of its follow-up: this
-                // one is waited on, so the person sees whether it landed.
-                botModelSyncTasks[bot.name]?.cancel()
-                botModelSyncTasks.removeValue(forKey: bot.name)
-                let outcome = await completeBotModelSync(pending, botName: bot.name)
-                if case let .applied(warning) = outcome, let warning {
-                    botModelSyncWarnings[bot.name] = warning
-                } else {
-                    botModelSyncWarnings.removeValue(forKey: bot.name)
-                }
-                return outcome
-            }
-            // Do not lose the old model needed to repair routines that only
-            // partly followed the previous change. Finish that repair before
-            // allowing another transition to replace its recovery record.
-            // A follow-up still running behind the last choice is stopped
-            // first so two carries do not write the same routines at once.
+        if let pending = pendingBotModelSyncs[bot.name],
+           pending.model == option.id, pending.provider == provider {
+            // The same choice again is a retry of its follow-up: this
+            // one is waited on, so the person sees whether it landed.
             botModelSyncTasks[bot.name]?.cancel()
             botModelSyncTasks.removeValue(forKey: bot.name)
-            do {
-                try await carryModelChange(
-                    to: bot.name,
-                    previousModel: pending.previousModel,
-                    previousProvider: pending.previousProvider,
-                    model: pending.model,
-                    provider: pending.provider
-                )
-                pendingBotModelSyncs.removeValue(forKey: bot.name)
-            } catch {
-                throw HermesRPCClient.Failure(
-                    reason: "Finish syncing \(botCurrentName(for: bot.name)) to "
-                        + "\(HermesClient.prettify(pending.model)) before choosing another model. "
-                        + PlainWords.describe(error, doing: "finish the sync")
-                )
+            let outcome = await completeBotModelSync(pending, botName: bot.name)
+            if case let .applied(warning) = outcome, let warning {
+                botModelSyncWarnings[bot.name] = warning
+            } else {
+                botModelSyncWarnings.removeValue(forKey: bot.name)
             }
+            return outcome
         }
+        // Another model was still being followed up. Drop that work: the
+        // new choice is the target, and the cancelled carry must not pin
+        // routines to the model that was just abandoned.
+        botModelSyncTasks[bot.name]?.cancel()
+        botModelSyncTasks.removeValue(forKey: bot.name)
 
         // A Bot detail page can stay open across several selections. Its input
         // row is then stale, while the cache is Hermes' latest accepted model.
@@ -1805,27 +1786,37 @@ final class AppStore {
             model: option.id,
             provider: provider
         )
-        if let rpc = await dashboardRPC() {
-            var params: [String: Any] = [
-                "name": bot.name, "model": option.id, "provider": provider,
-            ]
-            if confirm { params["confirm_expensive_model"] = true }
-            let response = try await rpc.call("profiles.configure", JSONObject(params))
-            if response["confirm_required"] as? Bool == true {
-                return .confirmation(
-                    (response["confirm_message"] as? String)
-                        ?? "Hermes wants confirmation before using this model."
-                )
+        // Replace the pending target before the network call so a cancelled
+        // carry of the previous model cannot pin routines to it.
+        let previousPending = pendingBotModelSyncs[bot.name]
+        pendingBotModelSyncs[bot.name] = transition
+        do {
+            if let rpc = await dashboardRPC() {
+                var params: [String: Any] = [
+                    "name": bot.name, "model": option.id, "provider": provider,
+                ]
+                if confirm { params["confirm_expensive_model"] = true }
+                let response = try await rpc.call("profiles.configure", JSONObject(params))
+                if response["confirm_required"] as? Bool == true {
+                    pendingBotModelSyncs[bot.name] = previousPending
+                    return .confirmation(
+                        (response["confirm_message"] as? String)
+                            ?? "Hermes wants confirmation before using this model."
+                    )
+                }
+                let applied = response["applied"] as? [String: Any]
+                guard applied?["model"] as? Bool == true else {
+                    throw HermesRPCClient.Failure(reason: "Hermes did not save the bot model.")
+                }
+            } else {
+                // Compatibility with dashboards from before profiles.configure.
+                // This still changes the real profile; it is never a phone-only
+                // model override.
+                try await dashboard.setModel(bot.name, provider: provider, model: option.id)
             }
-            let applied = response["applied"] as? [String: Any]
-            guard applied?["model"] as? Bool == true else {
-                throw HermesRPCClient.Failure(reason: "Hermes did not save the bot model.")
-            }
-        } else {
-            // Compatibility with dashboards from before profiles.configure.
-            // This still changes the real profile; it is never a phone-only
-            // model override.
-            try await dashboard.setModel(bot.name, provider: provider, model: option.id)
+        } catch {
+            pendingBotModelSyncs[bot.name] = previousPending
+            throw error
         }
 
         botModels.removeValue(forKey: bot.name)
@@ -1859,7 +1850,11 @@ final class AppStore {
         botModelSyncTasks[bot.name] = Task { [weak self] in
             guard let self else { return }
             let outcome = await self.completeBotModelSync(transition, botName: bot.name)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  Self.shouldApplyModelCarry(
+                    transition, stillPending: self.pendingBotModelSyncs[bot.name]
+                  )
+            else { return }
             if case let .applied(warning) = outcome, let warning {
                 self.botModelSyncWarnings[bot.name] = warning
             }
@@ -1931,10 +1926,23 @@ final class AppStore {
         }
     }
 
+    /// A cancelled carry must not write pins or clear a newer pending target.
+    nonisolated static func shouldApplyModelCarry(
+        _ intended: PendingBotModelSync, stillPending: PendingBotModelSync?
+    ) -> Bool {
+        stillPending == intended
+    }
+
     private func completeBotModelSync(
         _ pending: PendingBotModelSync, botName: String
     ) async -> BotModelUpdate {
         do {
+            try Task.checkCancellation()
+            guard Self.shouldApplyModelCarry(
+                pending, stillPending: pendingBotModelSyncs[botName]
+            ) else {
+                return .applied(warning: nil)
+            }
             try await carryModelChange(
                 to: botName,
                 previousModel: pending.previousModel,
@@ -1942,7 +1950,14 @@ final class AppStore {
                 model: pending.model,
                 provider: pending.provider
             )
-            pendingBotModelSyncs.removeValue(forKey: botName)
+            try Task.checkCancellation()
+            if Self.shouldApplyModelCarry(
+                pending, stillPending: pendingBotModelSyncs[botName]
+            ) {
+                pendingBotModelSyncs.removeValue(forKey: botName)
+            }
+            return .applied(warning: nil)
+        } catch is CancellationError {
             return .applied(warning: nil)
         } catch {
             // Keep the recovery record: the operation is idempotent and can be
@@ -2004,20 +2019,26 @@ final class AppStore {
                 jobs, previousModel: previousModel, previousProvider: previousProvider,
                 newModel: model, newProvider: provider
             )
-            for change in changes {
-                switch change {
-                case let .follow(id, profile):
-                    // Hermes re-records what an unpinned routine follows only
-                    // when its pin changes: pin it to the new model, release it.
-                    try await dashboard.pinRoutineModel(
-                        id, profile: profile, provider: provider, model: model
-                    )
-                    try await dashboard.followProfileModel(id, profile: profile)
-                case let .repin(id, profile):
-                    try await dashboard.pinRoutineModel(
-                        id, profile: profile, provider: provider, model: model
-                    )
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for change in changes {
+                    group.addTask {
+                        try Task.checkCancellation()
+                        switch change {
+                        case let .follow(id, profile):
+                            // Hermes re-records what an unpinned routine follows
+                            // only when its pin changes: pin it, then release it.
+                            try await self.dashboard.pinRoutineModel(
+                                id, profile: profile, provider: provider, model: model
+                            )
+                            try await self.dashboard.followProfileModel(id, profile: profile)
+                        case let .repin(id, profile):
+                            try await self.dashboard.pinRoutineModel(
+                                id, profile: profile, provider: provider, model: model
+                            )
+                        }
+                    }
                 }
+                try await group.waitForAll()
             }
         } catch {
             problems.append("its routines could not be moved to it (\(reason(error)))")

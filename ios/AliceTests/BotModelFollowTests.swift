@@ -93,4 +93,31 @@ final class BotModelFollowTests: XCTestCase {
         XCTAssertEqual(transition.model, "model-c")
         XCTAssertEqual(transition.provider, "provider-c")
     }
+
+    func testACancelledPendingDoesNotApplyTheAbandonedModel() {
+        let abandoned = AppStore.PendingBotModelSync(
+            previousModel: "model-a", previousProvider: "provider-a",
+            model: "model-b", provider: "provider-b"
+        )
+        let live = AppStore.PendingBotModelSync(
+            previousModel: "model-b", previousProvider: "provider-b",
+            model: "model-c", provider: "provider-c"
+        )
+        XCTAssertFalse(AppStore.shouldApplyModelCarry(abandoned, stillPending: live))
+        XCTAssertTrue(AppStore.shouldApplyModelCarry(live, stillPending: live))
+        XCTAssertFalse(AppStore.shouldApplyModelCarry(live, stillPending: nil))
+    }
+
+    func testANewChoiceStartsFromTheLiveCacheNotTheAbandonedPending() {
+        let abandonedPage = bot("model-a", provider: "provider-a")
+        let liveRow = bot("model-b", provider: "provider-b")
+        let next = AppStore.modelSyncTransition(
+            for: abandonedPage,
+            cachedBots: [liveRow],
+            model: "model-c",
+            provider: "provider-c"
+        )
+        XCTAssertEqual(next.previousModel, "model-b", "the new sync starts from the cache, not the cancelled pending")
+        XCTAssertEqual(next.model, "model-c")
+    }
 }

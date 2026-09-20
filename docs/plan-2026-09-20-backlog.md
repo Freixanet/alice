@@ -294,4 +294,5 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 | 3 Reconnecting | hecho | ee2ed06 | build device + install; unit tests escritos, no corridos aquí |
 | 4 Interim | hecho | f9919ed | build device + install; unit tests escritos, no corridos aquí |
 | 5 Captions | hecho | 63c326a | build device + push; install pendiente (iPhone unavailable) |
-| 6 Developer | hecho | feat(ios): show tokens and tool counts in developer mode | build device + install; unit tests escritos, no corridos aquí |
+| 6 Developer | hecho | bc3b26f | build device + push; install pendiente (iPhone unavailable) |
+| 7 Model sync | hecho | perf(ios): a new model choice cancels the previous routine sync | build device + install; unit tests escritos, no corridos aquí |
