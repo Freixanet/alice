@@ -9,11 +9,6 @@ struct Sidebar: View {
     let onDismiss: () -> Void
 
     @State private var showSearch = false
-    @State private var renaming: Conversation?
-    @State private var newTitle = ""
-    @State private var deletingConversation: Conversation?
-    @State private var projects: [NamedProject] = []
-    @State private var projectMoveFailure: String?
     @State private var going: Destination?
 
     /// Every surface Search can route to from the drawer. Only the everyday
@@ -39,7 +34,12 @@ struct Sidebar: View {
             // Bots, Routines, Library — so a conversation scrolling up dissolves
             // rather than vanishing at a hard line.
             ZStack(alignment: .bottom) {
-                list.mask(edgeFade)
+                SidebarList(width: width, onDismiss: onDismiss)
+                VStack(spacing: 0) {
+                    topFade.allowsHitTesting(false)
+                    Spacer(minLength: 0)
+                    bottomFade.allowsHitTesting(false)
+                }
                 footer
             }
         }
@@ -60,7 +60,7 @@ struct Sidebar: View {
         }
         .sheet(
             item: $going,
-            onDismiss: { Task { await loadProjects() } }
+            onDismiss: {}
         ) { destination in
             Group {
                 switch destination {
@@ -97,17 +97,6 @@ struct Sidebar: View {
                 onOpen: onDismiss,
                 onOpenDestination: { open($0) }
             )
-        }
-        .alert(
-            "Couldn’t move chat",
-            isPresented: Binding(
-                get: { projectMoveFailure != nil },
-                set: { if !$0 { projectMoveFailure = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { projectMoveFailure = nil }
-        } message: {
-            Text(projectMoveFailure ?? "Hermes did not move the session.")
         }
     }
 
@@ -187,236 +176,42 @@ struct Sidebar: View {
         .padding(.bottom, 6)
     }
 
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // The stack around it already carries 12, and the rows add 12
-            // of their own — so 12 here lands on the same 24pt column as
-            // everything else in the drawer.
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
-    }
-
-    /// Opaque through the middle, out at both ends.
-    ///
-    /// In points, not in fractions of the container. Expressed as fractions
-    /// the ramp changed length with the height it happened to be given, and
-    /// at this size that made the bottom one about a finger's width — short
-    /// enough to read as a rule with a soft edge rather than as a row losing
-    /// itself. A hundred and thirty points is most of the way from the last
-    /// legible row to the buttons, which is the distance a row actually has
-    /// to disappear over.
-    /// Shared by the mask and by the list's top inset, so the heading and the
-    /// ramp cannot drift apart.
-    /// 22, down from 30 with the destinations' bottom padding down from 22 to
-    /// 6: the gap to Pinned was 52pt. The list still starts where the ramp
-    /// ends, because both read this one value.
+    /// The existing edge fade, drawn over the list instead of masking it so
+    /// the rows do not rebuild with the drawer gesture.
     static let topFadeHeight: CGFloat = 22
 
-    private var edgeFade: some View {
-        VStack(spacing: 0) {
-            // Both ramps are long, and both hold near-opaque for their first
-            // third. That is what makes a fade look like it starts late and
-            // still takes its time: a row stays fully legible well into the
-            // band and then loses itself over the rest of it. A short ramp
-            // reads as a rule however many stops it has.
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black.opacity(0.18), location: 0.22),
-                    .init(color: .black.opacity(0.55), location: 0.48),
-                    .init(color: .black.opacity(0.85), location: 0.74),
-                    .init(color: .black, location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: Self.topFadeHeight)
-
-            Color.black
-
-            // Taller than the old 180, and it holds. The previous ramp was
-            // already down to three-quarters opacity a third of the way in,
-            // so a row went from legible to gone across about a finger —
-            // which reads as a hard edge that happens to be soft. Eight stops
-            // over 240pt keep a row readable well past halfway and then let
-            // it lose itself slowly, so full transparency lands lower down
-            // the drawer than it used to.
-            LinearGradient(
-                stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black.opacity(0.99), location: 0.18),
-                    .init(color: .black.opacity(0.95), location: 0.34),
-                    .init(color: .black.opacity(0.85), location: 0.48),
-                    .init(color: .black.opacity(0.68), location: 0.61),
-                    .init(color: .black.opacity(0.46), location: 0.73),
-                    .init(color: .black.opacity(0.24), location: 0.85),
-                    .init(color: .black.opacity(0.08), location: 0.94),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 240)
-        }
+    private var topFade: some View {
+        LinearGradient(
+            stops: [
+                .init(color: Palette.background(scheme), location: 0),
+                .init(color: Palette.background(scheme).opacity(0.82), location: 0.22),
+                .init(color: Palette.background(scheme).opacity(0.45), location: 0.48),
+                .init(color: Palette.background(scheme).opacity(0.15), location: 0.74),
+                .init(color: .clear, location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: Self.topFadeHeight)
     }
 
-    private var list: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                // Only when there is something in it: a heading over nothing
-                // is worse than no heading.
-                if !pinned.isEmpty {
-                    sectionLabel("Pinned")
-                    ForEach(pinned) { conversation in
-                        chatRow(conversation)
-                    }
-                    Spacer(minLength: 14)
-                }
-
-                sectionLabel("Recents")
-                ForEach(recents) { conversation in
-                    chatRow(conversation)
-                }
-            }
-            .padding(.horizontal, 12)
-            // Clears the top fade. The band exists so a row scrolling up
-            // dissolves rather than being cut off, but the first heading was
-            // starting inside it — "Pinned" was half gone before anything had
-            // moved. Content now begins below the ramp and only enters it on
-            // the way out.
-            .padding(.top, Self.topFadeHeight)
-        }
-        // Keyed on the connection: the drawer is built before the dashboard
-        // has signed in, and a one-shot task would leave the project list
-        // empty for the rest of the session.
-        .task(id: store.dashboardReady) { await loadProjects() }
-        .alert("Rename chat", isPresented: .constant(renaming != nil)) {
-            TextField("Title", text: $newTitle)
-            Button("Cancel", role: .cancel) { renaming = nil }
-            Button("Save") {
-                if let renaming { store.rename(renaming.id, to: newTitle) }
-                renaming = nil
-            }
-        }
-        .confirmationDialog(
-            "Delete Chat",
-            isPresented: .init(
-                get: { deletingConversation != nil },
-                set: { if !$0 { deletingConversation = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let deletingConversation {
-                    store.delete(deletingConversation.id)
-                }
-                deletingConversation = nil
-            }
-            Button("Cancel", role: .cancel) {
-                deletingConversation = nil
-            }
-        } message: {
-            Text("Are you sure you want to delete this chat? This cannot be undone.")
-        }
-    }
-
-    private var pinned: [Conversation] { store.conversations.filter { $0.pinned && !$0.isBotChat } }
-    private var recents: [Conversation] { store.conversations.filter { !$0.pinned && !$0.isBotChat } }
-
-    @ViewBuilder
-    private func chatRow(_ conversation: Conversation) -> some View {
-        Button {
-            store.activeID = conversation.id
-            onDismiss()
-        } label: {
-            // The title alone: it already says what the chat is about, and
-            // a line of the last reply under it made the drawer a wall of
-            // half-sentences.
-            Text(store.titleStyled(for: conversation))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: width - 48, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(
-                conversation.id == store.activeID
-                    ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
-                    : .clear,
-                in: .rect(cornerRadius: 10)
-            )
-            .contentShape(.rect(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            menu(for: conversation)
-        } preview: {
-            Text(store.titleStyled(for: conversation))
-                .lineLimit(1)
-                .frame(width: width - 48, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    conversation.id == store.activeID
-                        ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
-                        : Palette.card(scheme),
-                    in: .rect(cornerRadius: 10)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-    }
-
-    @ViewBuilder
-    private func menu(for conversation: Conversation) -> some View {
-        Button {
-            store.togglePin(conversation.id)
-        } label: {
-            Label(conversation.pinned ? "Unpin" : "Pin", systemImage: "pin")
-        }
-
-        Button {
-            newTitle = conversation.title
-            renaming = conversation
-        } label: {
-            Label("Rename", systemImage: "pencil")
-        }
-
-        // A Hermes Project owns workspace folders. Moving a chat therefore
-        // moves the real Hermes session cwd to that Project's primary folder;
-        // there is no iPhone-only filing layer and no fake "None" project.
-        if !projects.isEmpty {
-            Menu {
-                ForEach(projects) { project in
-                    Button(project.name) {
-                        Task {
-                            do {
-                                try await store.moveConversation(conversation.id, to: project)
-                            } catch {
-                                projectMoveFailure = (error as? LocalizedError)?.errorDescription
-                                    ?? "Hermes did not move the session."
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Label("Move to Project", systemImage: "folder")
-            }
-        }
-
-        Button("Delete", systemImage: "trash", role: .destructive) {
-            deletingConversation = conversation
-        }
-    }
-
-    private func loadProjects() async {
-        guard store.dashboardReady else {
-            projects = []
-            return
-        }
-        projects = ((try? await store.namedProjects(profile: "default")) ?? [])
-            .filter { !$0.archived && $0.primaryPath != nil }
+    private var bottomFade: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: Palette.background(scheme).opacity(0.08), location: 0.18),
+                .init(color: Palette.background(scheme).opacity(0.24), location: 0.34),
+                .init(color: Palette.background(scheme).opacity(0.46), location: 0.48),
+                .init(color: Palette.background(scheme).opacity(0.68), location: 0.61),
+                .init(color: Palette.background(scheme).opacity(0.85), location: 0.73),
+                .init(color: Palette.background(scheme).opacity(0.95), location: 0.85),
+                .init(color: Palette.background(scheme).opacity(0.99), location: 0.94),
+                .init(color: Palette.background(scheme), location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: 240)
     }
 
     /// The initial to show on the settings button, or nil when there is
@@ -587,5 +382,182 @@ struct Sidebar: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar.row.\(title)")
+    }
+}
+
+/// Conversation rows only: nothing here reads the drawer gesture.
+private struct SidebarList: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let width: CGFloat
+    let onDismiss: () -> Void
+
+    @State private var renaming: Conversation?
+    @State private var newTitle = ""
+    @State private var deletingConversation: Conversation?
+    @State private var projects: [NamedProject] = []
+    @State private var projectsFetchedAt: Date?
+    @State private var projectMoveFailure: String?
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                if !store.pinnedConversations.isEmpty {
+                    sectionLabel("Pinned")
+                    ForEach(store.pinnedConversations) { conversation in
+                        chatRow(conversation)
+                    }
+                    Spacer(minLength: 14)
+                }
+
+                sectionLabel("Recents")
+                ForEach(store.recentConversations) { conversation in
+                    chatRow(conversation)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, Sidebar.topFadeHeight)
+        }
+        .task(id: store.dashboardReady) { await loadProjects() }
+        .alert("Rename chat", isPresented: .constant(renaming != nil)) {
+            TextField("Title", text: $newTitle)
+            Button("Cancel", role: .cancel) { renaming = nil }
+            Button("Save") {
+                if let renaming { store.rename(renaming.id, to: newTitle) }
+                renaming = nil
+            }
+        }
+        .alert(
+            "Couldn’t move chat",
+            isPresented: Binding(
+                get: { projectMoveFailure != nil },
+                set: { if !$0 { projectMoveFailure = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { projectMoveFailure = nil }
+        } message: {
+            Text(projectMoveFailure ?? "Hermes did not move the session.")
+        }
+        .confirmationDialog(
+            "Delete Chat",
+            isPresented: .init(
+                get: { deletingConversation != nil },
+                set: { if !$0 { deletingConversation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let deletingConversation {
+                    store.delete(deletingConversation.id)
+                }
+                deletingConversation = nil
+            }
+            Button("Cancel", role: .cancel) {
+                deletingConversation = nil
+            }
+        } message: {
+            Text("Are you sure you want to delete this chat? This cannot be undone.")
+        }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private func chatRow(_ conversation: Conversation) -> some View {
+        Button {
+            store.activeID = conversation.id
+            onDismiss()
+        } label: {
+            Text(store.titleStyled(for: conversation))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: width - 48, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    conversation.id == store.activeID
+                        ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
+                        : .clear,
+                    in: .rect(cornerRadius: 10)
+                )
+                .contentShape(.rect(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            menu(for: conversation)
+        } preview: {
+            Text(store.displayTitle(for: conversation))
+                .lineLimit(1)
+                .frame(width: width - 48, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    conversation.id == store.activeID
+                        ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
+                        : Palette.card(scheme),
+                    in: .rect(cornerRadius: 10)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private func menu(for conversation: Conversation) -> some View {
+        Button {
+            store.togglePin(conversation.id)
+        } label: {
+            Label(conversation.pinned ? "Unpin" : "Pin", systemImage: "pin")
+        }
+
+        Button {
+            newTitle = conversation.title
+            renaming = conversation
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+
+        if !projects.isEmpty {
+            Menu {
+                ForEach(projects) { project in
+                    Button(project.name) {
+                        Task {
+                            do {
+                                try await store.moveConversation(conversation.id, to: project)
+                            } catch {
+                                projectMoveFailure = (error as? LocalizedError)?.errorDescription
+                                    ?? "Hermes did not move the session."
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("Move to Project", systemImage: "folder")
+            }
+        }
+
+        Button("Delete", systemImage: "trash", role: .destructive) {
+            deletingConversation = conversation
+        }
+    }
+
+    private func loadProjects() async {
+        if let projectsFetchedAt, Date().timeIntervalSince(projectsFetchedAt) < 60 {
+            return
+        }
+        guard store.dashboardReady else {
+            projects = []
+            projectsFetchedAt = nil
+            return
+        }
+        projects = ((try? await store.namedProjects(profile: "default")) ?? [])
+            .filter { !$0.archived && $0.primaryPath != nil }
+        projectsFetchedAt = Date()
     }
 }

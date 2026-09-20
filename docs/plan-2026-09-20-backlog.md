@@ -297,4 +297,5 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 | 6 Developer | hecho | bc3b26f | build device + push; install pendiente (iPhone unavailable) |
 | 7 Model sync | hecho | 6d855cb | build device + push; install pendiente (iPhone unavailable) |
 | 8 Queue UX | hecho | b78ee8e | build device + push; install pendiente (iPhone unavailable) |
-| 9 Bark | hecho | fix(notifier): wait for the real last assistant row before Bark | python -m unittest discover -s mac/notifier |
+| 9 Bark | hecho | bb49b50 | python -m unittest discover -s mac/notifier |
+| 10 Sidebar | hecho | perf(ios): keep the drawer list still while the pane moves | build device + install; unit tests escritos, no corridos aquí |

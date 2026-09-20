@@ -66,7 +66,27 @@ final class AppStore {
     private(set) var modelListIsPartial = false
 
     // Conversations
-    var conversations: [Conversation] = [.blank()]
+    var conversations: [Conversation] = [.blank()] {
+        didSet { refreshConversationShelves() }
+    }
+    /// Home chats for the drawer, kept still while a reply streams.
+    private(set) var pinnedConversations: [Conversation] = []
+    private(set) var recentConversations: [Conversation] = []
+    private var conversationShelfFingerprint = 0
+
+    /// Rebuilds the drawer lists only when membership or pins change.
+    private func refreshConversationShelves() {
+        let fingerprint = conversations.reduce(into: 0) { acc, chat in
+            acc = acc &* 31 &+ chat.id.hashValue
+            acc = acc &* 31 &+ chat.title.hashValue
+            acc = acc &* 31 &+ (chat.pinned ? 1 : 0)
+            acc = acc &* 31 &+ (chat.isBotChat ? 1 : 0)
+        }
+        guard fingerprint != conversationShelfFingerprint else { return }
+        conversationShelfFingerprint = fingerprint
+        pinnedConversations = conversations.filter { $0.pinned && !$0.isBotChat }
+        recentConversations = conversations.filter { !$0.pinned && !$0.isBotChat }
+    }
     var activeID: String? {
         didSet {
             // An edit belongs to the chat it was started in.
@@ -457,6 +477,7 @@ final class AppStore {
         restoreSalvagedConversationsIfPossible()
         migrateLegacyChannels()
         activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
+        refreshConversationShelves()
     }
 
     var activeConversation: Conversation? {
