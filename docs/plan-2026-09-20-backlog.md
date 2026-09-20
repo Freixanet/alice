@@ -296,4 +296,5 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 | 5 Captions | hecho | 63c326a | build device + push; install pendiente (iPhone unavailable) |
 | 6 Developer | hecho | bc3b26f | build device + push; install pendiente (iPhone unavailable) |
 | 7 Model sync | hecho | 6d855cb | build device + push; install pendiente (iPhone unavailable) |
-| 8 Queue UX | hecho | fix(ios): show when a send is queued and how to cancel it | build device + install; unit tests escritos, no corridos aquí |
+| 8 Queue UX | hecho | b78ee8e | build device + push; install pendiente (iPhone unavailable) |
+| 9 Bark | hecho | fix(notifier): wait for the real last assistant row before Bark | python -m unittest discover -s mac/notifier |

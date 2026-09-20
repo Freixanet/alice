@@ -43,6 +43,9 @@ ROUTINE_FAILED = "\n⚠️ Cron '"
 # Replies older than this when first seen are history, not news: a watcher that
 # was stopped for a day must not ring the phone for all of it.
 FRESH_SECONDS = 15 * 60
+# A `stop` is not the answer if the model is still working. Wait until the
+# row is last in its session for this long, or until a user row follows it.
+SETTLE_SECONDS = 8
 
 log = logging.getLogger('alice-notifier')
 
@@ -115,21 +118,41 @@ def _query(db, sql, args, immutable):
 
 def assistant_rows(db, after_id):
     """Assistant rows newer than after_id, or None when the database cannot be read."""
+    rows = messages_after(db, after_id)
+    if rows is None:
+        return None
+    return [row for row in rows if row[1] == 'assistant']
+
+
+def messages_after(db, after_id):
+    """Every new row, so a later user turn can settle the assistant above it."""
     try:
         # Whether the user turn before each row is a routine's report, decided in SQL so
         # the report itself never leaves the database.
         return read(db,
-                    'SELECT m.id, m.content, m.display_kind, m.finish_reason, s.source, m.timestamp, s.id, '
+                    'SELECT m.id, m.role, m.content, m.display_kind, m.finish_reason, s.source, m.timestamp, s.id, '
                     '(SELECT CASE WHEN substr(u.content, 1, ?) != ? THEN 0 WHEN instr(u.content, ?) > 0 THEN 2 '
                     'ELSE 1 END FROM messages u WHERE u.session_id = m.session_id '
                     'AND u.id < m.id AND u.role = ? ORDER BY u.id DESC LIMIT 1) '
                     'FROM messages m JOIN sessions s ON s.id = m.session_id '
-                    'WHERE m.id > ? AND m.role = ? ORDER BY m.id',
-                    (len(ROUTINE_REPORT), ROUTINE_REPORT, ROUTINE_FAILED, 'user', after_id, 'assistant'))
+                    'WHERE m.id > ? ORDER BY m.id',
+                    (len(ROUTINE_REPORT), ROUTINE_REPORT, ROUTINE_FAILED, 'user', after_id))
     except sqlite3.Error as error:
         # One unreadable database must not silence every other chat.
         log.warning('Could not read %s: %s', db.parent.name, error)
         return None
+
+
+def row_outcome(later, stamp, now):
+    """Whether this assistant row is the real last answer, already superseded, or still open.
+
+    later: following rows in the same session, oldest first, as (id, role, ...).
+    """
+    if later:
+        return 'final' if later[0][1] == 'user' else 'superseded'
+    if stamp is None or now - float(stamp) >= SETTLE_SECONDS:
+        return 'final'
+    return None
 
 
 def last_message_id(db):
@@ -168,6 +191,7 @@ def poll_once(state, home, send, now=None):
     now = time.time() if now is None else now
     marks = state.setdefault('messages', {})
     runs = state.setdefault('runs', {})
+    pending = state.setdefault('pending', {})
     sent = []
     for name, directory in profiles(home):
         title = display_name(name, directory)
@@ -179,12 +203,31 @@ def poll_once(state, home, send, now=None):
                 if last is not None:
                     marks[name] = last
             else:
-                rows = assistant_rows(db, marks[name]) or []
+                rows = messages_after(db, marks[name])
+                if rows is None:
+                    rows = []
                 found = []
-                for row_id, content, display_kind, finish_reason, source, stamp, session, after_report in rows:
+                advanced_to = marks[name]
+                for index, row in enumerate(rows):
+                    row_id, role, content, display_kind, finish_reason, source, stamp, session, after_report = row
+                    key = '%s/%s' % (name, session)
+                    if role != 'assistant':
+                        pending.pop(key, None)
+                        advanced_to = row_id
+                        continue
+                    later = [other for other in rows[index + 1:] if other[7] == session]
+                    outcome = row_outcome(later, stamp, now)
+                    if outcome is None:
+                        pending[key] = row_id
+                        break
+                    pending.pop(key, None)
+                    advanced_to = row_id
+                    if outcome != 'final':
+                        continue
                     kind = classify(content, display_kind, finish_reason, source, after_report or 0)
                     if kind and (stamp is None or now - float(stamp) <= FRESH_SECONDS):
                         found.append((kind, session if source == 'api_server' else None))
+                marks[name] = advanced_to
                 # A burst from one chat is one notification; a failure outranks the rest.
                 for kind in ('routine_failed', 'routine', 'reply'):
                     match = next((f for f in reversed(found) if f[0] == kind), None)
@@ -193,8 +236,6 @@ def poll_once(state, home, send, now=None):
                         send(*message)
                         sent.append(message)
                         break
-                if rows:
-                    marks[name] = rows[-1][0]
         # Routines that deliver somewhere other than a bot's chat leave no row to
         # watch. Their successes already reach wherever they deliver; say only
         # when one fails.
