@@ -2738,6 +2738,37 @@ final class AppStore {
     /// A reply is under way that Stop applies to — not one held on questions.
     var canStop: Bool { isSending && !activeAwaitsAnswers }
 
+    /// Hermes has taken the send but has not started it yet.
+    var queuedSendNote: String? {
+        guard let id = activeID, let turn = activeBotTurns[id],
+              let note = Self.queuedSendNote(
+                disposition: turn.disposition,
+                label: queuedSendLabel(for: turn, conversationID: id)
+              )
+        else { return nil }
+        return note
+    }
+
+    /// There is no per-prompt cancel in Hermes; Stop interrupts the whole queue.
+    func cancelQueuedSend() {
+        stop()
+    }
+
+    nonisolated static func queuedSendNote(
+        disposition: BotChatSubmission.Disposition?, label: String
+    ) -> String? {
+        guard let disposition, disposition == .queued || disposition == .foldedIn else {
+            return nil
+        }
+        return deliveryNote(for: disposition, label: label)
+    }
+
+    private func queuedSendLabel(for turn: ActiveBotTurn, conversationID: String) -> String {
+        let profile = conversations.first(where: { $0.id == conversationID })?.routedBotName
+            ?? turn.mentionProfile
+        return profile.map { botCurrentName(for: $0) } ?? "Alice"
+    }
+
     /// What is written in the composer while questions wait answers the one
     /// being asked, as "Something else" would.
     private func answerWaitingQuestion(with text: String) -> Bool {

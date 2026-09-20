@@ -295,4 +295,5 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 | 4 Interim | hecho | f9919ed | build device + install; unit tests escritos, no corridos aquí |
 | 5 Captions | hecho | 63c326a | build device + push; install pendiente (iPhone unavailable) |
 | 6 Developer | hecho | bc3b26f | build device + push; install pendiente (iPhone unavailable) |
-| 7 Model sync | hecho | perf(ios): a new model choice cancels the previous routine sync | build device + install; unit tests escritos, no corridos aquí |
+| 7 Model sync | hecho | 6d855cb | build device + push; install pendiente (iPhone unavailable) |
+| 8 Queue UX | hecho | fix(ios): show when a send is queued and how to cancel it | build device + install; unit tests escritos, no corridos aquí |

@@ -104,6 +104,10 @@ final class BotChatDeliveryTests: XCTestCase {
         XCTAssertTrue(queued?.contains("Radar IA") == true)
         XCTAssertTrue(foldedIn?.contains("Radar IA") == true)
         XCTAssertNotEqual(queued, foldedIn)
+        XCTAssertEqual(AppStore.queuedSendNote(disposition: .queued, label: "Radar IA"), queued)
+        XCTAssertEqual(AppStore.queuedSendNote(disposition: .foldedIn, label: "Radar IA"), foldedIn)
+        XCTAssertNil(AppStore.queuedSendNote(disposition: .started, label: "Radar IA"))
+        XCTAssertNil(AppStore.queuedSendNote(disposition: nil, label: "Radar IA"))
     }
 
     // MARK: - Stop

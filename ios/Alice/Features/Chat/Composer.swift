@@ -56,6 +56,7 @@ struct Composer: View {
                 if !commands.isEmpty { commandList }
                 else if !matchingBots.isEmpty { botMentionList }
                 if store.editingMessageID != nil { editingBanner }
+                if store.queuedSendNote != nil { queueBanner }
                 if isBotChat { botComposer }
                 else { aliceComposer }
             }
@@ -338,6 +339,27 @@ struct Composer: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
         .glassEffect(.regular, in: .capsule)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+
+    /// Hermes queued or folded this send into a busy turn. Stop clears that
+    /// queue — there is no way to cancel only this prompt.
+    private var queueBanner: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(store.queuedSendNote ?? "")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button("Stop") { store.cancelQueuedSend() }
+                .font(.footnote.weight(.semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(store.accent.primary(scheme))
+                .accessibilityHint("Cancels this send and whatever is queued")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .glassEffect(.regular, in: .rect(cornerRadius: 14))
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 

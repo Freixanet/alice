@@ -2306,7 +2306,7 @@ struct BotDetail: View {
             } header: {
                 Text("Configuration")
             } footer: {
-                Text("The fallback is used when this model is unavailable or at its limit.")
+                Text("The fallback is used when this model is unavailable or at its limit. What happens if you send while this agent is busy is Hermes’ `busy_input_mode` (steer, queue or interrupt), not a setting in Alice.")
             }
 
             Section {
