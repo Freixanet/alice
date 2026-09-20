@@ -38,6 +38,14 @@ struct NoteEditor: View {
     @State private var saving: Task<Void, Never>?
     /// Creating the note is in flight: later saves wait for its id.
     @State private var creating: Task<Note?, Never>?
+    /// The save that is out now, if one is. A second save does not race it:
+    /// it marks the text dirty and runs once this one is back.
+    @State private var inFlight: Task<Void, Never>?
+    @State private var dirtyWhileSaving = false
+    @State private var saveState: NoteSaveState = .saved
+    @State private var failures = 0
+    @State private var retry: Task<Void, Never>?
+    /// A dialog, only when the person acts and the store still says no.
     @State private var failure: String?
     @State private var showingDetails = false
     /// The caret is in the note — or about to be, as the page opens with the
@@ -69,6 +77,19 @@ struct NoteEditor: View {
                 .frame(height: 28)
                 .contentShape(.rect)
                 .onTapGesture { dismissKeyboard() }
+                .overlay(alignment: .leading) {
+                    // A quiet word about saving, where the eye is not: never a
+                    // dialog while the person is mid-sentence.
+                    if let caption = saveState.caption {
+                        Text(caption)
+                            .font(.caption)
+                            .foregroundStyle(saveState.blocksLeavingQuietly ? Palette.warning(scheme) : .secondary)
+                            .padding(.horizontal, 16)
+                            .transition(.opacity)
+                            .accessibilityIdentifier("note.saveState")
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: saveState)
             // The keyboard is up on arrival: opening a note is to write in it.
             RichTextEditor(
                 text: $content, isEditing: $editing, focusOnAppear: true,
@@ -91,7 +112,7 @@ struct NoteEditor: View {
             if editing {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", systemImage: "checkmark") {
-                        save(now: true)
+                        save(now: true, explicit: true)
                         dismissKeyboard()
                     }
                     .accessibilityIdentifier("note.done")
@@ -120,9 +141,19 @@ struct NoteEditor: View {
         }
         .onAppear { store.editingNote = true }
         .onChange(of: content) { scheduleSave() }
+        .onChange(of: scenePhase) { _, phase in
+            // Back in the foreground with words still unsaved: try again now,
+            // not on the next keystroke.
+            if phase == .active, saveState != .saved, saveState != .saving {
+                retry?.cancel()
+                failures = 0
+                save(now: true, explicit: false)
+            }
+        }
         .onDisappear {
             store.editingNote = false
-            if !deleted { save(now: true) }
+            retry?.cancel()
+            if !deleted { save(now: true, explicit: true) }
         }
         .sheet(isPresented: $showingDetails) {
             if let currentNote {
@@ -135,13 +166,14 @@ struct NoteEditor: View {
             "Note not saved",
             isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })
         ) {
-            Button("Try Again") { save(now: true) }
+            Button("Try Again") { failures = 0; save(now: true, explicit: true) }
             Button("OK", role: .cancel) {}
         } message: {
             Text(failure ?? "")
         }
     }
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var deleted = false
 
     private func deleteNote() {
@@ -170,52 +202,91 @@ struct NoteEditor: View {
         return store.notesSnapshot?.notes.first { $0.id == note.id } ?? note
     }
 
+    /// Typing pauses for this long before a save goes out. Long enough that a
+    /// sentence is one save, short enough that little is at risk.
+    private static let debounce: Duration = .seconds(2)
+
     private func scheduleSave() {
         saving?.cancel()
         saving = Task {
-            try? await Task.sleep(for: .seconds(1.2))
+            try? await Task.sleep(for: Self.debounce)
             guard !Task.isCancelled else { return }
-            save(now: false)
+            save(now: false, explicit: false)
         }
     }
 
-    private func save(now: Bool) {
+    /// Sends what is typed to the store.
+    ///
+    /// `explicit` is a tap on Done or leaving the page: then, and only then, a
+    /// store that still says no gets a dialog. A background save that fails is
+    /// retried quietly on its own schedule (`NoteSaveState.retryDelays`).
+    private func save(now: Bool, explicit: Bool) {
         if now { saving?.cancel() }
         let edited = content
         let words = edited.string
-        guard !edited.isEqual(to: saved),
-              !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
-        saved = edited
+        guard !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if edited.isEqual(to: saved), saveState == .saved { return }
+        if inFlight != nil {
+            // One save at a time; this text goes once the current one is back.
+            dirtyWhileSaving = true
+            return
+        }
+        retry?.cancel()
+        saveState = .saving
         let rich = RichNote.rtf(from: edited)
-        Task {
+        inFlight = Task {
             do {
-                if let existing = currentNote {
-                    try await store.editNote(existing, text: words, rich: rich)
-                } else if let pending = creating {
-                    // Created a moment ago and not back yet: edit it once it is.
-                    guard let created = await pending.value else { return }
-                    try await store.editNote(created, text: words, rich: rich)
-                } else {
-                    let create = Task<Note?, Never> {
-                        try? await store.addNote(words)
-                    }
-                    creating = create
-                    guard let created = await create.value else {
-                        creating = nil
-                        throw HermesRPCClient.Failure(reason: "Hermes did not save the note.")
-                    }
-                    note = created
-                    await store.put(created.id, in: folder)
-                    creating = nil
-                    // The styling goes in with the first edit, as adding takes words only.
-                    if let rich, !content.string.isEmpty {
-                        try await store.editNote(created, text: words, rich: rich)
+                try await write(words: words, rich: rich)
+                saved = edited
+                failures = 0
+                saveState = .saved
+            } catch {
+                let reason = PlainWords.describe(error, doing: "save the note")
+                failures += 1
+                saveState = NoteSaveState.afterFailure(previousFailures: failures - 1, reason: reason)
+                if explicit {
+                    failure = reason
+                } else if let pause = NoteSaveState.delay(afterFailures: failures) {
+                    retry = Task {
+                        try? await Task.sleep(for: .seconds(pause))
+                        guard !Task.isCancelled else { return }
+                        save(now: true, explicit: false)
                     }
                 }
-            } catch {
-                saved = NSAttributedString()
-                failure = PlainWords.describe(error, doing: "save the note")
+            }
+            inFlight = nil
+            if dirtyWhileSaving {
+                dirtyWhileSaving = false
+                save(now: true, explicit: false)
+            }
+        }
+    }
+
+    /// One write to the store: an edit, or a create followed by the styling.
+    private func write(words: String, rich: String?) async throws {
+        if let existing = currentNote {
+            try await store.editNote(existing, text: words, rich: rich)
+        } else if let pending = creating {
+            // Created a moment ago and not back yet: edit it once it is.
+            guard let created = await pending.value else {
+                throw HermesRPCClient.Failure(reason: "Hermes did not save the note.")
+            }
+            try await store.editNote(created, text: words, rich: rich)
+        } else {
+            let create = Task<Note?, Never> {
+                try? await store.addNote(words)
+            }
+            creating = create
+            guard let created = await create.value else {
+                creating = nil
+                throw HermesRPCClient.Failure(reason: "Hermes did not save the note.")
+            }
+            note = created
+            await store.put(created.id, in: folder)
+            creating = nil
+            // The styling goes in with the first edit, as adding takes words only.
+            if let rich, !content.string.isEmpty {
+                try await store.editNote(created, text: words, rich: rich)
             }
         }
     }
@@ -301,6 +372,25 @@ private final class AccessoryHost: UIView {
     }
 }
 
+/// A text view whose last line stays clear of what sits at the bottom of the
+/// screen. The page ignores the bottom safe area so the paper runs to the
+/// edge; the words must not. With the keyboard down, the bottom of the text
+/// is padded by the format bar's height plus the home indicator, so the
+/// last line is never up against either.
+private final class BottomClearTextView: UITextView {
+    /// The format bar above the keyboard, as `AccessoryHost` sizes it.
+    static let barHeight: CGFloat = 64
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let wanted = Self.barHeight + safeAreaInsets.bottom
+        if abs(contentInset.bottom - wanted) > 0.5 {
+            contentInset.bottom = wanted
+            verticalScrollIndicatorInsets.bottom = wanted
+        }
+    }
+}
+
 /// A `UITextView` that edits styled text, with the system's Format menu and a
 /// Notes-like bar above the keyboard.
 private struct RichTextEditor: UIViewRepresentable {
@@ -313,11 +403,15 @@ private struct RichTextEditor: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(text: $text, isEditing: $isEditing) }
 
     func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+        let view = BottomClearTextView()
         view.allowsEditingTextAttributes = true
         view.backgroundColor = .clear
         view.adjustsFontForContentSizeCategory = true
-        view.textContainerInset = UIEdgeInsets(top: 16, left: 16, bottom: 40, right: 16)
+        view.textContainerInset = UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        // The page gives up the bottom safe area, so the text view must keep
+        // the last line clear of the format bar (64) and the home indicator
+        // itself; `BottomClearTextView` adds those on layout. With the
+        // keyboard up, UIKit already pads for the keyboard and the bar.
         view.keyboardDismissMode = .interactive
         view.alwaysBounceVertical = true
         view.dataDetectorTypes = []
@@ -430,7 +524,7 @@ private struct RichTextEditor: UIViewRepresentable {
             // Its own height, stated: a plain view sized by its frame was laid
             // out at no height at all, so its buttons were drawn but could not
             // be touched, and a re-layout after the style menu cut its ends off.
-            let host = AccessoryHost(height: 64)
+            let host = AccessoryHost(height: BottomClearTextView.barHeight)
 
             let glass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
             glass.translatesAutoresizingMaskIntoConstraints = false

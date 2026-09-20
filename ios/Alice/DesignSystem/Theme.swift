@@ -129,6 +129,29 @@ enum Palette {
             ? Color.white.opacity(0.16)
             : Color(hex: 0x1A1A18).opacity(0.18)
     }
+
+    // MARK: State
+
+    /// Colours that say how something is going, and nothing else: a save
+    /// that landed, a routine that failed, a message waiting its turn. Each
+    /// is used only for state, never for decoration, and each is a step
+    /// quieter than the system's so it sits with the paper rather than on it.
+    /// Both readings meet AA against `background` and `card`.
+
+    /// Done, delivered, healthy.
+    static func success(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(hex: 0x7CC49A) : Color(hex: 0x2E7D4F)
+    }
+
+    /// Waiting, retrying, needs a look but nothing is lost.
+    static func warning(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(hex: 0xE0B25C) : Color(hex: 0x9A6B10)
+    }
+
+    /// Failed, refused, or about to delete.
+    static func danger(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(hex: 0xE58C8C) : Color(hex: 0xB23A3A)
+    }
 }
 
 
