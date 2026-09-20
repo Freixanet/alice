@@ -74,19 +74,14 @@ struct NotesFoldersScreen: View {
                     // Then the person's own, each followed by what is inside
                     // it, one step indented. The store keeps its folders flat;
                     // the nesting is this phone's arrangement.
-                    ForEach(store.rootNoteFolders) { folder in
-                        let children = store.subfolders(of: folder.id)
-                        customFolderRow(folder, expanded: children.isEmpty ? nil : Binding(
-                            get: { !collapsed.contains(folder.id) },
+                    ForEach(visibleFolderRows, id: \.id) { row in
+                        let children = store.subfolders(of: row.folder.id)
+                        customFolderRow(row.folder, depth: row.depth, expanded: children.isEmpty ? nil : Binding(
+                            get: { !collapsed.contains(row.folder.id) },
                             set: { open in
-                                if open { collapsed.remove(folder.id) } else { collapsed.insert(folder.id) }
+                                if open { collapsed.remove(row.folder.id) } else { collapsed.insert(row.folder.id) }
                             }
                         ))
-                        if !collapsed.contains(folder.id) {
-                            ForEach(children) { child in
-                                customFolderRow(child, depth: 1)
-                            }
-                        }
                     }
                     if !store.recentlyDeleted.isEmpty {
                         folderRow(.deleted, systemImage: "trash")
@@ -237,6 +232,24 @@ struct NotesFoldersScreen: View {
         case nil: break
         }
         naming = nil
+    }
+
+    /// Every folder the page should show, with how far it is indented. Walks
+    /// the tree rather than drawing it recursively: a `some View` that names
+    /// itself will not compile. A one-level list hid a nested folder when its
+    /// parent was opened here.
+    private var visibleFolderRows: [(id: String, folder: NoteFolder, depth: Int)] {
+        var rows: [(id: String, folder: NoteFolder, depth: Int)] = []
+        func walk(_ folder: NoteFolder, depth: Int) {
+            rows.append((folder.id, folder, depth))
+            guard depth < 8, !collapsed.contains(folder.id) else { return }
+            for child in store.subfolders(of: folder.id)
+            where !store.noteFolder(folder.id, isInside: child.id) {
+                walk(child, depth: depth + 1)
+            }
+        }
+        for root in store.rootNoteFolders { walk(root, depth: 0) }
+        return rows
     }
 
     /// A folder the person made: opened by a tap, and swiped or held for Share,

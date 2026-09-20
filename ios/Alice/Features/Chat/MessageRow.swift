@@ -50,7 +50,10 @@ struct MessageRow: View {
                         SentMessageMenu(message: message, selecting: $selectingText)
                     } label: {
                         // An agent named with `@` shows in its own colour.
-                        Text(store.mentionStyled(message.content))
+                        Text(store.mentionStyled(
+                            message.content,
+                            bareSlugs: message.mentionProfile.map { [$0] } ?? []
+                        ))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .padding(.horizontal, 16)

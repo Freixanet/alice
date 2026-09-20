@@ -335,7 +335,7 @@ struct Sidebar: View {
             // The title alone: it already says what the chat is about, and
             // a line of the last reply under it made the drawer a wall of
             // half-sentences.
-            Text(conversation.title)
+            Text(store.titleStyled(for: conversation))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: width - 48, alignment: .leading)
@@ -353,7 +353,7 @@ struct Sidebar: View {
         .contextMenu {
             menu(for: conversation)
         } preview: {
-            Text(conversation.title)
+            Text(store.titleStyled(for: conversation))
                 .lineLimit(1)
                 .frame(width: width - 48, alignment: .leading)
                 .padding(.horizontal, 12)

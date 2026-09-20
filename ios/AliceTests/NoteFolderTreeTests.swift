@@ -29,6 +29,9 @@ final class NoteFolderTreeTests: XCTestCase {
         XCTAssertEqual(
             NoteFolderTree.children(of: "work", in: folders, parent: nested).map(\.id), ["notes"]
         )
+        XCTAssertEqual(
+            NoteFolderTree.children(of: "notes", in: folders, parent: nested).map(\.id), ["deep"]
+        )
         XCTAssertTrue(NoteFolderTree.children(of: "home", in: folders, parent: nested).isEmpty)
     }
 

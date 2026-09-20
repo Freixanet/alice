@@ -54,4 +54,40 @@ final class ConversationTitleTests: XCTestCase {
         XCTAssertTrue(ConversationTitle.isPlaceholder("  "))
         XCTAssertFalse(ConversationTitle.isPlaceholder("Renta 2026"))
     }
+
+    func testAnInvokedAgentInATitleIsTheBareName() {
+        let names = [(display: "Descargas", slug: "descargas")]
+        let title = "Descargas youtube.com"
+        let ranges = ConversationTitle.agentNameRanges(in: title, names: names)
+        XCTAssertEqual(ranges.count, 1)
+        XCTAssertEqual(ranges[0].1, "descargas")
+        XCTAssertEqual(String(title[ranges[0].0]), "Descargas")
+    }
+
+    func testATitleDropsTheAtFromAnOlderInvocation() {
+        let invoked = [(display: "Descargas", slug: "descargas")]
+        XCTAssertEqual(
+            ConversationTitle.strippingAtMentions(in: "@Descargas youtube.com", invoked: invoked),
+            "Descargas youtube.com"
+        )
+        XCTAssertEqual(
+            ConversationTitle.strippingAtMentions(in: "Descargas youtube.com", invoked: invoked),
+            "Descargas youtube.com"
+        )
+        XCTAssertEqual(
+            ConversationTitle.strippingAtMentions(in: "YouTube video", invoked: invoked),
+            "YouTube video"
+        )
+    }
+
+    func testALongerAgentNameWinsOverItsPrefix() {
+        let names = [
+            (display: "Mi", slug: "mi"),
+            (display: "Mi Inbox", slug: "inbox"),
+        ]
+        let title = "Mi Inbox notes"
+        let ranges = ConversationTitle.agentNameRanges(in: title, names: names)
+        XCTAssertEqual(ranges.map(\.1), ["inbox"])
+        XCTAssertEqual(String(title[ranges[0].0]), "Mi Inbox")
+    }
 }

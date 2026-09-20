@@ -5,9 +5,10 @@ import Foundation
 /// The first forty characters of the first message made titles like "hola,
 /// una cosa: quería que me ayudaras con" — true to the keystrokes, not to the
 /// subject. This keeps the subject: the lead-in and the greeting go, an
-/// `@agent` becomes its name, a bare address becomes its site, and the cut
-/// lands on a word, not mid-word. A message that is only a greeting names
-/// nothing, so the chat stays "New chat" until a real one arrives.
+/// `@agent` becomes its name (the `@` is only how the composer opens the
+/// list), a bare address becomes its site, and the cut lands on a word, not
+/// mid-word. A message that is only a greeting names nothing, so the chat
+/// stays "New chat" until a real one arrives.
 enum ConversationTitle {
     static let placeholder = "New chat"
     static let maxLength = 40
@@ -30,6 +31,73 @@ enum ConversationTitle {
     /// Whether `title` is still the placeholder and can be replaced.
     static func isPlaceholder(_ title: String) -> Bool {
         title.trimmingCharacters(in: .whitespaces).isEmpty || title == placeholder
+    }
+
+    /// Ranges in a drawer title that name an invoked agent, longest first so
+    /// "Mi Inbox" is not taken as "Mi". `@` is accepted if an older title
+    /// still has it; the drawer shows the name without it.
+    static func agentNameRanges(
+        in title: String, names: [(display: String, slug: String)]
+    ) -> [(Range<String.Index>, String)] {
+        let ordered = names
+            .filter { !$0.display.isEmpty }
+            .sorted { $0.display.count > $1.display.count }
+        var taken: [Range<String.Index>] = []
+        var found: [(Range<String.Index>, String)] = []
+
+        for (display, slug) in ordered {
+            for needle in ["@" + display, display] {
+                var from = title.startIndex
+                while let range = title.range(
+                    of: needle, options: .caseInsensitive, range: from..<title.endIndex
+                ) {
+                    from = range.upperBound
+                    guard isWord(range, in: title),
+                          !taken.contains(where: { $0.overlaps(range) })
+                    else { continue }
+                    taken.append(range)
+                    found.append((range, slug))
+                }
+            }
+        }
+        return found
+    }
+
+    /// Drops `@` in front of an invoked agent so the drawer can show the name
+    /// in that agent's colour and nothing else.
+    static func strippingAtMentions(
+        in title: String, invoked names: [(display: String, slug: String)]
+    ) -> String {
+        var result = title
+        let ordered = names
+            .filter { !$0.display.isEmpty }
+            .sorted { $0.display.count > $1.display.count }
+        for (display, _) in ordered {
+            while let range = firstWord(of: "@" + display, in: result) {
+                result.replaceSubrange(range, with: result[result.index(after: range.lowerBound)..<range.upperBound])
+            }
+        }
+        return result
+    }
+
+    static func isWord(_ range: Range<String.Index>, in text: String) -> Bool {
+        let startsWord = range.lowerBound == text.startIndex
+            || text[text.index(before: range.lowerBound)].isWhitespace
+        let endsWord = range.upperBound == text.endIndex
+            || !(text[range.upperBound].isLetter || text[range.upperBound].isNumber
+                 || text[range.upperBound] == "-" || text[range.upperBound] == "_")
+        return startsWord && endsWord
+    }
+
+    static func firstWord(of needle: String, in title: String) -> Range<String.Index>? {
+        var from = title.startIndex
+        while let range = title.range(
+            of: needle, options: .caseInsensitive, range: from..<title.endIndex
+        ) {
+            from = range.upperBound
+            if isWord(range, in: title) { return range }
+        }
+        return nil
     }
 
     // MARK: Pieces
@@ -58,7 +126,7 @@ enum ConversationTitle {
                 out = (out as NSString).replacingCharacters(in: match.range, with: host)
             }
         }
-        // An @mention is who was asked; keep the name, drop the sign.
+        // `@` only opens the composer menu; the title keeps the name.
         out = out.replacingOccurrences(of: #"(^|\s)@([\w\-\.]+)"#, with: "$1$2", options: .regularExpression)
         return out
     }

@@ -80,7 +80,7 @@ struct NotesScreen: View {
             if let loadFailure { return .failed(loadFailure) }
             return .loading
         }
-        if store.notes(in: scope).isEmpty { return .nothingYet }
+        if store.notes(in: scope).isEmpty && subfolders.isEmpty { return .nothingYet }
         return shown.isEmpty ? .noResults : nil
     }
 
@@ -534,6 +534,18 @@ struct NotesScreen: View {
                         .frame(maxWidth: .infinity)
                 }
                 if !shown.isEmpty { TipView(NoteActionsTip()) }
+                if !subfolders.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Folders")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                        ForEach(subfolders) { folder in
+                            subfolderRow(folder)
+                                .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
+                        }
+                    }
+                }
                 ForEach(groups, id: \.title) { group in
                     VStack(alignment: .leading, spacing: 8) {
                         if !group.title.isEmpty {

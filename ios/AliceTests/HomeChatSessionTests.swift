@@ -263,6 +263,8 @@ final class HomeChatSessionTests: XCTestCase {
         // Part of a longer word is not the mention.
         XCTAssertEqual(AppStore.withoutMention("@inboxes y @inbox", of: "inbox", names: names), "@inboxes y")
         XCTAssertEqual(AppStore.withoutMention("@inbox", of: "inbox", names: names), "")
+        XCTAssertEqual(AppStore.withoutMention("inbox apunta esto", of: "inbox", names: names), "apunta esto")
+        XCTAssertEqual(AppStore.withoutMention("oye Inbox guarda", of: "inbox", names: names), "oye guarda")
     }
 
     func testAMutedRoutineLosesItsReportsButNotItsFailures() {

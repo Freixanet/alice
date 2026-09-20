@@ -110,6 +110,7 @@ struct Composer: View {
             if let whole = store.draftDeletingMention(old: old, new: new) {
                 store.draft = whole
             }
+            store.pruneDraftMentions()
         }
         .onChange(of: store.editingMessageID) { _, editing in
             if editing != nil { focused.wrappedValue = true }
@@ -137,6 +138,21 @@ struct Composer: View {
 
     private var isBotChat: Bool {
         store.activeBotProfileForModelSelection != nil
+    }
+
+    /// Field and overlay must share one font. A bold mention over a regular
+    /// field put the caret in a letter; a custom text view then ate the
+    /// keyboard. While a mention is present the whole draft is bold so the
+    /// name still reads strong and the caret stays on the glyphs.
+    private var composerFont: Font {
+        store.mentions(in: store.draft, bareSlugs: store.draftMentions.map(\.slug)).isEmpty
+            ? .body : .body.weight(.bold)
+    }
+
+    private func composerStyled(_ text: String) -> AttributedString {
+        var styled = store.mentionStyled(text, bold: false)
+        styled.font = composerFont
+        return styled
     }
 
     private var botMentionQuery: String? {
@@ -190,7 +206,8 @@ struct Composer: View {
                             let botName = store.botCurrentName(for: bot)
                             store.draft = ""
                             DispatchQueue.main.async {
-                                store.draft = prefix + "@" + botName + " "
+                                store.draft = prefix + botName + " "
+                                store.rememberDraftMention(display: botName, slug: bot.name)
                             }
                         }
                     } label: {
@@ -198,9 +215,9 @@ struct Composer: View {
                             BotMarkView(mark: store.mark(for: bot.name), size: 28)
                             VStack(alignment: .leading, spacing: 1) {
                                 HStack(spacing: 6) {
-                                    Text("@\(store.botCurrentName(for: bot))")
+                                    Text(store.botCurrentName(for: bot))
                                         .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(store.mark(for: bot.name).color)
                                         .lineLimit(1)
                                     let currentName = store.botCurrentName(for: bot)
                                     if currentName.lowercased() != bot.name.lowercased() {
@@ -341,8 +358,8 @@ struct Composer: View {
                 )
                     .lineLimit(1...7)
                     .textFieldStyle(.plain)
-                    .font(.body)
-                    .mentionColoured(store.draft, styled: { store.mentionStyled($0, bold: false) })
+                    .font(composerFont)
+                    .mentionColoured(store.draft, styled: composerStyled)
                     .focused(focused)
                     .padding(.horizontal, 4)
                     // The field only claims the height of its own text, so a
@@ -404,8 +421,8 @@ struct Composer: View {
                             prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
                         )
                             .textFieldStyle(.plain)
-                            .font(.body)
-                            .mentionColoured(store.draft, styled: { store.mentionStyled($0, bold: false) })
+                            .font(composerFont)
+                            .mentionColoured(store.draft, styled: composerStyled)
                             .focused(focused)
                             .lineLimit(1...7)
                             .padding(.vertical, 6)
@@ -645,8 +662,8 @@ struct Composer: View {
     }
 }
 
-/// While a draft names an agent with `@`, the name shows in that agent's colour
-/// as it is typed, as it will once sent.
+/// While a draft names an agent, the name shows in that agent's colour, as
+/// it will in the sent bubble and the drawer.
 ///
 /// A text field draws one colour, so the draft is always drawn a second time
 /// behind it — styled when it names an agent, plain when not — and the field's
@@ -664,8 +681,7 @@ private struct MentionColoured: ViewModifier {
             .foregroundStyle(.clear)
             .background(alignment: .topLeading) {
                 if !text.isEmpty {
-                    Text(text.contains("@") ? styled(text) : AttributedString(text))
-                        .font(.body)
+                    Text(styled(text))
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .allowsHitTesting(false)

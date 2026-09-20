@@ -79,6 +79,9 @@ final class AppStore {
         }
     }
     var draft: String = ""
+    /// Agents picked from the `@` menu in the current draft. The `@` is gone
+    /// from the text; these keep the turn routed to that profile.
+    var draftMentions: [(display: String, slug: String)] = []
     /// Waiting to go out with the next message.
     var draftAttachments: [Attachment] = []
     /// Chats with a reply under way. Each follows its own: one agent at work
@@ -5440,19 +5443,40 @@ final class AppStore {
         }
     }
 
-    /// Makes a folder in the notes store, shown at once.
-    func createNoteFolder(named name: String) async {
+    /// Makes a folder in the notes store, shown at once. Hermes keeps folders
+    /// flat and will hand back one of the same name; `inside` is this phone's
+    /// nesting, so it is recorded on the placeholder and kept on whatever id
+    /// the store returns — otherwise a nested create of a name already there
+    /// stayed at the top and vanished from the parent.
+    @discardableResult
+    func createNoteFolder(named name: String, inside parent: String? = nil) async -> NoteFolder? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let current = notesSnapshot else { return }
+        guard !trimmed.isEmpty, let current = notesSnapshot else { return nil }
         let placeholder = NoteFolder(id: "local-\(UUID().uuidString)", name: trimmed)
         notesSnapshot = current.with(folders: noteFolders + [placeholder])
+        if let parent {
+            noteFolderParent[placeholder.id] = parent
+        }
         do {
             let made = try await dashboard.createNoteFolder(named: trimmed)
             let others = noteFolders.filter { $0.id != placeholder.id && $0.id != made.id }
             notesSnapshot = notesSnapshot?.with(folders: others + [made])
+            if let parent {
+                var map = noteFolderParent
+                map.removeValue(forKey: placeholder.id)
+                map[made.id] = parent
+                noteFolderParent = map
+            }
+            return made
         } catch {
             notesSnapshot = notesSnapshot?.with(folders: noteFolders.filter { $0.id != placeholder.id })
+            if parent != nil {
+                var map = noteFolderParent
+                map.removeValue(forKey: placeholder.id)
+                noteFolderParent = map
+            }
             noteFolderFailure = HermesErrors.describe(error)
+            return nil
         }
     }
 
@@ -5467,17 +5491,6 @@ final class AppStore {
             notesSnapshot = notesSnapshot?.with(folders: before)
             noteFolderFailure = HermesErrors.describe(error)
         }
-    }
-
-    /// Makes a folder inside another. The store keeps its folders flat, so this
-    /// is the same folder as any other, remembered here as sitting inside one.
-    func createNoteFolder(named name: String, inside parent: String?) async {
-        let before = Set(noteFolders.map(\.id))
-        await createNoteFolder(named: name)
-        guard let parent,
-              let made = noteFolders.first(where: { !before.contains($0.id) })
-        else { return }
-        noteFolderParent[made.id] = parent
     }
 
     /// The folder goes; its notes go back to Quick Notes, not with it.
@@ -6977,6 +6990,16 @@ final class AppStore {
             }
 
             if invokedBot == nil {
+                for mention in draftMentions.sorted(by: { $0.display.count > $1.display.count }) {
+                    if ConversationTitle.firstWord(of: mention.display, in: text) != nil
+                        || ConversationTitle.firstWord(of: mention.slug, in: text) != nil {
+                        invokedBot = mention.slug
+                        break
+                    }
+                }
+            }
+
+            if invokedBot == nil {
                 let tokens = text.components(separatedBy: .whitespacesAndNewlines)
                 if let mentionToken = tokens.first(where: { $0.hasPrefix("@") && $0.count > 1 }) {
                     let candidate = String(mentionToken.dropFirst()).trimmingCharacters(in: .punctuationCharacters)
@@ -7022,6 +7045,7 @@ final class AppStore {
 
         let attachments = draftAttachments
         draft = ""
+        draftMentions = []
         draftAttachments = []
         sendingConversations.insert(conversationID)
         latencyStartedAt[conversationID] = Date()
@@ -7030,7 +7054,8 @@ final class AppStore {
 
         let user = Message(
             id: UUID().uuidString, role: .user, content: text, createdAt: Date(),
-            attachments: attachments
+            attachments: attachments,
+            mentionProfile: mentionText == nil ? nil : invokedBot
         )
         let replyID = UUID().uuidString
         conversations[index].messages.append(user)
@@ -7083,17 +7108,63 @@ final class AppStore {
         }
     }
 
-    /// A sent message with each `@agent` in it drawn in that agent's colour.
-    /// `bold` off keeps each glyph as wide as plain text, for drawing behind a
-    /// field whose caret must stay on its letters.
-    func mentionStyled(_ text: String, bold: Bool = true) -> AttributedString {
-        var styled = AttributedString(text)
-        for (range, slug) in mentions(in: text) {
+    /// A drawer title with each `@agent` invocation in that agent's colour.
+    /// Titles saved before `@` was kept are restored from the first message.
+    func titleStyled(for conversation: Conversation) -> AttributedString {
+        titleStyled(displayTitle(for: conversation), names: invokedTitleNames(in: conversation))
+    }
+
+    /// The title as the drawer should say it: the invoked agent's name, no `@`.
+    func displayTitle(for conversation: Conversation) -> String {
+        ConversationTitle.strippingAtMentions(
+            in: conversation.title, invoked: invokedTitleNames(in: conversation)
+        )
+    }
+
+    /// Agents the first ask actually invoked, so a title that merely contains
+    /// a bot's name is not painted as a mention.
+    private func invokedTitleNames(in conversation: Conversation) -> [(display: String, slug: String)] {
+        let first = conversation.messages.first(where: { $0.role == .user })
+        var slugs = Set<String>()
+        if let content = first?.content {
+            slugs.formUnion(mentions(in: content).compactMap { range, slug in
+                content[range].hasPrefix("@") ? slug : nil
+            })
+        }
+        if let profile = first?.mentionProfile { slugs.insert(profile) }
+        if slugs.isEmpty, let profile = conversation.messages.first(where: { $0.mentionProfile != nil })?.mentionProfile {
+            slugs.insert(profile)
+        }
+        return slugs.flatMap { slug in mentionNames(for: slug).map { ($0, slug) } }
+    }
+
+    /// A drawer title with each `@agent` invocation in that agent's colour.
+    /// A bare name is not an invocation and is left alone.
+    func titleStyled(_ title: String, names: [(display: String, slug: String)]) -> AttributedString {
+        var styled = AttributedString(title)
+        for (range, slug) in ConversationTitle.agentNameRanges(in: title, names: names) {
             guard let lower = AttributedString.Index(range.lowerBound, within: styled),
                   let upper = AttributedString.Index(range.upperBound, within: styled)
             else { continue }
             styled[lower..<upper].foregroundColor = mark(for: slug).color
-            if bold { styled[lower..<upper].font = .body.weight(.semibold) }
+            styled[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
+        }
+        return styled
+    }
+
+    /// A sent message with each named agent drawn in that agent's colour.
+    /// The rest stays `.body` so a composer overlay and the field wrap alike
+    /// when the mention is bold.
+    func mentionStyled(_ text: String, bold: Bool = true, bareSlugs: [String]? = nil) -> AttributedString {
+        var styled = AttributedString(text)
+        styled.font = .body
+        let slugs = bareSlugs ?? draftMentions.map(\.slug)
+        for (range, slug) in mentions(in: text, bareSlugs: slugs) {
+            guard let lower = AttributedString.Index(range.lowerBound, within: styled),
+                  let upper = AttributedString.Index(range.upperBound, within: styled)
+            else { continue }
+            styled[lower..<upper].foregroundColor = mark(for: slug).color
+            if bold { styled[lower..<upper].font = .body.weight(.bold) }
         }
         return styled
     }
@@ -7102,7 +7173,7 @@ final class AppStore {
     /// it: the whole name goes, as a mention is one thing, not letters.
     func draftDeletingMention(old: String, new: String) -> String? {
         guard old.count == new.count + 1 else { return nil }
-        for (range, _) in mentions(in: old) {
+        for (range, _) in mentions(in: old, bareSlugs: draftMentions.map(\.slug)) {
             var trimmed = old
             trimmed.remove(at: old.index(before: range.upperBound))
             if trimmed == new {
@@ -7114,32 +7185,45 @@ final class AppStore {
         return nil
     }
 
-    /// Each `@agent` in a text, with the agent it names.
-    func mentions(in text: String) -> [(Range<String.Index>, String)] {
+    /// Each `@agent` in a text. A bare name counts only when it was picked
+    /// from the `@` menu (`bareSlugs`); typing the name by hand does not.
+    func mentions(in text: String, bareSlugs: [String] = []) -> [(Range<String.Index>, String)] {
         var slugs = Set(cachedBots.map(\.name))
         slugs.formUnion(knownBotNames)
         slugs.formUnion(botCustomNames.keys)
-        // Longest names first, so "@Mi Inbox" is not taken as "@Mi".
         let names = slugs.flatMap { slug in mentionNames(for: slug).map { ($0, slug) } }
             .sorted { $0.0.count > $1.0.count }
+        let allowedBare = Set(bareSlugs)
         var taken: [Range<String.Index>] = []
         var found: [(Range<String.Index>, String)] = []
         for (name, slug) in names {
-            var from = text.startIndex
-            while let range = text.range(of: "@" + name, options: .caseInsensitive, range: from..<text.endIndex) {
-                from = range.upperBound
-                let startsWord = range.lowerBound == text.startIndex
-                    || text[text.index(before: range.lowerBound)].isWhitespace
-                let endsWord = range.upperBound == text.endIndex
-                    || !(text[range.upperBound].isLetter || text[range.upperBound].isNumber
-                         || text[range.upperBound] == "-" || text[range.upperBound] == "_")
-                guard startsWord, endsWord, !taken.contains(where: { $0.overlaps(range) })
-                else { continue }
-                taken.append(range)
-                found.append((range, slug))
+            var needles = ["@" + name]
+            if allowedBare.contains(slug) { needles.append(name) }
+            for needle in needles {
+                var from = text.startIndex
+                while let range = text.range(of: needle, options: .caseInsensitive, range: from..<text.endIndex) {
+                    from = range.upperBound
+                    guard ConversationTitle.isWord(range, in: text),
+                          !taken.contains(where: { $0.overlaps(range) })
+                    else { continue }
+                    taken.append(range)
+                    found.append((range, slug))
+                }
             }
         }
         return found
+    }
+
+    func rememberDraftMention(display: String, slug: String) {
+        draftMentions.removeAll { $0.slug.caseInsensitiveCompare(slug) == .orderedSame }
+        draftMentions.append((display, slug))
+    }
+
+    func pruneDraftMentions() {
+        draftMentions.removeAll { mention in
+            ConversationTitle.firstWord(of: mention.display, in: draft) == nil
+                && ConversationTitle.firstWord(of: mention.slug, in: draft) == nil
+        }
     }
 
     /// Every name an agent can be mentioned by.
@@ -7151,20 +7235,18 @@ final class AppStore {
     }
 
     /// The message as the agent would have been sent it in its own chat: the
-    /// first `@name` for it taken out, and the space it leaves tidied.
+    /// first `@name` or bare name for it taken out, and the space it leaves tidied.
     nonisolated static func withoutMention(_ text: String, of slug: String, names: [String]) -> String {
         for name in Set(names + [slug]).sorted(by: { $0.count > $1.count }) {
-            var searchFrom = text.startIndex
-            while let range = text.range(of: "@" + name, options: .caseInsensitive, range: searchFrom..<text.endIndex) {
-                let startsWord = range.lowerBound == text.startIndex
-                    || text[text.index(before: range.lowerBound)].isWhitespace
-                let endsWord = range.upperBound == text.endIndex
-                    || !(text[range.upperBound].isLetter || text[range.upperBound].isNumber
-                         || text[range.upperBound] == "-" || text[range.upperBound] == "_")
-                if startsWord && endsWord {
+            for needle in ["@" + name, name] {
+                var searchFrom = text.startIndex
+                while let range = text.range(of: needle, options: .caseInsensitive, range: searchFrom..<text.endIndex) {
+                    guard ConversationTitle.isWord(range, in: text) else {
+                        searchFrom = range.upperBound
+                        continue
+                    }
                     var rest = text
                     rest.removeSubrange(range)
-                    // "@inbox, apunta esto" reads as "apunta esto".
                     if range.lowerBound < rest.endIndex,
                        [",", ":"].contains(rest[range.lowerBound]) {
                         rest.remove(at: range.lowerBound)
@@ -7173,7 +7255,6 @@ final class AppStore {
                         .replacingOccurrences(of: "  ", with: " ")
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                 }
-                searchFrom = range.upperBound
             }
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
