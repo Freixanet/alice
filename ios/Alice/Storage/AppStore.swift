@@ -3613,7 +3613,8 @@ final class AppStore {
             thoughtSeconds: reply?.thoughtSeconds,
             steps: reply?.tools ?? [],
             elapsed: reply.map { now.timeIntervalSince($0.createdAt) },
-            seed: ToolCaption.seed(reply?.id ?? chat.id)
+            seed: ToolCaption.seed(reply?.id ?? chat.id),
+            status: reply?.lastStatus
         )
     }
 
@@ -6773,17 +6774,29 @@ final class AppStore {
         case "tool.start":
             guard let name = event.payload["name"] as? String else { return nil }
             return .tool(
-                id: (event.payload["id"] as? String) ?? name,
+                id: (event.payload["id"] as? String)
+                    ?? (event.payload["tool_id"] as? String)
+                    ?? name,
                 name: name, status: .start,
-                detail: event.payload["context"] as? String
+                detail: Self.toolDetail(from: event.payload)
             )
         case "tool.complete":
             guard let name = event.payload["name"] as? String else { return nil }
             return .tool(
-                id: (event.payload["id"] as? String) ?? name,
+                id: (event.payload["id"] as? String)
+                    ?? (event.payload["tool_id"] as? String)
+                    ?? name,
                 name: name, status: .done,
-                detail: event.payload["context"] as? String
+                detail: Self.toolDetail(from: event.payload)
             )
+        case "status.update":
+            if (event.payload["kind"] as? String) == "heartbeat" { return nil }
+            let text = (event.payload["text"] as? String)
+                ?? (event.payload["message"] as? String)
+                ?? (event.payload["status"] as? String)
+            guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return .status(text)
         case "approval.request":
             // Hermes' approval payload has no `title`: it carries `command`,
             // `description`, `pattern_key(s)`, `allow_session`,
@@ -6817,6 +6830,38 @@ final class AppStore {
         }
     }
 
+    /// A file, query or command Hermes sent with a tool, for the activity line.
+    nonisolated static func toolDetail(from payload: [String: Any]) -> String? {
+        let top = ["preview", "context", "path", "file", "query", "command", "target", "url", "args_text"]
+        if let preview = string(in: payload, keys: top) { return preview }
+        if let args = dictionary(payload["args"]) {
+            return string(in: args, keys: ["path", "file", "query", "command", "target", "url", "preview"])
+        }
+        return nil
+    }
+
+    private nonisolated static func string(in bag: [String: Any], keys: [String]) -> String? {
+        for key in keys {
+            guard let raw = bag[key] as? String else { continue }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+
+    private nonisolated static func dictionary(_ value: Any?) -> [String: Any]? {
+        if let bag = value as? [String: Any] { return bag }
+        if let bag = value as? [String: String] { return bag }
+        if let bag = value as? NSDictionary {
+            var mapped: [String: Any] = [:]
+            for (key, item) in bag {
+                if let name = key as? String { mapped[name] = item }
+            }
+            return mapped.isEmpty ? nil : mapped
+        }
+        return nil
+    }
+
     /// Socket event kinds Alice either handles or knowingly lets pass.
     ///
     /// The first group is what `chatEvent`, `LiveEvents` and the turn watch
@@ -6827,14 +6872,14 @@ final class AppStore {
     /// Alice has not learnt, and is recorded in `HermesUnknownEvents`.
     nonisolated static let knownSocketEventTypes: Set<String> = [
         // Handled.
-        "message.delta", "message.complete", "tool.start", "tool.complete",
+        "message.delta", "message.complete", "message.interim", "tool.start", "tool.complete",
         "approval.request", "clarify.request", "error", "request.cancel",
-        "subagent.start", "subagent.complete",
+        "subagent.start", "subagent.complete", "status.update",
         // Known and let pass.
-        "message.start", "message.interim", "message.user", "message.react",
+        "message.start", "message.user", "message.react",
         "reasoning.delta", "reasoning.available", "notification.show", "notification.clear",
         "session.info", "session.status", "session.reclaimed", "session.redirect",
-        "session.resume_progress", "status.update", "todo.updated", "usage.bars",
+        "session.resume_progress", "todo.updated", "usage.bars",
         "tool.generating", "tool.output_risk", "turn.start", "turn.end", "turn.error",
         "subagent.text", "subagent.thinking", "subagent.tool", "subagent.tail",
         "approval.pending", "approval.received", "model.context_length",
@@ -8041,6 +8086,9 @@ final class AppStore {
         let eventLabel = eventProfile.map { botCurrentName(for: $0) } ?? "Alice"
 
         switch event {
+        case let .status(text):
+            conversations[chat].messages[index].lastStatus = text
+
         case let .delta(text):
             conversations[chat].messages[index].content += text
 

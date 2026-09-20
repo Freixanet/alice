@@ -79,6 +79,45 @@ final class ToolCaptionTests: XCTestCase {
         }
     }
 
+    func testAStatusLineBeatsAMusing() {
+        XCTAssertEqual(
+            ToolCaption.headline(
+                pending: true, note: nil, thoughtSeconds: nil, elapsed: 40, seed: 3,
+                status: "Reading the notes store"
+            ),
+            "Reading the notes store"
+        )
+    }
+
+    func testADeliveryNoteBeatsAStatusLine() {
+        XCTAssertEqual(
+            ToolCaption.headline(
+                pending: true, note: "Reconnecting to Hermes…", thoughtSeconds: nil,
+                elapsed: 40, status: "Reading the notes store"
+            ),
+            "Reconnecting to Hermes…"
+        )
+    }
+
+    func testAToolWithAFileNamesTheFile() {
+        let reading = Message.ToolCall(
+            id: "t1", name: "read_file", status: .start, detail: "ios/Alice/NoteEditor.swift"
+        )
+        XCTAssertEqual(ToolCaption.phrase(for: reading), "Reading NoteEditor.swift")
+        XCTAssertEqual(
+            ToolCaption.headline(pending: true, note: nil, thoughtSeconds: nil, steps: [reading], elapsed: 40),
+            "Reading NoteEditor.swift"
+        )
+    }
+
+    func testMusingsStayUntilSomethingHappens() {
+        let later = ToolCaption.headline(
+            pending: true, note: nil, thoughtSeconds: nil, elapsed: ToolCaption.musingBeat, seed: 3
+        )
+        XCTAssertEqual(later, ToolCaption.musing(elapsed: ToolCaption.musingBeat, seed: 3))
+        XCTAssertNotEqual(later, "Thinking")
+    }
+
     func testWhatItIsWaitingOnBeatsThinking() {
         XCTAssertEqual(
             ToolCaption.headline(pending: true, note: "Reconnecting to Hermes…", thoughtSeconds: 2),

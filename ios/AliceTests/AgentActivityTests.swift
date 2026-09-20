@@ -44,6 +44,24 @@ final class AgentActivityTests: XCTestCase {
             ToolCaption.headline(pending: true, note: "Reconnecting to Hermes…", thoughtSeconds: nil),
             "Reconnecting to Hermes…"
         )
+        XCTAssertEqual(
+            ToolCaption.headline(
+                pending: true, note: nil, thoughtSeconds: nil, elapsed: 40,
+                status: "Reading the notes store"
+            ),
+            "Reading the notes store"
+        )
+        var chat = Conversation(id: "c1", title: "News", createdAt: Date(), updatedAt: Date())
+        chat.messages = [
+            Message(
+                id: "a1", role: .assistant, content: "", createdAt: Date(),
+                pending: true, tools: [download]
+            )
+        ]
+        chat.messages[0].lastStatus = "Reading the notes store"
+        XCTAssertEqual(AppStore.activityHeadline(for: chat), "Reading the notes store")
+        chat.messages[0].lastStatus = nil
+        XCTAssertEqual(AppStore.activityHeadline(for: chat), "Downloading")
     }
 
     func testTwoChatsNeverShareOneActivitySlot() {

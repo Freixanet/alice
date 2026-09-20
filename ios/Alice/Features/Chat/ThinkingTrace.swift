@@ -35,6 +35,8 @@ struct ThinkingTrace: View {
     var startedAt: Date? = nil
     /// Where in the list of words this reply starts; see `ToolCaption.seed`.
     var seed: Int = 0
+    /// Last `status.update` Hermes sent for this reply.
+    var status: String? = nil
 
     @State private var manual: Bool?
 
@@ -56,7 +58,8 @@ struct ThinkingTrace: View {
     private func headline(at now: Date) -> String {
         ToolCaption.headline(
             pending: pending, note: note, thoughtSeconds: thoughtSeconds,
-            steps: steps, elapsed: startedAt.map { now.timeIntervalSince($0) }, seed: seed
+            steps: steps, elapsed: startedAt.map { now.timeIntervalSince($0) }, seed: seed,
+            status: status
         )
     }
 

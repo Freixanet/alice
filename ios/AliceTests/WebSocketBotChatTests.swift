@@ -528,6 +528,32 @@ final class WebSocketBotChatTests: XCTestCase {
         }
         XCTAssertEqual([id, name], ["t1", "web_search"])
         XCTAssertEqual(status, .start)
+        if case let .tool(_, _, _, detail)? = tool {
+            XCTAssertEqual(detail, "chollos")
+        }
+
+        let fromArgs = AppStore.chatEvent(from: HermesRPCEvent(
+            type: "tool.start", sessionID: "s1",
+            payload: ["id": "t2", "name": "read_file", "args": ["path": "ios/Alice/NoteEditor.swift"]]
+        ))
+        guard case let .tool(_, name, _, path)? = fromArgs else {
+            return XCTFail("tool args must map")
+        }
+        XCTAssertEqual(name, "read_file")
+        XCTAssertEqual(path, "ios/Alice/NoteEditor.swift")
+
+        let statusLine = AppStore.chatEvent(from: HermesRPCEvent(
+            type: "status.update", sessionID: "s1",
+            payload: ["text": "Reading the notes store"]
+        ))
+        guard case let .status(text)? = statusLine else {
+            return XCTFail("status.update must map")
+        }
+        XCTAssertEqual(text, "Reading the notes store")
+        XCTAssertNil(AppStore.chatEvent(from: HermesRPCEvent(
+            type: "status.update", sessionID: "s1",
+            payload: ["kind": "heartbeat", "text": "♥ heartbeat #3 firing…"]
+        )))
 
         let approval = AppStore.chatEvent(from: HermesRPCEvent(
             type: "approval.request", sessionID: "s1",

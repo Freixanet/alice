@@ -117,7 +117,8 @@ struct MessageRow: View {
                             note: message.deliveryNote,
                             thoughtSeconds: message.thoughtSeconds,
                             startedAt: message.createdAt,
-                            seed: ToolCaption.seed(message.id)
+                            seed: ToolCaption.seed(message.id),
+                            status: message.lastStatus
                         )
                     }
 
@@ -608,13 +609,16 @@ enum ToolCaption {
     /// a place chosen by `seed` so two replies on screen do not move in step.
     static func headline(
         pending: Bool, note: String?, thoughtSeconds: Int?,
-        steps: [Message.ToolCall] = [], elapsed: TimeInterval? = nil, seed: Int = 0
+        steps: [Message.ToolCall] = [], elapsed: TimeInterval? = nil, seed: Int = 0,
+        status: String? = nil
     ) -> String {
         if pending {
-            if let note { return note }
+            if let note, !note.isEmpty { return note }
+            if let status, !status.isEmpty { return status }
             if let running = Self.steps(in: steps).last, running.status != .done {
                 return phrase(for: running, running: false)
             }
+            if !Self.steps(in: steps).isEmpty { return "Thinking" }
             guard let elapsed else { return "Thinking" }
             return musing(elapsed: elapsed, seed: seed)
         }
@@ -664,6 +668,7 @@ enum ToolCaption {
     /// Hermes and change between builds, so an unknown one falls back to its
     /// own words tidied up rather than to a shrug.
     static func phrase(for tool: Message.ToolCall) -> String {
+        if let concrete = concretePhrase(for: tool) { return concrete }
         let name = tool.name.lowercased()
         switch true {
         // Media first: `cobalt_download` must not fall into "Reading a file".
@@ -708,6 +713,36 @@ enum ToolCaption {
                 .replacingOccurrences(of: "-", with: " ")
             return words.prefix(1).uppercased() + words.dropFirst() + "…"
         }
+    }
+
+    /// A tool plus the file, query or command it is using, when Hermes sent one.
+    static func concretePhrase(for tool: Message.ToolCall) -> String? {
+        guard let raw = tool.detail?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty
+        else { return nil }
+        let snippet = Self.snippet(raw)
+        let name = tool.name.lowercased()
+        if name.contains("read") || name.contains("file") {
+            return "Reading \(snippet)"
+        }
+        if name.contains("search") {
+            return "Searching: \(snippet)"
+        }
+        if name.contains("terminal") || name.contains("shell") || name.contains("bash")
+            || name.contains("execute") {
+            return "Running \(snippet)"
+        }
+        if name.contains("download") || name.contains("cobalt") {
+            return "Downloading \(snippet)"
+        }
+        return nil
+    }
+
+    static func snippet(_ text: String) -> String {
+        let leaf = (text as NSString).lastPathComponent
+        let cut = leaf.isEmpty ? text : leaf
+        if cut.count <= 48 { return cut }
+        return String(cut.prefix(45)) + "…"
     }
 }
 

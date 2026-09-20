@@ -200,6 +200,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// bubble so the tool does not wipe it. Optional so archives written
     /// before this field existed still decode.
     var interim: Bool = false
+    /// Last `status.update` on this reply, for the line above the bubble.
+    var lastStatus: String? = nil
 
     /// Decoded field by field, every optional one at a time.
     ///
@@ -235,6 +237,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         mentionProfile = try box.decodeIfPresent(String.self, forKey: .mentionProfile)
         mentionSessionID = try box.decodeIfPresent(String.self, forKey: .mentionSessionID)
         interim = try box.decodeIfPresent(Bool.self, forKey: .interim) ?? false
+        lastStatus = try box.decodeIfPresent(String.self, forKey: .lastStatus)
     }
 
     init(
@@ -427,6 +430,8 @@ enum ChatEvent: Sendable {
     case failure(message: String, limit: ModelLimit?)
     /// Commentary beside a tool, when Hermes did not already stream it.
     case interim(String)
+    /// A live status line from Hermes (`status.update`).
+    case status(String)
 }
 
 /// Whether two stretches of a turn are the same words, so an interim
