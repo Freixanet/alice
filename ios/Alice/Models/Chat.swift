@@ -202,6 +202,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var interim: Bool = false
     /// Last `status.update` on this reply, for the line above the bubble.
     var lastStatus: String? = nil
+    /// Tokens and model calls from `message.complete.usage`, when Hermes sent them.
+    var usage: MessageUsage? = nil
 
     /// Decoded field by field, every optional one at a time.
     ///
@@ -238,6 +240,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         mentionSessionID = try box.decodeIfPresent(String.self, forKey: .mentionSessionID)
         interim = try box.decodeIfPresent(Bool.self, forKey: .interim) ?? false
         lastStatus = try box.decodeIfPresent(String.self, forKey: .lastStatus)
+        usage = try box.decodeIfPresent(MessageUsage.self, forKey: .usage)
     }
 
     init(
@@ -436,6 +439,97 @@ enum ChatEvent: Sendable {
 
 /// Whether two stretches of a turn are the same words, so an interim
 /// frame that repeats streamed deltas is not sealed as a second bubble.
+/// Tokens and calls Hermes reported for one finished reply.
+struct MessageUsage: Hashable, Sendable, Codable {
+    var model: String?
+    var input: Int = 0
+    var output: Int = 0
+    var reasoning: Int = 0
+    var total: Int = 0
+    var calls: Int = 0
+    var seconds: Int?
+
+    init(
+        model: String? = nil, input: Int = 0, output: Int = 0, reasoning: Int = 0,
+        total: Int = 0, calls: Int = 0, seconds: Int? = nil
+    ) {
+        self.model = model
+        self.input = input
+        self.output = output
+        self.reasoning = reasoning
+        self.total = total
+        self.calls = calls
+        self.seconds = seconds
+    }
+
+    init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        model = try box.decodeIfPresent(String.self, forKey: .model)
+        input = try box.decodeIfPresent(Int.self, forKey: .input) ?? 0
+        output = try box.decodeIfPresent(Int.self, forKey: .output) ?? 0
+        reasoning = try box.decodeIfPresent(Int.self, forKey: .reasoning) ?? 0
+        total = try box.decodeIfPresent(Int.self, forKey: .total) ?? 0
+        calls = try box.decodeIfPresent(Int.self, forKey: .calls) ?? 0
+        seconds = try box.decodeIfPresent(Int.self, forKey: .seconds)
+    }
+
+    static func parse(_ payload: [String: Any]) -> MessageUsage? {
+        guard let bag = dictionary(payload["usage"]) else { return nil }
+        let model = (bag["model"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let input = int(bag["input"]) > 0 ? int(bag["input"]) : int(bag["prompt"])
+        let output = int(bag["output"]) > 0 ? int(bag["output"]) : int(bag["completion"])
+        let reasoning = int(bag["reasoning"])
+        let total = int(bag["total"])
+        let calls = int(bag["calls"])
+        if (model == nil || model?.isEmpty == true)
+            && input == 0 && output == 0 && reasoning == 0 && total == 0 && calls == 0 {
+            return nil
+        }
+        return MessageUsage(
+            model: (model?.isEmpty == false) ? model : nil,
+            input: input, output: output, reasoning: reasoning,
+            total: total > 0 ? total : input + output + reasoning,
+            calls: calls
+        )
+    }
+
+    /// Developer-mode line under a finished reply.
+    static func footer(usage: MessageUsage?, tools: Int, seconds: Int?) -> String? {
+        guard usage != nil || tools > 0 || (seconds ?? 0) > 0 else { return nil }
+        var parts: [String] = []
+        if let model = usage?.model, !model.isEmpty { parts.append(model) }
+        if let calls = usage?.calls, calls > 0 { parts.append("\(calls) LLM") }
+        parts.append(tools == 1 ? "1 tool" : "\(tools) tools")
+        if let usage {
+            parts.append("\(usage.input)/\(usage.output)/\(usage.reasoning)")
+        }
+        if let seconds, seconds > 0 { parts.append("\(seconds) s") }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func int(_ value: Any?) -> Int {
+        if let number = value as? Int { return number }
+        if let number = value as? Double { return Int(number) }
+        if let number = value as? NSNumber { return number.intValue }
+        if let text = value as? String, let number = Int(text) { return number }
+        return 0
+    }
+
+    private static func dictionary(_ value: Any?) -> [String: Any]? {
+        if let bag = value as? [String: Any] { return bag }
+        if let bag = value as? [String: String] { return bag }
+        if let bag = value as? NSDictionary {
+            var mapped: [String: Any] = [:]
+            for (key, item) in bag {
+                if let name = key as? String { mapped[name] = item }
+            }
+            return mapped.isEmpty ? nil : mapped
+        }
+        return nil
+    }
+}
+
 enum TurnNarration {
     static func normalized(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)

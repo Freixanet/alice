@@ -149,6 +149,7 @@ final class AppStore {
         static let hiddenExpanded = "alice.bot.hiddenExpanded"
         static let homeCollapsed = "alice.bot.homeCollapsed"
         static let notesAsCards = "alice.notes.asCards"
+        static let developerMode = "alice.developerMode"
         static let botChatClearedAt = "alice.bot.chatClearedAt"
         static let botOrder = "alice.bot.order"
         static let cachedBots = "alice.cached.bots"
@@ -222,6 +223,10 @@ final class AppStore {
     /// Notes as cards rather than as a list, the way they were last left.
     var notesAsCards = false {
         didSet { defaults.set(notesAsCards, forKey: Keys.notesAsCards) }
+    }
+    /// Tokens and tool counts under a finished reply.
+    var developerMode = false {
+        didSet { defaults.set(developerMode, forKey: Keys.developerMode) }
     }
     /// How notes are ordered, and whether they sit under dates.
     ///
@@ -371,6 +376,7 @@ final class AppStore {
         hiddenExpanded = defaults.bool(forKey: Keys.hiddenExpanded)
         homeCollapsed = defaults.bool(forKey: Keys.homeCollapsed)
         notesAsCards = defaults.bool(forKey: Keys.notesAsCards)
+        developerMode = defaults.bool(forKey: Keys.developerMode)
         notesSort = (defaults.string(forKey: Keys.notesSort).flatMap(NotesSort.init(rawValue:))) ?? .dateCreated
         // Grouped unless it was turned off: `bool(forKey:)` is false for a key
         // nobody has written, which would start everyone ungrouped.
@@ -6176,6 +6182,10 @@ final class AppStore {
                             approvalSessionKey: storedSessionID
                         )
                     }
+                    if event.type == "message.complete",
+                       let usage = MessageUsage.parse(event.payload) {
+                        attachUsage(usage, to: replyID, conversationID: conversationID)
+                    }
                     if step == .finish {
                         ending = .outcome
                         break watching
@@ -8300,10 +8310,22 @@ final class AppStore {
         persistConversations()
     }
 
+    private func attachUsage(
+        _ usage: MessageUsage, to replyID: String, conversationID: String
+    ) {
+        guard let location = messageLocation(replyID, conversationID: conversationID)
+        else { return }
+        var recorded = usage
+        if recorded.calls == 0 { recorded.calls = 1 }
+        if recorded.seconds == nil, let started = latencyStartedAt[conversationID] {
+            recorded.seconds = max(0, Int(Date().timeIntervalSince(started).rounded()))
+        }
+        conversations[location.chat].messages[location.message].usage = recorded
+    }
+
     /// Keeps streamed narration as its own bubble and opens a fresh
     /// placeholder for whatever comes after the tool. Same conversation,
     /// same reply-to, same mention — never another chat.
-    @discardableResult
     private func sealOpenNarration(replyID: String, conversationID: String) -> String {
         guard let location = messageLocation(replyID, conversationID: conversationID)
         else { return replyID }

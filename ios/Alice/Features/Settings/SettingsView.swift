@@ -172,7 +172,13 @@ struct AdvancedSettingsView: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        @Bindable var store = store
         Form {
+            Section {
+                Toggle("Developer mode", isOn: $store.developerMode)
+            } footer: {
+                Text("Shows the model, token counts and tool calls under each reply.")
+            }
             if store.dashboardReady {
                 Section("This Hermes") {
                     NavigationLink { ModelsProvidersScreen() } label: {

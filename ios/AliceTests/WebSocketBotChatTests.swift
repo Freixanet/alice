@@ -518,6 +518,30 @@ final class WebSocketBotChatTests: XCTestCase {
         )
     }
 
+    func testMessageCompleteUsageBecomesADeveloperFooter() {
+        let usage = MessageUsage.parse([
+            "usage": [
+                "model": "grok-4",
+                "input": 120,
+                "output": 40,
+                "reasoning": 8,
+                "total": 168,
+                "calls": 2,
+            ]
+        ])
+        XCTAssertEqual(usage?.model, "grok-4")
+        XCTAssertEqual(usage?.input, 120)
+        XCTAssertEqual(usage?.output, 40)
+        XCTAssertEqual(usage?.reasoning, 8)
+        XCTAssertEqual(usage?.calls, 2)
+        XCTAssertEqual(
+            MessageUsage.footer(usage: usage, tools: 3, seconds: 12),
+            "grok-4 · 2 LLM · 3 tools · 120/40/8 · 12 s"
+        )
+        XCTAssertNil(MessageUsage.parse(["usage": ["model": ""]]))
+        XCTAssertNil(MessageUsage.footer(usage: nil, tools: 0, seconds: 0))
+    }
+
     func testToolAndApprovalEventsReachTheExistingRenderer() {
         let tool = AppStore.chatEvent(from: HermesRPCEvent(
             type: "tool.start", sessionID: "s1",

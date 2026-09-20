@@ -158,6 +158,18 @@ struct MessageRow: View {
                         RichMessageView(content: message.content, failed: message.error != nil)
                     }
 
+                    if store.developerMode, !message.pending, message.role == .assistant,
+                       let line = MessageUsage.footer(
+                            usage: message.usage,
+                            tools: message.tools.count,
+                            seconds: message.usage?.seconds ?? message.thoughtSeconds
+                       ) {
+                        Text(line)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.tertiary)
+                            .textSelection(.enabled)
+                    }
+
                     // A reply this device stopped watching. The bot may still
                     // be working, and saying so beats a spinner that never
                     // ends or a failure that did not happen.
