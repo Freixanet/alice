@@ -671,7 +671,6 @@ private struct TranscriptView: View {
 
 private struct EmptyChatView: View {
     @Environment(AppStore.self) private var store
-    @Environment(\.colorScheme) private var colorScheme
     @State private var showingConnection = false
 
     var body: some View {
@@ -713,23 +712,16 @@ private struct EmptyChatView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 8) {
-                Image(colorScheme == .dark ? "AliceHomeLogoDark" : "AliceHomeLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 88, height: 88)
-                    .accessibilityHidden(true)
-                    // After the launch logo has faded, not alongside it.
-                    .opacity(store.launchRevealed ? 1 : 0)
-                    .scaleEffect(store.launchRevealed ? 1 : 0.92)
-                    .animation(.easeOut(duration: 0.35), value: store.launchRevealed)
-                    .padding(.bottom, 8)
-
+                Spacer()
                 Text("What are we working on?")
                     .font(.aliceTitle(.title))
                     .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
                 Text("You talk to Alice. One thing at a time.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
 
                 if store.gatewayURL.isEmpty {
                     Button("Connect to Hermes") { showingConnection = true }
@@ -738,6 +730,7 @@ private struct EmptyChatView: View {
                         .accessibilityIdentifier("home.connect")
                         .padding(.top, 12)
                 }
+                Spacer()
             }
             .padding(.horizontal, 32)
             // No hardcoded composer offset either: the call site already
