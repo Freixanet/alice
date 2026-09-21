@@ -27,8 +27,8 @@ struct MessageRow: View {
     private var invokedAgent: String? {
         if let profile = message.mentionProfile, !profile.isEmpty { return profile }
         guard let bot = message.botName, !bot.isEmpty,
-              store.activeConversation?.routedBotName == nil,
-              store.activeConversation?.isChannel != true
+              store.activeChat.routedBotName == nil,
+              !store.activeChat.isChannel
         else { return nil }
         return bot
     }

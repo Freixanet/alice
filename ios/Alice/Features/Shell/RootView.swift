@@ -323,7 +323,7 @@ struct RootView: View {
 
     /// Whether the conversation on screen belongs to a bot.
     private var inBotChat: Bool {
-        !(store.activeConversation?.botName ?? "").isEmpty
+        !(store.activeChat.botName ?? "").isEmpty
     }
 
     /// Dismisses the bots page by sliding it off the side it is leaving by.

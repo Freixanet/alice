@@ -45,7 +45,7 @@ private struct ChatScreenContent: View, Equatable {
 
     /// The bot this conversation belongs to, if it belongs to one.
     private var bot: String? {
-        guard let name = store.activeConversation?.botName, !name.isEmpty else {
+        guard let name = store.activeChat.botName, !name.isEmpty else {
             return nil
         }
         return name
@@ -79,14 +79,14 @@ private struct ChatScreenContent: View, Equatable {
     }
 
     private var placeholder: String {
-        guard let bot = store.activeConversation?.botName, !bot.isEmpty else {
+        guard let bot = store.activeChat.botName, !bot.isEmpty else {
             return "Talk to Alice…"
         }
         return "Ask \(store.botCurrentName(for: bot))…"
     }
 
     private var hasTranscript: Bool {
-        guard let conversation = store.activeConversation else { return false }
+        guard let conversation = store.shownConversation else { return false }
         return !conversation.messages.isEmpty
     }
 
@@ -192,7 +192,7 @@ private struct ChatScreenContent: View, Equatable {
 
     @ViewBuilder
     private var chatContent: some View {
-        if let conversation = store.activeConversation, !conversation.messages.isEmpty {
+        if let conversation = store.shownConversation, !conversation.messages.isEmpty {
             transcript
                 .simultaneousGesture(dismissKeyboard)
                 // A real conversation reserves the live composer height so the
@@ -364,7 +364,7 @@ private struct ChatScreenContent: View, Equatable {
 
     @ViewBuilder
     private var transcript: some View {
-        if let conversation = store.activeConversation, !conversation.messages.isEmpty {
+        if let conversation = store.shownConversation, !conversation.messages.isEmpty {
             // A fresh transcript for every conversation. Reusing one scroll view
             // across chats carried the old chat's offset into the new one, and
             // a lazy stack scrolled by code alone did not draw the rows at that
@@ -489,10 +489,12 @@ private struct TranscriptView: View {
             agentAnswers: Set(conversation.agentAnswerIDs ?? [])
         )
     }
-    private var visibleMessages: ArraySlice<Message> { presentedMessages.suffix(shown) }
-    private var hiddenCount: Int { max(0, presentedMessages.count - shown) }
-
     var body: some View {
+        // Read once per redraw: presenting walks the whole history, and the
+        // page, the count above it and the rows each asked for it again.
+        let presented = presentedMessages
+        let hiddenCount = max(0, presented.count - shown)
+        let messages = Array(presented.suffix(shown))
         GeometryReader { area in
             ScrollView {
                 // Bounded pages of messages, laid out lazily so a Radar report
@@ -518,7 +520,6 @@ private struct TranscriptView: View {
                     // once at its end over all of it. While the latest task is
                     // still going — a reply being written, or work behind the
                     // scenes — it has neither.
-                    let messages = Array(visibleMessages)
                     let positions = ChatTasks.positions(messages)
                     let latestBusy = !store.backgroundWork(for: conversation.id).isEmpty
                         || messages.last?.pending == true
@@ -791,7 +792,7 @@ private struct EmptyChatView: View {
 
     @ViewBuilder
     private var centred: some View {
-        if let botName = store.activeConversation?.botName, !botName.isEmpty {
+        if let botName = store.activeChat.botName, !botName.isEmpty {
             VStack(spacing: 8) {
                 Spacer()
                 Text("What are we working on?")

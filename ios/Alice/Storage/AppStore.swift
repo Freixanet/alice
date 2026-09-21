@@ -67,7 +67,44 @@ final class AppStore {
 
     // Conversations
     var conversations: [Conversation] = [.blank()] {
-        didSet { refreshConversationShelves() }
+        didSet {
+            refreshConversationShelves()
+            refreshActiveChat()
+        }
+    }
+    /// What the screen shows of the chat on it, kept apart from
+    /// `conversations`.
+    ///
+    /// A view that read `activeConversation` depended on the whole array, so
+    /// every change to any chat — a token streaming in, another agent's chat
+    /// syncing in the background, a timestamp — redrew the app's shell, the
+    /// composer and every message on screen. These are reassigned only when
+    /// what they hold actually changed.
+    struct ActiveChat: Equatable {
+        var id: String?
+        var botName: String?
+        var routedBotName: String?
+        var isChannel = false
+        var isCanonicalBotChat = false
+        var isRecoveredHistory = false
+    }
+    private(set) var activeChat = ActiveChat()
+    /// The chat on screen, as `activeConversation`, but only reassigned when
+    /// that chat changes.
+    private(set) var shownConversation: Conversation?
+
+    private func refreshActiveChat() {
+        let current = conversations.first { $0.id == activeID }
+        let identity = ActiveChat(
+            id: current?.id,
+            botName: current?.botName,
+            routedBotName: current?.routedBotName,
+            isChannel: current?.isChannel == true,
+            isCanonicalBotChat: current?.isCanonicalBotChat == true,
+            isRecoveredHistory: current?.isRecoveredHistory == true
+        )
+        if identity != activeChat { activeChat = identity }
+        if current != shownConversation { shownConversation = current }
     }
     /// Home chats for the drawer, kept still while a reply streams.
     private(set) var pinnedConversations: [Conversation] = []
@@ -89,6 +126,7 @@ final class AppStore {
     }
     var activeID: String? {
         didSet {
+            defer { refreshActiveChat() }
             // An edit belongs to the chat it was started in.
             if activeID != oldValue, editingMessageID != nil { cancelEditing() }
             if activeID != oldValue { markMentionRepliesSeen(in: activeID) }
@@ -517,6 +555,7 @@ final class AppStore {
         migrateLegacyChannels()
         activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
         refreshConversationShelves()
+        refreshActiveChat()
     }
 
     var activeConversation: Conversation? {
@@ -528,10 +567,8 @@ final class AppStore {
     /// explicit prevents a model chip from promising one model while Hermes
     /// actually runs the profile's configured default.
     var activeBotProfileForModelSelection: String? {
-        guard let conversation = activeConversation, conversation.isCanonicalBotChat else {
-            return nil
-        }
-        return conversation.routedBotName
+        guard activeChat.isCanonicalBotChat else { return nil }
+        return activeChat.routedBotName
     }
 
     var activeBotForModelSelection: BotRow? {
@@ -1675,13 +1712,20 @@ final class AppStore {
     /// ordinary chat replies and routine cards are derived from their dates.
     func isBotUnread(_ bot: String) -> Bool {
         if unreadBots.contains(bot) { return true }
-        let conversation = conversations.first { $0.routedBotName == bot }
-        return Self.hasUnreadBotContent(
-            messages: conversation?.messages ?? [],
-            quietRuns: quietRoutineRuns[bot] ?? [],
-            botName: bot,
-            openedAt: conversation?.openedAt,
-            agentAnswers: Set(conversation?.agentAnswerIDs ?? [])
+        guard let conversation = conversations.first(where: { $0.routedBotName == bot }),
+              let newest = botChatPreview(conversation, botName: bot).newestReplyAt
+        else { return false }
+        return newest > (conversation.openedAt ?? .distantPast)
+    }
+
+    /// A bot chat's last reply as its row shows it, read again only when the
+    /// chat changed (`BotChatPreviews`). Agents asks for it for every bot on
+    /// every redraw.
+    @ObservationIgnored private let botChatPreviews = BotChatPreviews()
+
+    func botChatPreview(_ conversation: Conversation, botName: String) -> BotChatPreview {
+        botChatPreviews.preview(
+            for: conversation, botName: botName, quietRuns: quietRoutineRuns[botName] ?? []
         )
     }
 
@@ -7331,7 +7375,7 @@ final class AppStore {
     /// be redirected into the bot's real one — two agents' conversations
     /// spliced into one apparent history.
     var activeIsRecoveredHistory: Bool {
-        conversations.first { $0.id == activeID }?.isRecoveredHistory == true
+        activeChat.isRecoveredHistory
     }
 
     func setControlSending(_ value: Bool) {
