@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Alice's face in her own chat, with her name on the glass under it.
 struct AliceAvatar: View {
-    var size: CGFloat = 84
+    var size: CGFloat = 72
 
     var body: some View {
         VStack(spacing: 0) {
