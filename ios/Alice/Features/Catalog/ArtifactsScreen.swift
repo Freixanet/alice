@@ -48,8 +48,13 @@ struct ArtifactsScreen: View {
         List {
                 Section("Artifacts") {
                     ForEach(LibraryTool.allCases) { tool in
-                        Button {
-                            store.presentedLibraryTool = tool
+                        // Pushed here, in the Library's own stack. It used to
+                        // ask the app's root for a full-screen cover, which iOS
+                        // quietly refuses while this page is itself presented
+                        // over the root — the card did nothing. A pin on Home
+                        // still opens it from the root, where nothing covers it.
+                        NavigationLink {
+                            LibraryToolScreen(tool: tool)
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: tool.symbol)
