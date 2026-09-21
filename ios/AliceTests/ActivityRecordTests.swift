@@ -44,7 +44,7 @@ final class ActivityRecordTests: XCTestCase {
 
     func testARoutineNoticeBelongsOnRoutines() {
         var event = AliceEvent(
-            id: "run", kind: .automationSucceeded, severity: .info,
+            id: "run", kind: .automationSucceeded, severity: .informational,
             title: "Morning", summary: "Finished.", occurred: Date()
         )
         event.reference.routineKey = "default/morning"
@@ -53,7 +53,7 @@ final class ActivityRecordTests: XCTestCase {
 
     func testAnAgentNoticeBelongsOnAgents() {
         let event = AliceEvent(
-            id: "done", kind: .finished, severity: .info,
+            id: "done", kind: .finished, severity: .informational,
             profile: "radar", title: "Radar", summary: "Answered.", occurred: Date()
         )
         XCTAssertEqual(event.noticePlace, .agents)

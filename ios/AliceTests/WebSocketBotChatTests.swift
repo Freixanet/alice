@@ -574,11 +574,10 @@ final class WebSocketBotChatTests: XCTestCase {
             liveSessionID: "live-1", command: "/reasoning medium"
         )
         XCTAssertEqual(text, "Reasoning effort: medium")
-        XCTAssertEqual(await rpc.methods(), ["slash.exec"])
-        XCTAssertEqual(
-            await rpc.params(of: "slash.exec"),
-            ["session_id": "live-1", "command": "reasoning medium"]
-        )
+        let methods = await rpc.methods()
+        let params = await rpc.params(of: "slash.exec")
+        XCTAssertEqual(methods, ["slash.exec"])
+        XCTAssertEqual(params, ["session_id": "live-1", "command": "reasoning medium"])
     }
 
     func testSlashOutputPrefersWorkerTextAndNeverShowsSkillPayloads() {
