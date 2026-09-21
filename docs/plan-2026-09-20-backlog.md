@@ -302,3 +302,4 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 | 12 Inbox | hecho | 5e85b58 | plugin tests + build device + install |
 | 13 Accesos home | hecho | bb1062f | build device + install; unit tests escritos, no corridos aquí |
 | 14 Adjuntos | hecho |  | plugin tests + build device + install; unit tests escritos, no corridos aquí |
+| 18 Sugerencias | hecho |  | build device; unit tests escritos, no corridos aquí. No crea un briefing sola |

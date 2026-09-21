@@ -809,6 +809,38 @@ private struct EmptyChatView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 32)
 
+                if !keyboardShown {
+                    let suggestions = HomeSuggestions.make(
+                        events: store.activity,
+                        conversations: store.conversations,
+                        questions: (store.notesSnapshot?.notes ?? []).compactMap { note in
+                            guard !note.openQuestions.isEmpty else { return nil }
+                            let label = note.summary.isEmpty
+                                ? note.openQuestions[0]
+                                : note.summary
+                            return HomeNotePrompt(id: note.id, label: label)
+                        }
+                    )
+                    if !suggestions.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(suggestions) { suggestion in
+                                Button {
+                                    open(suggestion)
+                                } label: {
+                                    Label(suggestion.title, systemImage: suggestion.symbol)
+                                        .font(.subheadline)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.primary)
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        .padding(.top, 20)
+                        .accessibilityIdentifier("home.suggestions")
+                    }
+                }
+
                 if store.gatewayURL.isEmpty {
                     Button("Connect to Hermes") { showingConnection = true }
                         .buttonStyle(.glassProminent)
@@ -829,6 +861,21 @@ private struct EmptyChatView: View {
             // reserves the real height, and 140 on top of it was a second
             // guess at the same gap.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func open(_ suggestion: HomeSuggestion) {
+        switch suggestion.action {
+        case .routines:
+            store.requestedDestination = .routines
+        case .notes:
+            store.showingNotes = true
+        case .agents:
+            store.requestedDestination = .bots
+        case let .conversation(id):
+            store.openConversation(id)
+        case .usage:
+            store.requestedDestination = .usage
         }
     }
 }
