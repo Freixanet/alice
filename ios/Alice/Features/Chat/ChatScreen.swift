@@ -39,8 +39,6 @@ private struct ChatScreenContent: View, Equatable {
     /// Whether an on-screen keyboard is taking room. Not the composer's focus:
     /// a hardware keyboard focuses it without taking any.
     @State private var keyboardShown = false
-    /// The transcript is scrolled to its top, where Alice's mark belongs.
-    @State private var transcriptAtTop = true
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -230,12 +228,6 @@ private struct ChatScreenContent: View, Equatable {
         _ = try? await store.bots()
     }
 
-    /// Home has no transcript to scroll; a conversation shows the mark only
-    /// while it is at its top.
-    private var showsAliceMark: Bool {
-        store.activeConversation.map { $0.messages.isEmpty } ?? true || transcriptAtTop
-    }
-
     private var topControls: some View {
         HStack(spacing: 0) {
             Button(action: bot == nil ? onOpenDrawer : onBack) {
@@ -320,10 +312,6 @@ private struct ChatScreenContent: View, Equatable {
                 }
             } else {
                 AliceAvatar()
-                    // Only at the top of the conversation: once reading down
-                    // it, the face would sit over the words.
-                    .opacity(showsAliceMark ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.2), value: showsAliceMark)
             }
 
             Spacer(minLength: 0)
@@ -403,8 +391,7 @@ private struct ChatScreenContent: View, Equatable {
             TranscriptView(
                 conversation: conversation,
                 quietRuns: store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? [],
-                keyboardShown: keyboardShown,
-                atTop: $transcriptAtTop
+                keyboardShown: keyboardShown
             )
                 .id(conversation.id)
         } else {
@@ -481,7 +468,6 @@ private struct TranscriptView: View {
     /// This bot's routine runs that found nothing, shown as cards.
     var quietRuns: [QuietRoutineRun] = []
     var keyboardShown = false
-    @Binding var atTop: Bool
 
     @State private var position = ScrollPosition(edge: .bottom)
     /// Whether the transcript keeps to its live edge as it grows. Only the
@@ -608,12 +594,6 @@ private struct TranscriptView: View {
                 if Self.isReader(oldPhase), !readerScrolling, let lastTail {
                     following = lastTail.near
                 }
-            }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                // At the top while the first message is still clear of the header.
-                geometry.contentOffset.y + geometry.contentInsets.top < 12
-            } action: { _, top in
-                atTop = top
             }
             .onScrollGeometryChange(for: Tail.self) { geometry in
                 // The visible rect runs under the top controls and the

@@ -10,6 +10,7 @@ struct AliceAvatar: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: size, height: size)
+                .clipShape(.circle)
 
             Text("Alice")
                 .font(.caption.weight(.semibold))
