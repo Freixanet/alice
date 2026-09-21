@@ -2,7 +2,6 @@ import SwiftUI
 
 /// Alice's face in her own chat, with her name on the glass under it.
 struct AliceAvatar: View {
-    @Environment(\.colorScheme) private var scheme
     var size: CGFloat = 72
 
     var body: some View {
@@ -12,11 +11,6 @@ struct AliceAvatar: View {
                 .scaledToFit()
                 .frame(width: size, height: size)
                 .clipShape(.circle)
-                // The disc is cream on cream in the light, so the edge has
-                // to be drawn; in the dark the same line is just the rim.
-                .overlay {
-                    Circle().strokeBorder(Palette.border(scheme), lineWidth: 0.75)
-                }
 
             Text("Alice")
                 .font(.caption.weight(.semibold))
