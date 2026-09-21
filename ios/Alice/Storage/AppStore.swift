@@ -70,6 +70,7 @@ final class AppStore {
         didSet {
             refreshConversationShelves()
             refreshActiveChat()
+            refreshBotNameSets()
         }
     }
     /// What the screen shows of the chat on it, kept apart from
@@ -269,6 +270,7 @@ final class AppStore {
     /// sections.
     var botChannels: [BotChannel] = [] {
         didSet {
+            refreshBotNameSets()
             if let data = try? JSONEncoder().encode(botChannels) {
                 defaults.set(data, forKey: Keys.botChannels)
             }
@@ -442,12 +444,26 @@ final class AppStore {
         names.formUnion(botSections.keys)
         names.formUnion(botCustomNames.keys)
         names.formUnion(botModels.keys)
+        names.formUnion(botNamesInChats)
+        return Array(names).sorted()
+    }
+
+    /// The agents named by chats and channels, kept apart from them.
+    ///
+    /// `knownBotNames` walked every conversation and channel, so whatever read
+    /// it — the drawer's titles, through `mentions` — was redrawn by every
+    /// token streamed into any chat and every channel opened or shut. These
+    /// change only when an agent comes or goes.
+    private(set) var botNamesInChats: Set<String> = []
+
+    private func refreshBotNameSets() {
+        var names = Set<String>()
         for conv in conversations {
             if let b = conv.botName, !b.isEmpty { names.insert(b) }
             if let bots = conv.channelBots { names.formUnion(bots) }
         }
         for channel in botChannels { names.formUnion(channel.bots) }
-        return Array(names).sorted()
+        if names != botNamesInChats { botNamesInChats = names }
     }
 
     init(defaults: UserDefaults = .standard, conversationStorage: ConversationStorage? = nil) {
@@ -560,6 +576,7 @@ final class AppStore {
         activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
         refreshConversationShelves()
         refreshActiveChat()
+        refreshBotNameSets()
     }
 
     var activeConversation: Conversation? {
@@ -7634,7 +7651,11 @@ final class AppStore {
     /// A drawer title with each `@agent` invocation in that agent's colour.
     /// Titles saved before `@` was kept are restored from the first message.
     func titleStyled(for conversation: Conversation) -> AttributedString {
-        titleStyled(displayTitle(for: conversation), names: invokedTitleNames(in: conversation))
+        let names = invokedTitleNames(in: conversation)
+        return titleStyled(
+            ConversationTitle.strippingAtMentions(in: conversation.title, invoked: names),
+            names: names
+        )
     }
 
     /// The title as the drawer should say it: the invoked agent's name, no `@`.
@@ -7648,6 +7669,28 @@ final class AppStore {
     /// a bot's name is not painted as a mention.
     private func invokedTitleNames(in conversation: Conversation) -> [(display: String, slug: String)] {
         let first = conversation.messages.first(where: { $0.role == .user })
+        let fallback = conversation.messages.first(where: { $0.mentionProfile != nil })?.mentionProfile
+        // The drawer asks for every row it draws, on every redraw. Read again
+        // only when the first ask or the roster of names changed.
+        var key = Hasher()
+        key.combine(first?.id)
+        key.combine(first?.content)
+        key.combine(first?.mentionProfile)
+        key.combine(fallback)
+        key.combine(mentionNameList().key)
+        let fingerprint = key.finalize()
+        if let hit = invokedTitleNamesCache[conversation.id], hit.key == fingerprint { return hit.names }
+        let names = computeInvokedTitleNames(first: first, fallback: fallback)
+        invokedTitleNamesCache[conversation.id] = (fingerprint, names)
+        return names
+    }
+
+    @ObservationIgnored private var invokedTitleNamesCache:
+        [String: (key: Int, names: [(display: String, slug: String)])] = [:]
+
+    private func computeInvokedTitleNames(
+        first: Message?, fallback: String?
+    ) -> [(display: String, slug: String)] {
         var slugs = Set<String>()
         if let content = first?.content {
             slugs.formUnion(mentions(in: content).compactMap { range, slug in
@@ -7655,10 +7698,10 @@ final class AppStore {
             })
         }
         if let profile = first?.mentionProfile { slugs.insert(profile) }
-        if slugs.isEmpty, let profile = conversation.messages.first(where: { $0.mentionProfile != nil })?.mentionProfile {
+        if slugs.isEmpty, let profile = fallback {
             slugs.insert(profile)
         }
-        return slugs.flatMap { slug in mentionNames(for: slug).map { ($0, slug) } }
+        return slugs.sorted().flatMap { slug in mentionNames(for: slug).map { ($0, slug) } }
     }
 
     /// A drawer title with each `@agent` invocation in that agent's colour.
@@ -7711,11 +7754,9 @@ final class AppStore {
     /// Each `@agent` in a text. A bare name counts only when it was picked
     /// from the `@` menu (`bareSlugs`); typing the name by hand does not.
     func mentions(in text: String, bareSlugs: [String] = []) -> [(Range<String.Index>, String)] {
-        var slugs = Set(cachedBots.map(\.name))
-        slugs.formUnion(knownBotNames)
-        slugs.formUnion(botCustomNames.keys)
-        let names = slugs.flatMap { slug in mentionNames(for: slug).map { ($0, slug) } }
-            .sorted { $0.0.count > $1.0.count }
+        // Without an `@` only a picked bare name could match.
+        if bareSlugs.isEmpty, !text.contains("@") { return [] }
+        let names = mentionNameList().names
         let allowedBare = Set(bareSlugs)
         var taken: [Range<String.Index>] = []
         var found: [(Range<String.Index>, String)] = []
@@ -7736,6 +7777,28 @@ final class AppStore {
         }
         return found
     }
+
+    /// Every name an agent can be mentioned by, longest first, built once per
+    /// roster rather than on every call: `mentions` ran for each drawer row
+    /// on each redraw and rebuilt it every time.
+    private func mentionNameList() -> (key: Int, names: [(String, String)]) {
+        var slugs = Set(cachedBots.map(\.name))
+        slugs.formUnion(knownBotNames)
+        slugs.formUnion(botCustomNames.keys)
+        var hasher = Hasher()
+        for slug in slugs.sorted() { hasher.combine(slug) }
+        for bot in cachedBots { hasher.combine(bot.name); hasher.combine(bot.displayName); hasher.combine(bot.aliceRole) }
+        hasher.combine(botCustomNames)
+        hasher.combine(botMetadataIsRemote)
+        let key = hasher.finalize()
+        if let cached = mentionNameListCache, cached.key == key { return cached }
+        let names = slugs.flatMap { slug in mentionNames(for: slug).map { ($0, slug) } }
+            .sorted { ($0.0.count, $0.0, $0.1) > ($1.0.count, $1.0, $1.1) }
+        mentionNameListCache = (key, names)
+        return (key, names)
+    }
+
+    @ObservationIgnored private var mentionNameListCache: (key: Int, names: [(String, String)])?
 
     func rememberDraftMention(display: String, slug: String) {
         draftMentions.removeAll { $0.slug.caseInsensitiveCompare(slug) == .orderedSame }
