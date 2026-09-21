@@ -69,7 +69,7 @@ enum ConversationArchive {
         return hasher.finalize()
     }
 
-    static func load(from defaults: UserDefaults) -> Load {
+    static func load(from defaults: ConversationStorage) -> Load {
         if let indexData = defaults.data(forKey: indexKey), !indexData.isEmpty {
             switch loadSplit(indexData, from: defaults) {
             case .empty:
@@ -114,12 +114,18 @@ enum ConversationArchive {
     /// Writes the prepared records, then the index, then drops the leftover
     /// blob. That order is the recovery path: a crash before the index is
     /// stored still leaves the older blob for the next launch.
-    static func apply(_ write: PreparedWrite, to defaults: UserDefaults) {
+    ///
+    /// Only what changed is written. The index and the removals used to be
+    /// written on every save, so a save with nothing new still rewrote the
+    /// storage — all of it, while that was `UserDefaults`.
+    static func apply(_ write: PreparedWrite, to defaults: ConversationStorage) {
         for record in write.records {
             defaults.set(record.data, forKey: record.key)
         }
-        defaults.set(write.index, forKey: indexKey)
-        for key in write.removeKeys {
+        if defaults.data(forKey: indexKey) != write.index {
+            defaults.set(write.index, forKey: indexKey)
+        }
+        for key in write.removeKeys where defaults.data(forKey: key) != nil {
             defaults.removeObject(forKey: key)
         }
     }
@@ -149,7 +155,7 @@ enum ConversationArchive {
         }
     }
 
-    private static func loadSplit(_ indexData: Data, from defaults: UserDefaults) -> Load {
+    private static func loadSplit(_ indexData: Data, from defaults: ConversationStorage) -> Load {
         let ids: [String]
         do {
             ids = try JSONDecoder().decode([String].self, from: indexData)
@@ -181,7 +187,7 @@ enum ConversationArchive {
         )
     }
 
-    private static func loadBlob(from defaults: UserDefaults) -> Load? {
+    private static func loadBlob(from defaults: ConversationStorage) -> Load? {
         guard let data = defaults.data(forKey: blobKey), !data.isEmpty else { return nil }
         do {
             let saved = try JSONDecoder().decode([Conversation].self, from: data)

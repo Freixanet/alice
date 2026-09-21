@@ -167,6 +167,9 @@ final class AppStore {
     private var judgedRoutineRuns: [String: Set<String>] = [:]
     private let dashboard = DashboardClient()
     private let defaults: UserDefaults
+    /// Where conversations are kept (`FileConversationStorage`), apart from
+    /// the small settings in `defaults`.
+    private let conversationStorage: ConversationStorage
     /// The Face ID gate and per-note locks. Public surface is forwarded below
     /// so call sites keep `store.requireUnlock`-style access.
     let lock: AppLock
@@ -447,8 +450,9 @@ final class AppStore {
         return Array(names).sorted()
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, conversationStorage: ConversationStorage? = nil) {
         self.defaults = defaults
+        self.conversationStorage = conversationStorage ?? Self.conversationStorage(for: defaults)
         self.lock = AppLock(defaults: defaults)
         botMarks = (defaults.data(forKey: Keys.marks))
             .flatMap { try? JSONDecoder().decode([String: BotMark].self, from: $0) } ?? [:]
@@ -8907,7 +8911,11 @@ final class AppStore {
         persistGeneration += 1
         persistTask?.cancel()
         persistTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(80))
+            // A beat long enough that a streamed reply is saved a couple of
+            // times a second, not at every batch of tokens: each save writes
+            // the whole chat, attachments and all. Leaving for the background
+            // saves at once (`persistConversationsImmediately`).
+            try? await Task.sleep(for: .milliseconds(600))
             guard let self, !Task.isCancelled else { return }
             let generation = self.persistGeneration
             let snapshot = self.archiveSnapshot(self.conversations)
@@ -8925,6 +8933,17 @@ final class AppStore {
         writeConversationsNow(conversations)
     }
 
+    /// Conversations in files for the app itself, moved there from
+    /// `UserDefaults` on the first launch that can (`ConversationArchive.adopt`).
+    /// Another defaults suite — a test's — keeps them in that suite.
+    private static func conversationStorage(for defaults: UserDefaults) -> ConversationStorage {
+        guard defaults === UserDefaults.standard,
+              let directory = FileConversationStorage.standardDirectory
+        else { return defaults }
+        let files = FileConversationStorage(directory: directory)
+        return ConversationArchive.adopt(files, from: defaults) ? files : defaults
+    }
+
     private func archiveSnapshot(_ conversations: [Conversation]) -> ConversationArchive.Snapshot {
         ConversationArchive.Snapshot(
             conversations: conversations,
@@ -8935,7 +8954,11 @@ final class AppStore {
     }
 
     private func rememberWrite(_ prepared: ConversationArchive.PreparedWrite) {
-        ConversationArchive.apply(prepared, to: defaults)
+        ConversationArchive.apply(prepared, to: conversationStorage)
+        if let failure = (conversationStorage as? FileConversationStorage)?.takeFailure() {
+            storageWarning = Self.saveFailedPrefix + HermesErrors.describe(failure, fallback: "\(type(of: failure))")
+            return
+        }
         conversationFingerprints = prepared.fingerprints
         persistedConversationIDs = prepared.persistedIDs
         if storageWarning?.hasPrefix(Self.saveFailedPrefix) == true { storageWarning = nil }
@@ -9015,7 +9038,7 @@ final class AppStore {
     /// the next save wrote the empty result over it. That is how a build that
     /// merely added a field erased every conversation on the phone.
     private func loadConversations() {
-        switch ConversationArchive.load(from: defaults) {
+        switch ConversationArchive.load(from: conversationStorage) {
         case .empty:
             return
         case .available(let loaded):
@@ -9069,7 +9092,7 @@ final class AppStore {
             return
         }
         let live: [Conversation]
-        if case let .available(loaded) = ConversationArchive.load(from: defaults) {
+        if case let .available(loaded) = ConversationArchive.load(from: conversationStorage) {
             live = loaded.conversations
         } else {
             live = []
