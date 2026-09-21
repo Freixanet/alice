@@ -208,11 +208,16 @@ private struct ChatScreenContent: View, Equatable {
                     .contentShape(.rect)
                     .simultaneousGesture(dismissKeyboard)
 
-                Composer(
-                    focused: $composerFocused,
-                    placeholder: placeholder,
-                    keyboardShown: keyboardShown
-                )
+                VStack(spacing: 0) {
+                    if !keyboardShown {
+                        HomeSuggestionStrip()
+                    }
+                    Composer(
+                        focused: $composerFocused,
+                        placeholder: placeholder,
+                        keyboardShown: keyboardShown
+                    )
+                }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                         guard !composerFocused, height > 0,
                               abs(homeComposerHeight - height) > 0.5 else { return }
@@ -809,38 +814,6 @@ private struct EmptyChatView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 32)
 
-                if !keyboardShown {
-                    let suggestions = HomeSuggestions.make(
-                        events: store.activity,
-                        conversations: store.conversations,
-                        questions: (store.notesSnapshot?.notes ?? []).compactMap { note in
-                            guard !note.openQuestions.isEmpty else { return nil }
-                            let label = note.summary.isEmpty
-                                ? note.openQuestions[0]
-                                : note.summary
-                            return HomeNotePrompt(id: note.id, label: label)
-                        }
-                    )
-                    if !suggestions.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(suggestions) { suggestion in
-                                Button {
-                                    open(suggestion)
-                                } label: {
-                                    Label(suggestion.title, systemImage: suggestion.symbol)
-                                        .font(.subheadline)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.primary)
-                            }
-                        }
-                        .padding(.horizontal, 32)
-                        .padding(.top, 20)
-                        .accessibilityIdentifier("home.suggestions")
-                    }
-                }
-
                 if store.gatewayURL.isEmpty {
                     Button("Connect to Hermes") { showingConnection = true }
                         .buttonStyle(.glassProminent)
@@ -861,6 +834,47 @@ private struct EmptyChatView: View {
             // reserves the real height, and 140 on top of it was a second
             // guess at the same gap.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// Sits just above the composer.
+private struct HomeSuggestionStrip: View {
+    @Environment(AppStore.self) private var store
+
+    private var suggestions: [HomeSuggestion] {
+        HomeSuggestions.make(
+            events: store.activity,
+            questions: (store.notesSnapshot?.notes ?? []).compactMap { note in
+                guard !note.openQuestions.isEmpty else { return nil }
+                let label = note.summary.isEmpty
+                    ? note.openQuestions[0]
+                    : note.summary
+                return HomeNotePrompt(id: note.id, label: label)
+            }
+        )
+    }
+
+    var body: some View {
+        if suggestions.isEmpty {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(suggestions) { suggestion in
+                    Button {
+                        open(suggestion)
+                    } label: {
+                        Label(suggestion.title, systemImage: suggestion.symbol)
+                            .font(.subheadline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+            .accessibilityIdentifier("home.suggestions")
         }
     }
 

@@ -17,33 +17,21 @@ final class HomeSuggestionTests: XCTestCase {
             title: "Morning briefing failed", summary: "rate limit",
             occurred: now.addingTimeInterval(-3600)
         )
-        let chat = Conversation(
-            id: "chat-1", title: "Inbox", createdAt: now, updatedAt: now,
-            messages: [Message(id: "u", role: .user, content: "go", createdAt: now.addingTimeInterval(-600))]
-        )
         let rows = HomeSuggestions.make(
-            events: [failed, waiting], conversations: [chat], now: now
+            events: [failed, waiting], now: now
         )
         XCTAssertEqual(rows.map(\.id), ["waiting", "routines-failed"])
         XCTAssertEqual(rows[0].action, .conversation("chat-1"))
     }
 
-    func testAFreshSendIsNotAnUnansweredChat() {
-        let chat = Conversation(
-            id: "c", title: "Alice", createdAt: now, updatedAt: now,
-            messages: [Message(id: "u", role: .user, content: "hola", createdAt: now.addingTimeInterval(-10))]
+    func testARequestThatIsNotStillWaitingStaysQuiet() {
+        let idle = AliceEvent(
+            id: "s", kind: .needsInput, severity: .needsAttention,
+            title: "Scout", summary: "last turn was the person",
+            occurred: now.addingTimeInterval(-600),
+            standing: .none
         )
-        XCTAssertTrue(HomeSuggestions.make(conversations: [chat], now: now).isEmpty)
-    }
-
-    func testAnOldUnansweredChatIsOneRow() {
-        let chat = Conversation(
-            id: "c", title: "Trip", createdAt: now, updatedAt: now,
-            messages: [Message(id: "u", role: .user, content: "book it", createdAt: now.addingTimeInterval(-600))]
-        )
-        let rows = HomeSuggestions.make(conversations: [chat], now: now)
-        XCTAssertEqual(rows.map(\.title), ["Trip is still waiting"])
-        XCTAssertEqual(rows[0].action, .conversation("c"))
+        XCTAssertTrue(HomeSuggestions.make(events: [idle], now: now).isEmpty)
     }
 
     func testAnOpenQuestionAndHeavyUsageStayBehindMoreUrgentRows() {

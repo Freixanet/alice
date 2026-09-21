@@ -27,18 +27,17 @@ struct HomeNotePrompt: Equatable, Sendable {
 
 /// The home's short list of things that need a person.
 ///
-/// Order is fixed: someone waiting, a failed routine, a chat with no answer,
-/// an open question, heavy recent usage, then a morning briefing when the
-/// routine list is known and none exists. At most three. Usage and the
-/// briefing stay quiet unless the caller already has those facts.
+/// Order is fixed: a request Hermes is still holding, a failed routine, an
+/// open question, heavy recent usage, then a morning briefing when the routine
+/// list is known and none exists. At most three. A chat that merely ends on
+/// the person's message is not waiting. Usage and the briefing stay quiet
+/// unless the caller already has those facts.
 enum HomeSuggestions {
-    static let unansweredAfter: TimeInterval = 120
     static let failureWindow: TimeInterval = 7 * 24 * 60 * 60
     static let heavyTokens = 2_000_000
 
     static func make(
         events: [AliceEvent] = [],
-        conversations: [Conversation] = [],
         questions: [HomeNotePrompt] = [],
         routineNames: [String]? = nil,
         recentTokens: Int? = nil,
@@ -46,14 +45,12 @@ enum HomeSuggestions {
         limit: Int = 3
     ) -> [HomeSuggestion] {
         var rows: [HomeSuggestion] = []
-        var claimedChats = Set<String>()
 
         let waiting = events
-            .filter { $0.kind == .needsInput && $0.standing != .resolved && $0.standing != .gone }
+            .filter { $0.kind == .needsInput && $0.standing == .waiting }
             .sorted { $0.occurred > $1.occurred }
         if let event = waiting.first {
             let chat = event.reference.conversationID
-            if let chat { claimedChats.insert(chat) }
             rows.append(HomeSuggestion(
                 id: "waiting",
                 title: event.title.isEmpty ? "Something is waiting on you" : event.title,
@@ -74,18 +71,6 @@ enum HomeSuggestions {
                 title: title,
                 symbol: "exclamationmark.triangle",
                 action: .routines
-            ))
-        }
-
-        let quiet = conversations
-            .filter { unanswered($0, now: now) && !claimedChats.contains($0.id) }
-            .sorted { $0.updatedAt > $1.updatedAt }
-        if let chat = quiet.first {
-            rows.append(HomeSuggestion(
-                id: "unanswered-\(chat.id)",
-                title: chat.title.isEmpty ? "A chat is still waiting" : "\(chat.title) is still waiting",
-                symbol: "bubble.left",
-                action: .conversation(chat.id)
             ))
         }
 
@@ -117,15 +102,6 @@ enum HomeSuggestions {
         }
 
         return Array(rows.prefix(max(limit, 0)))
-    }
-
-    private static func unanswered(_ chat: Conversation, now: Date) -> Bool {
-        guard let last = chat.messages.last(where: { !$0.interim }) else { return false }
-        if chat.messages.contains(where: \.pending) { return false }
-        guard last.role == .user else { return false }
-        let text = last.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return false }
-        return now.timeIntervalSince(last.createdAt) >= unansweredAfter
     }
 
     private static func hasBriefing(_ names: [String]) -> Bool {
