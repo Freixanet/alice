@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Alice's face in her own chat, with her name on the glass under it.
 struct AliceAvatar: View {
-    var size: CGFloat = 56
+    var size: CGFloat = 84
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,7 +17,7 @@ struct AliceAvatar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .glassEffect(.regular, in: .capsule)
-                .offset(y: -8)
+                .offset(y: -10)
         }
         .padding(.bottom, -2)
         .accessibilityElement(children: .ignore)

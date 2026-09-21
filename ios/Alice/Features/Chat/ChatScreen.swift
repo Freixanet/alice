@@ -229,7 +229,7 @@ private struct ChatScreenContent: View, Equatable {
     }
 
     private var topControls: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             Button(action: bot == nil ? onOpenDrawer : onBack) {
                 // Two bars, not three, matched to the `plus` across from it.
                 // Both are math symbols, so the pairing is a real one — but
