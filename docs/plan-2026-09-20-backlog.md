@@ -300,4 +300,5 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 | 10 Sidebar | hecho | b172df0 / f587753 | build device + install; unit tests escritos, no corridos aquí |
 | 11 Carpetas | hecho | 92a5f3d | build device + install; unit tests escritos, no corridos aquí |
 | 12 Inbox | hecho | 5e85b58 | plugin tests + build device + install |
-| 13 Accesos home | hecho |  | build device + install; unit tests escritos, no corridos aquí |
+| 13 Accesos home | hecho | bb1062f | build device + install; unit tests escritos, no corridos aquí |
+| 14 Adjuntos | hecho |  | plugin tests + build device + install; unit tests escritos, no corridos aquí |

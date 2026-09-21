@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import PhotosUI
+import UniformTypeIdentifiers
 
 /// One note, open to edit, on a page of its own.
 ///
@@ -51,6 +53,13 @@ struct NoteEditor: View {
     /// The caret is in the note — or about to be, as the page opens with the
     /// keyboard up, so Done is there from the start rather than a beat later.
     @State private var editing = true
+    @State private var attachments: [Attachment]
+    @State private var savedAttachments: [Attachment]
+    @State private var photos: [PhotosPickerItem] = []
+    @State private var showPhotos = false
+    @State private var showCamera = false
+    @State private var showFiles = false
+    @State private var attachmentFailure: String?
 
     init(target: Target, agent: String?, folder: NotesScope = .quick) {
         self.agent = agent
@@ -60,116 +69,161 @@ struct NoteEditor: View {
         case let .existing(existing):
             _note = State(initialValue: existing)
             initial = RichNote.attributed(from: existing)
+            let held = existing.attachments ?? []
+            _attachments = State(initialValue: held)
+            _savedAttachments = State(initialValue: held)
         case .new:
             _note = State(initialValue: nil)
             initial = NSAttributedString()
+            _attachments = State(initialValue: [])
+            _savedAttachments = State(initialValue: [])
         }
         _content = State(initialValue: initial)
         _saved = State(initialValue: initial)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // No date on this page: the list says when a note was written.
-            // The space keeps the text clear of the header, and a tap there
-            // puts the keyboard away.
-            Color.clear
-                .frame(height: 28)
-                .contentShape(.rect)
-                .onTapGesture { dismissKeyboard() }
-                .overlay(alignment: .leading) {
-                    // A quiet word about saving, where the eye is not: never a
-                    // dialog while the person is mid-sentence.
-                    if let caption = saveState.caption {
-                        Text(caption)
-                            .font(.caption)
-                            .foregroundStyle(saveState.blocksLeavingQuietly ? Palette.warning(scheme) : .secondary)
-                            .padding(.horizontal, 16)
-                            .transition(.opacity)
-                            .accessibilityIdentifier("note.saveState")
-                    }
+        page
+            .background(Palette.background(scheme).ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { toolbar }
+            .confirmationDialog(
+                currentNote.map { note in
+                    let name = NotesFeed.title(of: note)
+                    return name.isEmpty ? "Delete this note?" : "Delete the note “\(name)”?"
+                } ?? "Delete this note?",
+                isPresented: $confirmingDelete, titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) { deleteNote() }
+            } message: {
+                Text("It is removed from the notes store, with what its agent made of it. This can’t be undone.")
+            }
+            .onAppear { store.editingNote = true }
+            .onChange(of: content) { scheduleSave() }
+            .onChange(of: attachments) { scheduleSave() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, saveState != .saved, saveState != .saving {
+                    retry?.cancel()
+                    failures = 0
+                    save(now: true, explicit: false)
                 }
-                .animation(.easeInOut(duration: 0.2), value: saveState)
-            // The keyboard is up on arrival: opening a note is to write in it.
+            }
+            .onDisappear {
+                store.editingNote = false
+                retry?.cancel()
+                if !deleted { save(now: true, explicit: true) }
+            }
+            .sheet(isPresented: $showingDetails) {
+                if let currentNote {
+                    NoteDetail(note: currentNote, agent: agent)
+                        .environment(store)
+                        .preferredColorScheme(store.theme.colorScheme)
+                }
+            }
+            .alert(
+                "Note not saved",
+                isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })
+            ) {
+                Button("Try Again") { failures = 0; save(now: true, explicit: true) }
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(failure ?? "")
+            }
+            .alert(
+                "Attachment not added",
+                isPresented: Binding(get: { attachmentFailure != nil }, set: { if !$0 { attachmentFailure = nil } })
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(attachmentFailure ?? "")
+            }
+            .modifier(NoteAttachmentPickers(
+                photos: $photos, showPhotos: $showPhotos, showFiles: $showFiles,
+                showCamera: $showCamera, onAdd: addAttachment
+            ))
+    }
+
+    private var page: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            saveCaption
+            if store.notesSnapshot?.supportsAttachments != true, !attachments.isEmpty {
+                Text("Update the plugin to sync attachments.")
+                    .font(.caption)
+                    .foregroundStyle(Palette.warning(scheme))
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .accessibilityIdentifier("note.attachments.plugin")
+            }
+            if !attachments.isEmpty {
+                AttachmentChips(attachments: attachments, onRemove: { item in
+                    attachments.removeAll { $0.id == item.id }
+                }, composerInsets: false)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
             RichTextEditor(
                 text: $content, isEditing: $editing, focusOnAppear: true,
                 startsWithTitle: note == nil
             )
-                .ignoresSafeArea(.container, edges: .bottom)
+            .ignoresSafeArea(.container, edges: .bottom)
         }
-        .background(Palette.background(scheme).ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if note != nil {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Details", systemImage: "info.circle") { showingDetails = true }
+    }
+
+    private var saveCaption: some View {
+        Color.clear
+            .frame(height: 28)
+            .contentShape(.rect)
+            .onTapGesture { dismissKeyboard() }
+            .overlay(alignment: .leading) {
+                if let caption = saveState.caption {
+                    Text(caption)
+                        .font(.caption)
+                        .foregroundStyle(saveState.blocksLeavingQuietly ? Palette.warning(scheme) : .secondary)
+                        .padding(.horizontal, 16)
+                        .transition(.opacity)
+                        .accessibilityIdentifier("note.saveState")
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: saveState)
+    }
+
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        if note != nil {
             ToolbarItem(placement: .primaryAction) {
-                ShareLink(item: content.string)
+                Button("Details", systemImage: "info.circle") { showingDetails = true }
             }
-            // Done writing: saved now, keyboard and caret put away.
-            if editing {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", systemImage: "checkmark") {
-                        save(now: true, explicit: true)
-                        dismissKeyboard()
+        }
+        ToolbarItem(placement: .primaryAction) {
+            ShareLink(item: content.string)
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Menu("Attach", systemImage: "paperclip") {
+                if CameraPicker.isAvailable {
+                    Button("Camera", systemImage: "camera") { showCamera = true }
+                }
+                Button("Photos", systemImage: "photo") { showPhotos = true }
+                Button("Files", systemImage: "folder") { showFiles = true }
+            }
+            .accessibilityIdentifier("note.attach")
+        }
+        if editing {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done", systemImage: "checkmark") {
+                    save(now: true, explicit: true)
+                    dismissKeyboard()
+                }
+                .accessibilityIdentifier("note.done")
+            }
+        }
+        if note != nil {
+            ToolbarItem(placement: .primaryAction) {
+                Menu("More", systemImage: "ellipsis") {
+                    Button("Delete Note", systemImage: "trash", role: .destructive) {
+                        confirmingDelete = true
                     }
-                    .accessibilityIdentifier("note.done")
                 }
             }
-            if note != nil {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu("More", systemImage: "ellipsis") {
-                        Button("Delete Note", systemImage: "trash", role: .destructive) {
-                            confirmingDelete = true
-                        }
-                    }
-                }
-            }
-        }
-        .confirmationDialog(
-            currentNote.map { note in
-                let name = NotesFeed.title(of: note)
-                return name.isEmpty ? "Delete this note?" : "Delete the note “\(name)”?"
-            } ?? "Delete this note?",
-            isPresented: $confirmingDelete, titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) { deleteNote() }
-        } message: {
-            Text("It is removed from the notes store, with what its agent made of it. This can’t be undone.")
-        }
-        .onAppear { store.editingNote = true }
-        .onChange(of: content) { scheduleSave() }
-        .onChange(of: scenePhase) { _, phase in
-            // Back in the foreground with words still unsaved: try again now,
-            // not on the next keystroke.
-            if phase == .active, saveState != .saved, saveState != .saving {
-                retry?.cancel()
-                failures = 0
-                save(now: true, explicit: false)
-            }
-        }
-        .onDisappear {
-            store.editingNote = false
-            retry?.cancel()
-            if !deleted { save(now: true, explicit: true) }
-        }
-        .sheet(isPresented: $showingDetails) {
-            if let currentNote {
-                NoteDetail(note: currentNote, agent: agent)
-                    .environment(store)
-                    .preferredColorScheme(store.theme.colorScheme)
-            }
-        }
-        .alert(
-            "Note not saved",
-            isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })
-        ) {
-            Button("Try Again") { failures = 0; save(now: true, explicit: true) }
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(failure ?? "")
         }
     }
 
@@ -225,7 +279,7 @@ struct NoteEditor: View {
         let edited = content
         let words = edited.string
         guard !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        if edited.isEqual(to: saved), saveState == .saved { return }
+        if edited.isEqual(to: saved), attachments == savedAttachments, saveState == .saved { return }
         if inFlight != nil {
             // One save at a time; this text goes once the current one is back.
             dirtyWhileSaving = true
@@ -238,6 +292,7 @@ struct NoteEditor: View {
             do {
                 try await write(words: words, rich: rich)
                 saved = edited
+                savedAttachments = attachments
                 failures = 0
                 saveState = .saved
             } catch {
@@ -264,17 +319,18 @@ struct NoteEditor: View {
 
     /// One write to the store: an edit, or a create followed by the styling.
     private func write(words: String, rich: String?) async throws {
+        let held = attachments
         if let existing = currentNote {
-            try await store.editNote(existing, text: words, rich: rich)
+            try await store.editNote(existing, text: words, rich: rich, attachments: held)
         } else if let pending = creating {
             // Created a moment ago and not back yet: edit it once it is.
             guard let created = await pending.value else {
                 throw HermesRPCClient.Failure(reason: "Hermes did not save the note.")
             }
-            try await store.editNote(created, text: words, rich: rich)
+            try await store.editNote(created, text: words, rich: rich, attachments: held)
         } else {
             let create = Task<Note?, Never> {
-                try? await store.addNote(words)
+                try? await store.addNote(words, attachments: held)
             }
             creating = create
             guard let created = await create.value else {
@@ -286,9 +342,56 @@ struct NoteEditor: View {
             creating = nil
             // The styling goes in with the first edit, as adding takes words only.
             if let rich, !content.string.isEmpty {
-                try await store.editNote(created, text: words, rich: rich)
+                try await store.editNote(created, text: words, rich: rich, attachments: held)
             }
         }
+    }
+
+    private func addAttachment(_ item: Attachment) {
+        let next = attachments + [item]
+        guard NoteAttachments.canHold(next) else {
+            attachmentFailure = "A note can hold 8 MB of attachments."
+            return
+        }
+        attachments = next
+    }
+}
+
+/// Camera, library and files for a note, kept off the editor's body so Swift
+/// can type-check the page.
+private struct NoteAttachmentPickers: ViewModifier {
+    @Binding var photos: [PhotosPickerItem]
+    @Binding var showPhotos: Bool
+    @Binding var showFiles: Bool
+    @Binding var showCamera: Bool
+    let onAdd: (Attachment) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .photosPicker(isPresented: $showPhotos, selection: $photos, maxSelectionCount: 4, matching: .images)
+            .onChange(of: photos) { _, picked in
+                guard !picked.isEmpty else { return }
+                photos = []
+                Task {
+                    for item in picked {
+                        if let attachment = await AttachmentLoader.image(from: item) {
+                            onAdd(attachment)
+                        }
+                    }
+                }
+            }
+            .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+                guard case let .success(urls) = result else { return }
+                for url in urls {
+                    if let attachment = AttachmentLoader.file(at: url) {
+                        onAdd(attachment)
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraPicker(onCapture: onAdd)
+                    .ignoresSafeArea()
+            }
     }
 }
 

@@ -146,4 +146,38 @@ final class NotesFeedTests: XCTestCase {
         XCTAssertTrue(NotesFeed.matches(note, query: "  "))
         XCTAssertFalse(NotesFeed.matches(note, query: "banco"))
     }
+
+    func testANoteCarriesAttachmentsAndAnOlderListingDoesNotWipeThem() throws {
+        let data = Data("hello".utf8)
+        let snapshot = try NotesFeed.snapshot(from: [
+            "available": true, "profile": "inbox", "supports_attachments": true, "notes": [
+                ["id": "n1", "text": "con foto", "attachments": [
+                    ["id": "a1", "name": "clip.txt", "mime": "text/plain",
+                     "kind": "file", "data_b64": data.base64EncodedString()],
+                    ["kind": "mystery", "data_b64": data.base64EncodedString()],
+                ]],
+            ],
+        ])
+        XCTAssertEqual(snapshot.supportsAttachments, true)
+        XCTAssertEqual(snapshot.notes[0].attachments?.map(\.name), ["clip.txt"])
+        XCTAssertEqual(snapshot.notes[0].attachments?.first?.data, data)
+
+        let local = NotesSnapshot(
+            available: true, agent: "inbox",
+            notes: [Note(id: "n1", createdAt: nil, text: "old",
+                         attachments: [Attachment(id: "a1", name: "kept.jpg", mime: "image/jpeg",
+                                                  kind: .image, data: Data("img".utf8))])]
+        )
+        let remote = try NotesFeed.snapshot(from: [
+            "available": true, "notes": [["id": "n1", "text": "from plugin"]],
+        ])
+        let merged = NotesFeed.mergingAttachments(remote: remote, local: local)
+        XCTAssertEqual(merged.notes[0].attachments?.first?.name, "kept.jpg")
+
+        let current = try NotesFeed.snapshot(from: [
+            "available": true, "supports_attachments": true,
+            "notes": [["id": "n1", "text": "from plugin", "attachments": []]],
+        ])
+        XCTAssertNil(NotesFeed.mergingAttachments(remote: current, local: local).notes[0].attachments?.first)
+    }
 }

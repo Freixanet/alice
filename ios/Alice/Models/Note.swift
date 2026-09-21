@@ -25,6 +25,22 @@ struct Note: Identifiable, Hashable, Sendable, Codable {
     var folder: String? = nil
     /// What it is about, as its agent tagged it.
     var tags: [String]? = nil
+    /// Files and photos kept with the note. Nil means the store did not say
+    /// — an older plugin — so a refresh must not wipe what this phone holds.
+    var attachments: [Attachment]? = nil
+}
+
+/// How many bytes of attachments one note may carry, decoded. Matches the plugin.
+enum NoteAttachments {
+    static let maxBytes = 8 * 1024 * 1024
+
+    static func size(_ items: [Attachment]) -> Int {
+        items.reduce(0) { $0 + $1.data.count }
+    }
+
+    static func canHold(_ items: [Attachment]) -> Bool {
+        size(items) <= maxBytes
+    }
 }
 
 struct NotesSnapshot: Equatable, Sendable, Codable {
@@ -36,12 +52,16 @@ struct NotesSnapshot: Equatable, Sendable, Codable {
     /// The store's folders, in the order made. Optional so a snapshot cached
     /// before folders existed still reads.
     var folders: [NoteFolder]? = nil
+    /// The plugin that wrote this listing can store attachments. Absent on a
+    /// cache from before that existed, and on an older plugin.
+    var supportsAttachments: Bool? = nil
 
     /// The same snapshot with other notes (or folders), everything else kept.
     func with(notes: [Note]? = nil, folders: [NoteFolder]? = nil) -> NotesSnapshot {
         NotesSnapshot(
             available: available, agent: agent, notes: notes ?? self.notes,
-            folders: folders ?? self.folders
+            folders: folders ?? self.folders,
+            supportsAttachments: supportsAttachments
         )
     }
 }
@@ -88,7 +108,8 @@ enum NotesFeed {
             folders: (object["folders"] as? [[String: Any]])?.compactMap { row in
                 guard let id = row["id"] as? String, let name = row["name"] as? String else { return nil }
                 return NoteFolder(id: id, name: name)
-            }
+            },
+            supportsAttachments: object["supports_attachments"] as? Bool
         )
     }
 
@@ -111,8 +132,50 @@ enum NotesFeed {
             rich: (row["rich"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             editedAt: date(row["edited_ts"] as? String),
             folder: (row["folder"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-            tags: row["tags"] as? [String]
+            tags: row["tags"] as? [String],
+            attachments: (row["attachments"] as? [[String: Any]]).map { $0.compactMap(attachment(from:)) }
         )
+    }
+
+    static func attachment(from row: [String: Any]) -> Attachment? {
+        guard let id = row["id"] as? String, !id.isEmpty,
+              let kind = (row["kind"] as? String).flatMap(Attachment.Kind.init(rawValue:)),
+              let b64 = row["data_b64"] as? String, let data = Data(base64Encoded: b64), !data.isEmpty
+        else { return nil }
+        return Attachment(
+            id: id,
+            name: (row["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Attachment",
+            mime: (row["mime"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "application/octet-stream",
+            kind: kind,
+            data: data
+        )
+    }
+
+    static func attachmentPayload(_ attachment: Attachment) -> [String: Any] {
+        [
+            "id": attachment.id,
+            "name": attachment.name,
+            "mime": attachment.mime,
+            "kind": attachment.kind.rawValue,
+            "data_b64": attachment.data.base64EncodedString(),
+        ]
+    }
+
+    /// An older plugin has no attachments field. What this phone already holds
+    /// for those notes stays, so a refresh does not throw the photos away.
+    static func mergingAttachments(remote: NotesSnapshot, local: NotesSnapshot?) -> NotesSnapshot {
+        guard let local, remote.supportsAttachments != true else { return remote }
+        let kept = Dictionary(uniqueKeysWithValues: local.notes.compactMap { note -> (String, [Attachment])? in
+            guard let attachments = note.attachments, !attachments.isEmpty else { return nil }
+            return (note.id, attachments)
+        })
+        guard !kept.isEmpty else { return remote }
+        return remote.with(notes: remote.notes.map { note in
+            guard note.attachments == nil, let attachments = kept[note.id] else { return note }
+            var copy = note
+            copy.attachments = attachments
+            return copy
+        })
     }
 
     /// The store writes local time with its offset (`2026-09-14T09:00:00+02:00`).

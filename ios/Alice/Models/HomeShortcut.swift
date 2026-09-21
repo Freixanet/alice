@@ -98,6 +98,37 @@ struct HomeShortcut: Codable, Equatable, Identifiable, Sendable {
         target = try box.decodeIfPresent(Target.self, forKey: .target) ?? .destination("")
     }
 
+    /// The name to show: the live title when that thing still exists, otherwise
+    /// the words saved on the pin so a deleted note does not go blank.
+    func displayedLabel(
+        note: Note? = nil,
+        folderName: String? = nil,
+        botName: String? = nil,
+        conversationTitle: String? = nil
+    ) -> String {
+        func kept(_ fallback: String) -> String {
+            label.isEmpty ? fallback : label
+        }
+        switch target {
+        case .note:
+            let title = note.map(NotesFeed.title(of:)) ?? ""
+            return title.isEmpty ? kept("Note") : title
+        case .noteFolder:
+            let name = folderName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return name.isEmpty ? kept("Folder") : name
+        case .bot:
+            let name = botName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return name.isEmpty ? kept("Agent") : name
+        case .conversation:
+            let title = conversationTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return title.isEmpty ? kept("Chat") : title
+        case let .destination(raw):
+            return AliceDestination.all.first { $0.target.rawValue == raw }?.title ?? kept(raw)
+        case .artifact:
+            return kept("File")
+        }
+    }
+
     /// A pin for a named place in the app, labelled as Search would label it.
     static func place(_ target: AliceDestination.Target) -> HomeShortcut {
         let named = AliceDestination.all.first { $0.target == target }

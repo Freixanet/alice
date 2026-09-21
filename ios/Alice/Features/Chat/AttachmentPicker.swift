@@ -162,6 +162,8 @@ struct AttachmentChips: View {
     @Environment(\.colorScheme) private var scheme
     let attachments: [Attachment]
     let onRemove: (Attachment) -> Void
+    /// Composer glass insets the chips; a note page does not.
+    var composerInsets = true
 
     private let tile: CGFloat = 120
 
@@ -181,12 +183,8 @@ struct AttachmentChips: View {
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
-        // The composer insets its contents by 16 across and 12 down, which
-        // left the squares 20pt from its left edge and 12 from its top — a
-        // corner that read as lopsided. Pulling back against those insets sets
-        // both to 8. The text stays where it is; only this row moves.
-        .padding(.leading, -8)
-        .padding(.top, -4)
+        .padding(.leading, composerInsets ? -8 : 0)
+        .padding(.top, composerInsets ? -4 : 0)
     }
 
     @ViewBuilder

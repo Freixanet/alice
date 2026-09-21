@@ -3527,7 +3527,7 @@ final class AppStore {
     func refreshNotes() async throws {
         do {
             let snap = try await dashboard.notes()
-            notesSnapshot = snap
+            notesSnapshot = NotesFeed.mergingAttachments(remote: snap, local: notesSnapshot)
             notesAccess = .from(snapshot: snap)
             await moveLegacyFoldersToStore()
         } catch is CancellationError {
@@ -3578,21 +3578,26 @@ final class AppStore {
 
     /// Saves an edited note, shown at once. A save Hermes refuses puts the
     /// note back as it was and throws, so the editor can say so.
-    func editNote(_ note: Note, text: String, rich: String?) async throws {
+    func editNote(_ note: Note, text: String, rich: String?, attachments: [Attachment]? = nil) async throws {
         func put(_ replacement: Note) {
             guard let current = notesSnapshot else { return }
             notesSnapshot = current.with(notes: current.notes.map { $0.id == replacement.id ? replacement : $0 })
         }
+        let wanted = attachments ?? note.attachments
         let optimistic = Note(
             id: note.id, createdAt: note.createdAt, text: text, urls: note.urls,
             types: note.types, topics: note.topics, actions: note.actions,
             openQuestions: note.openQuestions, summary: note.summary,
             processed: note.processed, rich: rich, editedAt: Date(),
-            folder: note.folder, tags: note.tags
+            folder: note.folder, tags: note.tags, attachments: wanted
         )
         put(optimistic)
         do {
-            put(try await dashboard.editNote(id: note.id, text: text, rich: rich))
+            var saved = try await dashboard.editNote(
+                id: note.id, text: text, rich: rich, attachments: wanted
+            )
+            if saved.attachments == nil { saved.attachments = wanted }
+            put(saved)
         } catch {
             put(note)
             throw error
@@ -3603,9 +3608,10 @@ final class AppStore {
     /// not take is taken off the list again, and the error thrown so the words
     /// go back into the field.
     @discardableResult
-    func addNote(_ text: String) async throws -> Note {
+    func addNote(_ text: String, attachments: [Attachment]? = nil) async throws -> Note {
         let placeholder = Note(
-            id: "local-\(UUID().uuidString)", createdAt: Date(), text: text, sending: true
+            id: "local-\(UUID().uuidString)", createdAt: Date(), text: text, sending: true,
+            attachments: attachments
         )
         if let current = notesSnapshot {
             notesSnapshot = current.with(notes: [placeholder] + current.notes)
@@ -3617,7 +3623,8 @@ final class AppStore {
             notesSnapshot = current.with(notes: notes)
         }
         do {
-            let saved = try await dashboard.addNote(text)
+            var saved = try await dashboard.addNote(text, attachments: attachments)
+            if saved.attachments == nil { saved.attachments = attachments }
             replacing(saved)
             return saved
         } catch {
@@ -5235,6 +5242,30 @@ final class AppStore {
         homeShortcuts.contains { $0.target == target }
     }
 
+    /// The pin's current name. Saved labels are a fallback for something gone.
+    func homeShortcutLabel(_ shortcut: HomeShortcut) -> String {
+        switch shortcut.target {
+        case let .note(id):
+            return shortcut.displayedLabel(note: notesSnapshot?.notes.first { $0.id == id })
+        case let .noteFolder(id):
+            return shortcut.displayedLabel(folderName: noteFolders.first { $0.id == id }?.name)
+        case let .bot(name):
+            let known = cachedBots.contains {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+            } || conversations.contains {
+                $0.botName?.caseInsensitiveCompare(name) == .orderedSame
+            }
+            return shortcut.displayedLabel(botName: known ? botCurrentName(for: name) : nil)
+        case let .conversation(id):
+            guard let chat = conversations.first(where: { $0.id == id }) else {
+                return shortcut.displayedLabel()
+            }
+            return shortcut.displayedLabel(conversationTitle: displayTitle(for: chat))
+        case .destination, .artifact:
+            return shortcut.displayedLabel()
+        }
+    }
+
     func addHomeShortcut(_ shortcut: HomeShortcut) {
         guard !hasHomeShortcut(matching: shortcut.target) else { return }
         homeShortcuts.append(shortcut)
@@ -5511,9 +5542,9 @@ final class AppStore {
 
     /// A copy of a note, styling and folder included.
     func duplicate(_ note: Note) async throws {
-        var copy = try await addNote(note.text)
+        var copy = try await addNote(note.text, attachments: note.attachments)
         if let rich = note.rich {
-            try await editNote(copy, text: note.text, rich: rich)
+            try await editNote(copy, text: note.text, rich: rich, attachments: note.attachments)
             copy.rich = rich
         }
         if let folder = noteFolderOf[note.id] { await put(copy.id, in: .folder(folder)) }
@@ -5763,9 +5794,9 @@ final class AppStore {
     /// A deleted note back in its store and its folder. The store gives it a
     /// new identity and today's date: it is written again, not undeleted.
     func recover(_ deleted: DeletedNote) async throws {
-        var created = try await addNote(deleted.note.text)
+        var created = try await addNote(deleted.note.text, attachments: deleted.note.attachments)
         if let rich = deleted.note.rich {
-            try await editNote(created, text: deleted.note.text, rich: rich)
+            try await editNote(created, text: deleted.note.text, rich: rich, attachments: deleted.note.attachments)
             created.rich = rich
         }
         if let folder = deleted.folderID, noteFolders.contains(where: { $0.id == folder }) {

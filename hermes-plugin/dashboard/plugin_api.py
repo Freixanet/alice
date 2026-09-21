@@ -763,6 +763,8 @@ NOTE_MAX_BYTES = 64_000
 NOTES_LIMIT_MAX = 2000
 # The styled copy of an edited note, as base64 RTF. Generous for formatting, not for media.
 NOTE_RICH_MAX_BYTES = 2_000_000
+# Decoded bytes across every attachment on one note. The JSON around them is extra.
+NOTE_ATTACHMENTS_MAX_BYTES = 8 * 1024 * 1024
 _URL = re.compile(r"https?://[^\s<>\"')\]]+")
 
 
@@ -856,7 +858,73 @@ def _note_payload(entry: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any
         # Written in Alice's editor: the styled copy, and when it was last changed.
         "rich": str(entry.get("rich_rtf") or "") or None,
         "edited_ts": str(entry.get("edited_ts") or "") or None,
+        "attachments": _payload_attachments(entry.get("attachments")),
     }
+
+
+def _payload_attachments(raw: Any) -> List[Dict[str, Any]]:
+    """The attachments a note carries, or none. Unknown shapes are dropped, not half-shown."""
+    if not isinstance(raw, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "")
+        if kind not in ("image", "file"):
+            continue
+        ident = str(item.get("id") or "").strip()
+        b64 = str(item.get("data_b64") or "")
+        if not ident or not b64:
+            continue
+        out.append({
+            "id": ident,
+            "name": str(item.get("name") or "Attachment"),
+            "mime": str(item.get("mime") or "application/octet-stream"),
+            "kind": kind,
+            "data_b64": b64,
+        })
+    return out
+
+
+def _normalize_attachments(raw: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+    """None means the client did not send the field, so what is stored stays.
+
+    An empty list clears them. Anything else is checked: readable base64, image or
+    file, and at most ``NOTE_ATTACHMENTS_MAX_BYTES`` decoded across the note.
+    """
+    if raw is None:
+        return None
+    out: List[Dict[str, Any]] = []
+    total = 0
+    for item in raw:
+        kind = str(item.get("kind") or "")
+        if kind not in ("image", "file"):
+            raise HTTPException(status_code=400, detail="An attachment must be an image or a file.")
+        ident = str(item.get("id") or "").strip() or secrets.token_hex(8)
+        name = str(item.get("name") or "Attachment").strip()[:200] or "Attachment"
+        mime = str(item.get("mime") or "application/octet-stream").strip()[:120]
+        b64 = str(item.get("data_b64") or "")
+        try:
+            data = base64.b64decode(b64, validate=True)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="An attachment is not readable.") from exc
+        if not data:
+            raise HTTPException(status_code=400, detail="An attachment is empty.")
+        total += len(data)
+        if total > NOTE_ATTACHMENTS_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Those attachments are too large.")
+        out.append({"id": ident, "name": name, "mime": mime, "kind": kind, "data_b64": b64})
+    return out
+
+
+def _store_attachments(row: Dict[str, Any], attachments: Optional[List[Dict[str, Any]]]) -> None:
+    if attachments is None:
+        return
+    if attachments:
+        row["attachments"] = attachments
+    else:
+        row.pop("attachments", None)
 
 
 def _notes_snapshot(limit: int) -> Dict[str, Any]:
@@ -879,7 +947,7 @@ def _notes_snapshot(limit: int) -> Dict[str, Any]:
         if note["folder"] not in known:
             note["folder"] = None
     return {"available": True, "profile": profile, "total": len(entries),
-            "folders": folders, "notes": notes}
+            "folders": folders, "notes": notes, "supports_attachments": True}
 
 
 def _note_folders(root: Path) -> List[Dict[str, Any]]:
@@ -921,17 +989,29 @@ def _store_or_404() -> Tuple[str, Path]:
     return store
 
 
+class _NoteAttachment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    mime: str
+    kind: str
+    data_b64: str
+
+
 class _NewNote(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str
+    attachments: Optional[List[_NoteAttachment]] = None
 
 
-def _add_note(text: str) -> Dict[str, Any]:
+def _add_note(text: str, attachments: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     if not text.strip():
         raise HTTPException(status_code=400, detail="A note needs some text.")
     if len(text.encode("utf-8")) > NOTE_MAX_BYTES:
         raise HTTPException(status_code=413, detail="That note is too long.")
+    stored = _normalize_attachments(attachments)
     store = _notes_store()
     if store is None:
         raise HTTPException(status_code=404, detail="No agent on this Hermes keeps a notes store.")
@@ -956,6 +1036,30 @@ def _add_note(text: str) -> Dict[str, Any]:
     entry = next((row for row in reversed(_read_jsonl(root / "entries.jsonl")) if row.get("id") == saved), None)
     if entry is None:
         entry = {"id": saved, "ts": reply.get("ts"), "text": text, "heuristic_types": reply.get("types")}
+    if stored:
+        path = root / "entries.jsonl"
+        try:
+            with path.open("r+", encoding="utf-8") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                lines = handle.read().splitlines(keepends=True)
+                for index, line in enumerate(lines):
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(row, dict) or str(row.get("id")) != saved:
+                        continue
+                    _store_attachments(row, stored)
+                    lines[index] = json.dumps(row, ensure_ascii=False) + "\n"
+                    entry = row
+                    break
+                handle.seek(0)
+                handle.write("".join(lines))
+                handle.truncate()
+                handle.flush()
+                os.fsync(handle.fileno())
+        except FileNotFoundError:
+            _store_attachments(entry, stored)
     return {"ok": True, "profile": profile, "note": _note_payload(entry, {})}
 
 
@@ -964,9 +1068,13 @@ class _EditedNote(BaseModel):
 
     text: str
     rich: Optional[str] = None
+    attachments: Optional[List[_NoteAttachment]] = None
 
 
-def _edit_note(note_id: str, text: str, rich: Optional[str]) -> Dict[str, Any]:
+def _edit_note(
+    note_id: str, text: str, rich: Optional[str],
+    attachments: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Rewrites one note in place: its plain text, which agents read, and its styled copy.
 
     Deliberately not append-only — the person chose to edit notes rather than keep versions. The
@@ -984,6 +1092,7 @@ def _edit_note(note_id: str, text: str, rich: Optional[str]) -> Dict[str, Any]:
             base64.b64decode(rich, validate=True)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="The note's formatting is not readable.") from exc
+    stored = _normalize_attachments(attachments)
     store = _notes_store()
     if store is None:
         raise HTTPException(status_code=404, detail="No agent on this Hermes keeps a notes store.")
@@ -1012,6 +1121,7 @@ def _edit_note(note_id: str, text: str, rich: Optional[str]) -> Dict[str, Any]:
                     row["rich_rtf"] = rich
                 else:
                     row.pop("rich_rtf", None)
+                _store_attachments(row, stored)
                 lines[index] = json.dumps(row, ensure_ascii=False) + "\n"
                 updated = row
                 break
@@ -1090,7 +1200,8 @@ async def get_notes(limit: int = 500) -> Dict[str, Any]:
 
 @router.post("/notes")
 async def add_note(body: _NewNote) -> Dict[str, Any]:
-    return await asyncio.to_thread(_add_note, body.text)
+    atts = None if body.attachments is None else [item.model_dump() for item in body.attachments]
+    return await asyncio.to_thread(_add_note, body.text, atts)
 
 
 class _FolderName(BaseModel):
@@ -1151,7 +1262,8 @@ async def delete_note(note_id: str) -> Dict[str, Any]:
 
 @router.put("/notes/{note_id}")
 async def edit_note(note_id: str, body: _EditedNote) -> Dict[str, Any]:
-    return await asyncio.to_thread(_edit_note, note_id, body.text, body.rich)
+    atts = None if body.attachments is None else [item.model_dump() for item in body.attachments]
+    return await asyncio.to_thread(_edit_note, note_id, body.text, body.rich, atts)
 
 
 # --- Shared agent create / rename (Alice form and Agent Maker) -----------------------------

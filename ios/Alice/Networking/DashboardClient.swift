@@ -2376,11 +2376,16 @@ extension DashboardClient {
     }
 
     /// Adds a note exactly as written, through the store's own writer.
-    func addNote(_ text: String) async throws -> Note {
-        let object = try await send("POST", "api/plugins/alice/notes", ["text": text])
-        guard let row = object["note"] as? [String: Any], let note = NotesFeed.note(from: row)
-        else { throw Failure.unreadable }
-        return note
+    func addNote(_ text: String, attachments: [Attachment]? = nil) async throws -> Note {
+        var body: [String: Any] = ["text": text]
+        if let attachments {
+            body["attachments"] = attachments.map(NotesFeed.attachmentPayload)
+        }
+        do {
+            return try note(from: await send("POST", "api/plugins/alice/notes", body))
+        } catch Failure.http(422, _) where attachments != nil {
+            return try note(from: await send("POST", "api/plugins/alice/notes", ["text": text]))
+        }
     }
 
     /// Makes a folder in the notes store; one of that name already there is returned.
@@ -2413,13 +2418,29 @@ extension DashboardClient {
     }
 
     /// Rewrites a note in its agent's store: the plain words, and the styled
-    /// copy as base64 RTF (nil drops it).
-    func editNote(id: String, text: String, rich: String?) async throws -> Note {
+    /// copy as base64 RTF (nil drops it). Attachments replace what is stored;
+    /// omitting them leaves the stored ones.
+    func editNote(
+        id: String, text: String, rich: String?, attachments: [Attachment]? = nil
+    ) async throws -> Note {
         var body: [String: Any] = ["text": text]
         if let rich { body["rich"] = rich }
-        let object = try await send(
-            "PUT", "api/plugins/alice/notes/\(Self.pathSegment(id))", body
-        )
+        if let attachments {
+            body["attachments"] = attachments.map(NotesFeed.attachmentPayload)
+        }
+        do {
+            return try note(from: await send(
+                "PUT", "api/plugins/alice/notes/\(Self.pathSegment(id))", body
+            ))
+        } catch Failure.http(422, _) where attachments != nil {
+            body.removeValue(forKey: "attachments")
+            return try note(from: await send(
+                "PUT", "api/plugins/alice/notes/\(Self.pathSegment(id))", body
+            ))
+        }
+    }
+
+    private func note(from object: [String: Any]) throws -> Note {
         guard let row = object["note"] as? [String: Any], let note = NotesFeed.note(from: row)
         else { throw Failure.unreadable }
         return note

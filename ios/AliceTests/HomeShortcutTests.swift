@@ -112,6 +112,37 @@ final class HomeShortcutTests: XCTestCase {
         XCTAssertEqual(store.conversations.map(\.id), ["home", "radar"])
     }
 
+    func testANotePinShowsTheNotesCurrentTitle() {
+        let pin = HomeShortcut(
+            label: "Old title", symbol: "note.text", target: .note("n1")
+        )
+        let note = Note(id: "n1", createdAt: nil, text: "New title\nThe rest of the note")
+        XCTAssertEqual(pin.displayedLabel(note: note), "New title")
+        XCTAssertEqual(pin.displayedLabel(), "Old title")
+    }
+
+    func testAFolderPinShowsTheFoldersCurrentName() {
+        let pin = HomeShortcut(label: "Work", symbol: "folder", target: .noteFolder("work"))
+        XCTAssertEqual(pin.displayedLabel(folderName: "Projects"), "Projects")
+        XCTAssertEqual(pin.displayedLabel(), "Work")
+    }
+
+    func testHomeReadsARenamedNoteFromTheStore() throws {
+        let suite = "alice.home-shortcuts.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let snap = NotesSnapshot(
+            available: true, agent: "inbox",
+            notes: [Note(id: "n1", createdAt: nil, text: "After the rename")]
+        )
+        defaults.set(try JSONEncoder().encode(snap), forKey: "alice.notes.snapshot")
+        let store = AppStore(defaults: defaults)
+        store.addHomeShortcut(HomeShortcut(
+            label: "Before", symbol: "note.text", target: .note("n1")
+        ))
+        XCTAssertEqual(store.homeShortcutLabel(store.homeShortcuts[0]), "After the rename")
+    }
+
     func testASavedPinIsThereAfterRelaunch() throws {
         let suite = "alice.home-shortcuts.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

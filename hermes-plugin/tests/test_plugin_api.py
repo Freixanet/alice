@@ -305,6 +305,41 @@ class PluginAPITests(unittest.TestCase):
         self.assertEqual([note["id"] for note in read["notes"]], ["n2", "n1"])
         self.assertFalse(read["notes"][0]["processed"])
 
+    def test_a_note_keeps_attachments_and_omitting_them_leaves_them(self):
+        import base64
+        import tempfile
+
+        payload = {
+            "id": "a1", "name": "clip.txt", "mime": "text/plain",
+            "kind": "file", "data_b64": base64.b64encode(b"hello").decode(),
+        }
+        with tempfile.TemporaryDirectory() as root:
+            profile, store = self.notes_profile(root)
+            with mock.patch.object(self.api, "_list_profiles", return_value=[profile]):
+                saved = self.client.post(
+                    "/api/plugins/alice/notes",
+                    json={"text": "con archivo", "attachments": [payload]},
+                )
+                self.assertEqual(saved.status_code, 200, saved.text)
+                self.assertEqual(saved.json()["note"]["attachments"][0]["name"], "clip.txt")
+                edited = self.client.put("/api/plugins/alice/notes/n3", json={"text": "con archivo, editado"})
+                self.assertEqual(edited.status_code, 200, edited.text)
+                self.assertEqual(edited.json()["note"]["attachments"][0]["id"], "a1")
+                cleared = self.client.put(
+                    "/api/plugins/alice/notes/n3",
+                    json={"text": "sin archivo", "attachments": []},
+                )
+                self.assertEqual(cleared.json()["note"]["attachments"], [])
+                with mock.patch.object(self.api, "NOTE_ATTACHMENTS_MAX_BYTES", 16):
+                    huge = self.client.put("/api/plugins/alice/notes/n3", json={
+                        "text": "grande",
+                        "attachments": [{**payload, "data_b64": base64.b64encode(b"x" * 32).decode()}],
+                    })
+                self.assertEqual(huge.status_code, 413)
+                listed = self.client.get("/api/plugins/alice/notes").json()
+        self.assertTrue(listed["supports_attachments"])
+        self.assertEqual(listed["notes"][0]["attachments"], [])
+
     def test_a_deleted_note_goes_with_its_reading_and_relations(self):
         import tempfile
 

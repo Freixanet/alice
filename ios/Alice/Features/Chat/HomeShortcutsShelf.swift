@@ -8,59 +8,32 @@ struct HomeShortcutsShelf: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
 
-    @State private var editing = false
     @State private var draggedID: String?
     @State private var haptic = UIImpactFeedbackGenerator(style: .light)
 
     var body: some View {
         let items = store.homeShortcuts
-        VStack(spacing: 14) {
-            HStack {
-                Spacer(minLength: 0)
-                Button(editing ? "Done" : "Edit") {
-                    haptic.impactOccurred()
-                    withAnimation(.snappy(duration: 0.2)) { editing.toggle() }
-                }
-                .font(.subheadline.weight(.medium))
-                .accessibilityIdentifier("home.shortcuts.edit")
-            }
-
-            VStack(spacing: 18) {
-                ForEach(Array(stride(from: 0, to: items.count, by: 3)), id: \.self) { start in
-                    HStack(spacing: 16) {
-                        ForEach(items[start..<min(start + 3, items.count)]) { shortcut in
-                            tile(shortcut)
-                        }
+        VStack(spacing: 18) {
+            ForEach(Array(stride(from: 0, to: items.count, by: 3)), id: \.self) { start in
+                HStack(spacing: 16) {
+                    ForEach(items[start..<min(start + 3, items.count)]) { shortcut in
+                        tile(shortcut)
                     }
                 }
             }
-            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 8)
         .accessibilityIdentifier("home.shortcuts")
     }
 
     private func tile(_ shortcut: HomeShortcut) -> some View {
         Button {
-            if editing {
-                store.removeHomeShortcut(shortcut.id)
-            } else {
-                store.openHomeShortcut(shortcut)
-            }
+            store.openHomeShortcut(shortcut)
         } label: {
             VStack(spacing: 8) {
-                ZStack(alignment: .topTrailing) {
-                    icon(for: shortcut)
-                    if editing {
-                        Image(systemName: "minus.circle.fill")
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, Palette.danger(scheme))
-                            .font(.system(size: 18))
-                            .offset(x: 6, y: -6)
-                            .accessibilityHidden(true)
-                    }
-                }
-                Text(shortcut.label)
+                icon(for: shortcut)
+                Text(store.homeShortcutLabel(shortcut))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -72,7 +45,7 @@ struct HomeShortcutsShelf: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("home.shortcut.\(shortcut.id)")
-        .accessibilityLabel(shortcut.label)
+        .accessibilityLabel(store.homeShortcutLabel(shortcut))
         .contextMenu {
             Button("Remove from Home", systemImage: "house", role: .destructive) {
                 store.removeHomeShortcut(shortcut.id)
@@ -114,7 +87,7 @@ struct HomeShortcutsShelf: View {
     private func tilePreview(_ shortcut: HomeShortcut) -> some View {
         VStack(spacing: 8) {
             icon(for: shortcut)
-            Text(shortcut.label)
+            Text(store.homeShortcutLabel(shortcut))
                 .font(.caption.weight(.medium))
                 .lineLimit(1)
         }
