@@ -91,15 +91,12 @@ private struct ChatScreenContent: View, Equatable {
     }
 
     var body: some View {
-        // Notes and Agents cover this screen. The transcript used to stay
-        // built underneath and redraw whenever any conversation changed, so
-        // those screens stalled with the person nowhere near the chat.
-        // Coming back rebuilds it at the latest message.
-        if store.showingNotes || store.showingBots {
-            Palette.background(scheme).ignoresSafeArea()
-        } else {
-            liveChat
-        }
+        // Kept built under Notes and Agents. Swapping it for a blank page
+        // while they covered it emptied Home in full view as a page slid in,
+        // and rebuilt all of it the moment one slid away. What made it worth
+        // tearing down — every change to any chat redrew it — is gone: it
+        // reads only the chat on screen (`AppStore.shownConversation`).
+        liveChat
     }
 
     private var liveChat: some View {

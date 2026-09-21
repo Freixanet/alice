@@ -342,11 +342,13 @@ struct RootView: View {
         closingBots = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         store.botsExitLeading = exitLeading
+        let before = store.activeID
         settle()
         let width = max(screenWidth, 1)
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
-            botsExitOffset = exitLeading ? -width : width
-        }
+        // A different chat under the page is laid out first, on a frame of
+        // its own. Built in the same frame the slide started, it cost the
+        // slide its first frames: the page jumped rather than moved.
+        let lead: Duration = store.activeID == before ? .zero : .milliseconds(17)
         // SwiftUI's animation completion has occasionally not been delivered
         // on a physical device, leaving the fully translated Bots layer alive
         // above Home. Retire it independently of the renderer after the same
@@ -354,6 +356,10 @@ struct RootView: View {
         botsCloseTask?.cancel()
         botsCloseTask = Task { @MainActor in
             do {
+                if lead > .zero { try await Task.sleep(for: lead) }
+                withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+                    botsExitOffset = exitLeading ? -width : width
+                }
                 try await Task.sleep(for: .milliseconds(320))
             } catch {
                 return
