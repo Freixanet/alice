@@ -7,17 +7,16 @@ struct AliceAvatar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ZStack {
-                // The disc is painted, not stroked: cream on near-black, white
-                // on the light paper — the same circle, without a drawn rim.
-                Circle()
-                    .fill(scheme == .dark ? Color(hex: 0xFBF6F0) : Color.white)
-                Image("AliceAvatar")
-                    .resizable()
-                    .scaledToFit()
-            }
-            .frame(width: size, height: size)
-            .clipShape(.circle)
+            Image("AliceAvatar")
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .clipShape(.circle)
+                // The disc is cream on cream in the light, so the edge has
+                // to be drawn; in the dark the same line is just the rim.
+                .overlay {
+                    Circle().strokeBorder(Palette.border(scheme), lineWidth: 0.75)
+                }
 
             Text("Alice")
                 .font(.caption.weight(.semibold))
