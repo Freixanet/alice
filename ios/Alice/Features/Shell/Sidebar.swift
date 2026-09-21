@@ -1,11 +1,12 @@
 import SwiftUI
 
 /// Everyday navigation and conversation history. Configuration lives in Settings.
-struct Sidebar: View {
+struct Sidebar: View, Equatable {
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.width == rhs.width }
+
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let width: CGFloat
-    let surfaceProgress: CGFloat
     let onDismiss: () -> Void
 
     @State private var showSearch = false
@@ -35,11 +36,7 @@ struct Sidebar: View {
             // rather than vanishing at a hard line.
             ZStack(alignment: .bottom) {
                 SidebarList(width: width, onDismiss: onDismiss)
-                VStack(spacing: 0) {
-                    topFade.allowsHitTesting(false)
-                    Spacer(minLength: 0)
-                    bottomFade.allowsHitTesting(false)
-                }
+                    .equatable()
                 footer
             }
         }
@@ -47,7 +44,7 @@ struct Sidebar: View {
         .background {
             ZStack {
                 Palette.background(scheme)
-                Palette.card(scheme).opacity(surfaceProgress)
+                Palette.card(scheme)
             }
             .ignoresSafeArea()
         }
@@ -176,43 +173,7 @@ struct Sidebar: View {
         .padding(.bottom, 6)
     }
 
-    /// The existing edge fade, drawn over the list instead of masking it so
-    /// the rows do not rebuild with the drawer gesture.
     static let topFadeHeight: CGFloat = 22
-
-    private var topFade: some View {
-        LinearGradient(
-            stops: [
-                .init(color: Palette.background(scheme), location: 0),
-                .init(color: Palette.background(scheme).opacity(0.82), location: 0.22),
-                .init(color: Palette.background(scheme).opacity(0.45), location: 0.48),
-                .init(color: Palette.background(scheme).opacity(0.15), location: 0.74),
-                .init(color: .clear, location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: Self.topFadeHeight)
-    }
-
-    private var bottomFade: some View {
-        LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0),
-                .init(color: Palette.background(scheme).opacity(0.08), location: 0.18),
-                .init(color: Palette.background(scheme).opacity(0.24), location: 0.34),
-                .init(color: Palette.background(scheme).opacity(0.46), location: 0.48),
-                .init(color: Palette.background(scheme).opacity(0.68), location: 0.61),
-                .init(color: Palette.background(scheme).opacity(0.85), location: 0.73),
-                .init(color: Palette.background(scheme).opacity(0.95), location: 0.85),
-                .init(color: Palette.background(scheme).opacity(0.99), location: 0.94),
-                .init(color: Palette.background(scheme), location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: 240)
-    }
 
     /// The initial to show on the settings button, or nil when there is
     /// nothing to go on.
@@ -386,7 +347,9 @@ struct Sidebar: View {
 }
 
 /// Conversation rows only: nothing here reads the drawer gesture.
-private struct SidebarList: View {
+private struct SidebarList: View, Equatable {
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.width == rhs.width }
+
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let width: CGFloat
@@ -418,6 +381,7 @@ private struct SidebarList: View {
             .padding(.horizontal, 12)
             .padding(.top, Sidebar.topFadeHeight)
         }
+        .mask(edgeFade)
         .task(id: store.dashboardReady) { await loadProjects() }
         .alert("Rename chat", isPresented: .constant(renaming != nil)) {
             TextField("Title", text: $newTitle)
@@ -457,6 +421,44 @@ private struct SidebarList: View {
             }
         } message: {
             Text("Are you sure you want to delete this chat? This cannot be undone.")
+        }
+    }
+
+    /// Same fade the list had before B10: a mask, not a painted overlay, so
+    /// pinned and recents keep the drawer colour.
+    private var edgeFade: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black.opacity(0.18), location: 0.22),
+                    .init(color: .black.opacity(0.55), location: 0.48),
+                    .init(color: .black.opacity(0.85), location: 0.74),
+                    .init(color: .black, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: Sidebar.topFadeHeight)
+
+            Color.black
+
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black.opacity(0.99), location: 0.18),
+                    .init(color: .black.opacity(0.95), location: 0.34),
+                    .init(color: .black.opacity(0.85), location: 0.48),
+                    .init(color: .black.opacity(0.68), location: 0.61),
+                    .init(color: .black.opacity(0.46), location: 0.73),
+                    .init(color: .black.opacity(0.24), location: 0.85),
+                    .init(color: .black.opacity(0.08), location: 0.94),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 240)
         }
     }
 

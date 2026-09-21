@@ -37,9 +37,9 @@ struct RootView: View {
                 // aside, which is what the drawer is for.
                 Sidebar(
                     width: drawerWidth,
-                    surfaceProgress: progress,
                     onDismiss: { setDrawer(false) }
                 )
+                    .equatable()
                     .frame(width: drawerWidth)
                     .safeAreaPadding(EdgeInsets(
                         top: proxy.safeAreaInsets.top,
