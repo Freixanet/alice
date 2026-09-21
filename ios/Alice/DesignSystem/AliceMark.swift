@@ -5,11 +5,16 @@ import SwiftUI
 struct ChatHeaderAvatar<Face: View>: View {
     var size: CGFloat = 72
     let name: String
+    var nameColor: Color = .primary
     var face: Face
 
-    init(size: CGFloat = 72, name: String, @ViewBuilder face: () -> Face) {
+    init(
+        size: CGFloat = 72, name: String, nameColor: Color = .primary,
+        @ViewBuilder face: () -> Face
+    ) {
         self.size = size
         self.name = name
+        self.nameColor = nameColor
         self.face = face()
     }
 
@@ -27,6 +32,7 @@ struct ChatHeaderAvatar<Face: View>: View {
 
             Text(name)
                 .font(.caption.weight(.semibold))
+                .foregroundStyle(nameColor)
                 .lineLimit(1)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)

@@ -276,7 +276,10 @@ private struct ChatScreenContent: View, Equatable {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
                 } label: {
-                    ChatHeaderAvatar(name: store.botCurrentName(for: bot)) {
+                    ChatHeaderAvatar(
+                        name: store.botCurrentName(for: bot),
+                        nameColor: store.mark(for: bot).nameColor(scheme)
+                    ) {
                         BotMarkView(mark: store.mark(for: bot), size: 72)
                     }
                 }

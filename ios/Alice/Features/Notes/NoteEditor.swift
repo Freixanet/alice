@@ -169,6 +169,15 @@ struct NoteEditor: View {
         }
     }
 
+    private var saveTint: Color {
+        switch saveState {
+        case .saving: Palette.info(scheme)
+        case .retrying: Palette.warning(scheme)
+        case .failed: Palette.danger(scheme)
+        case .saved: .secondary
+        }
+    }
+
     private var saveCaption: some View {
         Color.clear
             .frame(height: 28)
@@ -178,7 +187,7 @@ struct NoteEditor: View {
                 if let caption = saveState.caption {
                     Text(caption)
                         .font(.caption)
-                        .foregroundStyle(saveState.blocksLeavingQuietly ? Palette.warning(scheme) : .secondary)
+                        .foregroundStyle(saveTint)
                         .padding(.horizontal, 16)
                         .transition(.opacity)
                         .accessibilityIdentifier("note.saveState")

@@ -2174,7 +2174,7 @@ struct BotDetail: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack(spacing: 8) {
                                     Circle()
-                                        .fill(RoutinePresentation.colour(routine))
+                                        .fill(RoutinePresentation.colour(routine, scheme))
                                         .frame(width: 6, height: 6)
                                     Text(routine.name).font(.subheadline).lineLimit(1)
                                     Spacer(minLength: 8)

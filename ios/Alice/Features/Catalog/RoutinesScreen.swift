@@ -122,7 +122,7 @@ struct RoutinesScreen: View {
     private func routineRow(_ routine: JobRow) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
-                Circle().fill(RoutinePresentation.colour(routine)).frame(width: 7, height: 7)
+                Circle().fill(RoutinePresentation.colour(routine, scheme)).frame(width: 7, height: 7)
                 Text(routine.name).font(.subheadline.weight(.medium)).lineLimit(1)
                 Spacer(minLength: 8)
                 Text(profileLabel(routine.profile))
@@ -187,13 +187,13 @@ struct RoutinesScreen: View {
 }
 
 enum RoutinePresentation {
-    static func colour(_ routine: JobRow) -> Color {
+    static func colour(_ routine: JobRow, _ scheme: ColorScheme) -> Color {
         if routine.isPaused || routine.isCompleted { return .secondary.opacity(0.5) }
-        if routine.effectiveState == "error" { return .red }
+        if routine.effectiveState == "error" { return Palette.danger(scheme) }
         switch routine.lastStatus {
-        case "error": return .red
-        case "delivery_failed", "blocked_config": return .orange
-        default: return .green
+        case "error": return Palette.danger(scheme)
+        case "delivery_failed", "blocked_config": return Palette.warning(scheme)
+        default: return Palette.success(scheme)
         }
     }
 

@@ -12,12 +12,14 @@ struct BotMark: Codable, Hashable, Sendable {
     var colour: Int
     var shape: Int
 
-    static let colours: [Color] = [
-        Color(hex: 0xF5F3EE), Color(hex: 0x9C6B4A), Color(hex: 0xE5484D),
-        Color(hex: 0xE8722B), Color(hex: 0xE5A93B), Color(hex: 0x5BBE7C),
-        Color(hex: 0x4FB5A5), Color(hex: 0x3B82F6), Color(hex: 0x8B5CF6),
-        Color(hex: 0xEC4899), Color(hex: 0x8A8A8E),
+    static let colourHexes: [UInt32] = [
+        0xF5F3EE, 0x9C6B4A, 0xE5484D,
+        0xE8722B, 0xE5A93B, 0x5BBE7C,
+        0x4FB5A5, 0x3B82F6, 0x8B5CF6,
+        0xEC4899, 0x8A8A8E,
     ]
+
+    static let colours: [Color] = colourHexes.map { Color(hex: $0) }
 
     /// The five faces an agent can wear. Raw values start at 1 so a saved
     /// `shape` of 0 still means "not chosen" after older marks, which always
@@ -53,6 +55,13 @@ struct BotMark: Codable, Hashable, Sendable {
     }
 
     var color: Color { Self.colours[colour % Self.colours.count] }
+
+    /// The same hue, dark enough on light glass and light enough on dark
+    /// glass that the name under a portrait stays readable.
+    func nameColor(_ scheme: ColorScheme) -> Color {
+        let hex = Self.colourHexes[colour % Self.colourHexes.count]
+        return Color(hex: LegibleColor.ink(hex, on: scheme))
+    }
 
     var portrait: Portrait {
         Portrait(rawValue: shape) ?? .athena

@@ -882,7 +882,7 @@ private struct RunApprovalCard: View {
             if let error = approval.error {
                 Text(error)
                     .font(.caption)
-                    .foregroundStyle(Color.red)
+                    .foregroundStyle(Palette.danger(scheme))
             }
         }
         .padding(12)
