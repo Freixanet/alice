@@ -73,4 +73,49 @@ final class NoteFolderTreeTests: XCTestCase {
         XCTAssertNil(after["notes"])
         XCTAssertEqual(after["deep"], "notes")
     }
+
+    func testUnknownIdsInTheSavedOrderAreSkipped() {
+        let shown = NoteFolderTree.ordered(
+            folders, pinned: [], order: ["gone", "home", "work", "also-gone"]
+        )
+        XCTAssertEqual(shown.map(\.id), ["home", "work", "notes", "deep"])
+    }
+
+    func testPinnedFoldersFloatFirstThenTheSavedOrder() {
+        let shown = NoteFolderTree.ordered(
+            folders, pinned: ["deep", "home"], order: ["notes", "home", "work"]
+        )
+        XCTAssertEqual(shown.map(\.id), ["home", "deep", "notes", "work"])
+    }
+
+    func testNameSortStillFloatsPinsThenSortsTheRest() {
+        let shown = NoteFolderTree.ordered(
+            folders, pinned: ["deep"], order: ["work"], sort: .name
+        )
+        XCTAssertEqual(shown.map(\.id), ["deep", "home", "notes", "work"])
+    }
+
+    func testPlacingAFolderBeforeAnotherRewritesOnlyThatGroup() {
+        let order = NoteFolderTree.placing(
+            "home", beside: "work", after: false,
+            displayed: ["work", "home"], order: ["notes", "work", "deep", "home"]
+        )
+        XCTAssertEqual(order, ["notes", "home", "work", "deep"])
+    }
+
+    func testMovingDownSwapsWithTheNextSibling() {
+        let order = NoteFolderTree.movingInList(
+            "work", up: false, displayed: ["work", "home"], order: ["work", "home"]
+        )
+        XCTAssertEqual(order, ["home", "work"])
+    }
+
+    func testMovingPastTheEndLeavesTheOrderAlone() {
+        XCTAssertEqual(
+            NoteFolderTree.movingInList(
+                "home", up: false, displayed: ["work", "home"], order: ["work", "home"]
+            ),
+            ["work", "home"]
+        )
+    }
 }

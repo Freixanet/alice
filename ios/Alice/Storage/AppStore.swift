@@ -184,6 +184,9 @@ final class AppStore {
         static let notesSort = "alice.notes.sort"
         static let notesGroupByDate = "alice.notes.groupByDate"
         static let noteFolderParent = "alice.notes.folderParent"
+        static let noteFolderOrder = "alice.notes.folderOrder"
+        static let pinnedNoteFolders = "alice.notes.pinnedFolders"
+        static let noteFolderSort = "alice.notes.folderSort"
         static let recentlyDeleted = "alice.notes.recentlyDeleted"
         static let activitySeen = "alice.events.activitySeen"
         static let dismissedAttention = "alice.events.dismissedAttention"
@@ -267,6 +270,17 @@ final class AppStore {
     /// the store: a note in a subfolder is filed exactly as it was.
     var noteFolderParent: [String: String] = [:] {
         didSet { defaults.set(noteFolderParent, forKey: Keys.noteFolderParent) }
+    }
+    /// The person's arrangement of folders, by id. The store's own sequence
+    /// is the fallback for anything not listed here.
+    var noteFolderOrder: [String] = [] {
+        didSet { defaults.set(noteFolderOrder, forKey: Keys.noteFolderOrder) }
+    }
+    var pinnedNoteFolders: Set<String> = [] {
+        didSet { defaults.set(Array(pinnedNoteFolders), forKey: Keys.pinnedNoteFolders) }
+    }
+    var noteFolderSort: NoteFolderSort = .manual {
+        didSet { defaults.set(noteFolderSort.rawValue, forKey: Keys.noteFolderSort) }
     }
     /// When each agent's chat was last cleared, so routine cards from before
     /// it do not come back into the empty chat.
@@ -402,6 +416,12 @@ final class AppStore {
         // nobody has written, which would start everyone ungrouped.
         notesGroupByDate = defaults.object(forKey: Keys.notesGroupByDate) as? Bool ?? true
         noteFolderParent = (defaults.dictionary(forKey: Keys.noteFolderParent) as? [String: String]) ?? [:]
+        noteFolderOrder = defaults.stringArray(forKey: Keys.noteFolderOrder) ?? []
+        if let savedPins = defaults.stringArray(forKey: Keys.pinnedNoteFolders) {
+            pinnedNoteFolders = Set(savedPins)
+        }
+        noteFolderSort = (defaults.string(forKey: Keys.noteFolderSort).flatMap(NoteFolderSort.init(rawValue:)))
+            ?? .manual
         botChatClearedAt = (defaults.dictionary(forKey: Keys.botChatClearedAt) as? [String: Date]) ?? [:]
         activitySeen = defaults.object(forKey: Keys.activitySeen) as? Date ?? .distantPast
         if let savedCollapsed = defaults.stringArray(forKey: Keys.collapsedSections) {
@@ -5399,12 +5419,18 @@ final class AppStore {
 
     /// The folders shown at the top level: the ones not put inside another.
     var rootNoteFolders: [NoteFolder] {
-        NoteFolderTree.roots(noteFolders, parent: noteFolderParent)
+        orderedNoteFolders(NoteFolderTree.roots(noteFolders, parent: noteFolderParent))
     }
 
-    /// The folders inside one, in the order they were made.
+    /// The folders inside one, pinned first, then in the saved order.
     func subfolders(of id: String) -> [NoteFolder] {
-        NoteFolderTree.children(of: id, in: noteFolders, parent: noteFolderParent)
+        orderedNoteFolders(NoteFolderTree.children(of: id, in: noteFolders, parent: noteFolderParent))
+    }
+
+    private func orderedNoteFolders(_ folders: [NoteFolder]) -> [NoteFolder] {
+        NoteFolderTree.ordered(
+            folders, pinned: pinnedNoteFolders, order: noteFolderOrder, sort: noteFolderSort
+        )
     }
 
     /// Whether a folder is inside another, at any depth.
@@ -5415,6 +5441,59 @@ final class AppStore {
     /// Puts a folder inside another, or back at the top level.
     func moveNoteFolder(_ id: String, into parent: String?) {
         noteFolderParent = NoteFolderTree.moving(id, into: parent, parent: noteFolderParent)
+    }
+
+    func togglePinnedNoteFolder(_ id: String) {
+        if pinnedNoteFolders.contains(id) {
+            pinnedNoteFolders.remove(id)
+            return
+        }
+        pinnedNoteFolders.insert(id)
+        noteFolderOrder = [id] + noteFolderOrder.filter { $0 != id }
+    }
+
+    func moveNoteFolderInList(_ id: String, up: Bool) {
+        noteFolderOrder = NoteFolderTree.movingInList(
+            id, up: up, displayed: siblingIDs(of: id), order: noteFolderOrder
+        )
+        if noteFolderSort == .name { noteFolderSort = .manual }
+    }
+
+    /// A drop on a folder row: onto it nests, above or below places beside it.
+    func applyFolderDrop(_ id: String, onto target: String, kind: NoteFolderDrop) {
+        guard id != target else { return }
+        switch kind {
+        case .into:
+            guard !noteFolder(target, isInside: id) else { return }
+            moveNoteFolder(id, into: target)
+        case .before, .after:
+            placeNoteFolder(id, beside: target, after: kind == .after)
+        }
+    }
+
+    func placeNoteFolder(_ id: String, beside anchor: String, after: Bool) {
+        guard id != anchor else { return }
+        let parent = noteFolderParent[anchor]
+        if noteFolderParent[id] != parent {
+            moveNoteFolder(id, into: parent)
+        }
+        let siblings = parent == nil
+            ? NoteFolderTree.roots(noteFolders, parent: noteFolderParent)
+            : NoteFolderTree.children(of: parent!, in: noteFolders, parent: noteFolderParent)
+        let displayed = NoteFolderTree.ordered(
+            siblings, pinned: pinnedNoteFolders, order: noteFolderOrder, sort: .manual
+        ).map(\.id)
+        noteFolderOrder = NoteFolderTree.placing(
+            id, beside: anchor, after: after, displayed: displayed, order: noteFolderOrder
+        )
+        if noteFolderSort == .name { noteFolderSort = .manual }
+    }
+
+    private func siblingIDs(of id: String) -> [String] {
+        if let parent = noteFolderParent[id] {
+            return subfolders(of: parent).map(\.id)
+        }
+        return rootNoteFolders.map(\.id)
     }
 
     /// The folder each note is filed in, by note id.
@@ -5577,14 +5656,20 @@ final class AppStore {
     func deleteNoteFolder(_ id: String) async {
         let before = noteFolders
         let parentsBefore = noteFolderParent
+        let pinsBefore = pinnedNoteFolders
+        let orderBefore = noteFolderOrder
         // Whatever was inside it comes back to the top level, with its notes.
         noteFolderParent = NoteFolderTree.removing(id, from: noteFolderParent)
         notesSnapshot = notesSnapshot?.with(folders: before.filter { $0.id != id })
+        pinnedNoteFolders.remove(id)
+        noteFolderOrder.removeAll { $0 == id }
         do {
             try await dashboard.deleteNoteFolder(id: id)
         } catch {
             noteFolderParent = parentsBefore
             notesSnapshot = notesSnapshot?.with(folders: before)
+            pinnedNoteFolders = pinsBefore
+            noteFolderOrder = orderBefore
             noteFolderFailure = HermesErrors.describe(error)
         }
     }

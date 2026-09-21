@@ -72,6 +72,17 @@ struct NotesFolderMenu: View {
             }
 
             Menu {
+                Picker("Sort Folders", selection: $store.noteFolderSort) {
+                    ForEach(NoteFolderSort.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Text("Sort Folders")
+                Text(store.noteFolderSort.label)
+                Image(systemName: "folder")
+            }
+
+            Menu {
                 Picker("Group By Date", selection: $store.notesGroupByDate) {
                     Text("On").tag(true)
                     Text("Off").tag(false)

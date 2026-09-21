@@ -85,6 +85,75 @@ enum NoteFolderTree {
     static func removing(_ id: String, from parent: [String: String]) -> [String: String] {
         parent.filter { $0.key != id && $0.value != id }
     }
+
+    /// Folders in the order the page should show them.
+    ///
+    /// Pinned first, then `order`, then the store's own sequence. Ids in
+    /// `order` that are gone are skipped, so a leftover after a delete cannot
+    /// break the list. Name sort still floats pins, then sorts the rest.
+    static func ordered(
+        _ folders: [NoteFolder],
+        pinned: Set<String>,
+        order: [String],
+        sort: NoteFolderSort = .manual
+    ) -> [NoteFolder] {
+        let known = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
+        if sort == .name {
+            func named(_ pin: Bool) -> [NoteFolder] {
+                folders.filter { pinned.contains($0.id) == pin }
+                    .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            }
+            return named(true) + named(false)
+        }
+        var seen = Set<String>()
+        var result: [NoteFolder] = []
+        func append(_ id: String) {
+            guard let folder = known[id], seen.insert(id).inserted else { return }
+            result.append(folder)
+        }
+        for id in order where pinned.contains(id) { append(id) }
+        for folder in folders where pinned.contains(folder.id) { append(folder.id) }
+        for id in order { append(id) }
+        for folder in folders { append(folder.id) }
+        return result
+    }
+
+    /// `order` after putting `id` before or after `anchor` among `displayed`.
+    static func placing(
+        _ id: String, beside anchor: String, after: Bool,
+        displayed: [String], order: [String]
+    ) -> [String] {
+        guard id != anchor, displayed.contains(anchor) else { return order }
+        var siblings = displayed.filter { $0 != id }
+        guard let i = siblings.firstIndex(of: anchor) else { return order }
+        siblings.insert(id, at: after ? i + 1 : i)
+        return merging(siblings: siblings, into: order)
+    }
+
+    /// Replaces the sibling group inside `order` with `siblings`, keeping
+    /// everything else where it was.
+    static func merging(siblings: [String], into order: [String]) -> [String] {
+        let group = Set(siblings)
+        var merged = order.filter { !group.contains($0) }
+        let insertAt: Int = {
+            guard let idx = order.firstIndex(where: { group.contains($0) }) else {
+                return merged.count
+            }
+            return order[..<idx].filter { !group.contains($0) }.count
+        }()
+        merged.insert(contentsOf: siblings, at: min(insertAt, merged.count))
+        return merged
+    }
+
+    /// `order` after moving `id` one step among `displayed`.
+    static func movingInList(
+        _ id: String, up: Bool, displayed: [String], order: [String]
+    ) -> [String] {
+        guard let i = displayed.firstIndex(of: id) else { return order }
+        let j = up ? i - 1 : i + 1
+        guard displayed.indices.contains(j) else { return order }
+        return placing(id, beside: displayed[j], after: !up, displayed: displayed, order: order)
+    }
 }
 
 /// The order notes are listed in.
@@ -99,4 +168,22 @@ enum NotesSort: String, CaseIterable, Identifiable, Sendable {
         case .title: "Title"
         }
     }
+}
+
+/// How the folders page itself is ordered. Notes keep their own sort.
+enum NoteFolderSort: String, CaseIterable, Identifiable, Sendable {
+    case manual, name
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .manual: "Manual"
+        case .name: "Name"
+        }
+    }
+}
+
+/// Where a dragged folder lands on another row.
+enum NoteFolderDrop: Equatable, Sendable {
+    case into, before, after
 }

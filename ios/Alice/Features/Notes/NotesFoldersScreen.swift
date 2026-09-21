@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Where Notes opens: the folders, with Quick Notes first.
 ///
@@ -28,6 +29,9 @@ struct NotesFoldersScreen: View {
     @State private var collapsed: Set<String> = []
     /// Where a folder is being moved to, when one is.
     @State private var moving: NoteMove?
+    /// The folder being dragged, and where it would land if dropped now.
+    @State private var draggedFolder: String?
+    @State private var dropTarget: FolderDropHighlight?
 
     /// Making a folder, or renaming one.
     private enum Naming: Identifiable {
@@ -147,6 +151,20 @@ struct NotesFoldersScreen: View {
                 .accessibilityIdentifier("notes.back")
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort Folders", selection: Binding(
+                        get: { store.noteFolderSort },
+                        set: { store.noteFolderSort = $0 }
+                    )) {
+                        ForEach(NoteFolderSort.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Sort Folders")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     folderName = ""
                     naming = .new
@@ -257,7 +275,13 @@ struct NotesFoldersScreen: View {
     private func customFolderRow(
         _ folder: NoteFolder, depth: Int = 0, expanded: Binding<Bool>? = nil
     ) -> some View {
-        folderRow(.folder(folder.id), systemImage: "folder", depth: depth, expanded: expanded)
+        let siblings = store.noteFolderParent[folder.id].map { store.subfolders(of: $0).map(\.id) }
+            ?? store.rootNoteFolders.map(\.id)
+        let pinned = store.pinnedNoteFolders.contains(folder.id)
+        return folderRow(
+            .folder(folder.id), systemImage: "folder", depth: depth,
+            expanded: expanded, pinned: pinned
+        )
             .contextMenu {
                 // Share, Move and Delete side by side at the top, as in Notes;
                 // solid glyphs, Delete's red.
@@ -284,8 +308,57 @@ struct NotesFoldersScreen: View {
                     folderName = folder.name
                     naming = .rename(folder)
                 }
+                Button(
+                    pinned ? "Unpin" : "Pin",
+                    systemImage: pinned ? "pin.slash" : "pin"
+                ) {
+                    store.togglePinnedNoteFolder(folder.id)
+                }
+                Button("Move Up", systemImage: "arrow.up") {
+                    store.moveNoteFolderInList(folder.id, up: true)
+                }
+                .disabled(siblings.first == folder.id)
+                Button("Move Down", systemImage: "arrow.down") {
+                    store.moveNoteFolderInList(folder.id, up: false)
+                }
+                .disabled(siblings.last == folder.id)
             } preview: {
                 FolderPreview(name: store.name(of: .folder(folder.id)), notes: store.notes(in: .folder(folder.id)))
+            }
+            .onDrag {
+                draggedFolder = folder.id
+                return NSItemProvider(object: folder.id as NSString)
+            }
+            .onDrop(
+                of: [UTType.text],
+                delegate: FolderRowDropDelegate(
+                    target: folder.id,
+                    rowHeight: Self.rowHeight,
+                    draggedID: $draggedFolder,
+                    highlight: $dropTarget,
+                    drop: { id, kind in
+                        store.applyFolderDrop(id, onto: folder.id, kind: kind)
+                    }
+                )
+            )
+            .overlay(alignment: .top) {
+                if dropTarget?.id == folder.id, dropTarget?.kind == .before {
+                    Rectangle()
+                        .fill(store.accent.primary(scheme))
+                        .frame(height: 2)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if dropTarget?.id == folder.id, dropTarget?.kind == .after {
+                    Rectangle()
+                        .fill(store.accent.primary(scheme))
+                        .frame(height: 2)
+                }
+            }
+            .background {
+                if dropTarget?.id == folder.id, dropTarget?.kind == .into {
+                    store.accent.primary(scheme).opacity(0.12)
+                }
             }
             // The same swipe a note has, so a folder darkens under the finger
             // and stays darkened while it is left open on its buttons — the
@@ -333,7 +406,8 @@ struct NotesFoldersScreen: View {
     /// inside it: its chevron then opens and closes them instead of being the
     /// arrow every row has.
     private func folderRow(
-        _ scope: NotesScope, systemImage: String, depth: Int = 0, expanded: Binding<Bool>? = nil
+        _ scope: NotesScope, systemImage: String, depth: Int = 0, expanded: Binding<Bool>? = nil,
+        pinned: Bool = false
     ) -> some View {
         Button {
             // The end of a swipe is not a tap on the folder, and a tap while
@@ -359,6 +433,12 @@ struct NotesFoldersScreen: View {
                     .frame(width: 26)
                 Text(store.name(of: scope))
                     .foregroundStyle(.primary)
+                if pinned {
+                    Image(systemName: "pin.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
                 Spacer(minLength: 8)
                 Text("\(store.notes(in: scope).count)")
                     .foregroundStyle(.secondary)
@@ -412,6 +492,62 @@ struct NotesFoldersScreen: View {
         } else {
             arrow.padding(.trailing, 20)
         }
+    }
+}
+
+/// A drop on a folder row: the top or bottom edge inserts beside it, the
+/// middle nests inside it.
+private struct FolderDropHighlight: Equatable {
+    var id: String
+    var kind: NoteFolderDrop
+}
+
+private struct FolderRowDropDelegate: DropDelegate {
+    let target: String
+    let rowHeight: CGFloat
+    @Binding var draggedID: String?
+    @Binding var highlight: FolderDropHighlight?
+    let drop: (String, NoteFolderDrop) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        draggedID != nil && draggedID != target
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard let dragged = draggedID, dragged != target else {
+            return DropProposal(operation: .cancel)
+        }
+        let kind: NoteFolderDrop
+        if info.location.y < 12 {
+            kind = .before
+        } else if info.location.y > rowHeight - 12 {
+            kind = .after
+        } else {
+            kind = .into
+        }
+        highlight = FolderDropHighlight(id: target, kind: kind)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if highlight?.id == target { highlight = nil }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer {
+            draggedID = nil
+            highlight = nil
+        }
+        guard let dragged = draggedID, dragged != target else { return false }
+        let kind = highlight?.id == target ? highlight!.kind : kind(at: info.location.y)
+        drop(dragged, kind)
+        return true
+    }
+
+    private func kind(at y: CGFloat) -> NoteFolderDrop {
+        if y < 12 { return .before }
+        if y > rowHeight - 12 { return .after }
+        return .into
     }
 }
 
