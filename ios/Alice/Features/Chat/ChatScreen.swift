@@ -13,17 +13,13 @@ struct ChatScreen: View {
         ChatScreenContent(
             onOpenDrawer: onOpenDrawer, onBack: onBack, onOpenBots: onOpenBots
         )
-        .equatable()
         .environment(\.aliceDrawerProgress, drawerProgress)
     }
 }
 
-/// The conversation itself. It must not read the drawer gesture: rebuilding
-/// home on every frame of the slide flashes a scroll indicator in the middle
-/// of the screen.
-private struct ChatScreenContent: View, Equatable {
-    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }
-
+/// The conversation itself. It does not read the drawer gesture — only the
+/// header mark does — so the bars can turn without rebuilding home.
+private struct ChatScreenContent: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let onOpenDrawer: () -> Void
@@ -159,12 +155,23 @@ private struct ChatScreenContent: View, Equatable {
         )) { note in
             let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
                 .cgRectValue ?? .zero
-            keyboardShown = frame.height > 120
+            setKeyboardShown(frame.height > 120, from: note)
         }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillHideNotification
-        )) { _ in
-            keyboardShown = false
+        )) { note in
+            setKeyboardShown(false, from: note)
+        }
+    }
+
+    /// Padding that depends on the keyboard — home's extra lift, the
+    /// composer's gap, the transcript's last-line air — has to travel with
+    /// the keyboard, not jump at `willShow` while the composer is still
+    /// riding the safe area.
+    private func setKeyboardShown(_ shown: Bool, from note: Notification) {
+        guard keyboardShown != shown else { return }
+        withAnimation(.fromKeyboard(note)) {
+            keyboardShown = shown
         }
     }
 
@@ -426,6 +433,23 @@ private struct ChatScreenContent: View, Equatable {
 /// hand. The hand-driven version reasserted a far anchor over several frames
 /// while lazy rows were still measuring; on a phone it could land short, and
 /// a press on the jump button during a flick took several tries.
+
+private extension Animation {
+    static func fromKeyboard(_ note: Notification) -> Animation {
+        let duration = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
+            .doubleValue ?? 0.25
+        let curve = UIView.AnimationCurve(
+            rawValue: (note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?
+                .intValue ?? UIView.AnimationCurve.easeInOut.rawValue
+        ) ?? .easeInOut
+        switch curve {
+        case .easeIn: return .easeIn(duration: duration)
+        case .easeOut: return .easeOut(duration: duration)
+        case .linear: return .linear(duration: duration)
+        default: return .easeInOut(duration: duration)
+        }
+    }
+}
 
 private enum DrawerProgressKey: EnvironmentKey {
     static let defaultValue: CGFloat = 0
