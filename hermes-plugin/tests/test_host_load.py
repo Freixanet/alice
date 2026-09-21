@@ -152,6 +152,75 @@ class HostLoadTests(unittest.TestCase):
         )
         self.assertIsNone(self.mod.refusal(42, "Safari", "Safari", set()))
 
+    def test_swap_usage_is_read_in_bytes(self):
+        found = self.mod.parse_swapusage(
+            "total = 9216.00M  used = 8271.50M  free = 944.50M  (encrypted)"
+        )
+        self.assertEqual(found["swapTotal"], 9216 * 1024 ** 2)
+        self.assertEqual(found["swapUsed"], int(8271.5 * 1024 ** 2))
+
+    def test_vm_stat_carries_the_swap_counters(self):
+        text = "(page size of 100 bytes)\nSwapins: 7.\nSwapouts: 9.\n"
+        memory = self.mod.parse_vm_stat(text, total=1000)
+        self.assertEqual((memory["swapins"], memory["swapouts"]), (700, 900))
+
+    def test_a_mac_reading_back_from_swap_is_short_even_when_free_looks_fine(self):
+        calm = {"used": 1, "total": 16, "free_percent": 60}
+        self.assertEqual(self.mod.pressure(calm), "ok")
+        self.assertEqual(self.mod.pressure({**calm, "swap_in_rate": 2 * 1024 ** 2}), "tight")
+        self.assertEqual(self.mod.pressure({**calm, "swap_in_rate": 20 * 1024 ** 2}), "critical")
+
+    def _rows(self, *rows):
+        return [{"pid": pid, "name": name, "cpu": cpu, "memory": memory}
+                for pid, name, cpu, memory in rows]
+
+    def test_an_apps_helpers_count_as_that_app(self):
+        paths = {
+            10: "/Applications/Aside.app/Contents/MacOS/Aside",
+            11: "/Applications/Aside.app/Contents/Frameworks/Aside Helper (Renderer).app/Contents/MacOS/Aside Helper (Renderer)",
+            12: "/Applications/Aside.app/Contents/Frameworks/Aside Helper.app/Contents/MacOS/Aside Helper",
+            20: "/usr/local/bin/job",
+        }
+        rows = self._rows(
+            (10, "Aside", 1.0, 100 * 1024 ** 2),
+            (11, "Aside Helper (Renderer)", 2.0, 400 * 1024 ** 2),
+            (12, "Aside Helper", None, 300 * 1024 ** 2),
+            (20, "job", 0.0, 10 * 1024 ** 2),
+        )
+        groups = self.mod.group_processes(rows, paths.get, lambda pid, name: False, set())
+        aside = next(g for g in groups if g["name"] == "Aside")
+        self.assertEqual(aside["count"], 3)
+        self.assertEqual(aside["memory"], 800 * 1024 ** 2)
+        self.assertEqual(aside["cpu"], 3.0)
+        # Closing the app is stopping its own process, not a helper.
+        self.assertEqual((aside["stopPid"], aside["stopName"]), (10, "Aside"))
+        self.assertEqual(aside["effect"], "app")
+
+    def test_hermes_is_one_group_nobody_can_stop(self):
+        paths = {5: "/usr/local/bin/python3", 6: "/usr/local/bin/python3"}
+        rows = self._rows((5, "Python", 9.0, 500 * 1024 ** 2), (6, "Python", 1.0, 300 * 1024 ** 2))
+        groups = self.mod.group_processes(rows, paths.get, lambda pid, name: True, set())
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0]["name"], "Hermes")
+        self.assertIsNone(groups[0]["stopPid"])
+        self.assertTrue(all(m["effect"] == "hermes" for m in groups[0]["members"]))
+
+    def test_a_group_holding_alices_connection_cannot_be_stopped(self):
+        paths = {5: "/usr/local/bin/tool", 6: "/usr/local/bin/tool"}
+        rows = self._rows((5, "tool", 1.0, 200 * 1024 ** 2), (6, "tool", 1.0, 200 * 1024 ** 2))
+        groups = self.mod.group_processes(rows, paths.get, lambda pid, name: False, {6})
+        self.assertEqual(groups[0]["effect"], "connection")
+        self.assertIsNone(groups[0]["stopPid"])
+
+    def test_hermes_is_never_stopped_even_when_asked_directly(self):
+        with mock.patch.object(self.mod, "_executable", return_value="Python"), \
+             mock.patch.object(self.mod, "_is_hermes", return_value=True), \
+             mock.patch.object(self.mod.os, "kill") as kill:
+            result = self.mod.stop_process(4242, "Python")
+        self.assertFalse(result["ok"])
+        self.assertIn("Hermes", result["error"])
+        kill.assert_not_called()
+
     def test_vm_stat_counts_free_and_speculative_as_available(self):
         text = "Mach Virtual Memory Statistics: (page size of 100 bytes)\nPages free: 2.\nPages speculative: 3.\n"
         memory = self.mod.parse_vm_stat(text, total=1000)
