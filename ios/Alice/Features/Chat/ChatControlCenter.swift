@@ -28,6 +28,7 @@ enum ChatControlRequest: Equatable {
     case providerConnect(identifier: String, profile: String?)
     case providerDisconnect(identifier: String, profile: String?, confirm: Bool)
     case configSet(key: String, value: String, profile: String?)
+    case debug
 }
 
 enum ChatControlCenter {
@@ -44,6 +45,7 @@ enum ChatControlCenter {
 
         switch command {
         case "/control": return tokens.isEmpty ? .help : nil
+        case "/debug": return tokens.isEmpty ? .debug : nil
         // `/bots` is the command's old name, kept so habit still works.
         case "/agents", "/bots": return tokens.isEmpty ? .bots : nil
         case "/bot":
@@ -286,7 +288,11 @@ extension AppStore {
             if !self.dashboardReady { await self.restoreDashboard() }
             do {
                 let result = try await self.executeChatControl(request, conversationID: conversationID)
-                self.finishChatControl(replyID, conversationID: conversationID, content: result.text)
+                self.finishChatControl(
+                    replyID, conversationID: conversationID,
+                    content: result.text, choices: result.choices,
+                    offersModelChoice: result.offersModelChoice
+                )
                 if let bot = result.openBot { _ = self.openBotConversation(for: bot) }
             } catch {
                 self.finishChatControl(
@@ -299,18 +305,146 @@ extension AppStore {
         return true
     }
 
+    /// Commands the composer offers that Alice's control center does not own
+    /// (`/reasoning`, `/status`, `/compress`…) run on the live Hermes session
+    /// through `slash.exec`, the same way Desktop does. They must not become a
+    /// model turn: that is how `/reasoning` used to send Alice hunting through
+    /// Hermes' source for what the command meant.
+    @discardableResult
+    func handleHermesSlashIfNeeded(_ rawText: String) -> Bool {
+        guard draftAttachments.isEmpty,
+              Slash.looksLikeCommand(rawText),
+              ChatControlCenter.parse(rawText) == nil,
+              !activeIsRecoveredHistory, !isSending,
+              let chatIndex = conversations.firstIndex(where: { $0.id == activeID })
+        else { return false }
+
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let conversationID = conversations[chatIndex].id
+
+        if Slash.isLocalNewChat(text) {
+            draft = ""
+            if conversations[chatIndex].routedBotName == nil {
+                newChat()
+            } else {
+                presentSlashReply(
+                    command: text, chatIndex: chatIndex,
+                    content: "This agent's chat is its ongoing conversation, so /new does not empty it."
+                )
+            }
+            return true
+        }
+
+        let earlier = conversations[chatIndex].messages
+        let profile = conversations[chatIndex].routedBotName
+        let replyID = UUID().uuidString
+        draft = ""
+        setControlSending(true)
+        conversations[chatIndex].messages.append(
+            Message(id: UUID().uuidString, role: .user, content: text, createdAt: Date())
+        )
+        conversations[chatIndex].messages.append(
+            Message(id: replyID, role: .assistant, content: "", createdAt: Date(), pending: true)
+        )
+        if ConversationTitle.isPlaceholder(conversations[chatIndex].title),
+           let title = ConversationTitle.from(text) {
+            conversations[chatIndex].title = title
+        }
+        conversations[chatIndex].updatedAt = Date()
+        persistConversations()
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let output = try await self.executeHermesSlash(
+                    text, conversationID: conversationID, profile: profile, earlier: earlier
+                )
+                self.finishChatControl(replyID, conversationID: conversationID, content: output)
+            } catch {
+                self.finishChatControl(
+                    replyID, conversationID: conversationID,
+                    content: "Could not run \(text): \(diagnosticMessage(error))",
+                    error: diagnosticMessage(error)
+                )
+            }
+        }
+        return true
+    }
+
+    private func presentSlashReply(
+        command: String, chatIndex: Int, content: String
+    ) {
+        let presented = SlashReply.present(command: command, output: content)
+        conversations[chatIndex].messages.append(
+            Message(id: UUID().uuidString, role: .user, content: command, createdAt: Date())
+        )
+        var reply = Message(id: UUID().uuidString, role: .assistant, content: presented.text, createdAt: Date())
+        reply.slashChoices = presented.choices
+        conversations[chatIndex].messages.append(reply)
+        conversations[chatIndex].updatedAt = Date()
+        persistConversations()
+    }
+
+    private func executeHermesSlash(
+        _ command: String, conversationID: String, profile: String?, earlier: [Message]
+    ) async throws -> String {
+        if !dashboardReady { await restoreDashboard() }
+        guard let source = await botChatSource() else {
+            throw HermesRPCClient.Failure(
+                reason: "Connect the Hermes dashboard to run this command."
+            )
+        }
+        let liveID: String
+        if let profile {
+            let chat = try await resolveBotChat(profile, source: source)
+            let resumed = try await source.resume(
+                profile: profile, target: chat.resolvedID, omitMessages: true
+            )
+            guard let id = resumed["session_id"] as? String, !id.isEmpty else {
+                throw HermesRPCClient.Failure(
+                    reason: "Hermes resumed the chat without a live session id."
+                )
+            }
+            liveID = id
+        } else {
+            guard let session = try await openHomeSession(
+                source: source, conversationID: conversationID, earlier: earlier
+            ) else {
+                throw HermesRPCClient.Failure(
+                    reason: "Hermes could not open this chat to run the command."
+                )
+            }
+            liveID = session.liveID
+        }
+        return try await source.execSlash(
+            liveSessionID: liveID, command: command, profile: profile
+        )
+    }
+
     private struct ControlResult {
         var text: String
+        var choices: [SlashChoice] = []
+        var offersModelChoice: Bool = false
         var openBot: BotRow? = nil
     }
 
     private func finishChatControl(
-        _ replyID: String, conversationID: String, content: String, error: String? = nil
+        _ replyID: String, conversationID: String, content: String,
+        choices: [SlashChoice] = [], offersModelChoice: Bool = false, error: String? = nil
     ) {
         guard let chat = conversations.firstIndex(where: { $0.id == conversationID }),
               let message = conversations[chat].messages.firstIndex(where: { $0.id == replyID })
         else { setControlSending(false); return }
-        conversations[chat].messages[message].content = content
+        let command = message > 0 && conversations[chat].messages[message - 1].role == .user
+            ? conversations[chat].messages[message - 1].content : ""
+        let presented = error == nil
+            ? SlashReply.present(command: command, output: content)
+            : SlashReply.Presented(text: content, choices: [])
+        conversations[chat].messages[message].content = presented.text
+        conversations[chat].messages[message].offersModelChoice = offersModelChoice
+        conversations[chat].messages[message].slashChoices = offersModelChoice
+            ? []
+            : (choices.isEmpty ? presented.choices : choices)
         conversations[chat].messages[message].pending = false
         conversations[chat].messages[message].error = error
         conversations[chat].updatedAt = Date()
@@ -322,6 +456,9 @@ extension AppStore {
         _ request: ChatControlRequest, conversationID: String
     ) async throws -> ControlResult {
         switch request {
+        case .debug:
+            let uploaded = await pushDiagnostics(force: true)
+            return ControlResult(text: diagnosticsSnapshot().chatSummary(uploaded: uploaded))
         case .help:
             return ControlResult(text: Self.controlHelp)
         case .bots:
@@ -389,14 +526,22 @@ extension AppStore {
         case let .model(candidate):
             let profile = try await controlProfile(candidate, conversationID: conversationID)
             let info = try await profileModelInfo(profile: profile)
-            let label = try await controlProfileLabel(profile)
-            var caps: [String] = []
-            if info.capabilities.tools { caps.append("tools") }
-            if info.capabilities.vision { caps.append("vision") }
-            if info.capabilities.reasoning { caps.append("reasoning") }
-            let context = info.effectiveContextLength > 0 ? "\nContext: \(Self.compactNumber(info.effectiveContextLength)) tokens" : ""
-            let capText = caps.isEmpty ? "" : "\nCapabilities: \(caps.joined(separator: ", "))"
-            return ControlResult(text: "**Model — \(label)**\n\nProvider: **\(info.provider)**\nModel: **\(info.model)**\(context)\(capText)\n\nSwitch with `/model set <provider> <model>`.")
+            let providers = try await inferenceProviders(profile: profile)
+            let providerName = providers.first {
+                $0.slug.caseInsensitiveCompare(info.provider) == .orderedSame
+            }?.name ?? HermesClient.prettify(info.provider)
+            var text = "**\(HermesClient.prettify(info.model))** is answering"
+            if !providerName.isEmpty { text += ", from \(providerName)" }
+            text += "."
+            if info.effectiveContextLength > 0 {
+                text += " It can hold about \(Self.compactNumber(info.effectiveContextLength)) tokens."
+            }
+            var abilities: [String] = []
+            if info.capabilities.tools { abilities.append("use tools") }
+            if info.capabilities.vision { abilities.append("see pictures") }
+            if info.capabilities.reasoning { abilities.append("think before answering") }
+            if !abilities.isEmpty { text += " It can \(Self.listed(abilities))." }
+            return ControlResult(text: text, offersModelChoice: true)
         case let .providers(candidate):
             let profile = try await controlProfile(candidate, conversationID: conversationID)
             let providers = try await inferenceProviders(profile: profile)
@@ -535,7 +680,7 @@ extension AppStore {
                 let reason = result.confirmMessage.isEmpty ? "Hermes requires confirmation for this model." : result.confirmMessage
                 return ControlResult(text: "\(reason)\n\nRun `\u{60}/model set \(found.slug) \(resolvedModel) --confirm\u{60}` to confirm.")
             }
-            var text = "Default model changed to **\(resolvedModel)** via **\(found.name)**."
+            var text = "Alice will answer with **\(HermesClient.prettify(resolvedModel))**."
             if !result.staleAux.isEmpty {
                 text += "\n\nAuxiliary assignments still pinned elsewhere: " + result.staleAux.map(\.task).joined(separator: ", ") + "."
             }
@@ -685,6 +830,16 @@ extension AppStore {
     }
 
     private static func money(_ value: Double) -> String { String(format: "$%.2f", value) }
+
+    private static func listed(_ items: [String]) -> String {
+        switch items.count {
+        case 0: return ""
+        case 1: return items[0]
+        case 2: return "\(items[0]) and \(items[1])"
+        default:
+            return items.dropLast().joined(separator: ", ") + ", and " + items[items.count - 1]
+        }
+    }
 
     private static let controlHelp = """
         **Alice control center**

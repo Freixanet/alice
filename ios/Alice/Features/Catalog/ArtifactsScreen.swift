@@ -27,28 +27,17 @@ struct ArtifactsScreen: View {
     }
 
     var body: some View {
-        Group {
-            if let failure, found.isEmpty {
-                ContentUnavailableView(
-                    title, systemImage: "tray", description: Text(failure)
-                )
-            } else if found.isEmpty {
-                ContentUnavailableView(
-                    "Nothing here yet", systemImage: "tray",
-                    description: Text("Files and links your agents share in a chat with Alice appear here. Start a chat and ask an agent to make or send something.")
-                )
-            } else {
-                list
-            }
-        }
+        list
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
-        .task { await load() }
+        .task {
+            await load()
+        }
         .refreshableWithFeedback { await load() }
         .onChange(of: store.requestedArtifact) { _, _ in openRequestedArtifact() }
-        .sheet(item: $opened) { selection in
+        .fullScreenCover(item: $opened) { selection in
             HermesRemoteFileDetail(selection: selection)
                 .environment(store)
                 .preferredColorScheme(store.theme.colorScheme)
@@ -56,34 +45,78 @@ struct ArtifactsScreen: View {
     }
 
     private var list: some View {
-        VStack(spacing: 0) {
-            Picker("Show", selection: $kind) {
-                ForEach(Shelf.allCases, id: \.self) { shelf in
-                    Text(label(shelf)).tag(shelf)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
-
-            List {
-                Section {
-                    EmptyView()
-                } footer: {
-                    Text(kind == .files
-                         ? "Files your agents created or changed in your recent chats with Alice. They live on the computer running Hermes; tap one to see it."
-                         : "Links your agents gave you in your recent chats with Alice. Tap one to open it.")
-                }
-
-                ForEach(groups, id: \.title) { group in
-                    Section(group.title) {
-                        ForEach(group.items) { artifact in
-                            row(artifact)
+        List {
+                Section("Artifacts") {
+                    ForEach(LibraryTool.allCases) { tool in
+                        Button {
+                            store.presentedLibraryTool = tool
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: tool.symbol)
+                                    .font(.system(size: 17))
+                                    .foregroundStyle(store.accent.primary(scheme))
+                                    .frame(width: 26)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(tool.title)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.primary)
+                                    Text(tool.summary)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("library.artifact.\(tool.rawValue)")
+                        .listRowBackground(Palette.card(scheme))
+                        .contextMenu {
+                            AddToHomeButton(
+                                target: .artifact(kind: LibraryTool.shortcutKind, value: tool.rawValue),
+                                label: tool.title,
+                                symbol: tool.symbol
+                            )
                         }
                     }
                 }
-            }
+
+                if let failure, found.isEmpty {
+                    Section {
+                        Text(failure)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if found.isEmpty {
+                    Section {
+                        Text("Files and links your agents share in a chat with Alice appear here.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Section {
+                        Picker("Show", selection: $kind) {
+                            ForEach(Shelf.allCases, id: \.self) { shelf in
+                                Text(label(shelf)).tag(shelf)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .listRowBackground(Color.clear)
+                    } footer: {
+                        Text(kind == .files
+                             ? "Files your agents created or changed in your recent chats with Alice. They live on the computer running Hermes; tap one to see it."
+                             : "Links your agents gave you in your recent chats with Alice. Tap one to open it.")
+                    }
+
+                    ForEach(groups, id: \.title) { group in
+                        Section(group.title) {
+                            ForEach(group.items) { artifact in
+                                row(artifact)
+                            }
+                        }
+                    }
+                }
         }
     }
 

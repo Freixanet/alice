@@ -85,6 +85,11 @@ private struct ChatScreenContent: View, Equatable {
         return "Ask \(store.botCurrentName(for: bot))…"
     }
 
+    private var hasTranscript: Bool {
+        guard let conversation = store.activeConversation else { return false }
+        return !conversation.messages.isEmpty
+    }
+
     var body: some View {
         NavigationStack {
             chatContent
@@ -103,11 +108,7 @@ private struct ChatScreenContent: View, Equatable {
             // They are laid out here instead, with the same 44pt disc and
             // the same glass the composer's controls use.
             .toolbar(.hidden, for: .navigationBar)
-            // `safeAreaInset` rather than an overlay: it both places the
-            // controls and reserves their height, which is the half the
-            // navigation bar was quietly doing. As an overlay the first
-            // message sat underneath the new-chat button.
-            .safeAreaInset(edge: .top, spacing: 0) {
+            .modifier(ChatTopChrome(scrolling: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
                     // In the page, not floating over it: a popover tip is
@@ -118,7 +119,7 @@ private struct ChatScreenContent: View, Equatable {
                             .padding(.horizontal, 16)
                     }
                 }
-            }
+            })
         }
         // Paint the window, not just the keyboard-resized chat content. The
         // software keyboard is translucent in places; without this full-screen
@@ -342,34 +343,6 @@ private struct ChatScreenContent: View, Equatable {
         // edges. The drawer's search button keeps the same 20 on its side.
         .padding(.horizontal, 20)
         .padding(.top, 11)
-        // Something for the conversation to disappear into. The edge effect
-        // has nothing to work against when the bar behind these two discs is
-        // transparent, so a message scrolling past simply collided with them.
-        //
-        // Taller than the controls and anchored to the top, so the fade runs
-        // out below them: sized to the bar alone it ended exactly where the
-        // first line of a message begins, which is where they were colliding.
-        .background(alignment: .top) {
-            // The vanishing point sits above the discs, not below them.
-            // Opaque as far down as they reached, the glass had nothing to
-            // refract: text was already gone by the time it got there, and
-            // two discs over a flat colour are just two flat circles. Solid
-            // across the status bar, out by the time the discs end, so a line
-            // of a message passes behind them in view and disappears over
-            // the top instead.
-            LinearGradient(
-                stops: [
-                    .init(color: Palette.background(scheme), location: 0),
-                    .init(color: Palette.background(scheme), location: 0.42),
-                    .init(color: Palette.background(scheme).opacity(0), location: 0.94),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 132)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-        }
     }
 
     @ViewBuilder
@@ -557,13 +530,11 @@ private struct TranscriptView: View {
                 // The composer's own side inset, so the conversation and the
                 // field it is written in share one column.
                 .padding(.horizontal, store.activeBotProfileForModelSelection != nil ? 20 : 18)
-                // Clear of the header's buttons, not tucked under them.
-                .padding(.top, 44)
                 // Air between the last reply and the composer, so the
-                // conversation ends rather than stopping against the glass —
-                // more with the keyboard up, where the composer sits higher and
-                // the last line otherwise ran right into it.
-                .padding(.bottom, keyboardShown ? 52 : 34)
+                // conversation ends rather than stopping against the glass.
+                // At rest the field sits on the home indicator and needs a
+                // little more room than when the keyboard has lifted it.
+                .padding(.bottom, keyboardShown ? 52 : 56)
                 // At least a screenful, aligned to the top, so a short
                 // conversation is not pinned to the foot of the view.
                 .frame(minHeight: area.size.height, alignment: .top)
@@ -572,11 +543,11 @@ private struct TranscriptView: View {
             .scrollPosition($position)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
-            // On the scroll view itself, where the effect has an edge to work
-            // against. On the container outside it, text ran under the top
-            // controls with nothing between them.
+            // The transcript extends under the Dynamic Island. Soft fade
+            // starts there, rather than clipping the reply at the header.
             .scrollEdgeEffectStyle(.soft, for: .top)
             .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .background { ReplySelectionDismiss() }
             .onScrollPhaseChange { oldPhase, phase in
                 readerScrolling = Self.isReader(phase)
                 // Once the reader lets go, where they left it decides. The
@@ -655,6 +626,125 @@ private struct TranscriptView: View {
                 // scrolling up — animated whatever the transcript's layout was
                 // doing in that instant, and the conversation lurched.
                 .animation(.snappy(duration: 0.2), value: settled && !following)
+            }
+        }
+    }
+}
+
+/// A scrolling transcript uses a safe-area *bar* so replies pass under the
+/// Dynamic Island and the system edge effect can start there. An empty home
+/// still uses an inset: without a scroll view the bar would let the title
+/// centre under the discs.
+private struct ChatTopChrome<Header: View>: ViewModifier {
+    let scrolling: Bool
+    var header: Header
+
+    init(scrolling: Bool, @ViewBuilder header: () -> Header) {
+        self.scrolling = scrolling
+        self.header = header()
+    }
+
+    func body(content: Content) -> some View {
+        if scrolling {
+            content.safeAreaBar(edge: .top, spacing: 0) { header }
+        } else {
+            content.safeAreaInset(edge: .top, spacing: 0) { header }
+        }
+    }
+}
+
+/// A tap anywhere outside a selected reply clears the handles. The text view
+/// keeps them until something resigns it, and a tap on the transcript does not.
+private struct ReplySelectionDismiss: UIViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = ReplySelectionAnchor()
+        view.isUserInteractionEnabled = false
+        view.onEnterHierarchy = { [coordinator = context.coordinator] host in
+            coordinator.attach(near: host)
+        }
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {}
+
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+}
+
+private final class ReplySelectionAnchor: UIView {
+    var onEnterHierarchy: ((UIView) -> Void)?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { onEnterHierarchy?(self) }
+    }
+}
+
+extension ReplySelectionDismiss {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        private weak var host: UIView?
+        private var tap: UITapGestureRecognizer?
+
+        func attach(near anchor: UIView) {
+            guard tap == nil, let host = Self.controllerView(from: anchor) else { return }
+            let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+            tap.cancelsTouchesInView = false
+            tap.delaysTouchesBegan = false
+            tap.delaysTouchesEnded = false
+            tap.delegate = self
+            host.addGestureRecognizer(tap)
+            self.host = host
+            self.tap = tap
+        }
+
+        func detach() {
+            if let tap { host?.removeGestureRecognizer(tap) }
+            tap = nil
+            host = nil
+        }
+
+        @MainActor
+        @objc func tapped(_ tap: UITapGestureRecognizer) {
+            guard let root = tap.view else { return }
+            let hit = root.hitTest(tap.location(in: root), with: nil)
+            Self.clearSelections(in: root, keeping: Self.textView(containing: hit))
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+        ) -> Bool { true }
+
+        private static func controllerView(from anchor: UIView) -> UIView? {
+            var responder: UIResponder? = anchor
+            while let next = responder?.next {
+                if let controller = next as? UIViewController { return controller.view }
+                responder = next
+            }
+            return anchor.superview
+        }
+
+        private static func textView(containing hit: UIView?) -> UITextView? {
+            var current = hit
+            while let view = current {
+                if let text = view as? UITextView, !text.isEditable { return text }
+                current = view.superview
+            }
+            return nil
+        }
+
+        private static func clearSelections(in view: UIView, keeping kept: UITextView?) {
+            if let text = view as? UITextView, !text.isEditable, text !== kept {
+                if text.isFirstResponder || text.selectedRange.length > 0 {
+                    text.selectedTextRange = nil
+                    text.resignFirstResponder()
+                }
+            }
+            for child in view.subviews {
+                clearSelections(in: child, keeping: kept)
             }
         }
     }

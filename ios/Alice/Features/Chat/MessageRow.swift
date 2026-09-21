@@ -1,5 +1,6 @@
 import SwiftUI
 import TipKit
+import UIKit
 
 struct MessageRow: View {
     @Environment(AppStore.self) private var store
@@ -17,6 +18,9 @@ struct MessageRow: View {
     /// What copying, sharing and reading aloud take: the whole task.
     var actionsContent: String? = nil
     @State private var selectingText = false
+    @State private var showingModelPicker = false
+    /// Copy, share, speak, retry and developer usage stay off until the reply is tapped.
+    @State private var showingExtras = false
 
     /// The agent this reply is from when it was asked by name in a chat that
     /// is not its own.
@@ -82,6 +86,7 @@ struct MessageRow: View {
                         .accessibilityLabel("Sent \(when)")
                 }
                 VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 10) {
                     // Trying bot replies with nothing above them — no name, no
                     // mark. The conversation already says whose it is, and a
                     // reply still being written says "Thinking…" in its tool
@@ -133,12 +138,12 @@ struct MessageRow: View {
                             }
                         } else {
                             RoutineReportCard(name: routine) {
-                                RichMessageView(content: content, failed: message.error != nil)
+                                RichMessageView(content: content, failed: message.error != nil, onTap: revealReplyExtras)
                             }
                         }
                     } else if let agent = message.fromAgent {
                         AgentMessageCard(handle: agent) {
-                            RichMessageView(content: message.content, failed: message.error != nil)
+                            RichMessageView(content: message.content, failed: message.error != nil, onTap: revealReplyExtras)
                         }
                     } else if store.pendingHomeModelConfirmation?.replyID == message.id {
                         ModelConfirmationCard()
@@ -151,19 +156,30 @@ struct MessageRow: View {
                         // and repaints the links in the body colour. Links
                         // take the environment's tint, which `RichMessageView`
                         // sets on every block that can hold one.
-                        RichMessageView(content: message.content, failed: message.error != nil)
+                        RichMessageView(content: message.content, failed: message.error != nil, onTap: revealReplyExtras)
+                    }
+                    }
+                    .accessibilityHint(
+                        canRevealExtras
+                            ? "Shows actions. Hold to select text."
+                            : (canSelectReplyText ? "Hold to select text." : "")
+                    )
+
+                    if message.role == .assistant, message.choosesModelInAPicker {
+                        Button("Choose a model") { showingModelPicker = true }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.regular)
+                    } else if message.role == .assistant, !message.slashChoices.isEmpty {
+                        SlashChoiceButtons(choices: message.slashChoices)
                     }
 
-                    if store.developerMode, !message.pending, message.role == .assistant,
-                       let line = MessageUsage.footer(
-                            usage: message.usage,
-                            tools: message.tools.count,
-                            seconds: message.usage?.seconds ?? message.thoughtSeconds
-                       ) {
+                    if showingExtras, let line = developerLine {
                         Text(line)
                             .font(.caption2.monospaced())
                             .foregroundStyle(.tertiary)
                             .textSelection(.enabled)
+                            .accessibilityLabel("Developer details")
                     }
 
                     // A reply this device stopped watching. The bot may still
@@ -196,13 +212,39 @@ struct MessageRow: View {
                     }
                     // Only once the reply has finished: acting on half an
                     // answer copies or shares something that is still changing.
-                    if showsActions, !message.pending, !message.content.isEmpty {
+                    if showingExtras, canShowActions {
                         MessageActions(message: actionsMessage)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .sheet(isPresented: $showingModelPicker) { ModelPicker() }
+    }
+
+    private var canShowActions: Bool {
+        showsActions && !message.pending && !message.content.isEmpty
+    }
+
+    private var canRevealExtras: Bool { canShowActions || developerLine != nil }
+
+    private var canSelectReplyText: Bool {
+        !message.pending && !actionsMessage.content.isEmpty
+    }
+
+    private func revealReplyExtras() {
+        guard canRevealExtras else { return }
+        showingExtras.toggle()
+    }
+
+    /// Developer-mode line under a finished reply, hidden until the message is tapped.
+    private var developerLine: String? {
+        guard store.developerMode, !message.pending, message.role == .assistant else { return nil }
+        return MessageUsage.footer(
+            usage: message.usage,
+            tools: message.tools.count,
+            seconds: message.usage?.seconds ?? message.thoughtSeconds
+        )
     }
 
     /// Makes a bare URL tappable.
@@ -518,7 +560,7 @@ private struct SentMessageMenu: View {
 /// The message in a read-only text view, so any part of it can be selected
 /// with the system handles and its menu: Copy, Look Up, Translate, Share and
 /// whatever else iOS offers for selected text.
-private struct SelectableTextSheet: View {
+struct SelectableTextSheet: View {
     let text: String
     @Environment(\.dismiss) private var dismiss
 
@@ -540,6 +582,8 @@ private struct SelectableTextSheet: View {
 private struct SelectableText: UIViewRepresentable {
     let text: String
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
         view.isEditable = false
@@ -554,6 +598,16 @@ private struct SelectableText: UIViewRepresentable {
 
     func updateUIView(_ view: UITextView, context: Context) {
         if view.text != text { view.text = text }
+        guard !context.coordinator.didPrime, !text.isEmpty else { return }
+        context.coordinator.didPrime = true
+        DispatchQueue.main.async {
+            view.becomeFirstResponder()
+            view.selectAll(nil)
+        }
+    }
+
+    final class Coordinator {
+        var didPrime = false
     }
 }
 
@@ -938,6 +992,90 @@ private struct ModelLimitNote: View {
 
 /// Allow is the filled button; refuse stays outlined. Mixed `ButtonStyle`
 /// types cannot share a ternary, so the two looks are two branches.
+/// Options parsed out of a slash command, so the person taps one instead of typing it.
+private struct SlashChoiceButtons: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let choices: [SlashChoice]
+
+    var body: some View {
+        SlashChoiceFlow(spacing: 8) {
+            ForEach(choices) { choice in
+                Button {
+                    store.sendQuickReply(choice.command)
+                } label: {
+                    Text(choice.label)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+                .tint(choice.current ? store.accent.control(scheme) : Color.secondary)
+                .disabled(store.isSending)
+                .accessibilityLabel(choice.current ? "\(choice.label), current" : choice.label)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct SlashChoiceFlow: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        let rows = rows(of: subviews, width: width)
+        let height = rows.reduce(CGFloat(0)) { $0 + $1.height } + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(of: subviews, width: bounds.width) {
+            var x = bounds.minX
+            for item in row.items {
+                item.view.place(
+                    at: CGPoint(x: x, y: y),
+                    proposal: ProposedViewSize(width: item.size.width, height: item.size.height)
+                )
+                x += item.size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Item {
+        var view: LayoutSubview
+        var size: CGSize
+    }
+
+    private struct Row {
+        var items: [Item]
+        var height: CGFloat
+    }
+
+    private func rows(of subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var items: [Item] = []
+        var x: CGFloat = 0
+        var height: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if !items.isEmpty, x + size.width > width {
+                rows.append(Row(items: items, height: height))
+                items = []
+                x = 0
+                height = 0
+            }
+            items.append(Item(view: view, size: size))
+            height = max(height, size.height)
+            x += size.width + spacing
+        }
+        if !items.isEmpty { rows.append(Row(items: items, height: height)) }
+        return rows
+    }
+}
+
 struct ApprovalChoiceButton: View {
     let title: String
     var deny = false

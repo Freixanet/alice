@@ -136,6 +136,7 @@ struct AliceApp: App {
                         // it comes back, and it is idempotent.
                         store.startWatchingLiveEvents()
                         await notifier.post(store.syncEvents())
+                        await store.pushDiagnostics()
                         drainPendingRoute()
                     }
                 }

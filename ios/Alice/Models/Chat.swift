@@ -204,6 +204,19 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var lastStatus: String? = nil
     /// Tokens and model calls from `message.complete.usage`, when Hermes sent them.
     var usage: MessageUsage? = nil
+    /// Tappable options under a slash-command reply. Empty on ordinary turns,
+    /// and absent from archives written before a reply could offer a choice.
+    var slashChoices: [SlashChoice] = []
+    /// `/model` opens the model screen. A catalogue does not belong in the transcript.
+    var offersModelChoice: Bool = false
+
+    /// A model catalogue was stored as one chip per model. Those replies open
+    /// the picker instead of painting the chat with buttons.
+    var choosesModelInAPicker: Bool {
+        if offersModelChoice { return true }
+        return slashChoices.count > 1
+            && slashChoices.allSatisfy { $0.command.hasPrefix("/model set ") }
+    }
 
     /// Decoded field by field, every optional one at a time.
     ///
@@ -241,6 +254,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         interim = try box.decodeIfPresent(Bool.self, forKey: .interim) ?? false
         lastStatus = try box.decodeIfPresent(String.self, forKey: .lastStatus)
         usage = try box.decodeIfPresent(MessageUsage.self, forKey: .usage)
+        slashChoices = try box.decodeIfPresent([SlashChoice].self, forKey: .slashChoices) ?? []
+        offersModelChoice = try box.decodeIfPresent(Bool.self, forKey: .offersModelChoice) ?? false
     }
 
     init(
@@ -448,10 +463,20 @@ struct MessageUsage: Hashable, Sendable, Codable {
     var total: Int = 0
     var calls: Int = 0
     var seconds: Int?
+    /// Prompt tokens Hermes reused from cache, when it reported a count.
+    var cacheRead: Int = 0
+    /// Cache hit percent from `usage.cache_hit_pct`, when there was no count.
+    var cacheHitPercent: Int? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case model, input, output, reasoning, total, calls, seconds
+        case cacheRead, cacheHitPercent
+    }
 
     init(
         model: String? = nil, input: Int = 0, output: Int = 0, reasoning: Int = 0,
-        total: Int = 0, calls: Int = 0, seconds: Int? = nil
+        total: Int = 0, calls: Int = 0, seconds: Int? = nil,
+        cacheRead: Int = 0, cacheHitPercent: Int? = nil
     ) {
         self.model = model
         self.input = input
@@ -460,6 +485,8 @@ struct MessageUsage: Hashable, Sendable, Codable {
         self.total = total
         self.calls = calls
         self.seconds = seconds
+        self.cacheRead = cacheRead
+        self.cacheHitPercent = cacheHitPercent
     }
 
     init(from decoder: Decoder) throws {
@@ -471,6 +498,8 @@ struct MessageUsage: Hashable, Sendable, Codable {
         total = try box.decodeIfPresent(Int.self, forKey: .total) ?? 0
         calls = try box.decodeIfPresent(Int.self, forKey: .calls) ?? 0
         seconds = try box.decodeIfPresent(Int.self, forKey: .seconds)
+        cacheRead = try box.decodeIfPresent(Int.self, forKey: .cacheRead) ?? 0
+        cacheHitPercent = try box.decodeIfPresent(Int.self, forKey: .cacheHitPercent)
     }
 
     static func parse(_ payload: [String: Any]) -> MessageUsage? {
@@ -482,15 +511,21 @@ struct MessageUsage: Hashable, Sendable, Codable {
         let reasoning = int(bag["reasoning"])
         let total = int(bag["total"])
         let calls = int(bag["calls"])
+        let cacheRead = int(bag["cache_read"]) > 0
+            ? int(bag["cache_read"]) : int(bag["cache_read_tokens"])
+        let cacheHit = int(bag["cache_hit_pct"])
         if (model == nil || model?.isEmpty == true)
-            && input == 0 && output == 0 && reasoning == 0 && total == 0 && calls == 0 {
+            && input == 0 && output == 0 && reasoning == 0 && total == 0 && calls == 0
+            && cacheRead == 0 && cacheHit == 0 {
             return nil
         }
         return MessageUsage(
             model: (model?.isEmpty == false) ? model : nil,
             input: input, output: output, reasoning: reasoning,
             total: total > 0 ? total : input + output + reasoning,
-            calls: calls
+            calls: calls,
+            cacheRead: cacheRead,
+            cacheHitPercent: cacheHit > 0 ? cacheHit : nil
         )
     }
 
@@ -502,7 +537,14 @@ struct MessageUsage: Hashable, Sendable, Codable {
         if let calls = usage?.calls, calls > 0 { parts.append("\(calls) LLM") }
         parts.append(tools == 1 ? "1 tool" : "\(tools) tools")
         if let usage {
-            parts.append("\(usage.input)/\(usage.output)/\(usage.reasoning)")
+            parts.append("in \(usage.input)")
+            parts.append("out \(usage.output)")
+            parts.append("think \(usage.reasoning)")
+            if usage.cacheRead > 0 {
+                parts.append("cached \(usage.cacheRead)")
+            } else if let percent = usage.cacheHitPercent, percent > 0 {
+                parts.append("cached \(percent)%")
+            }
         }
         if let seconds, seconds > 0 { parts.append("\(seconds) s") }
         return parts.joined(separator: " · ")

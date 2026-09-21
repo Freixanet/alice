@@ -81,6 +81,30 @@ struct SettingsView: View {
                      : "Set a passcode for this iPhone in the Settings app to lock Alice.")
             }
 
+            Section {
+                NavigationLink {
+                    ActivityScreen()
+                } label: {
+                    HStack {
+                        Label("Activity", systemImage: "bell")
+                        Spacer(minLength: 8)
+                        if store.unreadActivity > 0 {
+                            Text("\(store.unreadActivity)")
+                                .font(.caption2.weight(.semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(store.accent.primary(scheme))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(store.accent.primary(scheme).opacity(0.16), in: .capsule)
+                                .accessibilityLabel("\(store.unreadActivity) unread")
+                        }
+                    }
+                }
+                .accessibilityIdentifier("settings.activity")
+            } footer: {
+                Text("What has happened, and what is waiting on you.")
+            }
+
             Section("General") {
                 Picker("Theme", selection: $store.theme) {
                     ForEach(ThemeChoice.allCases) { choice in

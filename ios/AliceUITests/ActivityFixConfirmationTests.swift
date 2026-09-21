@@ -15,7 +15,8 @@ final class ActivityFixConfirmationTests: XCTestCase {
         let leading = app.buttons["chat.leading"]
         XCTAssertTrue(leading.waitForExistence(timeout: 20))
         leading.tap()
-        let activity = app.buttons["sidebar.row.Activity"]
+        app.buttons["sidebar.settings"].tap()
+        let activity = app.buttons["settings.activity"]
         XCTAssertTrue(activity.waitForExistence(timeout: 10))
         activity.tap()
 

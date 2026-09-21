@@ -61,7 +61,7 @@ final class NavigationJourneyTests: XCTestCase {
     /// from search without competing with chats for vertical space.
     func testDrawerKeepsOnlyEverydayDestinations() {
         openDrawer()
-        for title in ["Agents", "Notes", "Activity", "Routines", "Projects", "Library"] {
+        for title in ["Agents", "Notes", "Routines", "Projects", "Library"] {
             assertDrawerRow(title)
         }
         for title in [
@@ -73,23 +73,24 @@ final class NavigationJourneyTests: XCTestCase {
                 "\(title) should live outside the everyday drawer"
             )
         }
+        XCTAssertFalse(
+            app.buttons["sidebar.row.Activity"].exists,
+            "Activity is the log in Settings, not a drawer destination"
+        )
     }
 
-    /// Two actions, not one. The drawer has to be opened first, so calling
-    /// Activity "one tap from the conversation" would be wrong — it is two, and
-    /// this measures it rather than asserting a number someone hoped for.
-    func testActivityIsTwoActionsFromTheConversation() {
+    /// Drawer, then Settings, then the log. Activity used to be a drawer row;
+    /// it now lives with the profile so the drawer stays the places you work.
+    func testActivityIsThreeActionsFromTheConversation() {
         var actions = 0
-        let leading = app.buttons["chat.leading"]
-        XCTAssertTrue(leading.waitForExistence(timeout: 20))
-        leading.tap(); actions += 1
-
-        let activity = app.buttons["sidebar.row.Activity"]
+        openDrawer(); actions += 1
+        app.buttons["sidebar.settings"].tap(); actions += 1
+        let activity = app.buttons["settings.activity"]
         XCTAssertTrue(activity.waitForExistence(timeout: 10))
         activity.tap(); actions += 1
 
         XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 10))
-        XCTAssertEqual(actions, 2, "opening the drawer is an action too")
+        XCTAssertEqual(actions, 3)
     }
 
     /// A drawer that scrolls is fine; a destination that cannot be reached at
@@ -100,7 +101,7 @@ final class NavigationJourneyTests: XCTestCase {
         XCTAssertTrue(leading.waitForExistence(timeout: 25))
         leading.tap()
 
-        for title in ["Agents", "Notes", "Activity", "Routines", "Projects", "Library"] {
+        for title in ["Agents", "Notes", "Routines", "Projects", "Library"] {
             let row = app.buttons["sidebar.row.\(title)"]
             XCTAssertTrue(
                 row.waitForExistence(timeout: 10),
@@ -139,7 +140,8 @@ final class NavigationJourneyTests: XCTestCase {
             "a tap whose destination is gone must still land in a usable app"
         )
         app.buttons["chat.leading"].tap()
-        let activity = app.buttons["sidebar.row.Activity"]
+        app.buttons["sidebar.settings"].tap()
+        let activity = app.buttons["settings.activity"]
         XCTAssertTrue(activity.waitForExistence(timeout: 10))
         activity.tap()
         XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 10))
@@ -165,9 +167,12 @@ final class NavigationJourneyTests: XCTestCase {
         XCTAssertFalse(back.exists, "the Bots page should actually be dismissed")
     }
 
-    func testActivityOpensFromTheDrawer() {
+    func testActivityOpensFromSettings() {
         openDrawer()
-        app.buttons["sidebar.row.Activity"].tap()
+        app.buttons["sidebar.settings"].tap()
+        let activity = app.buttons["settings.activity"]
+        XCTAssertTrue(activity.waitForExistence(timeout: 10))
+        activity.tap()
         XCTAssertTrue(
             app.otherElements["activity.list"].waitForExistence(timeout: 10)
                 || app.collectionViews["activity.list"].waitForExistence(timeout: 5)
@@ -201,7 +206,10 @@ final class NavigationJourneyTests: XCTestCase {
 
     func testActivityOwnsHistoryAndUsage() {
         openDrawer()
-        app.buttons["sidebar.row.Activity"].tap()
+        app.buttons["sidebar.settings"].tap()
+        let activity = app.buttons["settings.activity"]
+        XCTAssertTrue(activity.waitForExistence(timeout: 10))
+        activity.tap()
         XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Sessions"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Insights"].waitForExistence(timeout: 10))

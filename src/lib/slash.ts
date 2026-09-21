@@ -17,6 +17,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: "/model", hint: "Switch model" },
   { cmd: "/help", hint: "List commands" },
   { cmd: "/status", hint: "Status of this session" },
+  { cmd: "/debug", hint: "Send this phone's diagnostic summary" },
   { cmd: "/update", hint: "Update Hermes" },
   { cmd: "/tools", hint: "Available tools" },
   { cmd: "/skills", hint: "Skills" },

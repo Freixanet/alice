@@ -42,6 +42,31 @@ final class ActivityRecordTests: XCTestCase {
         XCTAssertEqual(repaired.summary, fresh.summary)
     }
 
+    func testARoutineNoticeBelongsOnRoutines() {
+        var event = AliceEvent(
+            id: "run", kind: .automationSucceeded, severity: .info,
+            title: "Morning", summary: "Finished.", occurred: Date()
+        )
+        event.reference.routineKey = "default/morning"
+        XCTAssertEqual(event.noticePlace, .routines)
+    }
+
+    func testAnAgentNoticeBelongsOnAgents() {
+        let event = AliceEvent(
+            id: "done", kind: .finished, severity: .info,
+            profile: "radar", title: "Radar", summary: "Answered.", occurred: Date()
+        )
+        XCTAssertEqual(event.noticePlace, .agents)
+    }
+
+    func testAComponentNoticeStaysInTheLog() {
+        let event = AliceEvent(
+            id: "attention:component:telegram", kind: .attention, severity: .needsAttention,
+            title: "Telegram", summary: "Telegram is not connected.", occurred: Date()
+        )
+        XCTAssertNil(event.noticePlace)
+    }
+
     func testOtherRowsAreLeftAlone() {
         let routine = AliceEvent(
             id: "routine:default/job1:1789000000", kind: .automationFailed, severity: .failure,

@@ -1038,11 +1038,38 @@ enum RichMath {
 
 // MARK: - Drawing
 
+/// When false, code and tables keep their own selection off. Reply prose is a
+/// text view, so a hold selects it in place.
+private struct AllowsRichTextSelectionKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var allowsRichTextSelection: Bool {
+        get { self[AllowsRichTextSelectionKey.self] }
+        set { self[AllowsRichTextSelectionKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// `.textSelection(.enabled)` and `.disabled` are different types, so a
+    /// ternary cannot switch between them.
+    @ViewBuilder
+    fileprivate func richTextSelection(_ enabled: Bool) -> some View {
+        if enabled {
+            textSelection(.enabled)
+        } else {
+            self
+        }
+    }
+}
+
 /// A reply drawn block by block.
 struct RichMessageView: View {
     @Environment(\.colorScheme) private var scheme
     let content: String
     var failed = false
+    var onTap: (@MainActor () -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1061,20 +1088,15 @@ struct RichMessageView: View {
     private func view(for block: RichBlock) -> some View {
         switch block {
         case let .heading(level, text):
-            Text(inline(text))
-                .font(Self.headingFont(level))
+            replyText(inline(text), font: Self.headingUIFont(level), spacing: 2)
                 .padding(.top, level <= 2 ? 4 : 0)
-                .textSelection(.enabled)
                 .accessibilityAddTraits(.isHeader)
         case let .paragraph(text):
-            Text(inline(text))
-                .lineSpacing(4)
-                .textSelection(.enabled)
-                .tint(Palette.link(scheme))
+            replyText(inline(text), font: .preferredFont(forTextStyle: .body), spacing: 4)
         case let .list(items):
-            RichListView(items: items, inline: inline)
+            RichListView(onTap: onTap, items: items, inline: inline)
         case let .callout(kind, body):
-            RichCalloutView(kind: kind, content: body, failed: failed)
+            RichCalloutView(kind: kind, content: body, failed: failed, onTap: onTap)
         case let .code(language, text):
             RichCodeView(language: language, code: text)
         case let .table(table):
@@ -1082,10 +1104,11 @@ struct RichMessageView: View {
         case .rule:
             Divider().padding(.vertical, 2)
         case let .math(formula):
-            Text(RichMath.unicode(formula))
-                .font(.system(.title3, design: .serif))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity)
+            replyText(
+                AttributedString(RichMath.unicode(formula)),
+                font: Self.mathUIFont,
+                spacing: 0
+            )
                 .padding(.vertical, 10)
                 .padding(.horizontal, 12)
                 .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
@@ -1108,11 +1131,121 @@ struct RichMessageView: View {
         default: .subheadline.weight(.semibold)
         }
     }
+
+    static func headingUIFont(_ level: Int) -> UIFont {
+        let style: UIFont.TextStyle = switch level {
+        case 1: .title3
+        case 2: .headline
+        default: .subheadline
+        }
+        let size = UIFont.preferredFont(forTextStyle: style).pointSize
+        return .systemFont(ofSize: size, weight: level == 1 ? .bold : .semibold)
+    }
+
+    static var mathUIFont: UIFont {
+        let descriptor = UIFontDescriptor
+            .preferredFontDescriptor(withTextStyle: .title3)
+            .withDesign(.serif) ?? UIFontDescriptor.preferredFontDescriptor(withTextStyle: .title3)
+        return UIFont(descriptor: descriptor, size: 0)
+    }
+
+    private func replyText(_ text: AttributedString, font: UIFont, spacing: CGFloat) -> some View {
+        SelectableReplyText(
+            attributed: text,
+            font: font,
+            lineSpacing: spacing,
+            link: UIColor(Palette.link(scheme)),
+            onTap: onTap
+        )
+    }
+}
+
+/// The reply's own words, selectable where they are drawn. A hold brings up
+/// the system handles in the chat; a tap still reveals the reply's actions.
+private struct SelectableReplyText: UIViewRepresentable {
+    let attributed: AttributedString
+    var font: UIFont
+    var lineSpacing: CGFloat
+    var link: UIColor
+    var onTap: (@MainActor () -> Void)?
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.adjustsFontForContentSizeCategory = true
+        view.dataDetectorTypes = []
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
+        tap.name = "alice.replyTap"
+        tap.cancelsTouchesInView = false
+        view.addGestureRecognizer(tap)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.onTap = onTap
+        view.tintColor = link
+        if let tap = view.gestureRecognizers?.first(where: { $0.name == "alice.replyTap" }) {
+            for case let press as UILongPressGestureRecognizer in view.gestureRecognizers ?? [] {
+                tap.require(toFail: press)
+            }
+        }
+        let next = Self.rendered(attributed, font: font, lineSpacing: lineSpacing)
+        if view.attributedText.string != next.string {
+            view.attributedText = next
+        }
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize, uiView: UITextView, context: Context
+    ) -> CGSize? {
+        let width = proposal.width ?? 0
+        guard width > 0 else { return nil }
+        let height = uiView.sizeThatFits(
+            CGSize(width: width, height: .greatestFiniteMagnitude)
+        ).height
+        return CGSize(width: width, height: ceil(height))
+    }
+
+    private static func rendered(
+        _ source: AttributedString, font: UIFont, lineSpacing: CGFloat
+    ) -> NSAttributedString {
+        let raw = NSMutableAttributedString(attributedString: NSAttributedString(source))
+        let full = NSRange(location: 0, length: raw.length)
+        guard full.length > 0 else { return raw }
+        raw.enumerateAttribute(.font, in: full) { value, range, _ in
+            if value == nil { raw.addAttribute(.font, value: font, range: range) }
+        }
+        raw.enumerateAttribute(.foregroundColor, in: full) { value, range, _ in
+            if value == nil { raw.addAttribute(.foregroundColor, value: UIColor.label, range: range) }
+        }
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = lineSpacing
+        raw.addAttribute(.paragraphStyle, value: style, range: full)
+        return raw
+    }
+
+    final class Coordinator: NSObject {
+        var onTap: (@MainActor () -> Void)?
+
+        @MainActor
+        @objc func tapped(_ gesture: UITapGestureRecognizer) {
+            if let text = gesture.view as? UITextView, text.isFirstResponder { return }
+            onTap?()
+        }
+    }
 }
 
 private struct RichListView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    var onTap: (@MainActor () -> Void)? = nil
     let items: [RichListItem]
     let inline: (String) -> AttributedString
 
@@ -1122,9 +1255,13 @@ private struct RichListView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     marker(item)
                         .frame(minWidth: 16, alignment: .trailing)
-                    Text(inline(item.text))
-                        .textSelection(.enabled)
-                        .tint(Palette.link(scheme))
+                    SelectableReplyText(
+                        attributed: inline(item.text),
+                        font: .preferredFont(forTextStyle: .body),
+                        lineSpacing: 4,
+                        link: UIColor(Palette.link(scheme)),
+                        onTap: onTap
+                    )
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.leading, CGFloat(item.depth) * 18)
@@ -1153,6 +1290,7 @@ private struct RichCalloutView: View {
     let kind: RichCallout?
     let content: String
     let failed: Bool
+    var onTap: (@MainActor () -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1166,7 +1304,7 @@ private struct RichCalloutView: View {
                         .foregroundStyle(tint)
                 }
                 // A callout holds Markdown of its own.
-                AnyView(RichMessageView(content: content, failed: failed))
+                AnyView(RichMessageView(content: content, failed: failed, onTap: onTap))
             }
         }
         .padding(12)
@@ -1209,6 +1347,7 @@ private struct RichCalloutView: View {
 
 private struct RichCodeView: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.allowsRichTextSelection) private var allowsSelection
     let language: String?
     let code: String
     @State private var copied = false
@@ -1237,7 +1376,7 @@ private struct RichCodeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code)
                     .font(.system(.footnote, design: .monospaced))
-                    .textSelection(.enabled)
+                    .richTextSelection(allowsSelection)
             }
         }
         .padding(12)
@@ -1252,6 +1391,7 @@ private struct RichCodeView: View {
 
 private struct RichTableView: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.allowsRichTextSelection) private var allowsSelection
     let table: RichTable
     let inline: (String) -> AttributedString
 
@@ -1272,7 +1412,7 @@ private struct RichTableView: View {
                         ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
                             Text(inline(cell))
                                 .font(.subheadline)
-                                .textSelection(.enabled)
+                                .richTextSelection(allowsSelection)
                                 .frame(maxWidth: 240, alignment: frame(column))
                         }
                     }

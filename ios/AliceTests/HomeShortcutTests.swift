@@ -73,6 +73,19 @@ final class HomeShortcutTests: XCTestCase {
         XCTAssertEqual(store.requestedNotesScope, .folder("work"))
     }
 
+    func testAMacPinOpensTheLiveReading() throws {
+        let (store, suite) = try store()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        store.openHomeShortcut(HomeShortcut(
+            label: "Mac",
+            symbol: LibraryTool.mac.symbol,
+            target: .artifact(kind: LibraryTool.shortcutKind, value: LibraryTool.mac.rawValue)
+        ))
+        XCTAssertEqual(store.presentedLibraryTool, .mac)
+        XCTAssertNil(store.requestedDestination)
+        XCTAssertNil(store.requestedArtifact)
+    }
+
     func testAPlacePinAsksTheDrawerForThatScreen() throws {
         let (store, suite) = try store()
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

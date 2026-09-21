@@ -152,7 +152,9 @@ struct Sidebar: View, Equatable {
     /// grouped under Settings → Advanced instead of competing with recents.
     private var destinations: some View {
         VStack(spacing: 2) {
-            row("Agents", systemImage: "person.2", weight: .medium, destination: .bots) {
+            row("Agents", systemImage: "person.2", weight: .medium,
+                badge: store.unreadNotices(in: .agents), destination: .bots) {
+                store.markNoticesSeen(.agents)
                 onDismiss()
                 store.botsFromLeading = false
                 store.showingBots = true
@@ -160,11 +162,11 @@ struct Sidebar: View, Equatable {
             // Second, right under Agents: a note is written in the moment or
             // not at all, so it is the shortest way in the drawer.
             row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
-            row(
-                "Activity", systemImage: "bell", weight: .medium,
-                badge: store.unreadActivity, destination: .activity
-            ) { going = .activity }
-            row("Routines", systemImage: "clock", weight: .medium, destination: .routines) { going = .routines }
+            row("Routines", systemImage: "clock", weight: .medium,
+                badge: store.unreadNotices(in: .routines), destination: .routines) {
+                store.markNoticesSeen(.routines)
+                going = .routines
+            }
             row("Projects", systemImage: "folder", weight: .medium, destination: .projects) { going = .projects }
             row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
         }
@@ -280,12 +282,15 @@ struct Sidebar: View, Equatable {
     private func open(_ target: AliceDestination.Target) {
         switch target {
         case .bots:
+            store.markNoticesSeen(.agents)
             onDismiss()
             store.botsFromLeading = false
             store.showingBots = true
         case .notes: openNotes()
         case .activity: going = .activity
-        case .routines: going = .routines
+        case .routines:
+            store.markNoticesSeen(.routines)
+            going = .routines
         case .projects: going = .projects
         case .files: going = .files
         case .library: going = .library
@@ -520,6 +525,7 @@ private struct SidebarList: View, Equatable {
                 in: .rect(cornerRadius: 10)
             )
             .contentShape(.rect(cornerRadius: 10))
+            .contentShape(.contextMenuPreview, .rect(cornerRadius: 10))
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -536,7 +542,6 @@ private struct SidebarList: View, Equatable {
                         : Palette.card(scheme),
                     in: .rect(cornerRadius: 10)
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 

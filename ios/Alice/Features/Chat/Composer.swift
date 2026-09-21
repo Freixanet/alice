@@ -218,7 +218,7 @@ struct Composer: View {
                                 HStack(spacing: 6) {
                                     Text(store.botCurrentName(for: bot))
                                         .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(store.mark(for: bot.name).color)
+                                        .foregroundStyle(.primary)
                                         .lineLimit(1)
                                     let currentName = store.botCurrentName(for: bot)
                                     if currentName.lowercased() != bot.name.lowercased() {

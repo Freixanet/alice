@@ -536,10 +536,70 @@ final class WebSocketBotChatTests: XCTestCase {
         XCTAssertEqual(usage?.calls, 2)
         XCTAssertEqual(
             MessageUsage.footer(usage: usage, tools: 3, seconds: 12),
-            "grok-4 · 2 LLM · 3 tools · 120/40/8 · 12 s"
+            "grok-4 · 2 LLM · 3 tools · in 120 · out 40 · think 8 · 12 s"
+        )
+        XCTAssertEqual(
+            MessageUsage.footer(
+                usage: MessageUsage.parse([
+                    "usage": [
+                        "model": "grok-4.6",
+                        "input": 20414,
+                        "output": 40,
+                        "reasoning": 8,
+                        "cache_hit_pct": 87,
+                    ]
+                ]),
+                tools: 0, seconds: 14
+            ),
+            "grok-4.6 · 0 tools · in 20414 · out 40 · think 8 · cached 87% · 14 s"
+        )
+        XCTAssertEqual(
+            MessageUsage.footer(
+                usage: MessageUsage.parse([
+                    "usage": ["input": 10, "output": 2, "cache_read": 9000]
+                ]),
+                tools: 1, seconds: nil
+            ),
+            "1 tool · in 10 · out 2 · think 0 · cached 9000"
         )
         XCTAssertNil(MessageUsage.parse(["usage": ["model": ""]]))
         XCTAssertNil(MessageUsage.footer(usage: nil, tools: 0, seconds: 0))
+    }
+
+    func testSlashExecRunsOnTheLiveSessionNotAsAPrompt() async throws {
+        let rpc = FakeRPC(results: [
+            "slash.exec": ["output": "Reasoning effort: medium"],
+        ])
+        let text = try await WebSocketBotChatSource(rpc: rpc).execSlash(
+            liveSessionID: "live-1", command: "/reasoning medium"
+        )
+        XCTAssertEqual(text, "Reasoning effort: medium")
+        XCTAssertEqual(await rpc.methods(), ["slash.exec"])
+        XCTAssertEqual(
+            await rpc.params(of: "slash.exec"),
+            ["session_id": "live-1", "command": "reasoning medium"]
+        )
+    }
+
+    func testSlashOutputPrefersWorkerTextAndNeverShowsSkillPayloads() {
+        XCTAssertEqual(
+            WebSocketBotChatSource.slashOutput(
+                JSONObject(["output": "Reasoning effort: high", "warning": "changed"]),
+                command: "reasoning"
+            ),
+            "changed\n\nReasoning effort: high"
+        )
+        XCTAssertEqual(
+            WebSocketBotChatSource.slashOutput(
+                JSONObject(["type": "skill", "display": "/work fix it", "message": "SYSTEM: expand"]),
+                command: "work"
+            ),
+            "/work fix it"
+        )
+        XCTAssertEqual(
+            WebSocketBotChatSource.slashOutput(JSONObject([:]), command: "status"),
+            "Hermes ran /status with nothing to show."
+        )
     }
 
     func testToolAndApprovalEventsReachTheExistingRenderer() {

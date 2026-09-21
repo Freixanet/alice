@@ -2353,6 +2353,20 @@ extension DashboardClient {
         _ = try await send("PUT", "api/config?profile=\(Self.queryValue(profile))", body)
     }
 
+    /// Live CPU, memory, and the processes using them on the Mac running Hermes.
+    func hostLoad() async throws -> HostLoad {
+        let object = try await get("api/plugins/alice/host/load")
+        guard let load = HostLoad.parse(object) else { throw Failure.unreadable }
+        return load
+    }
+
+    /// Ends one process on that Mac. The server checks the name still belongs to the pid.
+    func stopHostProcess(pid: Int, name: String) async throws {
+        _ = try await send("POST", "api/plugins/alice/host/process/stop", [
+            "pid": pid, "name": name,
+        ])
+    }
+
     /// A profile's curated memory as the Alice plugin for Hermes serves it
     /// (`hermes-plugin/`). Hermes itself has no route that edits those entries.
     func aliceMemory(profile: String) async throws -> MemorySnapshot {
@@ -2438,6 +2452,12 @@ extension DashboardClient {
                 "PUT", "api/plugins/alice/notes/\(Self.pathSegment(id))", body
             ))
         }
+    }
+
+    /// This phone's diagnostic dump, so Alice on Hermes can read what the
+    /// app last saw. Never a key, a message or an address.
+    func postAppDiagnostics(_ snapshot: AppDiagnosticsSnapshot) async throws {
+        _ = try await send("POST", "api/plugins/alice/app/diagnostics", snapshot.jsonObject())
     }
 
     private func note(from object: [String: Any]) throws -> Note {

@@ -1104,6 +1104,7 @@ struct BotsScreen: View {
         let collapsed = channel.collapsedSections.contains(section)
         return HStack(spacing: 0) {
             Button {
+                guard canOpenBot() else { return }
                 withAnimation(.snappy(duration: 0.2)) {
                     store.toggleChannelSectionCollapsed(channel.id, section: section)
                 }
@@ -1610,6 +1611,7 @@ struct BotsScreen: View {
     private func sectionHeader(_ title: String, count: Int) -> some View {
         HStack(spacing: 0) {
             Button {
+                guard canOpenBot() else { return }
                 withAnimation(.snappy(duration: 0.2)) {
                     store.toggleSectionCollapsed(title)
                 }
@@ -1680,6 +1682,7 @@ struct BotsScreen: View {
     private var unassignedSectionHeader: some View {
         HStack(spacing: 0) {
             Button {
+                guard canOpenBot() else { return }
                 withAnimation(.snappy(duration: 0.2)) {
                     store.unassignedExpanded.toggle()
                 }

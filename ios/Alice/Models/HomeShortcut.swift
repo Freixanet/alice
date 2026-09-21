@@ -124,7 +124,10 @@ struct HomeShortcut: Codable, Equatable, Identifiable, Sendable {
             return title.isEmpty ? kept("Chat") : title
         case let .destination(raw):
             return AliceDestination.all.first { $0.target.rawValue == raw }?.title ?? kept(raw)
-        case .artifact:
+        case let .artifact(kind, value):
+            if kind == LibraryTool.shortcutKind, let tool = LibraryTool(rawValue: value) {
+                return kept(tool.title)
+            }
             return kept("File")
         }
     }

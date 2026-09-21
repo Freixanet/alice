@@ -131,7 +131,9 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx = mock.Mock()
         self.plugin.register(ctx)
         ctx.register_hook.assert_called_once_with("pre_tool_call", self.plugin._pre_tool_call)
-        ctx.register_system_prompt_section.assert_called_once_with("alice.equipos", self.plugin.team_prompt)
+        ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
+        ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
+        self.assertEqual(ctx.register_system_prompt_section.call_count, 2)
 
 
 if __name__ == "__main__":

@@ -192,8 +192,10 @@ class NotesToolsTests(unittest.TestCase):
         self.plugin.register(Ctx())
         notes = [t for t in registered if t["toolset"] == "notes"]
         agents = [t for t in registered if t["toolset"] == "alice_agents"]
+        debug = [t for t in registered if t["toolset"] == "alice_debug"]
         self.assertEqual([t["name"] for t in notes], [t[0] for t in self.plugin.NOTE_TOOLS])
         self.assertEqual([t["name"] for t in agents], [t[0] for t in self.plugin.AGENT_TOOLS])
+        self.assertEqual([t["name"] for t in debug], [t[0] for t in self.plugin.DEBUG_TOOLS])
         for tool in notes:
             with self.subTest(tool=tool["name"]):
                 self.assertEqual(tool["toolset"], "notes")
@@ -206,6 +208,10 @@ class NotesToolsTests(unittest.TestCase):
             with self.subTest(tool=tool["name"]):
                 self.assertEqual(tool["toolset"], "alice_agents")
                 self.assertIs(tool["check_fn"], self.plugin._is_agent_maker)
+        for tool in debug:
+            with self.subTest(tool=tool["name"]):
+                self.assertEqual(tool["toolset"], "alice_debug")
+                self.assertIs(tool["check_fn"], self.plugin._always)
 
     def test_the_manifest_declares_the_tools_it_provides(self):
         import yaml
@@ -213,7 +219,11 @@ class NotesToolsTests(unittest.TestCase):
         manifest = yaml.safe_load((PLUGIN_INIT.parent / "plugin.yaml").read_text(encoding="utf-8"))
         self.assertEqual(
             sorted(manifest["provides_tools"]),
-            sorted([t[0] for t in self.plugin.NOTE_TOOLS] + [t[0] for t in self.plugin.AGENT_TOOLS]),
+            sorted(
+                [t[0] for t in self.plugin.NOTE_TOOLS]
+                + [t[0] for t in self.plugin.AGENT_TOOLS]
+                + [t[0] for t in self.plugin.DEBUG_TOOLS]
+            ),
         )
 
     def test_each_handler_passes_its_arguments_through(self):

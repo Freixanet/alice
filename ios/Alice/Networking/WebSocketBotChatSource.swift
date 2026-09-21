@@ -515,6 +515,57 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         return state
     }
 
+    /// Runs a Hermes slash command on a live session, not as a prompt.
+    ///
+    /// Desktop and the TUI send `/reasoning`, `/status`, `/compress` and the
+    /// rest through `slash.exec` so the model never sees them as chat. Alice
+    /// used to `prompt.submit` the typed line, and Alice-the-agent then went
+    /// looking up what the command meant.
+    func execSlash(
+        liveSessionID: String, command: String, profile: String? = nil
+    ) async throws -> String {
+        var body = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        while body.hasPrefix("/") { body.removeFirst() }
+        guard !body.isEmpty else {
+            throw HermesRPCClient.Failure(reason: "That slash command is empty.")
+        }
+        var params: [String: Any] = [
+            "session_id": liveSessionID,
+            "command": body,
+        ]
+        if let profile, !profile.isEmpty { params["profile"] = profile }
+        let result = try await rpc.call("slash.exec", JSONObject(params))
+        return Self.slashOutput(result, command: body)
+    }
+
+    /// Text Alice can put in the chat from a `slash.exec` result.
+    ///
+    /// Worker commands return `output` (and sometimes `warning`). Commands
+    /// rerouted to `command.dispatch` set `type` and may carry `display` or
+    /// `notice` instead — never the model-facing `message` of a skill.
+    static func slashOutput(_ result: JSONObject, command: String) -> String {
+        let warning = (result["warning"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let output = (result["output"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !output.isEmpty, output != "(no output)" {
+            return warning.isEmpty ? output : "\(warning)\n\n\(output)"
+        }
+        let display = (result["display"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !display.isEmpty {
+            return warning.isEmpty ? display : "\(warning)\n\n\(display)"
+        }
+        let notice = (result["notice"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !notice.isEmpty {
+            return warning.isEmpty ? notice : "\(warning)\n\n\(notice)"
+        }
+        if !warning.isEmpty { return warning }
+        let name = command.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? command
+        return "Hermes ran /\(name) with nothing to show."
+    }
+
     /// Answers an approval in that session.
     ///
     /// A server→client request (`srq-…`) is answered with a response frame, and

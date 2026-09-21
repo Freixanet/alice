@@ -54,7 +54,7 @@ struct DrawerPan: UIViewRepresentable {
 
     func updateUIView(_ view: UIView, context: Context) {
         context.coordinator.controlIdentifierPrefix = controlIdentifierPrefix
-        context.coordinator.pan?.cancelsTouchesInView = controlIdentifierPrefix != nil
+        context.coordinator.pan?.cancelsTouchesInView = true
         context.coordinator.shouldBegin = shouldBegin
         context.coordinator.onChange = onChange
         context.coordinator.onEnd = onEnd
@@ -97,12 +97,12 @@ struct DrawerPan: UIViewRepresentable {
             guard pan == nil, let host = anchor.owningControllerView else { return }
             let pan = UIPanGestureRecognizer(self, action: #selector(handle))
             pan.delegate = self
-            // Buttons, links and text selection all keep working: this watches
-            // the touch, it does not swallow it.
-            // Ordinary controls are excluded below. When an explicitly named
-            // row is allowed, a recognised swipe must cancel that row's press
-            // so lifting the finger cannot open it after navigation began.
-            pan.cancelsTouchesInView = controlIdentifierPrefix != nil
+            // Buttons, links and text selection keep working on a tap: this
+            // recogniser only cancels the original touches once a swipe has
+            // actually begun. Leaving them alive used to deliver the same
+            // finger-up to whatever control had just arrived under it — a
+            // section header on Agents, a bot row, a chat extra.
+            pan.cancelsTouchesInView = true
             pan.delaysTouchesBegan = false
             host.addGestureRecognizer(pan)
             self.host = host

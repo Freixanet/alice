@@ -50,8 +50,8 @@ struct RootView: View {
 
                 ChatScreen(
                     onOpenDrawer: { setDrawer(true) },
-                    onBack: goBackToBots,
-                    onOpenBots: openBots,
+                    onBack: { goBackToBots() },
+                    onOpenBots: { openBots() },
                     drawerProgress: progress
                 )
                     .overlay {
@@ -124,12 +124,12 @@ struct RootView: View {
                                 }
                             }
                         )
-                        // Same as the conversation's: the stack's container is
-                        // white by default and is what the search keyboard's
-                        // corners would show.
                         .containerBackground(Palette.background(scheme), for: .navigation)
                     }
                     .background(Palette.background(scheme))
+                    // The lift that finishes the incoming swipe must not land
+                    // on a section or row at the same height.
+                    .allowsHitTesting(!botsRowSwipeRecognized)
                     // The same swipe that got here from a bot's conversation,
                     // one step further out. A page you can only leave by
                     // reaching for a button is a page the thumb argues with.
@@ -238,6 +238,18 @@ struct RootView: View {
             // for it: on "system" it always resolved the light variant, so the
             // accent was wrong in the dark exactly where it is most visible.
             .tint(store.accent.primary(scheme))
+            .fullScreenCover(item: Bindable(store).presentedLibraryTool) { tool in
+                NavigationStack {
+                    LibraryToolScreen(tool: tool)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Done") { store.presentedLibraryTool = nil }
+                            }
+                        }
+                }
+                .presentationBackground(Palette.background(scheme))
+                .preferredColorScheme(store.theme.colorScheme)
+            }
             .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingBots)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingNotes)
@@ -286,13 +298,13 @@ struct RootView: View {
                         let flicked = abs(predicted) > 120
                         drag = 0
                         guard !inBotChat || drawerOpen else {
-                            if travelled || flicked { goBackToBots() }
+                            if travelled || flicked { goBackToBots(fromSwipe: true) }
                             return
                         }
                         if !drawerOpen, translation < 0 {
                             if travelled || flicked {
                                 SwipeNavigationTip().invalidate(reason: .actionPerformed)
-                                openBots()
+                                openBots(fromSwipe: true)
                             }
                             return
                         }
@@ -371,35 +383,40 @@ struct RootView: View {
     /// Back out of a bot's conversation to the list it was opened from.
     /// Forward into the bots from Alice's own conversation: in off the right,
     /// the way anything you are moving towards should arrive.
-    private func openBots() {
+    private func openBots(fromSwipe: Bool = false) {
         botsCloseTask?.cancel()
         botsCloseTask = nil
         closingBots = false
-        botsRowSwipeRecognized = false
+        botsRowSwipeRecognized = fromSwipe
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         botsExitOffset = 0
         store.botsFromLeading = false
         store.showingBots = true
+        store.markNoticesSeen(.agents)
+        if fromSwipe { releaseBotsRowSwipeBlock() }
     }
 
-    private func goBackToBots() {
+    private func goBackToBots(fromSwipe: Bool = false) {
         botsCloseTask?.cancel()
         botsCloseTask = nil
         closingBots = false
-        botsRowSwipeRecognized = false
+        botsRowSwipeRecognized = fromSwipe
         store.markActiveBotRead()
+        store.markNoticesSeen(.agents)
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         botsExitOffset = 0
         store.botsFromLeading = true
         store.showingBots = true
+        if fromSwipe { releaseBotsRowSwipeBlock() }
     }
 
-    /// UIKit can deliver the Button's release just after the pan's `.ended`.
-    /// One short run-loop grace period covers that release without making a
-    /// later, deliberate tap feel dead when a short horizontal drag cancels.
+    /// UIKit can deliver a Button's release just after the pan's `.ended`,
+    /// including onto a page that appeared under the same finger. Hold the
+    /// page deaf until that lift has passed, without making a later tap
+    /// feel dead.
     private func releaseBotsRowSwipeBlock() {
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(150))
+            try? await Task.sleep(for: .milliseconds(280))
             botsRowSwipeRecognized = false
         }
     }

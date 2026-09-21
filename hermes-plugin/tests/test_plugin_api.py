@@ -456,6 +456,45 @@ class PluginAPITests(unittest.TestCase):
                     else:
                         os.environ[key] = value
 
+    def test_the_phone_can_upload_a_diagnostic_dump(self):
+        body = {
+            "device_id": "A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B",
+            "wellbeing": "well",
+            "connected": True,
+            "dashboard_ready": True,
+            "gateway_configured": True,
+            "version": "1.0",
+            "build": "2",
+            "unknown_events": ["runStream:foo ×1 id"],
+            "lines": ["2026-09-21T12:00:00Z turn.failed reply=r1 error=timeout"],
+        }
+        saved = self.client.post("/api/plugins/alice/app/diagnostics", json=body)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["ok"], True)
+        self.assertEqual(saved.json()["lines"], 1)
+        path = Path(self.hermes_home.name) / ".alice" / "diagnostics" / f"{body['device_id']}.json"
+        dumped = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(dumped["wellbeing"], "well")
+        self.assertEqual(dumped["lines"], body["lines"])
+        self.assertNotIn("gateway_url", dumped)
+        self.assertNotIn("key", dumped)
+
+    def test_a_path_in_the_device_id_cannot_leave_the_diagnostics_folder(self):
+        saved = self.client.post("/api/plugins/alice/app/diagnostics", json={
+            "device_id": "../etc/passwd",
+            "lines": ["x"],
+        })
+        self.assertEqual(saved.status_code, 200, saved.text)
+        device = saved.json()["device_id"]
+        self.assertEqual(device, "etcpasswd")
+        folder = Path(self.hermes_home.name) / ".alice" / "diagnostics"
+        self.assertTrue((folder / "etcpasswd.json").is_file())
+        self.assertFalse((Path(self.hermes_home.name) / "etc").exists())
+
+    def test_a_blank_device_id_is_refused(self):
+        refused = self.client.post("/api/plugins/alice/app/diagnostics", json={"device_id": "///"})
+        self.assertEqual(refused.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

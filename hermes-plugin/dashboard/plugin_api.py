@@ -1366,4 +1366,115 @@ async def agent_job(job_id: str) -> Dict[str, Any]:
     return found
 
 
+DIAGNOSTICS_MAX_LINES = 200
+DIAGNOSTICS_LINE_MAX = 2000
+_DEVICE_ID_RE = re.compile(r"[^A-Za-z0-9-]")
+
+
+class _AppDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    captured_at: Optional[str] = None
+    version: Optional[str] = None
+    build: Optional[str] = None
+    revision: Optional[str] = None
+    wellbeing: Optional[str] = None
+    connected: Optional[bool] = None
+    dashboard_ready: Optional[bool] = None
+    gateway_configured: Optional[bool] = None
+    unknown_events: List[str] = Field(default_factory=list)
+    lines: List[str] = Field(default_factory=list)
+
+
+def _safe_device_id(raw: str) -> str:
+    cleaned = _DEVICE_ID_RE.sub("", str(raw or ""))[:64]
+    if not cleaned or cleaned in {".", ".."}:
+        raise HTTPException(status_code=400, detail="A device id is required.")
+    return cleaned
+
+
+def _diagnostics_dir(home: Path) -> Path:
+    return home / ".alice" / "diagnostics"
+
+
+def _save_diagnostics(body: _AppDiagnostics) -> Dict[str, Any]:
+    device = _safe_device_id(body.device_id)
+    folder = _diagnostics_dir(_engine_home())
+    folder.mkdir(parents=True, exist_ok=True)
+    lines = [str(line)[:DIAGNOSTICS_LINE_MAX] for line in (body.lines or [])][-DIAGNOSTICS_MAX_LINES:]
+    events = [str(item)[:200] for item in (body.unknown_events or [])][:32]
+    payload = {
+        "device_id": device,
+        "captured_at": body.captured_at,
+        "version": body.version,
+        "build": body.build,
+        "revision": body.revision,
+        "wellbeing": body.wellbeing,
+        "connected": body.connected,
+        "dashboard_ready": body.dashboard_ready,
+        "gateway_configured": body.gateway_configured,
+        "unknown_events": events,
+        "lines": lines,
+    }
+    path = folder / f"{device}.json"
+    tmp = folder / f".{device}.tmp"
+    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+    return {"ok": True, "device_id": device, "lines": len(lines)}
+
+
+@router.post("/app/diagnostics")
+async def post_app_diagnostics(body: _AppDiagnostics) -> Dict[str, Any]:
+    return await asyncio.to_thread(_save_diagnostics, body)
+
+
+def _host_load_module():
+    import importlib.util
+
+    path = Path(__file__).resolve().parent / "host_load.py"
+    name = "alice_host_load"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _host_load_reading() -> Dict[str, Any]:
+    try:
+        return _host_load_module().current()
+    except Exception:
+        _log.exception("host load")
+        raise HTTPException(status_code=503, detail="This Mac could not be read.")
+
+
+@router.get("/host/load")
+async def host_load() -> JSONResponse:
+    """Live CPU, memory, and the processes using them on this Mac."""
+    payload = await asyncio.to_thread(_host_load_reading)
+    return JSONResponse(payload, headers=_NO_STORE)
+
+
+class _StopProcess(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pid: int
+    name: str
+
+
+def _stop_host_process(pid: int, name: str) -> Dict[str, Any]:
+    return _host_load_module().stop_process(pid, name)
+
+
+@router.post("/host/process/stop")
+async def stop_host_process(body: _StopProcess) -> JSONResponse:
+    """End the named process. The name is checked again so a reused pid is left alone."""
+    payload = await asyncio.to_thread(_stop_host_process, body.pid, body.name)
+    status = 200 if payload.get("ok") else 409
+    return JSONResponse(payload, status_code=status, headers=_NO_STORE)
+
+
 _register_claim_auth()

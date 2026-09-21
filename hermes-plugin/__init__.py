@@ -393,9 +393,123 @@ def _register_agent_tools(ctx) -> None:
         )
 
 
+_ERROR_MARKS = ("fail", "error", "timeout", "losttouch", "reconnecting", "endedunseen")
+
+
+def _always(**_) -> bool:
+    return True
+
+
+def _diagnostics_reports(root: Path) -> list:
+    import json
+
+    folder = root / ".alice" / "diagnostics"
+    if not folder.is_dir():
+        return []
+    found = []
+    for path in folder.glob("*.json"):
+        if path.name.startswith("."):
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            data["_mtime"] = path.stat().st_mtime
+            found.append(data)
+    found.sort(key=lambda row: row.get("_mtime") or 0, reverse=True)
+    return found
+
+
+def alice_app_status(_args=None) -> str:
+    try:
+        from hermes_constants import get_hermes_home
+
+        root, _ = _root_and_sender(Path(get_hermes_home()))
+        reports = _diagnostics_reports(root)
+    except Exception as exc:
+        return _agent_json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+    if not reports:
+        return _agent_json({"ok": True, "reports": 0, "note": "no dump from the phone yet"})
+    latest = reports[0]
+    return _agent_json({
+        "ok": True,
+        "reports": len(reports),
+        "device_id": latest.get("device_id"),
+        "captured_at": latest.get("captured_at"),
+        "version": latest.get("version"),
+        "build": latest.get("build"),
+        "revision": latest.get("revision"),
+        "wellbeing": latest.get("wellbeing"),
+        "connected": latest.get("connected"),
+        "dashboard_ready": latest.get("dashboard_ready"),
+        "gateway_configured": latest.get("gateway_configured"),
+        "unknown_events": latest.get("unknown_events") or [],
+        "line_count": len(latest.get("lines") or []),
+    })
+
+
+def alice_recent_errors(_args=None) -> str:
+    try:
+        from hermes_constants import get_hermes_home
+
+        root, _ = _root_and_sender(Path(get_hermes_home()))
+        reports = _diagnostics_reports(root)
+    except Exception as exc:
+        return _agent_json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+    if not reports:
+        return _agent_json({"ok": True, "errors": [], "note": "no dump from the phone yet"})
+    lines = reports[0].get("lines") or []
+    errors = [
+        line for line in lines
+        if any(mark in str(line).lower() for mark in _ERROR_MARKS)
+    ]
+    return _agent_json({"ok": True, "errors": errors[-40:], "scanned": len(lines)})
+
+
+def debug_prompt(_session_info=None) -> str:
+    return (
+        "## Alice app diagnostics\n"
+        "When the person asks what is wrong with Alice or the iPhone app, "
+        "call `alice_app_status` and `alice_recent_errors` before guessing. "
+        "Do not invent connection state. Typical causes: notConfigured means they "
+        "have not paired; unreachable means local network, Tailscale or Hermes is "
+        "down; reconnecting or lostTouch means the gateway dropped mid-turn and "
+        "Alice does not retry mutations; turn.failed is the last send; unknown "
+        "event kinds are stream events Alice has not learnt, and the reply should "
+        "still have been kept.\n"
+    )
+
+
+DEBUG_TOOLS = (
+    ("alice_app_status", "📱",
+     "Connection, build and unknown events from the last dump the iPhone uploaded. "
+     "Call this before guessing why Alice is failing.",
+     ({}, []),
+     lambda _a: alice_app_status()),
+    ("alice_recent_errors", "⚠️",
+     "Recent failure, timeout and reconnect lines from the last dump the iPhone uploaded.",
+     ({}, []),
+     lambda _a: alice_recent_errors()),
+)
+
+
+def _register_debug_tools(ctx) -> None:
+    for name, emoji, description, (properties, required), call in DEBUG_TOOLS:
+        schema = {"name": name, "description": description,
+                  "parameters": {"type": "object", "properties": properties, "required": required}}
+        ctx.register_tool(
+            name=name, toolset="alice_debug", schema=schema,
+            handler=lambda args, _call=call, **_: _call(args or {}),
+            check_fn=_always, description=description, emoji=emoji,
+        )
+
+
 def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
+    ctx.register_system_prompt_section("alice.debug", debug_prompt)
     _register_notes_tools(ctx)
     _register_agent_tools(ctx)
+    _register_debug_tools(ctx)

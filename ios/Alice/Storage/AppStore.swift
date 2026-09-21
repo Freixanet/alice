@@ -190,6 +190,8 @@ final class AppStore {
         static let noteFolderSort = "alice.notes.folderSort"
         static let recentlyDeleted = "alice.notes.recentlyDeleted"
         static let activitySeen = "alice.events.activitySeen"
+        static let agentsNoticesSeen = "alice.events.agentsNoticesSeen"
+        static let routinesNoticesSeen = "alice.events.routinesNoticesSeen"
         static let dismissedAttention = "alice.events.dismissedAttention"
     }
 
@@ -435,6 +437,8 @@ final class AppStore {
             ?? .manual
         botChatClearedAt = (defaults.dictionary(forKey: Keys.botChatClearedAt) as? [String: Date]) ?? [:]
         activitySeen = defaults.object(forKey: Keys.activitySeen) as? Date ?? .distantPast
+        agentsNoticesSeen = defaults.object(forKey: Keys.agentsNoticesSeen) as? Date ?? activitySeen
+        routinesNoticesSeen = defaults.object(forKey: Keys.routinesNoticesSeen) as? Date ?? activitySeen
         if let savedCollapsed = defaults.stringArray(forKey: Keys.collapsedSections) {
             collapsedSections = Set(savedCollapsed)
         }
@@ -938,6 +942,16 @@ final class AppStore {
             }
         }
         return found.sorted { ($0.when ?? .distantPast) > ($1.when ?? .distantPast) }
+    }
+
+    /// One live reading of the Mac this Hermes is running on.
+    func hostLoad() async throws -> HostLoad {
+        try await dashboard.hostLoad()
+    }
+
+    /// Ends one process on that Mac.
+    func stopHostProcess(pid: Int, name: String) async throws {
+        try await dashboard.stopHostProcess(pid: pid, name: name)
     }
 
     func botCurrentName(for name: String) -> String {
@@ -2180,8 +2194,34 @@ final class AppStore {
         didSet { defaults.set(activitySeen, forKey: Keys.activitySeen) }
     }
 
+    /// When the Agents row last absorbed its own notices.
+    var agentsNoticesSeen: Date = .distantPast {
+        didSet { defaults.set(agentsNoticesSeen, forKey: Keys.agentsNoticesSeen) }
+    }
+
+    /// When the Routines row last absorbed its own notices.
+    var routinesNoticesSeen: Date = .distantPast {
+        didSet { defaults.set(routinesNoticesSeen, forKey: Keys.routinesNoticesSeen) }
+    }
+
     var unreadActivity: Int {
         activity.filter { $0.occurred > activitySeen }.count
+    }
+
+    /// Unread notices that belong on one drawer row.
+    func unreadNotices(in place: AliceEvent.NoticePlace) -> Int {
+        let seen = switch place {
+        case .agents: agentsNoticesSeen
+        case .routines: routinesNoticesSeen
+        }
+        return activity.filter { $0.noticePlace == place && $0.occurred > seen }.count
+    }
+
+    func markNoticesSeen(_ place: AliceEvent.NoticePlace) {
+        switch place {
+        case .agents: agentsNoticesSeen = Date()
+        case .routines: routinesNoticesSeen = Date()
+        }
     }
 
     /// Components and automations that want attention right now.
@@ -2226,6 +2266,53 @@ final class AppStore {
         case .well: "Hermes connected"
         case let .needsAttention(count):
             count == 1 ? "1 alert to check" : "\(count) alerts to check"
+        }
+    }
+
+    /// Connection, build and recent log lines — never a secret or a message.
+    func diagnosticsSnapshot() -> AppDiagnosticsSnapshot {
+        let build = AliceBuildInfo.current
+        let state: String
+        switch wellbeing {
+        case .notConfigured: state = "notConfigured"
+        case .unreachable: state = "unreachable"
+        case .well: state = "well"
+        case let .needsAttention(count): state = "needsAttention:\(count)"
+        }
+        return AppDiagnosticsSnapshot(
+            deviceID: AppDiagnosticsSnapshot.vendorDeviceID,
+            capturedAt: Date(),
+            version: build.version,
+            build: build.build,
+            revision: build.revision,
+            wellbeing: state,
+            connected: isConnected,
+            dashboardReady: dashboardReady,
+            gatewayConfigured: !gatewayURL.isEmpty,
+            unknownEvents: HermesUnknownEvents.shared.all.prefix(16).map { sighting in
+                let keys = sighting.keys.joined(separator: ",")
+                return keys.isEmpty
+                    ? "\(sighting.type) ×\(sighting.count)"
+                    : "\(sighting.type) ×\(sighting.count) \(keys)"
+            },
+            lines: DiagnosticsLog.recentLines(limit: 200)
+        )
+    }
+
+    /// POST the dump to the Alice plugin. `force` is `/debug` and a failed
+    /// turn; coming to the foreground waits 20 seconds between uploads.
+    @discardableResult
+    func pushDiagnostics(force: Bool = false) async -> Bool {
+        guard dashboardReady else { return false }
+        if !force, let last = lastDiagnosticsPush, Date().timeIntervalSince(last) < 20 {
+            return true
+        }
+        do {
+            try await dashboard.postAppDiagnostics(diagnosticsSnapshot())
+            lastDiagnosticsPush = Date()
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -2442,6 +2529,8 @@ final class AppStore {
     var notify: (@MainActor ([AliceEvent]) async -> Void)?
     /// Whether the interface is on screen, for the "already watching" rule.
     var isForeground = true
+    /// Foreground dumps skip if one went up in the last 20 seconds.
+    private var lastDiagnosticsPush: Date?
 
     @discardableResult
     func syncEvents() async -> [AliceEvent] {
@@ -3285,7 +3374,12 @@ final class AppStore {
         persistActivity()
     }
 
-    func markActivitySeen() { activitySeen = Date() }
+    func markActivitySeen() {
+        let now = Date()
+        activitySeen = now
+        agentsNoticesSeen = now
+        routinesNoticesSeen = now
+    }
 
     /// Removes a row the person is done with.
     ///
@@ -3553,6 +3647,7 @@ final class AppStore {
         requestedAgentTemplate = "inbox"
         showingNotes = false
         showingBots = true
+        markNoticesSeen(.agents)
     }
 
     /// Deletes a note, gone from the list at once. One Hermes did not delete
@@ -5330,6 +5425,7 @@ final class AppStore {
             case .bots:
                 botsFromLeading = false
                 showingBots = true
+                markNoticesSeen(.agents)
             default:
                 requestedDestination = destination
             }
@@ -5350,8 +5446,10 @@ final class AppStore {
                 openConversation(existing.id)
             }
         case let .artifact(kind, value):
-            requestedDestination = .library
-            if let artifactKind = Artifact.Kind(rawValue: kind) {
+            if kind == LibraryTool.shortcutKind, let tool = LibraryTool(rawValue: value) {
+                presentedLibraryTool = tool
+            } else if let artifactKind = Artifact.Kind(rawValue: kind) {
+                requestedDestination = .library
                 requestedArtifact = Artifact(kind: artifactKind, value: value, session: "")
             }
         case let .conversation(id):
@@ -5505,6 +5603,8 @@ final class AppStore {
     var requestedNotesScope: NotesScope?
     /// A home pin that wants a library item open once Library is up.
     var requestedArtifact: Artifact?
+    /// A living artifact covering the screen: Mac, and whatever is added next.
+    var presentedLibraryTool: LibraryTool?
     /// Opens the new-agent sheet on this template id, then is cleared.
     var requestedAgentTemplate: String?
     /// A note is open in its editor, on top of Notes. The Notes page's own
@@ -6559,6 +6659,7 @@ final class AppStore {
             }
         } catch {
             DiagnosticsLog.write("turn.failed reply=\(replyID) error=\(error.localizedDescription)")
+            Task { await self.pushDiagnostics(force: true) }
             if profile == nil, let needed = ModelConfirmation.needed(from: error) {
                 holdHomeModelConfirmation(
                     conversationID: conversationID, replyID: replyID, text: text,
@@ -6668,7 +6769,7 @@ final class AppStore {
     /// picker names. Nil when Hermes could not open it: nothing was sent then,
     /// and the gateway can still take the turn. A model Hermes will not switch
     /// to without confirmation is thrown as `ModelConfirmation.Needed`.
-    private func openHomeSession(
+    func openHomeSession(
         source: WebSocketBotChatSource, conversationID: String, earlier: [Message],
         confirmModel: Bool = false
     ) async throws -> HomeChatSession? {
@@ -7187,7 +7288,7 @@ final class AppStore {
     /// for its own signed-in session, so this reuses the login Alice already
     /// has: no second credential store, no second login screen, and the
     /// password never leaves `DashboardClient`.
-    private func botChatSource() async -> WebSocketBotChatSource? {
+    func botChatSource() async -> WebSocketBotChatSource? {
         // A send just after launch can arrive before the foreground probe.
         // Restore the saved dashboard instead of treating gateway access as
         // permission to run a named agent under the main profile.
@@ -7289,10 +7390,11 @@ final class AppStore {
             releaseBotTurn(activeID, stopped: false)
         }
 
-        // Management commands and a deliberately small set of natural control
-        // intents stay on-device and use Hermes' authoritative management
-        // APIs. Everything else continues into the actual agent unchanged.
+        // Management commands stay on-device. Hermes slash commands (`/reasoning`,
+        // `/status`, `/compress`…) run through `slash.exec` on this chat's
+        // session. Everything else is a model turn.
         if handleChatControlIfNeeded(text) { return }
+        if handleHermesSlashIfNeeded(text) { return }
 
         // Dropped since the last message? Pick it back up rather than making
         // somebody go to Connect and press a button for a connection that is
@@ -8027,7 +8129,7 @@ final class AppStore {
     private static let canonicalBotChatLifetime: TimeInterval = 45
 
     /// A bot's canonical chat, from the cache when it is fresh.
-    private func resolveBotChat(
+    func resolveBotChat(
         _ profile: String, source: WebSocketBotChatSource, fresh: Bool = false
     ) async throws -> CanonicalBotChat {
         if !fresh, let cached = canonicalBotChats[profile],

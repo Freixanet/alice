@@ -31,7 +31,7 @@ source of truth and merge conflicts in a `.pbxproj` never happen.
 Chat is the app. A tab bar would put peers at the bottom of a screen that is
 really one thing, so everyday navigation and conversation history live behind a
 drawer that slides in from the left. The drawer intentionally stays short:
-Agents, Notes, Activity, Routines, Projects and Library. Configuration lives in Settings,
+Agents, Notes, Routines, Projects and Library. Activity lives in Settings. Configuration lives in Settings,
 with technical administration progressively disclosed under Advanced.
 
 ## What Liquid Glass is doing here
@@ -50,10 +50,10 @@ with technical administration progressively disclosed under Advanced.
 | Chat                      | Streaming replies, tool calls, Markdown, model picker   |
 | Agents                    | Roster, create, model and fallback, routines, soul      |
 | Connect                   | Pairing-first connection; manual details under Advanced |
-| Settings                  | General, connection, agent options, Advanced            |
+| Settings                  | Activity, general, connection, agent options, Advanced  |
 | Skills                    | List, search, filter, enable/disable against Hermes     |
 | Tools, Plugins, MCP       | Preserved under Settings → Advanced                     |
-| Projects, Library, Memory | User-facing work and curated memory                     |
+| Projects, Library, Memory | User-facing work, a live Mac reading, and curated memory |
 | Activity, Sessions, Usage | Current attention plus history and usage                |
 
 Skills, Tools and Add-ons share one screen: they differ in where the rows come

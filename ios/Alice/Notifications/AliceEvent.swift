@@ -296,6 +296,29 @@ struct ActivityGroup: Identifiable, Sendable {
     }
 }
 
+extension AliceEvent {
+    /// The drawer row where this notice can be acted on.
+    ///
+    /// A routine run belongs on Routines. Something about an agent belongs on
+    /// Agents. A component or channel with no agent stays in the log.
+    enum NoticePlace: String, Sendable {
+        case agents
+        case routines
+    }
+
+    var noticePlace: NoticePlace? {
+        if reference.routineKey != nil
+            || kind == .automationSucceeded
+            || kind == .automationFailed {
+            return .routines
+        }
+        if profile != nil || kind == .finished || kind == .needsInput {
+            return .agents
+        }
+        return nil
+    }
+}
+
 /// What Alice last saw, so the same fact is not reported twice.
 ///
 /// Hermes has no durable event history — `session.events.since` is a 512-entry
