@@ -151,21 +151,21 @@ struct Sidebar: View, Equatable {
     /// grouped under Settings → Advanced instead of competing with recents.
     private var destinations: some View {
         VStack(spacing: 2) {
-            row("Agents", systemImage: "person.2", weight: .medium) {
+            row("Agents", systemImage: "person.2", weight: .medium, destination: .bots) {
                 onDismiss()
                 store.botsFromLeading = false
                 store.showingBots = true
             }
             // Second, right under Agents: a note is written in the moment or
             // not at all, so it is the shortest way in the drawer.
-            row("Notes", systemImage: "note.text", weight: .medium) { openNotes() }
+            row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
             row(
                 "Activity", systemImage: "bell", weight: .medium,
-                badge: store.unreadActivity
+                badge: store.unreadActivity, destination: .activity
             ) { going = .activity }
-            row("Routines", systemImage: "clock", weight: .medium) { going = .routines }
-            row("Projects", systemImage: "folder", weight: .medium) { going = .projects }
-            row("Library", systemImage: "photo.on.rectangle", weight: .medium) { going = .library }
+            row("Routines", systemImage: "clock", weight: .medium, destination: .routines) { going = .routines }
+            row("Projects", systemImage: "folder", weight: .medium, destination: .projects) { going = .projects }
+            row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
         }
         .padding(.horizontal, 12)
         // Most of the gap to Pinned is the list's own top inset, which has to
@@ -314,11 +314,13 @@ struct Sidebar: View, Equatable {
     }
 
     /// Each symbol gets a fixed column so every label starts on the same line.
+    @ViewBuilder
     private func row(
         _ title: String, systemImage: String, weight: Font.Weight = .regular,
-        badge: Int = 0, action: @escaping () -> Void
+        badge: Int = 0, destination: AliceDestination.Target? = nil,
+        action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: systemImage)
                     .font(.system(size: 15, weight: weight))
@@ -343,6 +345,18 @@ struct Sidebar: View, Equatable {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar.row.\(title)")
+
+        if let destination {
+            button.contextMenu {
+                AddToHomeButton(
+                    target: .place(destination),
+                    label: title,
+                    symbol: systemImage
+                )
+            }
+        } else {
+            button
+        }
     }
 }
 
@@ -518,6 +532,12 @@ private struct SidebarList: View, Equatable {
         } label: {
             Label(conversation.pinned ? "Unpin" : "Pin", systemImage: "pin")
         }
+
+        AddToHomeButton(
+            target: .conversation(conversation.id),
+            label: store.displayTitle(for: conversation),
+            symbol: conversation.isBotChat ? "person" : "bubble.left"
+        )
 
         Button {
             newTitle = conversation.title

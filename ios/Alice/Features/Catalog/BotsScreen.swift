@@ -605,6 +605,12 @@ struct BotsScreen: View {
                 }
             }
 
+            AddToHomeButton(
+                target: .bot(bot.name),
+                label: store.botCurrentName(for: bot),
+                symbol: "person"
+            )
+
             if let channel {
                 // Inside a channel, sections are that channel's own. Only the
                 // places the agent can go are offered, and sections are made —

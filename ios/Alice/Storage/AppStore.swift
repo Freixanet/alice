@@ -164,6 +164,7 @@ final class AppStore {
         static let botCustomNames = "alice.bot.customNames"
         static let botSectionOrder = "alice.bot.sectionOrder"
         static let botChannels = "alice.bot.channels"
+        static let homeShortcuts = "alice.home.shortcuts"
         static let botPlacementsApplied = "alice.bot.placementsApplied"
         static let unassignedExpanded = "alice.bot.unassignedExpanded"
         static let hiddenExpanded = "alice.bot.hiddenExpanded"
@@ -223,6 +224,14 @@ final class AppStore {
         didSet {
             if let data = try? JSONEncoder().encode(botChannels) {
                 defaults.set(data, forKey: Keys.botChannels)
+            }
+        }
+    }
+    /// Pins on the empty home. Phone-only, like channels.
+    var homeShortcuts: [HomeShortcut] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(homeShortcuts) {
+                defaults.set(data, forKey: Keys.homeShortcuts)
             }
         }
     }
@@ -405,6 +414,8 @@ final class AppStore {
         botSections = (defaults.dictionary(forKey: Keys.botSections) as? [String: String]) ?? [:]
         botChannels = (defaults.data(forKey: Keys.botChannels))
             .flatMap { try? JSONDecoder().decode([BotChannel].self, from: $0) } ?? []
+        homeShortcuts = (defaults.data(forKey: Keys.homeShortcuts))
+            .flatMap { try? JSONDecoder().decode([HomeShortcut].self, from: $0) } ?? []
         botPlacementsApplied = (defaults.dictionary(forKey: Keys.botPlacementsApplied) as? [String: Int]) ?? [:]
         unassignedExpanded = defaults.bool(forKey: Keys.unassignedExpanded)
         hiddenExpanded = defaults.bool(forKey: Keys.hiddenExpanded)
@@ -5220,6 +5231,79 @@ final class AppStore {
         }
     }
 
+    func hasHomeShortcut(matching target: HomeShortcut.Target) -> Bool {
+        homeShortcuts.contains { $0.target == target }
+    }
+
+    func addHomeShortcut(_ shortcut: HomeShortcut) {
+        guard !hasHomeShortcut(matching: shortcut.target) else { return }
+        homeShortcuts.append(shortcut)
+    }
+
+    func removeHomeShortcut(_ id: String) {
+        homeShortcuts.removeAll { $0.id == id }
+    }
+
+    func removeHomeShortcut(matching target: HomeShortcut.Target) {
+        homeShortcuts.removeAll { $0.target == target }
+    }
+
+    /// The dragged pin takes `target`'s place, the way the Agents shelf does.
+    func moveHomeShortcut(_ source: String, to target: String) {
+        guard source != target,
+              let from = homeShortcuts.firstIndex(where: { $0.id == source }),
+              let to = homeShortcuts.firstIndex(where: { $0.id == target })
+        else { return }
+        var next = homeShortcuts
+        let item = next.remove(at: from)
+        next.insert(item, at: to)
+        homeShortcuts = next
+    }
+
+    /// Opens what a home pin points at. Missing chats stay missing: this does
+    /// not fall through to another conversation or another agent.
+    func openHomeShortcut(_ shortcut: HomeShortcut) {
+        showingBots = false
+        showingNotes = false
+        switch shortcut.target {
+        case let .destination(raw):
+            guard let destination = AliceDestination.Target(rawValue: raw) else { return }
+            switch destination {
+            case .notes:
+                showingNotes = true
+            case .bots:
+                botsFromLeading = false
+                showingBots = true
+            default:
+                requestedDestination = destination
+            }
+        case let .note(id):
+            showingNotes = true
+            requestedNote = id
+        case let .noteFolder(id):
+            showingNotes = true
+            requestedNotesScope = .folder(id)
+        case let .bot(name):
+            if let bot = cachedBots.first(where: {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+            }) {
+                openBotConversation(for: bot)
+            } else if let existing = conversations.first(where: {
+                $0.botName?.caseInsensitiveCompare(name) == .orderedSame
+            }) {
+                openConversation(existing.id)
+            }
+        case let .artifact(kind, value):
+            requestedDestination = .library
+            if let artifactKind = Artifact.Kind(rawValue: kind) {
+                requestedArtifact = Artifact(kind: artifactKind, value: value, session: "")
+            }
+        case let .conversation(id):
+            guard conversations.contains(where: { $0.id == id }) else { return }
+            openConversation(id)
+        }
+    }
+
     /// Records a model as chosen, keeping the short list of recent ones.
     func chooseModel(_ id: String, provider: String?) {
         selectedModel = id
@@ -5359,6 +5443,12 @@ final class AppStore {
     var showingBots = false
     /// Notes is a page as well, reached sideways from the drawer.
     var showingNotes = false
+    /// A home pin that wants a particular note open once Notes is up.
+    var requestedNote: String?
+    /// A home pin that wants a particular folder open once Notes is up.
+    var requestedNotesScope: NotesScope?
+    /// A home pin that wants a library item open once Library is up.
+    var requestedArtifact: Artifact?
     /// Opens the new-agent sheet on this template id, then is cleared.
     var requestedAgentTemplate: String?
     /// A note is open in its editor, on top of Notes. The Notes page's own

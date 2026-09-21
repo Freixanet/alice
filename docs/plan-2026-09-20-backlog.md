@@ -299,4 +299,5 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 | 9 Bark | hecho | bb49b50 | python -m unittest discover -s mac/notifier |
 | 10 Sidebar | hecho | b172df0 / f587753 | build device + install; unit tests escritos, no corridos aquí |
 | 11 Carpetas | hecho | 92a5f3d | build device + install; unit tests escritos, no corridos aquí |
-| 12 Inbox | hecho |  | plugin tests + build device + install |
+| 12 Inbox | hecho | 5e85b58 | plugin tests + build device + install |
+| 13 Accesos home | hecho |  | build device + install; unit tests escritos, no corridos aquí |

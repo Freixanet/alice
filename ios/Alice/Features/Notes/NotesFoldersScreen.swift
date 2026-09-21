@@ -88,7 +88,13 @@ struct NotesFoldersScreen: View {
                     // than a folder of it: it is where everything can be found
                     // at once, so it belongs with the places, not above them.
                     folderRow(.all, systemImage: "tray.full")
-                        .contextMenu {} preview: {
+                        .contextMenu {
+                            AddToHomeButton(
+                                target: .place(.notes),
+                                label: "Notes",
+                                symbol: "note.text"
+                            )
+                        } preview: {
                             FolderPreview(name: store.name(of: .all), notes: store.notes(in: .all))
                         }
                         .deleteDisabled(true)
@@ -228,6 +234,9 @@ struct NotesFoldersScreen: View {
         }
         .task { try? await store.refreshNotes() }
         .refreshableWithFeedback { try? await store.refreshNotes() }
+        .onAppear { consumeHomeRequest() }
+        .onChange(of: store.requestedNote) { _, _ in consumeHomeRequest() }
+        .onChange(of: store.requestedNotesScope) { _, _ in consumeHomeRequest() }
         .navigationDestination(item: $openedFolder) { scope in
             if scope == .deleted {
                 RecentlyDeletedScreen()
@@ -310,6 +319,27 @@ struct NotesFoldersScreen: View {
         naming = nil
     }
 
+    /// A home pin asked for a note or a folder: open it now that Notes is up.
+    private func consumeHomeRequest() {
+        if let id = store.requestedNote {
+            store.requestedNote = nil
+            store.requestedNotesScope = nil
+            guard let note = store.notesSnapshot?.notes.first(where: { $0.id == id }) else { return }
+            if store.isLocked(note) {
+                Task {
+                    if await store.unlockNotes() { opened = .existing(note) }
+                }
+            } else {
+                opened = .existing(note)
+            }
+            return
+        }
+        if let scope = store.requestedNotesScope {
+            store.requestedNotesScope = nil
+            openedFolder = scope
+        }
+    }
+
     /// Every folder the page should show, with how far it is indented. Walks
     /// the tree rather than drawing it recursively: a `some View` that names
     /// itself will not compile. A one-level list hid a nested folder when its
@@ -376,6 +406,11 @@ struct NotesFoldersScreen: View {
                             }
                         }
                         .controlGroupStyle(.compactMenu)
+                        AddToHomeButton(
+                            target: .noteFolder(folder.id),
+                            label: folder.name,
+                            symbol: "folder"
+                        )
                         Button("Rename", systemImage: "pencil") {
                             folderName = folder.name
                             naming = .rename(folder)

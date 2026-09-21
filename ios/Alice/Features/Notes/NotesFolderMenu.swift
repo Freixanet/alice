@@ -84,6 +84,20 @@ struct NotesFolderMenu: View {
             }
 
             Button("View Attachments", systemImage: "paperclip", action: onAttachments)
+
+            if case let .folder(id) = scope {
+                AddToHomeButton(
+                    target: .noteFolder(id),
+                    label: store.name(of: scope),
+                    symbol: "folder"
+                )
+            } else if scope == .all || scope == .quick {
+                AddToHomeButton(
+                    target: .place(.notes),
+                    label: "Notes",
+                    symbol: "note.text"
+                )
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .contentShape(.circle)

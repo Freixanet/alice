@@ -716,6 +716,11 @@ struct NotesScreen: View {
             withAnimation(.snappy(duration: 0.3)) { store.togglePinned(note) }
             NoteActionsTip().invalidate(reason: .actionPerformed)
         }
+        AddToHomeButton(
+            target: .note(note.id),
+            label: NotesFeed.title(of: note).isEmpty ? "Note" : NotesFeed.title(of: note),
+            symbol: "note.text"
+        )
         let locked = store.isLocked(note)
         Button(locked ? "Remove Lock" : "Lock Note", systemImage: locked ? "lock.open" : "lock") {
             toggleLock(note)

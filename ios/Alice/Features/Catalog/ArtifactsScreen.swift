@@ -47,6 +47,7 @@ struct ArtifactsScreen: View {
         .background(Palette.background(scheme))
         .task { await load() }
         .refreshableWithFeedback { await load() }
+        .onChange(of: store.requestedArtifact) { _, _ in openRequestedArtifact() }
         .sheet(item: $opened) { selection in
             HermesRemoteFileDetail(selection: selection)
                 .environment(store)
@@ -118,6 +119,11 @@ struct ArtifactsScreen: View {
             Button(artifact.kind == .link ? "Copy Link" : "Copy Location", systemImage: "doc.on.doc") {
                 UIPasteboard.general.string = artifact.value
             }
+            AddToHomeButton(
+                target: .artifact(kind: artifact.kind.rawValue, value: artifact.value),
+                label: artifact.kind == .link ? linkTitle(artifact) : artifact.name,
+                symbol: artifact.kind.symbol
+            )
         }
     }
 
@@ -178,8 +184,23 @@ struct ArtifactsScreen: View {
             }) {
                 kind = other
             }
+            openRequestedArtifact()
         } catch {
             failure = PlainWords.describe(error, doing: "load the library")
+            openRequestedArtifact()
+        }
+    }
+
+    /// A home pin asked for this file or link. Opening by the stored path is
+    /// enough: the library may not have scanned it yet, and waiting would
+    /// leave the tap looking like it did nothing.
+    private func openRequestedArtifact() {
+        guard let wanted = store.requestedArtifact else { return }
+        store.requestedArtifact = nil
+        if let match = found.first(where: { $0.kind == wanted.kind && $0.value == wanted.value }) {
+            open(match)
+        } else {
+            open(wanted)
         }
     }
 }

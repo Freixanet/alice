@@ -717,11 +717,13 @@ private struct EmptyChatView: View {
                     .font(.aliceTitle(.title))
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 32)
                 Text("You talk to Alice. One thing at a time.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 32)
 
                 if store.gatewayURL.isEmpty {
                     Button("Connect to Hermes") { showingConnection = true }
@@ -729,10 +731,14 @@ private struct EmptyChatView: View {
                         .controlSize(.large)
                         .accessibilityIdentifier("home.connect")
                         .padding(.top, 12)
+                        .padding(.horizontal, 32)
+                }
+                if !store.homeShortcuts.isEmpty {
+                    HomeShortcutsShelf()
+                        .padding(.top, 18)
                 }
                 Spacer()
             }
-            .padding(.horizontal, 32)
             // No hardcoded composer offset either: the call site already
             // reserves the real height, and 140 on top of it was a second
             // guess at the same gap.
