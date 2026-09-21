@@ -85,7 +85,8 @@ struct MessageRow: View {
                     // Trying bot replies with nothing above them — no name, no
                     // mark. The conversation already says whose it is, and a
                     // reply still being written says "Thinking…" in its tool
-                    // list. Alice's own replies keep their label.
+                    // list. Alice's own replies need no label either: her face
+                    // is already at the top of the chat.
                     if showsAuthor, let agent = invokedAgent {
                         // An agent named with `@` in Alice's chat answers under
                         // its own face and name, not hers.
@@ -96,11 +97,6 @@ struct MessageRow: View {
                                 .foregroundStyle(.secondary)
                         }
                         .accessibilityElement(children: .combine)
-                    } else if showsAuthor, message.botName?.isEmpty ?? true {
-                        Text("ALICE")
-                            .font(.caption2.weight(.medium))
-                            .tracking(1.4)
-                            .foregroundStyle(.secondary)
                     }
 
                     // Above the answer, where the work happened: the steps run
