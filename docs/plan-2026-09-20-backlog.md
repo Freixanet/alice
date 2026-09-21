@@ -298,4 +298,5 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 | 8 Queue UX | hecho | b78ee8e | build device + push; install pendiente (iPhone unavailable) |
 | 9 Bark | hecho | bb49b50 | python -m unittest discover -s mac/notifier |
 | 10 Sidebar | hecho | b172df0 / f587753 | build device + install; unit tests escritos, no corridos aquí |
-| 11 Carpetas | hecho | feat(ios): pin, reorder and nest note folders by dragging | build device + install; unit tests escritos, no corridos aquí |
+| 11 Carpetas | hecho | 92a5f3d | build device + install; unit tests escritos, no corridos aquí |
+| 12 Inbox | hecho |  | plugin tests + build device + install |

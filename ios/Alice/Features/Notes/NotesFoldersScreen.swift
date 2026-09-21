@@ -58,6 +58,14 @@ struct NotesFoldersScreen: View {
     var body: some View {
         List {
             if query.isEmpty {
+                if foldersNeedHelp {
+                    Section {
+                        NotesUnavailableView(access: foldersAccessMessage) {
+                            store.requestInboxAgent()
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                }
                 // Quick Notes on its own: every note starts there, and it is
                 // not one folder among the person's own.
                 Section {
@@ -266,6 +274,22 @@ struct NotesFoldersScreen: View {
         } message: { _ in
             Text("Its notes are not deleted. They go back to Quick Notes.")
         }
+    }
+
+    /// True when there is no usable notes store to list, and we know why —
+    /// not while the first refresh is still in flight.
+    private var foldersNeedHelp: Bool {
+        if store.notesSnapshot?.available == false { return true }
+        guard store.notesSnapshot == nil else { return false }
+        switch store.notesAccess {
+        case .noStore, .offline, .unauthorized, .notConfigured, .pluginMissing, .failed: return true
+        case .unknown, .ready: return false
+        }
+    }
+
+    private var foldersAccessMessage: NotesAccess {
+        if store.notesAccess == .unknown || store.notesAccess == .ready { return .noStore }
+        return store.notesAccess
     }
 
     private var namingTitle: String {

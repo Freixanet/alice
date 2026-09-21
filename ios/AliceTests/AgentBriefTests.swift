@@ -2,8 +2,8 @@ import XCTest
 @testable import Alice
 
 final class AgentBriefTests: XCTestCase {
-    func testThereAreSevenTemplates() {
-        XCTAssertEqual(AgentBrief.templates.count, 7)
+    func testThereAreEightTemplates() {
+        XCTAssertEqual(AgentBrief.templates.count, 8)
     }
 
     func testTemplateIdsAreUnique() {
@@ -11,10 +11,11 @@ final class AgentBriefTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 
-    func testTitlesMatchTheSevenRoles() {
+    func testTitlesMatchTheEightRoles() {
         XCTAssertEqual(
             AgentBrief.templates.map(\.title),
             [
+                "Inbox",
                 "Personal assistant",
                 "News watcher",
                 "Deal hunter",

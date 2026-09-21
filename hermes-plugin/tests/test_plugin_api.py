@@ -8,6 +8,7 @@ import base64
 import importlib.util
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -41,10 +42,13 @@ class PluginAPITests(unittest.TestCase):
         self.api._reset_claim_state_for_tests()
         self.config = {"profile": "default", "gateway": {"url": "http://mac.tail.ts.net:8643", "key": "k"},
                        "dashboard": None}
+        self.hermes_home = tempfile.TemporaryDirectory()
+        self.addCleanup(self.hermes_home.cleanup)
         patches = [
             mock.patch.object(self.api, "_build_pairing_config",
                               mock.AsyncMock(return_value=(self.config, "default", "mac.tail.ts.net", "Alice"))),
             mock.patch.object(self.api, "_source_ip", return_value="100.100.1.2"),
+            mock.patch.object(self.api, "_engine_home", return_value=Path(self.hermes_home.name)),
         ]
         for patch in patches:
             patch.start()
@@ -190,6 +194,40 @@ class PluginAPITests(unittest.TestCase):
                 self.assertEqual(read.status_code, 200, read.text)
                 self.assertEqual(read.json(), {"available": False, "notes": [], "total": 0})
                 self.assertEqual(self.client.post("/api/plugins/alice/notes", json={"text": "hola"}).status_code, 404)
+
+    def test_the_chosen_notes_store_is_remembered_when_profiles_are_listed_in_another_order(self):
+        with tempfile.TemporaryDirectory() as root:
+            def profile(name):
+                home = Path(root) / name
+                store = home / "workspace" / "inbox-store"
+                store.mkdir(parents=True)
+                (store / "inbox.py").write_text("print(1)\n", encoding="utf-8")
+                return type("P", (), {"name": name, "path": home})()
+            alpha, beta = profile("alpha"), profile("beta")
+            with mock.patch.object(self.api, "_list_profiles", return_value=[alpha, beta]):
+                first = self.api._notes_store()
+            self.assertEqual(first[0], "alpha")
+            with mock.patch.object(self.api, "_list_profiles", return_value=[beta, alpha]):
+                again = self.api._notes_store()
+            self.assertEqual(again[0], "alpha")
+            saved = json.loads((Path(self.hermes_home.name) / ".alice" / "notes_store.json").read_text())
+            self.assertEqual(saved["profile"], "alpha")
+
+    def test_inbox_is_preferred_until_a_remembered_store_is_gone(self):
+        with tempfile.TemporaryDirectory() as root:
+            def profile(name):
+                home = Path(root) / name
+                store = home / "workspace" / "inbox-store"
+                store.mkdir(parents=True)
+                (store / "inbox.py").write_text("print(1)\n", encoding="utf-8")
+                return type("P", (), {"name": name, "path": home})()
+            inbox, other = profile("inbox"), profile("other")
+            with mock.patch.object(self.api, "_list_profiles", return_value=[other, inbox]):
+                self.assertEqual(self.api._notes_store()[0], "inbox")
+            with mock.patch.object(self.api, "_list_profiles", return_value=[other]):
+                self.assertEqual(self.api._notes_store()[0], "other")
+            saved = json.loads((Path(self.hermes_home.name) / ".alice" / "notes_store.json").read_text())
+            self.assertEqual(saved["profile"], "other")
 
     def test_notes_are_listed_newest_first_with_the_agents_reading_of_them(self):
         import tempfile

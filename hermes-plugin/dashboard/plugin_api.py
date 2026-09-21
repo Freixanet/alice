@@ -766,9 +766,32 @@ NOTE_RICH_MAX_BYTES = 2_000_000
 _URL = re.compile(r"https?://[^\s<>\"')\]]+")
 
 
+def _notes_store_choice_path() -> Path:
+    return _engine_home() / ".alice" / "notes_store.json"
+
+
+def _remembered_notes_profile() -> Optional[str]:
+    try:
+        data = json.loads(_notes_store_choice_path().read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError, TypeError):
+        return None
+    name = data.get("profile") if isinstance(data, dict) else None
+    return str(name) if name else None
+
+
+def _save_notes_store_choice(profile: str) -> None:
+    path = _notes_store_choice_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"profile": profile}), encoding="utf-8")
+
+
 def _notes_store() -> Optional[Tuple[str, Path]]:
-    """The profile keeping a notes store, and the store's folder: ``inbox`` when it has one,
-    otherwise the first profile that does. None when no agent keeps notes."""
+    """The profile keeping a notes store, and the store's folder.
+
+    Prefers a profile Alice already chose (``~/.hermes/.alice/notes_store.json``),
+    then ``inbox``, then the first profile that has a store. None when no agent
+    keeps notes. The choice is rewritten when the remembered profile is gone.
+    """
     found: List[Tuple[str, Path]] = []
     for profile in _list_profiles():
         home = getattr(profile, "path", None)
@@ -779,7 +802,15 @@ def _notes_store() -> Optional[Tuple[str, Path]]:
             found.append((str(profile.name), root))
     if not found:
         return None
-    return next((item for item in found if item[0] == "inbox"), found[0])
+    remembered = _remembered_notes_profile()
+    if remembered:
+        match = next((item for item in found if item[0] == remembered), None)
+        if match:
+            return match
+    chosen = next((item for item in found if item[0] == "inbox"), found[0])
+    if remembered != chosen[0]:
+        _save_notes_store_choice(chosen[0])
+    return chosen
 
 
 def _read_jsonl(path: Path) -> List[Dict[str, Any]]:

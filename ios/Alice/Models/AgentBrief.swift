@@ -23,6 +23,19 @@ enum AgentBrief {
 
     static let templates: [Template] = [
         Template(
+            id: "inbox",
+            title: "Inbox",
+            symbol: "tray",
+            name: "Inbox",
+            brief: "Capture notes exactly as I write them, file them when I say where, and keep Quick Notes for everything else. Do not rewrite what I captured.",
+            soulExtra: """
+            You keep the notes store. Capture text as written. File only when asked.
+            Answer in under 120 words unless asked for more
+            Use a tool only when the answer needs it
+            Never retry a failing tool more than once
+            """
+        ),
+        Template(
             id: "assistant",
             title: "Personal assistant",
             symbol: "person.crop.circle",

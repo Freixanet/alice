@@ -31,6 +31,16 @@ final class NotesFeedTests: XCTestCase {
         XCTAssertThrowsError(try NotesFeed.snapshot(from: ["notes": []]))
     }
 
+    func testAMissingStoreIsNotTheSameAsTheDashboardBeingUnreachable() {
+        XCTAssertEqual(NotesAccess.from(snapshot: NotesSnapshot(available: false, agent: nil, notes: [])), .noStore)
+        XCTAssertEqual(NotesAccess.from(snapshot: NotesSnapshot(available: true, agent: "inbox", notes: [])), .ready)
+        XCTAssertEqual(NotesAccess.from(error: DashboardClient.Failure.unreachable), .offline)
+        XCTAssertEqual(NotesAccess.from(error: DashboardClient.Failure.timedOut), .offline)
+        XCTAssertEqual(NotesAccess.from(error: DashboardClient.Failure.http(401, detail: nil)), .unauthorized)
+        XCTAssertEqual(NotesAccess.from(error: DashboardClient.Failure.http(404, detail: nil)), .pluginMissing)
+        XCTAssertEqual(NotesAccess.from(error: DashboardClient.Failure.notConfigured), .notConfigured)
+    }
+
     func testNotesAreGroupedByWhenTheyWereWritten() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Madrid")!

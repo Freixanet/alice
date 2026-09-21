@@ -46,6 +46,36 @@ struct NotesSnapshot: Equatable, Sendable, Codable {
     }
 }
 
+/// Why Notes last failed to refresh, or that the store is ready / missing.
+/// A failed refresh does not wipe the cached snapshot.
+enum NotesAccess: Equatable, Sendable {
+    case unknown
+    case ready
+    case noStore
+    case offline
+    case unauthorized
+    case notConfigured
+    case pluginMissing
+    case failed(String)
+
+    static func from(snapshot: NotesSnapshot) -> NotesAccess {
+        snapshot.available ? .ready : .noStore
+    }
+
+    static func from(error: Error) -> NotesAccess {
+        if let failure = error as? DashboardClient.Failure {
+            switch failure {
+            case .notConfigured: return .notConfigured
+            case .unreachable, .timedOut: return .offline
+            case .http(401, _): return .unauthorized
+            case .http(404, _): return .pluginMissing
+            default: break
+            }
+        }
+        return .failed(PlainWords.describe(error, doing: "load the notes"))
+    }
+}
+
 enum NotesFeed {
     static func snapshot(from object: [String: Any]) throws -> NotesSnapshot {
         guard let available = object["available"] as? Bool,

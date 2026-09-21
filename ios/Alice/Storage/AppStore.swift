@@ -3509,15 +3509,34 @@ final class AppStore {
         }
     }
 
+    /// Why the last notes refresh failed, or that the store is ready. Kept
+    /// beside the snapshot so a timeout does not look like "no notes agent".
+    private(set) var notesAccess: NotesAccess = .unknown
+
     func refreshNotes() async throws {
         do {
-            notesSnapshot = try await dashboard.notes()
+            let snap = try await dashboard.notes()
+            notesSnapshot = snap
+            notesAccess = .from(snapshot: snap)
             await moveLegacyFoldersToStore()
-        } catch DashboardClient.Failure.http(404, _) {
-            throw HermesRPCClient.Failure(
-                reason: "Notes need the latest Alice plugin on your Hermes."
-            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            notesAccess = .from(error: error)
+            if let failure = error as? DashboardClient.Failure, case .http(404, _) = failure {
+                throw HermesRPCClient.Failure(
+                    reason: "Notes need the latest Alice plugin on your Hermes."
+                )
+            }
+            throw error
         }
+    }
+
+    /// Closes Notes and opens the new-agent form on the Inbox template.
+    func requestInboxAgent() {
+        requestedAgentTemplate = "inbox"
+        showingNotes = false
+        showingBots = true
     }
 
     /// Deletes a note, gone from the list at once. One Hermes did not delete
@@ -5340,6 +5359,8 @@ final class AppStore {
     var showingBots = false
     /// Notes is a page as well, reached sideways from the drawer.
     var showingNotes = false
+    /// Opens the new-agent sheet on this template id, then is cleared.
+    var requestedAgentTemplate: String?
     /// A note is open in its editor, on top of Notes. The Notes page's own
     /// swipe to close stands down so the swipe goes back to the list instead.
     var editingNote = false

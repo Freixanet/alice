@@ -118,8 +118,8 @@ struct BotsScreen: View {
         .safeAreaBar(edge: .top, spacing: 0) {
             topControls
         }
-        .sheet(isPresented: $creatingBot) {
-            NewBotSheet { await load() }
+        .sheet(isPresented: $creatingBot, onDismiss: { store.requestedAgentTemplate = nil }) {
+            NewBotSheet(seedTemplateID: store.requestedAgentTemplate) { await load() }
         }
         .sheet(isPresented: $creatingChannel, onDismiss: { channelSeedBot = nil }) {
             ChannelSheet(bots: rows, seedBot: channelSeedBot)
@@ -306,9 +306,13 @@ struct BotsScreen: View {
             if rows.isEmpty { rows = store.cachedBots }
             await load()
             seeded = true
+            if store.requestedAgentTemplate != nil { creatingBot = true }
         }
         .onChange(of: store.cachedBots) { _, bots in
             rows = store.orderedBots(bots)
+        }
+        .onChange(of: store.requestedAgentTemplate) { _, id in
+            if id != nil { creatingBot = true }
         }
         .refreshableWithFeedback { await load() }
     }
@@ -2714,6 +2718,7 @@ private struct NewBotSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
+    var seedTemplateID: String? = nil
     let onCreated: () async -> Void
 
     @FocusState private var focusedField: Field?
@@ -2899,7 +2904,13 @@ private struct NewBotSheet: View {
             .navigationTitle("Create New Agent")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(busy)
-            .onAppear { preferCheapModel() }
+            .onAppear {
+                preferCheapModel()
+                if let id = seedTemplateID,
+                   let template = AgentBrief.templates.first(where: { $0.id == id }) {
+                    apply(template)
+                }
+            }
             .onChange(of: store.models) { _, _ in preferCheapModel() }
             .overlay {
                 if busy {

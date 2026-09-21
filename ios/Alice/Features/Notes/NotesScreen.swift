@@ -71,17 +71,26 @@ struct NotesScreen: View {
 
     /// What stands in for the notes when there are none to show.
     private enum Status {
-        case noStore, failed(String), loading, nothingYet, noResults
+        case noStore, offline, unauthorized, notConfigured, pluginMissing
+        case failed(String), loading, nothingYet, noResults
     }
 
     private var status: Status? {
-        if let snapshot, !snapshot.available { return .noStore }
-        guard snapshot != nil else {
-            if let loadFailure { return .failed(loadFailure) }
-            return .loading
+        if let snapshot, snapshot.available {
+            if store.notes(in: scope).isEmpty && subfolders.isEmpty { return .nothingYet }
+            return shown.isEmpty ? .noResults : nil
         }
-        if store.notes(in: scope).isEmpty && subfolders.isEmpty { return .nothingYet }
-        return shown.isEmpty ? .noResults : nil
+        switch store.notesAccess {
+        case .noStore: return .noStore
+        case .offline: return .offline
+        case .unauthorized: return .unauthorized
+        case .notConfigured: return .notConfigured
+        case .pluginMissing: return .pluginMissing
+        case .failed(let reason): return .failed(reason)
+        case .ready, .unknown:
+            if let loadFailure { return .failed(loadFailure) }
+            return snapshot == nil ? .loading : .noStore
+        }
     }
 
     var body: some View {
@@ -642,12 +651,17 @@ struct NotesScreen: View {
     private func statusView(_ status: Status) -> some View {
         switch status {
         case .noStore:
-            ContentUnavailableView(
-                "No notes agent", systemImage: "note.text",
-                description: Text("Notes are kept by an agent with a notes store, like Inbox. None was found on this Hermes.")
-            )
+            NotesUnavailableView(access: .noStore) { store.requestInboxAgent() }
+        case .offline:
+            NotesUnavailableView(access: .offline)
+        case .unauthorized:
+            NotesUnavailableView(access: .unauthorized)
+        case .notConfigured:
+            NotesUnavailableView(access: .notConfigured)
+        case .pluginMissing:
+            NotesUnavailableView(access: .pluginMissing)
         case let .failed(reason):
-            ContentUnavailableView("Notes", systemImage: "note.text", description: Text(reason))
+            NotesUnavailableView(access: .failed(reason))
         case .loading:
             ProgressView().frame(maxWidth: .infinity)
         case .nothingYet:
@@ -787,6 +801,49 @@ struct NotesScreen: View {
         }
     }
 
+}
+
+/// Why Notes cannot be used, when there is no cached store to show.
+struct NotesUnavailableView: View {
+    let access: NotesAccess
+    var onCreateInbox: () -> Void = {}
+
+    var body: some View {
+        switch access {
+        case .noStore, .unknown:
+            ContentUnavailableView {
+                Label("No notes agent", systemImage: "note.text")
+            } description: {
+                Text("Notes are kept by an agent with a notes store, like Inbox. None was found on this Hermes.")
+            } actions: {
+                Button("Create Inbox Agent", action: onCreateInbox)
+            }
+        case .offline:
+            ContentUnavailableView(
+                "Notes", systemImage: "wifi.slash",
+                description: Text("Alice cannot reach the dashboard. It only listens on your own network.")
+            )
+        case .unauthorized:
+            ContentUnavailableView(
+                "Notes", systemImage: "lock",
+                description: Text("Alice could not sign in to the dashboard. Open Connect and check the username and password.")
+            )
+        case .notConfigured:
+            ContentUnavailableView(
+                "Notes", systemImage: "link",
+                description: Text("Add your Hermes dashboard in Connect to see notes.")
+            )
+        case .pluginMissing:
+            ContentUnavailableView(
+                "Notes", systemImage: "puzzlepiece.extension",
+                description: Text("Notes need the latest Alice plugin on your Hermes.")
+            )
+        case .failed(let reason):
+            ContentUnavailableView("Notes", systemImage: "note.text", description: Text(reason))
+        case .ready:
+            EmptyView()
+        }
+    }
 }
 
 /// A row darkens while a finger is on it, as rows in Notes do, so pressing
