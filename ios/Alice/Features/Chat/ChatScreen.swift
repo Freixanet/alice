@@ -201,7 +201,7 @@ private struct ChatScreenContent: View, Equatable {
             ZStack(alignment: .bottom) {
                 Color.clear
                     .overlay {
-                        EmptyChatView()
+                        EmptyChatView(keyboardShown: keyboardShown)
                             .padding(.bottom, homeComposerHeight + (keyboardShown ? 0 : Self.restingLift))
                     }
                     .contentShape(.rect)
@@ -264,24 +264,15 @@ private struct ChatScreenContent: View, Equatable {
 
             Spacer(minLength: 0)
 
-            // Whose conversation this is. Alice's face and name when it is
-            // hers, and the bot's mark and name when it is not.
+            // Whose conversation this is. The same portrait-and-name as
+            // Alice's own chat, so a bot's room is not a smaller kind of thing.
             if let bot {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
                 } label: {
-                    HStack(spacing: 8) {
-                        BotMarkView(mark: store.mark(for: bot), size: 24)
-                        Text(store.botCurrentName(for: bot))
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
+                    ChatHeaderAvatar(name: store.botCurrentName(for: bot)) {
+                        BotMarkView(mark: store.mark(for: bot), size: 72)
                     }
-                    .padding(.horizontal, 14)
-                    // The back disc's height, so the two sit on one line as a
-                    // pair; at 36 the name read as smaller than the button
-                    // beside it.
-                    .frame(height: discSize)
-                    .glassEffect(.regular.interactive(), in: .capsule)
                 }
                 .accessibilityHint("Opens this bot’s settings")
                 // Held rather than tapped: the other bots. The name is where
@@ -672,6 +663,8 @@ private struct TranscriptView: View {
 private struct EmptyChatView: View {
     @Environment(AppStore.self) private var store
     @State private var showingConnection = false
+    /// Home pins give way while the software keyboard is up.
+    var keyboardShown = false
 
     var body: some View {
         // Deliberately neutral about the keyboard and about the composer.
@@ -692,23 +685,24 @@ private struct EmptyChatView: View {
     @ViewBuilder
     private var centred: some View {
         if let botName = store.activeConversation?.botName, !botName.isEmpty {
-            VStack(spacing: 16) {
+            VStack(spacing: 8) {
                 Spacer()
-                BotMarkView(mark: store.mark(for: botName), size: 84, animated: true)
-                Text(store.botCurrentName(for: botName))
-                    // The same face the app's own title wears.
+                Text("What are we working on?")
                     .font(.aliceTitle(.title))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 32)
                 let liveDetail = store.cachedBots.first(where: { $0.name == botName })?.detail ?? ""
                 if !liveDetail.isEmpty {
                     Text(liveDetail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
                         .padding(.horizontal, 32)
                 }
                 Spacer()
             }
-            .padding(.horizontal, 32)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 8) {
@@ -733,12 +727,14 @@ private struct EmptyChatView: View {
                         .padding(.top, 12)
                         .padding(.horizontal, 32)
                 }
-                if !store.homeShortcuts.isEmpty {
+                if !store.homeShortcuts.isEmpty, !keyboardShown {
                     HomeShortcutsShelf()
-                        .padding(.top, 18)
+                        .padding(.top, 32)
+                        .transition(.opacity)
                 }
                 Spacer()
             }
+            .animation(.snappy(duration: 0.22), value: keyboardShown)
             // No hardcoded composer offset either: the call site already
             // reserves the real height, and 140 on top of it was a second
             // guess at the same gap.

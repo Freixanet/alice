@@ -80,6 +80,7 @@ struct Sidebar: View, Equatable {
                 case .library: closable { LibraryView() }
                 // These two bring their own Done; a second would be one too many.
                 case .settings: NavigationStack { SettingsView() }
+                    .presentationBackground(Palette.background(scheme))
                 case .connect: ConnectView()
                 }
             }
@@ -324,6 +325,7 @@ struct Sidebar: View, Equatable {
             HStack(spacing: 10) {
                 Image(systemName: systemImage)
                     .font(.system(size: 15, weight: weight))
+                    .foregroundStyle(store.accent.primary(scheme))
                     .frame(width: 22, alignment: .center)
                 Text(title)
                 Spacer(minLength: 0)
@@ -331,9 +333,10 @@ struct Sidebar: View, Equatable {
                     Text("\(badge)")
                         .font(.caption2.weight(.semibold))
                         .monospacedDigit()
+                        .foregroundStyle(store.accent.primary(scheme))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Palette.card(scheme), in: .capsule)
+                        .background(store.accent.primary(scheme).opacity(0.16), in: .capsule)
                         .accessibilityLabel("\(badge) unread")
                 }
             }
@@ -492,19 +495,31 @@ private struct SidebarList: View, Equatable {
             store.activeID = conversation.id
             onDismiss()
         } label: {
-            Text(store.titleStyled(for: conversation))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: width - 48, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    conversation.id == store.activeID
-                        ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
-                        : .clear,
-                    in: .rect(cornerRadius: 10)
-                )
-                .contentShape(.rect(cornerRadius: 10))
+            HStack(spacing: 8) {
+                Group {
+                    if let bot = conversation.owningBotName {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(store.mark(for: bot).color)
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(width: 2, height: 22)
+                Text(store.titleStyled(for: conversation))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(width: width - 48, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                conversation.id == store.activeID
+                    ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
+                    : .clear,
+                in: .rect(cornerRadius: 10)
+            )
+            .contentShape(.rect(cornerRadius: 10))
         }
         .buttonStyle(.plain)
         .contextMenu {

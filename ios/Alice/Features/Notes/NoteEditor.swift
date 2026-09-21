@@ -55,6 +55,7 @@ struct NoteEditor: View {
     @State private var editing = true
     @State private var attachments: [Attachment]
     @State private var savedAttachments: [Attachment]
+    @State private var pendingAttachments: [Attachment] = []
     @State private var photos: [PhotosPickerItem] = []
     @State private var showPhotos = false
     @State private var showCamera = false
@@ -99,8 +100,10 @@ struct NoteEditor: View {
                 Text("It is removed from the notes store, with what its agent made of it. This can’t be undone.")
             }
             .onAppear { store.editingNote = true }
-            .onChange(of: content) { scheduleSave() }
-            .onChange(of: attachments) { scheduleSave() }
+            .onChange(of: content) {
+                attachments = NoteInlineInsert.attachments(in: content)
+                scheduleSave()
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active, saveState != .saved, saveState != .saving {
                     retry?.cancel()
@@ -146,26 +149,23 @@ struct NoteEditor: View {
     private var page: some View {
         VStack(alignment: .leading, spacing: 0) {
             saveCaption
-            if store.notesSnapshot?.supportsAttachments != true, !attachments.isEmpty {
-                Text("Update the plugin to sync attachments.")
-                    .font(.caption)
-                    .foregroundStyle(Palette.warning(scheme))
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                    .accessibilityIdentifier("note.attachments.plugin")
-            }
-            if !attachments.isEmpty {
-                AttachmentChips(attachments: attachments, onRemove: { item in
-                    attachments.removeAll { $0.id == item.id }
-                }, composerInsets: false)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-            }
+            pluginAttachmentCaption
             RichTextEditor(
                 text: $content, isEditing: $editing, focusOnAppear: true,
-                startsWithTitle: note == nil
+                startsWithTitle: note == nil, pending: $pendingAttachments
             )
-            .ignoresSafeArea(.container, edges: .bottom)
+        }
+    }
+
+    @ViewBuilder
+    private var pluginAttachmentCaption: some View {
+        if store.notesAttachmentsNeedPlugin, !attachments.isEmpty {
+            Text("Update the plugin to sync attachments.")
+                .font(.caption)
+                .foregroundStyle(Palette.warning(scheme))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                .accessibilityIdentifier("note.attachments.plugin")
         }
     }
 
@@ -277,9 +277,11 @@ struct NoteEditor: View {
     private func save(now: Bool, explicit: Bool) {
         if now { saving?.cancel() }
         let edited = content
-        let words = edited.string
-        guard !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        if edited.isEqual(to: saved), attachments == savedAttachments, saveState == .saved { return }
+        let words = NoteInlineInsert.words(from: edited)
+        let held = NoteInlineInsert.attachments(in: edited)
+        let spoken = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !spoken.isEmpty || !held.isEmpty else { return }
+        if edited.isEqual(to: saved), held == savedAttachments, saveState == .saved { return }
         if inFlight != nil {
             // One save at a time; this text goes once the current one is back.
             dirtyWhileSaving = true
@@ -287,12 +289,13 @@ struct NoteEditor: View {
         }
         retry?.cancel()
         saveState = .saving
+        let outgoing = spoken.isEmpty ? (held.first?.name ?? "Note") : words
         let rich = RichNote.rtf(from: edited)
         inFlight = Task {
             do {
-                try await write(words: words, rich: rich)
+                try await write(words: outgoing, rich: rich, attachments: held)
                 saved = edited
-                savedAttachments = attachments
+                savedAttachments = held
                 failures = 0
                 saveState = .saved
             } catch {
@@ -318,8 +321,7 @@ struct NoteEditor: View {
     }
 
     /// One write to the store: an edit, or a create followed by the styling.
-    private func write(words: String, rich: String?) async throws {
-        let held = attachments
+    private func write(words: String, rich: String?, attachments held: [Attachment]) async throws {
         if let existing = currentNote {
             try await store.editNote(existing, text: words, rich: rich, attachments: held)
         } else if let pending = creating {
@@ -353,7 +355,7 @@ struct NoteEditor: View {
             attachmentFailure = "A note can hold 8 MB of attachments."
             return
         }
-        attachments = next
+        pendingAttachments.append(item)
     }
 }
 
@@ -365,15 +367,19 @@ private struct NoteAttachmentPickers: ViewModifier {
     @Binding var showFiles: Bool
     @Binding var showCamera: Bool
     let onAdd: (Attachment) -> Void
+    @State private var importingPhotos = false
 
     func body(content: Content) -> some View {
         content
             .photosPicker(isPresented: $showPhotos, selection: $photos, maxSelectionCount: 4, matching: .images)
             .onChange(of: photos) { _, picked in
-                guard !picked.isEmpty else { return }
+                guard !picked.isEmpty, !importingPhotos else { return }
+                importingPhotos = true
+                let batch = picked
                 photos = []
-                Task {
-                    for item in picked {
+                Task { @MainActor in
+                    defer { importingPhotos = false }
+                    for item in batch {
                         if let attachment = await AttachmentLoader.image(from: item) {
                             onAdd(attachment)
                         }
@@ -408,25 +414,30 @@ enum RichNote {
 
     /// The styled copy when there is one, else the plain words in the body style.
     static func attributed(from note: Note) -> NSAttributedString {
+        let styled: NSAttributedString
         if let rich = note.rich, let data = Data(base64Encoded: rich),
-           let styled = try? NSMutableAttributedString(
+           let restored = try? NSMutableAttributedString(
                data: data,
                options: [.documentType: NSAttributedString.DocumentType.rtf],
                documentAttributes: nil
            ) {
-            adaptTextColor(styled)
-            return styled
+            adaptTextColor(restored)
+            styled = restored
+        } else {
+            styled = NSAttributedString(
+                string: note.text,
+                attributes: [.font: bodyFont, .foregroundColor: UIColor.label]
+            )
         }
-        return NSAttributedString(
-            string: note.text,
-            attributes: [.font: bodyFont, .foregroundColor: UIColor.label]
-        )
+        return NoteInlineInsert.embedding(note.attachments ?? [], in: styled)
     }
 
     /// RTF, base64. Text left in the default colour is saved without one, so
-    /// it reads in both light and dark rather than fixed as black.
+    /// it reads in both light and dark rather than fixed as black. Photos are
+    /// stored beside the note; a replacement character keeps their place.
     static func rtf(from text: NSAttributedString) -> String? {
         let copy = NSMutableAttributedString(attributedString: text)
+        NoteInlineInsert.replaceAttachmentsWithPlaceholders(in: copy)
         let whole = NSRange(location: 0, length: copy.length)
         copy.enumerateAttribute(.foregroundColor, in: whole) { value, range, _ in
             if let color = value as? UIColor, color == UIColor.label {
@@ -492,6 +503,18 @@ private final class BottomClearTextView: UITextView {
             verticalScrollIndicatorInsets.bottom = wanted
         }
     }
+
+    override func deleteBackward() {
+        let sel = selectedRange
+        let range = sel.length > 0
+            ? sel
+            : NSRange(location: max(0, sel.location - 1), length: sel.location > 0 ? 1 : 0)
+        if NoteInlineInsert.deleteAttachment(in: self, range: range) {
+            delegate?.textViewDidChange?(self)
+            return
+        }
+        super.deleteBackward()
+    }
 }
 
 /// A `UITextView` that edits styled text, with the system's Format menu and a
@@ -502,6 +525,7 @@ private struct RichTextEditor: UIViewRepresentable {
     var focusOnAppear = false
     /// A new note: its first line is written as a title.
     var startsWithTitle = false
+    @Binding var pending: [Attachment]
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text, isEditing: $isEditing) }
 
@@ -534,17 +558,41 @@ private struct RichTextEditor: UIViewRepresentable {
         if focusOnAppear {
             // Once the push has finished. Raised mid-push, the keyboard's own
             // animation fought the page's: the page paused halfway and the bar
-            // above the keys drew dark before it settled.
+            // above the keys drew dark before it settled. An existing note
+            // opens at the start; a new one keeps the caret where typing goes.
+            let caretAtEnd = startsWithTitle
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
                 guard view.window != nil else { return }
+                let location = caretAtEnd ? view.textStorage.length : 0
+                view.selectedRange = NSRange(location: location, length: 0)
                 view.becomeFirstResponder()
-                view.selectedRange = NSRange(location: view.textStorage.length, length: 0)
+                if location == 0 {
+                    view.setContentOffset(.zero, animated: false)
+                    DispatchQueue.main.async {
+                        guard view.window != nil else { return }
+                        view.setContentOffset(.zero, animated: false)
+                    }
+                }
             }
         }
         return view
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
+        if !pending.isEmpty {
+            context.coordinator.enqueue(pending)
+            pending.removeAll()
+        }
+        if context.coordinator.flush(into: view) {
+            // The view just gained the file. The bound text is still the
+            // previous string; writing it back would drop the insert, and
+            // running this again with the same pending would paste it twice.
+            return
+        }
+        if NoteInlineInsert.attachments(in: view.attributedText).count
+            > NoteInlineInsert.attachments(in: text).count {
+            return
+        }
         if !view.attributedText.isEqual(to: text) {
             let selection = view.selectedRange
             view.attributedText = text
@@ -559,10 +607,35 @@ private struct RichTextEditor: UIViewRepresentable {
         private weak var view: UITextView?
         /// A new note, whose first line is its title.
         var titleFirstLine = false
+        /// The caret before a picker took first responder away.
+        var lastCaret = 0
+        private var queued: [Attachment] = []
+        private var inserted = Set<String>()
 
         init(text: Binding<NSAttributedString>, isEditing: Binding<Bool>) {
             self.text = text
             self.isEditing = isEditing
+        }
+
+        func enqueue(_ items: [Attachment]) {
+            for item in items where inserted.insert(item.id).inserted {
+                queued.append(item)
+            }
+        }
+
+        @discardableResult
+        func flush(into view: UITextView) -> Bool {
+            guard !queued.isEmpty else { return false }
+            let items = queued
+            queued.removeAll()
+            if !view.isFirstResponder {
+                let caret = min(max(0, lastCaret), view.textStorage.length)
+                view.selectedRange = NSRange(location: caret, length: 0)
+            }
+            for item in items {
+                NoteInlineInsert.insert(item, into: view)
+            }
+            return true
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) { isEditing.wrappedValue = true }
@@ -574,6 +647,7 @@ private struct RichTextEditor: UIViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
+            lastCaret = textView.selectedRange.location
             refreshStates()
         }
 
@@ -849,6 +923,10 @@ private struct RichTextEditor: UIViewRepresentable {
         func textView(
             _ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText replacement: String
         ) -> Bool {
+            if replacement.isEmpty, NoteInlineInsert.deleteAttachment(in: textView, range: range) {
+                changed()
+                return false
+            }
             // A new note's first line is its title; the line after it is
             // ordinary text, as in Notes.
             if titleFirstLine, replacement == "\n",

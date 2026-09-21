@@ -143,6 +143,31 @@ final class HomeShortcutTests: XCTestCase {
         XCTAssertEqual(store.homeShortcutLabel(store.homeShortcuts[0]), "After the rename")
     }
 
+    func testAChatPinKeepsTheInvokedAgentColour() throws {
+        let (store, suite) = try store()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let chat = Conversation(
+            id: "c1", title: "Descargas youtube.com",
+            createdAt: Date(), updatedAt: Date(),
+            messages: [
+                Message(
+                    id: "m1", role: .user, content: "@Descargas youtube.com",
+                    createdAt: Date(), mentionProfile: "descargas"
+                )
+            ]
+        )
+        store.conversations = [chat]
+        store.addHomeShortcut(HomeShortcut(
+            label: "Old title", symbol: "bubble.left", target: .conversation("c1")
+        ))
+        let pin = store.homeShortcuts[0]
+        XCTAssertEqual(store.homeShortcutLabel(pin), "Descargas youtube.com")
+        XCTAssertEqual(
+            store.homeShortcutStyledLabel(pin),
+            store.titleStyled(for: chat)
+        )
+    }
+
     func testASavedPinIsThereAfterRelaunch() throws {
         let suite = "alice.home-shortcuts.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

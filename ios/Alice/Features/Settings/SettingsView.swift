@@ -13,7 +13,7 @@ struct SettingsView: View {
             if let warning = store.storageWarning {
                 Section {
                     Label("Something could not be kept on this phone", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Palette.warning(scheme))
                     Text(warning)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -23,7 +23,7 @@ struct SettingsView: View {
             if let warning = store.liveActivityWarning {
                 Section {
                     Label("Live Activity could not start", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Palette.warning(scheme))
                     Text(warning)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -41,7 +41,7 @@ struct SettingsView: View {
                         )
                         Spacer()
                         Circle()
-                            .fill(store.isConnected ? Color.green : Color.secondary.opacity(0.4))
+                            .fill(store.isConnected ? Palette.success(scheme) : Color.secondary.opacity(0.4))
                             .frame(width: 8, height: 8)
                             .accessibilityHidden(true)
                     }
@@ -158,8 +158,7 @@ struct SettingsView: View {
                 Button("Done") { dismiss() }
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Palette.background(scheme))
+        .aliceFormPaper(scheme)
     }
 }
 
@@ -244,7 +243,6 @@ struct AdvancedSettingsView: View {
         }
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
-        .scrollContentBackground(.hidden)
-        .background(Palette.background(scheme))
+        .aliceFormPaper(scheme)
     }
 }

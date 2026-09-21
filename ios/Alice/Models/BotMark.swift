@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// A bot's mark: a colour and a shape, and nothing else.
+/// A bot's mark: a colour and a face, and nothing else.
 ///
 /// Hermes has no field for this — a profile is a name, a SOUL and a model —
 /// so it is kept on the phone. That is the right place for it: losing it
 /// costs a colour, not a bot, and the agent has no use for one.
+///
+/// `shape` indexes `Portrait`. `0` means nobody has chosen one yet; the
+/// derived portrait from the agent's name stands in until they do.
 struct BotMark: Codable, Hashable, Sendable {
     var colour: Int
     var shape: Int
@@ -16,14 +19,52 @@ struct BotMark: Codable, Hashable, Sendable {
         Color(hex: 0xEC4899), Color(hex: 0x8A8A8E),
     ]
 
-    /// Eight silhouettes, distinct enough to tell apart at 28pt in a list.
-    enum Silhouette: Int, CaseIterable {
-        case circle, squircle, square, capsule, triangle, hexagon, cloud, drop
+    /// The five faces an agent can wear. Raw values start at 1 so a saved
+    /// `shape` of 0 still means "not chosen" after older marks, which always
+    /// stored 0 because the picker only offered colour.
+    enum Portrait: Int, CaseIterable, Identifiable {
+        case athena = 1
+        case hermes
+        case apollo
+        case hephaestus
+        case poseidon
+
+        var id: Int { rawValue }
+
+        var imageName: String {
+            switch self {
+            case .athena: "PortraitAthena"
+            case .hermes: "PortraitHermes"
+            case .apollo: "PortraitApollo"
+            case .hephaestus: "PortraitHephaestus"
+            case .poseidon: "PortraitPoseidon"
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .athena: "Athena"
+            case .hermes: "Hermes"
+            case .apollo: "Apollo"
+            case .hephaestus: "Hephaestus"
+            case .poseidon: "Poseidon"
+            }
+        }
     }
 
     var color: Color { Self.colours[colour % Self.colours.count] }
-    var silhouette: Silhouette {
-        Silhouette(rawValue: shape % Silhouette.allCases.count) ?? .circle
+
+    var portrait: Portrait {
+        Portrait(rawValue: shape) ?? .athena
+    }
+
+    /// Keep a chosen colour, and give an unmarked shape the same stable face
+    /// `derived(from:)` would have assigned.
+    func fillingPortrait(from name: String) -> BotMark {
+        guard Portrait(rawValue: shape) == nil else { return self }
+        var filled = self
+        filled.shape = Self.derived(from: name).shape
+        return filled
     }
 
     /// A stable mark for a bot nobody has chosen one for, so a fresh install
@@ -40,9 +81,10 @@ struct BotMark: Codable, Hashable, Sendable {
         // From index 1: the first colour is near-white, which is a fine thing
         // to choose on purpose and an invisible thing to be given, since the
         // card behind it is near-white too.
+        let portraits = Portrait.allCases
         return BotMark(
             colour: 1 + Int(hash % UInt64(colours.count - 1)),
-            shape: Silhouette.circle.rawValue
+            shape: portraits[Int((hash / 33) % UInt64(portraits.count))].rawValue
         )
     }
 }
@@ -235,6 +277,22 @@ struct BotFaceView: View {
     }
 }
 
+/// The agent's portrait, clipped to a circle at any size.
+struct BotPortraitView: View {
+    let mark: BotMark
+    var size: CGFloat = 28
+
+    var body: some View {
+        Image(mark.portrait.imageName)
+            .resizable()
+            .renderingMode(.original)
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .clipShape(.circle)
+            .accessibilityLabel(mark.portrait.label)
+    }
+}
+
 /// A mark that answers a tap, and — where it has room — floats.
 struct AnimatedBotMarkView: View {
     let mark: BotMark
@@ -251,33 +309,24 @@ struct AnimatedBotMarkView: View {
     @State private var bounceRotation: Double = 0
 
     var body: some View {
-        ZStack {
-            MarkShape(silhouette: mark.silhouette)
-                .fill(mark.color)
-                .overlay {
-                    MarkShape(silhouette: mark.silhouette)
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.75)
-                }
-
-            BotFaceView(size: size, animated: true, mood: mood)
-        }
-        .frame(width: size, height: size)
-        .scaleEffect((lifted ? 1.06 : 1) * bounceScale)
-        .rotationEffect(.degrees((lifted ? 3.5 : 0) + bounceRotation))
-        .offset(y: lifted ? -12 : 0)
-        .animation(
-            reduceMotion
-                ? nil
-                : .easeInOut(duration: 2).repeatForever(autoreverses: true),
-            value: lifted
-        )
-        .contentShape(.rect)
-        .onTapGesture { bounce() }
-        // Driven by a value rather than started inside `onAppear`: a
-        // repeatForever begun there stacks another copy every time the view
-        // comes back, and does not always restart when it should.
-        .onAppear { floating = true }
-        .onDisappear { floating = false }
+        BotPortraitView(mark: mark, size: size)
+            .scaleEffect((lifted ? 1.06 : 1) * bounceScale)
+            .rotationEffect(.degrees((lifted ? 3.5 : 0) + bounceRotation))
+            .offset(y: lifted ? -12 : 0)
+            .animation(
+                reduceMotion
+                    ? nil
+                    : .easeInOut(duration: mood == .thinking ? 2.8 : 2)
+                        .repeatForever(autoreverses: true),
+                value: lifted
+            )
+            .contentShape(.rect)
+            .onTapGesture { bounce() }
+            // Driven by a value rather than started inside `onAppear`: a
+            // repeatForever begun there stacks another copy every time the view
+            // comes back, and does not always restart when it should.
+            .onAppear { floating = true }
+            .onDisappear { floating = false }
     }
 
     private var lifted: Bool { floats && floating }
@@ -315,89 +364,7 @@ struct BotMarkView: View {
         if animated {
             AnimatedBotMarkView(mark: mark, size: size, mood: mood, floats: floats)
         } else {
-            ZStack {
-                // No outline. It was there so the palest mark would still
-                // read on a light card, but every face carries two dark eyes
-                // that separate it from any background on their own, and the
-                // hairline only made a small face look drawn rather than
-                // printed.
-                MarkShape(silhouette: mark.silhouette)
-                    .fill(mark.color)
-
-                BotFaceView(size: size, animated: false, mood: mood)
-            }
-            .frame(width: size, height: size)
+            BotPortraitView(mark: mark, size: size)
         }
-    }
-}
-
-/// A bot's outline. Internal so a glass surface can be cut to it.
-struct MarkShape: InsettableShape {
-    var inset: CGFloat = 0
-
-    func inset(by amount: CGFloat) -> MarkShape {
-        MarkShape(inset: inset + amount, silhouette: silhouette)
-    }
-
-    let silhouette: BotMark.Silhouette
-
-    func path(in outer: CGRect) -> Path {
-        let rect = outer.insetBy(dx: inset, dy: inset)
-        switch silhouette {
-        case .circle:
-            return Circle().path(in: rect)
-        case .squircle:
-            return RoundedRectangle(cornerRadius: rect.width * 0.3, style: .continuous)
-                .path(in: rect)
-        case .square:
-            return RoundedRectangle(cornerRadius: rect.width * 0.14, style: .continuous)
-                .path(in: rect)
-        case .capsule:
-            return Capsule().path(in: rect.insetBy(dx: 0, dy: rect.height * 0.22))
-        case .triangle:
-            return polygon(sides: 3, in: rect, rotation: -.pi / 2)
-        case .hexagon:
-            return polygon(sides: 6, in: rect, rotation: -.pi / 2)
-        case .cloud:
-            var path = Path()
-            let r = rect.width / 2
-            path.addEllipse(in: CGRect(x: rect.minX, y: rect.midY - r * 0.55,
-                                       width: r * 1.2, height: r * 1.2))
-            path.addEllipse(in: CGRect(x: rect.maxX - r * 1.2, y: rect.midY - r * 0.55,
-                                       width: r * 1.2, height: r * 1.2))
-            path.addEllipse(in: CGRect(x: rect.midX - r * 0.7, y: rect.minY,
-                                       width: r * 1.4, height: r * 1.4))
-            path.addRect(CGRect(x: rect.minX + r * 0.3, y: rect.midY,
-                                width: rect.width - r * 0.6, height: r * 0.75))
-            return path
-        case .drop:
-            var path = Path()
-            path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.midX, y: rect.maxY),
-                control: CGPoint(x: rect.maxX + rect.width * 0.12, y: rect.maxY)
-            )
-            path.addQuadCurve(
-                to: CGPoint(x: rect.midX, y: rect.minY),
-                control: CGPoint(x: rect.minX - rect.width * 0.12, y: rect.maxY)
-            )
-            return path
-        }
-    }
-
-    private func polygon(sides: Int, in rect: CGRect, rotation: CGFloat) -> Path {
-        let radius = min(rect.width, rect.height) / 2
-        let centre = CGPoint(x: rect.midX, y: rect.midY)
-        var path = Path()
-        for step in 0..<sides {
-            let angle = rotation + CGFloat(step) * 2 * .pi / CGFloat(sides)
-            let point = CGPoint(
-                x: centre.x + radius * cos(angle),
-                y: centre.y + radius * sin(angle)
-            )
-            step == 0 ? path.move(to: point) : path.addLine(to: point)
-        }
-        path.closeSubpath()
-        return path
     }
 }

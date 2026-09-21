@@ -112,6 +112,7 @@ targets:
       - path: Alice/Shared/AgentActivity.swift
       - path: Alice/Models/BotMark.swift
       - path: Alice/DesignSystem/ColorHex.swift
+      - path: Alice/Shared/BotPortraits.xcassets
     info:
       path: AliceActivities/Info.plist
       properties:

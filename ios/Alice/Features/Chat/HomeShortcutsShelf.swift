@@ -15,7 +15,7 @@ struct HomeShortcutsShelf: View {
         let items = store.homeShortcuts
         VStack(spacing: 18) {
             ForEach(Array(stride(from: 0, to: items.count, by: 3)), id: \.self) { start in
-                HStack(spacing: 16) {
+                HStack(alignment: .top, spacing: 16) {
                     ForEach(items[start..<min(start + 3, items.count)]) { shortcut in
                         tile(shortcut)
                     }
@@ -33,14 +33,13 @@ struct HomeShortcutsShelf: View {
         } label: {
             VStack(spacing: 8) {
                 icon(for: shortcut)
-                Text(store.homeShortcutLabel(shortcut))
+                Text(store.homeShortcutStyledLabel(shortcut))
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 88)
+                    .frame(maxWidth: 88, alignment: .top)
             }
-            .frame(width: 96)
+            .frame(width: 96, alignment: .top)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -87,7 +86,7 @@ struct HomeShortcutsShelf: View {
     private func tilePreview(_ shortcut: HomeShortcut) -> some View {
         VStack(spacing: 8) {
             icon(for: shortcut)
-            Text(store.homeShortcutLabel(shortcut))
+            Text(store.homeShortcutStyledLabel(shortcut))
                 .font(.caption.weight(.medium))
                 .lineLimit(1)
         }

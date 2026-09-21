@@ -413,7 +413,7 @@ struct RoutineDetailSheet: View {
     private func runRow(_ run: RoutineRun) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Circle().fill(run.isActive ? Color.orange : Color.secondary.opacity(0.45))
+                Circle().fill(run.isActive ? Palette.warning(scheme) : Color.secondary.opacity(0.45))
                     .frame(width: 6, height: 6)
                 Text(run.startedAt?.formatted(date: .abbreviated, time: .shortened) ?? run.title)
                     .font(.subheadline.weight(.medium))

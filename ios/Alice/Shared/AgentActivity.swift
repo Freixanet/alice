@@ -27,7 +27,7 @@ struct AgentActivityAttributes: ActivityAttributes {
 
     let profile: String
     let name: String
-    /// The agent's mark (`BotMark`): its colour and silhouette.
+    /// The agent's mark (`BotMark`): its colour and portrait.
     let colour: Int
     let shape: Int
     /// The chat this activity belongs to. Empty on activities started before

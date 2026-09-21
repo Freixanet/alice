@@ -742,25 +742,6 @@ struct BotsScreen: View {
 
     private func mark(_ bot: BotRow) -> BotMark { store.mark(for: bot.name) }
 
-    /// How much of the colour to lay under the glass.
-    ///
-    /// Measured off the colour's own lightness rather than fixed. On paper a
-    /// pale mark has almost nothing to say against a pale page and needs
-    /// nearly all of itself; a deep one at the same strength would read as a
-    /// sticker rather than as glass. In the dark it is the other way round.
-    static func backing(_ colour: Color, _ scheme: ColorScheme) -> Double {
-        var white: CGFloat = 0, alpha: CGFloat = 0
-        UIColor(colour).getWhite(&white, alpha: &alpha)
-        let lightness = Double(white)
-        // Raised in both, and most in the dark. Interactive glass sits darker
-        // than the plain kind — it has a shadow and a deeper surface — so the
-        // colour underneath has to come up to meet it or every bot reads as a
-        // muddy version of itself.
-        return scheme == .dark
-            ? 0.72 - 0.26 * lightness
-            : 0.60 + 0.38 * lightness
-    }
-
     @ViewBuilder
     private func pinnedTile(_ bot: BotRow, reorderPeers: [BotRow]? = nil) -> some View {
         if let reorderPeers {
@@ -835,32 +816,16 @@ struct BotsScreen: View {
         .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
     }
 
-    /// The bot's mark as a glass surface.
+    /// The bot's portrait, with the unread or working dot on the corner.
     @ViewBuilder
     private func glassMark(_ bot: BotRow, size: CGFloat, showsUnread: Bool = false) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            ZStack {
-                MarkShape(silhouette: mark(bot).silhouette)
-                    .fill(mark(bot).color.opacity(Self.backing(mark(bot).color, scheme)))
-                BotFaceView(size: size)
-            }
-            .frame(width: size, height: size)
-            // Interactive, which is what makes it stretch under a finger the
-            // way the discs in the conversation do.
-            .glassEffect(
-                .regular.interactive().tint(mark(bot).color.opacity(0.42)),
-                in: MarkShape(silhouette: mark(bot).silhouette)
-            )
-
+            BotMarkView(mark: mark(bot), size: size)
             if showsUnread, let color = dotColor(bot.name) {
                 statusDot(color, size: Self.unreadDotSize)
             }
         }
-        // Slack outside the glass, not inside it: the shape is cut to the
-        // mark first and the room comes after. The stretch draws beyond the
-        // mark's own bounds, and with nothing around it the top of the bulge
-        // was cut off against the edge of the layer.
-        .padding(size * 0.16)
+        .padding(size * 0.08)
     }
 
     /// Green while the agent is at work, blue while something of its is
@@ -1988,30 +1953,38 @@ struct BotsScreen: View {
     }
 }
 
-/// The mark color picker, shared by the detail screen and the create sheet.
+/// Face picker, shared by the detail screen and the create sheet.
 struct MarkPicker: View {
-    @Environment(\.colorScheme) private var scheme
     @Binding var mark: BotMark
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
-            ForEach(BotMark.colours.indices, id: \.self) { index in
-                Button { mark.colour = index } label: {
-                    Circle()
-                        .fill(BotMark.colours[index])
-                        .frame(width: 30, height: 30)
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 10) {
+            ForEach(BotMark.Portrait.allCases) { portrait in
+                Button { mark.shape = portrait.rawValue } label: {
+                    Image(portrait.imageName)
+                        .resizable()
+                        .renderingMode(.original)
+                        .scaledToFill()
+                        .frame(width: 52, height: 52)
+                        .clipShape(.circle)
                         .overlay {
                             Circle().strokeBorder(
                                 Color.primary,
-                                lineWidth: mark.colour == index ? 2 : 0
+                                lineWidth: selected(portrait) ? 2 : 0
                             )
                             .padding(-3)
                         }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(portrait.label)
+                .accessibilityAddTraits(selected(portrait) ? .isSelected : [])
             }
         }
         .padding(.vertical, 6)
+    }
+
+    private func selected(_ portrait: BotMark.Portrait) -> Bool {
+        mark.portrait == portrait && BotMark.Portrait(rawValue: mark.shape) != nil
     }
 }
 
@@ -2094,7 +2067,7 @@ struct BotDetail: View {
             } header: {
                 Text("Character")
             } footer: {
-                Text("How this agent's mark looks everywhere.")
+                Text("How this agent looks everywhere.")
             }
 
             Section {
@@ -2745,6 +2718,12 @@ private struct NewBotSheet: View {
 
     private var suggestedName: String { AgentDraft.name(from: detail) }
 
+    private var shownMark: BotMark {
+        let shown = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = shown.isEmpty ? suggestedName : shown
+        return mark.fillingPortrait(from: source)
+    }
+
     private var creationSlugNote: String? {
         let shown = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let source = shown.isEmpty ? suggestedName : shown
@@ -2757,7 +2736,7 @@ private struct NewBotSheet: View {
             Form {
                 Section {
                     VStack(spacing: 16) {
-                        BotMarkView(mark: mark, size: 96)
+                        BotMarkView(mark: shownMark, size: 96)
                         TextField(
                             suggestedName.isEmpty ? "Name your agent" : suggestedName,
                             text: $name
@@ -2807,8 +2786,11 @@ private struct NewBotSheet: View {
                 }
 
                 Section("Character") {
-                    MarkPicker(mark: $mark)
-                        .listRowBackground(Palette.card(scheme))
+                    MarkPicker(mark: Binding(
+                        get: { shownMark },
+                        set: { mark = $0 }
+                    ))
+                    .listRowBackground(Palette.card(scheme))
                 }
                 .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
 
@@ -3021,7 +3003,7 @@ private struct NewBotSheet: View {
                     fallback: selectedFallback,
                     soul: soul
                 )
-                store.botMarks[slug] = mark
+                store.botMarks[slug] = mark.fillingPortrait(from: slug)
                 if selectedChannel.isEmpty {
                     if !selectedSection.isEmpty {
                         store.setBotSection(slug, section: selectedSection)

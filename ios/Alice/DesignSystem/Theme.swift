@@ -152,6 +152,11 @@ enum Palette {
     static func danger(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(hex: 0xE58C8C) : Color(hex: 0xB23A3A)
     }
+
+    /// In progress, informational, neither a success nor a failure.
+    static func info(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(hex: 0x8BB4D9) : Color(hex: 0x3D6580)
+    }
 }
 
 
@@ -174,5 +179,16 @@ extension Font {
         case .headline, .body: 18
         default: 16
         }
+    }
+}
+
+extension View {
+    /// The paper behind a Form, including the band a grouped list otherwise
+    /// leaves system-white below the last section.
+    func aliceFormPaper(_ scheme: ColorScheme) -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background { Palette.background(scheme).ignoresSafeArea() }
+            .containerBackground(Palette.background(scheme), for: .navigation)
     }
 }

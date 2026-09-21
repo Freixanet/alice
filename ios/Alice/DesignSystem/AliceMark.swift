@@ -1,19 +1,33 @@
 import SwiftUI
 
-/// Alice's face in her own chat, with her name on the glass under it.
-struct AliceAvatar: View {
+/// The conversation's face at the top of a chat: a round portrait with
+/// the name on glass overlapping the chin.
+struct ChatHeaderAvatar<Face: View>: View {
     var size: CGFloat = 72
+    let name: String
+    var face: Face
+
+    init(size: CGFloat = 72, name: String, @ViewBuilder face: () -> Face) {
+        self.size = size
+        self.name = name
+        self.face = face()
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            Image("AliceAvatar")
-                .resizable()
-                .scaledToFit()
-                .frame(width: size, height: size)
-                .clipShape(.circle)
+            ZStack {
+                // The agent portraits are painted on this same near-white
+                // disc. Alice's asset is cut out, so without it her edge
+                // falls into the paper and the two kinds of face do not match.
+                Circle().fill(Color(hex: 0xFDFDFD))
+                face
+            }
+            .frame(width: size, height: size)
+            .clipShape(.circle)
 
-            Text("Alice")
+            Text(name)
                 .font(.caption.weight(.semibold))
+                .lineLimit(1)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .glassEffect(.regular, in: .capsule)
@@ -21,7 +35,26 @@ struct AliceAvatar: View {
         }
         .padding(.bottom, -2)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Alice")
+        .accessibilityLabel(name)
+    }
+}
+
+/// Alice's face in her own chat, with her name on the glass under it.
+struct AliceAvatar: View {
+    var size: CGFloat = 72
+    /// The god portraits paint a white ring of about 16px on a 384px
+    /// square. Alice's cutout fills the disc, so the same fraction is
+    /// inset here and the disc behind her shows through.
+    private static let halo: CGFloat = 16.0 / 384.0
+
+    var body: some View {
+        ChatHeaderAvatar(size: size, name: "Alice") {
+            Image("AliceAvatar")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFill()
+                .padding(size * Self.halo)
+        }
     }
 }
 

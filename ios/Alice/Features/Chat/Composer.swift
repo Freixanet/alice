@@ -348,7 +348,7 @@ struct Composer: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(store.queuedSendNote ?? "")
                 .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.warning(scheme))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             Button("Stop") { store.cancelQueuedSend() }
@@ -549,9 +549,9 @@ struct Composer: View {
         .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
     }
 
-    /// `Color.primary` inside the glass field becomes a grey vibrancy fill.
+    /// The accent's clearest home on a bot chat: the control that sends.
     private var botSendFill: Color {
-        scheme == .dark ? Color.white : Color(hex: 0x111110)
+        store.accent.primary(scheme)
     }
 
     private func toggleDictation(listening: Bool) {

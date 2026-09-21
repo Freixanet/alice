@@ -3523,11 +3523,16 @@ final class AppStore {
     /// Why the last notes refresh failed, or that the store is ready. Kept
     /// beside the snapshot so a timeout does not look like "no notes agent".
     private(set) var notesAccess: NotesAccess = .unknown
+    /// The plugin on Hermes did not take attachments. Photos stay on this
+    /// phone until that plugin is updated; the banner is only this, never a
+    /// cached snapshot that simply omitted the flag.
+    var notesAttachmentsNeedPlugin = false
 
     func refreshNotes() async throws {
         do {
             let snap = try await dashboard.notes()
             notesSnapshot = NotesFeed.mergingAttachments(remote: snap, local: notesSnapshot)
+            if snap.supportsAttachments == true { notesAttachmentsNeedPlugin = false }
             notesAccess = .from(snapshot: snap)
             await moveLegacyFoldersToStore()
         } catch is CancellationError {
@@ -3596,6 +3601,7 @@ final class AppStore {
             var saved = try await dashboard.editNote(
                 id: note.id, text: text, rich: rich, attachments: wanted
             )
+            rememberNoteAttachmentsSync(saved, sent: wanted)
             if saved.attachments == nil { saved.attachments = wanted }
             put(saved)
         } catch {
@@ -3624,12 +3630,21 @@ final class AppStore {
         }
         do {
             var saved = try await dashboard.addNote(text, attachments: attachments)
+            rememberNoteAttachmentsSync(saved, sent: attachments)
             if saved.attachments == nil { saved.attachments = attachments }
             replacing(saved)
             return saved
         } catch {
             replacing(nil)
             throw error
+        }
+    }
+
+    private func rememberNoteAttachmentsSync(_ saved: Note, sent: [Attachment]?) {
+        if saved.attachments != nil {
+            notesAttachmentsNeedPlugin = false
+        } else if let sent, !sent.isEmpty {
+            notesAttachmentsNeedPlugin = true
         }
     }
 
@@ -3877,7 +3892,7 @@ final class AppStore {
     }
 
     func mark(for name: String) -> BotMark {
-        botMarks[name] ?? BotMark.derived(from: name)
+        (botMarks[name] ?? BotMark.derived(from: name)).fillingPortrait(from: name)
     }
     func soul(_ name: String) async throws -> (text: String, exists: Bool) {
         try await dashboard.soul(name)
@@ -5264,6 +5279,16 @@ final class AppStore {
         case .destination, .artifact:
             return shortcut.displayedLabel()
         }
+    }
+
+    /// The pin as the shelf should draw it: a chat keeps the invoked agent's
+    /// colour, the way the drawer already does.
+    func homeShortcutStyledLabel(_ shortcut: HomeShortcut) -> AttributedString {
+        if case let .conversation(id) = shortcut.target,
+           let chat = conversations.first(where: { $0.id == id }) {
+            return titleStyled(for: chat)
+        }
+        return AttributedString(homeShortcutLabel(shortcut))
     }
 
     func addHomeShortcut(_ shortcut: HomeShortcut) {
