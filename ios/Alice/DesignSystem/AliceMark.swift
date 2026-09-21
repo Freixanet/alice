@@ -1,5 +1,29 @@
 import SwiftUI
 
+/// Alice's face in her own chat, with her name on the glass under it.
+struct AliceAvatar: View {
+    var size: CGFloat = 56
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Image("AliceAvatar")
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+
+            Text("Alice")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .glassEffect(.regular, in: .capsule)
+                .offset(y: -8)
+        }
+        .padding(.bottom, -2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Alice")
+    }
+}
+
 /// The mark from the web client, drawn rather than shipped as an image so it
 /// takes the current foreground colour and any size without a second asset to
 /// keep in step.

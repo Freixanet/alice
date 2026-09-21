@@ -272,9 +272,8 @@ private struct ChatScreenContent: View, Equatable {
 
             Spacer(minLength: 0)
 
-            // Whose conversation this is. Alice's own mark when it is hers —
-            // the drawer already says "Alice", so a second wordmark here would
-            // be one too many — and the bot's mark and name when it is not.
+            // Whose conversation this is. Alice's face and name when it is
+            // hers, and the bot's mark and name when it is not.
             if let bot {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
@@ -320,16 +319,11 @@ private struct ChatScreenContent: View, Equatable {
                     }
                 }
             } else {
-                AliceMark(size: 30)
-                    .foregroundStyle(.primary)
-                    // Its ink sits 0.75pt above the two glyphs either side,
-                    // the flags being lighter than the body they sit over.
-                    .offset(y: 0.75)
+                AliceAvatar()
                     // Only at the top of the conversation: once reading down
-                    // it, the mark would sit over the words.
+                    // it, the face would sit over the words.
                     .opacity(showsAliceMark ? 1 : 0)
                     .animation(.easeInOut(duration: 0.2), value: showsAliceMark)
-                    .accessibilityHidden(true)
             }
 
             Spacer(minLength: 0)
