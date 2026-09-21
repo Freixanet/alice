@@ -94,6 +94,14 @@ final class AppStore {
     /// that chat changes.
     private(set) var shownConversation: Conversation?
 
+    /// A chat by id for code that draws. The chat on screen comes from
+    /// `shownConversation`, so a view asking about it is not tied to every
+    /// other chat; any other is looked up in `conversations`.
+    func conversation(_ id: String) -> Conversation? {
+        if activeChat.id == id { return shownConversation }
+        return conversations.first { $0.id == id }
+    }
+
     private func refreshActiveChat() {
         let current = conversations.first { $0.id == activeID }
         let identity = ActiveChat(
@@ -577,7 +585,34 @@ final class AppStore {
         refreshConversationShelves()
         refreshActiveChat()
         refreshBotNameSets()
+        #if DEBUG
+        warnIfPreferencesOverBudget()
+        #endif
     }
+
+    #if DEBUG
+    /// Settings storage is rewritten whole by iOS on every change. Conversations
+    /// kept there reached 3 MB and had cfprefsd write 4.3 GB in a day; a debug
+    /// build says so in Settings if anything grows it past this again.
+    private static let preferencesBudget = 256 * 1024
+
+    private func warnIfPreferencesOverBudget() {
+        guard defaults === UserDefaults.standard,
+              let domain = Bundle.main.bundleIdentifier.flatMap(defaults.persistentDomain(forName:)),
+              let data = try? PropertyListSerialization.data(fromPropertyList: domain, format: .binary, options: 0),
+              data.count > Self.preferencesBudget
+        else { return }
+        let largest = domain.compactMap { key, value -> (String, Int)? in
+            guard let bytes = try? PropertyListSerialization.data(
+                fromPropertyList: value, format: .binary, options: 0
+            ) else { return nil }
+            return (key, bytes.count)
+        }.max { $0.1 < $1.1 }
+        storageWarning = "Settings storage is \(data.count / 1024) KB, over its \(Self.preferencesBudget / 1024) KB budget"
+            + (largest.map { " (largest: \($0.0), \($0.1 / 1024) KB)" } ?? "")
+            + ". iOS rewrites it whole on every change; large data belongs in files."
+    }
+    #endif
 
     var activeConversation: Conversation? {
         conversations.first { $0.id == activeID }
@@ -3007,9 +3042,7 @@ final class AppStore {
     }
 
     func pendingQuestions(in conversationID: String) -> [AliceEvent] {
-        guard let chat = conversations.first(where: { $0.id == conversationID }) else {
-            return []
-        }
+        guard let chat = conversation(conversationID) else { return [] }
         // A mention is identified by both profile and durable Hermes session.
         // Matching only by profile lets an older unresolved question from the
         // same agent jump into a newer turn in another session.
@@ -7925,7 +7958,7 @@ final class AppStore {
     /// refresh also swaps a sent message for Hermes' copy under Hermes' id.
     func canEdit(_ message: Message) -> Bool {
         guard message.role == .user, !message.content.isEmpty, !activeIsRecoveredHistory,
-              let chat = conversations.first(where: { $0.id == activeID }),
+              let chat = shownConversation,
               let last = chat.messages.last(where: { $0.role == .user })
         else { return false }
         return last.id == message.id

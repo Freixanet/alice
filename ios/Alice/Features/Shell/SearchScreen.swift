@@ -196,6 +196,7 @@ struct SearchScreen: View {
     /// written to: a conversation reread this morning belongs above one that
     /// was last replied to a week ago.
     private var recents: [Conversation] {
+        // reads every chat: the search page lists recent chats, only while open.
         store.conversations
             .filter { !$0.messages.isEmpty && !$0.isBotChat }
             .sorted { ($0.openedAt ?? $0.updatedAt) > ($1.openedAt ?? $1.updatedAt) }
@@ -257,6 +258,7 @@ struct SearchScreen: View {
     private var results: [Result] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return [] }
+        // reads every chat: search looks through all of them, only while searching.
         return store.conversations.compactMap { conversation in
             if conversation.title.localizedCaseInsensitiveContains(needle) {
                 return Result(conversation: conversation, line: nil)

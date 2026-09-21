@@ -12,9 +12,7 @@ struct BackgroundWorkCard: View {
     var body: some View {
         let work = store.backgroundWork(for: conversationID)
         if !work.isEmpty,
-           let agent = store.activeChat.id == conversationID
-               ? store.activeChat.routedBotName
-               : store.conversations.first(where: { $0.id == conversationID })?.routedBotName {
+           let agent = store.conversation(conversationID)?.routedBotName {
             let name = store.botCurrentName(for: agent)
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(work.waitingOn) { delegation in

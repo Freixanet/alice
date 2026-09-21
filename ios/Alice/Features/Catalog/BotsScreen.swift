@@ -1574,6 +1574,7 @@ struct BotsScreen: View {
     }
 
     private func allGroupsMatching(query: String) -> [Conversation] {
+        // reads every chat: search looks through all of them, only while searching.
         store.conversations.filter { conv in
             guard conv.isChannel == true else { return false }
             if query.isEmpty { return true }
@@ -1584,6 +1585,7 @@ struct BotsScreen: View {
     private func allMessagesMatching(query: String) -> [MessageMatch] {
         guard !query.isEmpty else { return [] }
         var results: [MessageMatch] = []
+        // reads every chat: search looks through all of them, only while searching.
         for conv in store.conversations {
             for msg in conv.messages {
                 if msg.content.localizedCaseInsensitiveContains(query) {
@@ -1596,6 +1598,7 @@ struct BotsScreen: View {
 
     private func allFilesMatching(query: String) -> [FileMatch] {
         var results: [FileMatch] = []
+        // reads every chat: search looks through all of them, only while searching.
         for conv in store.conversations {
             for msg in conv.messages {
                 for att in msg.attachments {
@@ -1871,6 +1874,8 @@ struct BotsScreen: View {
     }
 
     private func preview(for bot: BotRow) -> BotChatPreview {
+        // reads every chat: each row quotes its bot's latest reply, kept by
+        // `BotChatPreviews` so a redraw costs a lookup, not a re-read.
         guard let conversation = store.conversations.first(where: { $0.botName == bot.name })
         else { return .empty }
         return store.botChatPreview(conversation, botName: bot.name)
