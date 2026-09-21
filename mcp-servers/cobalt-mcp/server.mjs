@@ -31,7 +31,9 @@ import {
   uniquePath,
 } from "./lib.mjs";
 
-const API_URL = (process.env.COBALT_API_URL || "http://localhost:9000/").replace(/\/?$/, "/");
+const API_URL = (
+  process.env.COBALT_API_URL || "http://localhost:9000/"
+).replace(/\/?$/, "/");
 const API_KEY = process.env.COBALT_API_KEY || "";
 const SAVE_DIR = process.env.COBALT_SAVE_DIR || "";
 const PICKER_MAX = Math.max(1, Number(process.env.COBALT_PICKER_MAX) || 10);
@@ -61,13 +63,19 @@ function unreachable(err) {
 /** Streams `url` into a fresh file under SAVE_DIR; never overwrites. */
 async function saveFromUrl(url, preferredName, { type } = {}) {
   await fs.mkdir(SAVE_DIR, { recursive: true });
-  const res = await fetch(url, { signal: AbortSignal.timeout(FILE_TIMEOUT_MS) });
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
+  });
   if (!res.ok || !res.body) {
     throw new Error(`HTTP ${res.status} while downloading the file`);
   }
   let name = safeFileName(preferredName);
   if (!path.extname(name)) {
-    name += extensionFor({ type, contentType: res.headers.get("content-type"), url });
+    name += extensionFor({
+      type,
+      contentType: res.headers.get("content-type"),
+      url,
+    });
   }
   const dest = uniquePath(SAVE_DIR, name);
   const partial = `${dest}.part`;
@@ -99,19 +107,32 @@ server.registerTool(
       downloadMode: z
         .enum(["auto", "audio", "mute"])
         .default("auto")
-        .describe("auto = video with audio; audio = audio only; mute = video only"),
+        .describe(
+          "auto = video with audio; audio = audio only; mute = video only",
+        ),
       audioFormat: z
         .enum(["best", "mp3", "ogg", "wav", "opus"])
         .default("mp3")
         .describe("Audio format when downloadMode is audio"),
       videoQuality: z
-        .enum(["max", "2160", "1440", "1080", "720", "480", "360", "240", "144"])
+        .enum([
+          "max",
+          "2160",
+          "1440",
+          "1080",
+          "720",
+          "480",
+          "360",
+          "240",
+          "144",
+        ])
         .default("1080")
         .describe("Maximum video quality"),
     },
   },
   async ({ url, downloadMode, audioFormat, videoQuality }) => {
-    if (!SAVE_DIR) return fail("COBALT_SAVE_DIR is not set — cannot save the file.");
+    if (!SAVE_DIR)
+      return fail("COBALT_SAVE_DIR is not set — cannot save the file.");
 
     let res;
     try {
@@ -120,7 +141,13 @@ server.registerTool(
         headers: headers(),
         // Server-side processing: one finished file per request. Local
         // processing would hand back raw streams this tool cannot merge.
-        body: JSON.stringify({ url, downloadMode, audioFormat, videoQuality, localProcessing: "disabled" }),
+        body: JSON.stringify({
+          url,
+          downloadMode,
+          audioFormat,
+          videoQuality,
+          localProcessing: "disabled",
+        }),
         signal: AbortSignal.timeout(PROCESS_TIMEOUT_MS),
       });
     } catch (err) {
@@ -141,13 +168,18 @@ server.registerTool(
     // A post with several pieces: save each one, report each one.
     if (data.status === "picker" && Array.isArray(data.picker)) {
       const items = data.picker.slice(0, PICKER_MAX);
-      const lines = [`status: picker (${data.picker.length} items, ${items.length} saved)`];
+      const lines = [
+        `status: picker (${data.picker.length} items, ${items.length} saved)`,
+      ];
       const failures = [];
-      const stem = safeFileName(data.audioFilename || data.filename || `cobalt-${Date.now()}`)
-        .replace(/\.[a-z0-9]{2,5}$/i, "");
+      const stem = safeFileName(
+        data.audioFilename || data.filename || `cobalt-${Date.now()}`,
+      ).replace(/\.[a-z0-9]{2,5}$/i, "");
       for (const [i, item] of items.entries()) {
         try {
-          const saved = await saveFromUrl(item.url, `${stem} ${i + 1}`, { type: item.type });
+          const saved = await saveFromUrl(item.url, `${stem} ${i + 1}`, {
+            type: item.type,
+          });
           lines.push(`SAVED: ${saved.dest}`);
           lines.push(`media_markdown: ${mediaMarkdown(saved.dest, item.url)}`);
         } catch (err) {
@@ -156,16 +188,24 @@ server.registerTool(
       }
       if (data.audio) {
         try {
-          const saved = await saveFromUrl(data.audio, data.audioFilename || `${stem} audio`, { type: "audio" });
+          const saved = await saveFromUrl(
+            data.audio,
+            data.audioFilename || `${stem} audio`,
+            { type: "audio" },
+          );
           lines.push(`SAVED: ${saved.dest}`);
-          lines.push(`media_markdown: ${mediaMarkdown(saved.dest, data.audio)}`);
+          lines.push(
+            `media_markdown: ${mediaMarkdown(saved.dest, data.audio)}`,
+          );
         } catch (err) {
           failures.push(`  [audio] ${err.message}`);
         }
       }
       if (failures.length) lines.push("failed:", ...failures);
       if (data.picker.length > items.length) {
-        lines.push(`note: only the first ${items.length} of ${data.picker.length} items were saved`);
+        lines.push(
+          `note: only the first ${items.length} of ${data.picker.length} items were saved`,
+        );
       }
       return lines.length > 1 && !lines.some((l) => l.startsWith("SAVED"))
         ? fail(lines.join("\n"))
@@ -182,24 +222,41 @@ server.registerTool(
         );
       }
       try {
-        const saved = await saveFromUrl(tunnels[0], data.output?.filename || `cobalt-${Date.now()}`);
-        return ok(savedReport({ ...saved, mirrorUrl: tunnels[0], status: data.status }));
+        const saved = await saveFromUrl(
+          tunnels[0],
+          data.output?.filename || `cobalt-${Date.now()}`,
+        );
+        return ok(
+          savedReport({ ...saved, mirrorUrl: tunnels[0], status: data.status }),
+        );
       } catch (err) {
-        return fail(`File save failed: ${err.message}. The link still works: ${tunnels[0]}`);
+        return fail(
+          `File save failed: ${err.message}. The link still works: ${tunnels[0]}`,
+        );
       }
     }
 
     const downloadUrl = data.url || data.audio;
     if (!downloadUrl) {
-      return fail(`cobalt answered ${data.status} but no download URL: ${JSON.stringify(data).slice(0, 300)}`);
+      return fail(
+        `cobalt answered ${data.status} but no download URL: ${JSON.stringify(data).slice(0, 300)}`,
+      );
     }
     try {
-      const saved = await saveFromUrl(downloadUrl, data.filename || data.audioFilename || `cobalt-${Date.now()}`, {
-        type: downloadMode === "audio" ? "audio" : "video",
-      });
-      return ok(savedReport({ ...saved, mirrorUrl: downloadUrl, status: data.status }));
+      const saved = await saveFromUrl(
+        downloadUrl,
+        data.filename || data.audioFilename || `cobalt-${Date.now()}`,
+        {
+          type: downloadMode === "audio" ? "audio" : "video",
+        },
+      );
+      return ok(
+        savedReport({ ...saved, mirrorUrl: downloadUrl, status: data.status }),
+      );
     } catch (err) {
-      return fail(`File save failed: ${err.message}. The link still works: ${downloadUrl}`);
+      return fail(
+        `File save failed: ${err.message}. The link still works: ${downloadUrl}`,
+      );
     }
   },
 );
@@ -208,12 +265,16 @@ server.registerTool(
   "cobalt_services",
   {
     title: "List supported services",
-    description: "List the media services supported by the local cobalt instance.",
+    description:
+      "List the media services supported by the local cobalt instance.",
     inputSchema: {},
   },
   async () => {
     try {
-      const res = await fetch(API_URL, { headers: headers(), signal: AbortSignal.timeout(15_000) });
+      const res = await fetch(API_URL, {
+        headers: headers(),
+        signal: AbortSignal.timeout(15_000),
+      });
       const data = await res.json();
       const services = data?.cobalt?.services ?? [];
       return ok(
@@ -236,7 +297,10 @@ server.registerTool(
   },
   async () => {
     try {
-      const res = await fetch(API_URL, { headers: headers(), signal: AbortSignal.timeout(15_000) });
+      const res = await fetch(API_URL, {
+        headers: headers(),
+        signal: AbortSignal.timeout(15_000),
+      });
       const data = await res.json();
       const c = data?.cobalt ?? {};
       return ok(

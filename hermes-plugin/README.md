@@ -40,7 +40,7 @@ none of these tools (`check_fn`), so enable the `notes` toolset only where the s
 
 ```yaml
 platform_toolsets:
-  cli: [web, file, skills, memory, clarify, todo, notes]   # `terminal` is no longer needed
+  cli: [web, file, skills, memory, clarify, todo, notes] # `terminal` is no longer needed
 ```
 
 The agent gains one rule:

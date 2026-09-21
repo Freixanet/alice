@@ -45,16 +45,16 @@ with technical administration progressively disclosed under Advanced.
 
 ## Status
 
-| Screen                    | State                                                   |
-| ------------------------- | ------------------------------------------------------- |
-| Chat                      | Streaming replies, tool calls, Markdown, model picker   |
-| Agents                    | Roster, create, model and fallback, routines, soul      |
-| Connect                   | Pairing-first connection; manual details under Advanced |
-| Settings                  | Activity, general, connection, agent options, Advanced  |
-| Skills                    | List, search, filter, enable/disable against Hermes     |
-| Tools, Plugins, MCP       | Preserved under Settings → Advanced                     |
+| Screen                    | State                                                    |
+| ------------------------- | -------------------------------------------------------- |
+| Chat                      | Streaming replies, tool calls, Markdown, model picker    |
+| Agents                    | Roster, create, model and fallback, routines, soul       |
+| Connect                   | Pairing-first connection; manual details under Advanced  |
+| Settings                  | Activity, general, connection, agent options, Advanced   |
+| Skills                    | List, search, filter, enable/disable against Hermes      |
+| Tools, Plugins, MCP       | Preserved under Settings → Advanced                      |
 | Projects, Library, Memory | User-facing work, a live Mac reading, and curated memory |
-| Activity, Sessions, Usage | Current attention plus history and usage                |
+| Activity, Sessions, Usage | Current attention plus history and usage                 |
 
 Skills, Tools and Add-ons share one screen: they differ in where the rows come
 from and whether a row can be switched, not in how they read.

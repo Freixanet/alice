@@ -36,35 +36,37 @@ la verificación local iOS es una build `generic/platform=iOS`.
 
 ## 1. Orden de ejecución (por valor/riesgo)
 
-| # | Bloque | Ítems del usuario | Riesgo |
-|---|--------|-------------------|--------|
-| 1 | Commit del WIP | carpetas anidadas (parcial) | bajo |
-| 2 | Notas: banner "Note not saved" + margen inferior | 9, 10 | bajo |
-| 3 | "Reconnecting to Hermes…" espurio | 20 | bajo |
-| 4 | Mensajes intermedios visibles | 15 | medio |
-| 5 | Etiquetas de actividad reales por tarea | 13 | medio |
-| 6 | Modo desarrollador: llamadas/tokens por respuesta | 16 | bajo |
-| 7 | Cambio de modelo lento | 17 | medio |
-| 8 | Cola de mensajes acumulados | 18 | bajo (UX) |
-| 9 | Bark avisa antes de tiempo | 19 | bajo |
-| 10 | Sidebar lento | 5 | medio |
-| 11 | Carpetas: orden (Edit como Notas) | 1, 2 | medio |
-| 12 | Inbox funcionando | 3 | medio (depende de Hermes) |
-| 13 | Accesos directos en home | 4 | medio |
-| 14 | Adjuntos en notas | 11 | alto (servidor+cliente) |
-| 15 | Color de la app | 7 | medio |
-| 16 | Avatares de agentes | 8 | medio |
-| 17 | Alice se auto-diagnostica | 14 | alto |
-| 18 | Alice proactiva (investigación) | 12 | doc |
-| 19 | Pasada manual de pulido | 6 | — |
+| #   | Bloque                                            | Ítems del usuario           | Riesgo                    |
+| --- | ------------------------------------------------- | --------------------------- | ------------------------- |
+| 1   | Commit del WIP                                    | carpetas anidadas (parcial) | bajo                      |
+| 2   | Notas: banner "Note not saved" + margen inferior  | 9, 10                       | bajo                      |
+| 3   | "Reconnecting to Hermes…" espurio                 | 20                          | bajo                      |
+| 4   | Mensajes intermedios visibles                     | 15                          | medio                     |
+| 5   | Etiquetas de actividad reales por tarea           | 13                          | medio                     |
+| 6   | Modo desarrollador: llamadas/tokens por respuesta | 16                          | bajo                      |
+| 7   | Cambio de modelo lento                            | 17                          | medio                     |
+| 8   | Cola de mensajes acumulados                       | 18                          | bajo (UX)                 |
+| 9   | Bark avisa antes de tiempo                        | 19                          | bajo                      |
+| 10  | Sidebar lento                                     | 5                           | medio                     |
+| 11  | Carpetas: orden (Edit como Notas)                 | 1, 2                        | medio                     |
+| 12  | Inbox funcionando                                 | 3                           | medio (depende de Hermes) |
+| 13  | Accesos directos en home                          | 4                           | medio                     |
+| 14  | Adjuntos en notas                                 | 11                          | alto (servidor+cliente)   |
+| 15  | Color de la app                                   | 7                           | medio                     |
+| 16  | Avatares de agentes                               | 8                           | medio                     |
+| 17  | Alice se auto-diagnostica                         | 14                          | alto                      |
+| 18  | Alice proactiva (investigación)                   | 12                          | doc                       |
+| 19  | Pasada manual de pulido                           | 6                           | —                         |
 
 ## 2. Detalle por bloque
 
 ### B2. Notas — "The dashboard took too long to answer / Note not saved" y margen inferior
+
 Causa: `NoteEditor.swift:122` autosave con debounce 1.2 s → `save()` → `store.editNote`
 → `DashboardClient` con timeout 15 s (`DashboardClient.swift:72`); cualquier fallo
 pone `failure` y sale un `.alert` centrado (`NoteEditor.swift:134-142`) mientras escribes.
 Cambios:
+
 - `NoteEditor.swift`: el autosave **nunca** muestra alert. Guardar estado
   `saveState: .saved/.saving/.pendingRetry(Error)`; en fallo reintentar con
   backoff (2 s, 5 s, 15 s) y mostrar una línea discreta bajo el título
@@ -74,15 +76,17 @@ Cambios:
 - Debounce a 2 s; coalescer: si hay un save en vuelo, marcar `dirty` y encadenar.
 - Margen: `NoteEditor.swift:320` `textContainerInset.bottom = 40` con
   `.ignoresSafeArea(.bottom)` (`:77`). Poner bottom inset = 64 (barra accesoria)
-  + `safeAreaInsets.bottom` y actualizar `contentInset` con `keyboardLayoutGuide`.
-Verificar: build; test unitario de la máquina de estados si se extrae a
-`Models/NoteSaveState.swift`.
+  - `safeAreaInsets.bottom` y actualizar `contentInset` con `keyboardLayoutGuide`.
+    Verificar: build; test unitario de la máquina de estados si se extrae a
+    `Models/NoteSaveState.swift`.
 
 ### B3. "Reconnecting to Hermes…" espurio
+
 Causa: `AppStore.swift:6240` pone la nota al **primer** fallo de `turnSnapshot`
 (`BotTurnWatch.checked(.failure)` → `.reconnecting` desde `failedChecks == 1`,
 `BotTurnWatch.swift:195-208`). Un solo timeout de 20 s tras 30 s de silencio ya la muestra.
 Cambios (`BotTurnWatch.swift` + test `BotTurnWatchTests`):
+
 - `.reconnecting` solo cuando `failedChecks >= 2` **y** hay ≥ 45 s sin ningún frame;
   el primer fallo devuelve `.keepWaiting`.
 - Al recibir cualquier frame del turno, limpiar la nota (ya se hace en `.keepWaiting`).
@@ -90,10 +94,12 @@ Cambios (`BotTurnWatch.swift` + test `BotTurnWatchTests`):
   solo a partir del segundo fallo consecutivo.
 
 ### B4. Mensajes intermedios que desaparecen
+
 Causa: modelo de "una burbuja por turno". `tool.start` borra el texto acumulado
 (`AppStore.swift:6138-6141`); `message.interim` se ignora (`:6730-6733, :6821`);
 además el servidor no lo emite (config `interim_assistant_messages: false`).
 Cambios:
+
 - `Models/Chat.swift` `ChatEvent`: añadir `.interim(text:)`.
 - `AppStore.chatEvent(from:)`: mapear `message.interim` → `.interim`.
 - `AppStore.apply`: en `tool.start`, si el placeholder tiene texto no vacío,
@@ -109,10 +115,12 @@ Cambios:
   en Hermes para ver comentarios intermedios (Alice funciona igual sin él gracias al sellado en `tool.start`).
 
 ### B5. Etiquetas de actividad reales
+
 Causa: `ToolCaption` (`MessageRow.swift:592-712`) usa una lista fija `musings` sembrada
 por id de mensaje y un mapa por **nombre** de herramienta. Se ignoran `status.update`,
 `tool.start.context/args/preview`, `todo.updated`, `subagent.*` (`AppStore.swift:6821-6827`).
 Cambios:
+
 - `ChatEvent.tool` pasa a llevar `context`, `argsText/preview` (ya vienen en
   `ToolStartPayload`). Nuevo `ChatEvent.status(kind:text:)` desde `status.update`.
 - `ToolCaption.headline`: prioridad → `status.update.text` reciente > frase derivada de
@@ -123,9 +131,11 @@ Cambios:
 - Tests en `ToolCaptionTests`.
 
 ### B6. Modo desarrollador — llamadas y tokens
+
 Dato: `message.complete.usage` (`Usage{model,input,output,reasoning,total,calls,...}`)
 ya llega y se ignora; `tool.start` se puede contar en cliente.
 Cambios:
+
 - `Message`: `usage: MessageUsage?` (Codable opcional).
 - `AppStore.apply(.complete)`: guardar `usage`; contar `tool.start` por turno en
   `toolCallsByReply[replyID]`.
@@ -136,10 +146,12 @@ Cambios:
 - `session.usage` (tick a mitad de turno) opcional para actualizar en vivo.
 
 ### B7. Cambio de modelo lento
+
 Causa: `setBotModel` (`AppStore.swift:1743-1863`) espera al sync anterior completo
 (`:1754-1791`), luego `profiles.configure`; `carryModelChange` hace N RPC en serie
 (`:1996-2020`). El picker mantiene `applyingModel` hasta que vuelve.
 Cambios:
+
 - No esperar al sync anterior: cancelarlo (`botModelSyncTasks[bot]?.cancel()`) y
   arrancar el nuevo (el último cambio gana). Guardar el modelo objetivo para que
   el sync viejo no pise el nuevo.
@@ -150,9 +162,11 @@ Cambios:
   solo si el chat está abierto.
 
 ### B8. Cola acumulada
+
 Causa: comportamiento de Hermes `display.busy_input_mode` (queued/steer) — no hay cola
 en el cliente. Es correcto pero opaco.
 Cambios (solo UX):
+
 - Mostrar en el composer un aviso claro cuando la disposición es `.queued`/`.foldedIn`
   con acción **"Cancelar envío"** (`prompt.cancel`/`interrupt` si el gateway lo expone —
   comprobar `tui_gateway/contracts` `methods_*`; si no existe, permitir borrar el
@@ -160,10 +174,12 @@ Cambios (solo UX):
 - Documentar en Settings › Agente la opción `busy_input_mode` (steer/queue/interrupt).
 
 ### B9. Bark avisa antes de la respuesta
+
 Causa: `mac/notifier/alice_notifier.py:classify` avisa en la primera fila
 `role=assistant, finish_reason='stop'`, que también escriben los mensajes intermedios.
 Verificado en `~/.hermes/state.db`: filas `stop` seguidas de más filas assistant/tool.
 Cambios:
+
 - `assistant_rows`: además, comprobar que la sesión no tiene actividad posterior:
   la fila es final si es la última de su sesión **y** han pasado ≥ `SETTLE_SECONDS`
   (8 s) desde su timestamp, o si la siguiente fila es `role='user'`.
@@ -172,10 +188,12 @@ Cambios:
 - Tests en `mac/notifier/test_*.py` (fila intermedia no avisa; final sí).
 
 ### B10. Sidebar lento
+
 Causa: `Sidebar.body` se reevalúa cada frame del gesto (`surfaceProgress`), con
 `.mask(edgeFade)` sobre toda la lista (`Sidebar.swift:42,218-263`), filtros
 `pinned/recents` sin cache (`:326-327`), `titleStyled` dos veces por fila, `glassEffect`.
 Cambios:
+
 - Separar la lista en `SidebarList` (subvista) que **no** recibe `surfaceProgress`;
   solo el header/overlay dependen del progreso.
 - Reemplazar `.mask(edgeFade)` por dos `LinearGradient` superpuestos con
@@ -185,9 +203,11 @@ Cambios:
 - `loadProjects()` no en `.task(id:)` cada apertura: cachear 60 s.
 
 ### B11. Carpetas: orden (Edit, como Notas)
+
 Base: nesting ya funciona. Orden = `noteFolderOrder` en defaults (cliente).
 No hay pin de carpetas, ni arrastre libre para anidar, ni botón de ordenar.
 Cambios:
+
 - `NotesFoldersScreen`: a la derecha de New Folder, **Edit** → **checkmark**.
   En edit mode, List `.onMove` muestra el handle de tres rayas solo en las
   carpetas propias (no Quick Notes / All Notes / Recently Deleted). Arrastrar
@@ -197,22 +217,26 @@ Cambios:
   su padre.
 
 ### B12. Inbox
+
 "Inbox" = perfil Hermes que tiene `workspace/inbox-store/inbox.py`; sin él Notes
 muestra "No notes agent" (`plugin_api.py:769-782`, `NotesScreen.swift:644`).
 Pasos:
+
 1. Diagnóstico real: `ls ~/.hermes/profiles/*/workspace/inbox-store/` y llamar a
    `GET api/plugins/alice/notes` con el dashboard en marcha para ver `available`.
 2. Si falta el store: `hermes-plugin/install.sh` / README paso "notes agent"; si el
    perfil no se llama `inbox`, `_notes_store()` debe recordar el elegido
    (guardar en `~/.hermes/.alice/notes_store.json`) en vez de "el primero que encuentre".
-3. Cliente: `AppStore.refreshNotes` distingue *no store* / *offline* / *401* con
+3. Cliente: `AppStore.refreshNotes` distingue _no store_ / _offline_ / _401_ con
    textos y acciones distintas (botón "Crear agente Inbox" que lanza la plantilla
    de agente con el store).
 4. Test `test_plugin_api.py`: store elegido persiste entre peticiones.
 
 ### B13. Accesos directos en home
+
 No existe ninguna superficie de atajos. Home = `EmptyChatView` (`ChatScreen.swift:656-733`).
 Cambios:
+
 - `Models/HomeShortcut.swift`: `Target { destination, note, noteFolder, bot, artifact, conversation }`,
   `label`, `symbol`. Persistido JSON en `Keys.homeShortcuts` (patrón `botChannels`).
 - `AppStore.openHomeShortcut(_:)` junto a `goHome()`; para nota/carpeta añadir
@@ -222,7 +246,9 @@ Cambios:
 - Añadir "Añadir a la home" en menús contextuales de nota, carpeta, agente, chat, artefacto.
 
 ### B14. Adjuntos en notas
+
 Servidor solo guarda texto+RTF (`plugin_api.py:899-984`). Recomendado servidor+cliente:
+
 - `plugin_api.py`: `attachments: [{id,name,mime,kind,data_b64}]` en `_EditedNote`/`_add_note`,
   tope 8 MB por nota (`NOTE_ATTACHMENTS_MAX_BYTES`), persistir en `entries.jsonl`,
   emitir en `_note_payload`. Test en `test_notes_tools.py`.
@@ -233,7 +259,9 @@ Servidor solo guarda texto+RTF (`plugin_api.py:899-984`). Recomendado servidor+c
   "Actualiza el plugin para sincronizar adjuntos".
 
 ### B15. Color
+
 Hoy: neutro + un acento (`Theme.swift`). Sin romper reglas:
+
 - Acento con más presencia: botón enviar, selección, iconos de sección, título del
   agente en chat, chips de estado.
 - Colores semánticos (`Palette.success/warning/danger/info(scheme)`) usados solo para
@@ -243,7 +271,9 @@ Hoy: neutro + un acento (`Theme.swift`). Sin romper reglas:
 - Nada de gradientes/sombras/glass. Revisar AA en claro/oscuro.
 
 ### B16. Avatares de agentes (Muse-style, dioses griegos)
+
 Persistencia intacta: `BotMark{colour:Int, shape:Int}`. Cambiar solo el renderer.
+
 - `Models/BotSymbolMark.swift`: catálogo de 12 símbolos de línea (SF Symbols o Path)
   con nombre de dios: Hermes (caduceo/alas), Atenea (búho), Apolo (lira/sol),
   Artemisa (luna/arco), Hefesto (martillo), Deméter (espiga), Poseidón (tridente),
@@ -255,7 +285,9 @@ Persistencia intacta: `BotMark{colour:Int, shape:Int}`. Cambiar solo el renderer
   funcionando (usa `colour/shape` Int).
 
 ### B17. Alice se auto-diagnostica
+
 Hoy Hermes no puede leer nada de la app. Plan mínimo:
+
 - iOS `AppStore.pushDiagnostics()` al volver a primer plano y tras cada error de turno:
   POST cola de últimas 200 líneas de `DiagnosticsLog` + `appStateSummary()`
   (conexión, wellbeing, versión, eventos desconocidos) a
@@ -267,8 +299,10 @@ Hoy Hermes no puede leer nada de la app. Plan mínimo:
 - Slash `/debug` en la app que envía el resumen al chat actual.
 
 ### B18. Proactividad (investigación → `docs/radar-ia.md` o nuevo `docs/proactive.md`)
+
 Ya existen cron (`RoutinesScreen`, `RoutineBrief.templates`), eventos (`EventDigest`),
 Live Activity, canales, webhooks. Propuesta:
+
 1. "Sugerencias" en home: función pura sobre rutinas fallidas, chats sin responder,
    notas con `openQuestions`, usage alto → `AliceEvent`.
 2. Rutina "briefing diario" con plantilla existente + permiso de notificación.
@@ -277,6 +311,7 @@ Live Activity, canales, webhooks. Propuesta:
 4. Límite: iOS no permite always-on; Bark/Live Activity son el canal.
 
 ### B19. Pasada manual
+
 Con la app instalada en el iPhone: checklist en `docs/verification.md` — abrir drawer,
 crear/mover/ordenar carpetas, escribir nota 2 min sin alertas, adjuntar imagen,
 cambiar modelo (< 2 s cierre), enviar con el bot ocupado, apagar wifi 20 s a mitad de
@@ -286,21 +321,21 @@ respuesta, notificación Bark tras respuesta final, avatar y color en claro/oscu
 
 Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 
-| Bloque | Estado | Commit | Verificación |
-|--------|--------|--------|--------------|
-| 1 WIP | hecho | 28bbf48 | build device + install |
-| 2 Notas | hecho | 45add6b | build device + install; unit tests escritos, no corridos aquí |
-| 3 Reconnecting | hecho | ee2ed06 | build device + install; unit tests escritos, no corridos aquí |
-| 4 Interim | hecho | f9919ed | build device + install; unit tests escritos, no corridos aquí |
-| 5 Captions | hecho | 63c326a | build device + push; install pendiente (iPhone unavailable) |
-| 6 Developer | hecho | bc3b26f | build device + push; install pendiente (iPhone unavailable) |
-| 7 Model sync | hecho | 6d855cb | build device + push; install pendiente (iPhone unavailable) |
-| 8 Queue UX | hecho | b78ee8e | build device + push; install pendiente (iPhone unavailable) |
-| 9 Bark | hecho | bb49b50 | python -m unittest discover -s mac/notifier |
-| 10 Sidebar | hecho | b172df0 / f587753 | build device + install; unit tests escritos, no corridos aquí |
-| 11 Carpetas | hecho | 92a5f3d | build device + install; unit tests escritos, no corridos aquí |
-| 12 Inbox | hecho | 5e85b58 | plugin tests + build device + install |
-| 13 Accesos home | hecho | bb1062f | build device + install; unit tests escritos, no corridos aquí |
-| 14 Adjuntos | hecho |  | plugin tests + build device + install; unit tests escritos, no corridos aquí |
-| 15 Color | hecho |  | build device. Acento en enviar, selección e iconos. Los nombres de agente se quedan en el color del texto. Estado: guardado, fallo, rutina, cola |
-| 18 Sugerencias | hecho | 08ed44c | build device; unit tests escritos, no corridos aquí. No crea un briefing sola |
+| Bloque          | Estado | Commit            | Verificación                                                                                                                                     |
+| --------------- | ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 WIP           | hecho  | 28bbf48           | build device + install                                                                                                                           |
+| 2 Notas         | hecho  | 45add6b           | build device + install; unit tests escritos, no corridos aquí                                                                                    |
+| 3 Reconnecting  | hecho  | ee2ed06           | build device + install; unit tests escritos, no corridos aquí                                                                                    |
+| 4 Interim       | hecho  | f9919ed           | build device + install; unit tests escritos, no corridos aquí                                                                                    |
+| 5 Captions      | hecho  | 63c326a           | build device + push; install pendiente (iPhone unavailable)                                                                                      |
+| 6 Developer     | hecho  | bc3b26f           | build device + push; install pendiente (iPhone unavailable)                                                                                      |
+| 7 Model sync    | hecho  | 6d855cb           | build device + push; install pendiente (iPhone unavailable)                                                                                      |
+| 8 Queue UX      | hecho  | b78ee8e           | build device + push; install pendiente (iPhone unavailable)                                                                                      |
+| 9 Bark          | hecho  | bb49b50           | python -m unittest discover -s mac/notifier                                                                                                      |
+| 10 Sidebar      | hecho  | b172df0 / f587753 | build device + install; unit tests escritos, no corridos aquí                                                                                    |
+| 11 Carpetas     | hecho  | 92a5f3d           | build device + install; unit tests escritos, no corridos aquí                                                                                    |
+| 12 Inbox        | hecho  | 5e85b58           | plugin tests + build device + install                                                                                                            |
+| 13 Accesos home | hecho  | bb1062f           | build device + install; unit tests escritos, no corridos aquí                                                                                    |
+| 14 Adjuntos     | hecho  |                   | plugin tests + build device + install; unit tests escritos, no corridos aquí                                                                     |
+| 15 Color        | hecho  |                   | build device. Acento en enviar, selección e iconos. Los nombres de agente se quedan en el color del texto. Estado: guardado, fallo, rutina, cola |
+| 18 Sugerencias  | hecho  | 08ed44c           | build device; unit tests escritos, no corridos aquí. No crea un briefing sola                                                                    |

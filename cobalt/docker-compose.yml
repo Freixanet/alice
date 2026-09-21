@@ -13,8 +13,8 @@ services:
       API_URL: "http://MacBook-Pro-de-Marcos.local:9000/"
       # API_AUTH_REQUIRED: 1          # activa si expones fuera de localhost
       # API_KEY_URL: "file:///keys.json"
-      DURATION_LIMIT: 10800           # 3h max por archivo
-      TUNNEL_LIFESPAN: 1800           # 30 min de validez del enlace de descarga
+      DURATION_LIMIT: 10800 # 3h max por archivo
+      TUNNEL_LIFESPAN: 1800 # 30 min de validez del enlace de descarga
     labels:
       - com.centurylinklabs.watchtower.scope=cobalt
     # volumes:

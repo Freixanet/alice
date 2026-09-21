@@ -19,7 +19,11 @@ export function safeFileName(name, fallback = `cobalt-${Date.now()}`) {
 }
 
 /** `name.mp4` → `name (2).mp4` when `name.mp4` already exists in `dir`. */
-export function uniquePath(dir, fileName, exists = (p) => fsSync.existsSync(p)) {
+export function uniquePath(
+  dir,
+  fileName,
+  exists = (p) => fsSync.existsSync(p),
+) {
   const ext = path.extname(fileName);
   const stem = fileName.slice(0, fileName.length - ext.length);
   let candidate = path.join(dir, fileName);
@@ -68,7 +72,10 @@ export function extensionFor({ type, contentType, url } = {}) {
     }
   })();
   if (fromUrl) return fromUrl;
-  const mime = String(contentType ?? "").split(";")[0].trim().toLowerCase();
+  const mime = String(contentType ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
   const byMime = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -108,14 +115,18 @@ export function describeCobaltError(code, context) {
     "service.disabled": "That service is turned off on this cobalt instance.",
     "link.invalid": "That doesn't look like a valid link.",
     "link.unsupported": "That link isn't supported by cobalt.",
-    "fetch.fail": "cobalt couldn't fetch the media. It may be private, deleted or region-locked.",
+    "fetch.fail":
+      "cobalt couldn't fetch the media. It may be private, deleted or region-locked.",
     "fetch.critical": "cobalt hit an internal error fetching this media.",
     "fetch.empty": "cobalt found nothing to download at that link.",
-    "fetch.rate": "The source is rate-limiting cobalt. Try again in a few minutes.",
+    "fetch.rate":
+      "The source is rate-limiting cobalt. Try again in a few minutes.",
     "fetch.short_link": "cobalt couldn't resolve that short link.",
     "content.too_long": "The media is longer than this instance allows.",
-    "content.video.unavailable": "That video is unavailable (private, deleted or region-locked).",
-    "content.video.live": "That's a live stream; cobalt only downloads finished videos.",
+    "content.video.unavailable":
+      "That video is unavailable (private, deleted or region-locked).",
+    "content.video.live":
+      "That's a live stream; cobalt only downloads finished videos.",
     "content.video.private": "That video is private.",
     "content.video.age": "That video is age-restricted and needs a login.",
     "content.video.region": "That video isn't available in this region.",
@@ -126,20 +137,29 @@ export function describeCobaltError(code, context) {
     "youtube.codec": "YouTube has no matching codec for the requested quality.",
     "auth.jwt.missing": "This cobalt instance requires authentication.",
     "auth.key.invalid": "The cobalt API key is not accepted.",
-    "rate_exceeded": "Too many requests to cobalt; wait a moment.",
-    "capacity": "cobalt is at capacity right now; try again shortly.",
-    "generic": "cobalt reported an error.",
-    "unknown_response": "cobalt gave an answer this tool doesn't understand.",
+    rate_exceeded: "Too many requests to cobalt; wait a moment.",
+    capacity: "cobalt is at capacity right now; try again shortly.",
+    generic: "cobalt reported an error.",
+    unknown_response: "cobalt gave an answer this tool doesn't understand.",
   };
   const said = known[key] ?? `cobalt error: ${key || "unknown"}`;
-  const extra = context && typeof context === "object"
-    ? Object.entries(context).map(([k, v]) => `${k}=${v}`).join(", ")
-    : "";
+  const extra =
+    context && typeof context === "object"
+      ? Object.entries(context)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(", ")
+      : "";
   return extra ? `${said} (${extra})` : said;
 }
 
 /** Lines the bot reads back; the shape Alice's SOUL relies on. */
-export function savedReport({ dest, bytes, mirrorUrl, status, extraLines = [] }) {
+export function savedReport({
+  dest,
+  bytes,
+  mirrorUrl,
+  status,
+  extraLines = [],
+}) {
   const mb = (bytes / 1_048_576).toFixed(1);
   return [
     `SAVED: ${dest}`,
