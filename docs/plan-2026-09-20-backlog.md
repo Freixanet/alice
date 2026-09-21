@@ -48,7 +48,7 @@ la verificación local iOS es una build `generic/platform=iOS`.
 | 8 | Cola de mensajes acumulados | 18 | bajo (UX) |
 | 9 | Bark avisa antes de tiempo | 19 | bajo |
 | 10 | Sidebar lento | 5 | medio |
-| 11 | Carpetas: orden + fijar + arrastrar | 1, 2 | medio |
+| 11 | Carpetas: orden (Edit como Notas) | 1, 2 | medio |
 | 12 | Inbox funcionando | 3 | medio (depende de Hermes) |
 | 13 | Accesos directos en home | 4 | medio |
 | 14 | Adjuntos en notas | 11 | alto (servidor+cliente) |
@@ -184,18 +184,17 @@ Cambios:
 - Preview del contextMenu: `Text(conversation.title)` plano.
 - `loadProjects()` no en `.task(id:)` cada apertura: cachear 60 s.
 
-### B11. Carpetas: orden, fijar, arrastrar
-Base: nesting ya funciona (WIP). Orden = orden del servidor; no hay pin ni DnD.
-Cambios (solo cliente, patrón `noteFolderParent`):
-- `AppStore`: `noteFolderOrder: [String]` (`Keys.noteFolderOrder`) y
-  `pinnedNoteFolders: Set<String>` (`Keys.pinnedNoteFolders`), persistidos en defaults.
-  `orderedSubfolders(of:)` = fijadas primero, luego `noteFolderOrder`, resto orden servidor.
-- `NotesFoldersScreen`: filas con `.draggable(folder.id)` y `.dropDestination(for: String.self)`
-  con inserción antes/después y **soltar sobre una carpeta = mover dentro**
-  (reutiliza `moveNoteFolder(_:into:)`). Indicador de inserción visible.
-- Menú contextual: Fijar/Desfijar, Subir/Bajar (accesibilidad sin DnD).
-- `NotesFolderMenu`: entrada "Ordenar carpetas" (manual/nombre).
-- Tests `NoteFolderTreeTests`: orden estable con ids desconocidos, pin, mover.
+### B11. Carpetas: orden (Edit, como Notas)
+Base: nesting ya funciona. Orden = `noteFolderOrder` en defaults (cliente).
+No hay pin de carpetas, ni arrastre libre para anidar, ni botón de ordenar.
+Cambios:
+- `NotesFoldersScreen`: a la derecha de New Folder, **Edit** → **checkmark**.
+  En edit mode, List `.onMove` muestra el handle de tres rayas solo en las
+  carpetas propias (no Quick Notes / All Notes / Recently Deleted). Arrastrar
+  por el handle intercambia con la vecina; `UIImpactFeedbackGenerator(.light)`
+  en cada hop. `NoteFolderTree.reorderingDisplayed` reescribe solo hermanos.
+- Tests `NoteFolderTreeTests`: swap con la de debajo; anidadas se quedan con
+  su padre.
 
 ### B12. Inbox
 "Inbox" = perfil Hermes que tiene `workspace/inbox-store/inbox.py`; sin él Notes

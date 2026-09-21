@@ -154,6 +154,83 @@ enum NoteFolderTree {
         guard displayed.indices.contains(j) else { return order }
         return placing(id, beside: displayed[j], after: !up, displayed: displayed, order: order)
     }
+
+    /// `order` after a List `onMove` of one row among `displayed`.
+    ///
+    /// Only the moved folder's siblings are rewritten, so dragging past a
+    /// nested folder does not pull it out of its parent. Nil when the hop
+    /// would not change `order`.
+    static func reorderingDisplayed(
+        from source: IndexSet, to destination: Int,
+        displayed: [String], siblings: Set<String>, order: [String]
+    ) -> [String]? {
+        guard let from = source.first, displayed.indices.contains(from) else { return nil }
+        var ids = displayed
+        ids.move(fromOffsets: source, toOffset: destination)
+        guard ids != displayed else { return nil }
+        let reordered = ids.filter { siblings.contains($0) }
+        let next = merging(siblings: reordered, into: order)
+        return next == order ? nil : next
+    }
+
+    /// A List `onMove` of one visible row: same-level hops swap neighbours;
+    /// dragging a nested folder out of its parent's block un-nests it.
+    ///
+    /// Roots are never nested by this move. Nil when nothing would change.
+    static func movingDisplayed(
+        from source: IndexSet, to destination: Int,
+        displayed: [String],
+        parent: [String: String],
+        order: [String]
+    ) -> (parent: [String: String], order: [String])? {
+        guard let from = source.first, displayed.indices.contains(from) else { return nil }
+        let id = displayed[from]
+        var ids = displayed
+        ids.move(fromOffsets: source, toOffset: destination)
+        guard ids != displayed, let newIndex = ids.firstIndex(of: id) else { return nil }
+
+        let current = parent[id]
+        let nextParent: String?
+        if current == nil {
+            nextParent = nil
+        } else if inContiguousBlock(id, of: current!, displayed: ids, parent: parent) {
+            nextParent = current
+        } else {
+            let above = ids[..<newIndex].last { $0 != id && !isInside($0, id, parent: parent) }
+            if let above {
+                if above == current
+                    || above == parent[current!]
+                    || isInside(current!, above, parent: parent) {
+                    nextParent = above
+                } else {
+                    nextParent = parent[above]
+                }
+            } else {
+                nextParent = nil
+            }
+        }
+        let placed = nextParent == id || (nextParent.map { isInside($0, id, parent: parent) } ?? false)
+            ? current
+            : nextParent
+
+        let map = placed == current ? parent : moving(id, into: placed, parent: parent)
+        let siblings = ids.filter { $0 == id || map[$0] == placed }
+        let nextOrder = merging(siblings: siblings, into: order)
+        if map == parent, nextOrder == order { return nil }
+        return (map, nextOrder)
+    }
+
+    /// Whether `id` still sits in `ancestor`'s visible block: the ancestor
+    /// is above it, and every row in between is inside that ancestor.
+    static func inContiguousBlock(
+        _ id: String, of ancestor: String,
+        displayed: [String], parent: [String: String]
+    ) -> Bool {
+        guard let i = displayed.firstIndex(of: id),
+              let a = displayed.firstIndex(of: ancestor),
+              a < i else { return false }
+        return displayed[(a + 1)..<i].allSatisfy { isInside($0, ancestor, parent: parent) }
+    }
 }
 
 /// The order notes are listed in.
@@ -181,9 +258,4 @@ enum NoteFolderSort: String, CaseIterable, Identifiable, Sendable {
         case .name: "Name"
         }
     }
-}
-
-/// Where a dragged folder lands on another row.
-enum NoteFolderDrop: Equatable, Sendable {
-    case into, before, after
 }

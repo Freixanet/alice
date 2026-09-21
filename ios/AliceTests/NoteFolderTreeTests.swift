@@ -118,4 +118,52 @@ final class NoteFolderTreeTests: XCTestCase {
             ["work", "home"]
         )
     }
+
+    func testMovingAFolderOntoTheOneBelowSwapsThem() {
+        let next = NoteFolderTree.reorderingDisplayed(
+            from: IndexSet(integer: 0), to: 2,
+            displayed: ["work", "home"],
+            siblings: ["work", "home"],
+            order: ["work", "home"]
+        )
+        XCTAssertEqual(next, ["home", "work"])
+    }
+
+    func testReorderingAmongRootsLeavesNestedFoldersWithTheirParent() {
+        // Visible: Work, Meeting notes, Home. Drag Work onto Home.
+        let next = NoteFolderTree.movingDisplayed(
+            from: IndexSet(integer: 0), to: 3,
+            displayed: ["work", "notes", "home"],
+            parent: nested,
+            order: ["work", "notes", "home"]
+        )
+        XCTAssertEqual(next?.parent, nested)
+        XCTAssertEqual(next?.order, ["home", "work", "notes"])
+    }
+
+    func testDraggingANestedFolderOutUnnestsIt() {
+        // Minutes sits inside Meeting notes. Drag it past Home.
+        let next = NoteFolderTree.movingDisplayed(
+            from: IndexSet(integer: 2), to: 4,
+            displayed: ["work", "notes", "deep", "home"],
+            parent: nested,
+            order: ["work", "notes", "deep", "home"]
+        )
+        XCTAssertNil(next?.parent["deep"])
+        XCTAssertEqual(next?.parent["notes"], "work")
+        XCTAssertEqual(next?.order, ["work", "notes", "home", "deep"])
+    }
+
+    func testDraggingANestedFolderJustOutOfItsParentPromotesItOneLevel() {
+        // Minutes, dragged to sit between Work and Meeting notes, becomes
+        // a child of Work rather than vanishing to the top level.
+        let next = NoteFolderTree.movingDisplayed(
+            from: IndexSet(integer: 2), to: 1,
+            displayed: ["work", "notes", "deep", "home"],
+            parent: nested,
+            order: ["work", "notes", "deep", "home"]
+        )
+        XCTAssertEqual(next?.parent["deep"], "work")
+        XCTAssertEqual(next?.parent["notes"], "work")
+    }
 }

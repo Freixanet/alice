@@ -1,12 +1,13 @@
 import SwiftUI
-import UniformTypeIdentifiers
+import UIKit
 
 /// Where Notes opens: the folders, with Quick Notes first.
 ///
 /// Quick Notes holds every note not filed elsewhere, so nothing is ever out of
 /// reach; the person's own folders follow; Recently Deleted comes last and only
 /// while it holds something. New folders from the top right; search and a new
-/// note from the bottom, as in Notes.
+/// note from the bottom, as in Notes. Edit on the folders page is reorder
+/// only, as in Notes: the person's own folders get a handle, the places do not.
 struct NotesFoldersScreen: View {
     var onClose: () -> Void = {}
 
@@ -29,9 +30,14 @@ struct NotesFoldersScreen: View {
     @State private var collapsed: Set<String> = []
     /// Where a folder is being moved to, when one is.
     @State private var moving: NoteMove?
-    /// The folder being dragged, and where it would land if dropped now.
-    @State private var draggedFolder: String?
-    @State private var dropTarget: FolderDropHighlight?
+    /// Reorder handles on the person's own folders, as in Notes.
+    @State private var editingFolders = false
+    @State private var reorderHaptic = UIImpactFeedbackGenerator(style: .light)
+    /// True while a folder is being dragged by its handle. GestureState
+    /// clears itself when the finger lifts or the gesture is cancelled.
+    @GestureState private var slidingFolder = false
+    /// Trailing inset for the row line: to the handle while editing, as Notes.
+    private var folderLineTrailing: CGFloat { editingFolders ? 0 : 20 }
 
     /// Making a folder, or renaming one.
     private enum Naming: Identifiable {
@@ -63,6 +69,9 @@ struct NotesFoldersScreen: View {
                         } preview: {
                             FolderPreview(name: store.name(of: .quick), notes: store.notes(in: .quick))
                         }
+                        .deleteDisabled(true)
+                        .moveDisabled(true)
+                        .modifier(FolderRowLine(shown: false))
                         .listRowInsets(EdgeInsets())
                 }
                 .listRowBackground(Palette.card(scheme))
@@ -74,24 +83,37 @@ struct NotesFoldersScreen: View {
                         .contextMenu {} preview: {
                             FolderPreview(name: store.name(of: .all), notes: store.notes(in: .all))
                         }
+                        .deleteDisabled(true)
+                        .moveDisabled(true)
+                        .modifier(FolderRowLine(
+                            shown: !slidingFolder && (!visibleFolderRows.isEmpty || !store.recentlyDeleted.isEmpty),
+                            trailing: folderLineTrailing
+                        ))
                         .listRowInsets(EdgeInsets())
                     // Then the person's own, each followed by what is inside
                     // it, one step indented. The store keeps its folders flat;
                     // the nesting is this phone's arrangement.
                     ForEach(visibleFolderRows, id: \.id) { row in
                         let children = store.subfolders(of: row.folder.id)
+                        let last = row.id == visibleFolderRows.last?.id && store.recentlyDeleted.isEmpty
                         customFolderRow(row.folder, depth: row.depth, expanded: children.isEmpty ? nil : Binding(
                             get: { !collapsed.contains(row.folder.id) },
                             set: { open in
                                 if open { collapsed.remove(row.folder.id) } else { collapsed.insert(row.folder.id) }
                             }
-                        ))
+                        ), separated: !last && !slidingFolder)
+                        .deleteDisabled(true)
+                        .moveDisabled(!editingFolders)
                     }
+                    .onMove(perform: moveFolders)
                     if !store.recentlyDeleted.isEmpty {
                         folderRow(.deleted, systemImage: "trash")
                             .contextMenu {} preview: {
                                 FolderPreview(name: store.name(of: .deleted), notes: store.notes(in: .deleted))
                             }
+                            .deleteDisabled(true)
+                            .moveDisabled(true)
+                            .modifier(FolderRowLine(shown: false))
                             .listRowInsets(EdgeInsets())
                     }
                 }
@@ -137,11 +159,18 @@ struct NotesFoldersScreen: View {
         }
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, Self.rowHeight)
+        .environment(\.editMode, Binding(
+            get: { editingFolders ? .active : .inactive },
+            set: { editingFolders = $0 == .active }
+        ))
         .contentMargins(.top, 36, for: .scrollContent)
         .background { Palette.background(scheme).ignoresSafeArea() }
         .navigationTitle("Folders")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Search notes")
+        .onChange(of: query) { _, text in
+            if !text.isEmpty { editingFolders = false }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button(action: onClose) {
@@ -150,21 +179,7 @@ struct NotesFoldersScreen: View {
                 .accessibilityLabel("Back")
                 .accessibilityIdentifier("notes.back")
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("Sort Folders", selection: Binding(
-                        get: { store.noteFolderSort },
-                        set: { store.noteFolderSort = $0 }
-                    )) {
-                        ForEach(NoteFolderSort.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.inline)
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
-                }
-                .accessibilityLabel("Sort Folders")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
                     folderName = ""
                     naming = .new
@@ -173,6 +188,25 @@ struct NotesFoldersScreen: View {
                 }
                 .accessibilityLabel("New Folder")
                 .accessibilityIdentifier("notes.newFolder")
+                .disabled(editingFolders)
+                if query.isEmpty {
+                    Button {
+                        withAnimation(.snappy(duration: 0.25)) { editingFolders.toggle() }
+                        if editingFolders {
+                            swipedFolder = nil
+                            store.noteRowOpen = false
+                            reorderHaptic.prepare()
+                        }
+                    } label: {
+                        if editingFolders {
+                            Image(systemName: "checkmark")
+                        } else {
+                            Text("Edit")
+                        }
+                    }
+                    .accessibilityLabel(editingFolders ? "Done" : "Edit")
+                    .accessibilityIdentifier("notes.editFolders")
+                }
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             if store.notesSnapshot?.available != false {
@@ -270,129 +304,102 @@ struct NotesFoldersScreen: View {
         return rows
     }
 
+    /// List edit-mode: the dragged folder takes the slot it was dropped on,
+    /// and that neighbour takes the slot it left. A light tick on each hop.
+    private func moveFolders(from source: IndexSet, to destination: Int) {
+        let displayed = visibleFolderRows.map(\.id)
+        guard store.reorderVisibleNoteFolders(
+            from: source, to: destination, displayed: displayed
+        ) else { return }
+        reorderHaptic.impactOccurred()
+        reorderHaptic.prepare()
+    }
+
     /// A folder the person made: opened by a tap, and swiped or held for Share,
     /// Move and Delete, and Rename.
     private func customFolderRow(
-        _ folder: NoteFolder, depth: Int = 0, expanded: Binding<Bool>? = nil
+        _ folder: NoteFolder, depth: Int = 0, expanded: Binding<Bool>? = nil,
+        separated: Bool = true
     ) -> some View {
-        let siblings = store.noteFolderParent[folder.id].map { store.subfolders(of: $0).map(\.id) }
-            ?? store.rootNoteFolders.map(\.id)
-        let pinned = store.pinnedNoteFolders.contains(folder.id)
-        return folderRow(
+        let row = folderRow(
             .folder(folder.id), systemImage: "folder", depth: depth,
-            expanded: expanded, pinned: pinned
+            expanded: expanded
         )
-            .contextMenu {
-                // Share, Move and Delete side by side at the top, as in Notes;
-                // solid glyphs, Delete's red.
-                ControlGroup {
-                    ShareLink(item: shareText(.folder(folder.id))) {
-                        Label("Share", systemImage: "square.and.arrow.up.fill")
-                    }
-                    Button("Move", systemImage: "folder.fill") { moving = .folder(folder.id) }
-                    Button(role: .destructive) {
-                        deletingFolder = folder
-                    } label: {
-                        // The compact row draws its glyphs in the app's tint,
-                        // destructive or not; an image already red stays red.
-                        Label {
-                            Text("Delete")
-                        } icon: {
-                            Image(uiImage: UIImage(systemName: "trash.fill")!
-                                .withTintColor(.systemRed, renderingMode: .alwaysOriginal))
+        return Group {
+            if editingFolders {
+                row
+            } else {
+                row
+                    .contextMenu {
+                        // Share, Move and Delete side by side at the top, as in Notes;
+                        // solid glyphs, Delete's red.
+                        ControlGroup {
+                            ShareLink(item: shareText(.folder(folder.id))) {
+                                Label("Share", systemImage: "square.and.arrow.up.fill")
+                            }
+                            Button("Move", systemImage: "folder.fill") { moving = .folder(folder.id) }
+                            Button(role: .destructive) {
+                                deletingFolder = folder
+                            } label: {
+                                // The compact row draws its glyphs in the app's tint,
+                                // destructive or not; an image already red stays red.
+                                Label {
+                                    Text("Delete")
+                                } icon: {
+                                    Image(uiImage: UIImage(systemName: "trash.fill")!
+                                        .withTintColor(.systemRed, renderingMode: .alwaysOriginal))
+                                }
+                            }
                         }
-                    }
-                }
-                .controlGroupStyle(.compactMenu)
-                Button("Rename", systemImage: "pencil") {
-                    folderName = folder.name
-                    naming = .rename(folder)
-                }
-                Button(
-                    pinned ? "Unpin" : "Pin",
-                    systemImage: pinned ? "pin.slash" : "pin"
-                ) {
-                    store.togglePinnedNoteFolder(folder.id)
-                }
-                Button("Move Up", systemImage: "arrow.up") {
-                    store.moveNoteFolderInList(folder.id, up: true)
-                }
-                .disabled(siblings.first == folder.id)
-                Button("Move Down", systemImage: "arrow.down") {
-                    store.moveNoteFolderInList(folder.id, up: false)
-                }
-                .disabled(siblings.last == folder.id)
-            } preview: {
-                FolderPreview(name: store.name(of: .folder(folder.id)), notes: store.notes(in: .folder(folder.id)))
-            }
-            .onDrag {
-                draggedFolder = folder.id
-                return NSItemProvider(object: folder.id as NSString)
-            }
-            .onDrop(
-                of: [UTType.text],
-                delegate: FolderRowDropDelegate(
-                    target: folder.id,
-                    rowHeight: Self.rowHeight,
-                    draggedID: $draggedFolder,
-                    highlight: $dropTarget,
-                    drop: { id, kind in
-                        store.applyFolderDrop(id, onto: folder.id, kind: kind)
-                    }
-                )
-            )
-            .overlay(alignment: .top) {
-                if dropTarget?.id == folder.id, dropTarget?.kind == .before {
-                    Rectangle()
-                        .fill(store.accent.primary(scheme))
-                        .frame(height: 2)
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if dropTarget?.id == folder.id, dropTarget?.kind == .after {
-                    Rectangle()
-                        .fill(store.accent.primary(scheme))
-                        .frame(height: 2)
-                }
-            }
-            .background {
-                if dropTarget?.id == folder.id, dropTarget?.kind == .into {
-                    store.accent.primary(scheme).opacity(0.12)
-                }
-            }
-            // The same swipe a note has, so a folder darkens under the finger
-            // and stays darkened while it is left open on its buttons — the
-            // system's own swipe actions draw the buttons but never touch the
-            // row, which is what made folders feel like a different app.
-            // Nothing to pin: a folder opens to the left only.
-            .modifier(SwipeToDelete(
-                openSide: Binding(
-                    get: { swipedFolder == folder.id ? .trailing : nil },
-                    set: { side in
-                        if side != nil {
-                            swipedFolder = folder.id
-                        } else if swipedFolder == folder.id {
-                            swipedFolder = nil
+                        .controlGroupStyle(.compactMenu)
+                        Button("Rename", systemImage: "pencil") {
+                            folderName = folder.name
+                            naming = .rename(folder)
                         }
-                        store.noteRowOpen = swipedFolder != nil
+                    } preview: {
+                        FolderPreview(name: store.name(of: .folder(folder.id)), notes: store.notes(in: .folder(folder.id)))
                     }
-                ),
-                shareText: shareText(.folder(folder.id)),
-                pinned: false,
-                onPin: {},
-                lastSwipe: $lastSwipe,
-                moving: Binding(
-                    get: { movingFolder == folder.id },
-                    set: { now in
-                        movingFolder = now ? folder.id : (movingFolder == folder.id ? nil : movingFolder)
-                    }
-                ),
-                onDelete: { deletingFolder = folder },
-                onMove: { moving = .folder(folder.id) },
-                allowsPin: false,
-                rowHeight: Self.rowHeight
-            ))
-            .listRowInsets(EdgeInsets())
+                    // The same swipe a note has, so a folder darkens under the finger
+                    // and stays darkened while it is left open on its buttons — the
+                    // system's own swipe actions draw the buttons but never touch the
+                    // row, which is what made folders feel like a different app.
+                    // Nothing to pin: a folder opens to the left only.
+                    .modifier(SwipeToDelete(
+                        openSide: Binding(
+                            get: { swipedFolder == folder.id ? .trailing : nil },
+                            set: { side in
+                                if side != nil {
+                                    swipedFolder = folder.id
+                                } else if swipedFolder == folder.id {
+                                    swipedFolder = nil
+                                }
+                                store.noteRowOpen = swipedFolder != nil
+                            }
+                        ),
+                        shareText: shareText(.folder(folder.id)),
+                        pinned: false,
+                        onPin: {},
+                        lastSwipe: $lastSwipe,
+                        moving: Binding(
+                            get: { movingFolder == folder.id },
+                            set: { now in
+                                movingFolder = now ? folder.id : (movingFolder == folder.id ? nil : movingFolder)
+                            }
+                        ),
+                        onDelete: { deletingFolder = folder },
+                        onMove: { moving = .folder(folder.id) },
+                        allowsPin: false,
+                        rowHeight: Self.rowHeight
+                    ))
+            }
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 1)
+                .updating($slidingFolder) { _, state, _ in state = true },
+            including: editingFolders ? .all : .none
+        )
+        .modifier(FolderRowLine(shown: separated, trailing: folderLineTrailing))
+        .listRowInsets(EdgeInsets())
     }
 
     /// Every note in a folder as plain text, one after another, for Share.
@@ -406,58 +413,59 @@ struct NotesFoldersScreen: View {
     /// inside it: its chevron then opens and closes them instead of being the
     /// arrow every row has.
     private func folderRow(
-        _ scope: NotesScope, systemImage: String, depth: Int = 0, expanded: Binding<Bool>? = nil,
-        pinned: Bool = false
+        _ scope: NotesScope, systemImage: String, depth: Int = 0, expanded: Binding<Bool>? = nil
     ) -> some View {
-        Button {
-            // The end of a swipe is not a tap on the folder, and a tap while
-            // one is open closes it rather than opening a page.
-            guard Date.now.timeIntervalSince(lastSwipe) > 0.35 else { return }
-            guard swipedFolder == nil else {
-                withAnimation(.snappy(duration: 0.25)) { swipedFolder = nil }
-                store.noteRowOpen = false
-                return
+        let content = HStack(spacing: 12) {
+            if depth > 0 {
+                // A nudge, not a step. All it has to do is break the line
+                // the other folders' icons make down the left edge; any
+                // more and the name drifts away from every other name.
+                Spacer().frame(width: CGFloat(depth) * 7)
             }
-            openedFolder = scope
-        } label: {
-            HStack(spacing: 12) {
-                if depth > 0 {
-                    // A nudge, not a step. All it has to do is break the line
-                    // the other folders' icons make down the left edge; any
-                    // more and the name drifts away from every other name.
-                    Spacer().frame(width: CGFloat(depth) * 7)
-                }
-                Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(store.accent.primary(scheme))
-                    .frame(width: 26)
-                Text(store.name(of: scope))
-                    .foregroundStyle(.primary)
-                if pinned {
-                    Image(systemName: "pin.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                }
-                Spacer(minLength: 8)
-                Text("\(store.notes(in: scope).count)")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                // The arrow's place. It is drawn over the row rather than in
-                // it, so that a folder with folders inside can give it its own
-                // tap without nesting a button inside a button — which SwiftUI
-                // resolves by giving the tap to the outer one.
-                Color.clear.frame(width: 10, height: 14)
-            }
-            // Exactly the row's height, so the press darkens all of it: shorter
-            // than the list's minimum row, it left light bands above and below.
-            .padding(.horizontal, 20)
-            .frame(height: Self.rowHeight)
-            .contentShape(.rect)
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(store.accent.primary(scheme))
+                .frame(width: 26)
+            Text(store.name(of: scope))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            Text("\(store.notes(in: scope).count)")
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            // The arrow's place. It is drawn over the row rather than in
+            // it, so that a folder with folders inside can give it its own
+            // tap without nesting a button inside a button — which SwiftUI
+            // resolves by giving the tap to the outer one. Hidden while
+            // reordering so the system's three-line handle has the edge.
+            Color.clear.frame(width: editingFolders ? 0 : 10, height: 14)
         }
-        // Darkens under the finger, as a note does.
-        .buttonStyle(NoteRowPressStyle())
-        .overlay(alignment: .trailing) { chevron(expanded) }
+        .padding(.horizontal, 20)
+        .frame(height: Self.rowHeight)
+        .contentShape(.rect)
+
+        return Group {
+            if editingFolders {
+                content
+            } else {
+                Button {
+                    // The end of a swipe is not a tap on the folder, and a tap
+                    // while one is open closes it rather than opening a page.
+                    guard Date.now.timeIntervalSince(lastSwipe) > 0.35 else { return }
+                    guard swipedFolder == nil else {
+                        withAnimation(.snappy(duration: 0.25)) { swipedFolder = nil }
+                        store.noteRowOpen = false
+                        return
+                    }
+                    openedFolder = scope
+                } label: {
+                    content
+                }
+                .buttonStyle(NoteRowPressStyle())
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if !editingFolders { chevron(expanded) }
+        }
     }
 
     /// The arrow at the end of a folder's row: a plain one, or the control that
@@ -495,59 +503,27 @@ struct NotesFoldersScreen: View {
     }
 }
 
-/// A drop on a folder row: the top or bottom edge inserts beside it, the
-/// middle nests inside it.
-private struct FolderDropHighlight: Equatable {
-    var id: String
-    var kind: NoteFolderDrop
-}
+/// The list does not redraw its own separators while a row is dragged, so
+/// each folder draws the line under it, as a note does. The line is always
+/// in the tree (hidden with opacity on the last row) so it cannot fade back
+/// in a beat late after a move.
+private struct FolderRowLine: ViewModifier {
+    var shown: Bool
+    var trailing: CGFloat = 20
 
-private struct FolderRowDropDelegate: DropDelegate {
-    let target: String
-    let rowHeight: CGFloat
-    @Binding var draggedID: String?
-    @Binding var highlight: FolderDropHighlight?
-    let drop: (String, NoteFolderDrop) -> Void
-
-    func validateDrop(info: DropInfo) -> Bool {
-        draggedID != nil && draggedID != target
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard let dragged = draggedID, dragged != target else {
-            return DropProposal(operation: .cancel)
-        }
-        let kind: NoteFolderDrop
-        if info.location.y < 12 {
-            kind = .before
-        } else if info.location.y > rowHeight - 12 {
-            kind = .after
-        } else {
-            kind = .into
-        }
-        highlight = FolderDropHighlight(id: target, kind: kind)
-        return DropProposal(operation: .move)
-    }
-
-    func dropExited(info: DropInfo) {
-        if highlight?.id == target { highlight = nil }
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        defer {
-            draggedID = nil
-            highlight = nil
-        }
-        guard let dragged = draggedID, dragged != target else { return false }
-        let kind = highlight?.id == target ? highlight!.kind : kind(at: info.location.y)
-        drop(dragged, kind)
-        return true
-    }
-
-    private func kind(at y: CGFloat) -> NoteFolderDrop {
-        if y < 12 { return .before }
-        if y > rowHeight - 12 { return .after }
-        return .into
+    func body(content: Content) -> some View {
+        content
+            .listRowSeparator(.hidden)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color(uiColor: .opaqueSeparator))
+                    .frame(height: 1)
+                    .padding(.leading, 20)
+                    .padding(.trailing, trailing)
+                    .opacity(shown ? 1 : 0)
+                    .allowsHitTesting(false)
+                    .transaction { $0.animation = nil }
+            }
     }
 }
 

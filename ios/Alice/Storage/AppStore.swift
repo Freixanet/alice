@@ -5422,14 +5422,14 @@ final class AppStore {
         orderedNoteFolders(NoteFolderTree.roots(noteFolders, parent: noteFolderParent))
     }
 
-    /// The folders inside one, pinned first, then in the saved order.
+    /// The folders inside one, in the saved order.
     func subfolders(of id: String) -> [NoteFolder] {
         orderedNoteFolders(NoteFolderTree.children(of: id, in: noteFolders, parent: noteFolderParent))
     }
 
     private func orderedNoteFolders(_ folders: [NoteFolder]) -> [NoteFolder] {
         NoteFolderTree.ordered(
-            folders, pinned: pinnedNoteFolders, order: noteFolderOrder, sort: noteFolderSort
+            folders, pinned: [], order: noteFolderOrder, sort: .manual
         )
     }
 
@@ -5443,57 +5443,18 @@ final class AppStore {
         noteFolderParent = NoteFolderTree.moving(id, into: parent, parent: noteFolderParent)
     }
 
-    func togglePinnedNoteFolder(_ id: String) {
-        if pinnedNoteFolders.contains(id) {
-            pinnedNoteFolders.remove(id)
-            return
-        }
-        pinnedNoteFolders.insert(id)
-        noteFolderOrder = [id] + noteFolderOrder.filter { $0 != id }
-    }
-
-    func moveNoteFolderInList(_ id: String, up: Bool) {
-        noteFolderOrder = NoteFolderTree.movingInList(
-            id, up: up, displayed: siblingIDs(of: id), order: noteFolderOrder
-        )
-        if noteFolderSort == .name { noteFolderSort = .manual }
-    }
-
-    /// A drop on a folder row: onto it nests, above or below places beside it.
-    func applyFolderDrop(_ id: String, onto target: String, kind: NoteFolderDrop) {
-        guard id != target else { return }
-        switch kind {
-        case .into:
-            guard !noteFolder(target, isInside: id) else { return }
-            moveNoteFolder(id, into: target)
-        case .before, .after:
-            placeNoteFolder(id, beside: target, after: kind == .after)
-        }
-    }
-
-    func placeNoteFolder(_ id: String, beside anchor: String, after: Bool) {
-        guard id != anchor else { return }
-        let parent = noteFolderParent[anchor]
-        if noteFolderParent[id] != parent {
-            moveNoteFolder(id, into: parent)
-        }
-        let siblings = parent == nil
-            ? NoteFolderTree.roots(noteFolders, parent: noteFolderParent)
-            : NoteFolderTree.children(of: parent!, in: noteFolders, parent: noteFolderParent)
-        let displayed = NoteFolderTree.ordered(
-            siblings, pinned: pinnedNoteFolders, order: noteFolderOrder, sort: .manual
-        ).map(\.id)
-        noteFolderOrder = NoteFolderTree.placing(
-            id, beside: anchor, after: after, displayed: displayed, order: noteFolderOrder
-        )
-        if noteFolderSort == .name { noteFolderSort = .manual }
-    }
-
-    private func siblingIDs(of id: String) -> [String] {
-        if let parent = noteFolderParent[id] {
-            return subfolders(of: parent).map(\.id)
-        }
-        return rootNoteFolders.map(\.id)
+    /// List edit-mode: the dragged folder takes the slot it was dropped on,
+    /// and that neighbour takes the slot it left. A nested folder dragged
+    /// out of its parent is un-nested.
+    @discardableResult
+    func reorderVisibleNoteFolders(from source: IndexSet, to destination: Int, displayed: [String]) -> Bool {
+        guard let next = NoteFolderTree.movingDisplayed(
+            from: source, to: destination, displayed: displayed,
+            parent: noteFolderParent, order: noteFolderOrder
+        ) else { return false }
+        noteFolderParent = next.parent
+        noteFolderOrder = next.order
+        return true
     }
 
     /// The folder each note is filed in, by note id.
