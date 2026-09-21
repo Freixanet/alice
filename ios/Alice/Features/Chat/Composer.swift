@@ -379,6 +379,7 @@ struct Composer: View {
                     prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
                 )
                     .lineLimit(1...7)
+                    .scrollIndicators(.hidden)
                     .textFieldStyle(.plain)
                     .font(composerFont)
                     .mentionColoured(store.draft, styled: composerStyled)
@@ -443,6 +444,7 @@ struct Composer: View {
                             prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
                         )
                             .textFieldStyle(.plain)
+                            .scrollIndicators(.hidden)
                             .font(composerFont)
                             .mentionColoured(store.draft, styled: composerStyled)
                             .focused(focused)

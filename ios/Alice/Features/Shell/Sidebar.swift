@@ -381,6 +381,7 @@ private struct SidebarList: View, Equatable {
             .padding(.horizontal, 12)
             .padding(.top, Sidebar.topFadeHeight)
         }
+        .scrollIndicators(.hidden)
         .mask(edgeFade)
         .task(id: store.dashboardReady) { await loadProjects() }
         .alert("Rename chat", isPresented: .constant(renaming != nil)) {

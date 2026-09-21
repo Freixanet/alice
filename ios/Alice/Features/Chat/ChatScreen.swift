@@ -3,13 +3,32 @@ import TipKit
 import UIKit
 
 struct ChatScreen: View {
-    @Environment(AppStore.self) private var store
-    @Environment(\.colorScheme) private var scheme
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
     let onOpenBots: () -> Void
     /// How far the drawer is open, 0 to 1, as it moves.
     var drawerProgress: CGFloat = 0
+
+    var body: some View {
+        ChatScreenContent(
+            onOpenDrawer: onOpenDrawer, onBack: onBack, onOpenBots: onOpenBots
+        )
+        .equatable()
+        .environment(\.aliceDrawerProgress, drawerProgress)
+    }
+}
+
+/// The conversation itself. It must not read the drawer gesture: rebuilding
+/// home on every frame of the slide flashes a scroll indicator in the middle
+/// of the screen.
+private struct ChatScreenContent: View, Equatable {
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }
+
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let onOpenDrawer: () -> Void
+    let onBack: () -> Void
+    let onOpenBots: () -> Void
 
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
@@ -201,6 +220,7 @@ struct ChatScreen: View {
                         homeComposerHeight = height
                     }
             }
+            .scrollIndicators(.hidden)
         }
     }
 
@@ -234,9 +254,7 @@ struct ChatScreen: View {
                     if bot == nil {
                         // The two bars turn into an X as the drawer opens,
                         // following the finger rather than switching at the end.
-                        DrawerGlyph(progress: drawerProgress)
-                            .stroke(style: StrokeStyle(lineWidth: 1.9, lineCap: .round))
-                            .frame(width: 17, height: 17)
+                        DrawerOpenMark()
                     } else {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 20, weight: .medium))
@@ -408,6 +426,29 @@ struct ChatScreen: View {
 /// hand. The hand-driven version reasserted a far anchor over several frames
 /// while lazy rows were still measuring; on a phone it could land short, and
 /// a press on the jump button during a flick took several tries.
+
+private enum DrawerProgressKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+private extension EnvironmentValues {
+    var aliceDrawerProgress: CGFloat {
+        get { self[DrawerProgressKey.self] }
+        set { self[DrawerProgressKey.self] = newValue }
+    }
+}
+
+/// Follows the drawer without rebuilding the conversation under it.
+private struct DrawerOpenMark: View {
+    @Environment(\.aliceDrawerProgress) private var progress
+
+    var body: some View {
+        DrawerGlyph(progress: progress)
+            .stroke(style: StrokeStyle(lineWidth: 1.9, lineCap: .round))
+            .frame(width: 17, height: 17)
+    }
+}
+
 /// The drawer button's two bars, and the X they become.
 ///
 /// At 0 the bars of the `equal` sign it replaced: level, a little apart. At 1
@@ -556,6 +597,7 @@ private struct TranscriptView: View {
                 // conversation is not pinned to the foot of the view.
                 .frame(minHeight: area.size.height, alignment: .top)
             }
+            .scrollIndicators(.hidden)
             .scrollPosition($position)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
