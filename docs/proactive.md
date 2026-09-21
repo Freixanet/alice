@@ -4,7 +4,7 @@ Alice does not stay awake. A suggestion on the empty home is computed from
 state the phone already has: a request Hermes is still holding, a routine
 that failed in the last week, a note that still has an open question, and
 heavy recent usage when that number is already known. A chat that simply ends
-on the person's message is not waiting. The rows sit just above the composer.
+on the person's message is not waiting. The rows sit just above the composer on Alice's own home. An agent's chat does not show them.
 They are not a notification.
 
 A morning briefing is a Hermes routine. The template is already in Routines

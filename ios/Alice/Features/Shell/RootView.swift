@@ -22,6 +22,13 @@ struct RootView: View {
     /// Keep that late action from reopening the bot we just swiped away from.
     @State private var botsRowSwipeRecognized = false
     @State private var screenWidth: CGFloat = 0
+    /// Display corner radius, read once.
+    @State private var cornerRadius: CGFloat = 55
+    /// Full display radius for the whole time Home is away from the bezel.
+    /// It turns on with the first movement and off only after the close
+    /// has finished, so the curve does not grow or shrink with the slide.
+    @State private var panelRounded = false
+    @State private var unroundTask: Task<Void, Never>?
 
     private let drawerWidth: CGFloat = 300
 
@@ -65,40 +72,18 @@ struct RootView: View {
                             .onTapGesture { setDrawer(false) }
                     }
                     .overlay {
-                        // The corners need an edge of their own. Dimming a
-                        // near-black conversation over a near-black drawer
-                        // leaves three levels out of 255 between them, and the
-                        // rounding measured as present while being invisible.
-                        // A hairline states the shape instead of implying it.
                         RoundedRectangle(
-                            cornerRadius: displayCornerRadius, style: .continuous
+                            cornerRadius: panelCornerRadius, style: .continuous
                         )
                         .strokeBorder(
                             Palette.border(scheme).opacity(0.55 * progress),
                             lineWidth: 0.75
                         )
                     }
-                    // Rounded to the display's own radius: once it has moved, its
-                    // left corners are out in the middle of the screen, and square
-                    // ones there would give away that this is a flat layer rather
-                    // than the phone's surface sliding aside. Continuous, because
-                    // that is the curve the bezel is drawn with.
                     .clipShape(.rect(
-                        cornerRadius: displayCornerRadius * progress,
+                        cornerRadius: panelCornerRadius,
                         style: .continuous
                     ))
-                    // Cast to the left, onto the drawer. The hairline states
-                    // where the conversation ends; this says which of the two
-                    // is on top, which an edge alone cannot — two flat panels
-                    // meeting at a line could be either order. Grows with the
-                    // gesture so a half-open drawer is half-lit, and costs
-                    // nothing at rest, where its opacity is zero.
-                    .shadow(
-                        color: .black.opacity(0.30 * progress),
-                        radius: 22 * progress,
-                        x: -10 * progress,
-                        y: 0
-                    )
                     .offset(x: offset)
 
                 // Bots is a page, not a sheet. It is reached sideways — out
@@ -217,6 +202,7 @@ struct RootView: View {
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
+            .onAppear { cornerRadius = Self.displayCornerRadius }
             // Both layers have to reach the physical edges: the drawer so it fills
             // the display behind, and the conversation so its rounded corners land
             // on the bezel rather than being cut at the status bar. The screens
@@ -292,6 +278,10 @@ struct RootView: View {
                         // arrives as a page rather than by being dragged in.
                         guard drawerOpen || translation > 0 else { return }
                         drag = drawerOpen ? min(0, translation) : max(0, translation)
+                        if offset > 0 {
+                            unroundTask?.cancel()
+                            panelRounded = true
+                        }
                     },
                     onEnd: { translation, predicted in
                         let travelled = abs(translation) > drawerWidth * 0.3
@@ -435,13 +425,13 @@ struct RootView: View {
 
     private var progress: CGFloat { offset / drawerWidth }
 
-    /// The radius of the physical display's corners.
-    ///
-    /// UIKit has never made this public, and the value differs across
-    /// devices — so it is read from the screen where it exists and falls back
-    /// to a plausible modern-iPhone radius where it does not. Getting it wrong
-    /// is cosmetic: the corners simply stop matching the bezel.
-    private var displayCornerRadius: CGFloat {
+    /// The display radius whenever Home is out from under the bezel, including
+    /// the first frame of the open and the last frame of the close.
+    private var panelCornerRadius: CGFloat {
+        panelRounded ? cornerRadius : 0
+    }
+
+    private static var displayCornerRadius: CGFloat {
         let screen = UIApplication.shared.connectedScenes
             .compactMap { ($0 as? UIWindowScene)?.screen }
             .first
@@ -455,6 +445,7 @@ struct RootView: View {
     }
 
     private func setDrawer(_ open: Bool) {
+        let wasOpen = drawerOpen
         if drawerOpen != open {
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         }
@@ -465,8 +456,34 @@ struct RootView: View {
                 #selector(UIResponder.resignFirstResponder),
                 to: nil, from: nil, for: nil
             )
+            unroundTask?.cancel()
+            // The radius has to be the display radius before the slide
+            // starts. Setting both in one update lets the slide animation
+            // grow the curve on the way open.
+            if !panelRounded {
+                panelRounded = true
+                drag = 0
+                Task { @MainActor in
+                    drawerOpen = true
+                }
+                return
+            }
         }
         drag = 0
         drawerOpen = open
+        if open { return }
+        if wasOpen {
+            // Stay rounded until the slide has finished and Home is back
+            // under the bezel. Turning it off with the close would square
+            // the corners while they are still in the middle of the screen.
+            unroundTask?.cancel()
+            unroundTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(340))
+                guard !Task.isCancelled, !drawerOpen, drag == 0 else { return }
+                panelRounded = false
+            }
+        } else {
+            panelRounded = false
+        }
     }
 }

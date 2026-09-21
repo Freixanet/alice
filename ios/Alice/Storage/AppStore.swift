@@ -133,6 +133,10 @@ final class AppStore {
     /// so call sites keep `store.requireUnlock`-style access.
     let lock: AppLock
     private var streamTasks: [String: Task<Void, Never>] = [:]
+    /// Tokens waiting to be drawn. Applied together so a fast reply does not
+    /// rebuild the chat once per character.
+    @ObservationIgnored private var pendingStreamText: [String: PendingStreamText] = [:]
+    @ObservationIgnored private var streamFlush: Task<Void, Never>?
     private var persistGeneration = 0
     private var persistTask: Task<Void, Never>?
     private var conversationFingerprints: [String: Int] = [:]
@@ -2431,9 +2435,12 @@ final class AppStore {
             return
         }
         guard let identity = sessionIdentity(for: frame.sessionID) else { return }
-        // A turn nobody here follows — another agent's answer woke this one —
-        // is read as soon as it ends.
+        // A turn nobody here follows is picked up when its chat is opened.
+        // Reading it now replaced that transcript on the main thread and
+        // rebuilt the chat and the drawer underneath whatever else was on
+        // screen. The chat the person is looking at still updates.
         if LiveEvents.isTurnOutcome(frame), let conversationID = identity.conversationID,
+           conversationID == activeID,
            activeBotTurns[conversationID] == nil,
            conversations.contains(where: { $0.id == conversationID && $0.isCanonicalBotChat }) {
             Task { [weak self] in await self?.refreshBotChat(conversationID) }
@@ -6041,10 +6048,12 @@ final class AppStore {
             }
             guard let current = conversations.firstIndex(where: { $0.id == conversationID })
             else { return }
-            conversations[current].hermesSessionID = chat.resolvedID
+            if conversations[current].hermesSessionID != chat.resolvedID {
+                conversations[current].hermesSessionID = chat.resolvedID
+            }
             // A reply nobody is following any more — the app was suspended or
             // relaunched mid-reply — is settled against what just arrived.
-            conversations[current].messages = BotChatSync.settle(
+            let merged = BotChatSync.settle(
                 BotChatSync.merge(
                     WebSocketBotChatSource.turns(from: resumed.rows),
                     into: conversations[current].messages,
@@ -6053,6 +6062,13 @@ final class AppStore {
                 watching: Set(activeBotTurns.values.map(\.replyID)),
                 note: Self.lostTouchNote(label: botCurrentName(for: profile))
             )
+            // Same transcript as last time: assigning it anyway rebuilt every
+            // screen that can see a conversation, including ones the person
+            // is not in.
+            let transcriptChanged = conversations[current].messages != merged
+            if transcriptChanged {
+                conversations[current].messages = merged
+            }
             if conversations[current].messages.last(where: { $0.role == .assistant })?.pending != true {
                 closeAgentActivity(for: conversationID)
             }
@@ -6078,8 +6094,8 @@ final class AppStore {
                 running: activeBotTurns[conversationID] == nil
                     && BotTurnState(resumed)?.running == true
             ), for: conversationID)
-            botChatFailure[conversationID] = nil
-            persistConversations()
+            if botChatFailure[conversationID] != nil { botChatFailure[conversationID] = nil }
+            if transcriptChanged { persistConversations() }
             await refreshQuietRoutineRuns(profile: profile)
         } catch {
             // Keep what is on screen. The reason is recorded so the chat can
@@ -6134,7 +6150,7 @@ final class AppStore {
             for _ in 0..<Int(AgentMessages.patience / 8) {
                 try? await Task.sleep(for: .seconds(8))
                 guard let self, !Task.isCancelled else { return }
-                if self.activeBotTurns[conversationID] == nil {
+                if self.activeID == conversationID, self.activeBotTurns[conversationID] == nil {
                     await self.refreshBotChat(conversationID)
                 }
                 if self.backgroundWorks[conversationID] == nil { return }
@@ -6273,12 +6289,15 @@ final class AppStore {
     /// and this is the moment it becomes worth asking for.
     func refreshVisibleBotChats() async {
         // Replies first: they are what someone coming back from a notification
-        // opened the app to read. Refreshing every bot takes the better part of
-        // a minute on a busy Mac, and the socket was often gone again before
-        // Alice's own reply was ever looked for.
+        // opened the app to read. Every other bot is read when its own chat
+        // opens. Refreshing them all here took the better part of a minute
+        // and rebuilt the screens underneath Notes and Agents the whole time.
         await recoverWaitingReplies()
-        let ids = conversations.filter(\.isCanonicalBotChat).map(\.id)
-        for id in ids { await refreshBotChat(id) }
+        if let activeID,
+           conversations.contains(where: { $0.id == activeID && $0.isCanonicalBotChat }),
+           activeBotTurns[activeID] == nil {
+            await refreshBotChat(activeID)
+        }
         markMentionRepliesSeen(in: activeID)
         startReplyRecovery()
     }
@@ -8467,6 +8486,35 @@ final class AppStore {
         }
     }
 
+    private struct PendingStreamText {
+        var conversationID: String
+        var text: String
+    }
+
+    private func scheduleStreamFlush() {
+        guard streamFlush == nil else { return }
+        streamFlush = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(90))
+            guard let self else { return }
+            self.streamFlush = nil
+            guard !self.pendingStreamText.isEmpty else { return }
+            self.flushStreamedText()
+            if !self.pendingStreamText.isEmpty { self.scheduleStreamFlush() }
+        }
+    }
+
+    /// Writes every held token into its reply. Called when a turn ends and
+    /// when the app leaves, so the last characters are not still in the buffer.
+    private func flushStreamedText() {
+        let batch = pendingStreamText
+        pendingStreamText.removeAll(keepingCapacity: true)
+        for (id, pending) in batch {
+            guard let location = messageLocation(id, conversationID: pending.conversationID)
+            else { continue }
+            conversations[location.chat].messages[location.message].content += pending.text
+        }
+    }
+
     private func apply(
         _ event: ChatEvent,
         to id: String,
@@ -8488,7 +8536,18 @@ final class AppStore {
             conversations[chat].messages[index].lastStatus = text
 
         case let .delta(text):
-            conversations[chat].messages[index].content += text
+            // Held and drawn together. One character at a time rebuilt the
+            // whole transcript, and a long reply left the phone unable to
+            // take a tap until the stream slowed down. The first token of a
+            // quiet stretch is drawn at once; the rest of that stretch lands
+            // together.
+            var pending = pendingStreamText[id] ?? PendingStreamText(conversationID: conversationID, text: "")
+            pending.text += text
+            pendingStreamText[id] = pending
+            if streamFlush == nil {
+                flushStreamedText()
+                scheduleStreamFlush()
+            }
 
         case let .interim(text):
             if TurnNarration.isDuplicate(text, of: conversations[chat].messages[index].content) {
@@ -8657,6 +8716,7 @@ final class AppStore {
         message: String,
         limit: ModelLimit?
     ) {
+        flushStreamedText()
         guard let location = messageLocation(id, conversationID: conversationID) else { return }
         let chat = location.chat
         let index = location.message
@@ -8669,6 +8729,7 @@ final class AppStore {
     }
 
     private func finish(_ id: String, conversationID: String) {
+        flushStreamedText()
         sendingConversations.remove(conversationID)
         streamTasks[conversationID] = nil
         closeAgentActivity(for: conversationID)
@@ -8814,6 +8875,7 @@ final class AppStore {
     /// archive before the next line. Streaming uses `persistConversations()`,
     /// which waits a beat so many deltas become one encode.
     func persistConversationsImmediately() {
+        flushStreamedText()
         persistTask?.cancel()
         persistGeneration += 1
         writeConversationsNow(conversations)

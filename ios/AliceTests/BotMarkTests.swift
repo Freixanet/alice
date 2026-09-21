@@ -25,15 +25,6 @@ final class BotMarkTests: XCTestCase {
         XCTAssertEqual(chosen.fillingPortrait(from: "radar").shape, chosen.shape)
     }
 
-    func testEveryAgentColourStaysReadableOnTheHeader() {
-        for hex in BotMark.colourHexes {
-            let onLight = LegibleColor.ink(hex, on: .light)
-            let onDark = LegibleColor.ink(hex, on: .dark)
-            XCTAssertGreaterThanOrEqual(LegibleColor.contrast(onLight, 0xFFFFFF), 4.5)
-            XCTAssertGreaterThanOrEqual(LegibleColor.contrast(onDark, 0x3A3A3C), 4.5)
-        }
-    }
-
     func testTheSameNameKeepsTheSameFace() {
         XCTAssertEqual(
             BotMark.derived(from: "inbox"),

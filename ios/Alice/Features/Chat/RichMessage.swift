@@ -453,7 +453,9 @@ enum RichMarkdown {
     @MainActor static func cached(_ content: String) -> [RichBlock] {
         if let hit = cache[content] { return hit }
         let parsed = blocks(content)
-        if cache.count >= 300 { cache.removeAll(keepingCapacity: true) }
+        if cache.count >= 300, let oldest = cache.keys.first {
+            cache.removeValue(forKey: oldest)
+        }
         cache[content] = parsed
         return parsed
     }

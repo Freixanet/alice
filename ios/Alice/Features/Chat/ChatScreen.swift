@@ -91,6 +91,18 @@ private struct ChatScreenContent: View, Equatable {
     }
 
     var body: some View {
+        // Notes and Agents cover this screen. The transcript used to stay
+        // built underneath and redraw whenever any conversation changed, so
+        // those screens stalled with the person nowhere near the chat.
+        // Coming back rebuilds it at the latest message.
+        if store.showingNotes || store.showingBots {
+            Palette.background(scheme).ignoresSafeArea()
+        } else {
+            liveChat
+        }
+    }
+
+    private var liveChat: some View {
         NavigationStack {
             chatContent
             .background(Palette.background(scheme))
@@ -209,7 +221,7 @@ private struct ChatScreenContent: View, Equatable {
                     .simultaneousGesture(dismissKeyboard)
 
                 VStack(spacing: 0) {
-                    if !keyboardShown {
+                    if bot == nil, !keyboardShown {
                         HomeSuggestionStrip()
                     }
                     Composer(
@@ -276,10 +288,7 @@ private struct ChatScreenContent: View, Equatable {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
                 } label: {
-                    ChatHeaderAvatar(
-                        name: store.botCurrentName(for: bot),
-                        nameColor: store.mark(for: bot).nameColor(scheme)
-                    ) {
+                    ChatHeaderAvatar(name: store.botCurrentName(for: bot)) {
                         BotMarkView(mark: store.mark(for: bot), size: 72)
                     }
                 }

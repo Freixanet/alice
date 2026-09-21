@@ -302,5 +302,5 @@ Actualizar esta tabla al cerrar cada bloque (commit + estado de verificación).
 | 12 Inbox | hecho | 5e85b58 | plugin tests + build device + install |
 | 13 Accesos home | hecho | bb1062f | build device + install; unit tests escritos, no corridos aquí |
 | 14 Adjuntos | hecho |  | plugin tests + build device + install; unit tests escritos, no corridos aquí |
-| 15 Color | hecho |  | build device. Acento ya estaba en enviar, selección e iconos. Nombre del agente en su color (AA). Estado: guardado, fallo, rutina, cola |
+| 15 Color | hecho |  | build device. Acento en enviar, selección e iconos. Los nombres de agente se quedan en el color del texto. Estado: guardado, fallo, rutina, cola |
 | 18 Sugerencias | hecho | 08ed44c | build device; unit tests escritos, no corridos aquí. No crea un briefing sola |

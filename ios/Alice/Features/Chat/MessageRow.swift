@@ -33,6 +33,19 @@ struct MessageRow: View {
         return bot
     }
 
+    /// Plain text while tokens are still arriving. The full markdown layout
+    /// waits until the reply has settled.
+    @ViewBuilder
+    private func replyBody(_ content: String) -> some View {
+        if message.pending {
+            Text(content)
+                .font(.body)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            RichMessageView(content: content, failed: message.error != nil, onTap: revealReplyExtras)
+        }
+    }
+
     private var actionsMessage: Message {
         var whole = message
         if let actionsContent, !actionsContent.isEmpty { whole.content = actionsContent }
@@ -138,12 +151,12 @@ struct MessageRow: View {
                             }
                         } else {
                             RoutineReportCard(name: routine) {
-                                RichMessageView(content: content, failed: message.error != nil, onTap: revealReplyExtras)
+                                replyBody(content)
                             }
                         }
                     } else if let agent = message.fromAgent {
                         AgentMessageCard(handle: agent) {
-                            RichMessageView(content: message.content, failed: message.error != nil, onTap: revealReplyExtras)
+                            replyBody(message.content)
                         }
                     } else if store.pendingHomeModelConfirmation?.replyID == message.id {
                         ModelConfirmationCard()
@@ -156,7 +169,10 @@ struct MessageRow: View {
                         // and repaints the links in the body colour. Links
                         // take the environment's tint, which `RichMessageView`
                         // sets on every block that can hold one.
-                        RichMessageView(content: message.content, failed: message.error != nil, onTap: revealReplyExtras)
+                        // While the reply is still arriving it stays plain
+                        // text: parsing the whole answer on every token is
+                        // what made the phone stop taking taps.
+                        replyBody(message.content)
                     }
                     }
                     .accessibilityHint(
