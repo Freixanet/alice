@@ -97,3 +97,11 @@ when the chosen model hits a limit.
 `hermes-agents/forja` and `hermes-plugin/tests/test_agent_engine.py` check the
 engine against a fake Hermes CLI so those tests do not send prompts to a
 person's agent.
+
+Internet access stays on the Hermes host. Firecrawl, `gh`, `rss-feeds` and
+`reddit-reading` remain the first choice for pages, GitHub, feeds and public
+Reddit. `hermes-agents/internet` adds the channels those do not cover
+(YouTube transcripts, Exa, V2EX, Bilibili, and logged-in social reads) through
+one read-only command, `reach`. Agent-Reach installs and checks those tools;
+it does not sit in front of each request. Setup, rollback and health are in
+[internet.md](internet.md).
