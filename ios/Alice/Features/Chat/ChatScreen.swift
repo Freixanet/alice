@@ -449,6 +449,7 @@ private struct DrawerGlyph: Shape {
 
 private struct TranscriptView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     let conversation: Conversation
     /// This bot's routine runs that found nothing, shown as cards.
     var quietRuns: [QuietRoutineRun] = []
@@ -571,10 +572,25 @@ private struct TranscriptView: View {
             .scrollPosition($position)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
-            // The transcript extends under the Dynamic Island. Soft fade
-            // starts there, rather than clipping the reply at the header.
-            .scrollEdgeEffectStyle(.soft, for: .top)
-            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            // The transcript extends under the Dynamic Island, the header and
+            // the composer. A progressive blur there — deepening to the edge,
+            // under the glass controls and over the replies — in place of the
+            // system's soft edge, and only once something scrolls beneath it.
+            .scrollEdgeEffectHidden(true, for: [.top, .bottom])
+            .overlay {
+                GeometryReader { proxy in
+                    VStack(spacing: 0) {
+                        ProgressiveBlur(edge: .top, wash: Palette.background(scheme))
+                            .frame(height: proxy.safeAreaInsets.top + 18)
+                        Spacer(minLength: 0)
+                        ProgressiveBlur(edge: .bottom, wash: Palette.background(scheme))
+                            .frame(height: proxy.safeAreaInsets.bottom + 18)
+                    }
+                    .ignoresSafeArea()
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
             .background { ReplySelectionDismiss() }
             .onScrollPhaseChange { oldPhase, phase in
                 readerScrolling = Self.isReader(phase)

@@ -411,7 +411,19 @@ private struct SidebarList: View, Equatable {
             .padding(.top, Sidebar.topFadeHeight)
         }
         .scrollIndicators(.hidden)
-        .mask(edgeFade)
+        // The list deepens into a blur at both edges, under the header and
+        // behind Bots, Routines and Library, rather than fading to nothing.
+        .overlay {
+            VStack(spacing: 0) {
+                ProgressiveBlur(edge: .top, wash: Palette.card(scheme))
+                    .frame(height: Sidebar.topFadeHeight + 12)
+                Spacer(minLength: 0)
+                ProgressiveBlur(edge: .bottom, wash: Palette.card(scheme), startOffset: 0.15)
+                    .frame(height: 240)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
         .task(id: store.dashboardReady) { await loadProjects() }
         .alert("Rename chat", isPresented: .constant(renaming != nil)) {
             TextField("Title", text: $newTitle)
@@ -451,44 +463,6 @@ private struct SidebarList: View, Equatable {
             }
         } message: {
             Text("Are you sure you want to delete this chat? This cannot be undone.")
-        }
-    }
-
-    /// Same fade the list had before B10: a mask, not a painted overlay, so
-    /// pinned and recents keep the drawer colour.
-    private var edgeFade: some View {
-        VStack(spacing: 0) {
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black.opacity(0.18), location: 0.22),
-                    .init(color: .black.opacity(0.55), location: 0.48),
-                    .init(color: .black.opacity(0.85), location: 0.74),
-                    .init(color: .black, location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: Sidebar.topFadeHeight)
-
-            Color.black
-
-            LinearGradient(
-                stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black.opacity(0.99), location: 0.18),
-                    .init(color: .black.opacity(0.95), location: 0.34),
-                    .init(color: .black.opacity(0.85), location: 0.48),
-                    .init(color: .black.opacity(0.68), location: 0.61),
-                    .init(color: .black.opacity(0.46), location: 0.73),
-                    .init(color: .black.opacity(0.24), location: 0.85),
-                    .init(color: .black.opacity(0.08), location: 0.94),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 240)
         }
     }
 
