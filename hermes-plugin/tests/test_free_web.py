@@ -76,7 +76,7 @@ class ProviderTests(unittest.TestCase):
     def test_empty_free_search_falls_back_to_paid(self):
         paid = mock.Mock()
         paid.search.return_value = {"success": True, "data": {"web": [{"url": "https://b"}]}}
-        with self._keyless({"success": True, "data": {"web": []}}), \
+        with self._keyless({"success": True, "data": {"web": []}}), mock.patch.object(free_web, "RETRY_PAUSE", 0), \
                 mock.patch.object(free_web, "_paid_provider", return_value=paid):
             result = self.provider.search("q", 5)
         paid.search.assert_called_once_with("q", 5)
@@ -91,7 +91,7 @@ class ProviderTests(unittest.TestCase):
             return [{"url": u, "title": "p", "content": "paid"} for u in urls]
 
         paid.extract = paid_extract
-        with mock.patch.object(free_web, "jina_read", side_effect=lambda u: good if u == "https://ok" else bad), \
+        with mock.patch.object(free_web, "RETRY_PAUSE", 0), mock.patch.object(free_web, "jina_read", side_effect=lambda u: good if u == "https://ok" else bad), \
                 mock.patch.object(free_web, "_paid_provider", return_value=paid):
             pages = asyncio.run(self.provider.extract(["https://ok", "https://wall"]))
         self.assertEqual(pages[0], good)

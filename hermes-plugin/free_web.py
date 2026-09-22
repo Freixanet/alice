@@ -19,6 +19,7 @@ import asyncio
 import ipaddress
 import logging
 import socket
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
@@ -30,6 +31,9 @@ NAME = "alice-free"
 JINA_ENDPOINT = "https://r.jina.ai/"
 JINA_TIMEOUT = 25
 JINA_LIMIT = 400_000
+# Jina's free tier turns away bursts: a few pages at a time, one retry each.
+JINA_CONCURRENCY = 3
+RETRY_PAUSE = 1.2
 
 
 def _public_http(url: str) -> bool:
@@ -125,14 +129,19 @@ def _build_provider_class():
             return {"name": self.display_name, "badge": "free", "tag": "Exa free search, Jina reading; Firecrawl only as fallback", "env_vars": []}
 
         def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
-            try:
-                from plugins.web.keyless_mcp import exa_search_keyless
-                result = exa_search_keyless(query, limit)
-                if result.get("success") and ((result.get("data") or {}).get("web")):
-                    return result
-                reason = result.get("error") or "no results"
-            except Exception as exc:  # noqa: BLE001
-                reason = str(exc)
+            reason = "no results"
+            # Twice: the free endpoint sheds load with an odd reply now and then.
+            for attempt in range(2):
+                try:
+                    from plugins.web.keyless_mcp import exa_search_keyless
+                    result = exa_search_keyless(query, limit)
+                    if result.get("success") and ((result.get("data") or {}).get("web")):
+                        return result
+                    reason = result.get("error") or "no results"
+                except Exception as exc:  # noqa: BLE001
+                    reason = str(exc)
+                if attempt == 0:
+                    time.sleep(RETRY_PAUSE)
             logger.info("alice-free: Exa free search fell through (%s); using the paid backend", reason)
             paid = _paid_provider()
             if paid is None:
@@ -140,8 +149,22 @@ def _build_provider_class():
             return paid.search(query, limit)
 
         async def extract(self, urls: List[str], **kwargs: Any) -> List[Dict[str, Any]]:
-            pages = await asyncio.gather(*(asyncio.to_thread(jina_read, url) for url in urls))
+            gate = asyncio.Semaphore(JINA_CONCURRENCY)
+
+            async def read(url: str) -> Dict[str, Any]:
+                async with gate:
+                    page = await asyncio.to_thread(jina_read, url)
+                    if page.get("error") and "public web page" not in page["error"]:
+                        await asyncio.sleep(RETRY_PAUSE)
+                        page = await asyncio.to_thread(jina_read, url)
+                    return page
+
+            pages = await asyncio.gather(*(read(url) for url in urls))
             failed = [page["url"] for page in pages if page.get("error")]
+            for page in pages:
+                if page.get("error"):
+                    # The host and the reason only: never the page or the query.
+                    logger.info("alice-free: Jina could not read %s (%s)", urlsplit(page["url"]).hostname, page["error"][:80])
             if not failed:
                 return list(pages)
             paid = _paid_provider()
