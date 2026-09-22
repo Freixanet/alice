@@ -2461,6 +2461,16 @@
         }
       }
     },
+    "Copied": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiado"
+          }
+        }
+      }
+    },
     "Copy": {
       "localizations": {
         "es": {
@@ -7371,6 +7381,16 @@
         }
       }
     },
+    "Prompt": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mensaje"
+          }
+        }
+      }
+    },
     "Prompt size": {
       "localizations": {
         "es": {
@@ -9167,6 +9187,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Se muestra solo cuando el proveedor activo expone a Hermes una vista real de suscripción o saldo gastable."
+          }
+        }
+      }
+    },
+    "Shows actions. Hold for more.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muestra las acciones. Mantén pulsado para ver más."
           }
         }
       }
