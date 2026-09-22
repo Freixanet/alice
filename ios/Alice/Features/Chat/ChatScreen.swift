@@ -32,6 +32,10 @@ private struct ChatScreenContent: View, Equatable {
 
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
+    /// Today's own menu: asking before its history is thrown away.
+    @State private var confirmingTodayClear = false
+    @State private var clearingToday = false
+    @State private var todayClearFailure: String?
     @State private var homeComposerHeight: CGFloat = 120
     /// Extra room under the empty home while the keyboard is closed. The block
     /// centres in what is left, so it sits half of this higher.
@@ -353,6 +357,31 @@ private struct ChatScreenContent: View, Equatable {
                 }
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Agents")
+            } else if isToday {
+                // Today fills up with briefings and closes of the day; this
+                // is where it starts again. Its routines, and what Alice
+                // knows about Marc, stay.
+                Menu {
+                    Button(role: .destructive) {
+                        confirmingTodayClear = true
+                    } label: {
+                        Label(clearingToday ? "Clearing…" : "Clear Today", systemImage: "eraser")
+                    }
+                    .disabled(clearingToday)
+                } label: {
+                    Group {
+                        if clearingToday {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 18, weight: .semibold))
+                        }
+                    }
+                    .frame(width: discSize, height: discSize)
+                    .contentShape(.circle)
+                }
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Today options")
             } else {
                 Color.clear
                     .frame(width: discSize, height: discSize)
@@ -364,6 +393,30 @@ private struct ChatScreenContent: View, Equatable {
         // edges. The drawer's search button keeps the same 20 on its side.
         .padding(.horizontal, 20)
         .padding(.top, 11)
+        .confirmationDialog("Clear Today?", isPresented: $confirmingTodayClear, titleVisibility: .visible) {
+            Button("Clear Today", role: .destructive) { clearToday() }
+        } message: {
+            Text("Every briefing and message in Today goes, here and in Hermes. The morning briefing, the close of the day and what Alice knows about you stay.")
+        }
+        .alert("Today not cleared", isPresented: Binding(
+            get: { todayClearFailure != nil }, set: { if !$0 { todayClearFailure = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(todayClearFailure ?? "")
+        }
+    }
+
+    private func clearToday() {
+        clearingToday = true
+        Task {
+            defer { clearingToday = false }
+            do {
+                try await store.clearBotChat(AppStore.todayProfile)
+            } catch {
+                todayClearFailure = PlainWords.describe(error, doing: "clear Today")
+            }
+        }
     }
 
     @ViewBuilder
@@ -449,7 +502,6 @@ private struct DrawerGlyph: Shape {
 
 private struct TranscriptView: View {
     @Environment(AppStore.self) private var store
-    @Environment(\.colorScheme) private var scheme
     let conversation: Conversation
     /// This bot's routine runs that found nothing, shown as cards.
     var quietRuns: [QuietRoutineRun] = []
@@ -572,36 +624,10 @@ private struct TranscriptView: View {
             .scrollPosition($position)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
-            // The transcript extends under the Dynamic Island, the header and
-            // the composer. A progressive blur there — deepening to the edge,
-            // under the glass controls and over the replies — in place of the
-            // system's soft edge, and only once something scrolls beneath it.
-            .scrollEdgeEffectHidden(true, for: [.top, .bottom])
-            // It begins at the Dynamic Island, not under the header, and at
-            // the home indicator, not above the composer: the glass controls
-            // blur what passes under them on their own. Over the island and
-            // the indicator it rises slowly, the whole way, with only a light
-            // wash of the page colour, so a reply dims into the edge rather
-            // than turning opaque a few points in.
-            .overlay {
-                let device = DeviceInsets.current
-                VStack(spacing: 0) {
-                    ProgressiveBlur(
-                        edge: .top, intensity: 0.45, wash: Palette.background(scheme),
-                        rampShare: 1, washOpacity: 0.35
-                    )
-                    .frame(height: device.top + 14)
-                    Spacer(minLength: 0)
-                    ProgressiveBlur(
-                        edge: .bottom, intensity: 0.45, wash: Palette.background(scheme),
-                        rampShare: 1, washOpacity: 0.35
-                    )
-                    .frame(height: device.bottom + 14)
-                }
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
+            // The transcript extends under the Dynamic Island. Soft fade
+            // starts there, rather than clipping the reply at the header.
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
             .background { ReplySelectionDismiss() }
             .onScrollPhaseChange { oldPhase, phase in
                 readerScrolling = Self.isReader(phase)
