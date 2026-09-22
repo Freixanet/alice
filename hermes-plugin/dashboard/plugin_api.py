@@ -1491,6 +1491,50 @@ def _calendar_module():
     return module
 
 
+def _action_log_module():
+    import importlib.util
+
+    path = Path(__file__).resolve().parent.parent / "action_log.py"
+    name = "alice_action_log"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _hermes_root() -> Path:
+    from hermes_constants import get_default_hermes_root
+
+    return Path(get_default_hermes_root())
+
+
+@router.get("/actions")
+async def agent_actions(limit: int = 200, since: Optional[float] = None,
+                        profile: Optional[str] = None) -> JSONResponse:
+    """What agents did with consequences, newest first (``action_log``)."""
+    limit = max(1, min(int(limit), 500))
+    if profile is not None:
+        profile = await asyncio.to_thread(_known_profile, profile)
+    rows = await asyncio.to_thread(
+        lambda: _action_log_module().recent(_hermes_root(), limit=limit, since=since, profile=profile))
+    return JSONResponse({"actions": rows}, headers=_NO_STORE)
+
+
+@router.get("/receipt")
+async def conversation_receipt(session: str, profile: str = "default", around: Optional[int] = None,
+                               window: int = 3, at: Optional[float] = None) -> JSONResponse:
+    """A few turns of a past conversation around a cited message, or the moment of an action."""
+    name = await asyncio.to_thread(_known_profile, profile)
+    found = await asyncio.to_thread(
+        lambda: _action_log_module().receipt(_hermes_root(), name, session, around, window, at))
+    if found is None:
+        raise HTTPException(status_code=404, detail="That conversation is not on this Hermes.")
+    return JSONResponse(found, headers=_NO_STORE)
+
+
 class _CalendarUpload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

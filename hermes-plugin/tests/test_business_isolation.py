@@ -127,10 +127,13 @@ class BusinessIsolationTests(unittest.TestCase):
         (empty / "profiles" / "radar-ia").mkdir(parents=True)
         self.assertEqual(self.plugin.team_prompt_for(empty, "radar-ia"), "")
 
-    def test_register_adds_the_hook_and_the_prompt_section(self):
+    def test_register_adds_the_hooks_and_the_prompt_section(self):
         ctx = mock.Mock()
         self.plugin.register(ctx)
-        ctx.register_hook.assert_called_once_with("pre_tool_call", self.plugin._pre_tool_call)
+        # The Business boundary, and the observer that keeps Activity's record of actions.
+        ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._pre_tool_call)
+        ctx.register_hook.assert_any_call("post_tool_call", self.plugin._post_tool_call)
+        self.assertEqual(ctx.register_hook.call_count, 2)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
         self.assertEqual(ctx.register_system_prompt_section.call_count, 2)

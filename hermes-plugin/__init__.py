@@ -358,6 +358,36 @@ def _free_web():
     return module
 
 
+def _action_log():
+    import importlib.util
+    import sys
+
+    path = Path(__file__).resolve().parent / "action_log.py"
+    name = "alice_action_log"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _post_tool_call(tool_name=None, args=None, result=None, session_id="", status=None, **_):
+    """Keeps what an agent did that changed something — sent, scheduled, signed in, deleted —
+    for Alice's Activity. An observer: it never changes the call, and a failure here is
+    swallowed so it can never break a turn."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        root, profile = _root_and_sender(Path(get_hermes_home()))
+        _action_log().observe(root, profile, tool_name=tool_name or "", args=args, result=result,
+                              session_id=session_id or "", status=status)
+    except Exception:
+        pass
+    return None
+
+
 def _is_agent_maker(**_) -> bool:
     """Agent Maker's tools follow the stamped role, including after a rename."""
     try:
@@ -575,6 +605,8 @@ def _register_calendar_tools(ctx) -> None:
 
 def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
+    # What each agent did with consequences, for Alice's Activity.
+    ctx.register_hook("post_tool_call", _post_tool_call)
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
