@@ -31,6 +31,7 @@ struct Composer: View {
     /// when dictation fails to start — which is exactly when the reader most
     /// needs to know the button registered.
     @State private var micTaps = 0
+    @State private var showingVoice = false
     @State private var pendingListen: Bool?
 
     /// One height for every control on the bottom row, so the send button and
@@ -399,6 +400,7 @@ struct Composer: View {
                     attachButton
                     modelChip
                     Spacer(minLength: 4)
+                    voiceModeButton
                     actionButton
                 }
             }
@@ -454,6 +456,7 @@ struct Composer: View {
                             .contentShape(.rect)
                             .onTapGesture { focused.wrappedValue = true }
 
+                        voiceModeButton
                         botVoiceOrSendButton
                     }
                     .padding(.leading, 14)
@@ -547,6 +550,31 @@ struct Composer: View {
         )
         .accessibilityIdentifier("composer.action")
         .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
+    }
+
+    /// Talk it through: a spoken conversation with this chat (`VoiceModeView`),
+    /// offered while there is nothing typed and nothing being written.
+    @ViewBuilder
+    private var voiceModeButton: some View {
+        let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !store.draftAttachments.isEmpty
+        if !hasDraft, !store.isSending, !dictation.isListening, store.isConnected {
+            Button {
+                showingVoice = true
+            } label: {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 30))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(store.accent.primary(scheme))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Voice conversation")
+            .fullScreenCover(isPresented: $showingVoice) {
+                VoiceModeView()
+            }
+            .transition(.scale.combined(with: .opacity))
+        }
     }
 
     /// The accent's clearest home on a bot chat: the control that sends.
