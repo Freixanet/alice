@@ -85,6 +85,25 @@ class FactsTests(unittest.TestCase):
         self.assertTrue(text.startswith("Fecha: martes 22 de septiembre, 02:30"), text)
 
 
+    def test_todays_calendar_is_in_the_facts_only_when_connected(self):
+        import json
+        now = 1790060400  # 2026-09-22 09:00 in Madrid
+        self.assertNotIn("agenda", dias.facts(self.hermes.root, now, 16))
+        (self.hermes.root / ".alice").mkdir()
+        (self.hermes.root / ".alice" / "calendar.json").write_text(json.dumps({
+            "connected": True,
+            "events": [
+                {"title": "Dentista", "start": "2026-09-22T17:00:00+02:00",
+                 "end": "2026-09-22T18:00:00+02:00", "location": "Clínica"},
+                {"title": "Mañana", "start": "2026-09-23T10:00:00+02:00",
+                 "end": "2026-09-23T11:00:00+02:00"},
+            ],
+        }))
+        text = dias.facts(self.hermes.root, now, 16)
+        self.assertIn("- 17:00 Dentista · Clínica", text)
+        self.assertNotIn("Mañana", text)
+
+
 class InstallerTests(unittest.TestCase):
     def test_the_block_is_added_once_and_then_replaced(self):
         first = instalar.with_block("# Alice\n", "<!-- alice:proactiva inicio -->\nA\n<!-- alice:proactiva fin -->")

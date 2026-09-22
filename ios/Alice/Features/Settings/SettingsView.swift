@@ -118,6 +118,18 @@ struct SettingsView: View {
                 }
             }
 
+            // Where a connection an agent offered in a chat can be made — or
+            // undone — whatever was said there.
+            if store.dashboardReady {
+                Section {
+                    CalendarConnectionRow()
+                } header: {
+                    Text("Connections")
+                } footer: {
+                    Text("Your agents see what you connect here, read-only. Nothing leaves your own Hermes.")
+                }
+            }
+
             Section {
                 Toggle("Replies and routines come through Bark", isOn: $store.barkRelays)
             } header: {

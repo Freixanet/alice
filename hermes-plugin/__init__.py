@@ -505,6 +505,59 @@ def _register_debug_tools(ctx) -> None:
         )
 
 
+def _calendar():
+    import importlib.util
+    import sys
+
+    path = Path(__file__).resolve().parent / "calendar_snapshot.py"
+    name = "alice_calendar_snapshot"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def calendar_events_tool(args=None) -> str:
+    """The person's calendar, read on demand so a long chat never works from a stale copy."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        root, _ = _root_and_sender(Path(get_hermes_home()))
+        a = args or {}
+        return _agent_json(_calendar().events(
+            root, days_ahead=float(a.get("days_ahead", 7) or 7),
+            days_back=float(a.get("days_back", 0) or 0),
+        ))
+    except Exception as exc:
+        return _agent_json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+
+CALENDAR_TOOLS = (
+    ("calendar_events", "📅",
+     "Marc's calendar, as his iPhone last sent it (read-only). Always returns `status`: "
+     "`connected` with the events in the window asked for; `not_connected` when he has not "
+     "connected it; `declined` when he said not now. Call it before answering anything about "
+     "his schedule, plans, free time, meetings or trips.",
+     ({"days_ahead": {"type": "number", "description": "How many days ahead to include (default 7, at most 60)."},
+       "days_back": {"type": "number", "description": "How many days back to include (default 0)."}}, []),
+     calendar_events_tool),
+)
+
+
+def _register_calendar_tools(ctx) -> None:
+    for name, emoji, description, (properties, required), call in CALENDAR_TOOLS:
+        schema = {"name": name, "description": description,
+                  "parameters": {"type": "object", "properties": properties, "required": required}}
+        ctx.register_tool(
+            name=name, toolset="alice_calendar", schema=schema,
+            handler=lambda args, _call=call, **_: _call(args or {}),
+            check_fn=_always, description=description, emoji=emoji,
+        )
+
+
 def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
@@ -513,3 +566,4 @@ def register(ctx) -> None:
     _register_notes_tools(ctx)
     _register_agent_tools(ctx)
     _register_debug_tools(ctx)
+    _register_calendar_tools(ctx)

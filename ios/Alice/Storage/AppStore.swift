@@ -6077,6 +6077,71 @@ final class AppStore {
     /// settled a frame before the page is dismissed.
     var botsExitLeading = false
 
+    // MARK: - Calendar
+
+    /// Where the person's calendar stands with their Hermes. Read when the
+    /// app comes back, and changed by the offer card and Settings.
+    private(set) var calendarLink: CalendarLink = .unknown
+    @ObservationIgnored private var calendarSyncedAt: Date?
+
+    func refreshCalendarLink() async {
+        guard dashboardReady, let link = try? await dashboard.calendarLink() else { return }
+        if link != calendarLink { calendarLink = link }
+    }
+
+    /// Asks iOS for access and sends the first window. Nil when connected;
+    /// otherwise what to tell the person.
+    func connectCalendar() async -> String? {
+        guard dashboardReady else { return "Connect to your Hermes first." }
+        guard await CalendarSync.requestAccess() else {
+            return CalendarSync.refused
+                ? "Calendar access is off for Alice. Turn it on in iOS Settings › Alice › Calendars."
+                : "Alice did not get access to your calendar."
+        }
+        do {
+            try await uploadCalendar()
+            return nil
+        } catch {
+            return PlainWords.describe(error, doing: "send your calendar to Hermes")
+        }
+    }
+
+    /// "Not now": agents stop offering it until the person connects it.
+    func declineCalendar() async {
+        guard (try? await dashboard.declineCalendar()) != nil else { return }
+        calendarLink = .declined
+    }
+
+    /// Takes every event off Hermes. iOS keeps its own permission; the switch
+    /// for that is in iOS Settings.
+    func disconnectCalendar() async -> String? {
+        do {
+            try await dashboard.disconnectCalendar()
+            calendarLink = .notConnected
+            calendarSyncedAt = nil
+            return nil
+        } catch {
+            return PlainWords.describe(error, doing: "disconnect your calendar")
+        }
+    }
+
+    /// Keeps Hermes' copy current while connected: on each return to the app
+    /// and each background refresh, at most every ten minutes.
+    func syncCalendarIfConnected() async {
+        if calendarLink == .unknown { await refreshCalendarLink() }
+        guard calendarLink.isConnected, CalendarSync.hasAccess else { return }
+        if let last = calendarSyncedAt, Date().timeIntervalSince(last) < 10 * 60 { return }
+        try? await uploadCalendar()
+    }
+
+    private func uploadCalendar() async throws {
+        let window = CalendarSync.window()
+        let events = await CalendarSync.events(from: window.start, to: window.end)
+        try await dashboard.uploadCalendar(events, from: window.start, to: window.end)
+        calendarSyncedAt = Date()
+        calendarLink = .connected(updatedAt: Date())
+    }
+
     // MARK: - Today
 
     /// Alice's own forever-chat: the main profile's canonical Bot Chat in

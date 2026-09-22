@@ -58,3 +58,17 @@ add three habits:
 The morning briefing now says why a piece of news matters when it matches
 something she knows Marc cares about. Crossing calendar and mail (Rene,
 Today.ai) needs those accounts connected to Hermes; none is today.
+
+## Connecting the calendar where it helps (2026-09-22)
+
+When a request needs Marc's schedule, Alice calls `calendar_events` (Alice
+plugin, `calendar_snapshot.py`), which always says where things stand:
+`connected` with events, `not_connected`, or `declined`. Not connected, she
+answers as she can and ends with `[Conectar calendario](alice://connect/calendar)`
+— once per conversation — which the chat draws as a card (`ConnectOfferCard`):
+Connect asks iOS for read access (one tap) and sends a window of events from
+every account on the iPhone (yesterday to a month ahead; no notes) to his own
+Hermes; Not now is stored on Hermes, and agents stop offering it. Settings ›
+Connections › Calendar connects or disconnects at any time. The copy is kept
+current on each return to the app and each background refresh, and the
+morning briefing lists the day's events when connected. Read-only.

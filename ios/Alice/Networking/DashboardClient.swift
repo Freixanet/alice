@@ -2367,6 +2367,29 @@ extension DashboardClient {
         ])
     }
 
+    // MARK: Calendar (hermes-plugin/calendar_snapshot.py)
+
+    func calendarLink() async throws -> CalendarLink {
+        CalendarLink.parse(try await get("api/plugins/alice/calendar"))
+    }
+
+    func uploadCalendar(_ events: [CalendarSync.Event], from start: Date, to end: Date) async throws {
+        let format = ISO8601DateFormatter()
+        _ = try await send("POST", "api/plugins/alice/calendar", [
+            "window_start": format.string(from: start),
+            "window_end": format.string(from: end),
+            "events": events.map(\.json),
+        ])
+    }
+
+    func declineCalendar() async throws {
+        _ = try await send("POST", "api/plugins/alice/calendar/decline", [:])
+    }
+
+    func disconnectCalendar() async throws {
+        _ = try await send("POST", "api/plugins/alice/calendar/disconnect", [:])
+    }
+
     /// A profile's curated memory as the Alice plugin for Hermes serves it
     /// (`hermes-plugin/`). Hermes itself has no route that edits those entries.
     func aliceMemory(profile: String) async throws -> MemorySnapshot {

@@ -85,6 +85,8 @@ struct AliceApp: App {
                     // without this, a real pushed event cannot be attributed to
                     // its conversation until that bot is opened manually.
                     await store.refreshVisibleBotChats()
+                    // Hermes' copy of the calendar, current while connected.
+                    Task { await store.syncCalendarIfConnected() }
                     await notifier.refreshPermission()
                     store.startWatchingLiveEvents()
                     // Prime the watermarks without announcing the installation's
@@ -138,6 +140,7 @@ struct AliceApp: App {
                         // compression can advance a bot to a new session while
                         // Alice is suspended, and events must route by that live id.
                         await store.refreshVisibleBotChats()
+                        Task { await store.syncCalendarIfConnected() }
                         // The socket does not survive suspension; this is where
                         // it comes back, and it is idempotent.
                         store.startWatchingLiveEvents()
@@ -228,6 +231,8 @@ struct AliceApp: App {
         await store.refreshVisibleBotChats()
         activities.sync(working: store.agentWorks, ending: store.agentEnding)
         store.liveActivityWarning = activities.lastStartFailure
+        // So the morning briefing reads the day as it is, not as it was.
+        await store.syncCalendarIfConnected()
         guard notifier.permission.canDeliver else { return }
         await notifier.post(store.syncEvents())
     }

@@ -131,6 +131,31 @@ def zone(home: Path) -> Optional[tzinfo]:
     return None
 
 
+def calendar_today(home: Path, now: float, local) -> Optional[List[str]]:
+    """Today's events from the calendar his iPhone sent (`.alice/calendar.json`).
+
+    None when it is not connected: then the briefing says nothing about it.
+    """
+    try:
+        data = json.loads((home / ".alice" / "calendar.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not data.get("connected"):
+        return None
+    today = local(now).date()
+    rows = []
+    for event in data.get("events") or []:
+        begins, ends = stamp(event.get("start")), stamp(event.get("end"))
+        if begins is None or ends is None:
+            continue
+        if not (local(begins).date() <= today <= local(ends - 1).date()):
+            continue
+        when = "todo el día" if event.get("all_day") else local(begins).strftime("%H:%M")
+        where = f" · {event['location']}" if event.get("location") else ""
+        rows.append((begins, f"- {when} {event.get('title', 'Ocupado')}{where}"))
+    return [line for _, line in sorted(rows)]
+
+
 def facts(home: Path, now: float, hours: float) -> str:
     since = now - hours * 3600
     tz = zone(home)
@@ -169,6 +194,8 @@ def facts(home: Path, now: float, hours: float) -> str:
                 at = local(upcoming_at).strftime("%H:%M")
                 upcoming.append(f"- {at} «{job.get('name', 'sin nombre')}» ({who})")
 
+    agenda = calendar_today(home, now, local)
+
     moment = local(now)
     lines = [
         f"Fecha: {_DAYS[moment.weekday()]} {moment.day} de {_MONTHS[moment.month - 1]}, "
@@ -178,6 +205,9 @@ def facts(home: Path, now: float, hours: float) -> str:
     lines += heard or ["- Nada nuevo."]
     lines.append("\nRutinas que fallaron en las últimas 24 h:")
     lines += failed or ["- Ninguna."]
+    if agenda is not None:
+        lines.append("\nSu agenda de hoy (de su calendario):")
+        lines += agenda or ["- Nada en el calendario."]
     lines.append("\nRutinas programadas para lo que queda de hoy:")
     lines += sorted(upcoming) or ["- Ninguna."]
     return "\n".join(lines)

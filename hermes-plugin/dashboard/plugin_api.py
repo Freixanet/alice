@@ -1477,4 +1477,56 @@ async def stop_host_process(body: _StopProcess) -> JSONResponse:
     return JSONResponse(payload, status_code=status, headers=_NO_STORE)
 
 
+def _calendar_module():
+    import importlib.util
+
+    path = Path(__file__).resolve().parent.parent / "calendar_snapshot.py"
+    name = "alice_calendar_snapshot"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class _CalendarUpload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    window_start: str
+    window_end: str
+    events: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+@router.get("/calendar")
+async def calendar_status() -> JSONResponse:
+    """Whether the person's calendar is connected, declined, or neither."""
+    payload = await asyncio.to_thread(lambda: _calendar_module().status(_engine_home()))
+    return JSONResponse(payload, headers=_NO_STORE)
+
+
+@router.post("/calendar")
+async def calendar_upload(body: _CalendarUpload) -> JSONResponse:
+    """The iPhone's latest window of events. Read-only for everyone who reads it."""
+    payload = await asyncio.to_thread(
+        lambda: _calendar_module().save(_engine_home(), body.events, body.window_start, body.window_end)
+    )
+    return JSONResponse(payload, headers=_NO_STORE)
+
+
+@router.post("/calendar/decline")
+async def calendar_decline() -> JSONResponse:
+    """The person said not now: agents stop offering it."""
+    payload = await asyncio.to_thread(lambda: _calendar_module().decline(_engine_home()))
+    return JSONResponse(payload, headers=_NO_STORE)
+
+
+@router.post("/calendar/disconnect")
+async def calendar_disconnect() -> JSONResponse:
+    """Forget every event and go back to never connected."""
+    payload = await asyncio.to_thread(lambda: _calendar_module().disconnect(_engine_home()))
+    return JSONResponse(payload, headers=_NO_STORE)
+
+
 _register_claim_auth()

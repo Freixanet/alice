@@ -20,6 +20,9 @@ enum RichBlock: Equatable {
     case buttons([RichReplyButton])
     case links([RichLink])
     case media(RichMedia)
+    /// `[Title](alice://connect/<service>)`: an offer to connect something,
+    /// drawn as a card with Connect and Not now (`ConnectOfferCard`).
+    case connect(String)
 }
 
 struct RichListItem: Equatable {
@@ -432,7 +435,8 @@ enum RichMarkdown {
                 blocks.append(.media(media))
                 continue
             }
-            let extracted = replyButtons(in: paragraph.joined(separator: "\n"))
+            let offers = connectOffers(in: paragraph.joined(separator: "\n"))
+            let extracted = replyButtons(in: offers.text)
             let linked = RichLinks.extract(extracted.text)
             for run in paragraphRuns(linked.text) {
                 blocks.append(.paragraph(run))
@@ -443,8 +447,41 @@ enum RichMarkdown {
             if !extracted.buttons.isEmpty {
                 blocks.append(.buttons(extracted.buttons))
             }
+            for service in offers.services {
+                blocks.append(.connect(service))
+            }
         }
         return blocks
+    }
+
+    // MARK: Connect offers
+
+    private static let connectPattern = #"\[[^\]\n]+\]\(alice://connect/([a-z]+)\)"#
+
+    /// Offers to connect a service, taken out of the text: only services the
+    /// app can connect become a card; any other is dropped rather than shown
+    /// as a link that goes nowhere.
+    static func connectOffers(in text: String) -> (text: String, services: [String]) {
+        guard text.contains("alice://connect/"),
+              let regex = try? NSRegularExpression(pattern: connectPattern)
+        else { return (text, []) }
+        var services: [String] = []
+        var remaining = text
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let serviceRange = Range(match.range(at: 1), in: text),
+                  let removal = Range(match.range, in: remaining)
+            else { continue }
+            let service = String(text[serviceRange])
+            if ConnectOfferCard.services.contains(service), !services.contains(service) {
+                services.insert(service, at: 0)
+            }
+            remaining.removeSubrange(removal)
+        }
+        let cleaned = remaining.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        return (cleaned, services)
     }
 
     /// Parsed replies by content, because a chat redraws every visible row.
@@ -1119,6 +1156,8 @@ struct RichMessageView: View {
             RichReplyButtonsView(buttons: buttons)
         case let .links(links):
             RichLinksView(links: links)
+        case let .connect(service):
+            ConnectOfferCard(service: service)
         case let .media(media):
             // Blocks are keyed by position; a different file landing in the
             // same slot (a reply still streaming) must not keep the old card.
