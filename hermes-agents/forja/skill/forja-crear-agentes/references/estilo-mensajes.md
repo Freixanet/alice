@@ -15,6 +15,7 @@ Se leen en Alice, casi siempre en un móvil. Si tus instrucciones o una skill fi
 - Tablas para comparar. Tarjetas `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` o `[!CAUTION]` para la conclusión clave o un riesgo (1–2); nunca una cita `>` sin etiqueta.
 - Código con su lenguaje; `código en línea` para comandos, rutas y valores. Fórmulas `$...$`. Tareas `- [ ]`.
 - Enlaces siempre `[Texto claro](https://…)`, nunca la dirección a la vista.
+- Una imagen o archivo que generes o descargues, en su propia línea: si la herramienta te da una dirección web, `![Título](https://…)`; si te da una ruta del Mac, `![Título](alice://file?path=/ruta/absoluta.png)`. Alice lo muestra como tarjeta.
 - Botones de respuesta cuando haya que elegir: `[Texto](alice://reply?text=Texto%20codificado)`, uno por línea, máx. 4.
 
 **Componentes** (bloque ```` ```alice-ui ```` con un JSON en una pieza, tras 1–2 frases; uno por mensaje; 2–6 elementos):
