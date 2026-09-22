@@ -46,6 +46,7 @@ final class HitchMonitor {
             let watcher = Watcher { [weak self] seconds, trace in
                 Task { @MainActor in self?.record(seconds, trace: trace) }
             }
+            watcher.followAppState()
             watcher.start()
             self.watcher = watcher
             let link = CADisplayLink(target: FrameTarget(self), selector: #selector(FrameTarget.tick(_:)))
@@ -107,7 +108,12 @@ final class HitchMonitor {
         private let lock = NSLock()
         private var lastAnswer = CACurrentMediaTime()
         private var stopped = false
+        /// Off while the app is not in front: a suspended app answers nothing,
+        /// and counting that as a freeze reported a phone left locked for
+        /// seventeen minutes as a 1,047-second stall.
+        private var foreground = true
         private var thread: Thread?
+        private var observers: [NSObjectProtocol] = []
 
         init(report: @escaping @Sendable (Double, [String]) -> Void) { self.report = report }
 
@@ -119,7 +125,28 @@ final class HitchMonitor {
             thread.start()
         }
 
-        func stop() { lock.withLock { stopped = true } }
+        func stop() {
+            lock.withLock { stopped = true }
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+        }
+
+        /// Follows the app in and out of the foreground. Called on the main thread.
+        func followAppState() {
+            let center = NotificationCenter.default
+            let set: @Sendable (Bool) -> Void = { [weak self] on in
+                guard let self else { return }
+                self.lock.withLock {
+                    self.foreground = on
+                    // Coming back, the silence so far was the suspension.
+                    self.lastAnswer = CACurrentMediaTime()
+                }
+            }
+            observers = [
+                center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: nil) { _ in set(true) },
+                center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: nil) { _ in set(false) },
+            ]
+        }
 
         private func loop() {
             var stalledSince: CFTimeInterval?
@@ -128,8 +155,24 @@ final class HitchMonitor {
                     guard let self else { return }
                     self.lock.withLock { self.lastAnswer = CACurrentMediaTime() }
                 }
+                let slept = CACurrentMediaTime()
                 usleep(100_000)
-                let silence = CACurrentMediaTime() - lock.withLock { lastAnswer }
+                let now = CACurrentMediaTime()
+                // This thread itself was held far past its nap: the whole
+                // process was suspended, not the main thread busy. Nothing
+                // measured across that gap is a freeze.
+                let suspended = now - slept > 1
+                let (silence, inFront) = lock.withLock { (now - lastAnswer, foreground) }
+                if suspended || !inFront {
+                    if stalledSince != nil {
+                        stalledSince = nil
+                        #if DEBUG
+                        _ = DispatchQueue.main.sync { StallSampler.consume() }
+                        #endif
+                    }
+                    if suspended { lock.withLock { lastAnswer = now } }
+                    continue
+                }
                 if silence > 0.25 {
                     if stalledSince == nil { stalledSince = CACurrentMediaTime() - silence }
                     #if DEBUG

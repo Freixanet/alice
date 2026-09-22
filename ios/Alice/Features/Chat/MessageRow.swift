@@ -33,14 +33,12 @@ struct MessageRow: View {
         return bot
     }
 
-    /// Plain text while tokens are still arriving. The full markdown layout
-    /// waits until the reply has settled.
+    /// While tokens arrive, finished blocks in their final layout and the
+    /// paragraph being written as light Markdown (`StreamingReply`).
     @ViewBuilder
     private func replyBody(_ content: String) -> some View {
         if message.pending {
-            Text(Self.streamingText(content))
-                .font(.body)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            StreamingReply(content: content, onTap: revealReplyExtras)
         } else {
             RichMessageView(content: content, failed: message.error != nil, onTap: revealReplyExtras)
         }

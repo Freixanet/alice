@@ -3933,8 +3933,16 @@ final class AppStore {
     /// Agent chats at work that the person set going (`AgentActivities`): a
     /// reply under way, or teammates' answers still to come. An agent another
     /// agent is waiting on is not the person's task, so it has no activity.
+    ///
+    /// Read by the app's root on every change to any conversation — each
+    /// streamed token among them. Only a chat that is sending or has work
+    /// recorded can be working, so those two cheap lookups come first: asking
+    /// every chat for its pending questions scanned every message and every
+    /// event, per chat, per token, and froze the phone while replies streamed.
     var agentWorks: [AgentActivities.Work] {
         conversations.compactMap { chat in
+            guard sendingConversations.contains(chat.id) || backgroundWorks[chat.id] != nil
+            else { return nil }
             if !pendingQuestions(in: chat.id).isEmpty { return nil }
             let work = backgroundWork(for: chat.id)
             guard sendingConversations.contains(chat.id) || !work.isEmpty else { return nil }
@@ -6408,7 +6416,8 @@ final class AppStore {
         if activeBotTurns[conversationID] != nil { work.running = false }
         // Clarify is already on screen. Hermes still reports the turn as
         // running, which would keep "is working on it" up while nobody is.
-        if !pendingQuestions(in: conversationID).isEmpty { work.running = false }
+        // Asked only when it could change the answer: it is not cheap.
+        if work.running, !pendingQuestions(in: conversationID).isEmpty { work.running = false }
         return work
     }
 
