@@ -170,9 +170,17 @@ struct DrawerPan: UIViewRepresentable {
                        scroll.contentSize.width > scroll.bounds.width + 1 {
                         return false
                     }
+                    // A reply's words are a read-only text view: a sideways
+                    // swipe over them still opens the drawer or Agents. Only
+                    // a field being typed in, or text with a selection whose
+                    // handles are being dragged, keeps the touch.
+                    if let text = current as? UITextView {
+                        if text.isEditable || text.selectedRange.length > 0 { touchesControl = true }
+                        view = current.superview
+                        continue
+                    }
                     if current is UIControl
                         || current is UITextField
-                        || current is UITextView
                         || current.accessibilityTraits.contains(.button)
                         || current.accessibilityTraits.contains(.link) {
                         touchesControl = true
