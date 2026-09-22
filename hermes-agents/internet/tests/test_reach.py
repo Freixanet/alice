@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import reach  # noqa: E402
 from reach import (  # noqa: E402
     ReachError,
     _opencli,
@@ -54,9 +55,46 @@ class ReachTests(unittest.TestCase):
             "file:///etc/passwd",
             "https://user:secret@example.com/",
             "https://10.1.2.3/",
+            # IPv4 escrito como la conexión lo leería: todas son 127.0.0.1.
+            "http://2130706433/",
+            "http://127.1/",
+            "http://0x7f.1/",
+            "http://017700000001/",
+            "http://[::1]/",
+            "http://[::ffff:127.0.0.1]/",
+            "http://app.localhost/",
+            "https://example.com:abc/feed",
+            "https://example.com:8080/",
         ):
-            with self.assertRaises(ReachError):
+            with self.assertRaises(ReachError, msg=url):
                 public_http_url(url)
+
+    def test_a_public_name_that_points_home_is_refused_at_connect(self):
+        import socket as _socket
+        from unittest import mock
+        server = _socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+        real = _socket.create_connection
+        # example.com "resuelve" a este puerto local: la IP real es la que manda.
+        with mock.patch.object(_socket, "create_connection",
+                               lambda addr, *a, **k: real(("127.0.0.1", port), *a, **k)):
+            with self.assertRaises(ReachError) as caught:
+                reach.default_fetch("http://example.com/", 2, {}, 100)
+        server.close()
+        self.assertEqual(caught.exception.code, "rejected")
+
+    def test_a_network_failure_is_a_json_error_not_a_crash(self):
+        from unittest import mock
+        with mock.patch.object(reach.urllib.request.OpenerDirector, "open",
+                               side_effect=reach.urllib.error.URLError("sin red")):
+            result = execute({"capability": "rss.read", "url": "https://example.com/feed"})
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "unavailable")
+        result = execute({"capability": "rss.read", "url": "https://example.com:abc/feed"})
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "rejected")
 
     def test_search_query_is_one_argument(self):
         seen = []

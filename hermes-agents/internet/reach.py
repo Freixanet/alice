@@ -11,11 +11,13 @@ en `agent-reach`. Solo lectura. El contenido devuelto es datos, no órdenes.
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -78,17 +80,79 @@ def public_http_url(url: str) -> str:
         or host in {"localhost", "metadata.google.internal", "metadata.google"}
         or host.endswith(".local")
         or host.endswith(".internal")
+        or host.endswith(".localhost")
     ):
         raise ReachError("rejected", "Esa dirección no es pública.")
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        ip = None
+    ip = _literal_ip(host)
     if ip is not None and not _public_ip(ip):
         raise ReachError("rejected", "Esa dirección no es pública.")
-    if parts.port is not None and parts.port not in (80, 443):
+    try:
+        port = parts.port
+    except ValueError as exc:
+        raise ReachError("rejected", "La URL no es válida.") from exc
+    if port is not None and port not in (80, 443):
         raise ReachError("rejected", "Solo se leen los puertos 80 y 443.")
     return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", parts.query, ""))
+
+
+def _literal_ip(host: str) -> Optional[ipaddress._BaseAddress]:
+    """La IP que un host escrito como número es de verdad.
+
+    Los sistemas aceptan IPv4 en formas que ``ip_address`` no lee: ``127.1``,
+    ``2130706433``, ``0x7f.1`` u ``017700000001`` son todas 127.0.0.1. Se leen
+    como las leería la conexión, con ``inet_aton``, para que ninguna se cuele.
+    """
+    try:
+        return ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        pass
+    if re.fullmatch(r"[0-9a-fx.]+", host) and not re.search(r"[g-wyz]", host):
+        try:
+            return ipaddress.IPv4Address(socket.inet_aton(host))
+        except OSError:
+            return None
+    return None
+
+
+def _check_peer(sock: socket.socket) -> None:
+    """La IP a la que se conectó de verdad, que es la que cuenta.
+
+    Un nombre público puede resolver a 127.0.0.1, o cambiar de IP entre la
+    comprobación y la conexión. Mirar el otro extremo del socket, antes de
+    enviar nada, cierra las dos puertas.
+    """
+    try:
+        peer = ipaddress.ip_address(sock.getpeername()[0].split("%")[0])
+    except (OSError, ValueError) as exc:
+        sock.close()
+        raise ReachError("rejected", "No se pudo comprobar la dirección.") from exc
+    if not _public_ip(peer) or (getattr(peer, "ipv4_mapped", None) and not _public_ip(peer.ipv4_mapped)):
+        sock.close()
+        raise ReachError("rejected", "Esa dirección no es pública.")
+
+
+class _GuardedHTTPConnection(http.client.HTTPConnection):
+    def connect(self):
+        super().connect()
+        _check_peer(self.sock)
+
+
+class _GuardedHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self):
+        # TCP primero, se comprueba el otro extremo, y solo entonces TLS.
+        http.client.HTTPConnection.connect(self)
+        _check_peer(self.sock)
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+class _GuardedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_GuardedHTTPConnection, req)
+
+
+class _GuardedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_GuardedHTTPSConnection, req, context=self._context)
 
 
 def _public_ip(ip: ipaddress._BaseAddress) -> bool:
@@ -223,7 +287,10 @@ class _PublicRedirect(urllib.request.HTTPRedirectHandler):
 
 def default_fetch(url: str, timeout: float, headers: dict, limit: int) -> tuple[int, bytes]:
     public_http_url(url)
-    opener = urllib.request.build_opener(_PublicRedirect)
+    # Sin proxies del entorno: el otro extremo tiene que ser el sitio pedido.
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _GuardedHTTPHandler, _GuardedHTTPSHandler, _PublicRedirect
+    )
     request = urllib.request.Request(url, headers=headers)
     try:
         with opener.open(request, timeout=timeout) as response:
@@ -233,6 +300,19 @@ def default_fetch(url: str, timeout: float, headers: dict, limit: int) -> tuple[
     except urllib.error.HTTPError as exc:
         body = exc.read(limit + 1) if exc.fp is not None else b""
         return exc.code, body
+    except ReachError:
+        raise
+    except urllib.error.URLError as exc:
+        # Un ReachError lanzado al conectar llega envuelto en URLError.
+        if isinstance(exc.reason, ReachError):
+            raise exc.reason from exc
+        if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+            raise ReachError("timeout", "La página tardó demasiado en responder.") from exc
+        raise ReachError("unavailable", "No se pudo conectar con esa página.") from exc
+    except (socket.timeout, TimeoutError) as exc:
+        raise ReachError("timeout", "La página tardó demasiado en responder.") from exc
+    except (OSError, ValueError, http.client.HTTPException) as exc:
+        raise ReachError("unavailable", "No se pudo conectar con esa página.") from exc
 
 
 def tool_dirs(home: Path = HOME) -> list:
