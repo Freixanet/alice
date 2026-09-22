@@ -558,7 +558,7 @@ struct Composer: View {
     private var voiceModeButton: some View {
         let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !store.draftAttachments.isEmpty
-        if !hasDraft, !store.isSending, !dictation.isListening, store.isConnected {
+        if !hasDraft, !store.isSending, !dictation.isListening, store.isConnected || store.dashboardReady {
             Button {
                 showingVoice = true
             } label: {
