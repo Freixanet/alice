@@ -168,8 +168,8 @@ enum DiagnosticChecks {
         guard !monitor.stalls.isEmpty else { return .ok("No freezes this session") }
         let summary = "\(monitor.stalls.count) freezes · worst \(Int(worst * 1000)) ms"
         return worst >= 1
-            ? .failure(summary, "The screen stopped answering for over a second. Relaunch with ALICE_STALL_SAMPLER=1 to see where.")
-            : .warning(summary, "Short freezes; noticeable when scrolling or opening screens.")
+            ? .failure(summary, "The screen stopped answering for over a second. Recent activity names the functions the main thread was in.")
+            : .warning(summary, "Short freezes; noticeable when scrolling or opening screens. Recent activity names where the main thread was.")
     }
 
     static let hermesEvents = DiagnosticCheck(id: "events", title: "Hermes updates", symbol: "arrow.triangle.2.circlepath") { _, _ in

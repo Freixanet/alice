@@ -6,9 +6,9 @@ import UIKit
 ///
 /// Two readings, both cheap: stalls — the main thread not answering for more
 /// than a quarter of a second, which is what "the app froze" is — and frames,
-/// for the live meter. The freezes the person hit in Agents were only found
-/// with a debugger and a sampler; this says, from the app itself, whether
-/// one has happened this session and how long it lasted.
+/// for the live meter. Each stall is written to the diagnostics log with the
+/// functions the main thread was in, so a later look can tell a real hitch
+/// from the app having been suspended.
 @MainActor
 @Observable
 final class HitchMonitor {
@@ -40,8 +40,11 @@ final class HitchMonitor {
         guard on != running else { return }
         running = on
         if on {
-            let watcher = Watcher { [weak self] seconds in
-                Task { @MainActor in self?.record(seconds) }
+            #if DEBUG
+            StallSampler.arm()
+            #endif
+            let watcher = Watcher { [weak self] seconds, trace in
+                Task { @MainActor in self?.record(seconds, trace: trace) }
             }
             watcher.start()
             self.watcher = watcher
@@ -60,10 +63,13 @@ final class HitchMonitor {
 
     func reset() { stalls = [] }
 
-    private func record(_ seconds: Double) {
+    private func record(_ seconds: Double, trace: [String]) {
         stalls.insert(Stall(at: Date(), seconds: seconds), at: 0)
         if stalls.count > 50 { stalls.removeLast(stalls.count - 50) }
         DiagnosticsLog.write("stall \(Int(seconds * 1000))ms")
+        for line in trace {
+            DiagnosticsLog.write(line)
+        }
     }
 
     fileprivate func frame(_ link: CADisplayLink) {
@@ -94,16 +100,16 @@ final class HitchMonitor {
     }
 
     /// Pings the main thread from its own thread and times how long an
-    /// answer takes. Nothing of the main thread's work is sampled here —
-    /// `StallSampler` does that, on demand, in debug builds.
+    /// answer takes. While the answer is late, a debug build samples where
+    /// that thread is (`StallSampler`) so the log can name the functions.
     private final class Watcher: @unchecked Sendable {
-        private let report: @Sendable (Double) -> Void
+        private let report: @Sendable (Double, [String]) -> Void
         private let lock = NSLock()
         private var lastAnswer = CACurrentMediaTime()
         private var stopped = false
         private var thread: Thread?
 
-        init(report: @escaping @Sendable (Double) -> Void) { self.report = report }
+        init(report: @escaping @Sendable (Double, [String]) -> Void) { self.report = report }
 
         func start() {
             let thread = Thread { [weak self] in self?.loop() }
@@ -126,9 +132,22 @@ final class HitchMonitor {
                 let silence = CACurrentMediaTime() - lock.withLock { lastAnswer }
                 if silence > 0.25 {
                     if stalledSince == nil { stalledSince = CACurrentMediaTime() - silence }
+                    #if DEBUG
+                    StallSampler.capture()
+                    #endif
                 } else if let since = stalledSince {
                     stalledSince = nil
-                    report(CACurrentMediaTime() - since)
+                    let seconds = CACurrentMediaTime() - since
+                    // The last sample's handler runs on the main thread.
+                    // Reading the buffer there waits until that handler is done.
+                    let trace = DispatchQueue.main.sync {
+                        #if DEBUG
+                        StallSampler.consume()
+                        #else
+                        [String]()
+                        #endif
+                    }
+                    report(seconds, trace)
                 }
             }
         }

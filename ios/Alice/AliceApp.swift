@@ -19,9 +19,6 @@ struct AliceApp: App {
 
     init() {
         GestureTips.configure()
-        #if DEBUG
-        StallSampler.startIfRequested()
-        #endif
     }
 
     var body: some Scene {

@@ -93,7 +93,10 @@ Settings › Advanced › Developer mode adds **Settings › Developer**:
   session (`HitchMonitor`) and Hermes messages Alice does not understand yet.
   A feature that can break adds its own `DiagnosticCheck` to `all`.
 - **Performance meter**: frames per second, late frames and freezes, beside
-  the home indicator.
+  the home indicator. A debug build writes each freeze to the diagnostics log
+  with the functions the main thread was in (`stall.in`, `stall.at`). A stall
+  of many seconds whose stack is the resume path is the app having been
+  suspended, not a hitch while it was on screen.
 - **Tools**: component gallery (every rich block and card, Spanish and
   English), share a report, send diagnostics to Hermes, a test notification,
   and resets.

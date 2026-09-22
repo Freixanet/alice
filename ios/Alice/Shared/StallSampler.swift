@@ -2,45 +2,29 @@ import Darwin
 import Foundation
 
 #if DEBUG
-/// Finds out what the main thread is doing when it stops answering.
+/// Where the main thread is while it is not answering.
 ///
-/// Off unless the app is launched with `ALICE_STALL_SAMPLER=1`, which only a
-/// developer tool does. A watcher thread pings the main thread; once a ping
-/// goes unanswered for a quarter of a second, it interrupts the main thread
-/// every 40 ms and records where it is. When the main thread is free again it
-/// prints the stall's length and the functions it was in most often, prefixed
-/// `[stall]`, to the console a debugger or `devicectl --console` shows.
-///
-/// Built for diagnosis on a device with no profiler available; nothing of it
-/// ships outside debug builds.
+/// Armed while the hitch monitor runs (developer mode). A watcher thread
+/// interrupts the main thread during a stall and, once the stall ends, the
+/// functions it was in are written to the diagnostics log. Nothing of this
+/// is in a release build.
 enum StallSampler {
-    private static let maxFrames = 96
-    private static let maxSamples = 80
+    private static let maxFrames = 64
+    private static let maxSamples = 40
 
-    // Written by the signal handler, which runs on the main thread, and read
-    // by the main thread after the stall. Nothing else touches them.
+    // Written by the signal handler on the main thread, read after the stall
+    // on the main thread. Nothing else touches them.
     nonisolated(unsafe) private static let frames =
         UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: maxFrames * maxSamples)
     nonisolated(unsafe) private static let depths = UnsafeMutablePointer<Int32>.allocate(capacity: maxSamples)
     nonisolated(unsafe) private static var taken: Int = 0
     nonisolated(unsafe) private static var main: pthread_t?
+    nonisolated(unsafe) private static var armed = false
 
-    private final class Heartbeat: @unchecked Sendable {
-        private var lock = os_unfair_lock()
-        private var last = CFAbsoluteTimeGetCurrent()
-        func beat() {
-            os_unfair_lock_lock(&lock); last = CFAbsoluteTimeGetCurrent(); os_unfair_lock_unlock(&lock)
-        }
-        var silence: Double {
-            os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }
-            return CFAbsoluteTimeGetCurrent() - last
-        }
-    }
-
-    static func startIfRequested() {
-        guard ProcessInfo.processInfo.environment["ALICE_STALL_SAMPLER"] == "1",
-              Thread.isMainThread, main == nil
-        else { return }
+    /// Installs the handler. Call on the main thread, once the monitor is on.
+    static func arm() {
+        guard Thread.isMainThread, !armed else { return }
+        armed = true
         main = pthread_self()
         signal(SIGUSR2) { _ in
             let n = StallSampler.taken
@@ -50,57 +34,41 @@ enum StallSampler {
             )
             StallSampler.taken = n + 1
         }
-        let heartbeat = Heartbeat()
-        let watcher = Thread {
-            var stalledSince: Double?
-            while true {
-                DispatchQueue.main.async { heartbeat.beat() }
-                usleep(40_000)
-                let silence = heartbeat.silence
-                if silence > 0.25, let thread = main {
-                    if stalledSince == nil { stalledSince = CFAbsoluteTimeGetCurrent() - silence }
-                    pthread_kill(thread, SIGUSR2)
-                } else if let start = stalledSince {
-                    stalledSince = nil
-                    let length = CFAbsoluteTimeGetCurrent() - start
-                    DispatchQueue.main.async { report(length) }
-                }
-            }
-        }
-        watcher.name = "alice.stall-sampler"
-        watcher.qualityOfService = .userInteractive
-        watcher.start()
-        print("[stall] sampler on")
     }
 
-    private static func report(_ length: Double) {
+    /// One sample of the main thread, from the watcher. Ignored until `arm`.
+    static func capture() {
+        guard let main else { return }
+        pthread_kill(main, SIGUSR2)
+    }
+
+    /// The functions seen most often during the stall that just ended, then
+    /// clears the buffer. Call on the main thread, after capturing has stopped.
+    static func consume() -> [String] {
         let count = taken
-        defer { taken = 0 }
-        guard count > 0 else { return }
+        taken = 0
+        guard count > 0 else { return [] }
         var inclusive: [String: Int] = [:]
         var leaves: [String: Int] = [:]
-        var first: [String] = []
         for sample in 0..<count {
             let depth = Int(depths[sample])
             var seen = Set<String>()
             // Frames 0–1 are the signal handler and its trampoline.
             for index in 2..<max(2, depth) {
                 let name = symbol(frames[sample * maxFrames + index])
+                if name.contains("StallSampler") || name.contains("_sigtramp") { continue }
                 if index == 2 { leaves[name, default: 0] += 1 }
-                if sample == 0 { first.append(name) }
                 if seen.insert(name).inserted { inclusive[name, default: 0] += 1 }
             }
         }
-        print("[stall] \(Int(length * 1000)) ms, \(count) samples")
-        for (name, hits) in inclusive.sorted(by: { $0.value > $1.value }).prefix(45) {
-            print("[stall] incl \(hits)/\(count) \(name)")
+        var lines: [String] = []
+        for (name, hits) in inclusive.sorted(by: { $0.value > $1.value }).prefix(8) {
+            lines.append("stall.in \(hits)/\(count) \(name)")
         }
-        for (name, hits) in leaves.sorted(by: { $0.value > $1.value }).prefix(8) {
-            print("[stall] leaf \(hits)/\(count) \(name)")
+        if let (name, hits) = leaves.max(by: { $0.value < $1.value }) {
+            lines.append("stall.at \(hits)/\(count) \(name)")
         }
-        for (index, name) in first.prefix(70).enumerated() {
-            print("[stall] first \(index) \(name)")
-        }
+        return lines
     }
 
     private static func symbol(_ address: UnsafeMutableRawPointer?) -> String {
@@ -109,8 +77,28 @@ enum StallSampler {
         guard dladdr(address, &info) != 0 else { return "?" }
         let image = info.dli_fname.map { String(cString: $0) }
             .map { ($0 as NSString).lastPathComponent } ?? "?"
-        let name = info.dli_sname.map { String(cString: $0) } ?? "?"
-        return "\(image)`\(name)"
+        let raw = info.dli_sname.map { String(cString: $0) } ?? "?"
+        return "\(image)`\(demangle(raw))"
+    }
+
+    private static func demangle(_ raw: String) -> String {
+        guard raw.hasPrefix("$s") || raw.hasPrefix("_T") else { return raw }
+        return raw.withCString { pointer in
+            guard let out = swift_demangle(pointer, strlen(pointer), nil, nil, 0) else { return raw }
+            defer { free(out) }
+            let text = String(cString: out)
+            guard let paren = text.firstIndex(of: "(") else { return text }
+            return String(text[..<paren])
+        }
     }
 }
+
+@_silgen_name("swift_demangle")
+private func swift_demangle(
+    _ mangled: UnsafePointer<CChar>?,
+    _ length: Int,
+    _ output: UnsafeMutablePointer<CChar>?,
+    _ outputLength: UnsafeMutablePointer<Int>?,
+    _ flags: UInt32
+) -> UnsafeMutablePointer<CChar>?
 #endif
