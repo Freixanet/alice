@@ -210,6 +210,11 @@ struct AddEventCard: View {
     @State private var working = false
     @State private var problem: String?
     @State private var added: Date?
+    /// Whether the time on the card is one somebody gave: the agent, from
+    /// what was said, or the person, here. Until then it is not shown as
+    /// known — a haircut at "10:00" that nobody said was an invention.
+    @State private var timeChosen = false
+    @State private var initialStart: Date?
 
     var body: some View {
         if store.calendarLink == .declined, added == nil {
@@ -246,7 +251,7 @@ struct AddEventCard: View {
                         .lineLimit(2)
                     Text(detail)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(needsTime ? AnyShapeStyle(accent) : AnyShapeStyle(.secondary))
                         .lineLimit(2)
                         .contentTransition(.numericText())
                 }
@@ -297,21 +302,12 @@ struct AddEventCard: View {
                 .tint(accent)
                 .disabled(working)
 
-                Label(
-                    allDay ? "With a reminder that morning. Added only when you tap." : "With a reminder an hour before. Added only when you tap.",
-                    systemImage: "bell"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                if needsAccess {
-                    Label(
-                        "This connects your calendar to Alice: iOS asks once, and your agents can then plan around your day.",
-                        systemImage: "lock"
-                    )
+                // One line under the button: what is added and, the first time,
+                // that adding connects the calendar.
+                Text(footnote)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                }
             }
 
             if let problem {
@@ -329,7 +325,17 @@ struct AddEventCard: View {
         }
         .animation(.snappy(duration: 0.25), value: added)
         .onAppear(perform: prepare)
+        .onChange(of: start) { _, value in
+            if let initialStart, value != initialStart { timeChosen = true }
+        }
         .task { if store.calendarLink == .unknown { await store.refreshCalendarLink() } }
+    }
+
+    private var footnote: String {
+        let reminder = allDay ? String(localized: "Reminder that morning.") : String(localized: "Reminder an hour before.")
+        return needsAccess
+            ? String(localized: "iOS asks once to connect your calendar. \(reminder)")
+            : reminder
     }
 
     /// Adding is also connecting when the app has no calendar access yet,
@@ -367,10 +373,18 @@ struct AddEventCard: View {
         .accessibilityHidden(true)
     }
 
-    /// "Wednesday 23 September · 17:00 · Gràcia".
+    private var needsTime: Bool { !allDay && !timeChosen && added == nil }
+
+    /// "17:00 · Gràcia" — the day is already on the tile beside it.
     private var detail: String {
-        var parts = [shown.formatted(.dateTime.weekday(.wide).day().month(.wide))]
-        parts.append(allDay ? String(localized: "All day") : shown.formatted(date: .omitted, time: .shortened))
+        var parts: [String] = []
+        if allDay {
+            parts.append(String(localized: "All day"))
+        } else if needsTime {
+            parts.append(String(localized: "Choose a time"))
+        } else {
+            parts.append(shown.formatted(date: .omitted, time: .shortened))
+        }
         if let location = proposed.location { parts.append(location) }
         return parts.joined(separator: " · ")
     }
@@ -391,6 +405,8 @@ struct AddEventCard: View {
                 : proposedStart
         }
         allDay = false
+        timeChosen = proposed.time != nil
+        initialStart = start
     }
 
     private func add() async {
