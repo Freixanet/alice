@@ -203,11 +203,16 @@ struct RootView: View {
                 }
             }
             // Developer › Performance meter: centred under the composer, in
-            // the strip beside the home indicator, where it covers nothing.
+            // the strip beside the home indicator, where it covers nothing —
+            // and wherever the person drags it from there.
             .overlay(alignment: .bottom) {
                 if store.developerMode && showsPerformanceHUD {
-                    PerformanceHUD()
-                        .padding(.bottom, max(proxy.safeAreaInsets.bottom - 26, 4))
+                    MovablePerformanceHUD(
+                        bounds: CGSize(width: proxy.size.width,
+                                       height: proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom),
+                        topInset: proxy.safeAreaInsets.top,
+                        bottomPadding: max(proxy.safeAreaInsets.bottom - 26, 4)
+                    )
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
