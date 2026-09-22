@@ -1232,9 +1232,9 @@ struct RichMessageView: View {
         case let .links(links):
             RichLinksView(links: links)
         case let .connect(service):
-            ConnectOfferCard(service: service)
+            ConnectOfferCard(service: service, language: ChatLanguage.of(content))
         case let .addEvent(event):
-            AddEventCard(proposed: event)
+            AddEventCard(proposed: event, language: ChatLanguage.of(content))
         case let .media(media):
             // Blocks are keyed by position; a different file landing in the
             // same slot (a reply still streaming) must not keep the old card.

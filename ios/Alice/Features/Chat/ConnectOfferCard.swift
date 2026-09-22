@@ -15,6 +15,7 @@ struct ConnectOfferCard: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let service: String
+    var language: ChatLanguage = .english
 
     @State private var working = false
     @State private var problem: String?
@@ -28,9 +29,9 @@ struct ConnectOfferCard: View {
                     .frame(width: 42, height: 42)
                     .background(accent.opacity(0.14), in: .circle)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Connect your calendar")
+                    Text(language.pick("Connect your calendar", "Conecta tu calendario"))
                         .font(.headline)
-                    Text("So your agents can plan around your day: what you have, when you are free, what is coming up.")
+                    Text(language.pick("So your agents can plan around your day: what you have, when you are free, what is coming up.", "Para que tus agentes planifiquen contando con tu día: lo que tienes, cuándo estás libre y lo que viene."))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -39,11 +40,11 @@ struct ConnectOfferCard: View {
 
             switch store.calendarLink {
             case .connected:
-                Label("Connected", systemImage: "checkmark.circle.fill")
+                Label(language.pick("Connected", "Conectado"), systemImage: "checkmark.circle.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Palette.success(scheme))
             case .declined:
-                Text("Not now. You can connect it any time in Settings › Connections.")
+                Text(language.pick("Not now. You can connect it any time in Settings › Connections.", "Ahora no. Puedes conectarlo cuando quieras en Ajustes › Connections."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             case .notConnected, .unknown:
@@ -55,7 +56,7 @@ struct ConnectOfferCard: View {
                             if working {
                                 ProgressView()
                             } else {
-                                Label("Connect", systemImage: "calendar.badge.plus")
+                                Label(language.pick("Connect", "Conectar"), systemImage: "calendar.badge.plus")
                             }
                         }
                         .font(.subheadline.weight(.semibold))
@@ -65,7 +66,7 @@ struct ConnectOfferCard: View {
                     .buttonBorderShape(.capsule)
                     .tint(accent)
 
-                    Button("Not now") {
+                    Button(language.pick("Not now", "Ahora no")) {
                         Task { await decline() }
                     }
                     .font(.subheadline)
@@ -74,7 +75,7 @@ struct ConnectOfferCard: View {
                     .tint(.primary)
                 }
                 .disabled(working || store.isSending)
-                Label("Your events go only to your own Hermes. Alice adds only what you confirm.", systemImage: "lock")
+                Label(language.pick("Your events go only to your own Hermes. Alice adds only what you confirm.", "Tus eventos solo van a tu propio Hermes. Alice solo añade lo que tú confirmas."), systemImage: "lock")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -107,13 +108,13 @@ struct ConnectOfferCard: View {
             self.problem = problem
         } else {
             // The agent carries on with what it was asked, now with the day in view.
-            store.sendQuickReply("Listo, ya he conectado el calendario.")
+            store.sendQuickReply(language.pick("Done, my calendar is connected.", "Listo, ya he conectado el calendario."))
         }
     }
 
     private func decline() async {
         await store.declineCalendar()
-        store.sendQuickReply("Ahora no.")
+        store.sendQuickReply(language.pick("Not now.", "Ahora no."))
     }
 }
 
@@ -203,6 +204,7 @@ struct AddEventCard: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.openURL) private var openURL
     let proposed: RichCalendarEvent
+    var language: ChatLanguage = .english
 
     @State private var start = Date()
     @State private var allDay = false
@@ -228,7 +230,7 @@ struct AddEventCard: View {
 
     private var reminderOffer: some View {
         HStack(spacing: 8) {
-            ForEach(["Sí, recuérdamelo", "No"], id: \.self) { reply in
+            ForEach([language.pick("Yes, remind me", "Sí, recuérdamelo"), "No"], id: \.self) { reply in
                 Button(reply) { store.sendQuickReply(reply) }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
@@ -260,11 +262,11 @@ struct AddEventCard: View {
 
             if let added {
                 HStack {
-                    Label("Added to your calendar", systemImage: "checkmark.circle.fill")
+                    Label(language.pick("Added to your calendar", "Añadido a tu calendario"), systemImage: "checkmark.circle.fill")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Palette.success(scheme))
                     Spacer()
-                    Button("Open") {
+                    Button(language.pick("Open", "Abrir")) {
                         if let url = URL(string: "calshow:\(added.timeIntervalSinceReferenceDate)") {
                             openURL(url)
                         }
@@ -274,12 +276,14 @@ struct AddEventCard: View {
             } else {
                 VStack(spacing: 8) {
                     DatePicker(
-                        "When", selection: $start,
+                        language.pick("When", "Cuándo"), selection: $start,
                         displayedComponents: allDay ? [.date] : [.date, .hourAndMinute]
                     )
-                    Toggle("All day", isOn: $allDay)
+                    Toggle(language.pick("All day", "Todo el día"), isOn: $allDay)
                 }
                 .font(.subheadline)
+                // The picker's day and time in the conversation's language too.
+                .environment(\.locale, language.locale)
 
                 Button {
                     Task { await add() }
@@ -288,9 +292,9 @@ struct AddEventCard: View {
                         if working {
                             ProgressView()
                         } else if needsAccess {
-                            Label("Connect & Add", systemImage: "calendar.badge.plus")
+                            Label(language.pick("Connect & Add", "Conectar y añadir"), systemImage: "calendar.badge.plus")
                         } else {
-                            Label("Add to Calendar", systemImage: "plus")
+                            Label(language.pick("Add to Calendar", "Añadir al calendario"), systemImage: "plus")
                         }
                     }
                     .font(.subheadline.weight(.semibold))
@@ -332,9 +336,11 @@ struct AddEventCard: View {
     }
 
     private var footnote: String {
-        let reminder = allDay ? String(localized: "Reminder that morning.") : String(localized: "Reminder an hour before.")
+        let reminder = allDay
+            ? language.pick("Reminder that morning.", "Aviso esa mañana.")
+            : language.pick("Reminder an hour before.", "Aviso una hora antes.")
         return needsAccess
-            ? String(localized: "iOS asks once to connect your calendar. \(reminder)")
+            ? language.pick("iOS asks once to connect your calendar.", "iOS te pedirá una vez conectar tu calendario.") + " " + reminder
             : reminder
     }
 
@@ -348,10 +354,10 @@ struct AddEventCard: View {
 
     private var dateTile: some View {
         VStack(spacing: 1) {
-            Text(shown.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+            Text(shown.formatted(.dateTime.weekday(.abbreviated).locale(language.locale)).uppercased())
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(accent)
-            Text(shown.formatted(.dateTime.day()))
+            Text(shown.formatted(.dateTime.day().locale(language.locale)))
                 .font(.system(size: 26, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(.primary)
@@ -379,11 +385,11 @@ struct AddEventCard: View {
     private var detail: String {
         var parts: [String] = []
         if allDay {
-            parts.append(String(localized: "All day"))
+            parts.append(language.pick("All day", "Todo el día"))
         } else if needsTime {
-            parts.append(String(localized: "Choose a time"))
+            parts.append(language.pick("Choose a time", "Elige la hora"))
         } else {
-            parts.append(shown.formatted(date: .omitted, time: .shortened))
+            parts.append(shown.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(language.locale)))
         }
         if let location = proposed.location { parts.append(location) }
         return parts.joined(separator: " · ")
@@ -427,7 +433,7 @@ struct AddEventCard: View {
             AddEventCard.remember(key, at: when)
             await store.syncCalendarNow()
         } catch {
-            problem = "The event could not be added: \(error.localizedDescription)"
+            problem = language.pick("The event could not be added: ", "No se pudo añadir el evento: ") + error.localizedDescription
         }
     }
 

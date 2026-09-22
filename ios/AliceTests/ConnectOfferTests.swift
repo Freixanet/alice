@@ -43,4 +43,10 @@ final class ConnectOfferTests: XCTestCase {
         XCTAssertEqual(bad.text, "Hola")
         XCTAssertTrue(bad.events.isEmpty)
     }
+
+    func testCardsSpeakTheConversationsLanguage() {
+        XCTAssertEqual(ChatLanguage.of("Cita en la peluquería el miércoles 23. ¿Lo apunto en tu calendario, cielo?"), .spanish)
+        XCTAssertEqual(ChatLanguage.of("Haircut on Wednesday the 23rd. Shall I add it to your calendar?"), .english)
+        XCTAssertEqual(ChatLanguage.spanish.pick("Open", "Abrir"), "Abrir")
+    }
 }
