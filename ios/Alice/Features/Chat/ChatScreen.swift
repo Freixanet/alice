@@ -43,6 +43,10 @@ private struct ChatScreenContent: View, Equatable {
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
 
+    /// Alice's own Today chat (`AppStore.openToday`): an agent chat in how it
+    /// reads and sends, Alice's in how it looks and where Back leads.
+    private var isToday: Bool { bot == AppStore.todayProfile }
+
     /// The bot this conversation belongs to, if it belongs to one.
     private var bot: String? {
         guard let name = store.activeChat.botName, !name.isEmpty else {
@@ -245,7 +249,7 @@ private struct ChatScreenContent: View, Equatable {
 
     private var topControls: some View {
         HStack(alignment: .top, spacing: 0) {
-            Button(action: bot == nil ? onOpenDrawer : onBack) {
+            Button(action: bot == nil ? onOpenDrawer : (isToday ? { store.goHome() } : onBack)) {
                 // Two bars, not three, matched to the `plus` across from it.
                 // Both are math symbols, so the pairing is a real one — but
                 // not at the same settings: `equal` at 18pt medium matches
@@ -274,14 +278,17 @@ private struct ChatScreenContent: View, Equatable {
                 .contentShape(.circle)
             }
             .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel(bot == nil ? "Chats" : "Agents")
+            .accessibilityLabel(bot == nil ? "Chats" : (isToday ? "Home" : "Agents"))
             .accessibilityIdentifier("chat.leading")
 
             Spacer(minLength: 0)
 
             // Whose conversation this is. The same portrait-and-name as
             // Alice's own chat, so a bot's room is not a smaller kind of thing.
-            if let bot {
+            // Today is Alice's own, so it wears her face.
+            if isToday {
+                AliceAvatar()
+            } else if let bot {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
                 } label: {
@@ -861,7 +868,9 @@ private struct HomeSuggestionStrip: View {
                     ? note.openQuestions[0]
                     : note.summary
                 return HomeNotePrompt(id: note.id, label: label)
-            }
+            },
+            todayUnread: store.todayUnread,
+            agentsWithNews: store.agentsWithNews
         )
     }
 
@@ -900,6 +909,14 @@ private struct HomeSuggestionStrip: View {
             store.openConversation(id)
         case .usage:
             store.requestedDestination = .usage
+        case .today:
+            store.openToday()
+        case let .agent(slug):
+            if let bot = store.cachedBots.first(where: { $0.name == slug }) {
+                store.openBotConversation(for: bot)
+            } else {
+                store.requestedDestination = .bots
+            }
         }
     }
 }

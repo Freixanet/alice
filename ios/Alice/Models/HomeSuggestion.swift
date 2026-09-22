@@ -11,12 +11,22 @@ struct HomeSuggestion: Identifiable, Equatable, Sendable {
         case agents
         case conversation(String)
         case usage
+        /// Alice's own chat, where she writes first (`AppStore.openToday`).
+        case today
+        /// One agent's chat, by profile.
+        case agent(String)
     }
 
     var id: String
     var title: String
     var symbol: String
     var action: Action
+}
+
+/// An agent with something new since its chat was last opened.
+struct HomeAgentNews: Equatable, Sendable {
+    var slug: String
+    var name: String
 }
 
 /// A note that still has something unresolved, reduced to what the home row needs.
@@ -41,10 +51,19 @@ enum HomeSuggestions {
         questions: [HomeNotePrompt] = [],
         routineNames: [String]? = nil,
         recentTokens: Int? = nil,
+        todayUnread: Bool = false,
+        agentsWithNews: [HomeAgentNews] = [],
         now: Date = Date(),
         limit: Int = 3
     ) -> [HomeSuggestion] {
         var rows: [HomeSuggestion] = []
+
+        // What Alice started on her own comes first: it is why she is proactive.
+        if todayUnread {
+            rows.append(HomeSuggestion(
+                id: "today", title: "Alice wrote to you", symbol: "sun.max", action: .today
+            ))
+        }
 
         let waiting = events
             .filter { $0.kind == .needsInput && $0.standing == .waiting }
@@ -71,6 +90,18 @@ enum HomeSuggestions {
                 title: title,
                 symbol: "exclamationmark.triangle",
                 action: .routines
+            ))
+        }
+
+        // While you were away: the agents with something new, by name.
+        if !agentsWithNews.isEmpty {
+            let names = agentsWithNews.prefix(2).map(\.name).joined(separator: " and ")
+            let more = agentsWithNews.count > 2 ? " and \(agentsWithNews.count - 2) more" : ""
+            rows.append(HomeSuggestion(
+                id: "agents-news",
+                title: "New from \(names)\(more)",
+                symbol: "person.2",
+                action: agentsWithNews.count == 1 ? .agent(agentsWithNews[0].slug) : .agents
             ))
         }
 

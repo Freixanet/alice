@@ -173,10 +173,28 @@ def jobs(directory):
     return list(rows.values()) if isinstance(rows, dict) else list(rows or [])
 
 
+# Alice's own forever-chat - the default profile's canonical Bot Chat - which the
+# app shows as Today, where she writes first (briefings, what a watch found).
+TODAY = 'today'
+
+
 def link(name, chat=None):
     """Alice's own chats are stored in Hermes under the id Alice gave them."""
-    query = {'chat': chat or 'home'} if name == 'default' else {'bot': name}
+    if name == 'default' and chat == TODAY:
+        query = {'bot': 'default'}
+    else:
+        query = {'chat': chat or 'home'} if name == 'default' else {'bot': name}
     return 'alice://open?' + urllib.parse.urlencode(query)
+
+
+def is_canonical_chat(db, session):
+    """Whether a session is a profile's canonical Bot Chat. Its title says so."""
+    try:
+        rows = read(db, 'SELECT title FROM sessions WHERE id = ?', (session,))
+    except sqlite3.Error:
+        return False
+    return bool(rows) and rows[0][0] == 'Bot Chat'
+
 
 
 SENTENCES = {
@@ -226,7 +244,13 @@ def poll_once(state, home, send, now=None):
                         continue
                     kind = classify(content, display_kind, finish_reason, source, after_report or 0)
                     if kind and (stamp is None or now - float(stamp) <= FRESH_SECONDS):
-                        found.append((kind, session if source == 'api_server' else None))
+                        if source == 'api_server':
+                            chat = session
+                        elif name == 'default' and is_canonical_chat(db, session):
+                            chat = TODAY
+                        else:
+                            chat = None
+                        found.append((kind, chat))
                 marks[name] = advanced_to
                 # A burst from one chat is one notification; a failure outranks the rest.
                 for kind in ('routine_failed', 'routine', 'reply'):

@@ -152,6 +152,13 @@ struct Sidebar: View, Equatable {
     /// grouped under Settings → Advanced instead of competing with recents.
     private var destinations: some View {
         VStack(spacing: 2) {
+            // First: Alice's own chat, where she writes before you ask
+            // (`AppStore.openToday`). The count is what she wrote since.
+            row(AppStore.todayTitle, systemImage: "sun.max", weight: .medium,
+                badge: store.todayNewCount) {
+                store.openToday()
+                onDismiss()
+            }
             row("Agents", systemImage: "person.2", weight: .medium,
                 badge: store.unreadNotices(in: .agents), destination: .bots) {
                 store.markNoticesSeen(.agents)

@@ -25,11 +25,12 @@ class Hermes:
         directory = self.root if name == 'default' else self.root / 'profiles' / name
         directory.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(directory / 'state.db')) as conn, conn:
-            conn.execute('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT)')
+            conn.execute('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT)')
             conn.execute('CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, '
                          'content TEXT, display_kind TEXT, finish_reason TEXT, timestamp REAL)')
             for source in ('tui', 'cron', 'api_server'):
-                conn.execute('INSERT OR IGNORE INTO sessions VALUES (?, ?)', (source, source))
+                conn.execute('INSERT OR IGNORE INTO sessions VALUES (?, ?, NULL)', (source, source))
+            conn.execute('INSERT OR IGNORE INTO sessions VALUES (?, ?, ?)', ('botchat', 'desktop', 'Bot Chat'))
         if title:
             (directory / 'profile.yaml').write_text('ui_meta:\n  hermes-bots:\n    title: %s\n' % title)
         return directory
@@ -82,6 +83,12 @@ class NotifierTests(unittest.TestCase):
         self.poll(wait=n.SETTLE_SECONDS)
         # The fake session's id is its source name; in Hermes it is Alice's conversation id.
         self.assertEqual(self.sent, [('Alice', 'Ha respondido', 'alice://open?chat=api_server')])
+
+    def test_what_alice_writes_in_her_own_chat_opens_today(self):
+        self.poll()
+        self.hermes.row('default', 'botchat', 'buenos días')
+        self.poll(wait=n.SETTLE_SECONDS)
+        self.assertEqual(self.sent, [('Alice', 'Ha respondido', 'alice://open?bot=default')])
 
     def test_a_routines_own_transcript_and_tool_steps_stay_quiet(self):
         self.poll()

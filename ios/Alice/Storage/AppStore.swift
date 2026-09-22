@@ -585,6 +585,7 @@ final class AppStore {
         refreshConversationShelves()
         refreshActiveChat()
         refreshBotNameSets()
+        ensureTodayConversation()
         #if DEBUG
         warnIfPreferencesOverBudget()
         #endif
@@ -1052,6 +1053,7 @@ final class AppStore {
     }
 
     func botCurrentName(for name: String) -> String {
+        if name == Self.todayProfile { return "Alice" }
         let shown: String
         if botMetadataIsRemote,
            let found = cachedBots.first(where: { $0.name == name }), !found.displayName.isEmpty {
@@ -1067,6 +1069,7 @@ final class AppStore {
     }
 
     func botCurrentName(for bot: BotRow) -> String {
+        if bot.name == Self.todayProfile { return "Alice" }
         let shown: String
         if botMetadataIsRemote {
             shown = bot.displayName.isEmpty ? bot.name : bot.displayName
@@ -3371,6 +3374,8 @@ final class AppStore {
         showingBots = false
         showingNotes = false
         switch link {
+        case let .bot(name) where name == Self.todayProfile:
+            openToday()
         case let .bot(name):
             let bot = cachedBots.first(where: { $0.name == name }) ?? BotRow(
                 name: name, displayName: botCurrentName(for: name), detail: "",
@@ -6061,6 +6066,74 @@ final class AppStore {
     /// settled a frame before the page is dismissed.
     var botsExitLeading = false
 
+    // MARK: - Today
+
+    /// Alice's own forever-chat: the main profile's canonical Bot Chat in
+    /// Hermes. It is where she writes first — the morning briefing, what a
+    /// watch found — the way Poke or Today.ai keep one thread that starts
+    /// without you. Her other chats are conversations you start; this one is
+    /// hers, and reads, replies and approvals work as in any agent's chat.
+    nonisolated static let todayProfile = "default"
+    nonisolated static let todayTitle = "Today"
+
+    private static var todayBot: BotRow {
+        BotRow(
+            name: todayProfile, displayName: todayTitle, detail: "",
+            model: nil, provider: nil, skills: 0, isDefault: true,
+            gatewayRunning: false, active: true
+        )
+    }
+
+    var todayConversationID: String? {
+        conversations.first { $0.routedBotName == Self.todayProfile }?.id
+    }
+
+    /// Whether Alice has written something in Today since it was last opened.
+    var todayUnread: Bool { isBotUnread(Self.todayProfile) }
+
+    /// How many messages Alice wrote in Today since it was last opened.
+    var todayNewCount: Int {
+        guard let today = conversations.first(where: { $0.routedBotName == Self.todayProfile })
+        else { return 0 }
+        let since = today.openedAt ?? .distantPast
+        return RoutineDelivery.present(
+            today.messages, botName: Self.todayProfile,
+            agentAnswers: Set(today.agentAnswerIDs ?? [])
+        ).filter {
+            $0.role == .assistant && !$0.pending && MessageTime.isKnown($0.createdAt) && $0.createdAt > since
+        }.count
+    }
+
+    func openToday() {
+        showingBots = false
+        showingNotes = false
+        openBotConversation(for: Self.todayBot)
+    }
+
+    /// Today is kept on the phone from the start, so a briefing that arrives
+    /// while the app is closed has somewhere to be read into and counted as
+    /// new. Added at the end: it is never the chat the app opens on.
+    private func ensureTodayConversation() {
+        guard conversationsUnreadable == nil, todayConversationID == nil else { return }
+        let now = Date()
+        var today = Conversation(
+            id: UUID().uuidString, title: Self.todayTitle,
+            createdAt: now, updatedAt: now, botName: Self.todayProfile
+        )
+        // Nothing in it has been read yet, and nothing old should count as new.
+        today.openedAt = now
+        conversations.append(today)
+        persistConversations()
+    }
+
+    /// Agents with replies or reports since their chat was last opened, for
+    /// the home's "while you were away".
+    var agentsWithNews: [HomeAgentNews] {
+        cachedBots
+            .filter { !isBotHidden($0) && isBotUnread($0.name) }
+            .map { HomeAgentNews(slug: $0.name, name: botCurrentName(for: $0)) }
+    }
+
     /// Opens a bot's chat, then reconciles it with the agent's own.
     ///
     /// The local conversation is a cache, so it opens at once from what is
@@ -6395,6 +6468,11 @@ final class AppStore {
            conversations.contains(where: { $0.id == activeID && $0.isCanonicalBotChat }),
            activeBotTurns[activeID] == nil {
             await refreshBotChat(activeID)
+        }
+        // Today is read even when it is not open: it is where Alice writes
+        // first, and the home says so only if the phone has seen it.
+        if let today = todayConversationID, today != activeID, activeBotTurns[today] == nil {
+            await refreshBotChat(today)
         }
         markMentionRepliesSeen(in: activeID)
         startReplyRecovery()
