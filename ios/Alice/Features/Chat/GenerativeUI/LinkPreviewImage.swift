@@ -56,15 +56,16 @@ struct CardImage: View {
         if image != nil || page == nil {
             RemoteImage(url: image, symbol: symbol)
         } else {
-            ZStack {
-                Palette.muted(scheme)
-                if let preview {
-                    Image(uiImage: preview).resizable().scaledToFill().transition(.opacity)
-                } else if looked {
-                    Image(systemName: symbol).font(.title2).foregroundStyle(.tertiary)
+            // An overlay, so the filled picture cannot size the view; see `RemoteImage`.
+            Palette.muted(scheme)
+                .overlay {
+                    if let preview {
+                        Image(uiImage: preview).resizable().scaledToFill().transition(.opacity)
+                    } else if looked {
+                        Image(systemName: symbol).font(.title2).foregroundStyle(.tertiary)
+                    }
                 }
-            }
-            .clipped()
+                .clipped()
             .task(id: page) {
                 guard let page else { return }
                 if let cached = LinkPreviewImages.cached(page) {

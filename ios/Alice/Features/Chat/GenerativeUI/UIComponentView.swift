@@ -53,25 +53,28 @@ struct RemoteImage: View {
     let url: URL?
     var symbol = "photo"
 
+    /// The photo is an overlay on a plain surface, not a sibling in a stack:
+    /// a filled image is larger than its frame, and as a sibling it made
+    /// the stack larger too, so the clip let it spill over the text below.
     var body: some View {
-        ZStack {
-            Palette.muted(scheme)
-            if let url {
-                AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.25))) { phase in
-                    switch phase {
-                    case let .success(image):
-                        image.resizable().scaledToFill().transition(.opacity)
-                    case .failure:
-                        placeholder
-                    default:
-                        EmptyView()
+        Palette.muted(scheme)
+            .overlay {
+                if let url {
+                    AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.25))) { phase in
+                        switch phase {
+                        case let .success(image):
+                            image.resizable().scaledToFill().transition(.opacity)
+                        case .failure:
+                            placeholder
+                        default:
+                            EmptyView()
+                        }
                     }
+                } else {
+                    placeholder
                 }
-            } else {
-                placeholder
             }
-        }
-        .clipped()
+            .clipped()
     }
 
     private var placeholder: some View {
