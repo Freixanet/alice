@@ -41,7 +41,7 @@ struct PlacesCarousel: View {
 
     private func card(_ place: UIComponent.Place) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            RemoteImage(url: place.image, symbol: "mappin.and.ellipse")
+            CardImage(image: place.image, page: place.url, symbol: "mappin.and.ellipse")
                 .frame(width: 236, height: 150)
             VStack(alignment: .leading, spacing: 3) {
                 Text(place.title)

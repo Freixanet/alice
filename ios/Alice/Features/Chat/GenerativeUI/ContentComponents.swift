@@ -34,7 +34,10 @@ struct ProductsCarousel: View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
                 Color.white
-                if let image = product.image {
+                if product.image == nil, product.url != nil {
+                    CardImage(image: nil, page: product.url, symbol: "bag")
+                        .padding(14)
+                } else if let image = product.image {
                     AsyncImage(url: image, transaction: Transaction(animation: .easeOut(duration: 0.25))) { phase in
                         if case let .success(picture) = phase {
                             picture.resizable().scaledToFit().padding(14).transition(.opacity)

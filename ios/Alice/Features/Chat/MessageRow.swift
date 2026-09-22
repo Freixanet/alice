@@ -46,6 +46,15 @@ struct MessageRow: View {
         }
     }
 
+    /// Out of this phone's sight after a lost connection, but Hermes says it
+    /// is still being written.
+    private var stillWorking: Bool {
+        !message.pending && message.awaitingRemote && store.isStillWorking(message.id)
+    }
+
+    /// Being written, here or out of sight.
+    private var working: Bool { message.pending || stillWorking }
+
     private var actionsMessage: Message {
         var whole = message
         if let actionsContent, !actionsContent.isEmpty { whole.content = actionsContent }
@@ -122,11 +131,11 @@ struct MessageRow: View {
                     // over it. Questions waiting on the person end the turn as
                     // far as the chat shows — nothing is "Thinking" meanwhile.
                     if store.pendingHomeModelConfirmation?.replyID != message.id,
-                       (message.pending && !store.activeAwaitsAnswers)
+                       (working && !store.activeAwaitsAnswers)
                         || !ToolCaption.steps(in: message.tools).isEmpty {
                         ThinkingTrace(
                             steps: message.tools,
-                            pending: message.pending && message.approval == nil
+                            pending: working && message.approval == nil
                                 && !store.activeAwaitsAnswers,
                             note: message.deliveryNote,
                             thoughtSeconds: message.thoughtSeconds,
@@ -201,7 +210,7 @@ struct MessageRow: View {
                     // A reply this device stopped watching. The bot may still
                     // be working, and saying so beats a spinner that never
                     // ends or a failure that did not happen.
-                    if !message.pending, message.awaitingRemote,
+                    if !message.pending, message.awaitingRemote, !stillWorking,
                        let note = message.deliveryNote {
                         Text(note)
                             .font(.footnote)

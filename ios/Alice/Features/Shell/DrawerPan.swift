@@ -162,6 +162,14 @@ struct DrawerPan: UIViewRepresentable {
                        current.accessibilityIdentifier?.hasPrefix(prefix) == true {
                         matchesAllowedControl = true
                     }
+                    // Something that scrolls sideways — a row of cards in a
+                    // reply, a wide table — owns a sideways swipe. Taking it
+                    // turned "see the next card" into "go to Agents".
+                    if let scroll = current as? UIScrollView,
+                       scroll.isScrollEnabled,
+                       scroll.contentSize.width > scroll.bounds.width + 1 {
+                        return false
+                    }
                     if current is UIControl
                         || current is UITextField
                         || current is UITextView

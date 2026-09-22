@@ -9,10 +9,10 @@ import SwiftUI
 /// exactly like one the model wrote from memory. This keeps the steps, under a
 /// header that is a single quiet line when closed.
 ///
-/// It opens itself while the agent is working, because that is when the steps
-/// answer "what is it doing", and closes when the reply arrives, because by
-/// then the reply answers it. Once the reader opens or closes it by hand their
-/// choice stands: `manual` is only ever set by a tap.
+/// Closed unless the reader opens it: the header line already says what is
+/// running. Opening itself while the agent worked pushed the reply being
+/// written down the screen, and closing on arrival pulled it back up — the
+/// text jumped under the reader's eyes. `manual` is only ever set by a tap.
 ///
 /// A reply with no steps leaves nothing behind. "Thought for 2 seconds" over
 /// every answer in the chat is a label on a thing nobody asked about.
@@ -49,7 +49,7 @@ struct ThinkingTrace: View {
         steps.filter { !$0.name.lowercased().contains("clarify") }
     }
 
-    private var expanded: Bool { manual ?? pending }
+    private var expanded: Bool { manual ?? false }
 
     private var headline: String { headline(at: Date()) }
 

@@ -6344,6 +6344,27 @@ final class AppStore {
             if conversations[current].messages.last(where: { $0.role == .assistant })?.pending != true {
                 closeAgentActivity(for: conversationID)
             }
+            // A reply this phone lost the thread of, still being written in
+            // Hermes: drawn in progress again rather than as cut off.
+            let runningRemotely = activeBotTurns[conversationID] == nil
+                && BotTurnState(resumed)?.running == true
+            var resumedReply = false
+            if let last = conversations[current].messages.last(where: { $0.role == .assistant }),
+               last.awaitingRemote, !last.pending, last.remoteID == nil {
+                setStillWorking(runningRemotely, replyID: last.id)
+                resumedReply = runningRemotely
+                let label = botCurrentName(for: profile)
+                if runningRemotely, last.deliveryNote != Self.stillWorkingNote(label: label),
+                   let at = conversations[current].messages.lastIndex(where: { $0.id == last.id }) {
+                    conversations[current].messages[at].deliveryNote = Self.stillWorkingNote(label: label)
+                    persistConversations()
+                }
+                if runningRemotely { startReplyRecovery() }
+            }
+            for message in conversations[current].messages where remoteWorkingReplies.contains(message.id)
+                && !(message.awaitingRemote && runningRemotely) {
+                setStillWorking(false, replyID: message.id)
+            }
             // The answer landed while the watch had lost its socket: the
             // placeholder is gone, and so is anything left to follow.
             if let turn = activeBotTurns[conversationID], turn.disposition != nil,
@@ -6363,8 +6384,8 @@ final class AppStore {
             }
             setBackgroundWork(AgentMessages.BackgroundWork(
                 waitingOn: delegations.pending,
-                running: activeBotTurns[conversationID] == nil
-                    && BotTurnState(resumed)?.running == true
+                // Shown in the reply itself when there is one to show it in.
+                running: runningRemotely && !resumedReply
             ), for: conversationID)
             if botChatFailure[conversationID] != nil { botChatFailure[conversationID] = nil }
             if transcriptChanged { persistConversations() }
@@ -6579,6 +6600,26 @@ final class AppStore {
         startReplyRecovery()
     }
 
+    /// Replies this phone lost the thread of — the socket dropped, the app
+    /// was suspended — that Hermes, read back since, says it is still
+    /// writing. Drawn as in progress again, so a reply that is only out of
+    /// sight never looks like one that was cut off; recovery settles them.
+    private(set) var remoteWorkingReplies: Set<String> = []
+
+    func isStillWorking(_ replyID: String) -> Bool { remoteWorkingReplies.contains(replyID) }
+
+    private func setStillWorking(_ working: Bool, replyID: String) {
+        if working, !remoteWorkingReplies.contains(replyID) {
+            remoteWorkingReplies.insert(replyID)
+        } else if !working, remoteWorkingReplies.contains(replyID) {
+            remoteWorkingReplies.remove(replyID)
+        }
+    }
+
+    nonisolated static func stillWorkingNote(label: String) -> String {
+        "Reconnected. \(label) is still working on it."
+    }
+
     /// Replies still drawn as on their way — being written, or left waiting by
     /// a watch that lost its socket — that Hermes may already have finished.
     private var waitingReplyChats: [String] {
@@ -6627,8 +6668,11 @@ final class AppStore {
         guard replyRecovery == nil, !waitingReplyChats.isEmpty else { return }
         replyRecovery = Task { [weak self] in
             defer { self?.replyRecovery = nil }
-            for _ in 0..<50 {
-                try? await Task.sleep(for: .seconds(12))
+            for _ in 0..<80 {
+                // Sooner while Hermes is known to be writing: its answer
+                // should land about when it would have streamed.
+                let working = self?.remoteWorkingReplies.isEmpty == false
+                try? await Task.sleep(for: .seconds(working ? 5 : 12))
                 guard let self, !Task.isCancelled else { return }
                 guard self.isForeground else { continue }
                 if self.waitingReplyChats.isEmpty { return }
@@ -7021,6 +7065,12 @@ final class AppStore {
                 if let profile { await refreshOwnChat(of: profile) }
                 return
             }
+            // The socket this watch asked on was new, and missed the turn;
+            // Hermes, read back by the chat, says it is still being written.
+            if isStillWorking(replyID) {
+                startReplyRecovery()
+                return
+            }
             if botChatFailure[conversationID] == nil,
                messageLocation(replyID, conversationID: conversationID) != nil {
                 if let retainedFailure {
@@ -7321,6 +7371,8 @@ final class AppStore {
                 + "turns=\(state.turns.count) last=\(state.turns.last?.role.rawValue ?? "none") "
                 + "asking=\(asking != nil)"
         )
+        let followed = activeBotTurns[conversationID]?.replyID == reply.id
+        setStillWorking(state.running && !followed, replyID: reply.id)
         guard !state.running,
               let answer = WebSocketBotChatSource.finishedReply(
                   in: state.turns, sentAt: reply.createdAt, asking: asking
@@ -7332,15 +7384,24 @@ final class AppStore {
             // that it will show here, and look again on the next return.
             if activeBotTurns[conversationID] == nil,
                !sendingConversations.contains(conversationID),
-               let location = messageLocation(reply.id, conversationID: conversationID),
-               conversations[location.chat].messages[location.message].pending {
-                awaitRemote(
-                    reply.id, conversationID: conversationID,
-                    note: Self.lostTouchNote(label: profile.map { botCurrentName(for: $0) } ?? "Alice")
-                )
+               let location = messageLocation(reply.id, conversationID: conversationID) {
+                let label = profile.map { botCurrentName(for: $0) } ?? "Alice"
+                let message = conversations[location.chat].messages[location.message]
+                if state.running {
+                    // Still being written: say so, and keep reading it back.
+                    if message.pending || message.deliveryNote != Self.stillWorkingNote(label: label) {
+                        awaitRemote(reply.id, conversationID: conversationID,
+                                    note: Self.stillWorkingNote(label: label))
+                    }
+                    startReplyRecovery()
+                } else if message.pending {
+                    awaitRemote(reply.id, conversationID: conversationID,
+                                note: Self.lostTouchNote(label: label))
+                }
             }
             return false
         }
+        setStillWorking(false, replyID: reply.id)
         var settled = conversations[location.chat].messages[location.message]
         settled.content = answer
         settled.settle()
