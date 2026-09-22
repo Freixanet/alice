@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Las citas de Marc que empiezan en torno a una hora, para la rutina «Antes de cada cita».
+"""Las citas de Marcos que empiezan en torno a una hora, para la rutina «Antes de cada cita».
 
 Hermes lo ejecuta cada 15 minutos en modo monitor: si lo que imprime no cambia,
 no despierta al modelo. Por eso la salida es estable — título, hora y lugar,

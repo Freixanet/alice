@@ -33,7 +33,7 @@ HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 START = "<!-- alice:proactiva inicio -->"
 END = "<!-- alice:proactiva fin -->"
 
-PROMPT = """Escribe el «Buenos días» de Marc a partir de los hechos de abajo, que su Hermes reunió esta mañana, y de lo que sepas de él por tu memoria.
+PROMPT = """Escribe el «Buenos días» de Marcos a partir de los hechos de abajo, que su Hermes reunió esta mañana, y de lo que sepas de él por tu memoria.
 
 Formato, en este orden y sin títulos de sección vacíos:
 1. Una línea de saludo con el día de la semana.
@@ -49,7 +49,7 @@ Menos de 150 palabras. No inventes nada que no esté en los hechos o en tu memor
 Hechos:"""
 
 
-PROMPT_CITA = """Una cita de Marc empieza en torno a una hora: está en las líneas nuevas del cambio que ves arriba. Si no hay ninguna cita nueva (la lista quedó vacía o solo desapareció una), responde solo [SILENT].
+PROMPT_CITA = """Una cita de Marcos empieza en torno a una hora: está en las líneas nuevas del cambio que ves arriba. Si no hay ninguna cita nueva (la lista quedó vacía o solo desapareció una), responde solo [SILENT].
 
 Si la hay, escríbele un aviso breve, de menos de 60 palabras:
 - qué y a qué hora, en una línea;
@@ -58,10 +58,10 @@ Si la hay, escríbele un aviso breve, de menos de 60 palabras:
 
 Sin saludo ni relleno. No inventes nada que no esté en la cita o en tu memoria."""
 
-PROMPT_CIERRE = """Escribe el cierre del día de Marc a partir de los hechos de abajo. Menos de 120 palabras, en este orden y sin secciones vacías:
+PROMPT_CIERRE = """Escribe el resumen de la noche de Marcos a partir de los hechos de abajo. Todo lo que necesitas está aquí: no cargues skills ni uses herramientas (su protocolo INICIO/CIERRE es otra cosa y no aplica). Menos de 120 palabras, en este orden y sin secciones vacías:
 
 1. **Quedó abierto**: como mucho tres cosas que él dijo que haría, prometió a alguien o dejó sin cerrar hoy, una línea cada una. Tras cada una, un botón para recordárselo: `[Recuérdamelo mañana](alice://reply?text=Recu%C3%A9rdame%20ma%C3%B1ana%20a%20las%209%3A%20…)`, con el texto codificado como en una URL. No incluyas lo que ya está resuelto ni lo que solo era una pregunta.
-2. **Mañana**: su agenda en una o dos líneas, si la tienes.
+2. **Mañana**: su agenda en una o dos líneas, contando el calendario y también lo que él te dijo hoy que tiene mañana («tengo peluquería mañana»). Si algo de lo que te dijo no está en el calendario, añade debajo, sola, la línea `[Añadir a tu calendario](alice://calendar/add?title=…&date=AAAA-MM-DD)` (con `time` si lo sabes).
 
 Si no hay nada abierto ni nada mañana que merezca decirse, responde solo [SILENT]. No inventes nada que no esté en los hechos o en tu memoria.
 

@@ -153,12 +153,16 @@ class EveningTests(unittest.TestCase):
                 conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT)")
                 conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, "
                              "content TEXT, timestamp REAL)")
-                conn.execute("INSERT INTO sessions VALUES ('a', 'api_server', 'Chat'), ('c', 'cron', 'x')")
+                conn.execute("INSERT INTO sessions VALUES ('a', 'api_server', 'Chat'), ('c', 'cron', 'x'), "
+                             "('t', 'cli', 'Prueba')")
                 now = time.time()
                 for session, text in (("a", "Le mando el presupuesto a Laura mañana"),
                                       ("a", "Le mando el presupuesto a Laura mañana"),
                                       ("a", '[Cronjob "Radar" output — scheduled job, not the user.]'),
-                                      ("c", "borrador de una rutina")):
+                                      ("c", "borrador de una rutina"),
+                                      ("t", "Busca Agent-Reach en GitHub. No modifiques nada."),
+                                      ("a", "[System: The active model for this chat has changed]"),
+                                      ("a", "/help")):
                     conn.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, 'user', ?, ?)",
                                  (session, text, now - 60))
             lines = cierre.said_today(home, time.time(), cierre.zone(home))

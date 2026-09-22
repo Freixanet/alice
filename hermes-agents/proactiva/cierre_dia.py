@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Los hechos del «Cierre del día» de Alice, leídos de Hermes sin cambiar nada.
 
-Lo que Marc escribió hoy en sus conversaciones con Alice — de donde salen las
+Lo que Marcos escribió hoy en sus conversaciones con Alice — de donde salen las
 promesas y los cabos sueltos («te lo mando mañana», «tengo que llamar a…») — y
 su agenda de mañana, si conectó el calendario. El modelo decide qué merece
 contarse; aquí solo se reúne, recortado.
@@ -26,8 +26,11 @@ from typing import List, Optional
 HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 MAX_MESSAGES = 40
 MAX_CHARS = 300
-# What a routine hands a chat is not something Marc wrote.
-NOT_HIS = ('[Cronjob "', "[IMPORTANT: Background process", "Message from 🤖")
+# What a routine hands a chat is not something Marcos wrote.
+NOT_HIS = ('[Cronjob "', "[IMPORTANT: Background process", "Message from 🤖", "[System:", "/")
+# Where he writes: the app, the web and messaging. Not routines, not terminal
+# probes run on the Mac (tests read as things he said), not agents' sub-tasks.
+NOT_HIS_SOURCES = ("cron", "cli", "subagent")
 
 
 def zone(home: Path) -> Optional[tzinfo]:
@@ -50,14 +53,14 @@ def stamp(value) -> Optional[float]:
 
 
 def said_today(home: Path, now: float, tz) -> List[str]:
-    """What Marc wrote to Alice today, oldest first, each trimmed."""
+    """What Marcos wrote to Alice today, oldest first, each trimmed."""
     midnight = datetime.fromtimestamp(now, tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
     try:
         with closing(sqlite3.connect(f"file:{home / 'state.db'}?mode=ro", uri=True)) as conn:
             rows = conn.execute(
                 "SELECT m.content FROM messages m JOIN sessions s ON s.id = m.session_id "
-                "WHERE m.role = 'user' AND m.timestamp >= ? AND s.source != 'cron' ORDER BY m.id",
-                (midnight,),
+                "WHERE m.role = 'user' AND m.timestamp >= ? AND s.source NOT IN (?, ?, ?) ORDER BY m.id",
+                (midnight, *NOT_HIS_SOURCES),
             ).fetchall()
     except sqlite3.Error:
         return []
@@ -93,7 +96,7 @@ def tomorrow(home: Path, now: float, tz) -> Optional[List[str]]:
 
 def facts(home: Path, now: float) -> str:
     tz = zone(home)
-    lines = ["Lo que Marc te escribió hoy:"]
+    lines = ["Lo que Marcos te escribió hoy:"]
     lines += said_today(home, now, tz) or ["- Nada."]
     agenda = tomorrow(home, now, tz)
     if agenda is not None:
