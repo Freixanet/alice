@@ -1413,6 +1413,10 @@ private struct RichListView: View {
     }
 }
 
+/// A note set apart from the reply. Only its label carries colour — the
+/// quiet state colours of the palette, not the system's — on the same paper
+/// and hairline as every other card. The coloured bar down the left edge is
+/// gone: it is the mark of generated text everywhere, and it shouted.
 private struct RichCalloutView: View {
     @Environment(\.colorScheme) private var scheme
     let kind: RichCallout?
@@ -1421,44 +1425,40 @@ private struct RichCalloutView: View {
     var onTap: (@MainActor () -> Void)? = nil
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(tint)
-                .frame(width: 3)
-            VStack(alignment: .leading, spacing: 6) {
-                if let kind {
-                    Label(Self.title(kind), systemImage: Self.icon(kind))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(tint)
-                }
-                // A callout holds Markdown of its own.
-                AnyView(RichMessageView(content: content, failed: failed, onTap: onTap))
+        VStack(alignment: .leading, spacing: 6) {
+            if let kind {
+                Label(Self.title(kind, in: ChatLanguage.of(content)), systemImage: Self.icon(kind))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(tint)
             }
+            // A callout holds Markdown of its own.
+            AnyView(RichMessageView(content: content, failed: failed, onTap: onTap))
         }
-        .padding(12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.card(scheme), in: .rect(cornerRadius: 12))
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
+        .overlay { RoundedRectangle(cornerRadius: 16).stroke(Palette.border(scheme), lineWidth: 0.5) }
         .accessibilityElement(children: .contain)
     }
 
     private var tint: Color {
         switch kind {
-        case .note: .blue
-        case .tip: .green
-        case .important: .purple
-        case .warning: .orange
-        case .caution: .red
+        case .note, .important: Palette.info(scheme)
+        case .tip: Palette.success(scheme)
+        case .warning: Palette.warning(scheme)
+        case .caution: Palette.danger(scheme)
         case nil: .secondary
         }
     }
 
-    static func title(_ kind: RichCallout) -> String {
+    static func title(_ kind: RichCallout, in language: ChatLanguage) -> String {
         switch kind {
-        case .note: "Note"
-        case .tip: "Tip"
-        case .important: "Important"
-        case .warning: "Warning"
-        case .caution: "Caution"
+        case .note: language.pick("Note", "Nota")
+        case .tip: language.pick("Tip", "Consejo")
+        case .important: language.pick("Important", "Importante")
+        case .warning: language.pick("Warning", "Atención")
+        case .caution: language.pick("Caution", "Cuidado")
         }
     }
 
