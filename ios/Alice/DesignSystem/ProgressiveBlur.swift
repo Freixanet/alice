@@ -29,6 +29,11 @@ struct ProgressiveBlur: UIViewRepresentable {
     var wash: Color
     /// Share of the height, from the far side, before the blur starts to rise.
     var startOffset: CGFloat = 0
+    /// Share of the fade over which the blur reaches full strength: 1 rises
+    /// across the whole height, smaller reaches full sooner.
+    var rampShare: CGFloat = 0.6
+    /// How opaque the page-colour wash is at the edge.
+    var washOpacity: CGFloat = 0.85
 
     func makeUIView(context: Context) -> ProgressiveBlurUIView {
         let view = ProgressiveBlurUIView()
@@ -37,7 +42,8 @@ struct ProgressiveBlur: UIViewRepresentable {
     }
 
     func updateUIView(_ view: ProgressiveBlurUIView, context: Context) {
-        view.configure(edge: edge, intensity: intensity, wash: UIColor(wash), startOffset: startOffset)
+        view.configure(edge: edge, intensity: intensity, wash: UIColor(wash), startOffset: startOffset,
+                       rampShare: rampShare, washOpacity: washOpacity)
     }
 }
 
@@ -45,9 +51,7 @@ struct ProgressiveBlur: UIViewRepresentable {
 final class ProgressiveBlurUIView: UIView {
     private static let fadeSamples = 5
     private static let blurScale: CGFloat = 1.25
-    private static let blurRampShare: CGFloat = 0.6
     private static let coverageFadeDistance: CGFloat = 24
-    private static let washOpacity: CGFloat = 0.85
 
     private let blurContainer = UIView()
     private let maskedBlur = UIView()
@@ -61,6 +65,8 @@ final class ProgressiveBlurUIView: UIView {
     private var strength: CGFloat = 0.5
     private var wash: UIColor = .systemBackground
     private var startOffset: CGFloat = 0
+    private var rampShare: CGFloat = 0.6
+    private var washOpacity: CGFloat = 0.85
     private var liveBlurAmount: CGFloat = 1
     private var scrollViewCheck: Timer?
 
@@ -95,8 +101,14 @@ final class ProgressiveBlurUIView: UIView {
         }
     }
 
-    func configure(edge: ProgressiveBlur.Edge, intensity: CGFloat, wash: UIColor, startOffset: CGFloat) {
-        let changed = edge != self.edge || intensity != strength || wash != self.wash || startOffset != self.startOffset
+    func configure(
+        edge: ProgressiveBlur.Edge, intensity: CGFloat, wash: UIColor, startOffset: CGFloat,
+        rampShare: CGFloat, washOpacity: CGFloat
+    ) {
+        let changed = edge != self.edge || intensity != strength || wash != self.wash
+            || startOffset != self.startOffset || rampShare != self.rampShare || washOpacity != self.washOpacity
+        self.rampShare = max(0.05, min(1, rampShare))
+        self.washOpacity = max(0, min(1, washOpacity))
         self.edge = edge
         strength = max(0, min(1, intensity))
         self.wash = wash
@@ -135,10 +147,10 @@ final class ProgressiveBlurUIView: UIView {
     private func updateGradients() {
         let fadeLength = 1 - startOffset
         blurMask.update(edge: edge, color: .black,
-                        stops: Self.rising(to: fadeLength * Self.blurRampShare) + [(1, 1)])
+                        stops: Self.rising(to: fadeLength * rampShare) + [(1, 1)])
         let rising = Self.rising(to: fadeLength) + [(1, 1)]
         let washColor = wash.resolvedColor(with: traitCollection)
-        tintWash.update(edge: edge, color: washColor.withAlphaComponent(Self.washOpacity), stops: rising)
+        tintWash.update(edge: edge, color: washColor.withAlphaComponent(washOpacity), stops: rising)
         fallbackGradient.update(edge: edge, color: washColor, stops: rising.map { ($0.location, $0.alpha * strength) })
     }
 
@@ -388,4 +400,16 @@ private final class ScrollSpeedMonitor: NSObject {
 private func smoothstep(_ edge0: CGFloat, _ edge1: CGFloat, _ x: CGFloat) -> CGFloat {
     let t = max(0, min(1, (x - edge0) / (edge1 - edge0)))
     return t * t * (3 - 2 * t)
+}
+
+/// The screen's own insets — the Dynamic Island and the home indicator —
+/// without the bars a screen lays over them.
+@MainActor
+enum DeviceInsets {
+    static var current: UIEdgeInsets {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first
+        return window?.safeAreaInsets ?? UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+    }
 }

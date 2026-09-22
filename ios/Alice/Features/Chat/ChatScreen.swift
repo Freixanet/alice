@@ -577,17 +577,28 @@ private struct TranscriptView: View {
             // under the glass controls and over the replies — in place of the
             // system's soft edge, and only once something scrolls beneath it.
             .scrollEdgeEffectHidden(true, for: [.top, .bottom])
+            // It begins at the Dynamic Island, not under the header, and at
+            // the home indicator, not above the composer: the glass controls
+            // blur what passes under them on their own. Over the island and
+            // the indicator it rises slowly, the whole way, with only a light
+            // wash of the page colour, so a reply dims into the edge rather
+            // than turning opaque a few points in.
             .overlay {
-                GeometryReader { proxy in
-                    VStack(spacing: 0) {
-                        ProgressiveBlur(edge: .top, wash: Palette.background(scheme))
-                            .frame(height: proxy.safeAreaInsets.top + 18)
-                        Spacer(minLength: 0)
-                        ProgressiveBlur(edge: .bottom, wash: Palette.background(scheme))
-                            .frame(height: proxy.safeAreaInsets.bottom + 18)
-                    }
-                    .ignoresSafeArea()
+                let device = DeviceInsets.current
+                VStack(spacing: 0) {
+                    ProgressiveBlur(
+                        edge: .top, intensity: 0.45, wash: Palette.background(scheme),
+                        rampShare: 1, washOpacity: 0.35
+                    )
+                    .frame(height: device.top + 14)
+                    Spacer(minLength: 0)
+                    ProgressiveBlur(
+                        edge: .bottom, intensity: 0.45, wash: Palette.background(scheme),
+                        rampShare: 1, washOpacity: 0.35
+                    )
+                    .frame(height: device.bottom + 14)
                 }
+                .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             }
