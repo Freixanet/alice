@@ -47,6 +47,16 @@ struct ComponentGallery: View {
             spanish: "Peluquería el miércoles. ¿Lo apunto en tu calendario?\n[Añadir a tu calendario](alice://calendar/add?title=Peluquer%C3%ADa&date=2026-09-23&time=17:00&location=Gr%C3%A0cia)"
         ),
         Sample(
+            id: "move", title: "Move an event",
+            english: "Shall I move the haircut to Thursday at 18:00?\n[Move haircut](alice://calendar/move?title=Haircut&date=2026-09-23&time=17:00&to_date=2026-09-24&to_time=18:00)",
+            spanish: "¿Paso la peluquería al jueves a las 18:00?\n[Mover peluquería](alice://calendar/move?title=Peluquer%C3%ADa&date=2026-09-23&time=17:00&to_date=2026-09-24&to_time=18:00)"
+        ),
+        Sample(
+            id: "cancel", title: "Cancel an event",
+            english: "Cancel the dentist on Friday?\n[Cancel dentist](alice://calendar/cancel?title=Dentist&date=2026-09-25&time=11:30)",
+            spanish: "¿Cancelo el dentista del viernes?\n[Cancelar dentista](alice://calendar/cancel?title=Dentista&date=2026-09-25&time=11:30)"
+        ),
+        Sample(
             id: "connect", title: "Connect the calendar",
             english: "I can answer that once I can see your calendar.\n[Connect calendar](alice://connect/calendar)",
             spanish: "Te lo digo en cuanto pueda ver tu calendario.\n[Conectar calendario](alice://connect/calendar)"

@@ -78,6 +78,67 @@ enum CalendarSync {
         return event.eventIdentifier ?? ""
     }
 
+    /// A matched event on the phone, for a card to show and act on.
+    struct Found: Sendable, Equatable {
+        let identifier: String
+        let title: String
+        let start: Date
+        let end: Date
+        let allDay: Bool
+        let location: String?
+        let editable: Bool
+    }
+
+    /// The event an agent means: on that day, whose title matches (either
+    /// contains the other, case and accents aside), nearest the time given.
+    /// Nil when there is none — a card never acts on a guess.
+    @MainActor
+    static func find(title: String, day: Date, time: Date?) -> Found? {
+        guard hasAccess else { return nil }
+        let store = EKEventStore()
+        let calendar = Calendar.current
+        let from = calendar.startOfDay(for: day)
+        guard let to = calendar.date(byAdding: .day, value: 1, to: from) else { return nil }
+        let wanted = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        let matches = store.events(matching: store.predicateForEvents(withStart: from, end: to, calendars: nil))
+            .filter {
+                let have = ($0.title ?? "").folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+                return !have.isEmpty && (have.contains(wanted) || wanted.contains(have))
+            }
+        let best = time.map { t in matches.min { abs($0.startDate.timeIntervalSince(t)) < abs($1.startDate.timeIntervalSince(t)) } }
+            ?? matches.first
+        guard let event = best ?? matches.first else { return nil }
+        return Found(
+            identifier: event.eventIdentifier ?? "", title: event.title ?? title,
+            start: event.startDate, end: event.endDate, allDay: event.isAllDay,
+            location: event.location, editable: event.calendar.allowsContentModifications
+        )
+    }
+
+    /// Moves an event to a new start, keeping how long it lasts.
+    @MainActor
+    static func move(_ identifier: String, to start: Date) throws {
+        let store = EKEventStore()
+        guard let event = store.event(withIdentifier: identifier) else { throw ChangeFailure.gone }
+        let length = event.endDate.timeIntervalSince(event.startDate)
+        event.startDate = start
+        event.endDate = start.addingTimeInterval(length)
+        try store.save(event, span: .thisEvent, commit: true)
+    }
+
+    /// Removes one occurrence: a repeating event keeps its other dates.
+    @MainActor
+    static func cancel(_ identifier: String) throws {
+        let store = EKEventStore()
+        guard let event = store.event(withIdentifier: identifier) else { throw ChangeFailure.gone }
+        try store.remove(event, span: .thisEvent, commit: true)
+    }
+
+    enum ChangeFailure: LocalizedError {
+        case gone
+        var errorDescription: String? { "The event is no longer in the calendar." }
+    }
+
     /// One event as Hermes stores it: no notes, no attendees.
     struct Event: Sendable, Equatable {
         let title: String

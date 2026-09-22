@@ -26,6 +26,9 @@ enum RichBlock: Equatable {
     /// `[Title](alice://calendar/add?…)`: an event to add to the person's
     /// calendar once they confirm it (`AddEventCard`).
     case addEvent(RichCalendarEvent)
+    /// `alice://calendar/move` or `/cancel`: a change to an event he has,
+    /// done on the phone once he confirms.
+    case changeEvent(RichCalendarChange)
     /// ```alice-ui with a JSON object: a native piece of interface
     /// (`UIComponent`).
     case component(UIComponent)
@@ -69,6 +72,56 @@ struct RichCalendarEvent: Equatable, Hashable {
         format.dateFormat = time == nil ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm"
         return format.date(from: time.map { "\(date) \($0)" } ?? date)
     }
+}
+
+/// A change to an event already in the calendar, proposed by an agent:
+/// `alice://calendar/move?title=…&date=AAAA-MM-DD&time=HH:MM&to_date=…&to_time=…`
+/// or `alice://calendar/cancel?title=…&date=…&time=…`.
+struct RichCalendarChange: Equatable, Hashable {
+    enum Kind: Equatable, Hashable { case move, cancel }
+
+    let kind: Kind
+    let title: String
+    let date: String
+    let time: String?
+    let toDate: String?
+    let toTime: String?
+
+    init?(link: String) {
+        guard let parts = URLComponents(string: link), let items = parts.queryItems else { return nil }
+        let action = parts.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        switch action {
+        case "move": kind = .move
+        case "cancel": kind = .cancel
+        default: return nil
+        }
+        func value(_ name: String) -> String? {
+            let raw = items.first { $0.name == name }?.value?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return raw?.isEmpty == false ? raw : nil
+        }
+        func day(_ v: String?) -> String? { v.flatMap { $0.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil ? $0 : nil } }
+        func clock(_ v: String?) -> String? { v.flatMap { $0.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil ? $0 : nil } }
+        guard let title = value("title"), let date = day(value("date")) else { return nil }
+        self.title = title
+        self.date = date
+        self.time = clock(value("time"))
+        self.toDate = day(value("to_date"))
+        self.toTime = clock(value("to_time"))
+        if kind == .move, toDate == nil, toTime == nil { return nil }
+    }
+
+    private static func parse(_ date: String, _ time: String?) -> Date? {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.timeZone = .current
+        format.dateFormat = time == nil ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm"
+        return format.date(from: time.map { "\(date) \($0)" } ?? date)
+    }
+
+    var day: Date? { Self.parse(date, nil) }
+    var at: Date? { time.flatMap { Self.parse(date, $0) } }
+    /// Where it goes: the new day and time, each falling back to the old.
+    var target: Date? { Self.parse(toDate ?? date, toTime ?? time) }
 }
 
 struct RichListItem: Equatable {
@@ -486,7 +539,8 @@ enum RichMarkdown {
                 blocks.append(.media(media))
                 continue
             }
-            let events = calendarAdds(in: paragraph.joined(separator: "\n"))
+            let changes = calendarChanges(in: paragraph.joined(separator: "\n"))
+            let events = calendarAdds(in: changes.text)
             let offers = connectOffers(in: events.text)
             let extracted = replyButtons(in: offers.text)
             let linked = RichLinks.extract(extracted.text)
@@ -504,6 +558,9 @@ enum RichMarkdown {
             }
             for event in events.events {
                 blocks.append(.addEvent(event))
+            }
+            for change in changes.changes {
+                blocks.append(.changeEvent(change))
             }
         }
         return blocks
@@ -535,6 +592,31 @@ enum RichMarkdown {
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
         return (cleaned, events)
+    }
+
+    private static let calendarChangePattern = #"\[[^\]\n]+\]\((alice://calendar/(?:move|cancel)\?[^)\s]+)\)"#
+
+    /// Proposed moves and cancellations, taken out of the text like additions.
+    static func calendarChanges(in text: String) -> (text: String, changes: [RichCalendarChange]) {
+        guard text.contains("alice://calendar/move") || text.contains("alice://calendar/cancel"),
+              let regex = try? NSRegularExpression(pattern: calendarChangePattern)
+        else { return (text, []) }
+        var changes: [RichCalendarChange] = []
+        var remaining = text
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let linkRange = Range(match.range(at: 1), in: text),
+                  let removal = Range(match.range, in: remaining)
+            else { continue }
+            if let change = RichCalendarChange(link: String(text[linkRange])), !changes.contains(change) {
+                changes.insert(change, at: 0)
+            }
+            remaining.removeSubrange(removal)
+        }
+        let cleaned = remaining.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        return (cleaned, changes)
     }
 
     // MARK: Connect offers
@@ -1243,6 +1325,8 @@ struct RichMessageView: View {
             ConnectOfferCard(service: service, language: ChatLanguage.of(content))
         case let .addEvent(event):
             AddEventCard(proposed: event, language: ChatLanguage.of(content))
+        case let .changeEvent(change):
+            ChangeEventCard(change: change, language: ChatLanguage.of(content))
         case let .component(component):
             UIComponentView(component: component, language: ChatLanguage.of(content))
         case let .media(media):
