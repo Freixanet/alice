@@ -11,6 +11,7 @@ import SwiftUI
 struct Composer: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var focused: FocusState<Bool>.Binding
     var placeholder: String = "Talk to Alice…"
     var keyboardShown = false
@@ -548,7 +549,7 @@ struct Composer: View {
                 Circle().fill(sending ? botSendFill : Palette.muted(scheme))
             }
             .contentTransition(.symbolEffect(.replace))
-            .symbolEffect(.variableColor, isActive: listening)
+            .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
@@ -694,7 +695,7 @@ struct Composer: View {
             .font(.system(size: 16, weight: acting ? .semibold : .medium))
             .frame(width: controlHeight, height: controlHeight)
             .contentTransition(.symbolEffect(.replace))
-            .symbolEffect(.variableColor, isActive: listening)
+            .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
         // `.glassProminent` sizes itself, adding about 10pt of its own padding
         // around the label — measured at 44pt tall next to a 34pt chip. Applying

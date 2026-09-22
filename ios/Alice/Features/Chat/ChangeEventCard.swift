@@ -35,6 +35,13 @@ struct ChangeEventCard: View {
         }
         .animation(.snappy(duration: 0.25), value: dismissed)
         .animation(.snappy(duration: 0.25), value: done)
+        .sensoryFeedback(trigger: done) { _, new in
+            switch new {
+            case .moved?: .success
+            case .cancelled?: .impact(weight: .medium)
+            case nil: nil
+            }
+        }
         .task { await locate() }
     }
 
@@ -138,7 +145,9 @@ struct ChangeEventCard: View {
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(.rect)
+            .buttonStyle(.pressable)
             .disabled(working)
         }
     }

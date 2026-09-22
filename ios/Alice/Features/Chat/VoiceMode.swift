@@ -381,7 +381,7 @@ struct VoiceModeView: View {
             VStack(spacing: 28) {
                 Spacer()
                 Button { voice.tap() } label: { orb }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel(hint)
 
                 VStack(spacing: 10) {
@@ -417,7 +417,7 @@ struct VoiceModeView: View {
                         .frame(width: 56, height: 56)
                         .contentShape(.circle)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("End voice")
                 .padding(.bottom, 24)

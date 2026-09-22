@@ -20,7 +20,7 @@ struct EventsCard: View {
                 } label: {
                     row(event)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .disabled(event.start == nil)
             }
         }
@@ -110,8 +110,10 @@ struct TimelineCard: View {
                                 .foregroundStyle(.secondary)
                                 .frame(width: 28, height: 28)
                                 .background(Palette.muted(scheme), in: .circle)
+                                .frame(width: 44, height: 44)
+                                .contentShape(.rect)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                 }
             }
@@ -189,7 +191,7 @@ struct MonthCard: View {
                     Label(language.pick("Connect your calendar to see your events", "Conecta tu calendario para ver tus eventos"), systemImage: "calendar.badge.plus")
                         .font(.footnote.weight(.semibold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .foregroundStyle(accent)
             } else if let selected {
                 dayList(selected)
@@ -211,8 +213,10 @@ struct MonthCard: View {
                 .font(.caption.weight(.bold))
                 .frame(width: 30, height: 30)
                 .background(Palette.muted(scheme), in: .circle)
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .foregroundStyle(.secondary)
     }
 
@@ -231,7 +235,7 @@ struct MonthCard: View {
                 if let day {
                     dayCell(day)
                 } else {
-                    Color.clear.frame(height: 38)
+                    Color.clear.frame(height: 44)
                 }
             }
         }
@@ -256,10 +260,10 @@ struct MonthCard: View {
                     .fill(busy ? accent.opacity(0.8) : .clear)
                     .frame(width: 4, height: 4)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(language.locale)))
         .accessibilityValue(busy ? language.pick("Has events", "Con eventos") : "")
     }
@@ -298,7 +302,7 @@ struct MonthCard: View {
                     .padding(.vertical, 6)
                     .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
         .transition(.opacity)

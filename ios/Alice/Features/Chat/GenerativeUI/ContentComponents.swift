@@ -107,7 +107,7 @@ struct PhrasesCard: View {
                             .frame(width: 40, height: 40)
                             .background(accent.opacity(0.13), in: .circle)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel(language.pick("Listen", "Escuchar"))
                 }
                 .componentCard(scheme, padding: 14, radius: 18)
@@ -250,7 +250,7 @@ struct ArticleCard: View {
                               systemImage: expanded ? "chevron.up" : "chevron.down")
                             .font(.footnote.weight(.semibold))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .foregroundStyle(.secondary)
                 }
             }

@@ -285,7 +285,7 @@ struct AddEventCard: View {
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private func dismiss() {
@@ -376,8 +376,9 @@ struct AddEventCard: View {
                 Button(language.pick("No, thanks", "No, gracias")) { dismiss() }
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(.rect)
+                    .buttonStyle(.pressable)
                     .disabled(working)
 
                 // One line under the buttons: what is added and, the first time,
@@ -402,6 +403,7 @@ struct AddEventCard: View {
             RoundedRectangle(cornerRadius: 20).stroke(Palette.border(scheme), lineWidth: 0.5)
         }
         .animation(.snappy(duration: 0.25), value: added)
+        .sensoryFeedback(.success, trigger: added) { old, new in old == nil && new != nil }
         .onAppear(perform: prepare)
         .onChange(of: start) { _, value in
             if let initialStart, value != initialStart { timeChosen = true }
