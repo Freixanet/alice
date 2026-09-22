@@ -333,11 +333,20 @@ final class VoiceConversation {
     }
 
     private static func permitted() async -> Bool {
-        let speech = await withCheckedContinuation { (continuation: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
-            SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
-        }
-        guard speech == .authorized else { return false }
+        guard await speechAuthorization() == .authorized else { return false }
         return await AVAudioApplication.requestRecordPermission()
+    }
+
+    /// `requestAuthorization` answers on a queue of its own. A continuation
+    /// resumed from a closure that inherited this actor trips Swift 6's
+    /// executor check there and kills the app (the crash the first voice
+    /// button had): the request stays off the main actor, as `Dictation` does.
+    private nonisolated static func speechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
+        }
     }
 
     private final class SpeechFinish: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
