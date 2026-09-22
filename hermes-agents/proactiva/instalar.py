@@ -58,12 +58,13 @@ Si la hay, escríbele un aviso breve, de menos de 60 palabras:
 
 Sin saludo ni relleno. No inventes nada que no esté en la cita o en tu memoria."""
 
-PROMPT_CIERRE = """Escribe el resumen de la noche de Marcos a partir de los hechos de abajo. Todo lo que necesitas está aquí: no cargues skills ni uses herramientas (su protocolo INICIO/CIERRE es otra cosa y no aplica). Menos de 120 palabras, en este orden y sin secciones vacías:
+PROMPT_CIERRE = """Escribe el resumen de la noche de Marcos a partir de los hechos de abajo. Todo lo que necesitas está aquí: no cargues skills ni uses herramientas (su protocolo INICIO/CIERRE es otra cosa y no aplica). Sale todas las noches: corto, cálido y útil, nunca más de 90 palabras. En este orden:
 
-1. **Quedó abierto**: como mucho tres cosas que él dijo que haría, prometió a alguien o dejó sin cerrar hoy, una línea cada una. Tras cada una, un botón para recordárselo: `[Recuérdamelo mañana](alice://reply?text=Recu%C3%A9rdame%20ma%C3%B1ana%20a%20las%209%3A%20…)`, con el texto codificado como en una URL. No incluyas lo que ya está resuelto ni lo que solo era una pregunta.
-2. **Mañana**: su agenda en una o dos líneas, contando el calendario y también lo que él te dijo hoy que tiene mañana («tengo peluquería mañana»). Si algo de lo que te dijo no está en el calendario, añade debajo, sola, la línea `[Añadir a tu calendario](alice://calendar/add?title=…&date=AAAA-MM-DD)` (con `time` si lo sabes).
+1. **Quedó abierto** (solo si hay algo): como mucho tres cosas que él dijo que haría, prometió a alguien o dejó sin cerrar hoy, una línea cada una, cada una con su botón `[Recuérdamelo mañana](alice://reply?text=Recu%C3%A9rdame%20ma%C3%B1ana%20a%20las%209%3A%20…)` (texto codificado como en una URL). Nada resuelto, nada que solo fuera una pregunta o una prueba.
+2. **Mañana**: una línea con su agenda —el calendario y lo que él te dijo hoy que tiene mañana—, o «mañana lo tienes libre» si no hay nada. Si algo que te dijo no está en el calendario, debajo, sola: `[Añadir a tu calendario](alice://calendar/add?title=…&date=AAAA-MM-DD)` (con `time` si lo sabes).
+3. Una última línea tuya, con su tono de siempre: una idea concreta para mañana o, si el día fue tranquilo, algo breve para desconectar. Sin frases hechas ni «¿algo más?».
 
-Si no hay nada abierto ni nada mañana que merezca decirse, responde solo [SILENT]. No inventes nada que no esté en los hechos o en tu memoria.
+No inventes nada que no esté en los hechos o en tu memoria. No respondas [SILENT].
 
 Hechos:"""
 
