@@ -62,10 +62,12 @@
 			</dict>
 		</dict>
 	</dict>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Alice uses Face ID to unlock the app and your locked notes, when you turn that on in Settings.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Alice reads your upcoming events and shares them with your own Hermes, so your agents can plan around your day. She never creates or changes events.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Alice uses the camera to scan a Hermes pairing QR code and when you attach a photo you take from the composer.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Alice uses Face ID to unlock the app and your locked notes, when you turn that on in Settings.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Alice connects to the Hermes agent running on your network.</string>
 	<key>NSMicrophoneUsageDescription</key>
