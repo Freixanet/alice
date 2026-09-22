@@ -21,6 +21,8 @@ def load(name):
 
 dias = load("buenos_dias")
 instalar = load("instalar")
+cita = load("antes_de_cita")
+cierre = load("cierre_dia")
 
 
 class Hermes:
@@ -102,6 +104,65 @@ class FactsTests(unittest.TestCase):
         text = dias.facts(self.hermes.root, now, 16)
         self.assertIn("- 17:00 Dentista · Clínica", text)
         self.assertNotIn("Mañana", text)
+
+
+class AppointmentTests(unittest.TestCase):
+    NOW = 1790060400  # 2026-09-22 09:00 in Madrid
+
+    def setUp(self):
+        import json
+        self.temp = tempfile.TemporaryDirectory()
+        self.home = Path(self.temp.name)
+        (self.home / "config.yaml").write_text("timezone: Europe/Madrid\n")
+        (self.home / ".alice").mkdir()
+        (self.home / ".alice" / "calendar.json").write_text(json.dumps({"connected": True, "events": [
+            {"title": "Dentista", "start": "2026-09-22T10:00:00+02:00", "end": "2026-09-22T11:00:00+02:00",
+             "location": "Clínica"},
+            {"title": "Demasiado pronto", "start": "2026-09-22T09:20:00+02:00", "end": "2026-09-22T09:40:00+02:00"},
+            {"title": "Festivo", "start": "2026-09-22T00:00:00+02:00", "end": "2026-09-23T00:00:00+02:00",
+             "all_day": True},
+            {"title": "Mañana", "start": "2026-09-23T12:00:00+02:00", "end": "2026-09-23T13:00:00+02:00"},
+        ]}))
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_only_what_starts_in_about_an_hour_and_the_line_does_not_move(self):
+        first = cita.upcoming(self.home, self.NOW)
+        self.assertEqual(first, ["- 10:00 Dentista · Clínica"])
+        # A quarter of an hour later the same appointment reads the same, so
+        # the monitor does not wake the model twice for it.
+        self.assertEqual(cita.upcoming(self.home, self.NOW + 900), first)
+
+    def test_nothing_when_the_calendar_is_not_connected(self):
+        (self.home / ".alice" / "calendar.json").write_text('{"connected": false}')
+        self.assertEqual(cita.upcoming(self.home, self.NOW), [])
+
+    def test_the_evening_facts_hold_tomorrows_agenda(self):
+        text = cierre.facts(self.home, self.NOW)
+        self.assertIn("Su agenda de mañana:\n- 12:00 Mañana", text)
+        self.assertNotIn("Dentista", text.split("Su agenda de mañana:")[1])
+
+
+class EveningTests(unittest.TestCase):
+    def test_what_he_wrote_today_once_and_nothing_a_routine_wrote(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            (home / "config.yaml").write_text("timezone: Europe/Madrid\n")
+            with closing(sqlite3.connect(home / "state.db")) as conn, conn:
+                conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT)")
+                conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, "
+                             "content TEXT, timestamp REAL)")
+                conn.execute("INSERT INTO sessions VALUES ('a', 'api_server', 'Chat'), ('c', 'cron', 'x')")
+                now = time.time()
+                for session, text in (("a", "Le mando el presupuesto a Laura mañana"),
+                                      ("a", "Le mando el presupuesto a Laura mañana"),
+                                      ("a", '[Cronjob "Radar" output — scheduled job, not the user.]'),
+                                      ("c", "borrador de una rutina")):
+                    conn.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, 'user', ?, ?)",
+                                 (session, text, now - 60))
+            lines = cierre.said_today(home, time.time(), cierre.zone(home))
+        self.assertEqual(lines, ["- Le mando el presupuesto a Laura mañana"])
 
 
 class InstallerTests(unittest.TestCase):

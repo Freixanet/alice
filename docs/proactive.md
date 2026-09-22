@@ -72,3 +72,19 @@ Hermes; Not now is stored on Hermes, and agents stop offering it. Settings ›
 Connections › Calendar connects or disconnects at any time. The copy is kept
 current on each return to the app and each background refresh, and the
 morning briefing lists the day's events when connected. Read-only.
+
+## Before an appointment, and the end of the day (2026-09-22)
+
+Two more routines from `hermes-agents/proactiva/instalar.py`, delivered to Today:
+
+- **Antes de cada cita** runs every 15 minutes in Hermes' monitor mode with
+  `antes_de_cita.py`, which prints the timed events starting 45–75 minutes
+  from now (title, time, place — stable text, never "in N minutes"). The model
+  wakes only when that output changes, and writes a short note: what and when,
+  what Alice knows about it, and something practical if it applies.
+- **Cierre del día** at 21:30 with `cierre_dia.py`: what Marc wrote to Alice
+  today (deduplicated, routine hand-offs left out) and tomorrow's agenda. At
+  most three open loops, each with a "remind me tomorrow" button; `[SILENT]`
+  when nothing is worth saying.
+
+Both read the calendar the iPhone sends; they stay quiet without it.

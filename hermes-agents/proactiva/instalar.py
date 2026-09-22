@@ -3,11 +3,15 @@
 
     python3 instalar.py [--hora 07:30] [--comprobar]
 
-1. Copia ``buenos_dias.py`` a ``~/.hermes/scripts/``, donde Hermes permite
-   scripts de rutina.
-2. Crea la rutina «Buenos días» de Alice (perfil principal) a la hora dada, en
-   la zona horaria de Hermes, entregada en su chat Today (`bot-chat`). Si ya
-   existe una con ese nombre, no crea otra.
+1. Copia los scripts de las rutinas a ``~/.hermes/scripts/``, donde Hermes
+   permite scripts de rutina.
+2. Crea las rutinas de Alice (perfil principal), entregadas en su chat Today
+   (`bot-chat`), en la zona horaria de Hermes:
+   - «Buenos días», a la hora dada (``--hora``, 07:30 por defecto);
+   - «Antes de cada cita», cada 15 minutos en modo monitor: el modelo solo se
+     despierta cuando una cita entra en la hora siguiente;
+   - «Cierre del día», a las 21:30.
+   Si una ya existe con ese nombre, no crea otra; solo actualiza su prompt.
 3. Añade a las instrucciones de Alice cómo tomar la iniciativa (Today,
    «avísame cuando…», límites) entre marcadores; si ya estaban, las actualiza.
 
@@ -26,8 +30,6 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
-SCRIPT = "alice_buenos_dias.py"
-NAME = "Buenos días"
 START = "<!-- alice:proactiva inicio -->"
 END = "<!-- alice:proactiva fin -->"
 
@@ -46,6 +48,31 @@ Menos de 150 palabras. No inventes nada que no esté en los hechos o en tu memor
 
 Hechos:"""
 
+
+PROMPT_CITA = """Una cita de Marc empieza en torno a una hora: está en las líneas nuevas del cambio que ves arriba. Si no hay ninguna cita nueva (la lista quedó vacía o solo desapareció una), responde solo [SILENT].
+
+Si la hay, escríbele un aviso breve, de menos de 60 palabras:
+- qué y a qué hora, en una línea;
+- lo útil que sepas por tu memoria sobre esa cita, la persona o el lugar, si sabes algo;
+- algo práctico solo si aplica: salir con tiempo si hay un lugar, qué llevar, qué preparar.
+
+Sin saludo ni relleno. No inventes nada que no esté en la cita o en tu memoria."""
+
+PROMPT_CIERRE = """Escribe el cierre del día de Marc a partir de los hechos de abajo. Menos de 120 palabras, en este orden y sin secciones vacías:
+
+1. **Quedó abierto**: como mucho tres cosas que él dijo que haría, prometió a alguien o dejó sin cerrar hoy, una línea cada una. Tras cada una, un botón para recordárselo: `[Recuérdamelo mañana](alice://reply?text=Recu%C3%A9rdame%20ma%C3%B1ana%20a%20las%209%3A%20…)`, con el texto codificado como en una URL. No incluyas lo que ya está resuelto ni lo que solo era una pregunta.
+2. **Mañana**: su agenda en una o dos líneas, si la tienes.
+
+Si no hay nada abierto ni nada mañana que merezca decirse, responde solo [SILENT]. No inventes nada que no esté en los hechos o en tu memoria.
+
+Hechos:"""
+
+# name, schedule, prompt, script file here, installed name, monitor mode
+JOBS = [
+    ("Buenos días", None, PROMPT, "buenos_dias.py", "alice_buenos_dias.py", False),
+    ("Antes de cada cita", "*/15 * * * *", PROMPT_CITA, "antes_de_cita.py", "alice_antes_de_cita.py", True),
+    ("Cierre del día", "30 21 * * *", PROMPT_CIERRE, "cierre_dia.py", "alice_cierre_dia.py", False),
+]
 
 def run(argv, check=True):
     return subprocess.run(argv, capture_output=True, text=True, check=check, timeout=60)
@@ -87,32 +114,39 @@ def main(argv) -> int:
     cron = schedule(hour)
     done = {"ok": True, "comprobacion": check}
 
-    target = HOME / "scripts" / SCRIPT
-    source = (HERE / "buenos_dias.py").read_text(encoding="utf-8")
-    current = target.read_text(encoding="utf-8") if target.is_file() else None
-    done["script"] = "sin cambios" if current == source else ("actualiza" if current else "crea")
-    if not check and current != source:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(source, encoding="utf-8")
+    scripts = {}
+    for name, when, prompt, source_name, installed, monitor in JOBS:
+        target = HOME / "scripts" / installed
+        source = (HERE / source_name).read_text(encoding="utf-8")
+        current = target.read_text(encoding="utf-8") if target.is_file() else None
+        scripts[installed] = "sin cambios" if current == source else ("actualiza" if current else "crea")
+        if not check and current != source:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(source, encoding="utf-8")
+    done["scripts"] = scripts
 
-    found = next((job for job in existing_jobs() if job.get("name") == NAME), None)
-    if found:
-        # The routine is the person's once made: only its prompt follows this file,
-        # never the time or where it delivers, which they may have changed.
-        if (found.get("prompt") or "").strip() == PROMPT.strip():
-            done["rutina"] = "ya existe"
-        else:
-            done["rutina"] = "actualiza el prompt"
-            if not check:
-                run([hermes(), "cron", "edit", str(found.get("id")), "--prompt", PROMPT])
-    else:
-        done["rutina"] = f"crea ({cron}, zona de Hermes)"
+    existing = existing_jobs()
+    routines = {}
+    for name, when, prompt, source_name, installed, monitor in JOBS:
+        found = next((job for job in existing if job.get("name") == name), None)
+        if found:
+            # A routine is the person's once made: only its prompt follows this
+            # file, never the time or where it delivers, which they may change.
+            if (found.get("prompt") or "").strip() == prompt.strip():
+                routines[name] = "ya existe"
+            else:
+                routines[name] = "actualiza el prompt"
+                if not check:
+                    run([hermes(), "cron", "edit", str(found.get("id")), "--prompt", prompt])
+            continue
+        schedule_for = when or cron
+        routines[name] = f"crea ({schedule_for}, zona de Hermes)"
         if not check:
-            result = run([
-                hermes(), "cron", "create", cron, PROMPT,
-                "--name", NAME, "--deliver", "bot-chat", "--script", SCRIPT,
-            ])
-            done["hermes"] = result.stdout.strip().splitlines()[-1:] or []
+            argv = [hermes(), "cron", "create", schedule_for, prompt,
+                    "--name", name, "--deliver", "bot-chat"]
+            argv += ["--monitor-script", installed] if monitor else ["--script", installed]
+            run(argv)
+    done["rutinas"] = routines
 
     soul = HOME / "SOUL.md"
     block = (HERE / "alice-proactiva.md").read_text(encoding="utf-8").strip()
