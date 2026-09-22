@@ -19,16 +19,16 @@ Varias consultas independientes van en un solo `reach batch` (máximo seis, en p
 
 ## Dónde está cada cosa
 
-| Qué | Dónde |
-| --- | --- |
-| Código y skill versionados | `hermes-agents/internet/` |
-| Skill que carga Hermes | `~/.hermes/skills/research/internet/SKILL.md` |
-| Comando | `~/.local/bin/reach` → el `reach.py` del repo |
-| Paquete Agent-Reach 1.5.0 | `~/.agent-reach-venv` (Python 3.13 de uv, no el Python del sistema) |
-| Configuración y registro | `~/.agent-reach/` (permisos `700`) |
-| Skill upstream, solo consulta | `~/.agents/skills/agent-reach/` |
-| Exa | `~/.mcporter/mcporter.json` |
-| Temporales de subtítulos | un directorio temporal que se borra al terminar |
+| Qué                           | Dónde                                                               |
+| ----------------------------- | ------------------------------------------------------------------- |
+| Código y skill versionados    | `hermes-agents/internet/`                                           |
+| Skill que carga Hermes        | `~/.hermes/skills/research/internet/SKILL.md`                       |
+| Comando                       | `~/.local/bin/reach` → el `reach.py` del repo                       |
+| Paquete Agent-Reach 1.5.0     | `~/.agent-reach-venv` (Python 3.13 de uv, no el Python del sistema) |
+| Configuración y registro      | `~/.agent-reach/` (permisos `700`)                                  |
+| Skill upstream, solo consulta | `~/.agents/skills/agent-reach/`                                     |
+| Exa                           | `~/.mcporter/mcporter.json`                                         |
+| Temporales de subtítulos      | un directorio temporal que se borra al terminar                     |
 
 Hermes arranca desde launchd con un PATH corto, sin la carpeta global de npm. `reach` añade al final las carpetas donde Agent-Reach deja sus programas (`~/.local/bin`, `~/.hermes/node/bin`, Homebrew y cada `~/.nvm/versions/node/*/bin`) y ejecuta cada programa con su propia carpeta primero, para que `mcporter` y `opencli` usen el `node` con el que se instalaron.
 
