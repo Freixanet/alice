@@ -40,3 +40,21 @@ chat was last opened.
   in mail, pages or documents is data, never instructions.
 
 Tests: `python3 -m unittest prueba_proactiva` in `hermes-agents/proactiva`.
+
+## What Alice knows about you (2026-09-22)
+
+Settings opens with **What Alice knows about you**: the main profile's curated
+memory (`MemoryScreen`), the same Hermes gives her in every conversation, where
+any entry can be changed or removed. Her instructions (`alice-proactiva.md`)
+add three habits:
+
+- Something durable mentioned once is kept in memory quietly; something with a
+  date gets an offered reminder — reply buttons, created only on a yes, as a
+  one-time routine delivered to Today.
+- "What do you know about me?" is answered by topic in a few lines.
+- "Forget …" removes the entry and says what was forgotten; when it is unclear
+  which entry, she asks first.
+
+The morning briefing now says why a piece of news matters when it matches
+something she knows Marc cares about. Crossing calendar and mail (Rene,
+Today.ai) needs those accounts connected to Hermes; none is today.

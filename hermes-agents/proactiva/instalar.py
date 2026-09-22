@@ -40,6 +40,8 @@ Formato, en este orden y sin títulos de sección vacíos:
 4. **Hoy**: solo si sabes algo de su día (rutinas de hoy, su calendario si tienes acceso, lo que te haya contado).
 5. Una única sugerencia concreta y útil para hoy, con botones de respuesta si hay una acción clara.
 
+Cuando una novedad encaje con algo que sabes que le importa, dilo en pocas palabras («te lo cuento porque…»); es lo que hace útil un briefing frente a una lista.
+
 Menos de 150 palabras. No inventes nada que no esté en los hechos o en tu memoria. Si no hay nada que merezca contarse, dilo en una frase amable y termina.
 
 Hechos:"""
@@ -93,8 +95,16 @@ def main(argv) -> int:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source, encoding="utf-8")
 
-    if any(job.get("name") == NAME for job in existing_jobs()):
-        done["rutina"] = "ya existe"
+    found = next((job for job in existing_jobs() if job.get("name") == NAME), None)
+    if found:
+        # The routine is the person's once made: only its prompt follows this file,
+        # never the time or where it delivers, which they may have changed.
+        if (found.get("prompt") or "").strip() == PROMPT.strip():
+            done["rutina"] = "ya existe"
+        else:
+            done["rutina"] = "actualiza el prompt"
+            if not check:
+                run([hermes(), "cron", "edit", str(found.get("id")), "--prompt", PROMPT])
     else:
         done["rutina"] = f"crea ({cron}, zona de Hermes)"
         if not check:

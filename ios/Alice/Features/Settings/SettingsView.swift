@@ -105,6 +105,19 @@ struct SettingsView: View {
                 Text("What has happened, and what is waiting on you.")
             }
 
+            // What Alice has learnt, where it can be read and corrected — the
+            // same memory Hermes gives her in every conversation. Asking her
+            // "what do you know about me?" or "forget …" works too.
+            if store.dashboardReady {
+                Section {
+                    NavigationLink { MemoryScreen() } label: {
+                        Label("What Alice knows about you", systemImage: "person.text.rectangle")
+                    }
+                } footer: {
+                    Text("She remembers what matters from your conversations. Change or remove anything here, or tell her “forget …”.")
+                }
+            }
+
             Section {
                 Toggle("Replies and routines come through Bark", isOn: $store.barkRelays)
             } header: {
