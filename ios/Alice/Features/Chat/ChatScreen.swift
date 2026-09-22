@@ -580,6 +580,10 @@ private struct TranscriptView: View {
                     let positions = ChatTasks.positions(messages)
                     let latestBusy = !store.backgroundWork(for: conversation.id).isEmpty
                         || messages.last?.pending == true
+                    // Replies he has written after: their offers have been
+                    // answered or passed over, and close.
+                    let lastAsked = messages.lastIndex { $0.role == .user }
+                    let answered = Set(lastAsked.map { messages[..<$0].map(\.id) } ?? [])
                     ForEach(messages) { message in
                         let position = positions[message.id]
                         let busy = (position?.isLatest ?? false) && latestBusy
@@ -590,6 +594,7 @@ private struct TranscriptView: View {
                             showsAuthor: position?.isFirst ?? true,
                             actionsContent: position?.text
                         )
+                        .environment(\.replySuperseded, answered.contains(message.id))
                         // Parts of one task sit closer than separate messages.
                         .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
                         .id(message.id)

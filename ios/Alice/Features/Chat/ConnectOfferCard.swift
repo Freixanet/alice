@@ -1,5 +1,18 @@
 import SwiftUI
 
+private struct ReplySupersededKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True for a reply the person has written after: its offers are no
+    /// longer the question on the table. Set per row by the transcript.
+    var replySuperseded: Bool {
+        get { self[ReplySupersededKey.self] }
+        set { self[ReplySupersededKey.self] = newValue }
+    }
+}
+
 /// An agent's offer to connect something, in the chat where it helps.
 ///
 /// An agent that needs the person's calendar and does not have it ends its
@@ -14,13 +27,31 @@ struct ConnectOfferCard: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.replySuperseded) private var superseded
     let service: String
     var language: ChatLanguage = .english
 
     @State private var working = false
     @State private var problem: String?
 
+    /// Declined, or passed over by a later message while still unconnected:
+    /// the offer closes. Settings › Connections keeps the way back.
+    private var closed: Bool {
+        switch store.calendarLink {
+        case .declined: true
+        case .notConnected, .unknown: superseded
+        case .connected: false
+        }
+    }
+
     var body: some View {
+        if !closed {
+            offer
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+        }
+    }
+
+    private var offer: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "calendar")
@@ -44,9 +75,7 @@ struct ConnectOfferCard: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Palette.success(scheme))
             case .declined:
-                Text(language.pick("Not now. You can connect it any time in Settings › Connections.", "Ahora no. Puedes conectarlo cuando quieras en Ajustes › Connections."))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                EmptyView()
             case .notConnected, .unknown:
                 HStack(spacing: 10) {
                     Button {
@@ -206,6 +235,7 @@ struct AddEventCard: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.openURL) private var openURL
+    @Environment(\.replySuperseded) private var superseded
     let proposed: RichCalendarEvent
     var language: ChatLanguage = .english
 
@@ -220,15 +250,49 @@ struct AddEventCard: View {
     /// known — a haircut at "10:00" that nobody said was an invention.
     @State private var timeChosen = false
     @State private var initialStart: Date?
+    /// «No, gracias» on this card: it closes and stays closed.
+    @State private var dismissed = false
+    /// Passed over, then asked for again from its one-line form.
+    @State private var reopened = false
 
     var body: some View {
-        if store.calendarLink == .declined, added == nil {
-            // He said not now to the calendar: nothing about it, only the
-            // reminder Alice would have offered before there was a calendar.
-            reminderOffer
-        } else {
-            card
+        Group {
+            if dismissed, added == nil {
+                EmptyView()
+            } else if store.calendarLink == .declined, added == nil {
+                // He said not now to the calendar: nothing about it, only the
+                // reminder Alice would have offered before there was a calendar.
+                if !superseded { reminderOffer }
+            } else if superseded, added == nil, !reopened {
+                // The conversation moved on without using it: the tool closes
+                // to one quiet line, still there if he changes his mind.
+                collapsed
+            } else {
+                card
+            }
         }
+        .animation(.snappy(duration: 0.25), value: dismissed)
+        .animation(.snappy(duration: 0.25), value: reopened)
+        .onAppear { if AddEventCard.dismissedBefore(key) { dismissed = true } }
+    }
+
+    private var collapsed: some View {
+        Button {
+            reopened = true
+        } label: {
+            Label(language.pick("Add “\(proposed.title)” to your calendar", "Añadir «\(proposed.title)» al calendario"),
+                  systemImage: "calendar.badge.plus")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func dismiss() {
+        AddEventCard.rememberDismissed(key)
+        withAnimation(.snappy(duration: 0.25)) { dismissed = true }
+        // Said to the agent too, so the conversation reads as he left it.
+        if !superseded { store.sendQuickReply(language.pick("No, thanks.", "No, gracias.")) }
     }
 
     private var reminderOffer: some View {
@@ -309,7 +373,14 @@ struct AddEventCard: View {
                 .tint(accent)
                 .disabled(working)
 
-                // One line under the button: what is added and, the first time,
+                Button(language.pick("No, thanks", "No, gracias")) { dismiss() }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.plain)
+                    .disabled(working)
+
+                // One line under the buttons: what is added and, the first time,
                 // that adding connects the calendar.
                 Text(footnote)
                     .font(.caption)
@@ -445,6 +516,20 @@ struct AddEventCard: View {
     private static func addedAt(_ key: String) -> Date? {
         (UserDefaults.standard.dictionary(forKey: addedKey)?[key] as? Double)
             .map(Date.init(timeIntervalSinceReferenceDate:))
+    }
+
+    private static let dismissedKey = "alice.calendar.dismissed"
+
+    private static func dismissedBefore(_ key: String) -> Bool {
+        UserDefaults.standard.dictionary(forKey: dismissedKey)?[key] != nil
+    }
+
+    private static func rememberDismissed(_ key: String) {
+        var all = UserDefaults.standard.dictionary(forKey: dismissedKey) ?? [:]
+        all[key] = Date().timeIntervalSinceReferenceDate
+        // A handful of keys at most; cards are few and short-lived.
+        if all.count > 200 { all = all.filter { ($0.value as? Double ?? 0) > Date().timeIntervalSinceReferenceDate - 90 * 86400 } }
+        UserDefaults.standard.set(all, forKey: dismissedKey)
     }
 
     private static func remember(_ key: String, at date: Date) {
