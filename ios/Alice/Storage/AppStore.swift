@@ -8807,10 +8807,26 @@ final class AppStore {
         let batch = pendingStreamText
         pendingStreamText.removeAll(keepingCapacity: true)
         for (id, pending) in batch {
-            guard let location = messageLocation(id, conversationID: pending.conversationID)
-            else { continue }
-            conversations[location.chat].messages[location.message].content += pending.text
+            write(pending, into: id)
         }
+    }
+
+    /// One reply's held tokens, before anything else touches that reply.
+    ///
+    /// A turn's final text arrived while the last tokens were still held:
+    /// the final text was taken as the reply, and the held tokens were then
+    /// added after it — the reply ended with its last sentence twice.
+    private func flushStreamedText(for id: String) {
+        guard let pending = pendingStreamText.removeValue(forKey: id) else { return }
+        write(pending, into: id)
+    }
+
+    private func write(_ pending: PendingStreamText, into id: String) {
+        guard let location = messageLocation(id, conversationID: pending.conversationID) else { return }
+        // A reply that has already ended holds its final text: tokens still
+        // waiting for it are already in there.
+        guard conversations[location.chat].messages[location.message].pending else { return }
+        conversations[location.chat].messages[location.message].content += pending.text
     }
 
     private func apply(
@@ -8823,6 +8839,7 @@ final class AppStore {
     ) {
         guard let location = messageLocation(id, conversationID: conversationID) else { return }
         markLatency(conversationID, phase: "firstEvent")
+        if case .delta = event {} else { flushStreamedText(for: id) }
         let chat = location.chat
         let index = location.message
         let eventProfile = conversations[chat].messages[index].botName
