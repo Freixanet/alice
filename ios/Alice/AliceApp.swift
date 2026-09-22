@@ -155,6 +155,10 @@ struct AliceApp: App {
                     activities.sync(working: works, ending: store.agentEnding)
                     store.liveActivityWarning = activities.lastStartFailure
                 }
+                // Measured only while someone is looking: developer mode.
+                .onChange(of: store.developerMode, initial: true) { _, on in
+                    HitchMonitor.shared.setRunning(on)
+                }
                 .onChange(of: store.finishedActivityConversationID) { _, id in
                     guard let id else { return }
                     activities.end(conversationID: id, as: store.agentEnding(id))

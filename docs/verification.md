@@ -82,3 +82,23 @@ service results distinct. Check migrations and backups, production secrets and
 database configuration, signing/distribution and rollback before release.
 
 A badge describes a workflow run. It is not a certification of every feature.
+
+## Developer mode on the phone
+
+Settings › Advanced › Developer mode adds **Settings › Developer**:
+
+- **Checks** (`Features/Developer/DiagnosticChecks.swift`): Hermes reachability
+  and latency, the Alice plugin, one time zone for every agent, calendar,
+  notifications and Bark, the proactive routines, storage size, freezes this
+  session (`HitchMonitor`) and Hermes messages Alice does not understand yet.
+  A feature that can break adds its own `DiagnosticCheck` to `all`.
+- **Performance meter**: frames per second, late frames and freezes, beside
+  the home indicator.
+- **Tools**: component gallery (every rich block and card, Spanish and
+  English), share a report, send diagnostics to Hermes, a test notification,
+  and resets.
+- **Recent activity** from `DiagnosticsLog` — ids, states and timings, never
+  message text — and the build.
+
+These run against the real Hermes and phone: they read, and only the tools
+write (a test notification, a diagnostics upload, a card's own action).

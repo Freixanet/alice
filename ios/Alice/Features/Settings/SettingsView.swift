@@ -30,6 +30,15 @@ struct SettingsView: View {
                 }
             }
 
+            // Developer mode's own place: checks, the live meter and tools.
+            if store.developerMode {
+                Section {
+                    NavigationLink { DeveloperScreen() } label: {
+                        Label("Developer", systemImage: "wrench.and.screwdriver")
+                    }
+                }
+            }
+
             // First: whether Alice can reach Hermes is what everything
             // below depends on, and what people come here to check.
             Section("Connection") {
@@ -238,7 +247,7 @@ struct AdvancedSettingsView: View {
             Section {
                 Toggle("Developer mode", isOn: $store.developerMode)
             } footer: {
-                Text("Shows the model, token counts and tool calls under each reply.")
+                Text("Adds Settings › Developer — checks that everything works, a live performance meter and tools — and shows the model, tokens and tool calls under each reply.")
             }
             if store.dashboardReady {
                 Section("This Hermes") {

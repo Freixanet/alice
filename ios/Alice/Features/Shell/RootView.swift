@@ -12,6 +12,7 @@ struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
 
+    @AppStorage(PerformanceHUD.key) private var showsPerformanceHUD = false
     @State private var drawerOpen = false
     @State private var drag: CGFloat = 0
     /// Where the bots page is while it slides away; see `closeBots`.
@@ -199,6 +200,15 @@ struct RootView: View {
                     }
                     .transition(.move(edge: .trailing))
                     .zIndex(2)
+                }
+            }
+            // Developer › Performance meter: in the strip beside the home
+            // indicator, under the composer, where it covers nothing.
+            .overlay(alignment: .bottomLeading) {
+                if store.developerMode && showsPerformanceHUD {
+                    PerformanceHUD()
+                        .padding(.leading, 18)
+                        .padding(.bottom, max(proxy.safeAreaInsets.bottom - 26, 4))
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
