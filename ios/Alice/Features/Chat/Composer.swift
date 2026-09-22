@@ -95,6 +95,13 @@ struct Composer: View {
                 }
             }
         }
+        // On the composer itself, not on the voice button: the button goes
+        // away the moment there is text in the field — which voice mode puts
+        // there to send — and a cover attached to it went with it, leaving
+        // only the transcript behind.
+        .fullScreenCover(isPresented: $showingVoice) {
+            VoiceModeView()
+        }
         .fileImporter(
             isPresented: $showFiles,
             allowedContentTypes: [.item],
@@ -570,9 +577,6 @@ struct Composer: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Voice conversation")
-            .fullScreenCover(isPresented: $showingVoice) {
-                VoiceModeView()
-            }
             .transition(.scale.combined(with: .opacity))
         }
     }
