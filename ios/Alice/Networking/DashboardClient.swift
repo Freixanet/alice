@@ -2367,6 +2367,25 @@ extension DashboardClient {
         ])
     }
 
+    // MARK: Time zone
+
+    func hermesTimezones() async throws -> HermesTimezones {
+        HermesTimezones.parse(try await get("api/plugins/alice/timezones"))
+    }
+
+    /// Hermes' own config API deep-merges, so only `timezone` changes.
+    func setTimezone(_ identifier: String, profile: String) async throws {
+        _ = try await send(
+            "PUT", "api/config?profile=\(Self.queryValue(profile))",
+            ["config": ["timezone": identifier]]
+        )
+    }
+
+    /// Hermes caches the zone per process; the dashboard's is read again.
+    func refreshTimezones() async throws {
+        _ = try await send("POST", "api/plugins/alice/timezones/refresh", [:])
+    }
+
     // MARK: Calendar (hermes-plugin/calendar_snapshot.py)
 
     func calendarLink() async throws -> CalendarLink {

@@ -95,5 +95,23 @@ class CalendarToolTests(unittest.TestCase):
         self.assertIn("calendar_events", names)
 
 
+
+class TimezoneTests(unittest.TestCase):
+    def test_each_profile_says_its_own_zone_or_none(self):
+        api = load(ROOT / "dashboard" / "plugin_api.py", "alice_plugin_api_timezone_test")
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            (home / "config.yaml").write_text("model: x\ntimezone: Europe/Madrid\n")
+            for name, text in (("biz-scout", "model: x\n"), ("radar-ia", "timezone: 'Europe/Madrid'\n")):
+                (home / "profiles" / name).mkdir(parents=True)
+                (home / "profiles" / name / "config.yaml").write_text(text)
+            found = api._timezones(home)
+        self.assertEqual(found["timezone"], "Europe/Madrid")
+        self.assertEqual(found["profiles"], [
+            {"name": "biz-scout", "timezone": ""},
+            {"name": "radar-ia", "timezone": "Europe/Madrid"},
+        ])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -141,6 +141,9 @@ struct SettingsView: View {
             }
 
             Section("General") {
+                if store.dashboardReady {
+                    TimeZoneRow()
+                }
                 Picker("Theme", selection: $store.theme) {
                     ForEach(ThemeChoice.allCases) { choice in
                         Text(choice.label).tag(choice)

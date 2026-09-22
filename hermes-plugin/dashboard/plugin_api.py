@@ -1529,4 +1529,62 @@ async def calendar_disconnect() -> JSONResponse:
     return JSONResponse(payload, headers=_NO_STORE)
 
 
+_TIMEZONE_LINE = re.compile(r"^timezone:\s*['\"]?([^'\"\s#]+)", re.MULTILINE)
+
+
+def _configured_timezone(config: Path) -> str:
+    try:
+        match = _TIMEZONE_LINE.search(config.read_text(encoding="utf-8"))
+    except OSError:
+        return ""
+    return match.group(1) if match else ""
+
+
+def _server_timezone() -> str:
+    """The Mac's own zone, which a profile without one of its own falls back to."""
+    try:
+        link = os.path.realpath("/etc/localtime")
+        if "zoneinfo/" in link:
+            return link.split("zoneinfo/", 1)[1]
+    except OSError:
+        pass
+    return time.tzname[0] if time.tzname else ""
+
+
+def _timezones(home: Path) -> Dict[str, Any]:
+    profiles = []
+    root = home / "profiles"
+    if root.is_dir():
+        for directory in sorted(root.iterdir()):
+            if (directory / "config.yaml").is_file():
+                profiles.append({"name": directory.name,
+                                 "timezone": _configured_timezone(directory / "config.yaml")})
+    return {"timezone": _configured_timezone(home / "config.yaml"),
+            "server": _server_timezone(), "profiles": profiles}
+
+
+@router.get("/timezones")
+async def timezones() -> JSONResponse:
+    """Alice's zone, each agent's, and the Mac's — which an agent without one uses."""
+    payload = await asyncio.to_thread(lambda: _timezones(_engine_home()))
+    return JSONResponse(payload, headers=_NO_STORE)
+
+
+@router.post("/timezones/refresh")
+async def timezones_refresh() -> JSONResponse:
+    """After a zone is saved: Hermes caches it per process, so this one reads it again.
+
+    Chats run here and follow at once; the gateways (routines, messaging apps)
+    take it at their next restart.
+    """
+    try:
+        import hermes_time
+
+        hermes_time.reset_cache()
+        refreshed = True
+    except Exception:
+        refreshed = False
+    return JSONResponse({"ok": True, "refreshed": refreshed}, headers=_NO_STORE)
+
+
 _register_claim_auth()

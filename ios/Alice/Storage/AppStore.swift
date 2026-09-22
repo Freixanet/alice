@@ -6077,6 +6077,24 @@ final class AppStore {
     /// settled a frame before the page is dismissed.
     var botsExitLeading = false
 
+    // MARK: - Time zone
+
+    func hermesTimezones() async throws -> HermesTimezones {
+        try await dashboard.hermesTimezones()
+    }
+
+    /// Sets one zone on Alice and on every agent, so none is left on the
+    /// Mac's clock, and returns what Hermes then reports.
+    func setHermesTimezone(_ identifier: String) async throws -> HermesTimezones {
+        let current = try await dashboard.hermesTimezones()
+        try await dashboard.setTimezone(identifier, profile: "default")
+        for profile in current.profiles where profile.timezone != identifier {
+            try await dashboard.setTimezone(identifier, profile: profile.name)
+        }
+        try? await dashboard.refreshTimezones()
+        return try await dashboard.hermesTimezones()
+    }
+
     // MARK: - Calendar
 
     /// Where the person's calendar stands with their Hermes. Read when the
