@@ -343,6 +343,21 @@ def _agent_engine():
     return module
 
 
+def _free_web():
+    import importlib.util
+    import sys
+
+    path = Path(__file__).resolve().parent / "free_web.py"
+    name = "alice_free_web"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _is_agent_maker(**_) -> bool:
     """Agent Maker's tools follow the stamped role, including after a rename."""
     try:
@@ -564,6 +579,8 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
     _register_notes_tools(ctx)
+    # Search and page reading free first (Exa, Jina); Firecrawl only as fallback.
+    _free_web().register(ctx)
     _register_agent_tools(ctx)
     _register_debug_tools(ctx)
     _register_calendar_tools(ctx)
