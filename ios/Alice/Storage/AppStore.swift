@@ -218,6 +218,7 @@ final class AppStore {
         static let botCustomNames = "alice.bot.customNames"
         static let botSectionOrder = "alice.bot.sectionOrder"
         static let botChannels = "alice.bot.channels"
+        static let barkRelays = Notifier.barkRelaysKey
         static let homeShortcuts = "alice.home.shortcuts"
         static let botPlacementsApplied = "alice.bot.placementsApplied"
         static let unassignedExpanded = "alice.bot.unassignedExpanded"
@@ -271,6 +272,15 @@ final class AppStore {
     var botCustomSections: [String] = [] {
         didSet { defaults.set(botCustomSections, forKey: Keys.botCustomSections) }
     }
+    /// Whether the Mac's notifier reaches this phone through Bark, so replies
+    /// and routines are not also announced by Alice herself
+    /// (`Notifier.relayedKinds`). Turned on by the first Bark notification
+    /// opened — only Bark opens `alice://open` links — and switchable in
+    /// Settings.
+    var barkRelays: Bool = false {
+        didSet { defaults.set(barkRelays, forKey: Keys.barkRelays) }
+    }
+
     var collapsedSections: Set<String> = [] {
         didSet { defaults.set(Array(collapsedSections), forKey: Keys.collapsedSections) }
     }
@@ -492,6 +502,7 @@ final class AppStore {
         unassignedExpanded = defaults.bool(forKey: Keys.unassignedExpanded)
         hiddenExpanded = defaults.bool(forKey: Keys.hiddenExpanded)
         homeCollapsed = defaults.bool(forKey: Keys.homeCollapsed)
+        barkRelays = defaults.bool(forKey: Keys.barkRelays)
         notesAsCards = defaults.bool(forKey: Keys.notesAsCards)
         developerMode = defaults.bool(forKey: Keys.developerMode)
         notesSort = (defaults.string(forKey: Keys.notesSort).flatMap(NotesSort.init(rawValue:))) ?? .dateCreated

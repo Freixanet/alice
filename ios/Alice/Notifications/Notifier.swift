@@ -37,10 +37,32 @@ final class Notifier {
 
     private(set) var permission: Permission = .notAsked
 
+    /// Kinds another channel already delivers, so they are not posted here too.
+    ///
+    /// The Mac's notifier tells the phone through Bark when an agent answers or
+    /// a routine ends, whether Alice is running or not. Alice posting the same
+    /// thing whenever iOS happened to wake her made it arrive twice. Read from
+    /// what is saved (`AppStore.barkRelays`) rather than handed in, because a
+    /// background refresh can post before any screen has been set up.
+    var relayedKinds: Set<AliceEvent.Kind> {
+        defaults.bool(forKey: Self.barkRelaysKey) ? Self.barkKinds : []
+    }
+
+    nonisolated static let barkRelaysKey = "alice.notifications.barkRelays"
+    private let defaults: UserDefaults
+
+    /// What Bark delivers from the Mac (`mac/notifier`): replies and routines.
+    /// Questions, approvals and the health of the installation stay here.
+    static let barkKinds: Set<AliceEvent.Kind> = [.finished, .automationSucceeded, .automationFailed]
+
     private let center: NotificationScheduling
 
-    init(center: NotificationScheduling = UNUserNotificationCenter.current()) {
+    init(
+        center: NotificationScheduling = UNUserNotificationCenter.current(),
+        defaults: UserDefaults = .standard
+    ) {
         self.center = center
+        self.defaults = defaults
     }
 
     /// Reads the current setting. Worth re-reading whenever Alice becomes
@@ -73,7 +95,7 @@ final class Notifier {
     /// screen is a public surface; the content belongs inside the app, behind
     /// whatever unlocks the phone.
     func post(_ event: AliceEvent) async {
-        guard permission.canDeliver else { return }
+        guard permission.canDeliver, !relayedKinds.contains(event.kind) else { return }
         let content = UNMutableNotificationContent()
         content.title = event.title
         content.body = event.summary

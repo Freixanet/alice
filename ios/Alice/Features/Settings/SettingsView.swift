@@ -105,6 +105,16 @@ struct SettingsView: View {
                 Text("What has happened, and what is waiting on you.")
             }
 
+            Section {
+                Toggle("Replies and routines come through Bark", isOn: $store.barkRelays)
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text(store.barkRelays
+                     ? "Your Mac announces agent replies and routines through Bark, even while Alice is closed, so Alice does not announce them again. She still tells you about questions, approvals and problems with Hermes."
+                     : "Alice announces replies and routines herself, but only when iOS lets her run. With Bark and the Mac notifier set up, they arrive every time — and this switch keeps them from arriving twice.")
+            }
+
             Section("General") {
                 Picker("Theme", selection: $store.theme) {
                     ForEach(ThemeChoice.allCases) { choice in

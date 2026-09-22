@@ -250,6 +250,28 @@ final class NotifierTests: XCTestCase {
         XCTAssertFalse(notifier.permission.canDeliver)
     }
 
+    /// With Bark carrying replies and routines from the Mac, Alice does not
+    /// announce them a second time; what only she knows still gets through.
+    func testWhatBarkDeliversIsNotPostedTwice() async throws {
+        let name = "alice.notifier-test.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(true, forKey: Notifier.barkRelaysKey)
+        let center = FakeNotificationCenter(permission: .allowed)
+        let notifier = Notifier(center: center, defaults: defaults)
+        await notifier.refreshPermission()
+
+        await notifier.post([
+            event(id: "reply", kind: .finished),
+            event(id: "routine", kind: .automationSucceeded),
+            event(id: "failed", kind: .automationFailed),
+            event(id: "question", kind: .needsInput),
+            event(id: "health", kind: .attention),
+        ])
+
+        XCTAssertEqual(center.posted, ["question", "health"])
+    }
+
     func testPostsOnceAllowed() async {
         let center = FakeNotificationCenter(permission: .allowed)
         let notifier = Notifier(center: center)

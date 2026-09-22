@@ -55,6 +55,9 @@ struct AliceApp: App {
                 // no in-app scanner needed, least of all on a first install.
                 .onOpenURL { url in
                     if let link = NotificationLink(url: url) {
+                        // Only the Mac's notifier, through Bark, opens these:
+                        // it is delivering replies and routines already.
+                        if !store.barkRelays { store.barkRelays = true }
                         store.open(link)
                         return
                     }
