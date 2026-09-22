@@ -194,6 +194,7 @@ final class AppStore {
     private var protectedConversationIDs: Set<String> = []
 
     private enum Keys {
+        static let phoneActions = "alice.phoneActions"
         static let theme = "alice.theme"
         static let accent = "alice.accent"
         static let gateway = "alice.gateway"
@@ -587,6 +588,7 @@ final class AppStore {
         recentModels = defaults.stringArray(forKey: Keys.recentModels) ?? []
         loadConversations()
         loadActivity()
+        loadPhoneActions()
         if let data = defaults.data(forKey: Keys.notesSnapshot) {
             notesSnapshot = try? JSONDecoder().decode(NotesSnapshot.self, from: data)
         }
@@ -2270,6 +2272,38 @@ final class AppStore {
     /// before Alice was watching would be fabricating a record. It starts
     /// empty and fills as Alice runs, which is the truth about what it knows.
     private(set) var activity: [AliceEvent] = []
+
+    /// What agents did with consequences, as the Alice plugin records it
+    /// (`AgentAction`), newest first.
+    private(set) var agentActions: [AgentAction] = []
+    /// What this phone did at an agent's suggestion — a card, a 👍 — which
+    /// the Mac never saw. Kept on the phone.
+    private(set) var phoneActions: [AgentAction] = []
+    /// Whether the plugin answered at all, so an empty list can say why.
+    private(set) var agentActionsAvailable: Bool?
+    /// A cited conversation open over whatever is on screen (`ReceiptSheet`).
+    var openedReceipt: RichReceipt?
+    /// What is known of each cited conversation, by Hermes session id, for
+    /// the links and sources that cite it.
+    private(set) var receiptSummaries: [String: ReceiptSummary] = [:]
+
+    struct ReceiptSummary: Equatable, Sendable {
+        var title: String
+        var profile: String
+        var started: Date?
+    }
+
+    /// Conversation names by Hermes session id.
+    var receiptTitles: [String: String] { receiptSummaries.mapValues(\.title) }
+    @ObservationIgnored private var receiptTitlesAsked: Set<String> = []
+    /// A message to bring into view once its chat is on screen.
+    var focusedMessage: FocusedMessage?
+
+    struct FocusedMessage: Equatable {
+        var conversationID: String
+        /// Hermes' id for the turn.
+        var remoteID: String
+    }
 
     /// Routines whose successful runs are not worth a notice, by
     /// `EventDigest.key(for:)`. A failure is still said: that is news.
@@ -9527,5 +9561,178 @@ nonisolated enum ModelListPolicy {
             && !list.options.isEmpty
         if shouldRefresh || refreshing { next.refreshRequested = true }
         return Outcome(state: next, shouldRefresh: shouldRefresh)
+    }
+}
+
+// MARK: - Reactions, receipts and what agents did
+
+extension AppStore {
+    /// Whether a reply can be answered with a thumb: finished, in a chat this
+    /// phone can still write to.
+    func canReact(to message: Message) -> Bool {
+        message.role == .assistant && !message.pending && !message.content.isEmpty
+            && !message.interim && !activeIsRecoveredHistory && (isConnected || dashboardReady)
+    }
+
+    /// Answers a reply with a thumb.
+    ///
+    /// A 👍 to a reply that carries an unambiguous calendar card with a day and
+    /// a time does what the card's button would — adds the event, or moves it —
+    /// and says so under the thumb, so the agent confirms instead of trying
+    /// again. Cancelling is never done this way: it keeps its own confirmation.
+    func react(_ reaction: Reaction, to message: Message) async {
+        guard canReact(to: message) else { return }
+        let messages = activeConversation?.messages ?? []
+        let language = ChatLanguage.of(message.content)
+        // The newest reply needs no quote; an older one says which it was.
+        let lastReply = messages.last { $0.role == .assistant && !$0.content.isEmpty }
+        let isLatest = lastReply?.id == message.id && messages.last?.role != .user
+        let note = reaction == .yes ? await applyCard(in: message, language: language) : nil
+        let turn = ReactionTurn(
+            reaction: reaction,
+            quote: isLatest ? nil : ReactionTurn.snippet(of: message.content),
+            note: note
+        )
+        sendQuickReply(turn.text)
+    }
+
+    private func applyCard(in message: Message, language: ChatLanguage) async -> String? {
+        let blocks = RichMarkdown.blocks(message.content)
+        var adds: [RichCalendarEvent] = []
+        var moves: [RichCalendarChange] = []
+        var others = 0
+        for block in blocks {
+            switch block {
+            case let .addEvent(event): adds.append(event)
+            case let .changeEvent(change) where change.kind == .move: moves.append(change)
+            case .changeEvent: others += 1
+            default: break
+            }
+        }
+        // Two cards, or a cancel beside one: a thumb cannot say which.
+        guard adds.count + moves.count == 1, others == 0 else { return nil }
+        if !CalendarSync.hasAccess {
+            guard await connectCalendar() == nil else { return nil }
+        }
+        if let event = adds.first {
+            guard (try? AddEventCard.addFromReaction(event)) == true else { return nil }
+            recordPhoneAction(kind: "phone.calendar.added", target: event.title)
+            await syncCalendarNow()
+            return language.pick("added to my calendar", "añadido a mi calendario")
+        }
+        if let change = moves.first, (try? ChangeEventCard.moveFromReaction(change)) == true {
+            recordPhoneAction(kind: "phone.calendar.moved", target: change.title)
+            await syncCalendarNow()
+            return language.pick("moved in my calendar", "movido en mi calendario")
+        }
+        return nil
+    }
+
+    // MARK: Receipts
+
+    /// Opens a cited conversation, from a link in a reply.
+    func openReceipt(_ url: URL) {
+        guard let receipt = RichReceipt(url: url) else { return }
+        openedReceipt = receipt
+    }
+
+    /// The profile a receipt reads from: the one it names, or the chat's own.
+    func receiptProfile(_ receipt: RichReceipt) -> String {
+        receipt.profile ?? activeChat.routedBotName ?? Self.todayProfile
+    }
+
+    func receipt(_ receipt: RichReceipt, window: Int = 3) async throws -> ConversationReceipt {
+        let found = try await dashboard.receipt(
+            profile: receiptProfile(receipt), session: receipt.session,
+            around: receipt.message, at: receipt.at, window: window
+        )
+        let agent = botCurrentName(for: found.profile)
+        receiptSummaries[receipt.session] = ReceiptSummary(
+            title: found.displayTitle(agent: agent), profile: found.profile, started: found.started
+        )
+        return found
+    }
+
+    /// Names the conversations a reply cites, once each, so their links read
+    /// as titles rather than "that conversation".
+    func loadReceiptTitles(_ receipts: [RichReceipt]) async {
+        guard dashboardReady else { return }
+        for receipt in receipts where receiptSummaries[receipt.session] == nil {
+            guard receiptTitlesAsked.insert(receipt.session).inserted else { continue }
+            _ = try? await self.receipt(receipt, window: 1)
+        }
+    }
+
+    /// The conversation on this phone that is that Hermes session, if any.
+    func conversation(forSession session: String) -> Conversation? {
+        conversations.first { $0.hermesSessionID == session }
+    }
+
+    /// Opens the conversation a receipt came from, at the cited message.
+    func openReceiptConversation(_ receipt: ConversationReceipt, anchor: String?) -> Bool {
+        guard let chat = conversation(forSession: receipt.session) else { return false }
+        showingBots = false
+        showingNotes = false
+        openConversation(chat.id)
+        if let anchor { focusedMessage = FocusedMessage(conversationID: chat.id, remoteID: anchor) }
+        return true
+    }
+
+    // MARK: What agents did
+
+    /// Everything, newest first: the Mac's record and this phone's.
+    var allAgentActions: [AgentAction] {
+        (agentActions + phoneActions).sorted { $0.at > $1.at }
+    }
+
+    func refreshAgentActions() async {
+        guard dashboardReady else { return }
+        do {
+            agentActions = try await dashboard.agentActions()
+            agentActionsAvailable = true
+        } catch {
+            // An older plugin has no record to serve; that is not a failure
+            // worth an alert, only a reason for the empty list.
+            agentActionsAvailable = false
+        }
+    }
+
+    /// Something done here, on an agent's suggestion.
+    func recordPhoneAction(kind: String, target: String) {
+        let chat = activeConversation
+        let profile = chat?.routedBotName ?? Self.todayProfile
+        var action = AgentAction(
+            id: "phone-" + UUID().uuidString, at: Date(), profile: profile,
+            session: chat?.hermesSessionID, kind: kind, target: target, ok: true,
+            place: .phone, originTitle: chat?.title ?? "", routineKey: nil
+        )
+        action.conversationID = chat?.id
+        phoneActions.insert(action, at: 0)
+        if phoneActions.count > 200 { phoneActions.removeLast(phoneActions.count - 200) }
+        if let data = try? JSONEncoder().encode(phoneActions) {
+            defaults.set(data, forKey: Keys.phoneActions)
+        }
+    }
+
+    private func loadPhoneActions() {
+        guard let data = defaults.data(forKey: Keys.phoneActions),
+              let stored = try? JSONDecoder().decode([AgentAction].self, from: data)
+        else { return }
+        phoneActions = stored
+    }
+
+    /// Where an action happened: a chat on this phone opens at once (true);
+    /// anything else is the receipt of that moment, for Activity to show —
+    /// Activity is itself a sheet, so the app's own cannot go over it.
+    func openAction(_ action: AgentAction) -> (openedChat: Bool, receipt: RichReceipt?) {
+        if action.place == .phone, let id = action.conversationID,
+           conversations.contains(where: { $0.id == id }) {
+            showingBots = false
+            showingNotes = false
+            openConversation(id)
+            return (true, nil)
+        }
+        guard let session = action.session else { return (false, nil) }
+        return (false, RichReceipt(profile: action.profile, session: session, at: action.at))
     }
 }

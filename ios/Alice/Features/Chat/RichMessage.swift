@@ -32,6 +32,8 @@ enum RichBlock: Equatable {
     /// ```alice-ui with a JSON object: a native piece of interface
     /// (`UIComponent`).
     case component(UIComponent)
+    /// The past conversations the reply cites (`Receipts`), listed under it.
+    case receipts([RichReceipt])
 }
 
 /// An event an agent proposes: what, which day, and — when it was said — at
@@ -563,6 +565,8 @@ enum RichMarkdown {
                 blocks.append(.changeEvent(change))
             }
         }
+        let cited = Receipts.linked(in: source)
+        if !cited.isEmpty { blocks.append(.receipts(cited)) }
         return blocks
     }
 
@@ -1270,18 +1274,32 @@ extension View {
 
 /// A reply drawn block by block.
 struct RichMessageView: View {
+    @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let content: String
     var failed = false
     var onTap: (@MainActor () -> Void)? = nil
+    /// Off inside a callout: the reply around it lists the sources once.
+    var listsSources = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ForEach(Array(RichMarkdown.cached(content).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(RichMarkdown.cached(shown).enumerated()), id: \.offset) { _, block in
                 view(for: block)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: content) {
+            let cited = Receipts.cited(in: content)
+            if !cited.isEmpty { await store.loadReceiptTitles(cited) }
+        }
+    }
+
+    /// The reply with each cited conversation as a link under its name. Read
+    /// only when there is one, so a title arriving redraws only those replies.
+    private var shown: String {
+        guard content.contains("@session:") else { return content }
+        return Receipts.titled(content, titles: store.receiptTitles, language: ChatLanguage.of(content))
     }
 
     private func inline(_ text: String) -> AttributedString {
@@ -1333,6 +1351,10 @@ struct RichMessageView: View {
             // Blocks are keyed by position; a different file landing in the
             // same slot (a reply still streaming) must not keep the old card.
             RichMediaView(media: media).id(media)
+        case let .receipts(receipts):
+            if listsSources {
+                RichReceiptsView(receipts: receipts, language: ChatLanguage.of(content))
+            }
         }
     }
 
@@ -1393,6 +1415,7 @@ private struct SelectableReplyText: UIViewRepresentable {
         view.textContainer.lineFragmentPadding = 0
         view.adjustsFontForContentSizeCategory = true
         view.dataDetectorTypes = []
+        view.delegate = context.coordinator
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
         tap.name = "alice.replyTap"
         tap.cancelsTouchesInView = false
@@ -1443,13 +1466,24 @@ private struct SelectableReplyText: UIViewRepresentable {
         return raw
     }
 
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, UITextViewDelegate {
         var onTap: (@MainActor () -> Void)?
 
         @MainActor
         @objc func tapped(_ gesture: UITapGestureRecognizer) {
             if let text = gesture.view as? UITextView, text.isFirstResponder { return }
             onTap?()
+        }
+
+        /// A cited conversation opens over the chat, in Alice; every other
+        /// link keeps the system's own action.
+        func textView(
+            _ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction
+        ) -> UIAction? {
+            guard case let .link(url) = textItem.content, RichReceipt(url: url) != nil else { return defaultAction }
+            return UIAction { _ in
+                NotificationCenter.default.post(name: .aliceOpenReceipt, object: url)
+            }
         }
     }
 }
@@ -1516,7 +1550,7 @@ private struct RichCalloutView: View {
                     .foregroundStyle(tint)
             }
             // A callout holds Markdown of its own.
-            AnyView(RichMessageView(content: content, failed: failed, onTap: onTap))
+            AnyView(RichMessageView(content: content, failed: failed, onTap: onTap, listsSources: false))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

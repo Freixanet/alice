@@ -2409,6 +2409,27 @@ extension DashboardClient {
         _ = try await send("POST", "api/plugins/alice/calendar/disconnect", [:])
     }
 
+    // MARK: Agent actions and receipts (hermes-plugin/action_log.py)
+
+    /// What agents did with consequences, newest first.
+    func agentActions(since: Date? = nil, limit: Int = 200) async throws -> [AgentAction] {
+        var path = "api/plugins/alice/actions?limit=\(limit)"
+        if let since { path += "&since=\(since.timeIntervalSince1970)" }
+        let object = try await get(path)
+        return ((object["actions"] as? [[String: Any]]) ?? []).compactMap(AgentAction.parse)
+    }
+
+    /// A few turns of a past conversation around a cited message or a moment.
+    func receipt(profile: String, session: String, around: Int?, at: Date?, window: Int) async throws
+        -> ConversationReceipt {
+        var path = "api/plugins/alice/receipt?profile=\(Self.queryValue(profile))"
+            + "&session=\(Self.queryValue(session))&window=\(window)"
+        if let around { path += "&around=\(around)" }
+        if let at { path += "&at=\(at.timeIntervalSince1970)" }
+        guard let receipt = ConversationReceipt.parse(try await get(path)) else { throw Failure.unreadable }
+        return receipt
+    }
+
     /// A profile's curated memory as the Alice plugin for Hermes serves it
     /// (`hermes-plugin/`). Hermes itself has no route that edits those entries.
     func aliceMemory(profile: String) async throws -> MemorySnapshot {

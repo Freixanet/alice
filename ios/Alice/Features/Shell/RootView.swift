@@ -238,6 +238,16 @@ struct RootView: View {
             // for it: on "system" it always resolved the light variant, so the
             // accent was wrong in the dark exactly where it is most visible.
             .tint(store.accent.primary(scheme))
+            // A conversation an agent cited, or where an action happened.
+            .sheet(item: Bindable(store).openedReceipt) { receipt in
+                ReceiptSheet(receipt: receipt)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                    .preferredColorScheme(store.theme.colorScheme)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .aliceOpenReceipt)) { note in
+                if let url = note.object as? URL { store.openReceipt(url) }
+            }
             .fullScreenCover(item: Bindable(store).presentedLibraryTool) { tool in
                 NavigationStack {
                     LibraryToolScreen(tool: tool)

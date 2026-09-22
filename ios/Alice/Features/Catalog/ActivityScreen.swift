@@ -62,6 +62,8 @@ struct ActivityScreen: View {
     /// The routine a tapped routine event is about, open on its own page.
     @State private var openedRoutine: JobRow?
     @State private var routineNotice: String?
+    /// Where a tapped action happened (`AgentActionsSection`).
+    @State private var actionOpener = AgentActionOpener()
 
     private struct PendingFix: Identifiable {
         let id = UUID()
@@ -86,6 +88,10 @@ struct ActivityScreen: View {
                     Text("Swipe left to dismiss. It comes back only if something changes.")
                 }
             }
+
+            // What agents did that changed something: the record people
+            // most want of an assistant working on their behalf.
+            AgentActionsSection(opener: actionOpener, onOpenedChat: onOpenedChat)
 
             // No record while something needs attention: an "Earlier" heading
             // over "Nothing yet" is a section about nothing. With nothing
@@ -160,6 +166,7 @@ struct ActivityScreen: View {
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .refreshableWithFeedback { await refresh() }
+        .modifier(AgentActionOpener.Presenting(opener: actionOpener, onOpenedChat: onOpenedChat))
         .sheet(item: $openedRoutine) { routine in
             RoutineDetailSheet(routine: routine) {}
                 .preferredColorScheme(store.theme.colorScheme)
@@ -570,6 +577,8 @@ struct ActivityScreen: View {
         guard !refreshing else { return }
         refreshing = true
         defer { refreshing = false }
+        async let actions: Void = store.refreshAgentActions()
         await store.syncEvents()
+        await actions
     }
 }

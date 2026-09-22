@@ -11,6 +11,10 @@ extension EnvironmentValues {
         get { self[ReplySupersededKey.self] }
         set { self[ReplySupersededKey.self] = newValue }
     }
+
+    /// The thumb he answered this reply with, if any (`Reactions`). Set per
+    /// row by the transcript.
+    @Entry var givenReaction: Reaction? = nil
 }
 
 /// An agent's offer to connect something, in the chat where it helps.
@@ -274,6 +278,12 @@ struct AddEventCard: View {
         .animation(.snappy(duration: 0.25), value: dismissed)
         .animation(.snappy(duration: 0.25), value: reopened)
         .onAppear { if AddEventCard.dismissedBefore(key) { dismissed = true } }
+        // Added by a 👍 to the reply while the card was on screen.
+        .onReceive(NotificationCenter.default.publisher(for: .aliceCalendarCardsChanged)) { _ in
+            if added == nil, let at = AddEventCard.addedAt(key) {
+                withAnimation(.snappy(duration: 0.25)) { added = at }
+            }
+        }
     }
 
     private var collapsed: some View {
@@ -473,8 +483,27 @@ struct AddEventCard: View {
 
     /// Why this card remembers it was used: the same message is drawn again
     /// every time the chat is opened.
-    private var key: String {
-        "\(proposed.title)|\(proposed.date)|\(proposed.time ?? "")"
+    private var key: String { Self.key(for: proposed) }
+
+    private static func key(for event: RichCalendarEvent) -> String {
+        "\(event.title)|\(event.date)|\(event.time ?? "")"
+    }
+
+    /// What a 👍 to the reply does with this card: the button's add, when the
+    /// agent gave a day and a time. Without a time the card stays for him to
+    /// choose one — a thumb is not an hour. False when there was nothing to do.
+    static func addFromReaction(_ event: RichCalendarEvent) throws -> Bool {
+        let key = key(for: event)
+        guard event.time != nil, let start = event.start,
+              addedAt(key) == nil, !dismissedBefore(key)
+        else { return false }
+        _ = try CalendarSync.add(
+            title: event.title, start: start, allDay: false,
+            minutes: event.minutes, location: event.location
+        )
+        remember(key, at: start)
+        NotificationCenter.default.post(name: .aliceCalendarCardsChanged, object: nil)
+        return true
     }
 
     private func prepare() {
@@ -507,6 +536,7 @@ struct AddEventCard: View {
             )
             added = when
             AddEventCard.remember(key, at: when)
+            store.recordPhoneAction(kind: "phone.calendar.added", target: proposed.title)
             await store.syncCalendarNow()
         } catch {
             problem = language.pick("The event could not be added: ", "No se pudo añadir el evento: ") + error.localizedDescription
@@ -539,4 +569,9 @@ struct AddEventCard: View {
         all[key] = date.timeIntervalSinceReferenceDate
         UserDefaults.standard.set(all, forKey: addedKey)
     }
+}
+
+extension Notification.Name {
+    /// A calendar card's event was added or moved from outside the card.
+    static let aliceCalendarCardsChanged = Notification.Name("alice.calendar.cardsChanged")
 }

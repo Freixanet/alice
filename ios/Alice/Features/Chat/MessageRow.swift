@@ -92,7 +92,9 @@ struct MessageRow: View {
                     SentAttachments(attachments: message.attachments)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                if !message.content.isEmpty {
+                if let turn = ReactionTurn.parse(message.content) {
+                    ReactionBubble(turn: turn)
+                } else if !message.content.isEmpty {
                     // A tap opens the same actions as a long press: a menu
                     // only a long press reaches is one most people never find.
                     Menu {
@@ -462,6 +464,8 @@ private struct ChollometroDeals: View {
 private struct MessageActions: View {
     @Environment(AppStore.self) private var store
     @Environment(ReadAloud.self) private var speech
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.givenReaction) private var given
     let message: Message
     @State private var copied = false
 
@@ -470,6 +474,14 @@ private struct MessageActions: View {
         // and the leading inset pulls the first glyph's ink back onto the
         // paragraph's left edge rather than onto its slot's edge.
         HStack(spacing: 0) {
+            // First, because they answer: a yes or a no to what the reply
+            // proposed, sent as his turn. The one given stays filled.
+            if store.canReact(to: message) {
+                ForEach(Reaction.allCases, id: \.self) { reaction in
+                    reactionButton(reaction)
+                }
+            }
+
             Button {
                 UIPasteboard.general.string = message.content
                 copied = true
@@ -519,6 +531,70 @@ private struct MessageActions: View {
         .foregroundStyle(.secondary)
         .buttonStyle(.plain)
         .padding(.top, 2)
+    }
+}
+
+extension MessageActions {
+    private func reactionButton(_ reaction: Reaction) -> some View {
+        let chosen = given == reaction
+        return Button {
+            guard !chosen else { return }
+            ReactionTip().invalidate(reason: .actionPerformed)
+            Task { await store.react(reaction, to: message) }
+        } label: {
+            // 16.67: the thumb paints 17pt of ink at 16pt, as the copy
+            // squares do (`scripts/measure-symbol-ink.swift`).
+            ActionIcon(chosen ? reaction.symbol + ".fill" : reaction.symbol, slot: 16.67)
+                .foregroundStyle(chosen ? AnyShapeStyle(store.accent.primary(scheme)) : AnyShapeStyle(.secondary))
+                .symbolEffect(.bounce, value: chosen)
+        }
+        .disabled(store.isSending && !chosen)
+        .sensoryFeedback(.selection, trigger: chosen) { _, now in now }
+        .accessibilityLabel(reaction == .yes ? Text("Answer yes") : Text("Answer no"))
+        .accessibilityValue(chosen ? Text("Chosen") : Text(verbatim: ""))
+        .accessibilityHint("Sends it to the agent as your answer")
+    }
+}
+
+/// His answer with a thumb: the thumb itself, large, as a single emoji is in
+/// Messages, under the start of the reply it answers when that was not the
+/// latest, and over what the phone did about it.
+private struct ReactionBubble: View {
+    @Environment(\.colorScheme) private var scheme
+    let turn: ReactionTurn
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            if let quote = turn.quote {
+                Text("«\(quote)»")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
+                    .overlay { RoundedRectangle(cornerRadius: 14).stroke(Palette.border(scheme), lineWidth: 0.5) }
+            }
+            Text(turn.reaction.rawValue)
+                .font(.system(size: 40))
+            if let note = turn.note, let first = note.first {
+                Label(first.uppercased() + note.dropFirst(), systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
+        let answer = turn.reaction == .yes ? String(localized: "You answered yes") : String(localized: "You answered no")
+        var parts = [answer]
+        if let quote = turn.quote { parts.append(quote) }
+        if let note = turn.note { parts.append(note) }
+        return parts.joined(separator: ". ")
     }
 }
 

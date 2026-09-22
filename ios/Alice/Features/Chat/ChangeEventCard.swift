@@ -43,6 +43,52 @@ struct ChangeEventCard: View {
             }
         }
         .task { await locate() }
+        // Moved by a 👍 to the reply, here or before the app last closed.
+        .onReceive(NotificationCenter.default.publisher(for: .aliceCalendarCardsChanged)) { _ in
+            adoptReactionMove()
+        }
+        .onAppear { adoptReactionMove() }
+    }
+
+    private func adoptReactionMove() {
+        guard done == nil, let to = Self.movedAt(change) else { return }
+        done = .moved(to)
+    }
+
+    private static let movedKey = "alice.calendar.moved"
+
+    private static func key(for change: RichCalendarChange) -> String {
+        "\(change.title)|\(change.date)|\(change.time ?? "")|\(change.toDate ?? "")|\(change.toTime ?? "")"
+    }
+
+    private static func movedAt(_ change: RichCalendarChange) -> Date? {
+        (UserDefaults.standard.dictionary(forKey: movedKey)?[key(for: change)] as? Double)
+            .map(Date.init(timeIntervalSinceReferenceDate:))
+    }
+
+    private static func rememberMoved(_ change: RichCalendarChange, to date: Date) {
+        var all = UserDefaults.standard.dictionary(forKey: movedKey) ?? [:]
+        all[key(for: change)] = date.timeIntervalSinceReferenceDate
+        if all.count > 200 {
+            let cutoff = Date().timeIntervalSinceReferenceDate - 90 * 86400
+            all = all.filter { ($0.value as? Double ?? 0) > cutoff }
+        }
+        UserDefaults.standard.set(all, forKey: movedKey)
+    }
+
+    /// What a 👍 to the reply does with a move card: the event found the way
+    /// the card finds it, moved to where the agent proposed. False when it is
+    /// not there, cannot be changed, or was already moved.
+    static func moveFromReaction(_ change: RichCalendarChange) throws -> Bool {
+        guard change.kind == .move, movedAt(change) == nil,
+              let day = change.day, let to = change.target,
+              let found = CalendarSync.find(title: change.title, day: day, time: change.at),
+              found.editable
+        else { return false }
+        try CalendarSync.move(found.identifier, to: to)
+        rememberMoved(change, to: to)
+        NotificationCenter.default.post(name: .aliceCalendarCardsChanged, object: nil)
+        return true
     }
 
     private var card: some View {
@@ -208,11 +254,14 @@ struct ChangeEventCard: View {
             switch change.kind {
             case .move:
                 try CalendarSync.move(found.identifier, to: target)
+                Self.rememberMoved(change, to: target)
                 done = .moved(target)
+                store.recordPhoneAction(kind: "phone.calendar.moved", target: found.title)
                 store.sendQuickReply(language.pick("Done, moved.", "Hecho, movida."))
             case .cancel:
                 try CalendarSync.cancel(found.identifier)
                 done = .cancelled
+                store.recordPhoneAction(kind: "phone.calendar.cancelled", target: found.title)
                 store.sendQuickReply(language.pick("Done, cancelled.", "Hecho, cancelada."))
             }
             await store.syncCalendarNow()

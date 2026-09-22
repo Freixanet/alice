@@ -59,6 +59,10 @@ struct AliceApp: App {
                         return
                     }
                     guard url.scheme?.lowercased() == "alice" else { return }
+                    if url.host?.lowercased() == "receipt" {
+                        store.openReceipt(url)
+                        return
+                    }
                     if url.host?.lowercased() == "compose" {
                         acceptSharedCompose(url)
                         return

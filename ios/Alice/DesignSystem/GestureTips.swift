@@ -17,6 +17,12 @@ struct MessageActionsTip: Tip {
     var image: Image? { Image(systemName: "hand.tap") }
 }
 
+struct ReactionTip: Tip {
+    var title: Text { Text("Answer with a thumb") }
+    var message: Text? { Text("Tap a reply, then 👍 for yes or 👎 for no. A 👍 to a calendar card also adds or moves the event.") }
+    var image: Image? { Image(systemName: "hand.thumbsup") }
+}
+
 struct NoteActionsTip: Tip {
     var title: Text { Text("Hold or swipe a note") }
     var message: Text? { Text("Hold for more options, or swipe left to delete it.") }

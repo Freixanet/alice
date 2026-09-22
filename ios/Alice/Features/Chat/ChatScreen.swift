@@ -502,6 +502,7 @@ private struct DrawerGlyph: Shape {
 
 private struct TranscriptView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     let conversation: Conversation
     /// This bot's routine runs that found nothing, shown as cards.
     var quietRuns: [QuietRoutineRun] = []
@@ -519,12 +520,34 @@ private struct TranscriptView: View {
     /// The transcript's end as last measured, for decisions made a moment later.
     @State private var lastTail: Tail?
 
+    /// Scrolls to a message a receipt pointed at, loading earlier pages if it
+    /// is further back, and lights it for a moment.
+    private func bringIntoView(_ focus: AppStore.FocusedMessage?, in presented: [Message]) {
+        guard let focus, focus.conversationID == conversation.id,
+              let index = presented.firstIndex(where: { $0.remoteID == focus.remoteID || $0.id == focus.remoteID })
+        else { return }
+        let target = presented[index].id
+        store.focusedMessage = nil
+        shown = max(shown, presented.count - index)
+        following = false
+        Task { @MainActor in
+            // After the page that holds it is laid out.
+            try? await Task.sleep(for: .milliseconds(250))
+            withAnimation(.snappy(duration: 0.35)) { position.scrollTo(id: target, anchor: .center) }
+            withAnimation(.easeOut(duration: 0.2)) { highlighted = target }
+            try? await Task.sleep(for: .seconds(1.8))
+            withAnimation(.easeInOut(duration: 0.6)) { highlighted = nil }
+        }
+    }
+
     private static func isReader(_ phase: ScrollPhase) -> Bool {
         phase == .tracking || phase == .interacting || phase == .decelerating
     }
     /// Set the first time the transcript reaches its live edge, so the jump
     /// button does not flash while a long chat is still settling on open.
     @State private var settled = false
+    /// The message a receipt opened, lit for a moment.
+    @State private var highlighted: String?
 
     /// Where the end of the transcript is, against what can be seen of it.
     private struct Tail: Equatable {
@@ -581,9 +604,13 @@ private struct TranscriptView: View {
                     let latestBusy = !store.backgroundWork(for: conversation.id).isEmpty
                         || messages.last?.pending == true
                     // Replies he has written after: their offers have been
-                    // answered or passed over, and close.
-                    let lastAsked = messages.lastIndex { $0.role == .user }
+                    // answered or passed over, and close. A thumb answers one
+                    // reply only — a 👎 closes that one's offers, and neither
+                    // passes over the rest.
+                    let given = Reactions.given(in: messages)
+                    let lastAsked = messages.lastIndex { $0.role == .user && !Reactions.isReaction($0) }
                     let answered = Set(lastAsked.map { messages[..<$0].map(\.id) } ?? [])
+                        .union(given.filter { $0.value == .no }.keys)
                     ForEach(messages) { message in
                         let position = positions[message.id]
                         let busy = (position?.isLatest ?? false) && latestBusy
@@ -595,12 +622,26 @@ private struct TranscriptView: View {
                             actionsContent: position?.text
                         )
                         .environment(\.replySuperseded, answered.contains(message.id))
+                        .environment(\.givenReaction, given[message.id])
+                        // A cited message, opened from its receipt, glows once.
+                        .background {
+                            RoundedRectangle(cornerRadius: 18)
+                                .fill(store.accent.primary(scheme).opacity(highlighted == message.id ? 0.12 : 0))
+                                .padding(.horizontal, -10)
+                                .padding(.vertical, -8)
+                                .allowsHitTesting(false)
+                        }
                         // Parts of one task sit closer than separate messages.
                         .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
                         .id(message.id)
                     }
                     if conversation.messages.contains(where: { $0.role == .user }) {
                         TipView(MessageActionsTip())
+                    }
+                    // Once the actions hint has done its job, and only under a
+                    // reply that asks or offers something: where a thumb helps.
+                    if let last = messages.last, Reactions.invites(last), !MessageActionsTip().shouldDisplay {
+                        TipView(ReactionTip())
                     }
                     BackgroundWorkCard(conversationID: conversation.id)
                     // A question the agent is waiting on, where the reply
@@ -627,6 +668,9 @@ private struct TranscriptView: View {
             }
             .scrollIndicators(.hidden)
             .scrollPosition($position)
+            .onChange(of: store.focusedMessage, initial: true) { _, focus in
+                bringIntoView(focus, in: presented)
+            }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
             // The transcript extends under the Dynamic Island. Soft fade
