@@ -9,7 +9,7 @@ Lo que ya estaba se mantiene:
 - RSS: skill `rss-feeds`;
 - Reddit público: skill `reddit-reading`.
 
-`reach` añade YouTube (metadatos, búsqueda y subtítulos), búsqueda semántica con Exa, V2EX, búsqueda en Bilibili y lectura de X, Facebook, Instagram, LinkedIn y Xiaohongshu cuando hay sesión. Una rutina puede llamar a `reach` igual que un chat. No hay otro scheduler.
+`reach` añade YouTube (búsqueda y metadatos; las transcripciones las lee la skill `youtube-content` de Hermes, que las trae enteras y más rápido, y `reach` queda de reserva), búsqueda semántica con Exa, V2EX, búsqueda en Bilibili y lectura de X, Facebook, Instagram, LinkedIn y Xiaohongshu cuando hay sesión. Una rutina puede llamar a `reach` igual que un chat. No hay otro scheduler.
 
 ## Cómo fluye una petición
 

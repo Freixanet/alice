@@ -1,6 +1,6 @@
 ---
 name: internet
-description: "Canales de internet que las herramientas web de Hermes y las skills github, rss-feeds y reddit-reading no cubren: transcripciones de YouTube, búsqueda Exa, V2EX, Bilibili y lectura de X, Facebook, Instagram, LinkedIn o Xiaohongshu cuando ya hay sesión. Úsala para actualidad en esas fuentes. No publica ni inicia sesión sola."
+description: "Canales de internet que las herramientas web de Hermes y las skills github, rss-feeds, reddit-reading y youtube-content no cubren: buscar vídeos en YouTube y sus datos (título, canal, fecha), búsqueda Exa, V2EX, Bilibili y lectura de X, Facebook, Instagram, LinkedIn o Xiaohongshu cuando ya hay sesión. Úsala para actualidad en esas fuentes. No publica ni inicia sesión sola."
 version: 1.0.0
 platforms: [macos, linux]
 metadata:
@@ -21,6 +21,10 @@ El campo `sources` trae plataforma, URL, título, autor y fecha cuando existen. 
 - GitHub: `gh` o la skill de GitHub. `reach code.search` y `reach code.repo` llaman al mismo `gh`.
 - RSS: la skill `rss-feeds`. `reach rss.read` solo si ya tienes la URL del feed.
 - Reddit público: la skill `reddit-reading`. `reach social.search --platform reddit` solo con la sesión de Chrome (OpenCLI).
+- YouTube, cada cosa con lo suyo:
+  - **Encontrar vídeos** y saber de qué son: `reach video.search` y `reach video.meta`. `youtube-content` no busca.
+  - **Leer lo que dice un vídeo** (resumirlo, citarlo, sacar capítulos): la skill `youtube-content`. Trae la transcripción entera en un par de segundos. `reach video.transcript` la corta a unos 10.000 caracteres y tarda más: úsalo solo si `youtube-content` falla.
+  - Para «los mejores vídeos sobre X»: busca con `reach video.search` y lee con `youtube-content` solo los 2–3 que vayas a recomendar.
 
 ## Comandos
 
@@ -30,7 +34,7 @@ Di en el chat una frase humana («Buscando en YouTube…», «Leyendo 4 fuentes�
 reach web.search --query "consulta corta"
 reach web.read --url "https://example.com"
 reach video.meta --url "https://www.youtube.com/watch?v=…"
-reach video.transcript --url "https://www.youtube.com/watch?v=…"
+reach video.transcript --url "https://www.youtube.com/watch?v=…"   # solo si youtube-content falla
 reach video.search --query "consulta"
 reach code.search --query "consulta"
 reach code.repo --target owner/repo
