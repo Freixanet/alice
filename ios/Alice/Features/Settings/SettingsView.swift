@@ -221,6 +221,9 @@ struct SettingsView: View {
                     LabeledContent("Revision", value: revision)
                         .textSelection(.enabled)
                 }
+                if store.dashboardReady {
+                    HermesVersionRow()
+                }
             }
         }
         .navigationTitle("Settings")
@@ -315,5 +318,23 @@ struct AdvancedSettingsView: View {
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
         .aliceFormPaper(scheme)
+    }
+}
+
+/// The Hermes this Alice talks to, beside Alice's own version: the two are
+/// released apart, and knowing both is the first question when something
+/// breaks after an update.
+struct HermesVersionRow: View {
+    @Environment(AppStore.self) private var store
+    @State private var version: String?
+
+    var body: some View {
+        LabeledContent("Hermes", value: version ?? "…")
+            .textSelection(.enabled)
+            .task {
+                guard version == nil, let status = try? await store.hermesSystemStatus(profile: nil) else { return }
+                let released = status.releaseDate.isEmpty ? "" : " (\(status.releaseDate))"
+                version = status.version + released
+            }
     }
 }

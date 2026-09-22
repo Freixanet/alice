@@ -118,6 +118,7 @@ struct DeveloperScreen: View {
             Section("This build") {
                 let build = AliceBuildInfo.current
                 LabeledContent("Version", value: "\(build.version) (\(build.build))")
+                if store.dashboardReady { HermesVersionRow() }
                 if let revision = build.revision { LabeledContent("Revision", value: revision) }
                 LabeledContent("iOS", value: UIDevice.current.systemVersion)
                 LabeledContent("Low Power Mode", value: ProcessInfo.processInfo.isLowPowerModeEnabled ? "On" : "Off")
