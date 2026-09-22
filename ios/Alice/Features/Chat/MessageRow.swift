@@ -38,7 +38,7 @@ struct MessageRow: View {
     @ViewBuilder
     private func replyBody(_ content: String) -> some View {
         if message.pending {
-            Text(content)
+            Text(Self.streamingText(content))
                 .font(.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -54,6 +54,31 @@ struct MessageRow: View {
 
     /// Being written, here or out of sight.
     private var working: Bool { message.pending || stillWorking }
+
+    /// What is shown of a reply still arriving: plain, and cheap to make on
+    /// every token. Blank lines at the start — models often open with them
+    /// after a tool — left a gap under the trace that closed only when the
+    /// reply settled; bold markers would show as asterisks; and a code or
+    /// card block still being written would show its raw JSON, so the text
+    /// stops where one opens and the finished block appears with the reply.
+    nonisolated static func streamingText(_ content: String) -> String {
+        var text = content
+        if let fence = text.range(of: "```") {
+            let after = text[fence.upperBound...]
+            if after.range(of: "```") == nil { text = String(text[..<fence.lowerBound]) }
+        }
+        text = text.replacingOccurrences(of: "**", with: "")
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Words arriving and no tool running: the reply is being written, not
+    /// thought about, so the trace above it stops saying "Thinking".
+    private var writing: Bool {
+        guard message.pending,
+              !Self.streamingText(message.content).isEmpty
+        else { return false }
+        return ToolCaption.steps(in: message.tools).last.map { $0.status == .done } ?? true
+    }
 
     private var actionsMessage: Message {
         var whole = message
@@ -131,11 +156,11 @@ struct MessageRow: View {
                     // over it. Questions waiting on the person end the turn as
                     // far as the chat shows — nothing is "Thinking" meanwhile.
                     if store.pendingHomeModelConfirmation?.replyID != message.id,
-                       (working && !store.activeAwaitsAnswers)
+                       (working && !writing && !store.activeAwaitsAnswers)
                         || !ToolCaption.steps(in: message.tools).isEmpty {
                         ThinkingTrace(
                             steps: message.tools,
-                            pending: working && message.approval == nil
+                            pending: working && !writing && message.approval == nil
                                 && !store.activeAwaitsAnswers,
                             note: message.deliveryNote,
                             thoughtSeconds: message.thoughtSeconds,
