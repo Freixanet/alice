@@ -552,6 +552,12 @@ private struct TranscriptView: View {
                 // The composer's own side inset, so the conversation and the
                 // field it is written in share one column.
                 .padding(.horizontal, store.activeBotProfileForModelSelection != nil ? 20 : 18)
+                // Air under the header, so the first message does not start
+                // against the agent's portrait and name. The header is a bar
+                // laid over the transcript with no spacing of its own; close
+                // to the gap between messages, a little less so the chat still
+                // reads as starting there.
+                .padding(.top, 28)
                 // Air between the last reply and the composer, so the
                 // conversation ends rather than stopping against the glass.
                 // At rest the field sits on the home indicator and needs a
