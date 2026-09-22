@@ -12,10 +12,18 @@ import Observation
 final class ReadAloud {
     private let synthesizer = AVSpeechSynthesizer()
     private(set) var speakingID: String?
+    private let finish = Finish()
+
+    init() {
+        synthesizer.delegate = finish
+        finish.done = { [weak self] in self?.speakingID = nil }
+    }
 
     func isSpeaking(_ id: String) -> Bool { speakingID == id }
 
-    func toggle(_ text: String, id: String) {
+    /// `language`, a BCP 47 code such as `ja-JP`, when the caller knows it —
+    /// a phrase card does; a short phrase is too little to recognise.
+    func toggle(_ text: String, id: String, language: String? = nil) {
         if speakingID == id {
             stop()
             return
@@ -32,7 +40,7 @@ final class ReadAloud {
         }
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = Self.voice(for: text)
+        utterance.voice = language.flatMap(AVSpeechSynthesisVoice.init(language:)) ?? Self.voice(for: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synthesizer.speak(utterance)
         speakingID = id
@@ -52,5 +60,15 @@ final class ReadAloud {
         guard let code else { return nil }
         return AVSpeechSynthesisVoice(language: code)
             ?? AVSpeechSynthesisVoice(language: Locale.current.identifier)
+    }
+
+    /// Clears the playing state when a phrase ends on its own, so its button
+    /// goes back to Play.
+    private final class Finish: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
+        @MainActor var done: (() -> Void)?
+
+        nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+            Task { @MainActor in self.done?() }
+        }
     }
 }

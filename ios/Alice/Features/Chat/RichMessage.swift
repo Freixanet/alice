@@ -26,6 +26,9 @@ enum RichBlock: Equatable {
     /// `[Title](alice://calendar/add?…)`: an event to add to the person's
     /// calendar once they confirm it (`AddEventCard`).
     case addEvent(RichCalendarEvent)
+    /// ```alice-ui with a JSON object: a native piece of interface
+    /// (`UIComponent`).
+    case component(UIComponent)
 }
 
 /// An event an agent proposes: what, which day, and — when it was said — at
@@ -327,7 +330,12 @@ enum RichMarkdown {
                     if current.trimmingCharacters(in: .whitespaces).hasPrefix(fence.marker) { break }
                     body.append(current)
                 }
-                blocks.append(.code(language: fence.language, text: body.joined(separator: "\n")))
+                let code = body.joined(separator: "\n")
+                if UIComponent.accepts(fence.language), let component = UIComponent(json: code) {
+                    blocks.append(.component(component))
+                } else {
+                    blocks.append(.code(language: fence.language, text: code))
+                }
                 continue
             }
 
@@ -1235,6 +1243,8 @@ struct RichMessageView: View {
             ConnectOfferCard(service: service, language: ChatLanguage.of(content))
         case let .addEvent(event):
             AddEventCard(proposed: event, language: ChatLanguage.of(content))
+        case let .component(component):
+            UIComponentView(component: component, language: ChatLanguage.of(content))
         case let .media(media):
             // Blocks are keyed by position; a different file landing in the
             // same slot (a reply still streaming) must not keep the old card.
@@ -1598,6 +1608,7 @@ private struct RichLinksView: View {
 /// Reply buttons: each sends its text in the chat on screen, as if typed.
 private struct RichReplyButtonsView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     let buttons: [RichReplyButton]
 
     var body: some View {
@@ -1610,12 +1621,22 @@ private struct RichReplyButtonsView: View {
     @ViewBuilder
     private var items: some View {
         ForEach(Array(buttons.enumerated()), id: \.offset) { _, button in
-            Button(button.title) {
+            // Suggestions to tap, not controls to operate: the accent's own
+            // tint, soft, so a row of them reads as the next thing to say.
+            Button {
                 store.sendQuickReply(button.reply)
+            } label: {
+                Text(button.title)
+                    .font(.subheadline.weight(.medium))
+                    .multilineTextAlignment(.leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .foregroundStyle(store.accent.primary(scheme))
+                    .background(store.accent.primary(scheme).opacity(0.12), in: .capsule)
+                    .contentShape(.capsule)
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .tint(.primary)
+            .buttonStyle(PressableCardStyle())
+            .opacity(store.isSending ? 0.5 : 1)
             .disabled(store.isSending)
             .accessibilityHint("Sends “\(button.reply)”")
         }

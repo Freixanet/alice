@@ -202,12 +202,11 @@ struct RootView: View {
                     .zIndex(2)
                 }
             }
-            // Developer › Performance meter: in the strip beside the home
-            // indicator, under the composer, where it covers nothing.
-            .overlay(alignment: .bottomLeading) {
+            // Developer › Performance meter: centred under the composer, in
+            // the strip beside the home indicator, where it covers nothing.
+            .overlay(alignment: .bottom) {
                 if store.developerMode && showsPerformanceHUD {
                     PerformanceHUD()
-                        .padding(.leading, 18)
                         .padding(.bottom, max(proxy.safeAreaInsets.bottom - 26, 4))
                 }
             }

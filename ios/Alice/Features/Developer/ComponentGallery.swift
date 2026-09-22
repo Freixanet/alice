@@ -51,6 +51,51 @@ struct ComponentGallery: View {
             english: "I can answer that once I can see your calendar.\n[Connect calendar](alice://connect/calendar)",
             spanish: "Te lo digo en cuanto pueda ver tu calendario.\n[Conectar calendario](alice://connect/calendar)"
         ),
+        Sample(
+            id: "places", title: "Places",
+            english: "Three for dinner in Gràcia:\n```alice-ui\n{\"type\":\"places\",\"items\":[{\"title\":\"La Pubilla\",\"subtitle\":\"Market cooking, lunch only\",\"query\":\"La Pubilla Barcelona\"},{\"title\":\"Bar Bodega Quimet\",\"subtitle\":\"Vermouth and tapas since 1914\",\"query\":\"Bodega Quimet Barcelona\"}]}\n```\n[How do I get to La Pubilla?](alice://reply?text=How%20do%20I%20get%20to%20La%20Pubilla%3F)",
+            spanish: "Tres para cenar en Gràcia:\n```alice-ui\n{\"type\":\"places\",\"items\":[{\"title\":\"La Pubilla\",\"subtitle\":\"Cocina de mercado, solo mediodía\",\"query\":\"La Pubilla Barcelona\"},{\"title\":\"Bar Bodega Quimet\",\"subtitle\":\"Vermut y tapas desde 1914\",\"query\":\"Bodega Quimet Barcelona\"}]}\n```\n[¿Cómo llego a La Pubilla?](alice://reply?text=%C2%BFC%C3%B3mo%20llego%20a%20La%20Pubilla%3F)"
+        ),
+        Sample(
+            id: "map", title: "Map",
+            english: "```alice-ui\n{\"type\":\"map\",\"title\":\"Near Sagrada Família\",\"places\":[{\"title\":\"Sagrada Família\",\"lat\":41.4036,\"lon\":2.1744},{\"title\":\"Hospital de Sant Pau\",\"lat\":41.4115,\"lon\":2.1744}]}\n```",
+            spanish: "```alice-ui\n{\"type\":\"map\",\"title\":\"Cerca de la Sagrada Família\",\"places\":[{\"title\":\"Sagrada Família\",\"lat\":41.4036,\"lon\":2.1744},{\"title\":\"Hospital de Sant Pau\",\"lat\":41.4115,\"lon\":2.1744}]}\n```"
+        ),
+        Sample(
+            id: "events", title: "Events",
+            english: "```alice-ui\n{\"type\":\"events\",\"items\":[{\"title\":\"Haircut\",\"start\":\"2026-09-23T17:00\",\"end\":\"2026-09-23T17:45\",\"symbol\":\"scissors\"},{\"title\":\"Dinner with Laura\",\"start\":\"2026-09-24T21:00\",\"symbol\":\"fork.knife\"}]}\n```",
+            spanish: "```alice-ui\n{\"type\":\"events\",\"items\":[{\"title\":\"Peluquería\",\"start\":\"2026-09-23T17:00\",\"end\":\"2026-09-23T17:45\",\"symbol\":\"scissors\"},{\"title\":\"Cena con Laura\",\"start\":\"2026-09-24T21:00\",\"symbol\":\"fork.knife\"}]}\n```"
+        ),
+        Sample(
+            id: "timeline", title: "Timeline",
+            english: "```alice-ui\n{\"type\":\"timeline\",\"items\":[{\"time\":\"07:10\",\"title\":\"Barcelona BCN\",\"subtitle\":\"Terminal 1 · Vueling VY1234\",\"tag\":\"On time\"},{\"time\":\"09:05\",\"title\":\"Paris ORY\",\"subtitle\":\"Orly 3\"}]}\n```",
+            spanish: "```alice-ui\n{\"type\":\"timeline\",\"items\":[{\"time\":\"07:10\",\"title\":\"Barcelona BCN\",\"subtitle\":\"Terminal 1 · Vueling VY1234\",\"tag\":\"A su hora\"},{\"time\":\"09:05\",\"title\":\"París ORY\",\"subtitle\":\"Orly 3\"}]}\n```"
+        ),
+        Sample(
+            id: "products", title: "Products",
+            english: "```alice-ui\n{\"type\":\"products\",\"items\":[{\"brand\":\"Muji\",\"title\":\"Aroma diffuser\",\"price\":\"49,95 €\"},{\"brand\":\"Hay\",\"title\":\"Kaleido tray, small\",\"price\":\"25 €\"}]}\n```",
+            spanish: "```alice-ui\n{\"type\":\"products\",\"items\":[{\"brand\":\"Muji\",\"title\":\"Difusor de aromas\",\"price\":\"49,95 €\"},{\"brand\":\"Hay\",\"title\":\"Bandeja Kaleido, pequeña\",\"price\":\"25 €\"}]}\n```"
+        ),
+        Sample(
+            id: "phrases", title: "Phrases",
+            english: "```alice-ui\n{\"type\":\"phrases\",\"language\":\"ja-JP\",\"items\":[{\"text\":\"すみません\",\"translation\":\"Excuse me\",\"note\":\"To call a waiter or get past someone\"},{\"text\":\"ありがとうございます\",\"translation\":\"Thank you very much\"}]}\n```",
+            spanish: "```alice-ui\n{\"type\":\"phrases\",\"language\":\"fr-FR\",\"items\":[{\"text\":\"Une table pour deux, s'il vous plaît\",\"translation\":\"Una mesa para dos, por favor\"},{\"text\":\"L'addition, s'il vous plaît\",\"translation\":\"La cuenta, por favor\",\"note\":\"Al terminar; no la traen si no la pides\"}]}\n```"
+        ),
+        Sample(
+            id: "email", title: "Email draft",
+            english: "```alice-ui\n{\"type\":\"email\",\"to\":\"\",\"subject\":\"Moving Thursday's meeting\",\"body\":\"Hi Laura,\\n\\nCould we move Thursday's meeting to Friday at the same time?\\n\\nThanks,\\nMarc\"}\n```",
+            spanish: "```alice-ui\n{\"type\":\"email\",\"to\":\"\",\"subject\":\"Cambio de la reunión del jueves\",\"body\":\"Hola Laura,\\n\\n¿Podríamos pasar la reunión del jueves al viernes a la misma hora?\\n\\nGracias,\\nMarc\"}\n```"
+        ),
+        Sample(
+            id: "calendar", title: "Month",
+            english: "```alice-ui\n{\"type\":\"calendar\",\"month\":\"2026-09\"}\n```",
+            spanish: "```alice-ui\n{\"type\":\"calendar\",\"month\":\"2026-09\"}\n```"
+        ),
+        Sample(
+            id: "article", title: "Article",
+            english: "```alice-ui\n{\"type\":\"article\",\"title\":\"Kyoto in autumn\",\"sections\":[{\"heading\":\"When\",\"text\":\"Leaves turn from **mid-November** to early December.\"},{\"heading\":\"Where\",\"text\":\"Tofuku-ji and Eikan-dō, early, before the tour groups.\"},{\"heading\":\"Tip\",\"text\":\"Book a machiya a few months ahead.\"}]}\n```",
+            spanish: "```alice-ui\n{\"type\":\"article\",\"title\":\"Kioto en otoño\",\"sections\":[{\"heading\":\"Cuándo\",\"text\":\"Las hojas cambian de **mediados de noviembre** a principios de diciembre.\"},{\"heading\":\"Dónde\",\"text\":\"Tofuku-ji y Eikan-dō, temprano, antes de los grupos.\"},{\"heading\":\"Consejo\",\"text\":\"Reserva una machiya con meses de antelación.\"}]}\n```"
+        ),
     ]
 
     var body: some View {
