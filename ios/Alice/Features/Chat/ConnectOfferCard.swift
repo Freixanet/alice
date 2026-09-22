@@ -129,7 +129,8 @@ struct CalendarConnectionRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
+            // The icon on the name's baseline, the status one line under it.
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Image(systemName: "calendar")
                     .foregroundStyle(store.accent.primary(scheme))
                     .frame(width: 24)
@@ -138,6 +139,8 @@ struct CalendarConnectionRow: View {
                     Text(status)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
                 Spacer(minLength: 8)
                 if working {
@@ -173,8 +176,8 @@ struct CalendarConnectionRow: View {
         switch store.calendarLink {
         case let .connected(updatedAt):
             guard let updatedAt else { return "Connected" }
-            return "Connected · updated \(updatedAt.formatted(.relative(presentation: .named)))"
-        case .declined: return "Not connected — agents won’t offer it"
+            return "Connected · \(updatedAt.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))"
+        case .declined: return "Declined in a chat"
         case .notConnected: return "Not connected"
         case .unknown: return "Checking…"
         }
