@@ -235,12 +235,52 @@ def default_fetch(url: str, timeout: float, headers: dict, limit: int) -> tuple[
         return exc.code, body
 
 
+def tool_dirs(home: Path = HOME) -> list:
+    """Donde Agent-Reach deja sus programas, aunque Hermes arranque sin ellos.
+
+    El dashboard y el gateway corren desde launchd con un PATH corto, sin la
+    carpeta global de npm (nvm): ahí están mcporter (Exa) y opencli, así que
+    desde un chat parecían no instalados, aunque en la terminal funcionaran.
+    """
+    dirs = [home / ".local" / "bin", home / ".hermes" / "node" / "bin",
+            Path("/opt/homebrew/bin"), Path("/usr/local/bin")]
+    nvm = home / ".nvm" / "versions" / "node"
+    if nvm.is_dir():
+        def version(path: Path) -> tuple:
+            parts = re.findall(r"\d+", path.name)
+            return tuple(int(part) for part in parts)
+        dirs.extend(sorted((entry / "bin" for entry in nvm.iterdir() if (entry / "bin").is_dir()),
+                           key=lambda path: version(path.parent), reverse=True))
+    return [str(path) for path in dirs if path.is_dir()]
+
+
+def with_tool_path(path: str, home: Path = HOME) -> str:
+    """El PATH recibido, con las carpetas de `tool_dirs` que falten al final."""
+    parts = [part for part in path.split(os.pathsep) if part]
+    for extra in tool_dirs(home):
+        if extra not in parts:
+            parts.append(extra)
+    return os.pathsep.join(parts)
+
+
+def _spawn_env(argv: list, env: Optional[dict]) -> dict:
+    """Primero la carpeta del propio programa: un script de npm busca `node`
+    con `env`, y debe ser el node con el que se instaló, no otro del PATH."""
+    base = dict(os.environ if env is None else env)
+    path = base.get("PATH", "")
+    folder = os.path.dirname(argv[0]) if argv and os.path.isabs(argv[0]) else ""
+    if folder and folder not in path.split(os.pathsep):
+        path = folder + (os.pathsep + path if path else "")
+    base["PATH"] = path
+    return base
+
+
 def default_spawn(argv: list, timeout: float, env: Optional[dict] = None) -> tuple[int, str, str, bool]:
     proc = subprocess.Popen(
         argv,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=env,
+        env=_spawn_env(argv, env),
         start_new_session=True,
         text=True,
         errors="replace",
@@ -272,7 +312,7 @@ def _kill(proc: subprocess.Popen) -> None:
 
 
 def _which(name: str) -> Optional[str]:
-    return shutil.which(name)
+    return shutil.which(name, path=with_tool_path(os.environ.get("PATH", "")))
 
 
 def _log(capability: str, backend: str, ok: bool, elapsed_ms: int, results: int, code: str) -> None:
@@ -1232,6 +1272,8 @@ def _batch(raw: str, **kwargs) -> dict:
 
 def main(argv: Optional[list] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # También para `agent-reach doctor`, que busca los programas por su cuenta.
+    os.environ["PATH"] = with_tool_path(os.environ.get("PATH", ""))
     try:
         request = _parse_args(argv)
         if request.get("capability") == "batch":

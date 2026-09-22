@@ -30,6 +30,8 @@ Varias consultas independientes van en un solo `reach batch` (máximo seis, en p
 | Exa | `~/.mcporter/mcporter.json` |
 | Temporales de subtítulos | un directorio temporal que se borra al terminar |
 
+Hermes arranca desde launchd con un PATH corto, sin la carpeta global de npm. `reach` añade al final las carpetas donde Agent-Reach deja sus programas (`~/.local/bin`, `~/.hermes/node/bin`, Homebrew y cada `~/.nvm/versions/node/*/bin`) y ejecuta cada programa con su propia carpeta primero, para que `mcporter` y `opencli` usen el `node` con el que se instalaron.
+
 No hay cookies ni tokens en el repositorio. X solo recibe `TWITTER_AUTH_TOKEN` y `TWITTER_CT0` dentro del subproceso, si la persona los ha guardado con `agent-reach configure twitter-cookies`. El registro de `reach` anota capability, backend, duración, número de resultados y código de error. No anota la consulta ni el contenido.
 
 ## Estado

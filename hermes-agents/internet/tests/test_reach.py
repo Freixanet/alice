@@ -22,7 +22,20 @@ from reach import (  # noqa: E402
     execute,
     public_http_url,
     redact,
+    tool_dirs,
+    with_tool_path,
+    _spawn_env,
 )
+
+
+_LOG_FOLDER = tempfile.TemporaryDirectory()
+
+
+def setUpModule():
+    # Lo que las pruebas ejecutan no va al registro real de ~/.agent-reach:
+    # llenaba el diagnóstico de la persona con llamadas que nunca hizo.
+    import reach
+    reach.LOG_PATH = Path(_LOG_FOLDER.name) / "reach.log"
 
 
 def _which(found):
@@ -248,6 +261,29 @@ class ReachTests(unittest.TestCase):
         )
         self.assertTrue(timed_out)
         self.assertNotEqual(code, 0)
+
+
+class ToolPathTests(unittest.TestCase):
+    """Hermes arranca desde launchd con un PATH corto, sin la carpeta de npm."""
+
+    def test_npm_programs_are_found_from_a_short_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            for version in ("v20.19.6", "v22.23.2", "v9.1.0"):
+                (home / ".nvm" / "versions" / "node" / version / "bin").mkdir(parents=True)
+            (home / ".local" / "bin").mkdir(parents=True)
+            dirs = tool_dirs(home)
+            nvm = [d for d in dirs if ".nvm" in d]
+            self.assertEqual([Path(d).parent.name for d in nvm], ["v22.23.2", "v20.19.6", "v9.1.0"])
+            path = with_tool_path("/usr/bin:/bin", home)
+            self.assertTrue(path.startswith("/usr/bin:/bin:"))
+            self.assertIn(str(home / ".local" / "bin"), path)
+            self.assertEqual(with_tool_path(path, home), path)
+
+    def test_a_program_runs_with_its_own_folder_first(self):
+        env = _spawn_env(["/x/node/v20/bin/mcporter", "call"], {"PATH": "/usr/bin"})
+        self.assertEqual(env["PATH"], "/x/node/v20/bin:/usr/bin")
+        self.assertEqual(_spawn_env(["mcporter"], {"PATH": "/usr/bin"})["PATH"], "/usr/bin")
 
 
 if __name__ == "__main__":
