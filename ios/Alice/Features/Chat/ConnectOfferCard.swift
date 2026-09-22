@@ -212,22 +212,45 @@ struct AddEventCard: View {
     @State private var added: Date?
 
     var body: some View {
+        if store.calendarLink == .declined, added == nil {
+            // He said not now to the calendar: nothing about it, only the
+            // reminder Alice would have offered before there was a calendar.
+            reminderOffer
+        } else {
+            card
+        }
+    }
+
+    private var reminderOffer: some View {
+        HStack(spacing: 8) {
+            ForEach(["Sí, recuérdamelo", "No"], id: \.self) { reply in
+                Button(reply) { store.sendQuickReply(reply) }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .tint(.primary)
+                    .disabled(store.isSending)
+            }
+        }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: added == nil ? "calendar.badge.plus" : "calendar.badge.checkmark")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(accent)
-                    .frame(width: 42, height: 42)
-                    .background(accent.opacity(0.14), in: .circle)
-                VStack(alignment: .leading, spacing: 3) {
+            // A date tile, the way Calendar shows a day, with the event beside
+            // it and centred on it: a round icon at the top of a small line of
+            // text made the title look like an afterthought.
+            HStack(alignment: .center, spacing: 14) {
+                dateTile
+                VStack(alignment: .leading, spacing: 4) {
                     Text(proposed.title)
-                        .font(.headline)
-                    if let location = proposed.location {
-                        Label(location, systemImage: "mappin")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(2)
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .contentTransition(.numericText())
                 }
+                Spacer(minLength: 0)
             }
 
             if let added {
@@ -259,6 +282,8 @@ struct AddEventCard: View {
                     Group {
                         if working {
                             ProgressView()
+                        } else if needsAccess {
+                            Label("Connect & Add", systemImage: "calendar.badge.plus")
                         } else {
                             Label("Add to Calendar", systemImage: "plus")
                         }
@@ -278,6 +303,15 @@ struct AddEventCard: View {
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                if needsAccess {
+                    Label(
+                        "This connects your calendar to Alice: iOS asks once, and your agents can then plan around your day.",
+                        systemImage: "lock"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             if let problem {
@@ -295,9 +329,51 @@ struct AddEventCard: View {
         }
         .animation(.snappy(duration: 0.25), value: added)
         .onAppear(perform: prepare)
+        .task { if store.calendarLink == .unknown { await store.refreshCalendarLink() } }
     }
 
+    /// Adding is also connecting when the app has no calendar access yet,
+    /// and the card says so rather than leaving iOS's prompt as a surprise.
+    private var needsAccess: Bool { !CalendarSync.hasAccess }
+
     private var accent: Color { store.accent.primary(scheme) }
+
+    private var shown: Date { added ?? start }
+
+    private var dateTile: some View {
+        VStack(spacing: 1) {
+            Text(shown.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(accent)
+            Text(shown.formatted(.dateTime.day()))
+                .font(.system(size: 26, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+        }
+        .frame(width: 56, height: 58)
+        .background(Palette.background(scheme), in: .rect(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14).stroke(Palette.border(scheme), lineWidth: 0.5)
+        }
+        .overlay(alignment: .topTrailing) {
+            if added != nil {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Palette.success(scheme))
+                    .background(Palette.card(scheme), in: .circle)
+                    .offset(x: 6, y: -6)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// "Wednesday 23 September · 17:00 · Gràcia".
+    private var detail: String {
+        var parts = [shown.formatted(.dateTime.weekday(.wide).day().month(.wide))]
+        parts.append(allDay ? String(localized: "All day") : shown.formatted(date: .omitted, time: .shortened))
+        if let location = proposed.location { parts.append(location) }
+        return parts.joined(separator: " · ")
+    }
 
     /// Why this card remembers it was used: the same message is drawn again
     /// every time the chat is opened.
