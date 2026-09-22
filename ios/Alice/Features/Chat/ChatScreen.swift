@@ -909,6 +909,10 @@ private struct HomeSuggestionStrip: View {
             store.requestedDestination = .routines
         case .notes:
             store.showingNotes = true
+        case let .note(id):
+            // Read by the notes page as it appears: it opens this note.
+            store.requestedNote = id
+            store.showingNotes = true
         case .agents:
             store.requestedDestination = .bots
         case let .conversation(id):

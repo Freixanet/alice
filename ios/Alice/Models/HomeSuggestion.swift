@@ -8,6 +8,8 @@ struct HomeSuggestion: Identifiable, Equatable, Sendable {
     enum Action: Equatable, Sendable {
         case routines
         case notes
+        /// One note, opened in the editor.
+        case note(String)
         case agents
         case conversation(String)
         case usage
@@ -110,7 +112,7 @@ enum HomeSuggestions {
                 id: "question-\(note.id)",
                 title: note.label,
                 symbol: "note.text",
-                action: .notes
+                action: .note(note.id)
             ))
         }
 

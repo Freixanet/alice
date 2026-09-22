@@ -235,6 +235,8 @@ struct NotesFoldersScreen: View {
         .task { try? await store.refreshNotes() }
         .refreshableWithFeedback { try? await store.refreshNotes() }
         .onAppear { consumeHomeRequest() }
+        // Asked for while this page is already showing.
+        .onChange(of: store.requestedNote) { if store.requestedNote != nil { consumeHomeRequest() } }
         .onChange(of: store.requestedNote) { _, _ in consumeHomeRequest() }
         .onChange(of: store.requestedNotesScope) { _, _ in consumeHomeRequest() }
         .navigationDestination(item: $openedFolder) { scope in

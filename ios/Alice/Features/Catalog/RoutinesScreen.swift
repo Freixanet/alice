@@ -681,12 +681,24 @@ struct RoutineEditorSheet: View {
             }
         }
         .task {
-            if let found = try? await store.routineDeliveryTargets(), !found.isEmpty {
+            if var found = try? await store.routineDeliveryTargets(), !found.isEmpty {
+                // Hermes lists each agent's chat as `bot-chat:<profile>`; a
+                // routine saved with plain `bot-chat` goes to its own agent's
+                // chat, which is just as ready. Read as missing, it disabled
+                // Save on every such routine, whatever was changed.
+                if deliver == "bot-chat", !found.contains(where: { $0.id == "bot-chat" }),
+                   found.contains(where: { $0.id.hasPrefix("bot-chat:") && $0.homeTargetSet }) {
+                    found.insert(
+                        RoutineDeliveryTarget(id: "bot-chat", name: "The agent's own chat", homeTargetSet: true),
+                        at: min(1, found.count)
+                    )
+                }
                 targets = found
                 // A new routine lands in the agent's chat when Hermes offers
                 // it; otherwise the first destination that is ready.
                 if routine == nil, !found.contains(where: { $0.id == deliver && $0.homeTargetSet }) {
-                    deliver = found.first(where: { $0.id == "bot-chat" && $0.homeTargetSet })?.id
+                    deliver = found.first(where: { $0.id == "bot-chat:\(profile)" && $0.homeTargetSet })?.id
+                        ?? found.first(where: { $0.id == "bot-chat" && $0.homeTargetSet })?.id
                         ?? found.first(where: \.homeTargetSet)?.id ?? "local"
                 }
                 if !found.contains(where: { $0.id == deliver }), deliver != "local" {
