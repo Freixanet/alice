@@ -126,7 +126,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Connections")
                 } footer: {
-                    Text("Your agents see what you connect here, read-only. Nothing leaves your own Hermes.")
+                    Text("Your agents see what you connect here. Nothing leaves your own Hermes, and nothing is added to your calendar unless you tap Add.")
                 }
             }
 

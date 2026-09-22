@@ -24,4 +24,23 @@ final class ConnectOfferTests: XCTestCase {
         XCTAssertEqual(CalendarLink.parse(["status": "not_connected"]), .notConnected)
         XCTAssertTrue(CalendarLink.parse(["status": "connected", "updated_at": "2026-09-22T08:00:00+00:00"]).isConnected)
     }
+
+    func testAProposedEventBecomesACardWithWhatWasSaid() {
+        let text = "¿Lo apunto?\n[Añadir a tu calendario](alice://calendar/add?title=Peluquer%C3%ADa&date=2026-09-23&time=17:00&location=Gr%C3%A0cia)"
+        let blocks = RichMarkdown.blocks(text)
+        XCTAssertEqual(blocks.first, .paragraph("¿Lo apunto?"))
+        guard case let .addEvent(event)? = blocks.last else { return XCTFail("no event card: \(blocks)") }
+        XCTAssertEqual(event.title, "Peluquería")
+        XCTAssertEqual(event.date, "2026-09-23")
+        XCTAssertEqual(event.time, "17:00")
+        XCTAssertEqual(event.minutes, 60)
+        XCTAssertEqual(event.location, "Gràcia")
+    }
+
+    func testTheTimeIsOptionalAndABadLinkLeavesNothingBehind() {
+        XCTAssertNil(RichCalendarEvent(link: "alice://calendar/add?title=X&date=2026-09-23")?.time)
+        let bad = RichMarkdown.calendarAdds(in: "Hola\n[Añadir](alice://calendar/add?title=X&date=mañana)")
+        XCTAssertEqual(bad.text, "Hola")
+        XCTAssertTrue(bad.events.isEmpty)
+    }
 }

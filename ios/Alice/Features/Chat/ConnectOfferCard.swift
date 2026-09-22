@@ -74,7 +74,7 @@ struct ConnectOfferCard: View {
                     .tint(.primary)
                 }
                 .disabled(working || store.isSending)
-                Label("Read-only. Your events go only to your own Hermes.", systemImage: "lock")
+                Label("Your events go only to your own Hermes. Alice adds only what you confirm.", systemImage: "lock")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -189,5 +189,166 @@ struct CalendarConnectionRow: View {
         working = true
         defer { working = false }
         problem = await store.disconnectCalendar()
+    }
+}
+
+/// An event an agent proposes, added to the person's calendar on one tap.
+///
+/// "Tengo peluquería el miércoles" is best answered by putting it in the
+/// calendar, which reminds on its own. The agent fills in what it heard; the
+/// person sets the time if it was not said, and nothing is written until
+/// they tap Add. Without calendar access, that tap is where it is asked for.
+struct AddEventCard: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.openURL) private var openURL
+    let proposed: RichCalendarEvent
+
+    @State private var start = Date()
+    @State private var allDay = false
+    @State private var prepared = false
+    @State private var working = false
+    @State private var problem: String?
+    @State private var added: Date?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: added == nil ? "calendar.badge.plus" : "calendar.badge.checkmark")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .frame(width: 42, height: 42)
+                    .background(accent.opacity(0.14), in: .circle)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(proposed.title)
+                        .font(.headline)
+                    if let location = proposed.location {
+                        Label(location, systemImage: "mappin")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if let added {
+                HStack {
+                    Label("Added to your calendar", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Palette.success(scheme))
+                    Spacer()
+                    Button("Open") {
+                        if let url = URL(string: "calshow:\(added.timeIntervalSinceReferenceDate)") {
+                            openURL(url)
+                        }
+                    }
+                    .font(.subheadline)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    DatePicker(
+                        "When", selection: $start,
+                        displayedComponents: allDay ? [.date] : [.date, .hourAndMinute]
+                    )
+                    Toggle("All day", isOn: $allDay)
+                }
+                .font(.subheadline)
+
+                Button {
+                    Task { await add() }
+                } label: {
+                    Group {
+                        if working {
+                            ProgressView()
+                        } else {
+                            Label("Add to Calendar", systemImage: "plus")
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .tint(accent)
+                .disabled(working)
+
+                Label(
+                    allDay ? "With a reminder that morning. Added only when you tap." : "With a reminder an hour before. Added only when you tap.",
+                    systemImage: "bell"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            if let problem {
+                Text(problem)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.danger(scheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 20))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20).stroke(Palette.border(scheme), lineWidth: 0.5)
+        }
+        .animation(.snappy(duration: 0.25), value: added)
+        .onAppear(perform: prepare)
+    }
+
+    private var accent: Color { store.accent.primary(scheme) }
+
+    /// Why this card remembers it was used: the same message is drawn again
+    /// every time the chat is opened.
+    private var key: String {
+        "\(proposed.title)|\(proposed.date)|\(proposed.time ?? "")"
+    }
+
+    private func prepare() {
+        guard !prepared else { return }
+        prepared = true
+        added = AddEventCard.addedAt(key)
+        if let proposedStart = proposed.start {
+            start = proposed.time == nil
+                ? Calendar.current.date(bySettingHour: 10, minute: 0, second: 0, of: proposedStart) ?? proposedStart
+                : proposedStart
+        }
+        allDay = false
+    }
+
+    private func add() async {
+        working = true
+        defer { working = false }
+        problem = nil
+        if !CalendarSync.hasAccess, let refused = await store.connectCalendar() {
+            problem = refused
+            return
+        }
+        do {
+            let when = allDay ? Calendar.current.startOfDay(for: start) : start
+            _ = try CalendarSync.add(
+                title: proposed.title, start: when, allDay: allDay,
+                minutes: proposed.minutes, location: proposed.location
+            )
+            added = when
+            AddEventCard.remember(key, at: when)
+            await store.syncCalendarNow()
+        } catch {
+            problem = "The event could not be added: \(error.localizedDescription)"
+        }
+    }
+
+    private static let addedKey = "alice.calendar.added"
+
+    private static func addedAt(_ key: String) -> Date? {
+        (UserDefaults.standard.dictionary(forKey: addedKey)?[key] as? Double)
+            .map(Date.init(timeIntervalSinceReferenceDate:))
+    }
+
+    private static func remember(_ key: String, at date: Date) {
+        var all = UserDefaults.standard.dictionary(forKey: addedKey) ?? [:]
+        all[key] = date.timeIntervalSinceReferenceDate
+        UserDefaults.standard.set(all, forKey: addedKey)
     }
 }

@@ -23,6 +23,49 @@ enum RichBlock: Equatable {
     /// `[Title](alice://connect/<service>)`: an offer to connect something,
     /// drawn as a card with Connect and Not now (`ConnectOfferCard`).
     case connect(String)
+    /// `[Title](alice://calendar/add?…)`: an event to add to the person's
+    /// calendar once they confirm it (`AddEventCard`).
+    case addEvent(RichCalendarEvent)
+}
+
+/// An event an agent proposes: what, which day, and — when it was said — at
+/// what time, for how long and where. Written by the app, only on a tap.
+struct RichCalendarEvent: Equatable, Hashable {
+    let title: String
+    /// `yyyy-MM-dd`.
+    let date: String
+    /// `HH:mm`, or nil when the time was not said.
+    let time: String?
+    let minutes: Int
+    let location: String?
+
+    init?(link: String) {
+        guard let items = URLComponents(string: link)?.queryItems else { return nil }
+        func value(_ name: String) -> String? {
+            let raw = items.first { $0.name == name }?.value?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return raw?.isEmpty == false ? raw : nil
+        }
+        guard let title = value("title"), let date = value("date"),
+              date.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
+        else { return nil }
+        let time = value("time").flatMap {
+            $0.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil ? $0 : nil
+        }
+        self.title = title
+        self.date = date
+        self.time = time
+        self.minutes = value("minutes").flatMap(Int.init).map { min(max($0, 5), 24 * 60) } ?? 60
+        self.location = value("location")
+    }
+
+    /// Start in the phone's own zone, which is the person's.
+    var start: Date? {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.timeZone = .current
+        format.dateFormat = time == nil ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm"
+        return format.date(from: time.map { "\(date) \($0)" } ?? date)
+    }
 }
 
 struct RichListItem: Equatable {
@@ -435,7 +478,8 @@ enum RichMarkdown {
                 blocks.append(.media(media))
                 continue
             }
-            let offers = connectOffers(in: paragraph.joined(separator: "\n"))
+            let events = calendarAdds(in: paragraph.joined(separator: "\n"))
+            let offers = connectOffers(in: events.text)
             let extracted = replyButtons(in: offers.text)
             let linked = RichLinks.extract(extracted.text)
             for run in paragraphRuns(linked.text) {
@@ -450,8 +494,39 @@ enum RichMarkdown {
             for service in offers.services {
                 blocks.append(.connect(service))
             }
+            for event in events.events {
+                blocks.append(.addEvent(event))
+            }
         }
         return blocks
+    }
+
+    // MARK: Events to add
+
+    private static let calendarAddPattern = #"\[[^\]\n]+\]\((alice://calendar/add\?[^)\s]+)\)"#
+
+    /// Proposed events, taken out of the text. One that cannot be read is
+    /// dropped rather than left as a link that does nothing.
+    static func calendarAdds(in text: String) -> (text: String, events: [RichCalendarEvent]) {
+        guard text.contains("alice://calendar/add"),
+              let regex = try? NSRegularExpression(pattern: calendarAddPattern)
+        else { return (text, []) }
+        var events: [RichCalendarEvent] = []
+        var remaining = text
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let linkRange = Range(match.range(at: 1), in: text),
+                  let removal = Range(match.range, in: remaining)
+            else { continue }
+            if let event = RichCalendarEvent(link: String(text[linkRange])), !events.contains(event) {
+                events.insert(event, at: 0)
+            }
+            remaining.removeSubrange(removal)
+        }
+        let cleaned = remaining.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        return (cleaned, events)
     }
 
     // MARK: Connect offers
@@ -1158,6 +1233,8 @@ struct RichMessageView: View {
             RichLinksView(links: links)
         case let .connect(service):
             ConnectOfferCard(service: service)
+        case let .addEvent(event):
+            AddEventCard(proposed: event)
         case let .media(media):
             // Blocks are keyed by position; a different file landing in the
             // same slot (a reply still streaming) must not keep the old card.

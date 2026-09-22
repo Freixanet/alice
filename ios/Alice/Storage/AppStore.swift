@@ -6152,6 +6152,13 @@ final class AppStore {
         try? await uploadCalendar()
     }
 
+    /// After the app itself wrote an event: Hermes' copy is updated now, not
+    /// at the next ten-minute mark.
+    func syncCalendarNow() async {
+        guard CalendarSync.hasAccess else { return }
+        try? await uploadCalendar()
+    }
+
     private func uploadCalendar() async throws {
         let window = CalendarSync.window()
         let events = await CalendarSync.events(from: window.start, to: window.end)

@@ -63,7 +63,7 @@
 		</dict>
 	</dict>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Alice reads your upcoming events and shares them with your own Hermes, so your agents can plan around your day. She never creates or changes events.</string>
+	<string>Alice reads your upcoming events and shares them with your own Hermes, so your agents can plan around your day. She adds an event only when you tap Add, and never changes or deletes one.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Alice uses the camera to scan a Hermes pairing QR code and when you attach a photo you take from the composer.</string>
 	<key>NSFaceIDUsageDescription</key>

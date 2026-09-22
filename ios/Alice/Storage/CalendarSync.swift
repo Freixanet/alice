@@ -60,6 +60,24 @@ enum CalendarSync {
         return (try? await EKEventStore().requestFullAccessToEvents()) ?? false
     }
 
+    /// Writes one event the person confirmed, with an alert before it, into
+    /// the calendar new events go to. Returns its identifier.
+    @MainActor
+    static func add(title: String, start: Date, allDay: Bool, minutes: Int, location: String?) throws -> String {
+        let store = EKEventStore()
+        let event = EKEvent(eventStore: store)
+        event.title = title
+        event.isAllDay = allDay
+        event.startDate = start
+        event.endDate = allDay ? start : start.addingTimeInterval(TimeInterval(minutes * 60))
+        event.location = location
+        event.calendar = store.defaultCalendarForNewEvents
+        // An hour before; for a whole day, that morning at nine.
+        event.addAlarm(EKAlarm(relativeOffset: allDay ? 9 * 60 * 60 : -60 * 60))
+        try store.save(event, span: .thisEvent, commit: true)
+        return event.eventIdentifier ?? ""
+    }
+
     /// One event as Hermes stores it: no notes, no attendees.
     struct Event: Sendable, Equatable {
         let title: String
