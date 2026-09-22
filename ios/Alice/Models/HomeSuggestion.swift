@@ -87,11 +87,22 @@ enum HomeSuggestions {
             let title = failed.count == 1
                 ? (failed[0].title.isEmpty ? "A routine failed" : failed[0].title)
                 : "\(failed.count) routines need a look"
+            // One routine: its own chat, where its report — or why it
+            // failed — is, not the list of every routine. Alice's own
+            // routines deliver to Today. Several: the list, to see them together.
+            let profile = failed.count == 1
+                ? (failed[0].profile ?? failed[0].reference.profile).flatMap { $0.isEmpty ? nil : $0 }
+                : nil
+            let action: HomeSuggestion.Action = switch profile {
+            case nil: .routines
+            case "default"?: .today
+            case let slug?: .agent(slug)
+            }
             rows.append(HomeSuggestion(
                 id: "routines-failed",
                 title: title,
                 symbol: "exclamationmark.triangle",
-                action: .routines
+                action: action
             ))
         }
 

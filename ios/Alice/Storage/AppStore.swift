@@ -7765,7 +7765,14 @@ final class AppStore {
         // Dropped since the last message? Pick it back up rather than making
         // somebody go to Connect and press a button for a connection that is
         // still perfectly good.
-        guard isConnected else {
+        // Alice's own chat and the agents' chats run over the dashboard's
+        // socket; the gateway is only needed by the chats that stream through
+        // it. Waiting on it for a dashboard chat held a message — the voice
+        // mode's first one — until a reconnect that never came.
+        let overDashboard = dashboardReady && conversations.contains {
+            $0.id == activeID && ($0.isHomeSessionChat || $0.isCanonicalBotChat)
+        }
+        guard isConnected || overDashboard else {
             Task { [weak self] in
                 await self?.restoreConnection()
                 if self?.isConnected == true { self?.send() }

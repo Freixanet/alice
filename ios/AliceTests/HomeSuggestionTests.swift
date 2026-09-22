@@ -74,4 +74,19 @@ final class HomeSuggestionTests: XCTestCase {
         )
         XCTAssertTrue(HomeSuggestions.make(events: [resolved, old], now: now).isEmpty)
     }
+
+    func testOneFailedRoutineOpensItsAgentsChat() {
+        let failed = AliceEvent(
+            id: "r", kind: .automationFailed, severity: .failure, profile: "radar-ia",
+            title: "Radar IA — informe diario", summary: "rate limit",
+            occurred: now.addingTimeInterval(-600)
+        )
+        XCTAssertEqual(HomeSuggestions.make(events: [failed], now: now).first?.action, .agent("radar-ia"))
+        let alices = AliceEvent(
+            id: "a", kind: .automationFailed, severity: .failure, profile: "default",
+            title: "Buenos días", summary: "", occurred: now.addingTimeInterval(-600)
+        )
+        XCTAssertEqual(HomeSuggestions.make(events: [alices], now: now).first?.action, .today)
+        XCTAssertEqual(HomeSuggestions.make(events: [failed, alices], now: now).first?.action, .routines)
+    }
 }

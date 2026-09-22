@@ -224,10 +224,17 @@ final class VoiceConversation {
         watcher?.cancel()
         watcher = Task { [weak self] in
             var sawActivity = false
+            let sentAt = Date()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard let self, let store = self.store else { return }
                 guard store.activeChat.id == self.conversationID else { return }
+                // Nothing went out: say so, instead of thinking for ever.
+                if !sawActivity, (store.shownConversation?.messages.count ?? 0) <= self.baseline,
+                   Date().timeIntervalSince(sentAt) > 12 {
+                    self.phase = .unavailable("No se pudo enviar. Revisa la conexión con Hermes y toca para reintentar.")
+                    return
+                }
                 let messages = store.shownConversation?.messages ?? []
                 let reply = messages.dropFirst(min(self.baseline, messages.count))
                     .filter { $0.role == .assistant }
