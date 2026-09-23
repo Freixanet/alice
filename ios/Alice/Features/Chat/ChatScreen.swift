@@ -32,6 +32,8 @@ private struct ChatScreenContent: View, Equatable {
 
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
+    /// The agent's page grows out of its face in the header, and goes back into it.
+    @Namespace private var avatarZoom
     /// Today's own menu: asking before its history is thrown away.
     @State private var confirmingTodayClear = false
     @State private var clearingToday = false
@@ -156,6 +158,9 @@ private struct ChatScreenContent: View, Equatable {
                 BotDetail(bot: bot, onChange: { Task { await refreshBots() } })
             }
             .preferredColorScheme(store.theme.colorScheme)
+            // The system's zoom: the avatar becomes the page, and a swipe down
+            // follows the finger back into it.
+            .navigationTransition(.zoom(sourceID: "agent-avatar", in: avatarZoom))
         }
         // The list is where these are normally read, and a conversation can
         // be opened without ever going through it.
@@ -296,7 +301,8 @@ private struct ChatScreenContent: View, Equatable {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
                 } label: {
-                    ChatHeaderAvatar(name: store.botCurrentName(for: bot)) {
+                    ChatHeaderAvatar(name: store.botCurrentName(for: bot),
+                                     zoomSource: ("agent-avatar", avatarZoom)) {
                         BotMarkView(mark: store.mark(for: bot), size: 72)
                     }
                 }
