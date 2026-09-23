@@ -15,6 +15,8 @@ struct ReminderComposer: View {
     let onSubmit: () -> Void
     let onDetails: () -> Void
     let onPlace: () -> Void
+    /// Changing one's mind: nothing is saved.
+    let onCancel: () -> Void
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -60,6 +62,15 @@ struct ReminderComposer: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Details")
+                Button(action: onCancel) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Cancel")
+                .accessibilityIdentifier("agenda.composer.cancel")
             }
 
             ScrollView(.horizontal, showsIndicators: false) {

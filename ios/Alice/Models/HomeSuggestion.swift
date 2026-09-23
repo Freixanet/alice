@@ -57,6 +57,7 @@ enum HomeSuggestions {
         routineNames: [String]? = nil,
         recentTokens: Int? = nil,
         todayUnread: Bool = false,
+        todayWrittenAt: Date? = nil,
         agentsWithNews: [HomeAgentNews] = [],
         nextUp: String? = nil,
         now: Date = Date(),
@@ -67,7 +68,8 @@ enum HomeSuggestions {
         // What Alice started on her own comes first: it is why she is proactive.
         if todayUnread {
             rows.append(HomeSuggestion(
-                id: "today", title: "Alice wrote to you", symbol: "sun.max", action: .today
+                id: "today", title: "Alice wrote to you",
+                symbol: timeOfDaySymbol(todayWrittenAt ?? now), action: .today
             ))
         }
 
@@ -163,6 +165,15 @@ enum HomeSuggestions {
         }
 
         return Array(rows.prefix(max(limit, 0)))
+    }
+
+    /// Sunrise in the morning, sun in the day, moon at night.
+    static func timeOfDaySymbol(_ date: Date, calendar: Calendar = .current) -> String {
+        switch calendar.component(.hour, from: date) {
+        case 5..<12: "sunrise"
+        case 12..<20: "sun.max"
+        default: "moon.stars"
+        }
     }
 
     private static func hasBriefing(_ names: [String]) -> Bool {

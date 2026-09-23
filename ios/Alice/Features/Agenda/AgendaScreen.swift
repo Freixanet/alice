@@ -32,6 +32,9 @@ struct AgendaScreen: View {
     @State private var model = AgendaModel()
     @AppStorage("agenda.mode") private var modeRaw = Mode.list.rawValue
     @State private var selected = Date()
+    /// Bumped by "Today": the views scroll back to now even when today is
+    /// already the chosen day.
+    @State private var jump = 0
     @State private var ticking: Set<String> = []
     @State private var problem: String?
 
@@ -96,7 +99,12 @@ struct AgendaScreen: View {
                     details = DetailsTarget(identifier: nil, draft: composing ?? .init())
                     composing = nil
                 },
-                onPlace: { choosingPlace = true }
+                onPlace: { choosingPlace = true },
+                onCancel: {
+                    // Nothing is kept: the box closes as it was never opened.
+                    composing = nil
+                    composeFocused = false
+                }
             )
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
@@ -118,14 +126,21 @@ struct AgendaScreen: View {
                     .minimumScaleFactor(0.7)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 6)
+                    .padding(.top, 16)
+                    .padding(.bottom, 14)
                     .accessibilityAddTraits(.isHeader)
 
-                if mode == .month {
-                    AgendaMonthGrid(selected: $selected, hasItems: { model.hasItems(on: $0) }, now: now)
-                        .padding(.bottom, 6)
-                } else {
-                    AgendaWeekStrip(selected: $selected, hasItems: { model.hasItems(on: $0) }, now: now)
+                Group {
+                    if mode == .month {
+                        AgendaMonthGrid(selected: $selected, hasItems: { model.hasItems(on: $0) }, now: now)
+                            .padding(.bottom, 12)
+                    } else {
+                        AgendaWeekStrip(selected: $selected, hasItems: { model.hasItems(on: $0) }, now: now)
+                            .padding(.bottom, 10)
+                    }
+                }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    store.agendaCalendarFrame = $0
                 }
                 Divider()
                 modeContent(now: now)
@@ -138,11 +153,11 @@ struct AgendaScreen: View {
         switch mode {
         case .day:
             AgendaDayView(
-                day: selected, items: model.items(on: selected, now: now), now: now, ticking: ticking,
+                day: selected, items: model.items(on: selected, now: now), now: now, ticking: ticking, jump: jump,
                 onOpen: open, onTick: tick, onNewEvent: { start in Task { await startEvent(start) } }
             )
         case .list:
-            AgendaListContent(model: model, selected: selected, now: now, ticking: ticking,
+            AgendaListContent(model: model, selected: selected, now: now, ticking: ticking, jump: jump,
                               problem: problem, onOpen: open, onTick: tick)
         case .month:
             dayList(now: now)
@@ -192,6 +207,7 @@ struct AgendaScreen: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+        .contentMargins(.top, 14, for: .scrollContent)
     }
 
     // MARK: Toolbar
@@ -219,6 +235,7 @@ struct AgendaScreen: View {
         ToolbarItem(placement: .bottomBar) {
             Button("Today") {
                 withAnimation(.snappy) { selected = Date() }
+                jump += 1
             }
             .accessibilityIdentifier("agenda.today")
         }
@@ -460,6 +477,7 @@ struct AgendaListContent: View {
     let selected: Date
     let now: Date
     let ticking: Set<String>
+    var jump = 0
     var problem: String?
     let onOpen: (AgendaItem) -> Void
     let onTick: (AgendaItem) -> Void
@@ -498,6 +516,11 @@ struct AgendaListContent: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            .contentMargins(.top, 14, for: .scrollContent)
+            .onChange(of: jump) {
+                // Back to the top: what is late, then today.
+                if let first = days.first?.id { withAnimation(.snappy) { proxy.scrollTo(first, anchor: .top) } }
+            }
             .onChange(of: selected) { _, day in
                 let id = "d\(Int(Calendar.current.startOfDay(for: day).timeIntervalSince1970))"
                 withAnimation(.snappy) { proxy.scrollTo(id, anchor: .top) }

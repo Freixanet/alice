@@ -9,6 +9,7 @@ struct AgendaDayView: View {
     let items: [AgendaItem]
     let now: Date
     var ticking: Set<String> = []
+    var jump = 0
     let onOpen: (AgendaItem) -> Void
     let onTick: (AgendaItem) -> Void
     let onNewEvent: (Date) -> Void
@@ -40,6 +41,7 @@ struct AgendaDayView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Color.clear.frame(height: 6)
             if !allDay.isEmpty {
                 allDayBand
                 Divider()
@@ -53,6 +55,7 @@ struct AgendaDayView: View {
                 }
                 .onAppear { scroll(proxy) }
                 .onChange(of: day) { scroll(proxy) }
+                .onChange(of: jump) { withAnimation(.snappy) { scroll(proxy) } }
             }
         }
     }
@@ -83,7 +86,7 @@ struct AgendaDayView: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
     }
 
     // MARK: Hours

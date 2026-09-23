@@ -265,7 +265,11 @@ struct ReminderScopeScreen: View {
                             details = (nil, composing ?? .init())
                             composing = nil
                         },
-                        onPlace: { choosingPlace = true }
+                        onPlace: { choosingPlace = true },
+                        onCancel: {
+                            composing = nil
+                            composeFocused = false
+                        }
                     )
                     .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                     .listRowBackground(Color.clear)

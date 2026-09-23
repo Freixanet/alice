@@ -1043,6 +1043,7 @@ private struct HomeSuggestionStrip: View {
             // as notes picked at random: an old note's summary, with nothing
             // saying what it wanted.
             todayUnread: store.todayUnread,
+            todayWrittenAt: store.todayWrittenAt,
             agentsWithNews: store.agentsWithNews,
             nextUp: store.nextCommitment
         )

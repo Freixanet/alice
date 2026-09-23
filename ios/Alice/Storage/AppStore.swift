@@ -5822,6 +5822,9 @@ final class AppStore {
     var showingNotes = false
     /// The agenda, a page too (`AgendaScreen`).
     var showingAgenda = false
+    /// Where the agenda's week strip or month is on screen: a sideways swipe
+    /// there changes the week, anywhere else it closes the page.
+    @ObservationIgnored var agendaCalendarFrame: CGRect = .zero
     /// "Tomorrow 11:30 · Hairdresser": the next commitment within a day and a
     /// half, read on this phone, for the home's suggestions.
     private(set) var nextCommitment: String?
@@ -6318,6 +6321,13 @@ final class AppStore {
 
     /// Whether Alice has written something in Today since it was last opened.
     var todayUnread: Bool { isBotUnread(Self.todayProfile) }
+
+    /// When Alice last wrote in Today, for the home to say it with the time
+    /// of day it came: a night summary is not a sun.
+    var todayWrittenAt: Date? {
+        conversations.first(where: { $0.routedBotName == Self.todayProfile })?.messages
+            .last(where: { $0.role == .assistant && !$0.pending && MessageTime.isKnown($0.createdAt) })?.createdAt
+    }
 
     /// How many messages Alice wrote in Today since it was last opened.
     var todayNewCount: Int {
