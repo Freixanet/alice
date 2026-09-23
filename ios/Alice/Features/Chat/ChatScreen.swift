@@ -520,8 +520,22 @@ private struct TranscriptView: View {
     /// The transcript's end as last measured, for decisions made a moment later.
     @State private var lastTail: Tail?
 
-    /// How many of the latest messages are always laid out (see the stack).
-    static let eagerTail = 12
+    /// How many of the latest messages are always laid out (see the stack):
+    /// enough to fill the screen at the end, and no more. A fixed twelve laid
+    /// out twelve long reports at once in an agent like Radar, and opening its
+    /// chat froze the phone for close to half a second.
+    static func eagerTail(_ messages: [Message]) -> Int {
+        var count = 0
+        var characters = 0
+        for message in messages.reversed() {
+            count += 1
+            // A reply of ~1,800 characters is about a screen of text; cards and
+            // short turns count as a few lines each.
+            characters += max(message.content.count, 160)
+            if count >= 8 || (count >= 3 && characters >= 1_800) { break }
+        }
+        return count
+    }
 
     private func transcriptRow(
         _ message: Message, position: ChatTasks.Position?, latestBusy: Bool,
@@ -647,7 +661,7 @@ private struct TranscriptView: View {
                     // opened blank, or ended at an older routine card with
                     // the newer reports undrawn below, until the reader
                     // scrolled. With the tail real, the end is where it looks.
-                    let tail = min(messages.count, Self.eagerTail)
+                    let tail = Self.eagerTail(messages)
                     ForEach(messages.dropLast(tail)) { message in
                         transcriptRow(
                             message, position: positions[message.id], latestBusy: latestBusy,
