@@ -385,7 +385,52 @@ def _post_tool_call(tool_name=None, args=None, result=None, session_id="", statu
                               session_id=session_id or "", status=status)
     except Exception:
         pass
+    if tool_name == "memory" and status != "error":
+        _keep_memory(args, session_id or "")
     return None
+
+
+def _memory_keeper():
+    import importlib.util
+    import sys
+
+    path = Path(__file__).resolve().parent / "memory_keeper.py"
+    name = "alice_memory_keeper"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _keep_memory(args, session_id: str) -> None:
+    """An agent just wrote to memory: note where the entry came from, then tidy (or only
+    propose, by default). Never raises into the turn."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        home = Path(get_hermes_home())
+        _, profile = _root_and_sender(home)
+        a = args if isinstance(args, dict) else {}
+        target = str(a.get("target") or "memory")
+        keeper_module = _memory_keeper()
+        keeper = keeper_module.Keeper(home, keeper_module.HermesFiles())
+        # Recorded before anything looks: an entry nobody recorded reads as hand-written.
+        operations = a.get("operations") if isinstance(a.get("operations"), list) else [a]
+        targets = set()
+        for op in operations:
+            if not isinstance(op, dict):
+                continue
+            op_target = str(op.get("target") or target)
+            targets.add(op_target)
+            text = op.get("content") or op.get("new_text") or op.get("new_content")
+            if op.get("action") in ("add", "replace") and text:
+                keeper.record(op_target, str(text), "agent", session=session_id, profile=profile)
+        keeper.run(targets=tuple(t for t in sorted(targets) if t in keeper_module.TARGETS))
+    except Exception:
+        pass
 
 
 def _is_agent_maker(**_) -> bool:

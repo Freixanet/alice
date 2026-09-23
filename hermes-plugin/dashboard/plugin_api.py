@@ -695,9 +695,17 @@ def _memory_payload(store) -> Dict[str, Any]:
 
     def target_payload(target: str, label: str) -> Dict[str, Any]:
         entries = list(store._entries_for(target))
-        return {"id": target, "label": label, "enabled": bool(store.target_enabled(target)),
-                "entries": entries, "used": len(ENTRY_DELIMITER.join(entries)),
-                "limit": int(store._char_limit(target))}
+        payload = {"id": target, "label": label, "enabled": bool(store.target_enabled(target)),
+                   "entries": entries, "used": len(ENTRY_DELIMITER.join(entries)),
+                   "limit": int(store._char_limit(target))}
+        # Where each entry came from, in the same order (additive: older clients ignore it).
+        try:
+            rows = _keeper(store).scan(target)
+            payload["origins"] = [{"id": r["id"], "source": r["source"], "session": r["session"],
+                                   "profile": r["profile"], "created_at": r["created_at"]} for r in rows]
+        except Exception:  # noqa: BLE001 — the memory itself must always be readable
+            pass
+        return payload
 
     return {"provider": provider,
             "targets": [target_payload("user", "User profile"), target_payload("memory", "Agent notes")]}
@@ -741,6 +749,12 @@ def _mutate_memory(body: _MemoryMutation) -> Dict[str, Any]:
             result = store.remove(target, body.old_text)
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=str(result.get("error") or "Memory write failed"))
+        if action in ("add", "replace") and body.content.strip():
+            # The person's own words: never touched by cleanup.
+            try:
+                _keeper(store).record(target, body.content, "person", profile=body.profile)
+            except Exception:  # noqa: BLE001
+                pass
         return {**_memory_payload(store), "mutation": result}
 
 
@@ -754,6 +768,113 @@ async def get_memory(profile: str = "default") -> Dict[str, Any]:
 async def mutate_memory(body: _MemoryMutation) -> Dict[str, Any]:
     body.profile = await asyncio.to_thread(_known_profile, body.profile)
     return await asyncio.to_thread(_mutate_memory, body)
+
+
+# --- Memory that keeps itself tidy (memory_keeper.py) ------------------------------------
+
+
+def _keeper_module():
+    import importlib.util
+
+    name = "alice_memory_keeper"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent.parent / "memory_keeper.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _keeper(store=None):
+    """The keeper for the profile whose home is current (call inside ``_profile_scope``)."""
+    from hermes_constants import get_hermes_home
+
+    module = _keeper_module()
+    return module.Keeper(Path(get_hermes_home()), module.HermesFiles(store))
+
+
+def _with_keeper(profile: str, work):
+    with _profile_scope(profile):
+        return work(_keeper())
+
+
+def _maintenance(profile: str) -> Dict[str, Any]:
+    def read(keeper):
+        return {"profile": profile, "settings": keeper.settings(),
+                "proposals": keeper.run(apply=False)["proposals"], "changes": keeper.changes()}
+    return _with_keeper(profile, read)
+
+
+@router.get("/memory/maintenance")
+async def memory_maintenance(profile: str = "default") -> JSONResponse:
+    """What cleanup would change now (never applied by reading), and what it has changed."""
+    name = await asyncio.to_thread(_known_profile, profile)
+    return JSONResponse(await asyncio.to_thread(_maintenance, name), headers=_NO_STORE)
+
+
+class _MaintenanceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile: str = "default"
+    apply: bool
+
+
+@router.put("/memory/maintenance")
+async def memory_maintenance_settings(body: _MaintenanceSettings) -> JSONResponse:
+    """Cleanup only proposes until this is turned on."""
+    name = await asyncio.to_thread(_known_profile, body.profile)
+    await asyncio.to_thread(lambda: _with_keeper(name, lambda k: k.set_apply(body.apply)))
+    return JSONResponse(await asyncio.to_thread(_maintenance, name), headers=_NO_STORE)
+
+
+class _MaintenanceProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile: str = "default"
+
+
+@router.post("/memory/maintenance/run")
+async def memory_maintenance_run(body: _MaintenanceProfile) -> JSONResponse:
+    """A pass now: proposes, and applies only when the setting says so."""
+    name = await asyncio.to_thread(_known_profile, body.profile)
+    result = await asyncio.to_thread(lambda: _with_keeper(name, lambda k: k.run()))
+    return JSONResponse({"profile": name, **result}, headers=_NO_STORE)
+
+
+@router.post("/memory/changes/{change_id}/revert")
+async def memory_change_revert(change_id: str, body: _MaintenanceProfile) -> JSONResponse:
+    """Puts back what one change removed."""
+    name = await asyncio.to_thread(_known_profile, body.profile)
+
+    def revert(keeper):
+        try:
+            return keeper.revert(change_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="That change does not exist.") from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    change = await asyncio.to_thread(lambda: _with_keeper(name, revert))
+    return JSONResponse({"profile": name, "change": change}, headers=_NO_STORE)
+
+
+@router.get("/memory/origin")
+async def memory_origin(target: str, profile: str = "default", text: Optional[str] = None,
+                        entry: Optional[str] = None) -> JSONResponse:
+    """Why Alice knows something: who wrote the entry, when, and in which conversation."""
+    if target not in ("memory", "user") or not (text or entry):
+        raise HTTPException(status_code=400, detail="target must be memory or user, with text or entry")
+    name = await asyncio.to_thread(_known_profile, profile)
+
+    def find(keeper):
+        try:
+            return keeper.origin(target, text=text, entry=entry)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="That entry is not in memory.") from exc
+
+    return JSONResponse({"profile": name, **await asyncio.to_thread(lambda: _with_keeper(name, find))},
+                        headers=_NO_STORE)
 
 
 # --- Notes: the store an agent keeps in its workspace ------------------------------------
