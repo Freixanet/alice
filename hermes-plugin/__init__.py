@@ -713,12 +713,26 @@ def _register_work_tools(ctx) -> None:
                               check_fn=_always, description=description, emoji=emoji)
 
 
+BROWSER_HELD = (
+    "The person has taken over the shared browser (a sign-in, a verification code, a CAPTCHA "
+    "or a payment) and is using it now. Do not use the browser until they hand it back. Tell "
+    "them in one short sentence what you will do once they do, then stop; do not retry this "
+    "call, and do not open another browser to get around it."
+)
+
+
 def _browser_ready(tool_name=None, **_):
-    """Before an agent browses: the shared browser Alice keeps is running. Never blocks a call."""
-    if not str(tool_name or "").startswith("browser_"):
+    """Before an agent browses: the shared browser Alice keeps is running — unless the
+    person has taken it over, and then the agent waits for it to be handed back."""
+    name = str(tool_name or "")
+    if not (name.startswith("browser_") or name == "browser"):
         return None
     try:
-        _browser().ensure(_hermes_root())
+        root = _hermes_root()
+        module = _browser()
+        if module.managed(root) and module.control(root)["holder"] == "human":
+            return {"action": "block", "message": BROWSER_HELD}
+        module.ensure(root)
     except Exception:
         pass
     return None

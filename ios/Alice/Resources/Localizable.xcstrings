@@ -1031,6 +1031,16 @@
         }
       }
     },
+    "Agents use it": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo usan los agentes"
+          }
+        }
+      }
+    },
     "Aggregator": {
       "localizations": {
         "es": {
@@ -1051,6 +1061,16 @@
         }
       }
     },
+    "Alice can use this browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice puede usar este navegador"
+          }
+        }
+      }
+    },
     "Alice displays the first 300,000 characters to keep very large diffs responsive on iPhone.": {
       "localizations": {
         "es": {
@@ -1067,6 +1087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alice ya está conectada a Hermes."
+          }
+        }
+      }
+    },
+    "Alice is browsing": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice está navegando"
           }
         }
       }
@@ -1117,6 +1147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alice muestra los calendarios y recordatorios de este iPhone, y les añade cosas cuando se lo pides."
+          }
+        }
+      }
+    },
+    "Alice waits until you hand it back": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice espera a que se lo devuelvas"
           }
         }
       }
@@ -1807,6 +1847,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Explorar modelos GGUF de Hugging Face"
+          }
+        }
+      }
+    },
+    "Browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navegador"
+          }
+        }
+      }
+    },
+    "Browser off": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navegador apagado"
+          }
+        }
+      }
+    },
+    "Browser: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navegador: %@"
+          }
+        }
+      }
+    },
+    "Browsing now · tap to take over": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navegando ahora · toca para tomar el control"
           }
         }
       }
@@ -4431,6 +4511,16 @@
         }
       }
     },
+    "Forward": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adelante"
+          }
+        }
+      }
+    },
     "From %@": {
       "localizations": {
         "es": {
@@ -4577,6 +4667,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "HTTP / SSE"
+          }
+        }
+      }
+    },
+    "Hand Back": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Devolver"
           }
         }
       }
@@ -5031,6 +5131,16 @@
         }
       }
     },
+    "Hide Keyboard": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar teclado"
+          }
+        }
+      }
+    },
     "Hides how it got there": {
       "localizations": {
         "es": {
@@ -5377,6 +5487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Instalar y usar"
+          }
+        }
+      }
+    },
+    "Install Chrome on your Mac to use the browser.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instala Chrome en tu Mac para usar el navegador."
           }
         }
       }
@@ -7561,6 +7681,16 @@
         }
       }
     },
+    "Open in Safari": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir en Safari"
+          }
+        }
+      }
+    },
     "Open in Telegram": {
       "localizations": {
         "es": {
@@ -7647,6 +7777,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Abre %@"
+          }
+        }
+      }
+    },
+    "Opens the browser to watch or take over.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre el navegador para mirar o tomar el control."
           }
         }
       }
@@ -7767,6 +7907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "PR #%lld"
+          }
+        }
+      }
+    },
+    "Page watches tell you when a page changes. The browser runs on your Mac: watch your agents browse in it, and use it yourself to take over.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las vigilancias te avisan cuando cambia una página. El navegador funciona en tu Mac: mira cómo navegan tus agentes y úsalo tú para tomar el control."
           }
         }
       }
@@ -8587,6 +8737,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Registrar archivo del host"
+          }
+        }
+      }
+    },
+    "Reload": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recargar"
           }
         }
       }
@@ -9581,6 +9741,16 @@
         }
       }
     },
+    "Search or enter website": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Busca o escribe una web"
+          }
+        }
+      }
+    },
     "Search plugins": {
       "localizations": {
         "es": {
@@ -10301,6 +10471,16 @@
         }
       }
     },
+    "Start Browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encender navegador"
+          }
+        }
+      }
+    },
     "Start Telegram setup": {
       "localizations": {
         "es": {
@@ -10327,6 +10507,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Iniciar servidor"
+          }
+        }
+      }
+    },
+    "Start the browser on your Mac to watch your agents browse and use it yourself.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enciende el navegador en tu Mac para ver navegar a tus agentes y usarlo tú."
           }
         }
       }
@@ -10587,6 +10777,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Etiquetas"
+          }
+        }
+      }
+    },
+    "Take Over": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tomar el control"
           }
         }
       }
@@ -11851,6 +12051,16 @@
         }
       }
     },
+    "Web page: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Página web: %@"
+          }
+        }
+      }
+    },
     "Webhook URL": {
       "localizations": {
         "es": {
@@ -12197,6 +12407,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hablas con Alice. Una cosa cada vez."
+          }
+        }
+      }
+    },
+    "You're in control": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tienes el control"
           }
         }
       }

@@ -4819,6 +4819,9 @@ final class AppStore {
     func setSharedBrowser(on: Bool) async throws -> SharedBrowserState {
         try await dashboard.setSharedBrowser(on: on)
     }
+    func setSharedBrowserControl(human: Bool) async throws -> SharedBrowserState {
+        try await dashboard.setSharedBrowserControl(human: human)
+    }
     func sharedBrowserFrame(after: Int, target: String?) async throws -> SharedBrowserFrame {
         try await dashboard.sharedBrowserFrame(after: after, target: target)
     }
@@ -5823,6 +5826,13 @@ final class AppStore {
     var showingNotes = false
     /// The agenda, a page too (`AgendaScreen`).
     var showingAgenda = false
+    /// The agents' shared browser, live: one view of it for the chat's card
+    /// and the full-screen browser (`LiveBrowser`).
+    @ObservationIgnored lazy var liveBrowser: LiveBrowser = {
+        let live = LiveBrowser()
+        live.attach(self)
+        return live
+    }()
     /// "Tomorrow 11:30 · Hairdresser": the next commitment within a day and a
     /// half, read on this phone, for the home's suggestions.
     private(set) var nextCommitment: String?

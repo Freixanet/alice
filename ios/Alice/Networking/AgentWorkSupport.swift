@@ -13,6 +13,8 @@ struct SharedBrowserState: Equatable, Sendable {
     var available = false
     var pageTitle: String?
     var pageURL: String?
+    /// The person took over (a sign-in, a code, a CAPTCHA): agents wait until it is handed back.
+    var humanInControl = false
 
     /// The phone can open the live view right now.
     var watchable: Bool { configured && local && running }
@@ -26,7 +28,8 @@ struct SharedBrowserState: Equatable, Sendable {
             running: object["running"] as? Bool ?? false,
             available: object["available"] as? Bool ?? false,
             pageTitle: (page?["title"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-            pageURL: (page?["url"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            pageURL: (page?["url"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            humanInControl: (object["control"] as? String) == "human"
         )
     }
 }
@@ -132,6 +135,12 @@ extension DashboardClient {
 
     func setSharedBrowser(on: Bool) async throws -> SharedBrowserState {
         SharedBrowserState.parse(try await send("POST", "api/plugins/alice/browser/\(on ? "enable" : "disable")", [:]))
+    }
+
+    /// Take the browser over from the agents, or hand it back to them.
+    func setSharedBrowserControl(human: Bool) async throws -> SharedBrowserState {
+        SharedBrowserState.parse(try await send("POST", "api/plugins/alice/browser/control",
+                                                ["holder": human ? "human" : "agent"]))
     }
 
     /// The newest frame, waiting up to a second and a half for one after `after`.

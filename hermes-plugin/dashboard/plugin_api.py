@@ -1609,6 +1609,23 @@ async def browser_enable() -> JSONResponse:
         lambda: _browser_call(lambda: _browser_module().enable(_hermes_root(), _set_profile_cdp)))
 
 
+class _BrowserControl(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    holder: str
+
+
+@router.post("/browser/control")
+async def browser_control(body: _BrowserControl) -> JSONResponse:
+    """Take over the shared browser from the agents, or hand it back to them."""
+    if body.holder not in ("human", "agent"):
+        raise HTTPException(status_code=400, detail="holder must be human or agent")
+    module = _browser_module()
+    work = module.take_over if body.holder == "human" else module.hand_back
+    await asyncio.to_thread(work, _hermes_root())
+    return await asyncio.to_thread(lambda: _browser_call(lambda: module.status(_hermes_root())))
+
+
 @router.post("/browser/disable")
 async def browser_disable() -> JSONResponse:
     return await asyncio.to_thread(

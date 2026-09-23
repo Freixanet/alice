@@ -176,6 +176,14 @@ struct MessageRow: View {
                         TaskPlanCard(plan: plan, working: working)
                     }
 
+                    // The page it is on, live, while it browses — tap to take over.
+                    // It stays on the latest reply once done, so the page can still be opened.
+                    if BrowserActivity.used(message.tools),
+                       working || store.shownConversation?.messages.last?.id == message.id {
+                        LiveBrowserCard(working: working, browsing: BrowserActivity.running(message.tools))
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    }
+
                     if let routine = message.routineName {
                         let content = message.botName == "chollometro"
                             && routine == "Chollos del dia"

@@ -29,6 +29,11 @@ from urllib.parse import urlsplit
 PORT = 9222
 MANAGED_URL = f"http://127.0.0.1:{PORT}"
 STATE = Path(".alice") / "browser.json"
+# Who drives the shared browser: the agents, or the person who took over for a login, a
+# 2FA code, a CAPTCHA or a payment. While the person holds it, agents' browser tools wait.
+LEASE = Path(".alice") / "browser-lease.json"
+# A takeover nobody touches for this long goes back to the agents on its own.
+LEASE_IDLE_SECONDS = 15 * 60
 # Frames stop being produced once no phone has asked for one for this long.
 IDLE_SECONDS = 20
 # Tablet-portrait: sites lay out for it, and it reads on a phone without much zoom.
@@ -164,6 +169,59 @@ def _save_state(root: Path, state: Dict[str, Any]) -> None:
     path.write_text(json.dumps(state, indent=1), encoding="utf-8")
 
 
+# ── Who is in control ────────────────────────────────────────────────────────────
+
+
+def _read_lease(root: Path) -> Dict[str, Any]:
+    try:
+        data = json.loads((Path(root) / LEASE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_lease(root: Path, data: Dict[str, Any]) -> None:
+    path = Path(root) / LEASE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(data), encoding="utf-8")
+    os.replace(temp, path)
+
+
+def control(root: Path, now: Optional[float] = None) -> Dict[str, Any]:
+    """``{"holder": "human" | "agent", "since": …}``; a forgotten takeover lapses."""
+    now = time.time() if now is None else now
+    lease = _read_lease(root)
+    if lease.get("holder") == "human":
+        if now - float(lease.get("touched") or lease.get("since") or 0) < LEASE_IDLE_SECONDS:
+            return {"holder": "human", "since": lease.get("since")}
+        _write_lease(root, {"holder": "agent", "since": now, "lapsed": True})
+        return {"holder": "agent", "since": now}
+    return {"holder": "agent", "since": lease.get("since")}
+
+
+def take_over(root: Path, now: Optional[float] = None) -> Dict[str, Any]:
+    now = time.time() if now is None else now
+    current = _read_lease(root)
+    since = current.get("since") if current.get("holder") == "human" else now
+    _write_lease(root, {"holder": "human", "since": since, "touched": now})
+    return control(root, now)
+
+
+def hand_back(root: Path, now: Optional[float] = None) -> Dict[str, Any]:
+    now = time.time() if now is None else now
+    _write_lease(root, {"holder": "agent", "since": now})
+    return control(root, now)
+
+
+def touched(root: Path, now: Optional[float] = None) -> None:
+    """The person used the page: their takeover stays fresh."""
+    lease = _read_lease(root)
+    if lease.get("holder") == "human":
+        lease["touched"] = time.time() if now is None else now
+        _write_lease(root, lease)
+
+
 def managed(root: Path) -> bool:
     return bool(_state(root).get("managed"))
 
@@ -220,6 +278,7 @@ def status(root: Path) -> Dict[str, Any]:
     up = reachable(url) if url else False
     tabs = pages(url) if up else []
     return {"managed": managed(root), "configured": bool(url), "local": _local(url) if url else False,
+            "control": control(root)["holder"],
             "running": up, "available": _binary() is not None or up,
             "page": {"title": tabs[0]["title"], "url": tabs[0]["url"]} if tabs else None,
             "tabs": len(tabs)}
@@ -251,6 +310,8 @@ class Screencast:
         self._ids = 10
         self._changed = threading.Condition()
         self._socket = None
+        # Set once the tab's socket is open: an action that arrives first waits for it.
+        self._connected = threading.Event()
         self._send_lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, name="alice-screencast", daemon=True)
         self._thread.start()
@@ -268,6 +329,7 @@ class Screencast:
         try:
             with connect(self.page["ws"], open_timeout=5, max_size=None) as socket:
                 self._socket = socket
+                self._connected.set()
                 self._send("Page.enable", {})
                 self._send("Page.startScreencast", {"format": "jpeg", "quality": 62,
                                                     "maxWidth": 1200, "maxHeight": 1800, "everyNthFrame": 1})
@@ -324,6 +386,10 @@ class Screencast:
 
     def act(self, action: Dict[str, Any]) -> None:
         self.touched = time.monotonic()
+        # The first touch after a quiet spell reopens the tab's socket; give it time.
+        connected = getattr(self, "_connected", None)
+        if connected is not None:
+            connected.wait(timeout=5)
         kind = str(action.get("kind") or "")
         width = float(self.meta.get("deviceWidth") or 1000)
         height = float(self.meta.get("deviceHeight") or 1400)
@@ -422,6 +488,7 @@ def frame(root: Path, after: int = 0, wait: float = 1.5, target: Optional[str] =
 
 def act(root: Path, action: Dict[str, Any], target: Optional[str] = None) -> None:
     _cast(root, target).act(action)
+    touched(root)
 
 
 def stop_all() -> None:
