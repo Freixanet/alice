@@ -625,7 +625,7 @@ enum RichMarkdown {
 
     // MARK: Connect offers
 
-    private static let connectPattern = #"\[[^\]\n]+\]\(alice://connect/([a-z]+)\)"#
+    private static let connectPattern = #"\[[^\]\n]+\]\(alice://connect/([a-z]+|secret/[A-Za-z0-9_]+)\)"#
 
     /// Offers to connect a service, taken out of the text: only services the
     /// app can connect become a card; any other is dropped rather than shown
@@ -641,7 +641,7 @@ enum RichMarkdown {
                   let removal = Range(match.range, in: remaining)
             else { continue }
             let service = String(text[serviceRange])
-            if ConnectOfferCard.services.contains(service), !services.contains(service) {
+            if ConnectOfferCard.supports(service), !services.contains(service) {
                 services.insert(service, at: 0)
             }
             remaining.removeSubrange(removal)

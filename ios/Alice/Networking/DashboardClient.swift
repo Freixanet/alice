@@ -2447,6 +2447,17 @@ extension DashboardClient {
         return try Self.memorySnapshot(from: object, profile: profile)
     }
 
+    /// A key the person typed into a secure card, saved by the Alice plugin to
+    /// Hermes' `.env` files (`hermes-plugin/secret_store.py`). Never read back.
+    func saveAliceSecret(name: String, value: String) async throws {
+        _ = try await send("POST", "api/plugins/alice/secret", ["name": name, "value": value])
+    }
+
+    func aliceSecretIsSet(name: String) async throws -> Bool {
+        let object = try await get("api/plugins/alice/secret?name=\(Self.queryValue(name))")
+        return (object["set"] as? Bool) ?? false
+    }
+
     /// The notes an agent keeps on Hermes, newest first (`hermes-plugin/`).
     func notes(limit: Int = 500) async throws -> NotesSnapshot {
         try NotesFeed.snapshot(from: await get("api/plugins/alice/notes?limit=\(limit)"))

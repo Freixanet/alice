@@ -29,6 +29,11 @@ struct ConnectOfferCard: View {
     /// What the app knows how to connect.
     nonisolated static let services: Set<String> = ["calendar", "search"]
 
+    /// A service the app can show: one of `services`, or `secret/NAME`.
+    nonisolated static func supports(_ service: String) -> Bool {
+        services.contains(service) || SecretRequestCard.name(fromService: service) != nil
+    }
+
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.replySuperseded) private var superseded
@@ -50,7 +55,9 @@ struct ConnectOfferCard: View {
 
     var body: some View {
         if service == "search" {
-            SearchKeyOfferCard(language: language)
+            SecretRequestCard(request: .search, language: language)
+        } else if let name = SecretRequestCard.name(fromService: service) {
+            SecretRequestCard(request: .named(name), language: language)
         } else if !closed {
             offer
                 .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))

@@ -5454,6 +5454,14 @@ final class AppStore {
         try await dashboard.saveProviderCredential(profile: profile, key: key, value: value)
     }
 
+    func saveAliceSecret(name: String, value: String) async throws {
+        try await dashboard.saveAliceSecret(name: name, value: value)
+    }
+
+    func aliceSecretIsSet(name: String) async throws -> Bool {
+        try await dashboard.aliceSecretIsSet(name: name)
+    }
+
     func removeProviderCredential(profile: String, key: String) async throws {
         try await dashboard.removeProviderCredential(profile: profile, key: key)
     }
