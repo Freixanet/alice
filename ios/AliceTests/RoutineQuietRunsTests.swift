@@ -96,4 +96,19 @@ final class RoutineQuietRunsTests: XCTestCase {
             XCTAssertFalse(QuietRoutineRun.runsAtMostDaily(schedule), schedule)
         }
     }
+
+    func testADeliveryIsOpeningCardAndClosingAsOneMessage() {
+        let body = "Estos son los resultados de hoy: uno te interesa más.\n---\n**Uno**\nDetalle\n---\nLo importante: el primero te ahorra una hora a la semana."
+        let turn = Message(id: "r", role: .user,
+                           content: "[Cronjob \"Radar IA\" output — scheduled job, not the user.]\n\n" + body,
+                           createdAt: finished, remoteID: "r")
+        let shown = RoutineDelivery.present([turn], botName: "radar-ia")
+        XCTAssertEqual(shown.map(\.id), ["r:intro", "r", "r:outro"])
+        XCTAssertEqual(shown.map(\.routinePart), [.opening, .card, .closing])
+        XCTAssertEqual(shown[1].content, "**Uno**\nDetalle")
+        XCTAssertEqual(shown[2].content, "Lo importante: el primero te ahorra una hora a la semana.")
+        // One task: the time once, above the opening.
+        let positions = ChatTasks.positions(shown)
+        XCTAssertEqual(shown.map { positions[$0.id]?.isFirst }, [true, false, false])
+    }
 }

@@ -31,22 +31,29 @@ extension RoutineReport {
         )
     }
 
-    /// The agent's own words to the person, and the report under them.
+    /// The agent's own words around the report.
     ///
-    /// A routine's output opens with a line or two from the agent — what it
-    /// looked at, what matters — then a line of just `---`, then the report.
-    /// The words show as the agent's message; the report as the routine's
-    /// card below it. Output without that shape is all report.
-    static func split(_ body: String) -> (intro: String?, report: String) {
+    /// A routine's output opens with a line or two from the agent — that
+    /// these are its results, and why they matter — then a line of just
+    /// `---`, the report, another `---`, and a short closing: the one thing
+    /// worth knowing, for this person. The words show as the agent's; the
+    /// report as the routine's card between them. Output without that shape
+    /// is all report.
+    static func split(_ body: String) -> (intro: String?, report: String, outro: String?) {
         let lines = body.components(separatedBy: "\n")
-        guard let rule = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "---" }),
-              rule > 0
-        else { return (nil, body) }
-        let intro = lines[..<rule].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        let report = lines[(rule + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        // A heading rule deep in a report is not an introduction.
-        guard !intro.isEmpty, intro.count <= 700, !report.isEmpty, !intro.hasPrefix("#") else { return (nil, body) }
-        return (intro, report)
+        let rules = lines.indices.filter { lines[$0].trimmingCharacters(in: .whitespaces) == "---" }
+        func text(_ range: Range<Int>) -> String {
+            lines[range].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func spoken(_ words: String) -> Bool { !words.isEmpty && words.count <= 700 && !words.hasPrefix("#") }
+        guard let first = rules.first, first > 0, spoken(text(0..<first)) else { return (nil, body, nil) }
+        let intro = text(0..<first)
+        if let last = rules.last, last > first, spoken(text((last + 1)..<lines.count)) {
+            let report = text((first + 1)..<last)
+            if !report.isEmpty { return (intro, report, text((last + 1)..<lines.count)) }
+        }
+        let report = text((first + 1)..<lines.count)
+        return report.isEmpty ? (nil, body, nil) : (intro, report, nil)
     }
 
     /// Hermes' own notice that a routine could not finish, in the person's
@@ -169,11 +176,13 @@ enum RoutineDelivery {
         // so in its own words where the run happened — a message, not a
         // card: there is no report to show.
         for run in quietRuns.sorted(by: { $0.finishedAt < $1.finishedAt }) {
-            let card = Message(
+            var card = Message(
                 id: "quiet:\(run.id)", role: .assistant,
                 content: run.note ?? noNews(run.routineName),
                 createdAt: run.finishedAt, botName: botName
             )
+            card.routinePart = .quiet
+            card.routineGroup = card.id
             guard !shown.contains(where: { $0.id == card.id }) else { continue }
             let index = shown.firstIndex {
                 MessageTime.isKnown($0.createdAt) && $0.createdAt > run.finishedAt
@@ -205,20 +214,36 @@ enum RoutineDelivery {
             case .user:
                 if let report = RoutineReport(message.content) {
                     let failure = RoutineReport.failure(in: report.body)
-                    let parts = RoutineReport.split(report.body)
-                    if failure == nil, let intro = parts.intro {
+                    let parts: (intro: String?, report: String, outro: String?) = failure == nil
+                        ? RoutineReport.split(report.body) : (nil, report.body, nil)
+                    let group = parts.intro == nil ? nil : message.id
+                    if let intro = parts.intro {
                         // The agent speaks first, as itself; the report follows.
-                        shown.append(Message(
+                        var opening = Message(
                             id: message.id + ":intro", role: .assistant, content: intro,
                             createdAt: message.createdAt, botName: botName
-                        ))
+                        )
+                        opening.routinePart = .opening
+                        opening.routineGroup = group
+                        shown.append(opening)
                     }
                     var delivered = message
                     delivered.role = .assistant
                     delivered.content = failure ?? parts.report
+                    delivered.routinePart = group == nil ? nil : .card
+                    delivered.routineGroup = group
                     delivered.botName = botName
                     delivered.routineName = report.name
                     shown.append(delivered)
+                    if let outro = parts.outro {
+                        var closing = Message(
+                            id: message.id + ":outro", role: .assistant, content: outro,
+                            createdAt: message.createdAt, botName: botName
+                        )
+                        closing.routinePart = .closing
+                        closing.routineGroup = group
+                        shown.append(closing)
+                    }
                     answeringHandover = true
                 } else if let incoming = AgentMessages.incoming(message.content) {
                     guard AgentMessages.isAnswer(at: index, in: messages, answers: agentAnswers) else {

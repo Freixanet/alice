@@ -1253,6 +1253,10 @@ private struct AllowsRichTextSelectionKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
+    /// In a routine's card: each entry — a paragraph opening with a bold
+    /// title, or a heading — set apart from the one before it.
+    @Entry var separatesEntries = false
+
     var allowsRichTextSelection: Bool {
         get { self[AllowsRichTextSelectionKey.self] }
         set { self[AllowsRichTextSelectionKey.self] = newValue }
@@ -1282,9 +1286,16 @@ struct RichMessageView: View {
     /// Off inside a callout: the reply around it lists the sources once.
     var listsSources = true
 
+    @Environment(\.separatesEntries) private var separatesEntries
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ForEach(Array(RichMarkdown.cached(shown).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(RichMarkdown.cached(shown).enumerated()), id: \.offset) { index, block in
+                if separatesEntries, index > 0, Self.startsEntry(block) {
+                    // A report's entries read as a list of items, not one
+                    // block of text.
+                    Divider().padding(.vertical, 6)
+                }
                 view(for: block)
             }
         }
@@ -1304,6 +1315,14 @@ struct RichMessageView: View {
 
     private func inline(_ text: String) -> AttributedString {
         RichInline.cached(text, failed: failed, link: Palette.link(scheme))
+    }
+
+    private static func startsEntry(_ block: RichBlock) -> Bool {
+        switch block {
+        case .heading: true
+        case let .paragraph(text): text.hasPrefix("**")
+        default: false
+        }
     }
 
     @ViewBuilder

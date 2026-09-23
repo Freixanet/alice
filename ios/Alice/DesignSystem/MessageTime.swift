@@ -29,6 +29,28 @@ enum MessageTime {
         }
     }
 
+    /// Above a routine's delivery: the day in bold, then the time —
+    /// "**Today** 17:01", "**Yesterday** 9:00", "**Friday** 10:30",
+    /// "**8 Sep** 10:30".
+    static func routineCaption(
+        _ date: Date, now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent, locale: Locale = .autoupdatingCurrent
+    ) -> AttributedString? {
+        guard isKnown(date) else { return nil }
+        let style = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
+        let day: String = switch age(of: date, now: now, calendar: calendar) {
+        case .today: String(localized: "Today")
+        case .yesterday: String(localized: "Yesterday")
+        case .thisWeek: date.formatted(style.weekday(.wide))
+        case .thisYear: date.formatted(style.day().month(.abbreviated))
+        case .older: date.formatted(style.day().month(.abbreviated).year())
+        }
+        var caption = AttributedString(day)
+        caption.inlinePresentationIntent = .stronglyEmphasized
+        caption += AttributedString(" " + date.formatted(style.hour().minute()))
+        return caption
+    }
+
     /// At the end of a row: "10:32", "Yesterday", "Mon", "8 Sep".
     static func short(
         _ date: Date, now: Date = Date(),

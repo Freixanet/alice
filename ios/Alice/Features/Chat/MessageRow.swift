@@ -118,13 +118,15 @@ struct MessageRow: View {
             case .assistant:
                 // Ordinary turns are a conversation, not a log. A routine
                 // delivery is dated because it arrived on its own, later.
-                if showsTime, message.routineName != nil,
-                   let when = MessageTime.caption(message.createdAt) {
+                // Once, above the whole delivery: the agent's opening words,
+                // its card and its closing words are one routine.
+                if showsTime, message.routineName != nil || message.routinePart != nil,
+                   let when = MessageTime.routineCaption(message.createdAt) {
                     Text(when)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .accessibilityLabel("Sent \(when)")
+                        .accessibilityLabel(Text("Sent \(String(when.characters))"))
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -386,8 +388,9 @@ private struct RoutineReportCard<Content: View>: View {
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Routine: \(name)")
             content
+                .environment(\.separatesEntries, true)
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
         .overlay {
