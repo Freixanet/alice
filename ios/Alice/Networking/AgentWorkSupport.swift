@@ -190,6 +190,17 @@ extension DashboardClient {
         _ = try await send("DELETE", "api/plugins/alice/watches/\(id)")
     }
 
+    // MARK: Keys
+
+    /// Whether a key is set on the Mac. Its value is never read back.
+    func secretIsSet(_ name: String) async throws -> Bool {
+        (try await get("api/plugins/alice/secret?name=\(name)"))["set"] as? Bool ?? false
+    }
+
+    func saveSecret(_ name: String, value: String) async throws {
+        _ = try await send("POST", "api/plugins/alice/secret", ["name": name, "value": value])
+    }
+
     // MARK: Connector logos
 
     /// A connector's own logo, as the plugin found it on the product's site.

@@ -641,7 +641,7 @@ enum RichMarkdown {
 
     // MARK: Connect offers
 
-    private static let connectPattern = #"\[[^\]\n]+\]\(alice://connect/([a-z]+)\)"#
+    private static let connectPattern = #"\[[^\]\n]+\]\(alice://connect/([a-z]+(?:/[A-Z][A-Z0-9_]{1,63})?)\)"#
 
     /// Offers to connect a service, taken out of the text: only services the
     /// app can connect become a card; any other is dropped rather than shown
@@ -657,7 +657,8 @@ enum RichMarkdown {
                   let removal = Range(match.range, in: remaining)
             else { continue }
             let service = String(text[serviceRange])
-            if ConnectOfferCard.services.contains(service), !services.contains(service) {
+            if (ConnectOfferCard.services.contains(service) || SecretKeyCard.keyName(for: service) != nil),
+               !services.contains(service) {
                 services.insert(service, at: 0)
             }
             remaining.removeSubrange(removal)
@@ -1378,7 +1379,11 @@ struct RichMessageView: View {
         case let .links(links):
             RichLinksView(links: links)
         case let .connect(service):
-            ConnectOfferCard(service: service, language: ChatLanguage.of(content))
+            if let key = SecretKeyCard.keyName(for: service) {
+                SecretKeyCard(name: key, language: ChatLanguage.of(content))
+            } else {
+                ConnectOfferCard(service: service, language: ChatLanguage.of(content))
+            }
         case let .addEvent(event):
             AddEventCard(proposed: event, language: ChatLanguage.of(content))
         case let .changeEvent(change):
