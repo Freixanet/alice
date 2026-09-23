@@ -3441,6 +3441,7 @@ final class AppStore {
     func open(_ link: NotificationLink) {
         showingBots = false
         showingNotes = false
+        showingAgenda = false
         switch link {
         case let .bot(name) where name == Self.todayProfile:
             openToday()
@@ -3492,6 +3493,7 @@ final class AppStore {
         func show(_ id: String) -> Bool {
             showingBots = false
             showingNotes = false
+            showingAgenda = false
             activeID = id
             return true
         }
@@ -3516,6 +3518,7 @@ final class AppStore {
             }
             showingBots = false
             showingNotes = false
+            showingAgenda = false
             let bot = cachedBots.first {
                 $0.name.caseInsensitiveCompare(profile) == .orderedSame
             } ?? BotRow(
@@ -3824,6 +3827,7 @@ final class AppStore {
     func requestInboxAgent() {
         requestedAgentTemplate = "inbox"
         showingNotes = false
+        showingAgenda = false
         showingBots = true
         markNoticesSeen(.agents)
     }
@@ -5632,12 +5636,15 @@ final class AppStore {
     func openHomeShortcut(_ shortcut: HomeShortcut) {
         showingBots = false
         showingNotes = false
+        showingAgenda = false
         switch shortcut.target {
         case let .destination(raw):
             guard let destination = AliceDestination.Target(rawValue: raw) else { return }
             switch destination {
             case .notes:
                 showingNotes = true
+            case .agenda:
+                showingAgenda = true
             case .bots:
                 botsFromLeading = false
                 showingBots = true
@@ -5813,6 +5820,11 @@ final class AppStore {
     var showingBots = false
     /// Notes is a page as well, reached sideways from the drawer.
     var showingNotes = false
+    /// The agenda, a page too (`AgendaScreen`).
+    var showingAgenda = false
+    /// "Tomorrow 11:30 · Hairdresser": the next commitment within a day and a
+    /// half, read on this phone, for the home's suggestions.
+    private(set) var nextCommitment: String?
     /// A home pin that wants a particular note open once Notes is up.
     var requestedNote: String?
     /// A home pin that wants a particular folder open once Notes is up.
@@ -6262,6 +6274,28 @@ final class AppStore {
         calendarLink = .connected(updatedAt: Date())
     }
 
+    // MARK: - Agenda
+
+    /// What the agenda page just read, so the home can say what is next
+    /// without reading the calendar again.
+    func noteCommitments(_ items: [AgendaItem], now: Date = Date()) {
+        let line = Agenda.next(items, now: now).map { Agenda.glance($0, now: now) }
+        if line != nextCommitment { nextCommitment = line }
+    }
+
+    /// On each return to the app and each change to the phone's calendar.
+    func refreshCommitments() async {
+        guard CalendarSync.hasAccess else {
+            if nextCommitment != nil { nextCommitment = nil }
+            return
+        }
+        var items = AgendaSource.events()
+        if UserDefaults.standard.bool(forKey: "agenda.includeReminders") {
+            items += await AgendaSource.reminders()
+        }
+        noteCommitments(items)
+    }
+
     // MARK: - Today
 
     /// Alice's own forever-chat: the main profile's canonical Bot Chat in
@@ -6303,6 +6337,7 @@ final class AppStore {
     func openToday() {
         showingBots = false
         showingNotes = false
+        showingAgenda = false
         openBotConversation(for: Self.todayBot)
     }
 
@@ -9841,6 +9876,7 @@ extension AppStore {
         guard let chat = conversation(forSession: receipt.session) else { return false }
         showingBots = false
         showingNotes = false
+        showingAgenda = false
         openConversation(chat.id)
         if let anchor { focusedMessage = FocusedMessage(conversationID: chat.id, remoteID: anchor) }
         return true
@@ -9906,6 +9942,7 @@ extension AppStore {
            conversations.contains(where: { $0.id == id }) {
             showingBots = false
             showingNotes = false
+            showingAgenda = false
             openConversation(id)
             return (true, nil)
         }

@@ -72,6 +72,8 @@
 	<string>Alice connects to the Hermes agent running on your network.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Alice uses the microphone when you dictate a message.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Alice shows your open reminders next to your events in Agenda, on this iPhone only, and marks one done only when you tick it.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Alice transcribes what you dictate so you can edit it before sending.</string>
 	<key>NSSupportsLiveActivities</key>

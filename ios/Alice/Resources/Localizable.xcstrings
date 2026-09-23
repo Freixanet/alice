@@ -101,6 +101,16 @@
         }
       }
     },
+    "%@, %@ · Alice will write to you": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ · Alice te escribirá"
+          }
+        }
+      }
+    },
     "%lld": {
       "localizations": {
         "es": {
@@ -157,6 +167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld más"
+          }
+        }
+      }
+    },
+    "%lld more things today.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld cosas más hoy."
           }
         }
       }
@@ -891,6 +911,16 @@
         }
       }
     },
+    "Agenda": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agenda"
+          }
+        }
+      }
+    },
     "Agent": {
       "localizations": {
         "es": {
@@ -1011,6 +1041,26 @@
         }
       }
     },
+    "Alice reads the calendars on this iPhone — iCloud, Google, Outlook — and shows your next two weeks here. She changes nothing.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice lee los calendarios de este iPhone —iCloud, Google, Outlook— y te enseña aquí tus próximas dos semanas. No cambia nada."
+          }
+        }
+      }
+    },
+    "Alice will write to you": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice te escribirá"
+          }
+        }
+      }
+    },
     "Alice’s model": {
       "localizations": {
         "es": {
@@ -1037,6 +1087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Todas las auxiliares"
+          }
+        }
+      }
+    },
+    "All day": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo el día"
           }
         }
       }
@@ -1661,6 +1721,16 @@
         }
       }
     },
+    "Busy": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocupado"
+          }
+        }
+      }
+    },
     "By model": {
       "localizations": {
         "es": {
@@ -1687,6 +1757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "CPU"
+          }
+        }
+      }
+    },
+    "Calendar access is off for Alice. Turn it on in Settings › Alice › Calendars.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El acceso al calendario está desactivado para Alice. Actívalo en Ajustes › Alice › Calendarios."
           }
         }
       }
@@ -2197,6 +2277,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mensaje del commit"
+          }
+        }
+      }
+    },
+    "Complete": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completar"
           }
         }
       }
@@ -4161,6 +4251,16 @@
         }
       }
     },
+    "HAPPENING NOW": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AHORA MISMO"
+          }
+        }
+      }
+    },
     "HMAC secret · shown once": {
       "localizations": {
         "es": {
@@ -4871,12 +4971,62 @@
         }
       }
     },
+    "In %lld days": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En %lld días"
+          }
+        }
+      }
+    },
+    "In %lld h": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En %lld h"
+          }
+        }
+      }
+    },
+    "In %lld h %lld min": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En %1$lld h %2$lld min"
+          }
+        }
+      }
+    },
+    "In %lld min": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En %lld min"
+          }
+        }
+      }
+    },
     "In: %@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "En: %@"
+          }
+        }
+      }
+    },
+    "Include Reminders": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incluir Recordatorios"
           }
         }
       }
@@ -6251,6 +6401,16 @@
         }
       }
     },
+    "New events in your calendar appear here on their own.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los eventos nuevos de tu calendario aparecen aquí solos."
+          }
+        }
+      }
+    },
     "New folder": {
       "localizations": {
         "es": {
@@ -6387,6 +6547,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ningún modelo curado cabe en el presupuesto de memoria actual"
+          }
+        }
+      }
+    },
+    "No date": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin fecha"
           }
         }
       }
@@ -6611,6 +6781,26 @@
         }
       }
     },
+    "Nothing in the next two weeks": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada en las próximas dos semanas"
+          }
+        }
+      }
+    },
+    "Nothing left today.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada más por hoy."
+          }
+        }
+      }
+    },
     "Nothing was said there that can be shown.": {
       "localizations": {
         "es": {
@@ -6761,6 +6951,16 @@
         }
       }
     },
+    "One more thing today.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Una cosa más hoy."
+          }
+        }
+      }
+    },
     "Only the default model loaded": {
       "localizations": {
         "es": {
@@ -6777,6 +6977,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Abrir"
+          }
+        }
+      }
+    },
+    "Open Calendar": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir Calendario"
+          }
+        }
+      }
+    },
+    "Open Settings": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir Ajustes"
           }
         }
       }
@@ -6967,6 +7187,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "O pega el enlace de emparejamiento"
+          }
+        }
+      }
+    },
+    "Overdue": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atrasado"
           }
         }
       }
@@ -7837,6 +8067,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recordó algo sobre ti"
+          }
+        }
+      }
+    },
+    "Reminder": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recordatorio"
+          }
+        }
+      }
+    },
+    "Reminder from Alice": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recordatorio de Alice"
           }
         }
       }
@@ -8831,6 +9081,16 @@
         }
       }
     },
+    "See what's coming up": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mira lo que viene"
+          }
+        }
+      }
+    },
     "Select Notes": {
       "localizations": {
         "es": {
@@ -9187,6 +9447,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mostrar servidor instalado"
+          }
+        }
+      }
+    },
+    "Show my calendar": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver mi calendario"
           }
         }
       }
@@ -9821,6 +10091,26 @@
         }
       }
     },
+    "That event is no longer in your calendar.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese evento ya no está en tu calendario."
+          }
+        }
+      }
+    },
+    "That reminder could not be completed.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido completar ese recordatorio."
+          }
+        }
+      }
+    },
     "That routine no longer exists.": {
       "localizations": {
         "es": {
@@ -10281,6 +10571,36 @@
         }
       }
     },
+    "Today %@ · %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hoy %1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "Tomorrow": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mañana"
+          }
+        }
+      }
+    },
+    "Tomorrow %@ · %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mañana %1$@ · %2$@"
+          }
+        }
+      }
+    },
     "Too large": {
       "localizations": {
         "es": {
@@ -10371,6 +10691,16 @@
         }
       }
     },
+    "Turn on Reminders for Alice in Settings.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activa Recordatorios para Alice en Ajustes."
+          }
+        }
+      }
+    },
     "Type": {
       "localizations": {
         "es": {
@@ -10387,6 +10717,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Programación típica"
+          }
+        }
+      }
+    },
+    "UP NEXT": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A CONTINUACIÓN"
           }
         }
       }
@@ -11097,6 +11437,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hablas con Alice. Una cosa cada vez."
+          }
+        }
+      }
+    },
+    "Your commitments, at a glance.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus compromisos, de un vistazo."
+          }
+        }
+      }
+    },
+    "Your open to-dos, next to your events.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus tareas pendientes, junto a tus eventos."
           }
         }
       }

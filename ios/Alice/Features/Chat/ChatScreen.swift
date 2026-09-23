@@ -1043,7 +1043,8 @@ private struct HomeSuggestionStrip: View {
                 return HomeNotePrompt(id: note.id, label: label)
             },
             todayUnread: store.todayUnread,
-            agentsWithNews: store.agentsWithNews
+            agentsWithNews: store.agentsWithNews,
+            nextUp: store.nextCommitment
         )
     }
 
@@ -1094,6 +1095,8 @@ private struct HomeSuggestionStrip: View {
             } else {
                 store.requestedDestination = .bots
             }
+        case .agenda:
+            store.showingAgenda = true
         }
     }
 }

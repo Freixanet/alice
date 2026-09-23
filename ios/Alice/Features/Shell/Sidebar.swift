@@ -159,6 +159,8 @@ struct Sidebar: View, Equatable {
                 store.openToday()
                 onDismiss()
             }
+            // Right under Today: the person's own day, next to what Alice wrote.
+            row("Agenda", systemImage: "calendar", weight: .medium, destination: .agenda) { openAgenda() }
             row("Agents", systemImage: "person.2", weight: .medium,
                 badge: store.unreadNotices(in: .agents), destination: .bots) {
                 store.markNoticesSeen(.agents)
@@ -294,6 +296,7 @@ struct Sidebar: View, Equatable {
             store.botsFromLeading = false
             store.showingBots = true
         case .notes: openNotes()
+        case .agenda: openAgenda()
         case .activity: going = .activity
         case .routines:
             store.markNoticesSeen(.routines)
@@ -317,6 +320,13 @@ struct Sidebar: View, Equatable {
         }
     }
 
+
+    /// The agenda is a page like Notes: in off the right, out the same way.
+    private func openAgenda() {
+        onDismiss()
+        store.showingBots = false
+        store.showingAgenda = true
+    }
 
     /// Notes is a page, like Agents: it comes in sideways and stays until left,
     /// rather than a sheet a stray downward swipe closes mid-sentence.

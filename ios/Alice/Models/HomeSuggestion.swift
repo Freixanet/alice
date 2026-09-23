@@ -17,6 +17,8 @@ struct HomeSuggestion: Identifiable, Equatable, Sendable {
         case today
         /// One agent's chat, by profile.
         case agent(String)
+        /// The person's commitments (`AgendaScreen`).
+        case agenda
     }
 
     var id: String
@@ -39,7 +41,8 @@ struct HomeNotePrompt: Equatable, Sendable {
 
 /// The home's short list of things that need a person.
 ///
-/// Order is fixed: a request Hermes is still holding, a failed routine, an
+/// Order is fixed: a request Hermes is still holding, the next commitment
+/// within a day and a half, a failed routine, an
 /// open question, heavy recent usage, then a morning briefing when the routine
 /// list is known and none exists. At most three. A chat that merely ends on
 /// the person's message is not waiting. Usage and the briefing stay quiet
@@ -55,6 +58,7 @@ enum HomeSuggestions {
         recentTokens: Int? = nil,
         todayUnread: Bool = false,
         agentsWithNews: [HomeAgentNews] = [],
+        nextUp: String? = nil,
         now: Date = Date(),
         limit: Int = 3
     ) -> [HomeSuggestion] {
@@ -78,6 +82,12 @@ enum HomeSuggestions {
                 symbol: "questionmark.bubble",
                 action: chat.map(HomeSuggestion.Action.conversation) ?? .agents
             ))
+        }
+
+        // What is next on the person's day, within a day and a half: the
+        // commitment they would otherwise have to go and look up.
+        if let nextUp, !nextUp.isEmpty {
+            rows.append(HomeSuggestion(id: "agenda-next", title: nextUp, symbol: "calendar", action: .agenda))
         }
 
         // A routine that has run fine since it failed no longer needs a look.

@@ -88,6 +88,8 @@ struct AliceApp: App {
                     await store.refreshVisibleBotChats()
                     // Hermes' copy of the calendar, current while connected.
                     Task { await store.syncCalendarIfConnected() }
+                    // What is next on the phone's calendar, for the home.
+                    Task { await store.refreshCommitments() }
                     await notifier.refreshPermission()
                     store.startWatchingLiveEvents()
                     // Prime the watermarks without announcing the installation's
@@ -142,6 +144,7 @@ struct AliceApp: App {
                         // Alice is suspended, and events must route by that live id.
                         await store.refreshVisibleBotChats()
                         Task { await store.syncCalendarIfConnected() }
+                        Task { await store.refreshCommitments() }
                         // The socket does not survive suspension; this is where
                         // it comes back, and it is idempotent.
                         store.startWatchingLiveEvents()

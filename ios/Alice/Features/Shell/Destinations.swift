@@ -15,7 +15,7 @@ import Foundation
 /// searching "webhook" or "gateway" is served by the same list.
 struct AliceDestination: Identifiable, Hashable, Sendable {
     enum Target: String, Sendable {
-        case bots, notes, activity, routines, projects, files, library
+        case bots, notes, agenda, activity, routines, projects, files, library
         case channels, mcp, skills, tools, webhooks, git, system
         case settings, connect, memory, models, usage, sessions, insights
         case configuration, pairing, plugins
@@ -54,6 +54,11 @@ struct AliceDestination: Identifiable, Hashable, Sendable {
               systemImage: "note.text",
               synonyms: ["note", "nota", "notas", "memo", "write down", "jot",
                          "apuntar", "idea", "ideas", "thought", "thoughts"]),
+        .init(target: .agenda, title: "Agenda", technical: nil,
+              systemImage: "calendar",
+              synonyms: ["calendar", "calendario", "agenda", "events", "eventos", "appointment", "appointments",
+                         "cita", "citas", "reminders", "recordatorios", "to-do", "todo", "pending", "pendientes",
+                         "commitments", "compromisos", "schedule today", "what's next", "upcoming", "tomorrow"]),
         .init(target: .activity, title: "Activity", technical: nil,
               systemImage: "bell",
               synonyms: ["notification", "notifications", "alerts", "history",
