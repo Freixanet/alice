@@ -30,6 +30,18 @@ struct AgendaScreen: View {
     @State private var ticked: Set<String> = []
     @State private var opened: OpenedEvent?
     @State private var problem: String?
+    /// A reminder being typed in its row, when one is.
+    @State private var composing: AgendaSource.ReminderDraft?
+    @FocusState private var composeFocused: Bool
+    /// A reminder's details sheet: a new one, or one already there.
+    @State private var editing: EditingReminder?
+    @State private var addingEvent = false
+
+    private struct EditingReminder: Identifiable {
+        let id = UUID()
+        let identifier: String?
+        let draft: AgendaSource.ReminderDraft
+    }
 
     private struct OpenedEvent: Identifiable {
         let id: String
@@ -55,10 +67,25 @@ struct AgendaScreen: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 0, trailing: 20))
                     .listRowSeparator(.hidden)
 
-                if !hasCalendar && local.isEmpty {
+                if composing != nil {
+                    Section {
+                        ReminderDraftRow(
+                            draft: Binding(get: { composing ?? .init() }, set: { composing = $0 }),
+                            focused: $composeFocused,
+                            onSubmit: commitDraft,
+                            onDetails: {
+                                editing = EditingReminder(identifier: nil, draft: composing ?? .init())
+                                composing = nil
+                            }
+                        )
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                }
+
+                if !hasCalendar && local.isEmpty && composing == nil {
                     noAccess
                         .listRowBackground(Color.clear)
-                } else if loaded && days.isEmpty {
+                } else if loaded && days.isEmpty && composing == nil {
                     ContentUnavailableView(
                         "Nothing in the next two weeks",
                         systemImage: "calendar",
@@ -77,6 +104,12 @@ struct AgendaScreen: View {
                             )
                             .contentShape(.rect)
                             .onTapGesture { open(item) }
+                            .contextMenu {
+                                if item.isReminder {
+                                    Button { tick(item) } label: { Label("Complete", systemImage: "checkmark.circle") }
+                                    Button { open(item) } label: { Label("Details", systemImage: "info.circle") }
+                                }
+                            }
                             .swipeActions(edge: .trailing) {
                                 if item.isReminder {
                                     Button("Complete") { tick(item) }
@@ -104,30 +137,15 @@ struct AgendaScreen: View {
         .background { Palette.background(scheme).ignoresSafeArea() }
         .navigationTitle("Agenda")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: onClose) { Image(systemName: "chevron.left") }
-                    .accessibilityLabel("Back")
-                    .accessibilityIdentifier("agenda.back")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Toggle(isOn: Binding(
-                        get: { includeReminders && AgendaSource.remindersAllowed },
-                        set: { on in Task { await setReminders(on) } }
-                    )) {
-                        Label("Show Reminders", systemImage: "checklist")
-                    }
-                    Button {
-                        openURL(URL(string: "calshow:\(Date().timeIntervalSinceReferenceDate)")!)
-                    } label: {
-                        Label("Open Calendar", systemImage: "calendar")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .accessibilityLabel("Agenda options")
-                .accessibilityIdentifier("agenda.options")
+        .toolbar { toolbarContent }
+        .onChange(of: composeFocused) { _, focused in
+            // Leaving the row keeps what was typed, as Reminders does. Return
+            // hands the focus straight to the next row, so a moment's loss
+            // of it is not leaving.
+            guard !focused, composing != nil else { return }
+            Task {
+                try? await Task.sleep(for: .milliseconds(200))
+                if !composeFocused { finishDraft() }
             }
         }
         .refreshable { await load(fresh: true) }
@@ -138,9 +156,75 @@ struct AgendaScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await load(fresh: false) } }
         }
+        .sheet(item: $editing) { edit in
+            ReminderDetailsSheet(identifier: edit.identifier, draft: edit.draft) { saved in
+                editing = nil
+                if saved { Task { await load(fresh: false) } }
+            }
+        }
+        .sheet(isPresented: $addingEvent) {
+            NewEventSheet { addingEvent = false }
+                .ignoresSafeArea()
+        }
         .sheet(item: $opened) { event in
             EventDetail(identifier: event.id, start: event.start) { opened = nil }
                 .ignoresSafeArea()
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button(action: onClose) { Image(systemName: "chevron.left") }
+                .accessibilityLabel("Back")
+                .accessibilityIdentifier("agenda.back")
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Toggle(isOn: Binding(
+                    get: { includeReminders && AgendaSource.remindersAllowed },
+                    set: { on in Task { await setReminders(on) } }
+                )) {
+                    Label("Show Reminders", systemImage: "checklist")
+                }
+                Button {
+                    Task { await newEvent() }
+                } label: {
+                    Label("New Event", systemImage: "calendar.badge.plus")
+                }
+                Button {
+                    openURL(URL(string: "calshow:\(Date().timeIntervalSinceReferenceDate)")!)
+                } label: {
+                    Label("Open Calendar", systemImage: "calendar")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .accessibilityLabel("Agenda options")
+            .accessibilityIdentifier("agenda.options")
+        }
+        // As in Reminders: bottom left, in the accent, always there.
+        ToolbarItem(placement: .bottomBar) {
+            Button {
+                Task { await startComposing() }
+            } label: {
+                Label("New Reminder", systemImage: "plus.circle.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.body.weight(.semibold))
+            }
+            .accessibilityIdentifier("agenda.newReminder")
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .keyboard) {
+            if composing != nil {
+                ReminderQuickDates(
+                    draft: Binding(get: { composing ?? .init() }, set: { composing = $0 }),
+                    onMore: {
+                        editing = EditingReminder(identifier: nil, draft: composing ?? .init())
+                        composing = nil
+                    }
+                )
+            }
         }
     }
 
@@ -242,13 +326,91 @@ struct AgendaScreen: View {
                 return
             }
             opened = OpenedEvent(id: identifier, start: item.start)
-        case .reminder:
-            if let url = URL(string: "x-apple-reminderkit://") { openURL(url) }
+        case let .reminder(identifier, _):
+            guard let draft = AgendaSource.draft(of: identifier) else {
+                problem = String(localized: "That reminder is no longer in Reminders.")
+                return
+            }
+            editing = EditingReminder(identifier: identifier, draft: draft)
         case .alice:
             // Where Alice will write when the time comes.
             onClose()
             store.openToday()
         }
+    }
+
+    // MARK: Writing
+
+    /// Reminders need their own permission; asking for it here is asking
+    /// for what the person is about to do.
+    private func remindersReady() async -> Bool {
+        if AgendaSource.remindersAllowed {
+            includeReminders = true
+            return true
+        }
+        if AgendaSource.remindersRefused {
+            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            return false
+        }
+        guard await AgendaSource.requestReminders() else { return false }
+        includeReminders = true
+        await load(fresh: false)
+        return true
+    }
+
+    private func startComposing() async {
+        guard await remindersReady() else { return }
+        if composing == nil {
+            var draft = AgendaSource.ReminderDraft()
+            ReminderDates.set(&draft, dayOffset: 0)
+            composing = draft
+        }
+        composeFocused = true
+    }
+
+    /// Return: this one is saved and the next row opens, on the same day.
+    private func commitDraft() {
+        guard let draft = composing else { return }
+        if draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            composing = nil
+            composeFocused = false
+            return
+        }
+        if saveDraft(draft) {
+            var next = AgendaSource.ReminderDraft()
+            next.due = draft.due
+            next.hasTime = draft.hasTime
+            next.list = draft.list
+            composing = next
+            composeFocused = true
+        }
+    }
+
+    private func finishDraft() {
+        guard let draft = composing else { return }
+        composing = nil
+        if !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            _ = saveDraft(draft)
+        }
+    }
+
+    private func saveDraft(_ draft: AgendaSource.ReminderDraft) -> Bool {
+        do {
+            try AgendaSource.save(draft)
+            problem = nil
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Task { await load(fresh: false) }
+            return true
+        } catch {
+            problem = String(localized: "That reminder could not be saved.")
+            return false
+        }
+    }
+
+    private func newEvent() async {
+        if !CalendarSync.hasAccess { await connect() }
+        guard CalendarSync.hasAccess else { return }
+        addingEvent = true
     }
 
     private func connect() async {

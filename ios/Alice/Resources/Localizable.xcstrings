@@ -3021,6 +3021,26 @@
         }
       }
     },
+    "Date": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fecha"
+          }
+        }
+      }
+    },
+    "Date and Time": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fecha y hora"
+          }
+        }
+      }
+    },
     "Days": {
       "localizations": {
         "es": {
@@ -3161,6 +3181,16 @@
         }
       }
     },
+    "Delete Reminder": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar recordatorio"
+          }
+        }
+      }
+    },
     "Delete Routine": {
       "localizations": {
         "es": {
@@ -3247,6 +3277,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "¿Eliminar el hook de shell?"
+          }
+        }
+      }
+    },
+    "Delete this reminder?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar este recordatorio?"
           }
         }
       }
@@ -5421,6 +5461,16 @@
         }
       }
     },
+    "List": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lista"
+          }
+        }
+      }
+    },
     "Live Activity could not start": {
       "localizations": {
         "es": {
@@ -6281,6 +6331,16 @@
         }
       }
     },
+    "New Event": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo evento"
+          }
+        }
+      }
+    },
     "New Folder": {
       "localizations": {
         "es": {
@@ -6317,6 +6377,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Proyecto nuevo"
+          }
+        }
+      }
+    },
+    "New Reminder": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo recordatorio"
           }
         }
       }
@@ -6477,6 +6547,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Próxima ejecución"
+          }
+        }
+      }
+    },
+    "No Date": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin fecha"
           }
         }
       }
@@ -6737,6 +6817,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nota"
+          }
+        }
+      }
+    },
+    "Notes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notas"
           }
         }
       }
@@ -10057,6 +10147,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se ha podido completar ese recordatorio."
+          }
+        }
+      }
+    },
+    "That reminder could not be deleted.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido eliminar ese recordatorio."
+          }
+        }
+      }
+    },
+    "That reminder could not be saved.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido guardar ese recordatorio."
+          }
+        }
+      }
+    },
+    "That reminder is no longer in Reminders.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese recordatorio ya no está en Recordatorios."
           }
         }
       }

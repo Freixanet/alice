@@ -112,4 +112,25 @@ final class AgendaTests: XCTestCase {
         XCTAssertEqual(rows.first?.symbol, "calendar")
         XCTAssertTrue(HomeSuggestions.make(nextUp: "", now: now).isEmpty)
     }
+
+    func testQuickDatesKeepTheTimeAndSayTheDay() {
+        let today = Calendar.current.startOfDay(for: Date())
+        var draft = AgendaSource.ReminderDraft(title: "Llamar al dentista")
+        ReminderDates.set(&draft, dayOffset: 0)
+        XCTAssertEqual(draft.due, today)
+        XCTAssertTrue(ReminderDates.isDay(draft, offset: 0))
+        XCTAssertEqual(ReminderDates.describe(draft), String(localized: "Today"))
+
+        draft.hasTime = true
+        draft.due = Calendar.current.date(bySettingHour: 9, minute: 30, second: 0, of: today)
+        ReminderDates.set(&draft, dayOffset: 1)
+        XCTAssertTrue(ReminderDates.isDay(draft, offset: 1))
+        XCTAssertEqual(Calendar.current.component(.hour, from: draft.due!), 9)
+        XCTAssertEqual(Calendar.current.component(.minute, from: draft.due!), 30)
+        XCTAssertTrue(ReminderDates.describe(draft)!.hasPrefix(String(localized: "Tomorrow")))
+
+        draft.due = nil
+        XCTAssertNil(ReminderDates.describe(draft))
+        XCTAssertFalse(ReminderDates.isDay(draft, offset: 0))
+    }
 }

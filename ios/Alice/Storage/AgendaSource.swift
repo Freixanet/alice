@@ -75,6 +75,89 @@ enum AgendaSource {
         }
     }
 
+    /// A list in Reminders, to file a new reminder in.
+    struct ReminderList: Identifiable, Hashable, Sendable {
+        let id: String
+        let title: String
+        let color: AgendaColor?
+    }
+
+    /// The lists the person can add to, their default first.
+    @MainActor
+    static func reminderLists() -> [ReminderList] {
+        guard remindersAllowed else { return [] }
+        let preferred = store.defaultCalendarForNewReminders()?.calendarIdentifier
+        return store.calendars(for: .reminder)
+            .filter(\.allowsContentModifications)
+            .sorted { ($0.calendarIdentifier == preferred ? 0 : 1, $0.title) < ($1.calendarIdentifier == preferred ? 0 : 1, $1.title) }
+            .map { ReminderList(id: $0.calendarIdentifier, title: $0.title, color: color($0.cgColor)) }
+    }
+
+    /// What a reminder says, for adding one or changing it. `due` without a
+    /// time is a day; no `due` at all is a to-do with no date.
+    struct ReminderDraft: Equatable, Sendable {
+        var title = ""
+        var notes = ""
+        var due: Date?
+        var hasTime = false
+        var list: String?
+    }
+
+    /// The reminder as it stands, for its details sheet.
+    @MainActor
+    static func draft(of identifier: String) -> ReminderDraft? {
+        guard let reminder = store.calendarItem(withIdentifier: identifier) as? EKReminder else { return nil }
+        let components = reminder.dueDateComponents
+        return ReminderDraft(
+            title: reminder.title ?? "", notes: reminder.notes ?? "",
+            due: components.flatMap { Calendar.current.date(from: $0) },
+            hasTime: components?.hour != nil, list: reminder.calendar?.calendarIdentifier
+        )
+    }
+
+    /// Adds a reminder to Reminders, or changes the one `identifier` names.
+    /// A time gets an alert at that time, as Reminders does.
+    @MainActor
+    @discardableResult
+    static func save(_ draft: ReminderDraft, identifier: String? = nil) throws -> String {
+        let reminder: EKReminder
+        if let identifier {
+            guard let found = store.calendarItem(withIdentifier: identifier) as? EKReminder else {
+                throw CalendarSync.ChangeFailure.gone
+            }
+            reminder = found
+        } else {
+            reminder = EKReminder(eventStore: store)
+        }
+        reminder.title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        reminder.notes = draft.notes.isEmpty ? nil : draft.notes
+        let calendar = Calendar.current
+        if let due = draft.due {
+            let parts: Set<Calendar.Component> = draft.hasTime
+                ? [.year, .month, .day, .hour, .minute] : [.year, .month, .day]
+            reminder.dueDateComponents = calendar.dateComponents(parts, from: due)
+        } else {
+            reminder.dueDateComponents = nil
+        }
+        reminder.alarms?.forEach { reminder.removeAlarm($0) }
+        if let due = draft.due, draft.hasTime {
+            reminder.addAlarm(EKAlarm(absoluteDate: due))
+        }
+        if let list = draft.list, let chosen = store.calendar(withIdentifier: list) {
+            reminder.calendar = chosen
+        } else if reminder.calendar == nil {
+            reminder.calendar = store.defaultCalendarForNewReminders()
+        }
+        try store.save(reminder, commit: true)
+        return reminder.calendarItemIdentifier
+    }
+
+    @MainActor
+    static func delete(_ identifier: String) throws {
+        guard let reminder = store.calendarItem(withIdentifier: identifier) as? EKReminder else { return }
+        try store.remove(reminder, commit: true)
+    }
+
     /// Ticks a reminder off in Reminders itself.
     @MainActor
     static func complete(_ identifier: String) throws {
