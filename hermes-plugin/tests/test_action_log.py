@@ -107,6 +107,11 @@ class RecordTests(unittest.TestCase):
                     status="error")
         self.assertFalse(log.recent(self.root)[0]["ok"])
 
+    def test_a_refused_curator_patch_is_not_an_action(self):
+        result = '{"success": false, "error": "Refusing background curator patch for bundled skill \'x\'."}'
+        self.assertIsNone(log.observe(self.root, "default", tool_name="skill_manage",
+                                      args={"action": "patch", "name": "x"}, result=result, status="error"))
+
     def test_since_and_profile_filter(self):
         log.record(self.root, profile="a", session="", tool="t", kind="note.saved", target="", ok=True, now=100)
         log.record(self.root, profile="b", session="", tool="t", kind="note.saved", target="", ok=True, now=200)

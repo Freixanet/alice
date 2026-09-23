@@ -9850,7 +9850,16 @@ extension AppStore {
 
     /// Everything, newest first: the Mac's record and this phone's.
     var allAgentActions: [AgentAction] {
-        (agentActions + phoneActions).sorted { $0.at > $1.at }
+        let all = (agentActions + phoneActions).sorted { $0.at > $1.at }
+        // A failed attempt the agent then made again successfully is not a
+        // failure worth showing: an edit whose first try matched twice and
+        // whose retry went through read as "Didn't go through".
+        return all.filter { action in
+            action.ok || !all.contains { other in
+                other.ok && other.at >= action.at && other.kind == action.kind
+                    && other.target == action.target && other.session == action.session
+            }
+        }
     }
 
     func refreshAgentActions() async {
