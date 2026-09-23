@@ -195,6 +195,9 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// that agent's own Hermes session — the one its chat uses — kept here so
     /// the reply can be found there if this device stops watching it.
     var mentionProfile: String? = nil
+    /// Exact bare names chosen from the @ menu. Optional in older archives;
+    /// a repeated plain word must not become another highlighted invocation.
+    var selectedMentionRanges: [NSRange] = []
     var mentionSessionID: String? = nil
     /// Narration the model said on the way to a tool call, kept as its own
     /// bubble so the tool does not wipe it. Optional so archives written
@@ -253,6 +256,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         replyToMessageID = try box.decodeIfPresent(String.self, forKey: .replyToMessageID)
         remoteMatchContent = try box.decodeIfPresent(String.self, forKey: .remoteMatchContent)
         mentionProfile = try box.decodeIfPresent(String.self, forKey: .mentionProfile)
+        selectedMentionRanges = try box.decodeIfPresent([NSRange].self, forKey: .selectedMentionRanges) ?? []
         mentionSessionID = try box.decodeIfPresent(String.self, forKey: .mentionSessionID)
         interim = try box.decodeIfPresent(Bool.self, forKey: .interim) ?? false
         lastStatus = try box.decodeIfPresent(String.self, forKey: .lastStatus)
@@ -273,9 +277,11 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         awaitingRemote: Bool = false, replyToMessageID: String? = nil,
         remoteMatchContent: String? = nil,
         mentionProfile: String? = nil,
+        selectedMentionRanges: [NSRange] = [],
         interim: Bool = false
     ) {
         self.mentionProfile = mentionProfile
+        self.selectedMentionRanges = selectedMentionRanges
         self.deliveryNote = deliveryNote
         self.awaitingRemote = awaitingRemote
         self.replyToMessageID = replyToMessageID

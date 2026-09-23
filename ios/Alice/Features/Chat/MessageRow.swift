@@ -108,7 +108,8 @@ struct MessageRow: View {
                         // Only the named agent is emphasized; the bubble keeps one text colour.
                         Text(store.mentionStyled(
                             message.content,
-                            bareSlugs: message.mentionProfile.map { [$0] } ?? []
+                            bareSlugs: message.mentionProfile.map { [$0] } ?? [],
+                            selectedRanges: message.selectedMentionRanges
                         ))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)

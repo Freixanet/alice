@@ -115,12 +115,8 @@ struct Composer: View {
                 }
             }
         }
-        .onChange(of: store.draft) { old, new in
+        .onChange(of: store.draft) { _, _ in
             commandsDismissed = false
-            if let whole = store.draftDeletingMention(old: old, new: new) {
-                store.draft = whole
-            }
-            store.pruneDraftMentions()
         }
         .onChange(of: store.editingMessageID) { _, editing in
             if editing != nil { focused.wrappedValue = true }
@@ -150,17 +146,27 @@ struct Composer: View {
         store.activeBotProfileForModelSelection != nil
     }
 
+    private var editorText: Binding<String> {
+        Binding(
+            get: { store.draft },
+            set: { value in
+                let old = store.draft
+                store.draft = store.draftDeletingMention(old: old, new: value) ?? value
+            }
+        )
+    }
+
     /// Keep the native TextField's glyphs, wrapping and caret untouched. Draw
     /// a little extra ink over a mention using the very same regular font,
     /// whose advances exactly match the field. The background never handles
     /// touches or changes the field's measured size.
     private func mentionInk(_ draft: String) -> AttributedString? {
-        let ranges = store.mentions(in: draft, bareSlugs: store.draftMentions.map(\.slug))
+        let ranges = store.draftMentionRanges(in: draft)
         guard !ranges.isEmpty else { return nil }
         var ink = AttributedString(draft)
         ink.font = .body
         ink.foregroundColor = .clear
-        for (range, _) in ranges {
+        for range in ranges {
             guard let lower = AttributedString.Index(range.lowerBound, within: ink),
                   let upper = AttributedString.Index(range.upperBound, within: ink)
             else { continue }
@@ -244,11 +250,18 @@ struct Composer: View {
                     Button {
                         if let atIndex = store.draft.lastIndex(of: "@") {
                             let prefix = store.draft[..<atIndex]
+                            let location = String(prefix).utf16.count
+                            let retained = store.draftMentions.filter {
+                                NSMaxRange($0.utf16Range) <= location
+                            }
                             let botName = store.botCurrentName(for: bot)
                             store.draft = ""
                             DispatchQueue.main.async {
                                 store.draft = prefix + botName + " "
-                                store.rememberDraftMention(display: botName, slug: bot.name)
+                                store.draftMentions = retained.filter { $0.range(in: store.draft) != nil }
+                                store.rememberDraftMention(
+                                    display: botName, slug: bot.name, location: location
+                                )
                             }
                         }
                     } label: {
@@ -415,7 +428,7 @@ struct Composer: View {
                 }
 
                 TextField(
-                    "", text: $store.draft,
+                    "", text: editorText,
                     prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
                 )
                     .lineLimit(1...7)
@@ -481,7 +494,7 @@ struct Composer: View {
 
                     HStack(alignment: .bottom, spacing: 6) {
                         TextField(
-                            "", text: $store.draft,
+                            "", text: editorText,
                             prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
                         )
                             .textFieldStyle(.plain)

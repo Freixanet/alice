@@ -145,10 +145,12 @@ final class AppStore {
             conversations[index].openedAt = Date()
         }
     }
-    var draft: String = ""
-    /// Agents picked from the `@` menu in the current draft. The `@` is gone
-    /// from the text; these keep the turn routed to that profile.
-    var draftMentions: [(display: String, slug: String)] = []
+    var draft: String = "" {
+        didSet { draftMentions = DraftMention.rebased(draftMentions, from: oldValue, to: draft) }
+    }
+    /// Exact occurrences picked from the `@` menu. The `@` is gone from the
+    /// text, so a slug alone would mark later ordinary uses of the same word.
+    var draftMentions: [DraftMention] = []
     /// Waiting to go out with the next message.
     var draftAttachments: [Attachment] = []
     /// Chats with a reply under way. Each follows its own: one agent at work
@@ -7802,6 +7804,12 @@ final class AppStore {
     func send() {
         guard !activeIsRecoveredHistory else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let leadingWhitespace = draft.prefix(while: { $0.isWhitespace }).utf16.count
+        let messageMentions = draftMentions.compactMap { mention -> DraftMention? in
+            var moved = mention
+            moved.location -= leadingWhitespace
+            return moved.range(in: text) == nil ? nil : moved
+        }
         guard !text.isEmpty || !draftAttachments.isEmpty else { return }
         if let editing = editingMessageID {
             editingMessageID = nil
@@ -7889,9 +7897,8 @@ final class AppStore {
             }
 
             if invokedBot == nil {
-                for mention in draftMentions.sorted(by: { $0.display.count > $1.display.count }) {
-                    if ConversationTitle.firstWord(of: mention.display, in: text) != nil
-                        || ConversationTitle.firstWord(of: mention.slug, in: text) != nil {
+                for mention in messageMentions.sorted(by: { $0.display.count > $1.display.count }) {
+                    if mention.range(in: text) != nil {
                         invokedBot = mention.slug
                         break
                     }
@@ -7938,11 +7945,15 @@ final class AppStore {
 
         var mentionText: String?
         if case .agent(let profile, true) = route {
-            mentionText = Self.withoutMention(text, of: profile, names: mentionNames(for: profile))
+            let selected = messageMentions.first(where: { $0.slug == profile })
+            mentionText = Self.withoutMention(
+                text, of: profile, names: mentionNames(for: profile), selectedRange: selected?.utf16Range
+            )
             guard mentionText?.isEmpty == false || !draftAttachments.isEmpty else { return }
         }
 
         let attachments = draftAttachments
+        let selectedMentionRanges = messageMentions.map(\.utf16Range)
         draft = ""
         draftMentions = []
         draftAttachments = []
@@ -7954,7 +7965,8 @@ final class AppStore {
         let user = Message(
             id: UUID().uuidString, role: .user, content: text, createdAt: Date(),
             attachments: attachments,
-            mentionProfile: mentionText == nil ? nil : invokedBot
+            mentionProfile: mentionText == nil ? nil : invokedBot,
+            selectedMentionRanges: selectedMentionRanges
         )
         let replyID = UUID().uuidString
         conversations[index].messages.append(user)
@@ -8079,11 +8091,31 @@ final class AppStore {
 
     /// A named agent is bold in a sent message, with the same text colour as
     /// everything around it.
-    func mentionStyled(_ text: String, bareSlugs: [String]? = nil) -> AttributedString {
+    func mentionStyled(
+        _ text: String, bareSlugs: [String] = [], selectedRanges: [NSRange] = []
+    ) -> AttributedString {
         var styled = AttributedString(text)
         styled.font = .body
-        let slugs = bareSlugs ?? draftMentions.map(\.slug)
-        for (range, _) in mentions(in: text, bareSlugs: slugs) {
+        var ranges = mentions(in: text).map(\.0)
+        for selected in selectedRanges {
+            if let range = Range(selected, in: text),
+               ConversationTitle.isWord(range, in: text),
+               !ranges.contains(where: { $0.overlaps(range) }) {
+                ranges.append(range)
+            }
+        }
+        // Archives made before selected ranges were stored can only identify
+        // the routed profile. Emphasize one bare occurrence, not every repeat.
+        if selectedRanges.isEmpty, ranges.isEmpty, !bareSlugs.isEmpty {
+            for slug in bareSlugs {
+                if let range = mentions(in: text, bareSlugs: [slug]).first(where: {
+                    !text[$0.0].hasPrefix("@") && $0.1 == slug
+                })?.0 {
+                    ranges.append(range)
+                }
+            }
+        }
+        for range in ranges {
             guard let lower = AttributedString.Index(range.lowerBound, within: styled),
                   let upper = AttributedString.Index(range.upperBound, within: styled)
             else { continue }
@@ -8096,7 +8128,7 @@ final class AppStore {
     /// it: the whole name goes, as a mention is one thing, not letters.
     func draftDeletingMention(old: String, new: String) -> String? {
         guard old.count == new.count + 1 else { return nil }
-        for (range, _) in mentions(in: old, bareSlugs: draftMentions.map(\.slug)) {
+        for range in draftMentionRanges(in: old) {
             var trimmed = old
             trimmed.remove(at: old.index(before: range.upperBound))
             if trimmed == new {
@@ -8135,6 +8167,19 @@ final class AppStore {
         return found
     }
 
+    /// Explicit @mentions plus only the bare occurrences actually picked in
+    /// this draft. Other uses of an agent's name stay ordinary text.
+    func draftMentionRanges(in text: String) -> [Range<String.Index>] {
+        var ranges = mentions(in: text).map(\.0)
+        for mention in draftMentions {
+            if let range = mention.range(in: text),
+               !ranges.contains(where: { $0.overlaps(range) }) {
+                ranges.append(range)
+            }
+        }
+        return ranges
+    }
+
     /// Every name an agent can be mentioned by, longest first, built once per
     /// roster rather than on every call: `mentions` ran for each drawer row
     /// on each redraw and rebuilt it every time.
@@ -8157,16 +8202,9 @@ final class AppStore {
 
     @ObservationIgnored private var mentionNameListCache: (key: Int, names: [(String, String)])?
 
-    func rememberDraftMention(display: String, slug: String) {
-        draftMentions.removeAll { $0.slug.caseInsensitiveCompare(slug) == .orderedSame }
-        draftMentions.append((display, slug))
-    }
-
-    func pruneDraftMentions() {
-        draftMentions.removeAll { mention in
-            ConversationTitle.firstWord(of: mention.display, in: draft) == nil
-                && ConversationTitle.firstWord(of: mention.slug, in: draft) == nil
-        }
+    func rememberDraftMention(display: String, slug: String, location: Int) {
+        let mention = DraftMention(display: display, slug: slug, location: location)
+        if mention.range(in: draft) != nil { draftMentions.append(mention) }
     }
 
     /// Every name an agent can be mentioned by.
@@ -8179,28 +8217,42 @@ final class AppStore {
 
     /// The message as the agent would have been sent it in its own chat: the
     /// first `@name` or bare name for it taken out, and the space it leaves tidied.
-    nonisolated static func withoutMention(_ text: String, of slug: String, names: [String]) -> String {
-        for name in Set(names + [slug]).sorted(by: { $0.count > $1.count }) {
-            for needle in ["@" + name, name] {
-                var searchFrom = text.startIndex
-                while let range = text.range(of: needle, options: .caseInsensitive, range: searchFrom..<text.endIndex) {
-                    guard ConversationTitle.isWord(range, in: text) else {
-                        searchFrom = range.upperBound
-                        continue
-                    }
-                    var rest = text
-                    rest.removeSubrange(range)
-                    if range.lowerBound < rest.endIndex,
-                       [",", ":"].contains(rest[range.lowerBound]) {
-                        rest.remove(at: range.lowerBound)
-                    }
-                    return rest
-                        .replacingOccurrences(of: "  ", with: " ")
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                }
+    nonisolated static func withoutMention(
+        _ text: String, of slug: String, names: [String], selectedRange: NSRange? = nil
+    ) -> String {
+        let orderedNames = Set(names + [slug]).sorted(by: { $0.count > $1.count })
+        for name in orderedNames {
+            if let range = ConversationTitle.firstWord(of: "@" + name, in: text) {
+                return textRemovingMention(text, at: range)
+            }
+        }
+        if let selectedRange, let range = Range(selectedRange, in: text),
+           ConversationTitle.isWord(range, in: text),
+           Set(names + [slug]).contains(where: {
+               String(text[range]).caseInsensitiveCompare($0) == .orderedSame
+           }) {
+            return textRemovingMention(text, at: range)
+        }
+        for name in orderedNames {
+            if let range = ConversationTitle.firstWord(of: name, in: text) {
+                return textRemovingMention(text, at: range)
             }
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func textRemovingMention(
+        _ text: String, at range: Range<String.Index>
+    ) -> String {
+        var rest = text
+        rest.removeSubrange(range)
+        if range.lowerBound < rest.endIndex,
+           [",", ":"].contains(rest[range.lowerBound]) {
+            rest.remove(at: range.lowerBound)
+        }
+        return rest
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// A turn as a gateway run, with the conversation sent along with it.

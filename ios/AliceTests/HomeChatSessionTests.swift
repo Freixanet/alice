@@ -265,6 +265,17 @@ final class HomeChatSessionTests: XCTestCase {
         XCTAssertEqual(AppStore.withoutMention("@inbox", of: "inbox", names: names), "")
         XCTAssertEqual(AppStore.withoutMention("inbox apunta esto", of: "inbox", names: names), "apunta esto")
         XCTAssertEqual(AppStore.withoutMention("oye Inbox guarda", of: "inbox", names: names), "oye guarda")
+        let repeated = "Inbox es el nombre; Inbox guarda esto"
+        let selected = (repeated as NSString).range(of: "Inbox", options: .backwards)
+        XCTAssertEqual(
+            AppStore.withoutMention(repeated, of: "inbox", names: names, selectedRange: selected),
+            "Inbox es el nombre; guarda esto"
+        )
+        XCTAssertEqual(
+            AppStore.withoutMention("@Inbox y Inbox", of: "inbox", names: names,
+                                    selectedRange: NSRange(location: 9, length: 5)),
+            "y Inbox"
+        )
     }
 
     func testAMutedRoutineLosesItsReportsButNotItsFailures() {
