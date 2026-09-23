@@ -1255,12 +1255,20 @@ final class AppStore {
         }
     }
 
+    /// Hermes' metadata decides once a row carries it — also a row from the
+    /// saved roster, before `profiles.list` has answered this launch. Only
+    /// the live read used to count, so every launch and reconnect showed the
+    /// Agents page without its pinned shelf until Hermes answered.
+    private func usesRemoteMetadata(_ bot: BotRow) -> Bool {
+        botMetadataIsRemote || bot.metadata.present
+    }
+
     func isBotPinned(_ bot: BotRow) -> Bool {
-        botMetadataIsRemote ? (bot.metadata.pinned ?? false) : pinnedBots.contains(bot.name)
+        usesRemoteMetadata(bot) ? (bot.metadata.pinned ?? false) : pinnedBots.contains(bot.name)
     }
 
     func isBotHidden(_ bot: BotRow) -> Bool {
-        botMetadataIsRemote ? (bot.metadata.hidden ?? false) : hiddenBots.contains(bot.name)
+        usesRemoteMetadata(bot) ? (bot.metadata.hidden ?? false) : hiddenBots.contains(bot.name)
     }
 
     func setBotPinned(_ bot: BotRow, pinned: Bool) async throws {
