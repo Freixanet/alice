@@ -56,14 +56,32 @@ struct SecretRequestCard: View {
 
     @State private var key = ""
     @State private var working = false
-    @State private var saved = false
     @State private var problem: String?
+    /// Hermes has not answered yet whether the key is there: nothing is
+    /// shown rather than a field that may be about to close.
+    @State private var checked = false
+    /// A saved key the person wants to change (a wrong one, say).
+    @State private var replacing = false
+
+    /// From the store, not the card: the row is rebuilt while the agent
+    /// answers, and a card's own flag would forget and ask again.
+    private var saved: Bool { store.savedSecrets.contains(request.name) }
 
     var body: some View {
-        if saved || !superseded {
+        // Once answered (the person wrote after it) the card closes, saved
+        // or not; before that, a saved key shows as done, never as a field.
+        if !superseded, checked || saved {
             offer
                 .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+        } else if !superseded {
+            Color.clear.frame(height: 0)
+                .task { await check() }
         }
+    }
+
+    private func check() async {
+        _ = try? await store.aliceSecretIsSet(name: request.name)
+        checked = true
     }
 
     private var offer: some View {
@@ -84,10 +102,16 @@ struct SecretRequestCard: View {
                 }
             }
 
-            if saved {
-                Label(language.pick("Saved", "Guardada"), systemImage: "checkmark.circle.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Palette.success(scheme))
+            if saved && !replacing {
+                HStack {
+                    Label(language.pick("Saved", "Guardada"), systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Palette.success(scheme))
+                    Spacer(minLength: 8)
+                    Button(language.pick("Change", "Cambiar")) { replacing = true }
+                        .font(.subheadline)
+                        .buttonStyle(.borderless)
+                }
             } else {
                 if let page = request.keysPage {
                     Link(destination: page) {
@@ -144,10 +168,6 @@ struct SecretRequestCard: View {
             RoundedRectangle(cornerRadius: 20).stroke(Palette.border(scheme), lineWidth: 0.5)
         }
         .animation(.snappy(duration: 0.25), value: saved)
-        .task {
-            // Already given (another card, another chat): say so rather than ask again.
-            if !saved, (try? await store.aliceSecretIsSet(name: request.name)) == true { saved = true }
-        }
         .accessibilityElement(children: .contain)
     }
 
@@ -163,7 +183,7 @@ struct SecretRequestCard: View {
         do {
             try await store.saveAliceSecret(name: request.name, value: value)
             key = ""
-            saved = true
+            replacing = false
             // The agent carries on; this message names the key, never its value.
             store.sendQuickReply(language.pick(
                 "Done, \(request.name) is saved. Carry on.",

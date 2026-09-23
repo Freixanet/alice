@@ -5454,12 +5454,21 @@ final class AppStore {
         try await dashboard.saveProviderCredential(profile: profile, key: key, value: value)
     }
 
+    /// Keys already given in a secure card, by name (never the value). Kept
+    /// here rather than in the card: a chat redraws its rows while the agent
+    /// answers, a card is made anew, and its own state would ask again.
+    private(set) var savedSecrets: Set<String> = []
+
     func saveAliceSecret(name: String, value: String) async throws {
         try await dashboard.saveAliceSecret(name: name, value: value)
+        savedSecrets.insert(name)
     }
 
     func aliceSecretIsSet(name: String) async throws -> Bool {
-        try await dashboard.aliceSecretIsSet(name: name)
+        if savedSecrets.contains(name) { return true }
+        let set = try await dashboard.aliceSecretIsSet(name: name)
+        if set { savedSecrets.insert(name) }
+        return set
     }
 
     func removeProviderCredential(profile: String, key: String) async throws {
