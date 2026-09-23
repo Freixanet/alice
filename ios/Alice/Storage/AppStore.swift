@@ -8077,19 +8077,17 @@ final class AppStore {
         return styled
     }
 
-    /// A sent message with each named agent drawn in that agent's colour.
-    /// The rest stays `.body` so a composer overlay and the field wrap alike
-    /// when the mention is bold.
-    func mentionStyled(_ text: String, bold: Bool = true, bareSlugs: [String]? = nil) -> AttributedString {
+    /// A named agent is bold in a sent message, with the same text colour as
+    /// everything around it.
+    func mentionStyled(_ text: String, bareSlugs: [String]? = nil) -> AttributedString {
         var styled = AttributedString(text)
         styled.font = .body
         let slugs = bareSlugs ?? draftMentions.map(\.slug)
-        for (range, slug) in mentions(in: text, bareSlugs: slugs) {
+        for (range, _) in mentions(in: text, bareSlugs: slugs) {
             guard let lower = AttributedString.Index(range.lowerBound, within: styled),
                   let upper = AttributedString.Index(range.upperBound, within: styled)
             else { continue }
-            styled[lower..<upper].foregroundColor = mark(for: slug).color
-            if bold { styled[lower..<upper].font = .body.weight(.bold) }
+            styled[lower..<upper].font = .body.weight(.bold)
         }
         return styled
     }

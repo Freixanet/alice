@@ -19,7 +19,7 @@ final class HomeKeyboardStabilityTests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         let before = title.frame
 
-        let field = app.textFields.firstMatch
+        let field = app.textViews["composer.draft"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         let keyboard = app.keyboards.firstMatch
@@ -34,7 +34,7 @@ final class HomeKeyboardStabilityTests: XCTestCase {
         // Home sits in the middle of the room between the header and the
         // composer: the same air above the logo as under the last line.
         let headerBottom = app.buttons["chat.leading"].frame.maxY
-        let composerTop = app.textFields.firstMatch.frame.minY
+        let composerTop = app.textViews["composer.draft"].frame.minY
         let subtitle = app.staticTexts["You talk to Alice. One thing at a time."]
         XCTAssertTrue(subtitle.exists, "Home's subtitle should be on screen")
         let blockTop = app.images.firstMatch.exists
@@ -74,7 +74,7 @@ final class HomeKeyboardStabilityTests: XCTestCase {
         }
         XCTAssertTrue(title.waitForExistence(timeout: 10))
 
-        let field = app.textFields.firstMatch
+        let field = app.textViews["composer.draft"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         let keyboard = app.keyboards.firstMatch

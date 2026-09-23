@@ -150,19 +150,27 @@ struct Composer: View {
         store.activeBotProfileForModelSelection != nil
     }
 
-    /// Field and overlay must share one font. A bold mention over a regular
-    /// field put the caret in a letter; a custom text view then ate the
-    /// keyboard. While a mention is present the whole draft is bold so the
-    /// name still reads strong and the caret stays on the glyphs.
-    private var composerFont: Font {
-        store.mentions(in: store.draft, bareSlugs: store.draftMentions.map(\.slug)).isEmpty
-            ? .body : .body.weight(.bold)
-    }
-
-    private func composerStyled(_ text: String) -> AttributedString {
-        var styled = store.mentionStyled(text, bold: false)
-        styled.font = composerFont
-        return styled
+    /// UIKit lays out the attributed text and its caret together. The name is
+    /// bold within the actual editor; the surrounding words remain regular.
+    private var draftField: some View {
+        @Bindable var store = store
+        return ZStack(alignment: .topLeading) {
+            if store.draft.isEmpty {
+                Text(placeholder)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            MentionDraftEditor(text: $store.draft, focused: focused) { text in
+                store.mentions(in: text, bareSlugs: store.draftMentions.map(\.slug)).map(\.0)
+            }
+        }
+        .frame(minHeight: 30, alignment: .topLeading)
+        .background {
+            Color.clear.contentShape(.rect)
+                .onTapGesture { focused.wrappedValue = true }
+        }
     }
 
     private var botMentionQuery: String? {
@@ -383,26 +391,10 @@ struct Composer: View {
                     }
                 }
 
-                TextField(
-                    "", text: $store.draft,
-                    prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
-                )
-                    .lineLimit(1...7)
-                    .scrollIndicators(.hidden)
-                    .textFieldStyle(.plain)
-                    .font(composerFont)
-                    .mentionColoured(store.draft, styled: composerStyled)
-                    .focused(focused)
+                draftField
                     .padding(.horizontal, 4)
-                    // The field only claims the height of its own text, so a
-                    // tap anywhere on the upper half of the composer used to
-                    // land on inert glass. Give it a real target.
                     .frame(maxWidth: .infinity, minHeight: 30, alignment: .topLeading)
-                    // Sitting flush against the top of its own box read as
-                    // crowded against the glass above it.
                     .padding(.top, 4)
-                    .contentShape(.rect)
-                    .onTapGesture { focused.wrappedValue = true }
 
                 HStack(spacing: 8) {
                     attachButton
@@ -449,20 +441,9 @@ struct Composer: View {
                     botAttachButton
 
                     HStack(alignment: .bottom, spacing: 6) {
-                        TextField(
-                            "", text: $store.draft,
-                            prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
-                        )
-                            .textFieldStyle(.plain)
-                            .scrollIndicators(.hidden)
-                            .font(composerFont)
-                            .mentionColoured(store.draft, styled: composerStyled)
-                            .focused(focused)
-                            .lineLimit(1...7)
+                        draftField
                             .padding(.vertical, 6)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(.rect)
-                            .onTapGesture { focused.wrappedValue = true }
 
                         voiceModeButton
                         botVoiceOrSendButton
@@ -716,40 +697,5 @@ struct Composer: View {
         )
         .accessibilityIdentifier("composer.action")
         .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
-    }
-}
-
-/// While a draft names an agent, the name shows in that agent's colour, as
-/// it will in the sent bubble and the drawer.
-///
-/// A text field draws one colour, so the draft is always drawn a second time
-/// behind it — styled when it names an agent, plain when not — and the field's
-/// own glyphs are always clear. Always, not only while there is a mention: a
-/// field turned clear and back kept drawing clear, and whatever was typed after
-/// a mention was deleted could not be seen. Both lay the same text out at the
-/// same size in the same box, so they wrap alike; caret and selection stay the
-/// field's, and the placeholder is the field's prompt, coloured on its own.
-private struct MentionColoured: ViewModifier {
-    let text: String
-    let styled: (String) -> AttributedString
-
-    func body(content: Content) -> some View {
-        content
-            .foregroundStyle(.clear)
-            .background(alignment: .topLeading) {
-                if !text.isEmpty {
-                    Text(styled(text))
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
-    }
-}
-
-private extension View {
-    func mentionColoured(_ text: String, styled: @escaping (String) -> AttributedString) -> some View {
-        modifier(MentionColoured(text: text, styled: styled))
     }
 }

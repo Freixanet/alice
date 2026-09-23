@@ -105,7 +105,7 @@ struct MessageRow: View {
                     Button {
                         withAnimation(.snappy(duration: 0.2)) { showingExtras.toggle() }
                     } label: {
-                        // An agent named with `@` shows in its own colour.
+                        // Only the named agent is emphasized; the bubble keeps one text colour.
                         Text(store.mentionStyled(
                             message.content,
                             bareSlugs: message.mentionProfile.map { [$0] } ?? []

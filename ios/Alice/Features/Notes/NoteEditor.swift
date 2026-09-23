@@ -14,17 +14,24 @@ struct NoteEditor: View {
     /// A note to edit, or a new one: the same page either way.
     enum Target: Hashable, Identifiable {
         case existing(Note)
+        case shortcut(Note)
         case new(UUID)
 
         var id: String {
             switch self {
-            case let .existing(note): note.id
+            case let .existing(note), let .shortcut(note): note.id
             case let .new(token): "new-\(token.uuidString)"
             }
+        }
+
+        var focusOnOpen: Bool {
+            if case .shortcut = self { return false }
+            return true
         }
     }
 
     let agent: String?
+    private let focusOnOpen: Bool
     /// Where a new note is filed once it exists.
     var folder: NotesScope = .quick
 
@@ -50,9 +57,8 @@ struct NoteEditor: View {
     /// A dialog, only when the person acts and the store still says no.
     @State private var failure: String?
     @State private var showingDetails = false
-    /// The caret is in the note — or about to be, as the page opens with the
-    /// keyboard up, so Done is there from the start rather than a beat later.
-    @State private var editing = true
+    /// A home shortcut opens for reading; tapping the text still starts editing.
+    @State private var editing: Bool
     @State private var attachments: [Attachment]
     @State private var savedAttachments: [Attachment]
     @State private var pendingAttachments: [Attachment] = []
@@ -65,9 +71,11 @@ struct NoteEditor: View {
     init(target: Target, agent: String?, folder: NotesScope = .quick) {
         self.agent = agent
         self.folder = folder
+        focusOnOpen = target.focusOnOpen
+        _editing = State(initialValue: target.focusOnOpen)
         let initial: NSAttributedString
         switch target {
-        case let .existing(existing):
+        case let .existing(existing), let .shortcut(existing):
             _note = State(initialValue: existing)
             initial = RichNote.attributed(from: existing)
             let held = existing.attachments ?? []
@@ -151,7 +159,7 @@ struct NoteEditor: View {
             saveCaption
             pluginAttachmentCaption
             RichTextEditor(
-                text: $content, isEditing: $editing, focusOnAppear: true,
+                text: $content, isEditing: $editing, focusOnAppear: focusOnOpen,
                 startsWithTitle: note == nil, pending: $pendingAttachments
             )
         }

@@ -329,10 +329,10 @@ struct NotesFoldersScreen: View {
             guard let note = store.notesSnapshot?.notes.first(where: { $0.id == id }) else { return }
             if store.isLocked(note) {
                 Task {
-                    if await store.unlockNotes() { opened = .existing(note) }
+                    if await store.unlockNotes() { opened = .shortcut(note) }
                 }
             } else {
-                opened = .existing(note)
+                opened = .shortcut(note)
             }
             return
         }
