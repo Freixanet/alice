@@ -6290,9 +6290,7 @@ final class AppStore {
             return
         }
         var items = AgendaSource.events()
-        if UserDefaults.standard.bool(forKey: "agenda.includeReminders") {
-            items += await AgendaSource.reminders()
-        }
+        items += await AgendaSource.reminders()
         noteCommitments(items)
     }
 

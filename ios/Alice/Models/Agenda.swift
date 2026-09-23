@@ -20,6 +20,15 @@ struct AgendaItem: Identifiable, Hashable, Sendable {
     var end: Date?
     var allDay: Bool
     var location: String?
+    // Reminders only.
+    var notes: String? = nil
+    /// Reminders' own scale as it shows it: 0 none, 1 low (!), 2 medium (!!), 3 high (!!!).
+    var priority: Int = 0
+    var recurring: Bool = false
+    /// The list (EventKit calendar) it is in.
+    var list: String? = nil
+    var completed: Bool = false
+    var completedAt: Date? = nil
 
     var isReminder: Bool { if case .reminder = kind { true } else { false } }
     var isAlice: Bool { if case .alice = kind { true } else { false } }

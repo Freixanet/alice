@@ -1,94 +1,22 @@
 import EventKit
 import EventKitUI
+import MapKit
 import SwiftUI
 
-/// The row a new reminder is typed into, as in Reminders: an empty circle,
-/// the title field, and — while typing — the (i) that opens its details.
-struct ReminderDraftRow: View {
-    @Binding var draft: AgendaSource.ReminderDraft
-    var focused: FocusState<Bool>.Binding
-    let onSubmit: () -> Void
-    let onDetails: () -> Void
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(" ")
-                .frame(width: 54, alignment: .leading)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "circle")
-                    .font(.system(size: 19))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    TextField("New Reminder", text: $draft.title)
-                        .font(.body)
-                        .focused(focused)
-                        .submitLabel(.next)
-                        .onSubmit(onSubmit)
-                        .accessibilityIdentifier("agenda.newReminder.title")
-                    if let when = ReminderDates.describe(draft) {
-                        Text(when)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Spacer(minLength: 8)
-            if focused.wrappedValue {
-                Button(action: onDetails) {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 20))
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Details")
-            }
-        }
-        .padding(.vertical, 2)
-    }
-}
-
-/// The quick dates above the keyboard, as Reminders offers them.
-struct ReminderQuickDates: View {
-    @Binding var draft: AgendaSource.ReminderDraft
-    let onMore: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            chip("Today", selected: ReminderDates.isDay(draft, offset: 0)) { ReminderDates.set(&draft, dayOffset: 0) }
-            chip("Tomorrow", selected: ReminderDates.isDay(draft, offset: 1)) { ReminderDates.set(&draft, dayOffset: 1) }
-            chip("No Date", selected: draft.due == nil) { draft.due = nil; draft.hasTime = false }
-            Spacer(minLength: 0)
-            Button(action: onMore) {
-                Image(systemName: "calendar")
-            }
-            .accessibilityLabel("Date and Time")
-        }
-    }
-
-    private func chip(_ title: LocalizedStringKey, selected: Bool, action: @escaping () -> Void) -> some View {
-        Group {
-            if selected {
-                Button(title, action: action).buttonStyle(.borderedProminent)
-            } else {
-                Button(title, action: action).buttonStyle(.bordered)
-            }
-        }
-        .controlSize(.small)
-        .buttonBorderShape(.capsule)
-    }
-}
-
-/// A reminder's details, as Reminders shows them: title and notes, date and
-/// time, and the list it belongs to.
+/// A reminder's details, as Reminders lays them out: title, notes and URL;
+/// date and time; repeat; location; priority; list. What Reminders keeps to
+/// itself — flags, tags, subtasks, images — is not offered, because nothing
+/// set here could reach it.
 struct ReminderDetailsSheet: View {
     let identifier: String?
     @State var draft: AgendaSource.ReminderDraft
+    let lists: [AgendaSource.ReminderList]
     let onDone: (_ saved: Bool) -> Void
 
     @Environment(\.colorScheme) private var scheme
-    @State private var lists: [AgendaSource.ReminderList] = []
     @State private var problem: String?
     @State private var confirmingDelete = false
+    @State private var choosingPlace = false
 
     private var hasDate: Binding<Bool> {
         Binding(
@@ -99,6 +27,7 @@ struct ReminderDetailsSheet: View {
                 } else {
                     draft.due = nil
                     draft.hasTime = false
+                    draft.repeats = .never
                 }
             }
         )
@@ -108,20 +37,27 @@ struct ReminderDetailsSheet: View {
         Binding(
             get: { draft.hasTime },
             set: { on in
-                draft.hasTime = on
+                let calendar = Calendar.current
                 if on {
-                    // The next whole hour on that day, as Reminders suggests.
-                    let base = draft.due ?? Date()
-                    let hour = Calendar.current.component(.hour, from: Date()) + 1
-                    draft.due = Calendar.current.date(bySettingHour: min(hour, 23), minute: 0, second: 0, of: base)
-                } else if let due = draft.due {
-                    draft.due = Calendar.current.startOfDay(for: due)
+                    let day = draft.due ?? calendar.startOfDay(for: Date())
+                    let next = calendar.component(.hour, from: Date()) + 1
+                    draft.due = calendar.date(bySettingHour: min(next, 23), minute: 0, second: 0, of: day)
+                    draft.hasTime = true
+                } else {
+                    draft.hasTime = false
+                    if let due = draft.due { draft.due = calendar.startOfDay(for: due) }
                 }
             }
         )
     }
 
-    private var dueDate: Binding<Date> {
+    private var hasPlace: Binding<Bool> {
+        Binding(get: { draft.place != nil }, set: { on in
+            if on { choosingPlace = true } else { draft.place = nil }
+        })
+    }
+
+    private var due: Binding<Date> {
         Binding(get: { draft.due ?? Date() }, set: { draft.due = $0 })
     }
 
@@ -131,38 +67,75 @@ struct ReminderDetailsSheet: View {
                 Section {
                     TextField("Title", text: $draft.title)
                     TextField("Notes", text: $draft.notes, axis: .vertical)
-                        .lineLimit(3...8)
+                        .lineLimit(2...8)
+                    TextField("URL", text: $draft.url)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
+
                 Section {
                     Toggle(isOn: hasDate) {
-                        Label("Date", systemImage: "calendar")
+                        row("Date", systemImage: "calendar", color: .red,
+                            detail: draft.due.map { AgendaStyle.when($0, allDay: true, now: Date()) })
                     }
                     if draft.due != nil {
-                        DatePicker("Date", selection: dueDate, displayedComponents: .date)
+                        DatePicker("Date", selection: due, displayedComponents: .date)
                             .datePickerStyle(.graphical)
                     }
                     Toggle(isOn: hasTime) {
-                        Label("Time", systemImage: "clock")
+                        row("Time", systemImage: "clock.fill", color: .blue,
+                            detail: draft.hasTime ? draft.due?.formatted(date: .omitted, time: .shortened) : nil)
                     }
-                    .disabled(draft.due == nil)
                     if draft.hasTime {
-                        DatePicker("Time", selection: dueDate, displayedComponents: .hourAndMinute)
+                        DatePicker("Time", selection: due, displayedComponents: .hourAndMinute)
+                    }
+                    if draft.due != nil {
+                        Picker(selection: $draft.repeats) {
+                            ForEach(ReminderRepeat.allCases) { Text($0.title).tag($0) }
+                        } label: {
+                            row("Repeat", systemImage: "repeat", color: .gray, detail: nil)
+                        }
                     }
                 }
-                if lists.count > 1 {
-                    Section {
+
+                Section {
+                    Toggle(isOn: hasPlace) {
+                        row("Location", systemImage: "location.fill", color: .blue, detail: draft.place?.title)
+                    }
+                    if let place = draft.place {
+                        Picker("When", selection: Binding(
+                            get: { place.arriving },
+                            set: { draft.place?.arriving = $0 }
+                        )) {
+                            Text("Arriving").tag(true)
+                            Text("Leaving").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                        Button("Change Location") { choosingPlace = true }
+                    }
+                }
+
+                Section {
+                    Picker(selection: $draft.priority) {
+                        ForEach(ReminderPriority.allCases) { Text($0.title).tag($0) }
+                    } label: {
+                        row("Priority", systemImage: "exclamationmark", color: .red, detail: nil)
+                    }
+                    if lists.count > 1 {
                         Picker(selection: Binding(
                             get: { draft.list ?? lists.first?.id ?? "" },
                             set: { draft.list = $0 }
                         )) {
-                            ForEach(lists) { list in
+                            ForEach(lists.filter(\.editable)) { list in
                                 Text(list.title).tag(list.id)
                             }
                         } label: {
-                            Label("List", systemImage: "list.bullet")
+                            row("List", systemImage: "list.bullet", color: listColor, detail: nil)
                         }
                     }
                 }
+
                 if identifier != nil {
                     Section {
                         Button("Delete Reminder", role: .destructive) { confirmingDelete = true }
@@ -175,7 +148,7 @@ struct ReminderDetailsSheet: View {
                 }
             }
             .aliceFormPaper(scheme)
-            .navigationTitle(identifier == nil ? "New Reminder" : "Details")
+            .navigationTitle("Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -189,7 +162,36 @@ struct ReminderDetailsSheet: View {
             .confirmationDialog("Delete this reminder?", isPresented: $confirmingDelete, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) { delete() }
             }
-            .onAppear { lists = AgendaSource.reminderLists() }
+            .sheet(isPresented: $choosingPlace) {
+                PlaceSearch { place in
+                    if let place { draft.place = place }
+                    choosingPlace = false
+                }
+            }
+        }
+    }
+
+    private var listColor: Color {
+        lists.first { $0.id == draft.list }?.color.map(AgendaStyle.color) ?? .blue
+    }
+
+    /// Settings' own row: a white symbol on a coloured rounded square, the
+    /// name, and what is set under it in blue.
+    private func row(_ title: LocalizedStringKey, systemImage: String, color: Color, detail: String?) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(color, in: .rect(cornerRadius: 7))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                if let detail {
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(.blue)
+                }
+            }
         }
     }
 
@@ -213,8 +215,83 @@ struct ReminderDetailsSheet: View {
     }
 }
 
-/// Calendar's own new-event page.
+/// A place from Apple Maps' own search, for a reminder that goes off on
+/// arriving or leaving. The search runs on Apple's service, as in Reminders.
+struct PlaceSearch: View {
+    let onPick: (ReminderPlace?) -> Void
+
+    @State private var query = ""
+    @State private var completer = PlaceCompleter()
+    @State private var looking = false
+
+    var body: some View {
+        NavigationStack {
+            List(completer.results, id: \.self) { result in
+                Button {
+                    Task { await pick(result) }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(result.title).foregroundStyle(.primary)
+                        if !result.subtitle.isEmpty {
+                            Text(result.subtitle)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .overlay {
+                if looking { ProgressView() }
+            }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search for a place")
+            .onChange(of: query) { _, text in completer.search(text) }
+            .navigationTitle("Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { onPick(nil) } }
+            }
+        }
+    }
+
+    private func pick(_ completion: MKLocalSearchCompletion) async {
+        looking = true
+        defer { looking = false }
+        let search = MKLocalSearch(request: MKLocalSearch.Request(completion: completion))
+        guard let item = try? await search.start().mapItems.first else { return }
+        let coordinate = item.location.coordinate
+        onPick(ReminderPlace(title: item.name ?? completion.title,
+                             latitude: coordinate.latitude, longitude: coordinate.longitude))
+    }
+}
+
+@MainActor
+@Observable
+final class PlaceCompleter: NSObject, MKLocalSearchCompleterDelegate {
+    private(set) var results: [MKLocalSearchCompletion] = []
+    @ObservationIgnored private let completer = MKLocalSearchCompleter()
+
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.resultTypes = [.address, .pointOfInterest]
+    }
+
+    func search(_ text: String) {
+        completer.queryFragment = text
+        if text.isEmpty { results = [] }
+    }
+
+    nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        // The completer calls back on the main thread, where it was made.
+        MainActor.assumeIsolated { results = self.completer.results }
+    }
+
+    nonisolated func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {}
+}
+
+/// Calendar's own new-event page, starting at `start`.
 struct NewEventSheet: UIViewControllerRepresentable {
+    var start: Date?
     let onDone: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onDone: onDone) }
@@ -224,10 +301,9 @@ struct NewEventSheet: UIViewControllerRepresentable {
         controller.eventStore = AgendaSource.store
         let event = EKEvent(eventStore: AgendaSource.store)
         // The next whole hour, an hour long, as Calendar suggests.
-        let calendar = Calendar.current
-        let hour = calendar.dateInterval(of: .hour, for: Date())?.end ?? Date()
-        event.startDate = hour
-        event.endDate = hour.addingTimeInterval(3600)
+        let from = start ?? Calendar.current.dateInterval(of: .hour, for: Date())?.end ?? Date()
+        event.startDate = from
+        event.endDate = from.addingTimeInterval(3600)
         event.calendar = AgendaSource.store.defaultCalendarForNewEvents
         controller.event = event
         controller.editViewDelegate = context.coordinator
@@ -246,8 +322,36 @@ struct NewEventSheet: UIViewControllerRepresentable {
     }
 }
 
-/// Dates for a reminder being written: which quick date is chosen, and how
-/// to say it under the title.
+/// Calendar's own event page: details, alerts, and its edit and delete.
+struct EventDetail: UIViewControllerRepresentable {
+    let identifier: String
+    let start: Date?
+    let onDone: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onDone: onDone) }
+
+    func makeUIViewController(context: Context) -> UINavigationController {
+        let controller = EKEventViewController()
+        controller.event = AgendaSource.event(identifier, starting: start)
+        controller.allowsEditing = true
+        controller.allowsCalendarPreview = true
+        controller.delegate = context.coordinator
+        return UINavigationController(rootViewController: controller)
+    }
+
+    func updateUIViewController(_ controller: UINavigationController, context: Context) {}
+
+    final class Coordinator: NSObject, EKEventViewDelegate {
+        let onDone: () -> Void
+        init(onDone: @escaping () -> Void) { self.onDone = onDone }
+
+        func eventViewController(_ controller: EKEventViewController, didCompleteWith action: EKEventViewAction) {
+            onDone()
+        }
+    }
+}
+
+/// Dates for a reminder being written.
 enum ReminderDates {
     static func set(_ draft: inout AgendaSource.ReminderDraft, dayOffset: Int, now: Date = Date()) {
         let calendar = Calendar.current
@@ -270,11 +374,6 @@ enum ReminderDates {
     /// "Today", "Tomorrow, 9:00", "Fri 25 Sep" — nil for no date.
     static func describe(_ draft: AgendaSource.ReminderDraft, now: Date = Date()) -> String? {
         guard let due = draft.due else { return nil }
-        let calendar = Calendar.current
-        let day = calendar.isDate(due, inSameDayAs: now) ? String(localized: "Today")
-            : calendar.isDateInTomorrow(due) ? String(localized: "Tomorrow")
-            : due.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
-        guard draft.hasTime else { return day }
-        return "\(day), \(due.formatted(date: .omitted, time: .shortened))"
+        return AgendaStyle.when(due, allDay: !draft.hasTime, now: now)
     }
 }

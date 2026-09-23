@@ -168,7 +168,13 @@ struct CalendarConnectionRow: View {
                     .foregroundStyle(store.accent.primary(scheme))
                     .frame(width: 24)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Calendar")
+                    // Which calendar: the iPhone's own, with every account on
+                    // it — not a Google or Outlook sign-in of its own.
+                    Text("iPhone Calendar")
+                    Text(accounts)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(status)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -203,6 +209,15 @@ struct CalendarConnectionRow: View {
         } message: {
             Text("Your events are deleted from your Hermes and your agents stop seeing them. Calendar access for Alice stays in iOS Settings until you turn it off there.")
         }
+    }
+
+    /// "iCloud, Gmail and Outlook", or what it will read before access.
+    private var accounts: String {
+        let names = CalendarSync.accountNames()
+        guard !names.isEmpty else {
+            return String(localized: "Every account on this iPhone: iCloud, Google, Outlook…")
+        }
+        return names.formatted(.list(type: .and))
     }
 
     private var status: String {

@@ -54,6 +54,23 @@ enum CalendarSync {
         return status == .denied || status == .restricted
     }
 
+    /// The accounts whose calendars this iPhone holds — "iCloud", "Gmail",
+    /// "Outlook" — as iOS names them. Empty without access.
+    static func accountNames() -> [String] {
+        guard hasAccess else { return [] }
+        let store = EKEventStore()
+        var seen = Set<String>()
+        return store.calendars(for: .event)
+            .filter { $0.type != .birthday && $0.type != .subscription }
+            .compactMap { calendar -> String? in
+                guard let source = calendar.source else { return nil }
+                let name = source.sourceType == .local
+                    ? String(localized: "On My iPhone")
+                    : source.title
+                return seen.insert(name).inserted ? name : nil
+            }
+    }
+
     /// Asks iOS for read access. True when granted.
     static func requestAccess() async -> Bool {
         if hasAccess { return true }

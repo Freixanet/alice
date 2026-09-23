@@ -133,4 +133,45 @@ final class AgendaTests: XCTestCase {
         XCTAssertNil(ReminderDates.describe(draft))
         XCTAssertFalse(ReminderDates.isDay(draft, offset: 0))
     }
+
+    func testADateSaidInTheTitleIsOfferedAndTakenOut() {
+        let now = date(23, 20, 0)
+        let said = ReminderParsing.suggestion(in: "Comprar pan mañana a las 18:00", now: now, calendar: calendar)
+        XCTAssertEqual(said?.remainingTitle, "Comprar pan")
+        XCTAssertEqual(said?.hasTime, true)
+        let day = ReminderParsing.suggestion(in: "Llamar a mamá el viernes", now: now, calendar: calendar)
+        XCTAssertEqual(day?.remainingTitle, "Llamar a mamá")
+        XCTAssertEqual(day?.hasTime, false)
+        XCTAssertNil(ReminderParsing.suggestion(in: "sacar la basura", now: now, calendar: calendar))
+        XCTAssertNil(ReminderParsing.suggestion(in: "comprar 3 kilos de patatas", now: now, calendar: calendar))
+        XCTAssertTrue(ReminderParsing.saysTime("a las 10"))
+        XCTAssertTrue(ReminderParsing.saysTime("6 PM"))
+        XCTAssertFalse(ReminderParsing.saysTime("el 1 de octubre"))
+    }
+
+    func testRepeatAndPriorityRoundTripThroughEventKit() {
+        for option in ReminderRepeat.allCases {
+            XCTAssertEqual(ReminderRepeat(rule: option.rule), option, "\(option)")
+        }
+        for priority in ReminderPriority.allCases {
+            XCTAssertEqual(ReminderPriority(eventKit: priority.eventKit), priority)
+        }
+        XCTAssertEqual(ReminderPriority(eventKit: 3), .high)
+        XCTAssertEqual(ReminderPriority.high.marks, "!!!")
+    }
+
+    func testOverlappingEventsSitSideBySide() {
+        let start = calendar.startOfDay(for: now)
+        let items = [
+            event("a", date(23, 9, 0)),
+            event("b", date(23, 9, 30)),
+            event("c", date(23, 11, 0)),
+        ]
+        let layout = AgendaDayView.layout(items, dayStart: start)
+        XCTAssertEqual(layout["a"]?.column, 0)
+        XCTAssertEqual(layout["b"]?.column, 1)
+        XCTAssertEqual(layout["a"]?.count, 2)
+        XCTAssertEqual(layout["c"]?.column, 0)
+        XCTAssertEqual(layout["c"]?.count, 1)
+    }
 }

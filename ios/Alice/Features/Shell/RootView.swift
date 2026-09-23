@@ -214,7 +214,10 @@ struct RootView: View {
                             .ignoresSafeArea()
                     }
                     .overlay {
+                        // From the edge only: inside, a sideways swipe changes
+                        // the week or the month, as in Calendar.
                         DrawerPan(
+                            edgeWidth: 28,
                             shouldBegin: { velocity in
                                 velocity.x > 0 && abs(velocity.x) > abs(velocity.y) * 1.5
                             },
