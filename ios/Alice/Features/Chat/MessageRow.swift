@@ -154,7 +154,7 @@ struct MessageRow: View {
                     if store.pendingHomeModelConfirmation?.replyID != message.id,
                        (working && !writing && !store.activeAwaitsAnswers)
                         || !ToolCaption.steps(in: message.tools).isEmpty
-                        || message.reasoning?.isEmpty == false {
+                        || shownReasoning != nil {
                         ThinkingTrace(
                             steps: message.tools,
                             pending: working && !writing && message.approval == nil
@@ -164,7 +164,7 @@ struct MessageRow: View {
                             startedAt: message.createdAt,
                             seed: ToolCaption.seed(message.id),
                             status: message.lastStatus,
-                            reasoning: message.reasoning
+                            reasoning: shownReasoning
                         )
                     }
 
@@ -276,6 +276,16 @@ struct MessageRow: View {
         .sheet(isPresented: $selectingText) {
             SelectableTextSheet(text: message.content)
         }
+    }
+
+    /// The reasoning worth showing: not the reply over again, which is what
+    /// earlier builds stored from Hermes' misnamed `reasoning.available`.
+    private var shownReasoning: String? {
+        guard let text = message.reasoning?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+        let reply = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if reply.hasPrefix(text) || text.hasPrefix(reply.prefix(200)) { return nil }
+        return text
     }
 
     private var canShowActions: Bool {

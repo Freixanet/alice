@@ -198,6 +198,10 @@ struct ThinkingTrace: View {
                 }
             }
         }
+        // As tall as what it holds: the rule beside the steps has no height
+        // of its own, and with reasoning text in the column it took all the
+        // height offered and left a screen of empty space under the trace.
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.leading, 5)
         .padding(.top, 5)
         .padding(.bottom, 2)

@@ -7661,11 +7661,15 @@ final class AppStore {
                 name: name, status: .done,
                 detail: Self.toolDetail(from: event.payload)
             )
-        case "reasoning.delta", "reasoning.available":
+        case "reasoning.delta":
+            // Only the streamed reasoning is reasoning. Despite its name,
+            // `reasoning.available` carries the start of the text the model
+            // wrote in that step (`agent/turn_response_intake._relay_thinking`),
+            // which showed the reply twice.
             guard let text = (event.payload["text"] as? String) ?? (event.payload["delta"] as? String),
                   !text.isEmpty
             else { return nil }
-            return .reasoning(text, block: event.type == "reasoning.available")
+            return .reasoning(text, block: false)
         case "todo.updated":
             // The whole plan after every change; a bot chat's `todo` args
             // are not read, so the two never race.
@@ -7755,12 +7759,12 @@ final class AppStore {
     nonisolated static let knownSocketEventTypes: Set<String> = [
         // Handled.
         "message.delta", "message.complete", "message.interim", "tool.start", "tool.complete",
-        "todo.updated", "reasoning.delta", "reasoning.available",
+        "todo.updated", "reasoning.delta",
         "approval.request", "clarify.request", "error", "request.cancel",
         "subagent.start", "subagent.complete", "status.update",
         // Known and let pass.
         "message.start", "message.user", "message.react",
-        "notification.show", "notification.clear",
+        "reasoning.available", "notification.show", "notification.clear",
         "session.info", "session.status", "session.reclaimed", "session.redirect",
         "session.resume_progress", "usage.bars",
         "tool.generating", "tool.output_risk", "turn.start", "turn.end", "turn.error",
