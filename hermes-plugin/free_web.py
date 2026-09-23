@@ -98,6 +98,53 @@ def jina_read(url: str, fetch=None) -> Dict[str, Any]:
     }
 
 
+KEY_NAME = "EXA_API_KEY"
+KEY_OFFER = (
+    "Do not ask for the key in the chat. Say in one sentence that search needs a free Exa key "
+    "and end your reply with this line alone: [Conectar búsqueda](alice://connect/search) "
+    "(English replies: [Turn on search](alice://connect/search)). Alice asks for the key in a secure field "
+    "and saves it to Hermes; when the person says it is done, search again."
+)
+
+
+def _env_file_value(path, name: str) -> str:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    for raw in lines:
+        line = raw.strip()
+        if line.startswith("export "):
+            line = line[len("export "):].strip()
+        if not line.startswith(name + "="):
+            continue
+        return line[len(name) + 1:].strip().strip("\"'")
+    return ""
+
+
+def exa_key() -> str:
+    """The person's Exa key: the process environment, else this profile's .env, else the main one.
+
+    Read at every search, so a key saved from Alice works without restarting Hermes.
+    """
+    key = os.environ.get(KEY_NAME, "").strip()
+    if key:
+        return key
+    try:
+        from pathlib import Path
+        from hermes_constants import get_default_hermes_root, get_hermes_home
+    except Exception:  # noqa: BLE001 — outside Hermes: no files to read
+        return ""
+    for root in (get_hermes_home(), get_default_hermes_root()):
+        try:
+            value = _env_file_value(Path(root) / ".env", KEY_NAME)
+        except Exception:  # noqa: BLE001
+            value = ""
+        if value:
+            return value
+    return ""
+
+
 def exa_search_keyed(query: str, limit: int, key: str, fetch=None) -> Dict[str, Any]:
     """Exa search with the person's own key, in Hermes' search shape."""
     body = json.dumps({
@@ -171,7 +218,7 @@ def _build_provider_class():
 
         def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
             reason = "no results"
-            key = os.environ.get("EXA_API_KEY", "").strip()
+            key = exa_key()
             if key:
                 result = exa_search_keyed(query, limit, key)
                 if result.get("success") and result["data"]["web"]:
@@ -193,9 +240,11 @@ def _build_provider_class():
             logger.info("alice-free: Exa free search fell through (%s); using the paid backend", reason)
             paid = _paid_provider()
             if paid is None:
+                if key:
+                    return {"success": False, "error": f"Search failed ({reason}) and no paid backend is set."}
                 return {"success": False, "error": (
-                    f"Free search failed ({reason}) and no paid backend is set. "
-                    "Exa's keyless endpoint is rate-limited: add a free EXA_API_KEY (dashboard.exa.ai) to Hermes' .env."
+                    f"Search failed ({reason}): Exa's keyless endpoint is rate-limited and no paid backend is set. "
+                    + KEY_OFFER
                 )}
             return paid.search(query, limit)
 

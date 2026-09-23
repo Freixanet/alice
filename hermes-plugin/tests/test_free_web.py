@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -63,6 +64,23 @@ class ExaKeyedTests(unittest.TestCase):
         self.assertEqual(result, {"success": False, "error": "Exa: HTTP 429"})
 
 
+class ExaKeyTests(unittest.TestCase):
+    def test_the_environment_wins(self):
+        with mock.patch.dict(os.environ, {"EXA_API_KEY": " env "}):
+            self.assertEqual(free_web.exa_key(), "env")
+
+    def test_a_key_saved_to_the_env_file_is_read_without_a_restart(self):
+        with tempfile.TemporaryDirectory() as profile, tempfile.TemporaryDirectory() as root:
+            Path(root, ".env").write_text('OTHER=1\nexport EXA_API_KEY="from-main"\n', encoding="utf-8")
+            constants = types.ModuleType("hermes_constants")
+            constants.get_hermes_home = lambda: profile
+            constants.get_default_hermes_root = lambda: root
+            with mock.patch.dict(os.environ, {"EXA_API_KEY": ""}), mock.patch.dict(sys.modules, {"hermes_constants": constants}):
+                self.assertEqual(free_web.exa_key(), "from-main")
+                Path(profile, ".env").write_text("EXA_API_KEY=from-profile\n", encoding="utf-8")
+                self.assertEqual(free_web.exa_key(), "from-profile")
+
+
 class ProviderTests(unittest.TestCase):
     def setUp(self):
         # Stand-ins for Hermes' modules, so the test runs without Hermes.
@@ -77,7 +95,7 @@ class ProviderTests(unittest.TestCase):
         })
         self.modules.start()
         # No key unless a test sets one: the machine running this may have one.
-        self.env = mock.patch.dict(os.environ, {"EXA_API_KEY": ""})
+        self.env = mock.patch.object(free_web, "exa_key", return_value="")
         self.env.start()
         self.provider = free_web._build_provider_class()()
 
@@ -87,7 +105,7 @@ class ProviderTests(unittest.TestCase):
 
     def test_own_key_is_used_before_the_keyless_endpoint(self):
         hits = {"success": True, "data": {"web": [{"url": "https://k", "title": "K", "description": ""}]}}
-        with mock.patch.dict(os.environ, {"EXA_API_KEY": "k"}), \
+        with mock.patch.object(free_web, "exa_key", return_value="k"), \
                 self._keyless({"success": True, "data": {"web": [{"url": "https://free"}]}}), \
                 mock.patch.object(free_web, "exa_search_keyed", return_value=hits) as keyed:
             self.assertEqual(self.provider.search("q", 5), hits)
@@ -95,7 +113,7 @@ class ProviderTests(unittest.TestCase):
 
     def test_a_failing_key_still_tries_the_keyless_endpoint(self):
         free = {"success": True, "data": {"web": [{"url": "https://free"}]}}
-        with mock.patch.dict(os.environ, {"EXA_API_KEY": "k"}), self._keyless(free), \
+        with mock.patch.object(free_web, "exa_key", return_value="k"), self._keyless(free), \
                 mock.patch.object(free_web, "exa_search_keyed", return_value={"success": False, "error": "Exa: HTTP 401"}):
             self.assertEqual(self.provider.search("q", 5), free)
 
@@ -105,7 +123,9 @@ class ProviderTests(unittest.TestCase):
                 mock.patch.object(free_web, "_paid_provider", return_value=None):
             result = self.provider.search("q", 5)
         self.assertFalse(result["success"])
-        self.assertIn("EXA_API_KEY", result["error"])
+        # The agent is sent to Alice's secure card, never to ask for the key in the chat.
+        self.assertIn("alice://connect/search", result["error"])
+        self.assertIn("Do not ask for the key in the chat", result["error"])
 
     def _keyless(self, result):
         module = types.ModuleType("plugins.web.keyless_mcp")

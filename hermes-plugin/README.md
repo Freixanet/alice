@@ -56,6 +56,14 @@ The agent gains one rule:
   The hook runs only in profiles where the plugin is enabled; the team installer enables
   it in every profile.
 
+Web search (`alice-free`, selected with `web.search_backend`) searches Exa with the person's
+own free `EXA_API_KEY` when there is one — read from the environment, the profile's `.env` or
+the main `.env` at every search, so no restart is needed — then Exa's keyless endpoint, then
+Firecrawl. Exa's keyless endpoint is rate-limited; when search fails without a key, the tool
+tells the agent not to ask for it in the chat but to end its reply with
+`[Conectar búsqueda](alice://connect/search)`. Alice shows that as a card with a secure field
+and saves the key to the main profile's `.env` through the dashboard (`PUT /api/env`).
+
 ## Install
 
 From a checkout of this repository, one command:

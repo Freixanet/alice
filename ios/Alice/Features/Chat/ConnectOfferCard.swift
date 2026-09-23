@@ -27,7 +27,7 @@ extension EnvironmentValues {
 /// keeps the way back for a change of mind.
 struct ConnectOfferCard: View {
     /// What the app knows how to connect.
-    nonisolated static let services: Set<String> = ["calendar"]
+    nonisolated static let services: Set<String> = ["calendar", "search"]
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -49,7 +49,9 @@ struct ConnectOfferCard: View {
     }
 
     var body: some View {
-        if !closed {
+        if service == "search" {
+            SearchKeyOfferCard(language: language)
+        } else if !closed {
             offer
                 .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
         }

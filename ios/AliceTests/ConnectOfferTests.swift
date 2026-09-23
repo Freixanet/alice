@@ -19,6 +19,14 @@ final class ConnectOfferTests: XCTestCase {
         XCTAssertTrue(offers.services.isEmpty)
     }
 
+    func testTheSearchKeyOfferBecomesACard() {
+        let text = "No he podido buscar.\n[Conectar búsqueda](alice://connect/search)"
+        XCTAssertEqual(RichMarkdown.blocks(text), [
+            .paragraph("No he podido buscar."),
+            .connect("search"),
+        ])
+    }
+
     func testHermesSaysWhereTheCalendarStands() {
         XCTAssertEqual(CalendarLink.parse(["status": "declined"]), .declined)
         XCTAssertEqual(CalendarLink.parse(["status": "not_connected"]), .notConnected)
