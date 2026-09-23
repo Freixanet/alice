@@ -181,6 +181,15 @@ extension DashboardClient {
         _ = try await send("DELETE", "api/plugins/alice/watches/\(id)")
     }
 
+    // MARK: Connector logos
+
+    /// A connector's own logo, as the plugin found it on the product's site.
+    func connectorIcon(_ name: String, profile: String = "default") async throws -> Data? {
+        let (data, response) = try await raw("GET", "api/plugins/alice/connectors/icon/\(name)?profile=\(profile)")
+        guard response.statusCode == 200, !data.isEmpty else { return nil }
+        return data
+    }
+
     // MARK: Documents
 
     /// A document from the phone, kept on the Mac where agents' tools open it.

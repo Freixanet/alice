@@ -131,11 +131,12 @@ struct SettingsView: View {
             // undone — whatever was said there.
             if store.dashboardReady {
                 Section {
-                    CalendarConnectionRow()
-                } header: {
-                    Text("Connections")
+                    NavigationLink { ConnectionsScreen() } label: {
+                        Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .accessibilityIdentifier("settings.connections")
                 } footer: {
-                    Text("Your agents see what you connect here. Nothing leaves your own Hermes, and nothing is added to your calendar unless you tap Add.")
+                    Text("Your iPhone's calendar and every connector Hermes offers — Notion, Linear, Figma and more — to connect or disconnect.")
                 }
 
                 Section {

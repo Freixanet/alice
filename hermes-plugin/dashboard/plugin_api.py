@@ -1850,3 +1850,56 @@ async def timezones_refresh() -> JSONResponse:
 
 
 _register_claim_auth()
+
+
+# --- Connector logos (connector_icons.py) ---------------------------------------------------
+
+
+def _connector_icons():
+    import importlib.util
+
+    name = "alice_connector_icons"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / "connector_icons.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _connector_icon(name: str, profile: str) -> Optional[Tuple[bytes, str]]:
+    """Where a connector lives, from the catalog or the person's own server entry."""
+    hosts: List[str] = []
+    urls: List[str] = []
+    with contextlib.suppress(Exception):
+        from hermes_cli import mcp_catalog
+
+        entry = mcp_catalog.get_entry(name)
+        if entry is not None:
+            if entry.suggest:
+                hosts = list(entry.suggest.hosts or [])
+            urls = [u for u in (getattr(entry.transport, "url", None), entry.source) if u]
+    if not hosts and not urls:
+        with contextlib.suppress(Exception):
+            from hermes_cli.mcp_config import _get_mcp_servers
+
+            with _profile_scope(profile):
+                server = _get_mcp_servers().get(name) or {}
+            if server.get("url"):
+                urls = [str(server["url"])]
+    if not hosts and not urls:
+        return None
+    return _connector_icons().Icons(_engine_home()).get(name, hosts, urls)
+
+
+@router.get("/connectors/icon/{name}")
+async def connector_icon(name: str, profile: str = "default") -> Response:
+    """A connector's own logo, from its product's site (never an icon service), cached."""
+    if not re.match(r"^[a-z0-9][a-z0-9_.-]{0,63}$", name or ""):
+        raise HTTPException(status_code=400, detail="Invalid connector name")
+    found = await asyncio.to_thread(_connector_icon, name, profile)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No logo found for this connector")
+    data, mime = found
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=86400"})

@@ -21,6 +21,16 @@
         }
       }
     },
+    "%@ is connected": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ está conectado"
+          }
+        }
+      }
+    },
     "%@ of %@": {
       "localizations": {
         "es": {
@@ -541,12 +551,32 @@
         }
       }
     },
+    "Access": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceso"
+          }
+        }
+      }
+    },
     "Access is off for Alice. Turn on Calendars and Reminders in Settings › Alice.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "El acceso está desactivado para Alice. Activa Calendarios y Recordatorios en Ajustes › Alice."
+          }
+        }
+      }
+    },
+    "Access key": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clave de acceso"
           }
         }
       }
@@ -657,6 +687,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Añadir clave de API"
+          }
+        }
+      }
+    },
+    "Add Connector": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir conector"
           }
         }
       }
@@ -1247,6 +1287,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Responder que sí"
+          }
+        }
+      }
+    },
+    "Any service with an MCP address. Connectors are added to Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cualquier servicio con dirección MCP. Los conectores se añaden a Alice."
           }
         }
       }
@@ -3671,6 +3721,16 @@
         }
       }
     },
+    "Disconnect your calendar?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Desconectar tu calendario?"
+          }
+        }
+      }
+    },
     "Discover models from /models": {
       "localizations": {
         "es": {
@@ -4271,6 +4331,16 @@
         }
       }
     },
+    "Finish signing in on the page that opened, then come back to Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Termina de iniciar sesión en la página que se ha abierto y vuelve a Alice."
+          }
+        }
+      }
+    },
     "Fit is a rough pre-download estimate. Hermes reads the real GGUF header after staging and then applies its runtime placement policy.": {
       "localizations": {
         "es": {
@@ -4427,6 +4497,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "General"
+          }
+        }
+      }
+    },
+    "Getting the sign-in page ready…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparando la página de inicio de sesión…"
           }
         }
       }
@@ -6051,6 +6131,16 @@
         }
       }
     },
+    "MCP address (https://…)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección MCP (https://…)"
+          }
+        }
+      }
+    },
     "MCP for": {
       "localizations": {
         "es": {
@@ -7081,6 +7171,16 @@
         }
       }
     },
+    "No sign-in": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin inicio de sesión"
+          }
+        }
+      }
+    },
     "No workspace folders yet.": {
       "localizations": {
         "es": {
@@ -7417,6 +7517,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Abrir Ajustes"
+          }
+        }
+      }
+    },
+    "Open Sign-In Page": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir página de inicio de sesión"
           }
         }
       }
@@ -9281,6 +9391,16 @@
         }
       }
     },
+    "Saved in Hermes on your Mac. Alice does not keep a copy.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se guarda en Hermes, en tu Mac. Alice no guarda copia."
+          }
+        }
+      }
+    },
     "Saved the sign-in for %@": {
       "localizations": {
         "es": {
@@ -9387,6 +9507,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Buscar blueprints"
+          }
+        }
+      }
+    },
+    "Search connectors": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar conectores"
           }
         }
       }
@@ -9967,6 +10097,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cargar manualmente un GGUF ya presente en el Mac"
+          }
+        }
+      }
+    },
+    "Sign In Again": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a iniciar sesión"
+          }
+        }
+      }
+    },
+    "Sign in to %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicia sesión en %@"
+          }
+        }
+      }
+    },
+    "Sign in with an account": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión con una cuenta"
           }
         }
       }
@@ -10707,6 +10867,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "La entrada del proveedor y su credencial dedicada guardada se eliminarán. Si es la ruta de modelo activa, Hermes también la desvincula."
+          }
+        }
+      }
+    },
+    "The service's own documentation gives its MCP address.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La documentación del propio servicio indica su dirección MCP."
+          }
+        }
+      }
+    },
+    "The sign-in did not finish.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El inicio de sesión no terminó."
           }
         }
       }
@@ -12021,12 +12201,52 @@
         }
       }
     },
+    "Your agents can use it now.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus agentes ya pueden usarlo."
+          }
+        }
+      }
+    },
+    "Your agents see what you connect here. Nothing leaves your own Hermes, and nothing is added to your calendar unless you tap Add.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus agentes ven lo que conectes aquí. Nada sale de tu Hermes, y no se añade nada a tu calendario salvo que toques Añadir."
+          }
+        }
+      }
+    },
+    "Your agents stop using it. You can connect it again at any time.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus agentes dejan de usarlo. Puedes volver a conectarlo cuando quieras."
+          }
+        }
+      }
+    },
     "Your calendar": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Tu calendario"
+          }
+        }
+      }
+    },
+    "Your iPhone's calendar and every connector Hermes offers — Notion, Linear, Figma and more — to connect or disconnect.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El calendario de tu iPhone y todos los conectores que ofrece Hermes (Notion, Linear, Figma y más) para conectarlos o desconectarlos."
           }
         }
       }

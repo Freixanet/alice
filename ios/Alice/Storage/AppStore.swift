@@ -4815,6 +4815,7 @@ final class AppStore {
     // Agent work lives behind the same authenticated dashboard as the rest of
     // Alice's controls. Keep the screen independent of connection credentials.
     func sharedBrowser() async throws -> SharedBrowserState { try await dashboard.sharedBrowser() }
+    func connectorIcon(_ name: String) async -> Data? { try? await dashboard.connectorIcon(name) }
     func setSharedBrowser(on: Bool) async throws -> SharedBrowserState {
         try await dashboard.setSharedBrowser(on: on)
     }
