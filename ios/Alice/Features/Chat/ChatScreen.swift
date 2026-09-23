@@ -1035,13 +1035,9 @@ private struct HomeSuggestionStrip: View {
     private var suggestions: [HomeSuggestion] {
         HomeSuggestions.make(
             events: store.activity,
-            questions: (store.notesSnapshot?.notes ?? []).compactMap { note in
-                guard !note.openQuestions.isEmpty else { return nil }
-                let label = note.summary.isEmpty
-                    ? note.openQuestions[0]
-                    : note.summary
-                return HomeNotePrompt(id: note.id, label: label)
-            },
+            // A note's open questions stay in the note. On the home they read
+            // as notes picked at random: an old note's summary, with nothing
+            // saying what it wanted.
             todayUnread: store.todayUnread,
             agentsWithNews: store.agentsWithNews,
             nextUp: store.nextCommitment
