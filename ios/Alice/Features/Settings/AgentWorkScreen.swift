@@ -4,6 +4,7 @@ import UIKit
 
 /// Controls for work Alice can keep doing after a conversation ends.
 struct AgentWorkScreen: View {
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         List {
             Section {
@@ -21,10 +22,12 @@ struct AgentWorkScreen: View {
             }
         }
         .navigationTitle("Agent work")
+        .aliceFormPaper(scheme)
     }
 }
 
 private struct PageWatchesScreen: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @State private var service: PageWatchService?
     @State private var watches: [PageWatch] = []
@@ -44,7 +47,7 @@ private struct PageWatchesScreen: View {
                     }
                     .disabled(service.installing || loading)
                     if let failed = service.failed {
-                        Text(failed).font(.footnote).foregroundStyle(.red)
+                        Text(failed).font(.footnote).foregroundStyle(Palette.danger(scheme))
                     }
                 } footer: {
                     Text("Alice installs the page watcher on your Mac when you ask. Setup can take a few minutes.")
@@ -64,7 +67,7 @@ private struct PageWatchesScreen: View {
                                 Text(detail).font(.footnote).foregroundStyle(.secondary)
                             }
                             if let error = watch.error {
-                                Text(error).font(.caption).foregroundStyle(.orange)
+                                Text(error).font(.caption).foregroundStyle(Palette.warning(scheme))
                             }
                         }
                         .swipeActions {
@@ -79,10 +82,11 @@ private struct PageWatchesScreen: View {
             }
 
             if let failure {
-                Section("Last error") { Text(failure).foregroundStyle(.red) }
+                Section("Last error") { Text(failure).foregroundStyle(Palette.danger(scheme)) }
             }
         }
         .navigationTitle("Page watches")
+        .aliceFormPaper(scheme)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { adding = true } label: { Image(systemName: "plus") }
@@ -158,6 +162,7 @@ private struct PageWatchesScreen: View {
 }
 
 private struct NewPageWatchSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let onSaved: () -> Void
@@ -190,9 +195,10 @@ private struct NewPageWatchSheet: View {
                     TextField("Words to look for", text: $wantedText)
                 }
             }
-            if let failure { Section { Text(failure).foregroundStyle(.red) } }
+            if let failure { Section { Text(failure).foregroundStyle(Palette.danger(scheme)) } }
         }
         .navigationTitle("Watch a page")
+        .aliceFormPaper(scheme)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
@@ -225,6 +231,7 @@ private struct NewPageWatchSheet: View {
 }
 
 private struct SharedBrowserScreen: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @State private var state: SharedBrowserState?
     @State private var frame: SharedBrowserFrame?
@@ -302,11 +309,12 @@ private struct SharedBrowserScreen: View {
                 } else {
                     ProgressView()
                 }
-                if let failure { Text(failure).foregroundStyle(.red).font(.footnote) }
+                if let failure { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
             }
             .padding()
         }
         .navigationTitle("Shared browser")
+        .aliceFormPaper(scheme)
         .disabled(busy)
         .confirmationDialog("Use Alice’s shared browser?", isPresented: $showEnable) {
             Button("Use shared browser") { Task { await switchBrowser(true) } }
@@ -357,6 +365,7 @@ private struct SharedBrowserScreen: View {
 }
 
 private struct AgentDocumentsScreen: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @State private var importing = false
     @State private var busy = false
@@ -384,9 +393,10 @@ private struct AgentDocumentsScreen: View {
                     Text("Paste this reference into a chat and tell Alice what you want done with the file.")
                 }
             }
-            if let failure { Section("Last error") { Text(failure).foregroundStyle(.red) } }
+            if let failure { Section("Last error") { Text(failure).foregroundStyle(Palette.danger(scheme)) } }
         }
         .navigationTitle("Documents")
+        .aliceFormPaper(scheme)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
             guard case let .success(urls) = result, let url = urls.first else { return }
             Task { await upload(url) }

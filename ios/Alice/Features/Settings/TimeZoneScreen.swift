@@ -41,6 +41,7 @@ struct HermesTimezones: Equatable, Sendable {
 
 /// Settings › General › Time zone.
 struct TimeZoneRow: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @State private var zones: HermesTimezones?
 
@@ -57,7 +58,7 @@ struct TimeZoneRow: View {
                     if let zones, !zones.outOfStep.isEmpty {
                         Text("\(zones.outOfStep.count) agents on another clock")
                             .font(.caption2)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Palette.warning(scheme))
                     }
                 }
             }
@@ -67,6 +68,7 @@ struct TimeZoneRow: View {
 }
 
 struct TimeZoneScreen: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Binding var zones: HermesTimezones?
@@ -94,7 +96,7 @@ struct TimeZoneScreen: View {
                     if !zones.outOfStep.isEmpty {
                         Text("\(zones.outOfStep.count) agents have no zone of their own and use this Mac’s clock (\(Self.label(zones.server))): \(zones.outOfStep.prefix(4).map(\.name).joined(separator: ", "))\(zones.outOfStep.count > 4 ? "…" : ""). Choosing a zone below sets it for all of them.")
                             .font(.footnote)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Palette.warning(scheme))
                     }
                 } footer: {
                     Text("Routines run, and your agents tell the date, in this zone. Your agents’ chats follow at once; routines and messaging apps after Hermes next restarts.")
@@ -112,11 +114,12 @@ struct TimeZoneScreen: View {
             }
 
             if let failure {
-                Section { Text(failure).foregroundStyle(.red) }
+                Section { Text(failure).foregroundStyle(Palette.danger(scheme)) }
             }
         }
         .searchable(text: $query, prompt: "City or region")
         .navigationTitle("Time zone")
+        .aliceFormPaper(scheme)
         .navigationBarTitleDisplayMode(.inline)
         .disabled(saving)
         .overlay { if saving { ProgressView() } }

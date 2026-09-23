@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MemoryProvidersScreen: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
 
     let profile: String
@@ -68,10 +69,11 @@ struct MemoryProvidersScreen: View {
             }
 
             if let failure {
-                Section { Text(failure).foregroundStyle(.red).font(.footnote) }
+                Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
             }
         }
         .navigationTitle("Memory Providers")
+        .aliceFormPaper(scheme)
         .navigationBarTitleDisplayMode(.inline)
         .overlay { if loading && hostStatus == nil { ProgressView() } }
         .toolbar {
@@ -110,7 +112,7 @@ struct MemoryProvidersScreen: View {
     private func providerRow(name: String, detail: String, status: String, active: Bool) -> some View {
         HStack(spacing: 12) {
             Image(systemName: active ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(active ? Color.green : Color.secondary)
+                .foregroundStyle(active ? Palette.success(scheme) : Color.secondary)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 7) {
                     Text(name).foregroundStyle(.primary)
@@ -166,6 +168,7 @@ struct MemoryProvidersScreen: View {
 }
 
 private struct MemoryProviderDetailSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -295,7 +298,7 @@ private struct MemoryProviderDetailSheet: View {
                                     Text(result.command).font(.caption2.monospaced()).textSelection(.enabled)
                                 }
                                 if !result.stderr.isEmpty {
-                                    Text(result.stderr).font(.caption2.monospaced()).foregroundStyle(.red).textSelection(.enabled)
+                                    Text(result.stderr).font(.caption2.monospaced()).foregroundStyle(Palette.danger(scheme)).textSelection(.enabled)
                                 } else if !result.stdout.isEmpty {
                                     Text(result.stdout).font(.caption2.monospaced()).textSelection(.enabled)
                                 }
@@ -322,10 +325,11 @@ private struct MemoryProviderDetailSheet: View {
                 }
 
                 if let failure {
-                    Section { Text(failure).foregroundStyle(.red).font(.footnote) }
+                    Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
                 }
             }
             .navigationTitle(provider.name)
+            .aliceFormPaper(scheme)
             .navigationBarTitleDisplayMode(.inline)
             .overlay { if loading && config == nil { ProgressView() } }
             .toolbar {
@@ -393,7 +397,7 @@ private struct MemoryProviderDetailSheet: View {
     private func fieldHelp(_ field: MemoryProviderField) -> some View {
         if !field.detail.isEmpty { Text(field.detail).font(.caption).foregroundStyle(.secondary) }
         if !field.info.isEmpty { Text(field.info).font(.caption2).foregroundStyle(.secondary) }
-        if field.required { Text("Required").font(.caption2.weight(.medium)).foregroundStyle(.orange) }
+        if field.required { Text("Required").font(.caption2.weight(.medium)).foregroundStyle(Palette.warning(scheme)) }
         if let url = URL(string: field.url), !field.url.isEmpty { Link("More information", destination: url).font(.caption) }
     }
 

@@ -4,6 +4,7 @@ import SwiftUI
 /// schema; Alice intentionally edits only options that materially change how
 /// the agent behaves and deep-merges those keys server-side.
 struct ConfigurationScreen: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
 
     @State private var profiles = [HermesProfileChoice(id: "default", label: "Alice")]
@@ -99,10 +100,11 @@ struct ConfigurationScreen: View {
             }
 
             if let failure {
-                Section { Text(failure).foregroundStyle(.red).font(.footnote) }
+                Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
             }
         }
         .navigationTitle("Hermes Configuration")
+        .aliceFormPaper(scheme)
         .navigationBarTitleDisplayMode(.inline)
         .overlay { if loading && !loaded { ProgressView() } }
         .toolbar {
