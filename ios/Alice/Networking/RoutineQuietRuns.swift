@@ -10,6 +10,9 @@ struct QuietRoutineRun: Sendable, Equatable, Identifiable, Codable {
     let id: String
     let routineName: String
     let finishedAt: Date
+    /// The agent's own words about finding nothing, written above its
+    /// `[SILENT]` line; nil when the run answered with the marker alone.
+    var note: String? = nil
 }
 
 extension QuietRoutineRun {
@@ -45,7 +48,7 @@ extension QuietRoutineRun {
         guard let final = answers.max(by: { Self.position($0) < Self.position($1) }),
               let text = final["content"] as? String, Self.isSilence(text)
         else { return nil }
-        self.init(id: id, routineName: routineName, finishedAt: finished)
+        self.init(id: id, routineName: routineName, finishedAt: finished, note: Self.note(in: text))
     }
 
     /// Hermes' matcher for an autonomous run with nothing to say
@@ -63,6 +66,36 @@ extension QuietRoutineRun {
     }
 
     private static let markers: Set<String> = ["[SILENT]", "SILENT", "NO_REPLY", "NO REPLY"]
+
+    /// A report routine — a few runs a day at most — rather than a watch
+    /// that checks every few minutes. Unknown schedules count as watches.
+    static func runsAtMostDaily(_ schedule: String) -> Bool {
+        let text = schedule.trimmingCharacters(in: .whitespaces).lowercased()
+        let fields = text.split(separator: " ")
+        if fields.count == 5 {
+            let minute = fields[0], hour = fields[1]
+            guard Int(minute) != nil else { return false }
+            let hours = hour.split(separator: ",")
+            return !hours.isEmpty && hours.count <= 3 && hours.allSatisfy { Int($0) != nil }
+        }
+        if text.hasPrefix("daily") || text.hasPrefix("weekly") || text.hasPrefix("monthly")
+            || text.contains(" at ") { return true }
+        if let match = text.firstMatch(of: /every\s+(\d+)\s*(d|day|days|w|week|weeks)\b/) {
+            return Int(match.1) ?? 0 >= 1
+        }
+        return false
+    }
+
+    /// What the agent wrote around the marker, if anything.
+    static func note(in text: String) -> String? {
+        var body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.uppercased().hasPrefix("[SILENT]") { body = String(body.dropFirst("[SILENT]".count)) }
+        let lines = body.components(separatedBy: .newlines).filter { !markers.contains(canonical($0)) }
+        let note = lines.joined(separator: "\n")
+            .replacingOccurrences(of: "[SILENT]", with: "", options: .caseInsensitive)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return note.count >= 12 ? note : nil
+    }
 
     private static func canonical(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".!*`")))
@@ -92,6 +125,7 @@ extension DashboardClient {
             let listing = try await get(
                 "api/cron/jobs/\(encoded(routine.id))/runs?profile=\(encoded(profile))&limit=10"
             )
+            let daily = QuietRoutineRun.runsAtMostDaily(routine.schedule)
             for run in (listing["runs"] as? [[String: Any]]) ?? [] {
                 guard let id = run["id"] as? String, !judged.contains(id),
                       let finished = QuietRoutineRun.finishedAt(run), finished >= since
@@ -103,7 +137,10 @@ extension DashboardClient {
                 if let found = QuietRoutineRun(
                     run: run, messages: (page["messages"] as? [[String: Any]]) ?? [],
                     routineName: routine.name
-                ) {
+                ), daily {
+                    // A routine that checks every few minutes finds nothing
+                    // most of the time; saying so each time — even in the
+                    // agent's own words — would bury the chat.
                     quiet.append(found)
                 }
             }

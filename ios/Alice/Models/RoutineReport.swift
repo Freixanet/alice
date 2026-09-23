@@ -31,6 +31,24 @@ extension RoutineReport {
         )
     }
 
+    /// The agent's own words to the person, and the report under them.
+    ///
+    /// A routine's output opens with a line or two from the agent — what it
+    /// looked at, what matters — then a line of just `---`, then the report.
+    /// The words show as the agent's message; the report as the routine's
+    /// card below it. Output without that shape is all report.
+    static func split(_ body: String) -> (intro: String?, report: String) {
+        let lines = body.components(separatedBy: "\n")
+        guard let rule = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "---" }),
+              rule > 0
+        else { return (nil, body) }
+        let intro = lines[..<rule].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let report = lines[(rule + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        // A heading rule deep in a report is not an introduction.
+        guard !intro.isEmpty, intro.count <= 700, !report.isEmpty, !intro.hasPrefix("#") else { return (nil, body) }
+        return (intro, report)
+    }
+
     /// Hermes' own notice that a routine could not finish, in the person's
     /// language.
     ///
@@ -134,9 +152,10 @@ enum ChollometroReport {
 /// sent it, and the bot's answer to it is left out until the person writes
 /// again. Only the presentation changes: the transcript keeps Hermes' turns.
 enum RoutineDelivery {
-    /// The card for a run that found nothing (`QuietRoutineRun`).
-    static var noNews: String {
-        String(localized: "routine.quiet.noNews")
+    /// What the agent says for a run that found nothing, when the run did
+    /// not say it in its own words (runs from before routines wrote one).
+    static func noNews(_ routine: String) -> String {
+        String(localized: "routine.quiet.noNews.agent \(routine)")
     }
 
     /// - Parameter agentAnswers: the rows of this chat that answer something it
@@ -146,14 +165,15 @@ enum RoutineDelivery {
         agentAnswers: Set<String> = []
     ) -> [Message] where Messages.Element == Message {
         var shown = reports(Array(messages), botName: botName, agentAnswers: agentAnswers)
-        // Runs without news leave nothing in the transcript; their cards go
-        // where they happened, among the turns around them.
+        // Runs without news leave nothing in the transcript. The agent says
+        // so in its own words where the run happened — a message, not a
+        // card: there is no report to show.
         for run in quietRuns.sorted(by: { $0.finishedAt < $1.finishedAt }) {
-            var card = Message(
-                id: "quiet:\(run.id)", role: .assistant, content: noNews,
+            let card = Message(
+                id: "quiet:\(run.id)", role: .assistant,
+                content: run.note ?? noNews(run.routineName),
                 createdAt: run.finishedAt, botName: botName
             )
-            card.routineName = run.routineName
             guard !shown.contains(where: { $0.id == card.id }) else { continue }
             let index = shown.firstIndex {
                 MessageTime.isKnown($0.createdAt) && $0.createdAt > run.finishedAt
@@ -184,9 +204,18 @@ enum RoutineDelivery {
             switch message.role {
             case .user:
                 if let report = RoutineReport(message.content) {
+                    let failure = RoutineReport.failure(in: report.body)
+                    let parts = RoutineReport.split(report.body)
+                    if failure == nil, let intro = parts.intro {
+                        // The agent speaks first, as itself; the report follows.
+                        shown.append(Message(
+                            id: message.id + ":intro", role: .assistant, content: intro,
+                            createdAt: message.createdAt, botName: botName
+                        ))
+                    }
                     var delivered = message
                     delivered.role = .assistant
-                    delivered.content = RoutineReport.failure(in: report.body) ?? report.body
+                    delivered.content = failure ?? parts.report
                     delivered.botName = botName
                     delivered.routineName = report.name
                     shown.append(delivered)

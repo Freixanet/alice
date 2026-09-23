@@ -11334,6 +11334,23 @@
         }
       }
     },
+    "routine.quiet.noNews.agent %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I checked “%@” and there was nothing new worth your attention this time."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "He revisado «%@» y esta vez no hay nada nuevo que merezca tu atención."
+          }
+        }
+      }
+    },
     "stdio": {
       "localizations": {
         "es": {
