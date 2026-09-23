@@ -138,6 +138,20 @@ enum Agenda {
         }
     }
 
+    /// "Miércoles, 23 de septiembre": the day, as the agenda and the home title it.
+    static func dayTitle(_ date: Date) -> String {
+        let text = date.formatted(.dateTime.weekday(.wide).day().month(.wide))
+        guard let first = text.first else { return text }
+        return first.uppercased() + text.dropFirst()
+    }
+
+    /// "Jueves": a day's name, capitalised as a heading.
+    static func weekday(_ date: Date) -> String {
+        let text = date.formatted(.dateTime.weekday(.wide))
+        guard let first = text.first else { return text }
+        return first.uppercased() + text.dropFirst()
+    }
+
     /// A line for the home: "Tomorrow 11:30 · Hairdresser".
     static func glance(_ item: AgendaItem, now: Date, calendar: Calendar = .current) -> String {
         guard let start = item.start else { return item.title }

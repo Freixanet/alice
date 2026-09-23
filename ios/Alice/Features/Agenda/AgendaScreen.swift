@@ -3,12 +3,15 @@ import EventKitUI
 import SwiftUI
 import UIKit
 
-/// The person's commitments, from now to two weeks ahead: what is next, then
-/// each day, then — when they include Reminders — their open to-dos.
+/// The person's commitments, from today to two weeks ahead, day by day — and,
+/// when they include Reminders, their open to-dos.
 ///
-/// Everything here is read on the phone. Calendar events come from every
-/// account iOS holds; nothing is sent to Hermes from this page, and nothing is
-/// changed except a reminder the person ticks off.
+/// Built from the system's own parts, as Calendar and Reminders are: a list,
+/// section headers, a time column, the calendar's colour as a dot. What is
+/// next says so in its own row rather than in a card of its own.
+///
+/// Everything is read on the phone. Nothing is sent to Hermes from this page,
+/// and nothing is changed except a reminder the person ticks off.
 struct AgendaScreen: View {
     var onClose: () -> Void = {}
 
@@ -22,6 +25,8 @@ struct AgendaScreen: View {
     @State private var fromAlice: [AgendaItem] = []
     @State private var loaded = false
     @State private var hasCalendar = CalendarSync.hasAccess
+    /// Ticked a moment ago: shown checked, then gone.
+    @State private var ticking: Set<String> = []
     @State private var ticked: Set<String> = []
     @State private var opened: OpenedEvent?
     @State private var problem: String?
@@ -32,46 +37,69 @@ struct AgendaScreen: View {
     }
 
     private var items: [AgendaItem] {
-        (local + fromAlice).filter { !ticked.contains($0.id) || isTicking($0.id) }
+        (local + fromAlice).filter { !ticked.contains($0.id) }
     }
 
-    /// Ticked a moment ago: still shown, filled, before it goes.
-    @State private var ticking: Set<String> = []
-    private func isTicking(_ id: String) -> Bool { ticking.contains(id) }
-
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
+        TimelineView(.everyMinute) { context in
             let now = context.date
             let days = Agenda.days(items, now: now)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    header(now: now, days: days)
-                    if !hasCalendar && local.isEmpty {
-                        ConnectCalendarCard(refused: CalendarSync.refused) { await connect() }
-                    } else {
-                        if let next = current(items, now: now) ?? Agenda.next(items, now: now) {
-                            NextCard(item: next, now: now) { open(next) }
-                        }
-                        ForEach(days) { day in
-                            daySection(day, now: now)
-                        }
-                        if loaded && days.isEmpty {
-                            nothingAhead
-                        }
-                    }
-                    remindersChoice
-                    if let problem {
-                        Text(problem)
-                            .font(.footnote)
-                            .foregroundStyle(Palette.danger(scheme))
-                    }
+            let next = Agenda.next(items, now: now)?.id
+            List {
+                Text(Agenda.dayTitle(now))
+                    .font(.aliceTitle(.largeTitle))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .accessibilityAddTraits(.isHeader)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 0, trailing: 20))
+                    .listRowSeparator(.hidden)
+
+                if !hasCalendar && local.isEmpty {
+                    noAccess
+                        .listRowBackground(Color.clear)
+                } else if loaded && days.isEmpty {
+                    ContentUnavailableView(
+                        "Nothing in the next two weeks",
+                        systemImage: "calendar",
+                        description: Text("New events in your calendar appear here on their own.")
+                    )
+                    .listRowBackground(Color.clear)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .padding(.bottom, 40)
-                .animation(.snappy(duration: 0.3), value: items.map(\.id))
+
+                ForEach(days) { day in
+                    Section {
+                        ForEach(day.items) { item in
+                            AgendaRow(
+                                item: item, now: now, overdue: day.label == .overdue,
+                                isNext: item.id == next, ticked: ticking.contains(item.id),
+                                onTick: { tick(item) }
+                            )
+                            .contentShape(.rect)
+                            .onTapGesture { open(item) }
+                            .swipeActions(edge: .trailing) {
+                                if item.isReminder {
+                                    Button("Complete") { tick(item) }
+                                        .tint(Palette.success(scheme))
+                                }
+                            }
+                        }
+                    } header: {
+                        header(day.label)
+                    }
+                    .listRowBackground(Palette.card(scheme))
+                }
+
+                if let problem {
+                    Text(problem)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.danger(scheme))
+                        .listRowBackground(Color.clear)
+                }
             }
-            .scrollIndicators(.hidden)
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .animation(.snappy(duration: 0.3), value: items.map(\.id))
         }
         .background { Palette.background(scheme).ignoresSafeArea() }
         .navigationTitle("Agenda")
@@ -83,12 +111,23 @@ struct AgendaScreen: View {
                     .accessibilityIdentifier("agenda.back")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    openURL(URL(string: "calshow:\(Date().timeIntervalSinceReferenceDate)")!)
+                Menu {
+                    Toggle(isOn: Binding(
+                        get: { includeReminders && AgendaSource.remindersAllowed },
+                        set: { on in Task { await setReminders(on) } }
+                    )) {
+                        Label("Show Reminders", systemImage: "checklist")
+                    }
+                    Button {
+                        openURL(URL(string: "calshow:\(Date().timeIntervalSinceReferenceDate)")!)
+                    } label: {
+                        Label("Open Calendar", systemImage: "calendar")
+                    }
                 } label: {
-                    Image(systemName: "calendar")
+                    Image(systemName: "ellipsis")
                 }
-                .accessibilityLabel("Open Calendar")
+                .accessibilityLabel("Agenda options")
+                .accessibilityIdentifier("agenda.options")
             }
         }
         .refreshable { await load(fresh: true) }
@@ -99,82 +138,27 @@ struct AgendaScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await load(fresh: false) } }
         }
-        .onChange(of: includeReminders) { Task { await load(fresh: false) } }
         .sheet(item: $opened) { event in
             EventDetail(identifier: event.id, start: event.start) { opened = nil }
                 .ignoresSafeArea()
         }
     }
 
-    // MARK: Header
+    // MARK: Parts
 
-    private func header(now: Date, days: [AgendaDay]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide)).capitalizedFirst)
-                .font(.aliceTitle(.largeTitle))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-            Text(summary(now: now, days: days))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .contentTransition(.numericText())
+    private func header(_ label: AgendaDay.Label) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title(of: label))
+                .font(.headline)
+                .foregroundStyle(label == .overdue ? Palette.danger(scheme) : .primary)
+            if let date = subtitle(of: label) {
+                Text(date)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .accessibilityElement(children: .combine)
+        .textCase(nil)
         .accessibilityAddTraits(.isHeader)
-    }
-
-    private func summary(now: Date, days: [AgendaDay]) -> String {
-        guard hasCalendar || !local.isEmpty else { return String(localized: "Your commitments, at a glance.") }
-        let today = days.first { $0.label == .today }?.items.filter { !$0.isPast(now) } ?? []
-        switch today.count {
-        case 0: return String(localized: "Nothing left today.")
-        case 1: return String(localized: "One more thing today.")
-        default: return String(localized: "\(today.count) more things today.")
-        }
-    }
-
-    /// Something under way: it comes before what is next.
-    private func current(_ items: [AgendaItem], now: Date) -> AgendaItem? {
-        items.first { $0.isNow(now) }
-    }
-
-    // MARK: Days
-
-    private func daySection(_ day: AgendaDay, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title(of: day.label))
-                    .font(.headline)
-                    .foregroundStyle(day.label == .overdue ? Palette.danger(scheme) : .primary)
-                if let date = subtitle(of: day.label) {
-                    Text(date)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .accessibilityAddTraits(.isHeader)
-
-            VStack(spacing: 0) {
-                ForEach(Array(day.items.enumerated()), id: \.element.id) { index, item in
-                    if index > 0 {
-                        Divider().padding(.leading, 76)
-                    }
-                    AgendaRow(
-                        item: item, now: now, overdue: day.label == .overdue,
-                        ticked: ticking.contains(item.id),
-                        onTick: { tick(item) },
-                        onOpen: { open(item) }
-                    )
-                }
-            }
-            .background(Palette.card(scheme), in: .rect(cornerRadius: 20))
-            .overlay {
-                RoundedRectangle(cornerRadius: 20)
-                    .strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5)
-            }
-        }
     }
 
     private func title(of label: AgendaDay.Label) -> String {
@@ -182,75 +166,46 @@ struct AgendaScreen: View {
         case .overdue: String(localized: "Overdue")
         case .today: String(localized: "Today")
         case .tomorrow: String(localized: "Tomorrow")
-        case let .day(date): date.formatted(.dateTime.weekday(.wide)).capitalizedFirst
+        case let .day(date): Agenda.weekday(date)
         case .someday: String(localized: "No date")
         }
     }
 
     private func subtitle(of label: AgendaDay.Label) -> String? {
+        let calendar = Calendar.current
         switch label {
-        case let .day(date): date.formatted(.dateTime.day().month(.abbreviated))
-        case .today: Date().formatted(.dateTime.day().month(.abbreviated))
-        case .tomorrow: Calendar.current.date(byAdding: .day, value: 1, to: Date())?
-            .formatted(.dateTime.day().month(.abbreviated))
-        default: nil
+        case let .day(date): return date.formatted(.dateTime.day().month(.abbreviated))
+        case .today: return Date().formatted(.dateTime.day().month(.abbreviated))
+        case .tomorrow:
+            return calendar.date(byAdding: .day, value: 1, to: Date())?.formatted(.dateTime.day().month(.abbreviated))
+        default: return nil
         }
     }
 
-    private var nothingAhead: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "sun.max")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("Nothing in the next two weeks")
-                .font(.headline)
-            Text("New events in your calendar appear here on their own.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 36)
-    }
-
-    // MARK: Reminders
-
-    @ViewBuilder
-    private var remindersChoice: some View {
-        if !includeReminders || !AgendaSource.remindersAllowed {
-            Button {
-                Task { await includeRemindersNow() }
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "checklist")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(store.accent.primary(scheme))
-                        .frame(width: 36, height: 36)
-                        .background(store.accent.primary(scheme).opacity(0.12), in: .rect(cornerRadius: 10))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Include Reminders")
-                            .font(.subheadline.weight(.medium))
-                        Text(AgendaSource.remindersRefused
-                             ? "Turn on Reminders for Alice in Settings."
-                             : "Your open to-dos, next to your events.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(store.accent.primary(scheme))
-                }
-                .padding(14)
-                .background(Palette.card(scheme), in: .rect(cornerRadius: 20))
-                .contentShape(.rect)
+    private var noAccess: some View {
+        ContentUnavailableView {
+            Label("Your calendar", systemImage: "calendar")
+        } description: {
+            Text(CalendarSync.refused
+                 ? "Calendar access is off for Alice. Turn it on in Settings › Alice › Calendars."
+                 : "Alice shows the next two weeks from the calendars on this iPhone. She changes nothing.")
+        } actions: {
+            Button(CalendarSync.refused ? "Open Settings" : "Allow Access") {
+                Task { await connect() }
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("agenda.includeReminders")
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("agenda.connect")
         }
     }
 
-    private func includeRemindersNow() async {
+    // MARK: Actions
+
+    private func setReminders(_ on: Bool) async {
+        guard on else {
+            includeReminders = false
+            await load(fresh: false)
+            return
+        }
         if AgendaSource.remindersRefused {
             if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
             return
@@ -261,26 +216,23 @@ struct AgendaScreen: View {
     }
 
     private func tick(_ item: AgendaItem) {
-        guard case let .reminder(identifier, _) = item.kind else { return }
+        guard case let .reminder(identifier, _) = item.kind, !ticking.contains(item.id) else { return }
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        withAnimation(.snappy(duration: 0.25)) { _ = ticking.insert(item.id) }
         do {
             try AgendaSource.complete(identifier)
             problem = nil
+            withAnimation(.snappy(duration: 0.2)) { _ = ticking.insert(item.id) }
             Task {
-                try? await Task.sleep(for: .milliseconds(700))
+                try? await Task.sleep(for: .milliseconds(600))
                 withAnimation(.snappy(duration: 0.3)) {
-                    ticked.insert(item.id)
-                    ticking.remove(item.id)
+                    _ = ticked.insert(item.id)
+                    _ = ticking.remove(item.id)
                 }
             }
         } catch {
-            ticking.remove(item.id)
             problem = String(localized: "That reminder could not be completed.")
         }
     }
-
-    // MARK: Opening
 
     private func open(_ item: AgendaItem) {
         switch item.kind {
@@ -308,8 +260,6 @@ struct AgendaScreen: View {
         await load(fresh: false)
     }
 
-    // MARK: Loading
-
     private func load(fresh: Bool) async {
         hasCalendar = CalendarSync.hasAccess
         var found = AgendaSource.events()
@@ -324,155 +274,78 @@ struct AgendaScreen: View {
     }
 }
 
-// MARK: - Next
-
-private struct NextCard: View {
-    let item: AgendaItem
-    let now: Date
-    let onOpen: () -> Void
-
-    @Environment(AppStore.self) private var store
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(item.isNow(now) ? "HAPPENING NOW" : "UP NEXT")
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.2)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if let start = item.start, !item.isNow(now) {
-                        Text(Agenda.countdown(to: start, now: now))
-                            .font(.caption.weight(.semibold))
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                            .foregroundStyle(store.accent.primary(scheme))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(store.accent.primary(scheme).opacity(0.14), in: .capsule)
-                    }
-                }
-                Text(item.title)
-                    .font(.aliceTitle(.title))
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-                VStack(alignment: .leading, spacing: 6) {
-                    Label(when, systemImage: item.isAlice ? "sparkles" : "clock")
-                    if let location = item.location {
-                        Label(location, systemImage: "mappin.and.ellipse")
-                            .lineLimit(1)
-                    }
-                }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(Palette.card(scheme))
-                    .overlay(alignment: .leading) {
-                        // The calendar's own colour, as a quiet edge.
-                        Rectangle()
-                            .fill(tint)
-                            .frame(width: 4)
-                    }
-                    .clipShape(.rect(cornerRadius: 24))
-                    .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.06), radius: 18, y: 8)
-            }
-            .contentShape(.rect(cornerRadius: 24))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("agenda.next")
-    }
-
-    private var tint: Color {
-        AgendaRow.color(of: item, accent: store.accent.primary(scheme))
-    }
-
-    private var when: String {
-        guard let start = item.start else { return "" }
-        let calendar = Calendar.current
-        let day = calendar.isDateInToday(start) ? String(localized: "Today")
-            : calendar.isDateInTomorrow(start) ? String(localized: "Tomorrow")
-            : start.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)).capitalizedFirst
-        let from = start.formatted(date: .omitted, time: .shortened)
-        if item.isAlice { return String(localized: "\(day), \(from) · Alice will write to you") }
-        guard let end = item.end, end > start else { return "\(day), \(from)" }
-        return "\(day), \(from) – \(end.formatted(date: .omitted, time: .shortened))"
-    }
-}
-
 // MARK: - Row
 
+/// Time, a dot in the calendar's colour, the title and where. The next thing
+/// says how soon on the right; what is under way says "Now".
 private struct AgendaRow: View {
     let item: AgendaItem
     let now: Date
     let overdue: Bool
+    let isNext: Bool
     let ticked: Bool
     let onTick: () -> Void
-    let onOpen: () -> Void
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             time
-                .frame(width: 52, alignment: .leading)
-            marker
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
+                .frame(width: 54, alignment: .leading)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                marker
+                VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
-                        .font(.subheadline.weight(.medium))
-                        .strikethrough(ticked)
+                        .font(.body)
+                        .foregroundStyle(item.isPast(now) || ticked ? .secondary : .primary)
+                        .strikethrough(ticked, color: .secondary)
                         .lineLimit(2)
-                    if item.isNow(now) {
-                        Text("Now")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Self.color(of: item, accent: store.accent.primary(scheme)), in: .capsule)
+                    if let detail {
+                        Text(detail)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
-                if let detail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(overdue ? Palette.danger(scheme) : .secondary)
-                        .lineLimit(1)
-                }
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            if item.isNow(now) {
+                Text("Now")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(store.accent.primary(scheme))
+            } else if isNext, let start = item.start {
+                Text(Agenda.countdown(to: start, now: now))
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .opacity(item.isPast(now) || ticked ? 0.45 : 1)
-        .contentShape(.rect)
-        .onTapGesture(perform: onOpen)
+        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: Text("Complete")) { if item.isReminder { onTick() } }
     }
 
     @ViewBuilder
     private var time: some View {
-        if item.allDay || item.start == nil {
-            Text(item.start == nil ? "—" : String(localized: "All day"))
-                .font(.caption)
+        let style: Color = item.isPast(now) ? .secondary : .primary
+        if item.start == nil {
+            Text(" ")
+        } else if item.allDay {
+            Text("All day")
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .padding(.top, 1)
         } else if let start = item.start {
             VStack(alignment: .leading, spacing: 1) {
-                Text(overdue ? start.formatted(.dateTime.day().month(.abbreviated)) : start.formatted(date: .omitted, time: .shortened))
+                Text(overdue
+                     ? start.formatted(.dateTime.day().month(.abbreviated))
+                     : start.formatted(date: .omitted, time: .shortened))
                     .font(.subheadline)
                     .monospacedDigit()
-                if !overdue, let end = item.end, end > start, !item.isReminder {
+                    .foregroundStyle(overdue ? Palette.danger(scheme) : style)
+                if !overdue, let end = item.end, end > start {
                     Text(end.formatted(date: .omitted, time: .shortened))
-                        .font(.caption2)
+                        .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
@@ -482,29 +355,26 @@ private struct AgendaRow: View {
 
     @ViewBuilder
     private var marker: some View {
-        let tint = Self.color(of: item, accent: store.accent.primary(scheme))
         switch item.kind {
-        case .event:
-            Capsule()
-                .fill(tint)
-                .frame(width: 3)
-                .frame(minHeight: 32)
-        case .reminder:
+        case let .event(_, color):
+            Circle()
+                .fill(Self.color(color, fallback: store.accent.primary(scheme)))
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+        case let .reminder(_, color):
             Button(action: onTick) {
                 Image(systemName: ticked ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(ticked ? tint : .secondary)
+                    .font(.system(size: 19))
+                    .foregroundStyle(ticked ? Self.color(color, fallback: store.accent.primary(scheme)) : .secondary)
                     .contentTransition(.symbolEffect(.replace))
-                    .frame(width: 24, height: 24)
-                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Complete")
         case .alice:
-            Image(systemName: "sparkles")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(tint)
-                .frame(width: 20, height: 24)
+            Image(systemName: "bell")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         }
     }
 
@@ -513,66 +383,8 @@ private struct AgendaRow: View {
         return item.location
     }
 
-    static func color(of item: AgendaItem, accent: Color) -> Color {
-        switch item.kind {
-        case let .event(_, color), let .reminder(_, color):
-            color.map { Color(red: $0.red, green: $0.green, blue: $0.blue) } ?? accent
-        case .alice:
-            accent
-        }
-    }
-}
-
-// MARK: - Connect
-
-private struct ConnectCalendarCard: View {
-    let refused: Bool
-    let connect: () async -> Void
-
-    @Environment(AppStore.self) private var store
-    @Environment(\.colorScheme) private var scheme
-    @State private var working = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Image(systemName: "calendar")
-                .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(store.accent.primary(scheme))
-                .frame(width: 56, height: 56)
-                .background(store.accent.primary(scheme).opacity(0.12), in: .rect(cornerRadius: 16))
-            VStack(alignment: .leading, spacing: 6) {
-                Text("See what's coming up")
-                    .font(.aliceTitle(.title2))
-                Text(refused
-                     ? "Calendar access is off for Alice. Turn it on in Settings › Alice › Calendars."
-                     : "Alice reads the calendars on this iPhone — iCloud, Google, Outlook — and shows your next two weeks here. She changes nothing.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Button {
-                working = true
-                Task {
-                    await connect()
-                    working = false
-                }
-            } label: {
-                HStack {
-                    if working { ProgressView().controlSize(.small) }
-                    Text(refused ? "Open Settings" : "Show my calendar")
-                        .font(.body.weight(.semibold))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .foregroundStyle(scheme == .dark ? Color.black : Color.white)
-                .background(scheme == .dark ? Color.white : Color.black, in: .capsule)
-            }
-            .buttonStyle(.plain)
-            .disabled(working)
-            .accessibilityIdentifier("agenda.connect")
-        }
-        .padding(22)
-        .background(Palette.card(scheme), in: .rect(cornerRadius: 24))
+    private static func color(_ color: AgendaColor?, fallback: Color) -> Color {
+        color.map { Color(red: $0.red, green: $0.green, blue: $0.blue) } ?? fallback
     }
 }
 

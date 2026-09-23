@@ -992,11 +992,15 @@ private struct EmptyChatView: View {
         } else {
             VStack(spacing: 8) {
                 Spacer()
-                Text("What are we working on?")
-                    .font(.aliceTitle(.title))
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 32)
+                // Alice's home opens on the day, as the agenda does.
+                TimelineView(.everyMinute) { context in
+                    Text(Agenda.dayTitle(context.date))
+                        .font(.aliceTitle(.title))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 32)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 Text("You talk to Alice. One thing at a time.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

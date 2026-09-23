@@ -159,8 +159,6 @@ struct Sidebar: View, Equatable {
                 store.openToday()
                 onDismiss()
             }
-            // Right under Today: the person's own day, next to what Alice wrote.
-            row("Agenda", systemImage: "calendar", weight: .medium, destination: .agenda) { openAgenda() }
             row("Agents", systemImage: "person.2", weight: .medium,
                 badge: store.unreadNotices(in: .agents), destination: .bots) {
                 store.markNoticesSeen(.agents)
@@ -168,7 +166,9 @@ struct Sidebar: View, Equatable {
                 store.botsFromLeading = false
                 store.showingBots = true
             }
-            // Second, right under Agents: a note is written in the moment or
+            // Under Agents: the person's own day.
+            row("Agenda", systemImage: "calendar", weight: .medium, destination: .agenda) { openAgenda() }
+            // Then Notes: a note is written in the moment or
             // not at all, so it is the shortest way in the drawer.
             row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
             row("Routines", systemImage: "clock", weight: .medium,
