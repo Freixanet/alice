@@ -6,7 +6,7 @@ import Foundation
 /// delivery is suppressed (`cron/scheduler.py`) — so a routine with no news and
 /// a routine that never ran looked exactly the same in the bot's chat. Alice
 /// finds these runs in the routine's run history and shows a card for each.
-struct QuietRoutineRun: Sendable, Equatable, Identifiable {
+struct QuietRoutineRun: Sendable, Equatable, Identifiable, Codable {
     let id: String
     let routineName: String
     let finishedAt: Date

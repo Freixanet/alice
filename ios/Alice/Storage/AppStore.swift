@@ -173,9 +173,19 @@ final class AppStore {
     /// Routine runs that finished with nothing to report, keyed by bot. Hermes
     /// sends nothing for those, and without a card a routine with no news and
     /// one that never ran look the same.
-    var quietRoutineRuns: [String: [QuietRoutineRun]] = [:]
+    ///
+    /// Kept on the phone. Held only in memory, they were empty on every launch
+    /// until a bot chat's full refresh finished: an agent's chat ended at an
+    /// older failed run, with the later quiet ones missing, for as long as
+    /// that took — or for good when the refresh failed.
+    var quietRoutineRuns: [String: [QuietRoutineRun]] = [:] {
+        didSet { persistQuietRuns() }
+    }
     /// Run ids already read for silence, keyed by bot.
-    private var judgedRoutineRuns: [String: Set<String>] = [:]
+    private var judgedRoutineRuns: [String: Set<String>] = [:] {
+        didSet { persistQuietRuns() }
+    }
+    @ObservationIgnored private var quietRunsLoaded = false
     private let dashboard = DashboardClient()
     private let defaults: UserDefaults
     /// Where conversations are kept (`FileConversationStorage`), apart from
@@ -196,6 +206,8 @@ final class AppStore {
     private var protectedConversationIDs: Set<String> = []
 
     private enum Keys {
+        static let quietRuns = "alice.quietRoutineRuns"
+        static let judgedRuns = "alice.judgedRoutineRuns"
         static let phoneActions = "alice.phoneActions"
         static let theme = "alice.theme"
         static let accent = "alice.accent"
@@ -590,6 +602,7 @@ final class AppStore {
         recentModels = defaults.stringArray(forKey: Keys.recentModels) ?? []
         loadConversations()
         loadActivity()
+        loadQuietRuns()
         loadPhoneActions()
         if let data = defaults.data(forKey: Keys.notesSnapshot) {
             notesSnapshot = try? JSONDecoder().decode(NotesSnapshot.self, from: data)
@@ -6469,7 +6482,29 @@ final class AppStore {
             // say the transcript may be behind, rather than pretending it is
             // complete or blanking it.
             botChatFailure[conversationID] = HermesErrors.describe(error)
+            // Its routine runs are read on their own route, and still count.
+            await refreshQuietRoutineRuns(profile: profile)
         }
+    }
+
+    private func persistQuietRuns() {
+        guard quietRunsLoaded else { return }
+        if let data = try? JSONEncoder().encode(quietRoutineRuns) {
+            defaults.set(data, forKey: Keys.quietRuns)
+        }
+        defaults.set(judgedRoutineRuns.mapValues { Array($0.suffix(200)) }, forKey: Keys.judgedRuns)
+    }
+
+    private func loadQuietRuns() {
+        if let data = defaults.data(forKey: Keys.quietRuns),
+           let saved = try? JSONDecoder().decode([String: [QuietRoutineRun]].self, from: data) {
+            let since = Date().addingTimeInterval(-QuietRoutineRun.window)
+            quietRoutineRuns = saved.mapValues { $0.filter { $0.finishedAt >= since } }
+        }
+        if let saved = defaults.dictionary(forKey: Keys.judgedRuns) as? [String: [String]] {
+            judgedRoutineRuns = saved.mapValues(Set.init)
+        }
+        quietRunsLoaded = true
     }
 
     /// Work each bot chat has going on out of sight, keyed by conversation.
