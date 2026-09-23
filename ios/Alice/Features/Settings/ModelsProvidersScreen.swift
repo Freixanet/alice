@@ -112,7 +112,7 @@ struct ModelsProvidersScreen: View {
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: providerConnected(destination.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(providerConnected(destination.id) ? Color.green : Color.secondary)
+                                .foregroundStyle(providerConnected(destination.id) ? Palette.success(scheme) : Color.secondary)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(destination.name)
@@ -144,10 +144,11 @@ struct ModelsProvidersScreen: View {
             }
 
             if let failure {
-                Section { Text(failure).foregroundStyle(.red).font(.footnote) }
+                Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
             }
         }
         .navigationTitle("Models & Providers")
+        .aliceFormPaper(scheme)
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
             if loading && info == nil { ProgressView() }
@@ -242,7 +243,7 @@ struct ModelsProvidersScreen: View {
     private func capability(_ label: String, _ enabled: Bool) -> some View {
         LabeledContent(label) {
             Image(systemName: enabled ? "checkmark" : "minus")
-                .foregroundStyle(enabled ? Color.green : Color.secondary)
+                .foregroundStyle(enabled ? Palette.success(scheme) : Color.secondary)
         }
     }
 
@@ -260,6 +261,7 @@ struct ModelsProvidersScreen: View {
 }
 
 private struct ModelPickerSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -294,7 +296,7 @@ private struct ModelPickerSheet: View {
         NavigationStack {
             List {
                 if let failure {
-                    Section { Text(failure).foregroundStyle(.red).font(.footnote) }
+                    Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
                 }
                 ForEach(visibleProviders) { provider in
                     Section {
@@ -327,6 +329,7 @@ private struct ModelPickerSheet: View {
             }
             .searchable(text: $search, prompt: "Model or provider")
             .navigationTitle("Default Model")
+            .aliceFormPaper(scheme)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -392,6 +395,7 @@ private struct ModelPickerSheet: View {
 }
 
 private struct ProviderDetailSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -417,7 +421,7 @@ private struct ProviderDetailSheet: View {
                     LabeledContent("Provider", value: destination.name)
                     LabeledContent("Models", value: "\(inventory?.models.count ?? 0)")
                     if let warning = inventory?.warning, !warning.isEmpty {
-                        Text(warning).foregroundStyle(.orange).font(.footnote)
+                        Text(warning).foregroundStyle(Palette.warning(scheme)).font(.footnote)
                     }
                     if let oauth, oauth.loggedIn {
                         LabeledContent("OAuth", value: oauth.source.isEmpty ? "Connected" : oauth.source)
@@ -428,7 +432,7 @@ private struct ProviderDetailSheet: View {
                     Section("Account") {
                         if oauth.loggedIn {
                             Label("Connected", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Palette.success(scheme))
                             if !oauth.expiresAt.isEmpty {
                                 LabeledContent("Expires", value: oauth.expiresAt)
                             }
@@ -457,7 +461,7 @@ private struct ProviderDetailSheet: View {
                             }
                         }
                         if !oauth.error.isEmpty {
-                            Text(oauth.error).foregroundStyle(.red).font(.footnote)
+                            Text(oauth.error).foregroundStyle(Palette.danger(scheme)).font(.footnote)
                         }
                     }
                 }
@@ -503,10 +507,11 @@ private struct ProviderDetailSheet: View {
                 }
 
                 if let failure {
-                    Section { Text(failure).foregroundStyle(.red).font(.footnote) }
+                    Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
                 }
             }
             .navigationTitle(destination.name)
+            .aliceFormPaper(scheme)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .sheet(item: $editingCredential) { credential in
@@ -590,6 +595,7 @@ private struct ProviderDetailSheet: View {
 }
 
 private struct CredentialEditorSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -621,13 +627,14 @@ private struct CredentialEditorSheet: View {
                         LabeledContent("Current", value: credential.redactedValue.isEmpty ? "Set" : credential.redactedValue)
                     }
                 }
-                if let warning { Section { Text(warning).foregroundStyle(.orange).font(.footnote) } }
-                if let failure { Section { Text(failure).foregroundStyle(.red).font(.footnote) } }
+                if let warning { Section { Text(warning).foregroundStyle(Palette.warning(scheme)).font(.footnote) } }
+                if let failure { Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) } }
                 if credential.isSet {
                     Section { Button("Remove key", role: .destructive) { removing = true } }
                 }
             }
             .navigationTitle(credential.key)
+            .aliceFormPaper(scheme)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
