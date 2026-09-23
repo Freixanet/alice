@@ -2,27 +2,13 @@ import EventKit
 import SwiftUI
 import UIKit
 
-/// Calendar and Reminders as one page, the way iOS 18 began to join them:
-/// the week strip or the month on top, then the chosen day's hours (Day),
-/// everything ahead by day with the to-dos after it (List), or the month
-/// with the chosen day under it (Month). Reminders sit among the events,
-/// ticked where they are; "+" adds either; "Lists" is Reminders' own first
-/// screen. Everything is the phone's own Calendar and Reminders — it syncs
-/// wherever they do, and nothing here goes to Hermes.
+/// The person's events and reminders as one list: what is late, then each
+/// day from today with its events and reminders, then the to-dos with no
+/// date. Reminders are ticked where they are; "+" adds either; "Lists" is
+/// Reminders' own first screen. Everything is the phone's own Calendar and
+/// Reminders — it syncs wherever they do, and nothing here goes to Hermes.
 struct AgendaScreen: View {
     var onClose: () -> Void = {}
-
-    enum Mode: String, CaseIterable, Identifiable {
-        case day, list, month
-        var id: String { rawValue }
-        var title: LocalizedStringKey {
-            switch self {
-            case .day: "Day"
-            case .list: "List"
-            case .month: "Month"
-            }
-        }
-    }
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -30,8 +16,6 @@ struct AgendaScreen: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var model = AgendaModel()
-    @AppStorage("agenda.mode") private var modeRaw = Mode.list.rawValue
-    @State private var selected = Date()
     /// Bumped by "Today": the views scroll back to now even when today is
     /// already the chosen day.
     @State private var jump = 0
@@ -63,7 +47,6 @@ struct AgendaScreen: View {
         let start: Date?
     }
 
-    private var mode: Mode { Mode(rawValue: modeRaw) ?? .list }
 
     var body: some View {
         TimelineView(.everyMinute) { context in
@@ -78,7 +61,6 @@ struct AgendaScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await load(fresh: false) } }
         }
-        .onChange(of: selected) { _, day in Task { await model.look(at: day) } }
         .onChange(of: model.events.count + model.reminders.count) { store.noteCommitments(model.all) }
         .onChange(of: composeFocused) { _, focused in leftComposer(focused) }
         .modifier(AgendaSheets(
@@ -120,47 +102,19 @@ struct AgendaScreen: View {
             noAccess
         } else {
             VStack(spacing: 0) {
-                Text(Agenda.dayTitle(selected))
+                Text(Agenda.dayTitle(now))
                     .font(.aliceTitle(.title))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
-                    .padding(.bottom, 14)
+                    .padding(.bottom, 10)
                     .accessibilityAddTraits(.isHeader)
-
-                Group {
-                    if mode == .month {
-                        AgendaMonthGrid(selected: $selected, hasItems: { model.hasItems(on: $0) }, now: now)
-                            .padding(.bottom, 12)
-                    } else {
-                        AgendaWeekStrip(selected: $selected, hasItems: { model.hasItems(on: $0) }, now: now)
-                            .padding(.bottom, 10)
-                    }
-                }
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
-                    store.agendaCalendarFrame = $0
-                }
                 Divider()
-                modeContent(now: now)
+                AgendaListContent(model: model, now: now, ticking: ticking, jump: jump,
+                                  problem: problem, onOpen: open, onTick: tick)
             }
-        }
-    }
-
-    @ViewBuilder
-    private func modeContent(now: Date) -> some View {
-        switch mode {
-        case .day:
-            AgendaDayView(
-                day: selected, items: model.items(on: selected, now: now), now: now, ticking: ticking, jump: jump,
-                onOpen: open, onTick: tick, onNewEvent: { start in Task { await startEvent(start) } }
-            )
-        case .list:
-            AgendaListContent(model: model, selected: selected, now: now, ticking: ticking, jump: jump,
-                              problem: problem, onOpen: open, onTick: tick)
-        case .month:
-            dayList(now: now)
         }
     }
 
@@ -181,35 +135,6 @@ struct AgendaScreen: View {
         }
     }
 
-    /// Under the month: the chosen day, as a list.
-    private func dayList(now: Date) -> some View {
-        let items = model.items(on: selected, now: now).sorted {
-            ($0.allDay ? 0 : 1, $0.start ?? .distantPast) < ($1.allDay ? 0 : 1, $1.start ?? .distantPast)
-        }
-        return List {
-            if items.isEmpty {
-                Text("Nothing on this day")
-                    .foregroundStyle(.secondary)
-                    .listRowBackground(Color.clear)
-            }
-            ForEach(items) { item in
-                AgendaItemRow(item: item, now: now, ticked: ticking.contains(item.id)) { tick(item) }
-                    .contentShape(.rect)
-                    .onTapGesture { open(item) }
-                    .listRowBackground(Palette.card(scheme))
-            }
-            if let problem {
-                Text(problem)
-                    .font(.footnote)
-                    .foregroundStyle(Palette.danger(scheme))
-                    .listRowBackground(Color.clear)
-            }
-        }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.top, 14, for: .scrollContent)
-    }
-
     // MARK: Toolbar
 
     @ToolbarContentBuilder
@@ -219,14 +144,6 @@ struct AgendaScreen: View {
                 .accessibilityLabel("Back")
                 .accessibilityIdentifier("agenda.back")
         }
-        ToolbarItem(placement: .principal) {
-            Picker("View", selection: $modeRaw) {
-                ForEach(Mode.allCases) { Text($0.title).tag($0.rawValue) }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 210)
-            .accessibilityIdentifier("agenda.mode")
-        }
         ToolbarItem(placement: .topBarTrailing) {
             Button { searching = true } label: { Image(systemName: "magnifyingglass") }
                 .accessibilityLabel("Search")
@@ -234,7 +151,6 @@ struct AgendaScreen: View {
 
         ToolbarItem(placement: .bottomBar) {
             Button("Today") {
-                withAnimation(.snappy) { selected = Date() }
                 jump += 1
             }
             .accessibilityIdentifier("agenda.today")
@@ -326,7 +242,7 @@ struct AgendaScreen: View {
         // On the day being looked at, as Calendar's new reminder does; in the
         // list view, today.
         let calendar = Calendar.current
-        let day = mode == .list ? Date() : selected
+        let day = Date()
         let offset = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
                                              to: calendar.startOfDay(for: day)).day ?? 0
         ReminderDates.set(&draft, dayOffset: offset)
@@ -346,7 +262,7 @@ struct AgendaScreen: View {
         guard CalendarSync.hasAccess else { return }
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: Date()) + 1
-        newEvent = NewEvent(start: start ?? calendar.date(bySettingHour: min(hour, 23), minute: 0, second: 0, of: selected))
+        newEvent = NewEvent(start: start ?? calendar.date(bySettingHour: min(hour, 23), minute: 0, second: 0, of: Date()))
     }
 
     /// Return: this one is saved and the next box opens, same day and list.
@@ -474,7 +390,6 @@ private struct AgendaSheets: ViewModifier {
 /// strip scrolls to it.
 struct AgendaListContent: View {
     let model: AgendaModel
-    let selected: Date
     let now: Date
     let ticking: Set<String>
     var jump = 0
@@ -520,10 +435,6 @@ struct AgendaListContent: View {
             .onChange(of: jump) {
                 // Back to the top: what is late, then today.
                 if let first = days.first?.id { withAnimation(.snappy) { proxy.scrollTo(first, anchor: .top) } }
-            }
-            .onChange(of: selected) { _, day in
-                let id = "d\(Int(Calendar.current.startOfDay(for: day).timeIntervalSince1970))"
-                withAnimation(.snappy) { proxy.scrollTo(id, anchor: .top) }
             }
         }
     }

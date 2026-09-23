@@ -214,10 +214,7 @@ struct RootView: View {
                             .ignoresSafeArea()
                     }
                     .overlay {
-                        // Anywhere but the week strip or the month, where a
-                        // sideways swipe changes the week or the month.
                         DrawerPan(
-                            startsAt: { !store.agendaCalendarFrame.contains($0) },
                             shouldBegin: { velocity in
                                 velocity.x > 0 && abs(velocity.x) > abs(velocity.y) * 1.5
                             },

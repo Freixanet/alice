@@ -159,19 +159,4 @@ final class AgendaTests: XCTestCase {
         XCTAssertEqual(ReminderPriority(eventKit: 3), .high)
         XCTAssertEqual(ReminderPriority.high.marks, "!!!")
     }
-
-    func testOverlappingEventsSitSideBySide() {
-        let start = calendar.startOfDay(for: now)
-        let items = [
-            event("a", date(23, 9, 0)),
-            event("b", date(23, 9, 30)),
-            event("c", date(23, 11, 0)),
-        ]
-        let layout = AgendaDayView.layout(items, dayStart: start)
-        XCTAssertEqual(layout["a"]?.column, 0)
-        XCTAssertEqual(layout["b"]?.column, 1)
-        XCTAssertEqual(layout["a"]?.count, 2)
-        XCTAssertEqual(layout["c"]?.column, 0)
-        XCTAssertEqual(layout["c"]?.count, 1)
-    }
 }

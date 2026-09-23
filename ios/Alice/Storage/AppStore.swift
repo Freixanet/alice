@@ -5823,9 +5823,6 @@ final class AppStore {
     var showingNotes = false
     /// The agenda, a page too (`AgendaScreen`).
     var showingAgenda = false
-    /// Where the agenda's week strip or month is on screen: a sideways swipe
-    /// there changes the week, anywhere else it closes the page.
-    @ObservationIgnored var agendaCalendarFrame: CGRect = .zero
     /// "Tomorrow 11:30 · Hairdresser": the next commitment within a day and a
     /// half, read on this phone, for the home's suggestions.
     private(set) var nextCommitment: String?
