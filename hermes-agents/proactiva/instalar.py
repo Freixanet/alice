@@ -44,7 +44,7 @@ Formato, en este orden y sin títulos de sección vacíos:
 
 Cuando una novedad encaje con algo que sabes que le importa, dilo en pocas palabras («te lo cuento porque…»); es lo que hace útil un briefing frente a una lista.
 
-Entrégalo en tres partes separadas por una línea con solo `---`: el saludo del punto 1 con una frase tuya que presente el día; los puntos 2 a 4; y el punto 5 como cierre, breve y personal. Alice muestra la primera y la última como tus mensajes y lo del medio en su tarjeta.
+Entrégalo en tres partes separadas por una línea con solo `---`: el saludo del punto 1, una sola frase corta que avise de que ahí va su resumen de la mañana, sin análisis; los puntos 2 a 4; y el punto 5 como cierre, con lo que más le importa hoy, breve y personal. Alice muestra la primera y la última como tus mensajes y lo del medio en su tarjeta.
 
 Menos de 150 palabras. No inventes nada que no esté en los hechos o en tu memoria. Si no hay nada que merezca contarse, dilo en una frase amable y termina (sin `---`).
 
@@ -66,7 +66,7 @@ PROMPT_CIERRE = """Escribe el resumen de la noche de Marcos a partir de los hech
 2. **Mañana**: una línea con su agenda —el calendario y lo que él te dijo hoy que tiene mañana—, o «mañana lo tienes libre» si no hay nada. Si algo que te dijo no está en el calendario, debajo, sola: `[Añadir a tu calendario](alice://calendar/add?title=…&date=AAAA-MM-DD)` (con `time` si lo sabes).
 3. Una última línea tuya, con su tono de siempre: una idea concreta para mañana o, si el día fue tranquilo, algo breve para desconectar. Sin frases hechas ni «¿algo más?».
 
-Entrégalo en tres partes separadas por una línea con solo `---`: una frase tuya, cálida, que resuma su día; los puntos 1 y 2; y el punto 3 como cierre.
+Entrégalo en tres partes separadas por una línea con solo `---`: una frase corta y cálida que avise de que ahí va su cierre del día, sin análisis; los puntos 1 y 2; y el punto 3 como cierre.
 
 No inventes nada que no esté en los hechos o en tu memoria. No respondas [SILENT].
 
