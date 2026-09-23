@@ -488,7 +488,9 @@ private struct SidebarList: View, Equatable {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 240)
+            // Starts low, near the footer's buttons: at 240pt the recents
+            // were already fading halfway up the drawer.
+            .frame(height: 150)
         }
     }
 

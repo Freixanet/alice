@@ -520,6 +520,36 @@ private struct TranscriptView: View {
     /// The transcript's end as last measured, for decisions made a moment later.
     @State private var lastTail: Tail?
 
+    /// How many of the latest messages are always laid out (see the stack).
+    static let eagerTail = 12
+
+    private func transcriptRow(
+        _ message: Message, position: ChatTasks.Position?, latestBusy: Bool,
+        superseded: Bool, reaction: Reaction?
+    ) -> some View {
+        let busy = (position?.isLatest ?? false) && latestBusy
+        return MessageRow(
+            message: message,
+            showsActions: (position?.isLast ?? true) && !busy,
+            showsTime: (position?.isFirst ?? true) && !busy,
+            showsAuthor: position?.isFirst ?? true,
+            actionsContent: position?.text
+        )
+        .environment(\.replySuperseded, superseded)
+        .environment(\.givenReaction, reaction)
+        // A cited message, opened from its receipt, glows once.
+        .background {
+            RoundedRectangle(cornerRadius: 18)
+                .fill(store.accent.primary(scheme).opacity(highlighted == message.id ? 0.12 : 0))
+                .padding(.horizontal, -10)
+                .padding(.vertical, -8)
+                .allowsHitTesting(false)
+        }
+        // Parts of one task sit closer than separate messages.
+        .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
+        .id(message.id)
+    }
+
     /// Scrolls to a message a receipt pointed at, loading earlier pages if it
     /// is further back, and lights it for a moment.
     private func bringIntoView(_ focus: AppStore.FocusedMessage?, in presented: [Message]) {
@@ -611,29 +641,26 @@ private struct TranscriptView: View {
                     let lastAsked = messages.lastIndex { $0.role == .user && !Reactions.isReaction($0) }
                     let answered = Set(lastAsked.map { messages[..<$0].map(\.id) } ?? [])
                         .union(given.filter { $0.value == .no }.keys)
-                    ForEach(messages) { message in
-                        let position = positions[message.id]
-                        let busy = (position?.isLatest ?? false) && latestBusy
-                        MessageRow(
-                            message: message,
-                            showsActions: (position?.isLast ?? true) && !busy,
-                            showsTime: (position?.isFirst ?? true) && !busy,
-                            showsAuthor: position?.isFirst ?? true,
-                            actionsContent: position?.text
+                    // The latest turns are always laid out whole; older ones
+                    // lazily. A lazy stack moved to its end by code alone
+                    // guessed the heights of rows it had not drawn: a bot chat
+                    // opened blank, or ended at an older routine card with
+                    // the newer reports undrawn below, until the reader
+                    // scrolled. With the tail real, the end is where it looks.
+                    let tail = min(messages.count, Self.eagerTail)
+                    ForEach(messages.dropLast(tail)) { message in
+                        transcriptRow(
+                            message, position: positions[message.id], latestBusy: latestBusy,
+                            superseded: answered.contains(message.id), reaction: given[message.id]
                         )
-                        .environment(\.replySuperseded, answered.contains(message.id))
-                        .environment(\.givenReaction, given[message.id])
-                        // A cited message, opened from its receipt, glows once.
-                        .background {
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(store.accent.primary(scheme).opacity(highlighted == message.id ? 0.12 : 0))
-                                .padding(.horizontal, -10)
-                                .padding(.vertical, -8)
-                                .allowsHitTesting(false)
+                    }
+                    VStack(alignment: .leading, spacing: 34) {
+                        ForEach(messages.suffix(tail)) { message in
+                            transcriptRow(
+                                message, position: positions[message.id], latestBusy: latestBusy,
+                                superseded: answered.contains(message.id), reaction: given[message.id]
+                            )
                         }
-                        // Parts of one task sit closer than separate messages.
-                        .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
-                        .id(message.id)
                     }
                     if conversation.messages.contains(where: { $0.role == .user }) {
                         TipView(MessageActionsTip())

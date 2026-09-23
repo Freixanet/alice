@@ -95,38 +95,25 @@ struct MessageRow: View {
                 if let turn = ReactionTurn.parse(message.content) {
                     ReactionBubble(turn: turn)
                 } else if !message.content.isEmpty {
-                    // A tap shows the actions under it, as a reply's do; a
-                    // hold opens the menu. A menu only a long press reaches is
-                    // one most people never find — but a tap-opened SwiftUI
-                    // `Menu` crashed the app on a double tap: the second tap
-                    // made SwiftUI replace the menu while it was still
-                    // animating in, and UIKit aborted scrolling a list with no
-                    // rows yet (build 60).
-                    Button {
-                        withAnimation(.snappy(duration: 0.2)) { showingExtras.toggle() }
-                    } label: {
-                        // Only the named agent is emphasized; the bubble keeps one text colour.
-                        Text(store.mentionStyled(
-                            message.content,
-                            bareSlugs: message.mentionProfile.map { [$0] } ?? [],
-                            selectedRanges: message.selectedMentionRanges
-                        ))
-                            .foregroundStyle(.primary)
-                            .multilineTextAlignment(.leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
-                            .contentShape(.rect(cornerRadius: 18))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Shows actions. Hold for more.")
-                    .contentShape(.contextMenuPreview, .rect(cornerRadius: 18))
-                    .contextMenu { SentMessageMenu(message: message, selecting: $selectingText) }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    if showingExtras {
-                        SentMessageActions(message: message, selecting: $selectingText)
-                            .transition(.opacity)
-                    }
+                    // Only a hold opens its actions, as in Messages; a tap does
+                    // nothing. (A tap-opened SwiftUI `Menu` crashed on a double
+                    // tap in build 60, and a row of buttons under every sent
+                    // message on a tap was not wanted either.)
+                    // Only the named agent is emphasized; the bubble keeps one text colour.
+                    Text(store.mentionStyled(
+                        message.content,
+                        bareSlugs: message.mentionProfile.map { [$0] } ?? [],
+                        selectedRanges: message.selectedMentionRanges
+                    ))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
+                        .contentShape(.contextMenuPreview, .rect(cornerRadius: 18))
+                        .contextMenu { SentMessageMenu(message: message, selecting: $selectingText) }
+                        .accessibilityHint("Hold for actions.")
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             case .assistant:
                 // Ordinary turns are a conversation, not a log. A routine
@@ -660,64 +647,6 @@ private struct ActionIcon: View {
     /// drawn shape 0.63pt low. Everything else is centred as drawn.
     private static func inkDropBelowCentre(_ symbol: String) -> CGFloat {
         symbol == "square.and.arrow.up" ? 0.63 : 0
-    }
-}
-
-/// Tapping a message you sent: the same things holding it offers, as a row
-/// under it that lines up with its right edge, the way a reply's row lines up
-/// with its left.
-private struct SentMessageActions: View {
-    @Environment(AppStore.self) private var store
-    let message: Message
-    @Binding var selecting: Bool
-    @State private var copied = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Button {
-                UIPasteboard.general.string = message.content
-                MessageActionsTip().invalidate(reason: .actionPerformed)
-                copied = true
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    copied = false
-                }
-            } label: {
-                ActionIcon(copied ? "checkmark" : "square.on.square", slot: 16.67)
-            }
-            .accessibilityLabel(copied ? "Copied" : "Copy")
-
-            // Only the latest message: Hermes can replace the last exchange
-            // and nothing before it.
-            if store.canEdit(message) {
-                Button {
-                    store.beginEditing(message)
-                    MessageActionsTip().invalidate(reason: .actionPerformed)
-                } label: {
-                    ActionIcon("pencil", slot: 12)
-                }
-                .accessibilityLabel("Edit")
-            }
-
-            Button {
-                selecting = true
-                MessageActionsTip().invalidate(reason: .actionPerformed)
-            } label: {
-                ActionIcon("text.cursor", slot: 15.67)
-            }
-            .accessibilityLabel("Select Text")
-
-            ShareLink(item: message.content, preview: SharePreview("Prompt")) {
-                ActionIcon("square.and.arrow.up", slot: 14)
-            }
-            .accessibilityLabel("Share Prompt")
-        }
-        // The mirror of a reply's row: the last glyph's ink on the bubble's
-        // right edge rather than its slot's.
-        .padding(.trailing, -ActionIcon.gap / 2)
-        .foregroundStyle(.secondary)
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
