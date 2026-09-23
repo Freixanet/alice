@@ -716,6 +716,13 @@ private struct TranscriptView: View {
                 bringIntoView(focus, in: presented)
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
+            // While the reader is at the end, the end stays put as the lazy
+            // rows draw and change the height: the transcript opened at the
+            // end of a height guessed for undrawn rows (211,828pt for Radar)
+            // and shrank to 149,828pt within a second, leaving the view on
+            // empty space below the last message. Off while they read higher
+            // up, so what they are reading does not move.
+            .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
             // The transcript extends under the Dynamic Island. Soft fade
             // starts there, rather than clipping the reply at the header.
