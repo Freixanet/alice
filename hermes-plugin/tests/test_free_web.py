@@ -4,6 +4,8 @@
 """
 import asyncio
 import importlib.util
+import json
+import os
 import sys
 import types
 import unittest
@@ -41,6 +43,26 @@ class JinaTests(unittest.TestCase):
         self.assertIn("error", page)
 
 
+class ExaKeyedTests(unittest.TestCase):
+    def test_results_come_back_in_hermes_shape(self):
+        seen = {}
+
+        def fetch(request):
+            seen["key"] = request.get_header("X-api-key")
+            seen["body"] = json.loads(request.data)
+            reply = {"results": [{"url": "https://a", "title": "A", "text": "uno\n dos"}, {"title": "no url"}]}
+            return 200, json.dumps(reply).encode()
+
+        result = free_web.exa_search_keyed("q", 50, "secret", fetch=fetch)
+        self.assertEqual(seen["key"], "secret")
+        self.assertEqual(seen["body"]["numResults"], 10)
+        self.assertEqual(result, {"success": True, "data": {"web": [{"url": "https://a", "title": "A", "description": "uno dos"}]}})
+
+    def test_an_http_error_is_an_answer(self):
+        result = free_web.exa_search_keyed("q", 5, "k", fetch=lambda _r: (429, b"{}"))
+        self.assertEqual(result, {"success": False, "error": "Exa: HTTP 429"})
+
+
 class ProviderTests(unittest.TestCase):
     def setUp(self):
         # Stand-ins for Hermes' modules, so the test runs without Hermes.
@@ -54,10 +76,36 @@ class ProviderTests(unittest.TestCase):
             "agent": types.ModuleType("agent"), "agent.web_search_provider": base,
         })
         self.modules.start()
+        # No key unless a test sets one: the machine running this may have one.
+        self.env = mock.patch.dict(os.environ, {"EXA_API_KEY": ""})
+        self.env.start()
         self.provider = free_web._build_provider_class()()
 
     def tearDown(self):
+        self.env.stop()
         self.modules.stop()
+
+    def test_own_key_is_used_before_the_keyless_endpoint(self):
+        hits = {"success": True, "data": {"web": [{"url": "https://k", "title": "K", "description": ""}]}}
+        with mock.patch.dict(os.environ, {"EXA_API_KEY": "k"}), \
+                self._keyless({"success": True, "data": {"web": [{"url": "https://free"}]}}), \
+                mock.patch.object(free_web, "exa_search_keyed", return_value=hits) as keyed:
+            self.assertEqual(self.provider.search("q", 5), hits)
+        keyed.assert_called_once_with("q", 5, "k")
+
+    def test_a_failing_key_still_tries_the_keyless_endpoint(self):
+        free = {"success": True, "data": {"web": [{"url": "https://free"}]}}
+        with mock.patch.dict(os.environ, {"EXA_API_KEY": "k"}), self._keyless(free), \
+                mock.patch.object(free_web, "exa_search_keyed", return_value={"success": False, "error": "Exa: HTTP 401"}):
+            self.assertEqual(self.provider.search("q", 5), free)
+
+    def test_dead_search_says_how_to_fix_it(self):
+        limited = {"success": False, "error": "You've hit Exa's free MCP rate limit."}
+        with self._keyless(limited), mock.patch.object(free_web, "RETRY_PAUSE", 0), \
+                mock.patch.object(free_web, "_paid_provider", return_value=None):
+            result = self.provider.search("q", 5)
+        self.assertFalse(result["success"])
+        self.assertIn("EXA_API_KEY", result["error"])
 
     def _keyless(self, result):
         module = types.ModuleType("plugins.web.keyless_mcp")
