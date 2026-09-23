@@ -601,6 +601,9 @@ private struct TranscriptView: View {
         let near: Bool
         /// Nothing left underneath the composer.
         let atEnd: Bool
+        /// Scrolled beyond the end: the transcript shrank under the reader,
+        /// and what is on screen is empty space below the last message.
+        var past = false
     }
 
     /// How many messages are laid out at a time, and added per "earlier".
@@ -739,10 +742,23 @@ private struct TranscriptView: View {
                 return Tail(
                     contentHeight: geometry.contentSize.height.rounded(),
                     viewportHeight: geometry.containerSize.height.rounded(),
-                    near: below < 120, atEnd: below < 2
+                    near: below < 120, atEnd: below < 2, past: below < -40
                 )
             } action: { old, tail in
                 lastTail = tail
+                // Past the end with nobody holding it: a lazy stack opens at
+                // the end of the height it estimated for rows it had not
+                // drawn, then shrinks as they draw, and the chat sat on empty
+                // space below its last message until the reader scrolled.
+                // The follow rule below waits for content to *grow*.
+                if tail.past, !readerScrolling {
+                    DiagnosticsLog.write("transcript.past content=\(Int(tail.contentHeight)) viewport=\(Int(tail.viewportHeight))")
+                    Task { @MainActor in
+                        guard !readerScrolling, lastTail?.past == true else { return }
+                        position.scrollTo(edge: .bottom)
+                    }
+                    return
+                }
                 if tail.near { settled = true }
                 let grew = tail.contentHeight != old.contentHeight
                     || tail.viewportHeight != old.viewportHeight
