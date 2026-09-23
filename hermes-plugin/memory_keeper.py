@@ -47,7 +47,7 @@ DIR = Path(".alice") / "memory"
 TARGETS = ("memory", "user")
 # Who wrote an entry. Never touched by cleanup: the person's own words.
 PROTECTED = frozenset({"hand", "person"})
-SOURCES = frozenset({"agent", "person", "hand", "legacy", "cleanup"})
+SOURCES = frozenset({"agent", "person", "hand", "legacy", "cleanup", "learned"})
 MAX_CHANGES = 500
 
 
@@ -83,6 +83,11 @@ class HermesFiles:
 
     def add(self, target: str, text: str) -> Optional[str]:
         result = self.store.add(target, text)
+        return None if result.get("success") else str(result.get("error") or "Memory write failed")
+
+    def replace(self, target: str, old: str, new: str) -> Optional[str]:
+        # ``old`` is always a whole entry: Hermes replaces the entry that contains it.
+        result = self.store.replace(target, old, new)
         return None if result.get("success") else str(result.get("error") or "Memory write failed")
 
 
@@ -190,11 +195,22 @@ class Keeper:
 
     def settings(self) -> Dict[str, Any]:
         data = self._read("settings.json", {})
-        return {"apply": bool(data.get("apply")) if isinstance(data, dict) else False}
+        data = data if isinstance(data, dict) else {}
+        # Cleanup only proposes until turned on; learning what the person said is on.
+        return {"apply": bool(data.get("apply")), "learn": data.get("learn") is not False}
+
+    def _set(self, **values) -> Dict[str, Any]:
+        data = self._read("settings.json", {})
+        data = data if isinstance(data, dict) else {}
+        data.update({k: bool(v) for k, v in values.items()}, changed_at=self.now())
+        self._write("settings.json", data)
+        return self.settings()
 
     def set_apply(self, apply: bool) -> Dict[str, Any]:
-        self._write("settings.json", {"apply": bool(apply), "changed_at": self.now()})
-        return self.settings()
+        return self._set(apply=apply)
+
+    def set_learn(self, learn: bool) -> Dict[str, Any]:
+        return self._set(learn=learn)
 
     def changes(self, limit: int = 100) -> List[Dict[str, Any]]:
         rows = self._read("changes.json", [])
@@ -346,9 +362,39 @@ class Keeper:
         change = {"id": proposal["id"], "at": self.now(), "kind": proposal["kind"], "target": target,
                   "reason": proposal["reason"], "removed": removed, "kept": proposal.get("keep"),
                   "reverted_at": None}
+        self._log(change)
+        return change
+
+    def _log(self, change: Dict[str, Any]) -> None:
         rows = self._read("changes.json", [])
         rows = (rows if isinstance(rows, list) else []) + [change]
         self._write("changes.json", rows[-MAX_CHANGES:])
+
+    def learn(self, target: str, text: str, *, replaces: Optional[str] = None, evidence: str = "",
+              session: str = "", profile: str = "") -> Optional[Dict[str, Any]]:
+        """Keeps a fact the person stated in a conversation (``memory_review``), replacing
+        the entry it updates unless the person wrote that one themselves."""
+        text = (text or "").strip()
+        if target not in TARGETS or not text:
+            return None
+        rows = {row["text"]: row for row in self.scan(target)}
+        if any(normalized(t) == normalized(text) for t in rows):
+            return None
+        old = rows.get(replaces) if replaces else None
+        if replaces and (old is None or old["source"] in PROTECTED):
+            return None
+        error = self.files.replace(target, old["text"], text) if old else self.files.add(target, text)
+        if error:
+            return None
+        meta = self._meta()
+        removed = [{"text": old["text"], "meta": meta["entries"].get(f"{target}:{old['id']}")}] if old else []
+        self.record(target, text, "learned", session=session, profile=profile)
+        change = {"id": hashlib.sha256(f"{target}|learned|{entry_id(text)}|{self.now()}".encode()).hexdigest()[:12],
+                  "at": self.now(), "kind": "learned", "target": target,
+                  "reason": "Lo dijiste en una conversación.", "removed": removed,
+                  "added": {"id": entry_id(text), "text": text, "evidence": evidence},
+                  "session": session or None, "reverted_at": None}
+        self._log(change)
         return change
 
     def revert(self, change_id: str) -> Dict[str, Any]:
@@ -361,6 +407,11 @@ class Keeper:
         if change.get("reverted_at"):
             return change
         target = change["target"]
+        added = change.get("added")
+        if added:
+            error = self.files.remove(target, added["text"])
+            if error and added["text"] in self.files.entries(target):
+                raise RuntimeError(error)
         meta = self._meta()
         for item in change["removed"]:
             error = self.files.add(target, item["text"])

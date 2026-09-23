@@ -135,7 +135,9 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_hook.assert_any_call("post_tool_call", self.plugin._post_tool_call)
         # And the shared browser is started before an agent browses.
         ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._browser_ready)
-        self.assertEqual(ctx.register_hook.call_count, 3)
+        # And a paused conversation is read for what the person said and nobody kept.
+        ctx.register_hook.assert_any_call("on_session_end", self.plugin._schedule_memory_review)
+        self.assertEqual(ctx.register_hook.call_count, 4)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
         self.assertEqual(ctx.register_system_prompt_section.call_count, 2)

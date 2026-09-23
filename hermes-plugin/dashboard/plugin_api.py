@@ -817,14 +817,23 @@ class _MaintenanceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     profile: str = "default"
-    apply: bool
+    apply: Optional[bool] = None
+    learn: Optional[bool] = None
 
 
 @router.put("/memory/maintenance")
 async def memory_maintenance_settings(body: _MaintenanceSettings) -> JSONResponse:
-    """Cleanup only proposes until this is turned on."""
+    """Cleanup only proposes until ``apply`` is turned on; ``learn`` (on by default) keeps
+    what the person said about themselves in a conversation that no agent saved."""
     name = await asyncio.to_thread(_known_profile, body.profile)
-    await asyncio.to_thread(lambda: _with_keeper(name, lambda k: k.set_apply(body.apply)))
+
+    def update(keeper):
+        if body.apply is not None:
+            keeper.set_apply(body.apply)
+        if body.learn is not None:
+            keeper.set_learn(body.learn)
+
+    await asyncio.to_thread(lambda: _with_keeper(name, update))
     return JSONResponse(await asyncio.to_thread(_maintenance, name), headers=_NO_STORE)
 
 
