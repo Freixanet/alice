@@ -153,7 +153,8 @@ struct MessageRow: View {
                     // far as the chat shows — nothing is "Thinking" meanwhile.
                     if store.pendingHomeModelConfirmation?.replyID != message.id,
                        (working && !writing && !store.activeAwaitsAnswers)
-                        || !ToolCaption.steps(in: message.tools).isEmpty {
+                        || !ToolCaption.steps(in: message.tools).isEmpty
+                        || message.reasoning?.isEmpty == false {
                         ThinkingTrace(
                             steps: message.tools,
                             pending: working && !writing && message.approval == nil
@@ -162,7 +163,8 @@ struct MessageRow: View {
                             thoughtSeconds: message.thoughtSeconds,
                             startedAt: message.createdAt,
                             seed: ToolCaption.seed(message.id),
-                            status: message.lastStatus
+                            status: message.lastStatus,
+                            reasoning: message.reasoning
                         )
                     }
 
@@ -813,8 +815,12 @@ enum ToolCaption {
             guard let elapsed else { return "Thinking" }
             return musing(elapsed: elapsed, seed: seed)
         }
-        guard let thoughtSeconds, thoughtSeconds >= 1 else { return "Thought for a moment" }
-        return "Thought for \(thoughtSeconds) second\(thoughtSeconds == 1 ? "" : "s")"
+        guard let thoughtSeconds, thoughtSeconds >= 1 else { return String(localized: "Thought for a moment") }
+        // "Thought for 53s", "Thought for 2m 5s".
+        let span = thoughtSeconds < 60 ? "\(thoughtSeconds)s"
+            : thoughtSeconds % 60 == 0 ? "\(thoughtSeconds / 60)m"
+            : "\(thoughtSeconds / 60)m \(thoughtSeconds % 60)s"
+        return String(localized: "Thought for \(span)")
     }
 
     /// Ways of saying "thinking" that a person waiting can smile at. Plain

@@ -221,6 +221,9 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var routinePart: RoutinePart? = nil
     /// The delivery the part belongs to, so its parts read as one message.
     var routineGroup: String? = nil
+    /// The model's own reasoning for this reply, when Hermes sent it
+    /// (`display.show_reasoning`). Shown only inside the closed trace.
+    var reasoning: String? = nil
 
     enum RoutinePart: String, Hashable, Sendable, Codable {
         case opening, card, closing, quiet
@@ -276,6 +279,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         plan = try box.decodeIfPresent(TaskPlan.self, forKey: .plan)
         routinePart = try box.decodeIfPresent(RoutinePart.self, forKey: .routinePart)
         routineGroup = try box.decodeIfPresent(String.self, forKey: .routineGroup)
+        reasoning = try box.decodeIfPresent(String.self, forKey: .reasoning)
     }
 
     init(
@@ -474,6 +478,8 @@ enum ChatEvent: Sendable {
     case status(String)
     /// The agent's plan for the task changed (`TaskPlan`).
     case plan(TaskPlanChange)
+    /// The model's reasoning: a streamed piece, or a whole block.
+    case reasoning(String, block: Bool)
 }
 
 /// Whether two stretches of a turn are the same words, so an interim

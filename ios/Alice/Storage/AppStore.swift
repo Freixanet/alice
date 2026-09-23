@@ -7661,6 +7661,11 @@ final class AppStore {
                 name: name, status: .done,
                 detail: Self.toolDetail(from: event.payload)
             )
+        case "reasoning.delta", "reasoning.available":
+            guard let text = (event.payload["text"] as? String) ?? (event.payload["delta"] as? String),
+                  !text.isEmpty
+            else { return nil }
+            return .reasoning(text, block: event.type == "reasoning.available")
         case "todo.updated":
             // The whole plan after every change; a bot chat's `todo` args
             // are not read, so the two never race.
@@ -7750,12 +7755,12 @@ final class AppStore {
     nonisolated static let knownSocketEventTypes: Set<String> = [
         // Handled.
         "message.delta", "message.complete", "message.interim", "tool.start", "tool.complete",
-        "todo.updated",
+        "todo.updated", "reasoning.delta", "reasoning.available",
         "approval.request", "clarify.request", "error", "request.cancel",
         "subagent.start", "subagent.complete", "status.update",
         // Known and let pass.
         "message.start", "message.user", "message.react",
-        "reasoning.delta", "reasoning.available", "notification.show", "notification.clear",
+        "notification.show", "notification.clear",
         "session.info", "session.status", "session.reclaimed", "session.redirect",
         "session.resume_progress", "usage.bars",
         "tool.generating", "tool.output_risk", "turn.start", "turn.end", "turn.error",
@@ -9159,6 +9164,19 @@ final class AppStore {
                 tools.append(.init(id: toolID, name: name, status: status, detail: detail))
             }
             conversations[chat].messages[index].tools = tools
+
+        case let .reasoning(text, block):
+            var reasoning = conversations[chat].messages[index].reasoning ?? ""
+            if block {
+                // A whole block: once, even when its pieces already streamed.
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, !reasoning.contains(trimmed) {
+                    reasoning += (reasoning.isEmpty ? "" : "\n\n") + trimmed
+                }
+            } else {
+                reasoning += text
+            }
+            conversations[chat].messages[index].reasoning = reasoning
 
         case let .plan(change):
             // One plan per task, on its newest reply: narration sealed into

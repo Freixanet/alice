@@ -159,6 +159,14 @@ struct BotChatSync: Sendable {
             guard message.role == .assistant, message.pending || message.awaitingRemote else { return nil }
             return message.replyToMessageID
         })
+        // The reasoning streamed to this phone is not in the agent's rows:
+        // it stays with the turn it belonged to.
+        for message in local {
+            if let remoteID = message.remoteID, let reasoning = message.reasoning,
+               byRemoteID[remoteID] != nil, byRemoteID[remoteID]?.reasoning == nil {
+                byRemoteID[remoteID]?.reasoning = reasoning
+            }
+        }
         var carried: [Message] = []
         for message in local {
             if let remoteID = message.remoteID, byRemoteID[remoteID] != nil { continue }
@@ -176,6 +184,9 @@ struct BotChatSync: Sendable {
             if message.role == .user, remoteCopyByLocalID[message.id] != nil { continue }
             if let copy = persistedCopy(of: message, in: remote, excluding: claimed) {
                 claimed.insert(copy)
+                if let reasoning = message.reasoning, byRemoteID[copy]?.reasoning == nil {
+                    byRemoteID[copy]?.reasoning = reasoning
+                }
                 continue
             }
             var kept = message

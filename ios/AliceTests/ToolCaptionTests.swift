@@ -127,12 +127,20 @@ final class ToolCaptionTests: XCTestCase {
 
     func testAFinishedReplySaysWhatItTook() {
         XCTAssertEqual(
-            ToolCaption.headline(pending: false, note: nil, thoughtSeconds: 4),
-            "Thought for 4 seconds"
+            ToolCaption.headline(pending: false, note: nil, thoughtSeconds: 53),
+            "Thought for 53s"
         )
         XCTAssertEqual(
             ToolCaption.headline(pending: false, note: nil, thoughtSeconds: 1),
-            "Thought for 1 second"
+            "Thought for 1s"
+        )
+        XCTAssertEqual(
+            ToolCaption.headline(pending: false, note: nil, thoughtSeconds: 125),
+            "Thought for 2m 5s"
+        )
+        XCTAssertEqual(
+            ToolCaption.headline(pending: false, note: nil, thoughtSeconds: 120),
+            "Thought for 2m"
         )
     }
 

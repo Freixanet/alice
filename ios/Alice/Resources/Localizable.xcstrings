@@ -4641,6 +4641,16 @@
         }
       }
     },
+    "Hides how it got there": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oculta cómo llegó a la respuesta"
+          }
+        }
+      }
+    },
     "History & usage": {
       "localizations": {
         "es": {
@@ -7611,6 +7621,16 @@
         }
       }
     },
+    "Reasoning: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Razonamiento: %@"
+          }
+        }
+      }
+    },
     "Receiver": {
       "localizations": {
         "es": {
@@ -9201,6 +9221,16 @@
         }
       }
     },
+    "Shows how it got there": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muestra cómo llegó a la respuesta"
+          }
+        }
+      }
+    },
     "Sideload a GGUF already on the Mac": {
       "localizations": {
         "es": {
@@ -10157,6 +10187,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Este valor guardado se eliminará."
+          }
+        }
+      }
+    },
+    "Thought for %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pensó durante %@"
+          }
+        }
+      }
+    },
+    "Thought for a moment": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pensó un momento"
           }
         }
       }

@@ -85,6 +85,15 @@ enum HermesRunProtocol {
             guard let text = limitedText(object["delta"], max: 1_000_000) else { return [] }
             return [.delta(text)]
 
+        case "tool.progress":
+            // Hermes' runs carry each finished reasoning block as the
+            // progress of a pseudo-tool named `_thinking`.
+            guard bounded(object["tool"] ?? object["tool_name"], max: 256) == "_thinking",
+                  let text = limitedText(object["delta"] ?? object["preview"], max: 200_000),
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return [] }
+            return [.reasoning(text, block: true)]
+
         case "tool.started":
             guard let name = bounded(object["tool"] ?? object["tool_name"], max: 256)
             else { return [] }
