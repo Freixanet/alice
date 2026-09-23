@@ -126,6 +126,9 @@ struct MessageRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
+                        // Room from the agent's previous message and before the routine opens.
+                        .padding(.top, 16)
+                        .padding(.bottom, 6)
                         .accessibilityLabel(Text("Sent \(String(when.characters))"))
                 }
                 VStack(alignment: .leading, spacing: 10) {

@@ -23,6 +23,7 @@ evaluado. Todo comando imprime un JSON.
 Variables para pruebas: EVALS_HERMES_HOME, EVALS_DIR, EVALS_HERMES_BIN y
 EVALS_EUR_POR_USD (el coste que da Hermes es en dólares; el cambio es aproximado).
 """
+import fcntl
 import hashlib
 import json
 import os
@@ -33,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -325,7 +327,25 @@ def load_suite(agent: str) -> dict:
     return suite
 
 
+@contextmanager
+def sandbox_turn():
+    """One suite at a time: the sandbox holds a single agent's instructions, so a
+    second run waits here instead of syncing over the first one mid-suite."""
+    EVALS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(EVALS_DIR / ".sandbox.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 def cmd_ejecutar(args: dict) -> dict:
+    with sandbox_turn():
+        return run_suite(args)
+
+
+def run_suite(args: dict) -> dict:
     agent = args["posicional"]
     suite = load_suite(agent)
     requested = [t for t in (suite.get("toolsets") or DEFAULT_TOOLSETS)]
