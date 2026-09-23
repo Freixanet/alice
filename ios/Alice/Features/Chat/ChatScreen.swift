@@ -520,21 +520,25 @@ private struct TranscriptView: View {
     /// The transcript's end as last measured, for decisions made a moment later.
     @State private var lastTail: Tail?
 
-    /// How many of the latest messages are always laid out (see the stack):
-    /// enough to fill the screen at the end, and no more. A fixed twelve laid
-    /// out twelve long reports at once in an agent like Radar, and opening its
-    /// chat froze the phone for close to half a second.
-    static func eagerTail(_ messages: [Message]) -> Int {
-        var count = 0
+    /// Where the laid-out window starts: the latest messages, back to about
+    /// twelve thousand characters or fifteen messages — a few screens.
+    ///
+    /// The whole window is laid out for real. A lazy stack over eighty rows
+    /// opened at the end of heights it guessed for rows it had not drawn —
+    /// Radar's transcript measured 211,828pt, then shrank to 147,311pt as
+    /// rows drew — and the view was left on empty space below the last
+    /// message: an agent chat that opened blank. Anchors and scrolling after
+    /// it lost that race; not guessing is what fixes it. Earlier history
+    /// comes in the same sized steps from the button at the top.
+    static func windowStart(_ messages: [Message], before end: Int) -> Int {
+        var start = end
         var characters = 0
-        for message in messages.reversed() {
-            count += 1
-            // A reply of ~1,800 characters is about a screen of text; cards and
-            // short turns count as a few lines each.
-            characters += max(message.content.count, 160)
-            if count >= 8 || (count >= 3 && characters >= 1_800) { break }
+        while start > 0 {
+            start -= 1
+            characters += max(messages[start].content.count, 200)
+            if end - start >= 15 || characters >= 12_000 { break }
         }
-        return count
+        return start
     }
 
     private func transcriptRow(
@@ -572,7 +576,9 @@ private struct TranscriptView: View {
         else { return }
         let target = presented[index].id
         store.focusedMessage = nil
-        shown = max(shown, presented.count - index)
+        let current = firstShownID.flatMap { id in presented.firstIndex { $0.id == id } }
+            ?? Self.windowStart(presented, before: presented.count)
+        if index < current { firstShownID = presented[index].id }
         following = false
         Task { @MainActor in
             // After the page that holds it is laid out.
@@ -606,9 +612,9 @@ private struct TranscriptView: View {
         var past = false
     }
 
-    /// How many messages are laid out at a time, and added per "earlier".
-    private static let page = 80
-    @State private var shown = TranscriptView.page
+    /// The first message laid out (`windowStart`), kept by id so a reply
+    /// arriving does not push what is being read out at the top.
+    @State private var firstShownID: String?
 
     private var presentedMessages: [Message] {
         RoutineDelivery.present(
@@ -620,20 +626,23 @@ private struct TranscriptView: View {
         // Read once per redraw: presenting walks the whole history, and the
         // page, the count above it and the rows each asked for it again.
         let presented = presentedMessages
-        let hiddenCount = max(0, presented.count - shown)
-        let messages = Array(presented.suffix(shown))
+        let start = firstShownID.flatMap { id in presented.firstIndex { $0.id == id } }
+            ?? Self.windowStart(presented, before: presented.count)
+        let hiddenCount = start
+        let messages = Array(presented[start...])
         GeometryReader { area in
             ScrollView {
-                // Bounded pages of messages, laid out lazily so a Radar report
-                // does not force every visible row to measure at once. Earlier
-                // history still loads with the button below — a years-long chat
-                // is never all in the view.
-                LazyVStack(alignment: .leading, spacing: 34) {
+                // A bounded window of the latest messages, laid out for real
+                // (`windowStart`). Earlier history loads with the button below
+                // — a years-long chat is never all in the view.
+                VStack(alignment: .leading, spacing: 34) {
                     if hiddenCount > 0 {
+                        let earlier = Self.windowStart(presented, before: start)
                         Button {
-                            shown += Self.page
+                            following = false
+                            firstShownID = presented[earlier].id
                         } label: {
-                            Text("Show \(min(hiddenCount, Self.page)) earlier messages")
+                            Text("Show \(start - earlier) earlier messages")
                                 .font(.footnote.weight(.medium))
                                 .padding(.horizontal, 14)
                                 .frame(height: 36)
@@ -658,26 +667,11 @@ private struct TranscriptView: View {
                     let lastAsked = messages.lastIndex { $0.role == .user && !Reactions.isReaction($0) }
                     let answered = Set(lastAsked.map { messages[..<$0].map(\.id) } ?? [])
                         .union(given.filter { $0.value == .no }.keys)
-                    // The latest turns are always laid out whole; older ones
-                    // lazily. A lazy stack moved to its end by code alone
-                    // guessed the heights of rows it had not drawn: a bot chat
-                    // opened blank, or ended at an older routine card with
-                    // the newer reports undrawn below, until the reader
-                    // scrolled. With the tail real, the end is where it looks.
-                    let tail = Self.eagerTail(messages)
-                    ForEach(messages.dropLast(tail)) { message in
+                    ForEach(messages) { message in
                         transcriptRow(
                             message, position: positions[message.id], latestBusy: latestBusy,
                             superseded: answered.contains(message.id), reaction: given[message.id]
                         )
-                    }
-                    VStack(alignment: .leading, spacing: 34) {
-                        ForEach(messages.suffix(tail)) { message in
-                            transcriptRow(
-                                message, position: positions[message.id], latestBusy: latestBusy,
-                                superseded: answered.contains(message.id), reaction: given[message.id]
-                            )
-                        }
                     }
                     if conversation.messages.contains(where: { $0.role == .user }) {
                         TipView(MessageActionsTip())
@@ -712,6 +706,13 @@ private struct TranscriptView: View {
             }
             .scrollIndicators(.hidden)
             .scrollPosition($position)
+            .onAppear {
+                // Pinned once, so replies arriving later extend the window
+                // at the bottom instead of sliding it.
+                if firstShownID == nil, !presented.isEmpty {
+                    firstShownID = presented[Self.windowStart(presented, before: presented.count)].id
+                }
+            }
             .onChange(of: store.focusedMessage, initial: true) { _, focus in
                 bringIntoView(focus, in: presented)
             }
