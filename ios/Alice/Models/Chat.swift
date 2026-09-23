@@ -209,6 +209,9 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var slashChoices: [SlashChoice] = []
     /// `/model` opens the model screen. A catalogue does not belong in the transcript.
     var offersModelChoice: Bool = false
+    /// The steps the agent set itself for this task (`TaskPlan`), on the
+    /// newest reply of the task only.
+    var plan: TaskPlan? = nil
 
     /// A model catalogue was stored as one chip per model. Those replies open
     /// the picker instead of painting the chat with buttons.
@@ -256,6 +259,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         usage = try box.decodeIfPresent(MessageUsage.self, forKey: .usage)
         slashChoices = try box.decodeIfPresent([SlashChoice].self, forKey: .slashChoices) ?? []
         offersModelChoice = try box.decodeIfPresent(Bool.self, forKey: .offersModelChoice) ?? false
+        plan = try box.decodeIfPresent(TaskPlan.self, forKey: .plan)
     }
 
     init(
@@ -450,6 +454,8 @@ enum ChatEvent: Sendable {
     case interim(String)
     /// A live status line from Hermes (`status.update`).
     case status(String)
+    /// The agent's plan for the task changed (`TaskPlan`).
+    case plan(TaskPlanChange)
 }
 
 /// Whether two stretches of a turn are the same words, so an interim

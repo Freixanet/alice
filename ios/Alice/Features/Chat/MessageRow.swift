@@ -176,6 +176,11 @@ struct MessageRow: View {
                         )
                     }
 
+                    // What the agent set out to do, step by step (`TaskPlan`).
+                    if let plan = message.plan, plan.total > 0 {
+                        TaskPlanCard(plan: plan, working: working)
+                    }
+
                     if let routine = message.routineName {
                         let content = message.botName == "chollometro"
                             && routine == "Chollos del dia"

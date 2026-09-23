@@ -4016,6 +4016,12 @@ final class AppStore {
     /// Same words the chat row shows while this reply is under way.
     nonisolated static func activityHeadline(for chat: Conversation, now: Date = Date()) -> String {
         let reply = chat.messages.last(where: { $0.role == .assistant })
+        // With a plan, how far along it is: "Step 3 of 5". Never the step's
+        // own words — the Lock Screen is not the place for them.
+        if let plan = chat.messages.last(where: { $0.role == .assistant && $0.plan != nil })?.plan,
+           plan.total > 1, !plan.isFinished {
+            return String(localized: "Step \(min(plan.done + 1, plan.total)) of \(plan.total)")
+        }
         return ToolCaption.headline(
             pending: true,
             note: reply?.deliveryNote,
@@ -4777,6 +4783,30 @@ final class AppStore {
 
     func hermesFiles(path: String? = nil) async throws -> ManagedFilesListing {
         try await dashboard.managedFiles(path: path)
+    }
+
+    // Agent work lives behind the same authenticated dashboard as the rest of
+    // Alice's controls. Keep the screen independent of connection credentials.
+    func sharedBrowser() async throws -> SharedBrowserState { try await dashboard.sharedBrowser() }
+    func setSharedBrowser(on: Bool) async throws -> SharedBrowserState {
+        try await dashboard.setSharedBrowser(on: on)
+    }
+    func sharedBrowserFrame(after: Int, target: String?) async throws -> SharedBrowserFrame {
+        try await dashboard.sharedBrowserFrame(after: after, target: target)
+    }
+    func sharedBrowserInput(_ action: SharedBrowserAction, target: String?) async throws {
+        try await dashboard.sharedBrowserInput(action, target: target)
+    }
+    func pageWatches() async throws -> (service: PageWatchService, watches: [PageWatch]) {
+        try await dashboard.pageWatches()
+    }
+    func setUpPageWatches() async throws -> PageWatchService { try await dashboard.setUpPageWatches() }
+    func createPageWatch(url: String, kind: PageWatch.Kind, label: String, below: Double?, text: String) async throws {
+        try await dashboard.createPageWatch(url: url, kind: kind, label: label, below: below, text: text)
+    }
+    func deletePageWatch(_ id: String) async throws { try await dashboard.deletePageWatch(id) }
+    func uploadAgentDocument(name: String, data: Data) async throws -> String {
+        try await dashboard.uploadDocument(name: name, data: data)
     }
 
     func hermesFile(path: String) async throws -> ManagedFileContents {
@@ -7586,6 +7616,11 @@ final class AppStore {
                 name: name, status: .done,
                 detail: Self.toolDetail(from: event.payload)
             )
+        case "todo.updated":
+            // The whole plan after every change; a bot chat's `todo` args
+            // are not read, so the two never race.
+            guard let plan = TaskPlan.snapshot(event.payload) else { return nil }
+            return .plan(.snapshot(plan))
         case "status.update":
             if (event.payload["kind"] as? String) == "heartbeat" { return nil }
             let text = (event.payload["text"] as? String)
@@ -7670,13 +7705,14 @@ final class AppStore {
     nonisolated static let knownSocketEventTypes: Set<String> = [
         // Handled.
         "message.delta", "message.complete", "message.interim", "tool.start", "tool.complete",
+        "todo.updated",
         "approval.request", "clarify.request", "error", "request.cancel",
         "subagent.start", "subagent.complete", "status.update",
         // Known and let pass.
         "message.start", "message.user", "message.react",
         "reasoning.delta", "reasoning.available", "notification.show", "notification.clear",
         "session.info", "session.status", "session.reclaimed", "session.redirect",
-        "session.resume_progress", "todo.updated", "usage.bars",
+        "session.resume_progress", "usage.bars",
         "tool.generating", "tool.output_risk", "turn.start", "turn.end", "turn.error",
         "subagent.text", "subagent.thinking", "subagent.tool", "subagent.tail",
         "approval.pending", "approval.received", "model.context_length",
@@ -9030,6 +9066,23 @@ final class AppStore {
                 tools.append(.init(id: toolID, name: name, status: status, detail: detail))
             }
             conversations[chat].messages[index].tools = tools
+
+        case let .plan(change):
+            // One plan per task, on its newest reply: narration sealed into
+            // bubbles earlier in the task gives it up.
+            let replyTo = conversations[chat].messages[index].replyToMessageID
+            var current = conversations[chat].messages[index].plan ?? .empty
+            for other in conversations[chat].messages.indices where other != index {
+                let sameTask = conversations[chat].messages[other].replyToMessageID == replyTo
+                    && conversations[chat].messages[other].role == .assistant
+                if sameTask, let earlier = conversations[chat].messages[other].plan {
+                    if earlier.revision > current.revision { current = earlier }
+                    conversations[chat].messages[other].plan = nil
+                }
+            }
+            if let next = current.applying(change) {
+                conversations[chat].messages[index].plan = next
+            }
 
         case let .run(runID, status, output):
             conversations[chat].messages[index].runID = runID

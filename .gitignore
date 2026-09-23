@@ -33,3 +33,7 @@ __pycache__/
 
 # Xcode build output: xcodebuild -derivedDataPath ios/build writes here.
 ios/build/
+
+# Installed by hermes-plugin/install.sh
+hermes-plugin/vendor/
+.freebuff/

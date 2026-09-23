@@ -1,6 +1,6 @@
 name: alice
 version: 1.0.0
-description: "Connects the Alice iPhone app to this Hermes. Adds an Alice tab to the dashboard that shows a one-time pairing QR code, lets Alice read and edit each profile's curated memory and notes, creates and renames agents through a shared engine, and keeps the Business team talking only among itself (a pre_tool_call hook on message_agent). Gives a note-taking profile a toolset for its own notes store, so capturing a note is a tool call instead of a shell command. Agent Maker gets agent_create and agent_rename. The iPhone can upload a diagnostic dump; alice_app_status and alice_recent_errors read it. Serves a live reading of this Mac's CPU, memory, and the processes using them. Keeps a record of what each agent did with consequences (a post_tool_call hook) and serves it, with receipts from past conversations, to Alice's Activity. No commands or changes to Hermes' own code, so Hermes updates never collide with it."
+description: "Connects the Alice iPhone app to this Hermes. Adds an Alice tab to the dashboard that shows a one-time pairing QR code, lets Alice read and edit each profile's curated memory and notes, creates and renames agents through a shared engine, and keeps the Business team talking only among itself (a pre_tool_call hook on message_agent). Gives a note-taking profile a toolset for its own notes store, so capturing a note is a tool call instead of a shell command. Agent Maker gets agent_create and agent_rename. The iPhone can upload a diagnostic dump; alice_app_status and alice_recent_errors read it. Serves a live reading of this Mac's CPU, memory, and the processes using them. Watches pages for price, stock and changes (changedetection.io, installed on demand), fills PDF forms, adds up bank statements, and lets the iPhone watch and drive the agents' shared browser. Keeps a record of what each agent did with consequences (a post_tool_call hook) and serves it, with receipts from past conversations, to Alice's Activity. No commands or changes to Hermes' own code, so Hermes updates never collide with it."
 provides_tools:
   - note_add
   - note_file
@@ -21,6 +21,13 @@ provides_tools:
   - agent_rename
   - alice_app_status
   - alice_recent_errors
+  - calendar_events
+  - page_watch_create
+  - page_watch_list
+  - page_watch_delete
+  - pdf_form_read
+  - pdf_form_fill
+  - spending_summary
 provides_hooks:
   - pre_tool_call
   - post_tool_call

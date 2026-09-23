@@ -13,6 +13,8 @@ boundaries; it is not a promise that every deployment has passed live testing.
 | MCP / skills / tools        | Native management views                                                                                                                                                                   | Companion views                  | Individual management endpoints and configured integrations                     |
 | Notes                       | Native                                                                                                                                                                                    | No equivalent primary notes page | An agent's compatible inbox-store must exist                                    |
 | Memory / projects / files   | Native management                                                                                                                                                                         | Partial companion surfaces       | Dashboard/plugin contracts vary by feature                                      |
+| Page watches / documents    | Native setup, watch list and document upload                                                                                                                                              | No matching page                 | Alice plugin; changedetection.io installed on first use; pypdf for PDF forms    |
+| Shared browser              | Native live view and controls                                                                                                                                                             | No matching page                 | Alice plugin and a Chromium browser on the Hermes Mac                           |
 | Notifications               | Local + opportunistic background refresh; Live Activity for home and bot chats while Alice runs                                                                                           | Browser/session behavior         | iOS controls background execution; no always-on guarantee; no APNs              |
 | Share into chat             | Share extension hands Alice a paragraph or URL as a composer draft                                                                                                                        | No                               | Person sends; extension does not talk to Hermes                                 |
 | Encrypted conversation sync | Not a shared native sync implementation                                                                                                                                                   | Account-scoped E2EE              | Do not claim iOS/web cloud-sync parity                                          |
@@ -41,6 +43,9 @@ See [the detailed contract checklist](hermes-contracts.md).
   a version string or the ability to send a chat message.
 - The iOS share extension forwards text or one URL into the composer. It has not
   been live-tested from Safari on a physical iPhone in this change set.
+- The page watcher, document tools and shared browser have fixture tests and a
+  device build. Their operation against a live Hermes and real external pages
+  still needs a separate end-to-end check before release readiness is claimed.
 
 ## A fixture is not a client implementation
 
@@ -48,9 +53,9 @@ The source fixtures describe Hermes' advertised HTTP surface. They do not imply
 that Alice implements a separate client for every wire protocol. For example,
 `/v1/responses` is recorded in the fixture, while Alice's conversations use its
 chat, run and dashboard RPC transports. The browser-control registration/socket
-endpoints are also recorded, but Alice does not implement a device-browser bridge
-for them. Hermes can still use browser tools on its own host; that is a different
-execution surface.
+endpoints are also recorded, but Alice's shared browser uses the optional plugin's
+local Chromium connection instead of those Hermes endpoints. A fixture version
+does not validate that integration.
 
 Native dictation and read-aloud use the iOS speech interfaces. They do not imply
 support for a Hermes realtime-voice service: the checked static manifest marks

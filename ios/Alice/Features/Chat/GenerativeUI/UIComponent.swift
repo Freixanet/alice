@@ -20,6 +20,7 @@ enum UIComponent: Equatable, Sendable {
     /// A month drawn from the person's own calendar on this phone.
     case calendar(month: String?)
     case article(Article)
+    case spending(Spending)
 
     struct Place: Equatable, Sendable, Identifiable {
         var id: String { title + (query ?? "") }
@@ -82,6 +83,22 @@ enum UIComponent: Equatable, Sendable {
         let title: String
         let image: URL?
         let sections: [Section]
+    }
+
+    struct Spending: Equatable, Sendable {
+        struct Category: Equatable, Sendable, Identifiable {
+            var id: String { name }
+            let name: String
+            let amount: Double
+        }
+
+        let income: Double
+        let spent: Double
+        let net: Double
+        let currency: String
+        let from: String?
+        let to: String?
+        let categories: [Category]
     }
 
     /// The fence languages an agent may use.
@@ -148,6 +165,20 @@ enum UIComponent: Equatable, Sendable {
                 return Article.Section(heading: Self.string(row["heading"]), text: text)
             }
             self = .article(Article(title: title, image: Self.url(object["image"]), sections: sections))
+        case "spending":
+            guard let income = Self.number(object["income"]), income.isFinite,
+                  let spent = Self.number(object["spent"]), spent.isFinite,
+                  let net = Self.number(object["net"]), net.isFinite
+            else { return nil }
+            let categories = ((object["categories"] as? [[String: Any]]) ?? []).compactMap { row -> Spending.Category? in
+                guard let name = Self.string(row["name"]), let amount = Self.number(row["amount"]), amount.isFinite
+                else { return nil }
+                return Spending.Category(name: name, amount: amount)
+            }
+            self = .spending(Spending(income: income, spent: spent, net: net,
+                                      currency: Self.string(object["currency"]) ?? "EUR",
+                                      from: Self.string(object["from"]), to: Self.string(object["to"]),
+                                      categories: categories))
         default:
             return nil
         }

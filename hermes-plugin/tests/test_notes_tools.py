@@ -223,6 +223,9 @@ class NotesToolsTests(unittest.TestCase):
                 [t[0] for t in self.plugin.NOTE_TOOLS]
                 + [t[0] for t in self.plugin.AGENT_TOOLS]
                 + [t[0] for t in self.plugin.DEBUG_TOOLS]
+                + [t[0] for t in self.plugin.CALENDAR_TOOLS]
+                + [t[0] for t in self.plugin.WATCH_TOOLS]
+                + [t[0] for t in self.plugin.DOCUMENT_TOOLS]
             ),
         )
 

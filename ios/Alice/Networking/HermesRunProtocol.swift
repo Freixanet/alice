@@ -90,14 +90,17 @@ enum HermesRunProtocol {
             else { return [] }
             let callID = bounded(object["call_id"] ?? object["tool_call_id"], max: 160)
                 ?? "\(runID):\(name)"
-            return [
-                .tool(
-                    id: callID,
-                    name: name,
-                    status: .start,
-                    detail: bounded(object["preview"], max: 8_000)
-                )
-            ]
+            let started = ChatEvent.tool(
+                id: callID,
+                name: name,
+                status: .start,
+                detail: bounded(object["preview"], max: 8_000)
+            )
+            // A run carries the plan only as the `todo` call's arguments.
+            if TaskPlan.isTodoTool(name), let change = TaskPlan.call(object["args"]) {
+                return [started, .plan(change)]
+            }
+            return [started]
 
         case "tool.completed", "tool.failed":
             guard let name = bounded(object["tool"] ?? object["tool_name"], max: 256)

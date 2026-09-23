@@ -29,6 +29,27 @@ Si el complemento Alice está en el panel de Hermes:
 
 El ordenador debe seguir encendido y accesible.
 
+## Trabajo de los agentes
+
+Con el complemento Alice y el panel conectados, abre **Settings → Agent work**
+en el iPhone:
+
+- **Page watches:** activa la vigilancia la primera vez y añade una página.
+  En el Mac se instala `changedetection.io` en un entorno separado. Elige si
+  quieres saber de una bajada de precio, una reposición, un texto o cualquier
+  cambio. Puedes detener cada vigilancia desde su fila.
+- **Shared browser:** inicia un navegador Chromium compartido en el Mac.
+  Podrás ver su página, tocarla, escribir y desplazarte desde el iPhone. Al
+  apagarlo, Alice restaura la configuración anterior de los agentes.
+- **Documents:** elige un PDF o CSV. Alice lo copia al Mac y muestra la ruta
+  que puedes pegar en el chat para pedir que lo lea o lo complete. Revisa
+  siempre el PDF resultante antes de firmarlo o enviarlo.
+
+Estas funciones necesitan el panel además del servicio de chat. La vigilancia
+se instala solo cuando la activas; requiere que el Mac esté encendido y tenga
+acceso a las páginas vigiladas. El navegador compartido requiere Chrome u otro
+navegador Chromium instalado en el Mac.
+
 ### Instalar el complemento (un comando)
 
 Desde una copia de este repositorio, en la máquina que ejecuta Hermes:

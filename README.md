@@ -59,6 +59,8 @@ phone's language setting chooses which one you see.
 - **Organize:** conversation history, pinned chats, projects, library and notes where supported.
 - **Share into chat:** the iOS share sheet hands Alice a paragraph or a link as a draft. You send it.
 - **Run routines:** manage scheduled work and review activity.
+- **Keep an eye on pages:** set a price, stock, text or change watch in Settings → Agent work. The optional watcher runs on your Hermes Mac.
+- **Work with files and a shared browser:** give agents a PDF or bank statement, or watch and control their browser from Settings → Agent work. These require the Alice dashboard plugin.
 - **Configure:** everyday settings first; models, skills and Hermes administration one level deeper.
 
 Availability depends on your Hermes installation and its management endpoints.

@@ -582,10 +582,10 @@ def calendar_events_tool(args=None) -> str:
 
 CALENDAR_TOOLS = (
     ("calendar_events", "📅",
-     "Marc's calendar, as his iPhone last sent it (read-only). Always returns `status`: "
-     "`connected` with the events in the window asked for; `not_connected` when he has not "
-     "connected it; `declined` when he said not now. Call it before answering anything about "
-     "his schedule, plans, free time, meetings or trips.",
+     "The person's calendar, as their iPhone last sent it (read-only). Always returns `status`: "
+     "`connected` with the events in the window asked for; `not_connected` when they have not "
+     "connected it; `declined` when they said not now. Call it before answering anything about "
+     "their schedule, plans, free time, meetings or trips.",
      ({"days_ahead": {"type": "number", "description": "How many days ahead to include (default 7, at most 60)."},
        "days_back": {"type": "number", "description": "How many days back to include (default 0)."}}, []),
      calendar_events_tool),
@@ -603,8 +603,131 @@ def _register_calendar_tools(ctx) -> None:
         )
 
 
+# ── Page watches, PDF forms, spending, and the shared browser ──────────────────────
+
+
+def _module(filename: str, name: str):
+    import importlib.util
+    import sys
+
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / filename)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _watch():
+    return _module("page_watch.py", "alice_page_watch")
+
+
+def _documents():
+    return _module("documents.py", "alice_documents")
+
+
+def _browser():
+    return _module("browser_live.py", "alice_browser_live")
+
+
+def _hermes_root() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return _root_and_sender(Path(get_hermes_home()))[0]
+
+
+def _tool(call):
+    """A handler that answers JSON and never raises: failures are the agent's to explain."""
+    def handler(args=None, **_):
+        try:
+            return _agent_json({"ok": True, **call(args or {})})
+        except Exception as exc:  # noqa: BLE001
+            return _agent_json({"ok": False, "error": str(exc) or type(exc).__name__})
+    return handler
+
+
+def _watch_create(a):
+    from hermes_constants import get_hermes_home
+
+    root, profile = _root_and_sender(Path(get_hermes_home()))
+    below = a.get("below")
+    return {"watch": _watch().create(
+        root, url=str(a.get("url") or ""), kind=str(a.get("kind") or "change"), label=str(a.get("label") or ""),
+        below=float(below) if below not in (None, "") else None, text=str(a.get("text") or ""),
+        every_minutes=int(a.get("every_minutes") or 60), profile=profile)}
+
+
+WATCH_TOOLS = (
+    ("page_watch_create", "👀",
+     "Watch a public web page for the person and tell them when something happens, without them asking again. "
+     "kind: `price` (tell when the price drops, or with `below` when it is at or under that amount), `stock` "
+     "(tell when it is available again), `text` (tell when `text` appears on the page) or `change` (any change). "
+     "Checks every `every_minutes` (default 60, minimum 15); news reaches their Alice chat on its own. Use it "
+     "whenever they say «avísame si/cuando…» about a page, a product, tickets or availability. If it says the "
+     "feature is not active, tell them to turn it on in Alice › Vigilancias.",
+     ({"url": {"type": "string", "description": "The page, http(s)."},
+       "kind": {"type": "string", "enum": ["price", "stock", "text", "change"]},
+       "label": {"type": "string", "description": "A short name for it, in their language."},
+       "below": {"type": "number", "description": "For price: tell when the price is at or under this."},
+       "text": {"type": "string", "description": "For text: the words to wait for."},
+       "every_minutes": {"type": "integer"}}, ["url", "kind"]),
+     _watch_create),
+    ("page_watch_list", "👀", "The pages being watched for the person, with the current price, stock and status.",
+     ({}, []), lambda a: {"watches": _watch().listing(_hermes_root())}),
+    ("page_watch_delete", "👀", "Stop watching a page (by the id page_watch_list gives).",
+     ({"id": {"type": "string"}}, ["id"]),
+     lambda a: (_watch().delete(_hermes_root(), str(a.get("id") or "")), {"deleted": a.get("id")})[1]),
+)
+
+DOCUMENT_TOOLS = (
+    ("pdf_form_read", "📄",
+     "Read a fillable PDF form: its fields (name, kind, current value, choices) and the start of its text. "
+     "`path` is the file's absolute path or its alice://file link.",
+     ({"path": {"type": "string"}}, ["path"]),
+     lambda a: _documents().form_read(str(a.get("path") or ""))),
+    ("pdf_form_fill", "📄",
+     "Fill a PDF form's fields exactly and save a copy next to it (…-rellenado.pdf). `values` maps field "
+     "names from pdf_form_read to values; for checkboxes use one of the field's options. Then show the copy "
+     "as ![Título](alice://file?path=…) so the person can review and sign it on their iPhone before it goes "
+     "anywhere. Never invent data you do not have: ask for it.",
+     ({"path": {"type": "string"}, "values": {"type": "object"}}, ["path", "values"]),
+     lambda a: _documents().form_fill(str(a.get("path") or ""), a.get("values") or {})),
+    ("spending_summary", "💶",
+     "Add up a bank statement CSV exactly: income, spending, categories, top merchants, months and the "
+     "largest payments from a bank CSV. Show a `spending` alice-ui component with the returned "
+     "`income`, `spent`, `net`, `currency`, `from`, `to` and `categories` fields unchanged, "
+     "then 2–4 plain observations. If `uncategorized` has recognisable merchants, call again with `rules` "
+     "({\"text in the description\": \"Category\"}) instead of guessing sums yourself.",
+     ({"path": {"type": "string"}, "rules": {"type": "object"}}, ["path"]),
+     lambda a: _documents().spending(str(a.get("path") or ""), a.get("rules") or None)),
+)
+
+
+def _register_work_tools(ctx) -> None:
+    for toolset, tools in (("alice_watch", WATCH_TOOLS), ("alice_documents", DOCUMENT_TOOLS)):
+        for name, emoji, description, (properties, required), call in tools:
+            schema = {"name": name, "description": description,
+                      "parameters": {"type": "object", "properties": properties, "required": required}}
+            ctx.register_tool(name=name, toolset=toolset, schema=schema, handler=_tool(call),
+                              check_fn=_always, description=description, emoji=emoji)
+
+
+def _browser_ready(tool_name=None, **_):
+    """Before an agent browses: the shared browser Alice keeps is running. Never blocks a call."""
+    if not str(tool_name or "").startswith("browser_"):
+        return None
+    try:
+        _browser().ensure(_hermes_root())
+    except Exception:
+        pass
+    return None
+
+
 def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
+    # The shared browser the iPhone can watch is started before an agent needs it.
+    ctx.register_hook("pre_tool_call", _browser_ready)
     # What each agent did with consequences, for Alice's Activity.
     ctx.register_hook("post_tool_call", _post_tool_call)
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
@@ -616,3 +739,4 @@ def register(ctx) -> None:
     _register_agent_tools(ctx)
     _register_debug_tools(ctx)
     _register_calendar_tools(ctx)
+    _register_work_tools(ctx)

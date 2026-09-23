@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 _log = logging.getLogger("hermes_dashboard_plugin_alice")
@@ -1533,6 +1533,224 @@ async def conversation_receipt(session: str, profile: str = "default", around: O
     if found is None:
         raise HTTPException(status_code=404, detail="That conversation is not on this Hermes.")
     return JSONResponse(found, headers=_NO_STORE)
+
+
+# --- The shared browser, page watches and files from the iPhone ----------------------------
+
+
+def _sibling(filename: str, name: str):
+    import importlib.util
+
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent.parent / filename)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _browser_module():
+    return _sibling("browser_live.py", "alice_browser_live")
+
+
+def _watch_module():
+    return _sibling("page_watch.py", "alice_page_watch")
+
+
+def _config_lock():
+    try:
+        from hermes_cli.web_routers._common import _CONFIG_MUTATION_LOCK as lock
+    except Exception:  # noqa: BLE001
+        try:
+            from hermes_cli.web_server import _CONFIG_MUTATION_LOCK as lock
+        except Exception:  # noqa: BLE001
+            lock = contextlib.nullcontext()
+    return lock
+
+
+def _set_profile_cdp(home: Path, value: Optional[str]) -> Optional[str]:
+    """``browser.cdp_url`` for one profile, through Hermes' own config writer."""
+    from hermes_cli.config import load_config, save_config
+    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+    token = set_hermes_home_override(str(home))
+    try:
+        with _config_lock():
+            config = load_config() or {}
+            browser = config.get("browser") if isinstance(config.get("browser"), dict) else {}
+            previous = str(browser.get("cdp_url") or "").strip() or None
+            if value:
+                browser["cdp_url"] = value
+            else:
+                browser.pop("cdp_url", None)
+            config["browser"] = browser
+            save_config(config)
+            return previous
+    finally:
+        reset_hermes_home_override(token)
+
+
+def _browser_call(work):
+    try:
+        return JSONResponse(work(), headers=_NO_STORE)
+    except _browser_module().BrowserError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/browser")
+async def browser_status() -> JSONResponse:
+    return await asyncio.to_thread(lambda: _browser_call(lambda: _browser_module().status(_hermes_root())))
+
+
+@router.post("/browser/enable")
+async def browser_enable() -> JSONResponse:
+    return await asyncio.to_thread(
+        lambda: _browser_call(lambda: _browser_module().enable(_hermes_root(), _set_profile_cdp)))
+
+
+@router.post("/browser/disable")
+async def browser_disable() -> JSONResponse:
+    return await asyncio.to_thread(
+        lambda: _browser_call(lambda: _browser_module().disable(_hermes_root(), _set_profile_cdp)))
+
+
+@router.get("/browser/frame")
+async def browser_frame(after: int = 0, target: Optional[str] = None) -> Response:
+    """The newest frame of the page, waiting briefly for one newer than ``after``."""
+    from urllib.parse import quote
+
+    def read():
+        try:
+            return _browser_module().frame(_hermes_root(), after=max(0, after), wait=1.5, target=target)
+        except _browser_module().BrowserError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    shot = await asyncio.to_thread(read)
+    headers = {**_NO_STORE, "X-Alice-Seq": str(shot["seq"]), "X-Alice-Target": shot["target"],
+               "X-Alice-Width": str(shot["width"] or ""), "X-Alice-Height": str(shot["height"] or ""),
+               "X-Alice-Url": quote(shot["url"], safe=""), "X-Alice-Title": quote(shot["title"], safe="")}
+    if not shot["jpeg"]:
+        return Response(status_code=204, headers=headers)
+    return Response(content=shot["jpeg"], media_type="image/jpeg", headers=headers)
+
+
+class _BrowserInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    x: float = 0
+    y: float = 0
+    dy: float = 0
+    text: str = Field(default="", max_length=2000)
+    key: str = ""
+    url: str = Field(default="", max_length=2000)
+    target: Optional[str] = None
+
+
+@router.post("/browser/input")
+async def browser_input(body: _BrowserInput) -> JSONResponse:
+    # What is typed may be a password: it is sent on and never kept or logged.
+    action = body.model_dump(exclude={"target"})
+    return await asyncio.to_thread(lambda: _browser_call(
+        lambda: (_browser_module().act(_hermes_root(), action, body.target), {"ok": True})[1]))
+
+
+def _watch_call(work):
+    try:
+        return JSONResponse(work(), headers=_NO_STORE)
+    except _watch_module().WatchError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _watch_setup_in_background() -> None:
+    watch = _watch_module()
+    hermes = Path(sys.executable).with_name("hermes")
+
+    def work():
+        try:
+            watch.setup(_hermes_root(), **({"hermes": str(hermes)} if hermes.exists() else {}))
+        except Exception as exc:  # noqa: BLE001 — shown through status
+            _log.warning("page watch setup failed: %s", type(exc).__name__)
+
+    threading.Thread(target=work, name="alice-watch-setup", daemon=True).start()
+
+
+@router.get("/watches")
+async def watches() -> JSONResponse:
+    def read():
+        watch = _watch_module()
+        root = _hermes_root()
+        return {"status": watch.status(root), "watches": watch.listing(root)}
+    return await asyncio.to_thread(lambda: _watch_call(read))
+
+
+@router.post("/watches/setup")
+async def watches_setup() -> JSONResponse:
+    _watch_setup_in_background()
+    return await asyncio.to_thread(lambda: _watch_call(lambda: {"status": _watch_module().status(_hermes_root())}))
+
+
+class _NewWatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(max_length=2000)
+    kind: str
+    label: str = Field(default="", max_length=120)
+    below: Optional[float] = None
+    text: str = Field(default="", max_length=200)
+    every_minutes: int = 60
+
+
+@router.post("/watches")
+async def create_watch(body: _NewWatch) -> JSONResponse:
+    return await asyncio.to_thread(lambda: _watch_call(lambda: {"watch": _watch_module().create(
+        _hermes_root(), url=body.url, kind=body.kind, label=body.label, below=body.below, text=body.text,
+        every_minutes=body.every_minutes)}))
+
+
+@router.delete("/watches/{watch_id}")
+async def delete_watch(watch_id: str) -> JSONResponse:
+    return await asyncio.to_thread(lambda: _watch_call(
+        lambda: (_watch_module().delete(_hermes_root(), watch_id), {"deleted": watch_id})[1]))
+
+
+FILE_UPLOAD_MAX = 25 * 1024 * 1024
+_FILE_SUFFIXES = {".pdf", ".csv", ".tsv", ".txt", ".xlsx", ".xls", ".json"}
+
+
+class _Upload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(max_length=200)
+    data: str
+
+
+@router.post("/files")
+async def upload_file(request: Request) -> JSONResponse:
+    """A document from the iPhone, kept where agents' tools can open it."""
+    raw = await _read_body_limited(request, FILE_UPLOAD_MAX * 4 // 3 + 4096)
+    if raw is None:
+        raise HTTPException(status_code=413, detail="The file is too large (25 MB at most).")
+    try:
+        body = _Upload.model_validate_json(raw)
+        content = base64.b64decode(body.data, validate=True)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="The upload could not be read.") from exc
+    name = re.sub(r"[^\w .()-]+", "_", Path(body.name).name).strip(" .") or "archivo"
+    if Path(name).suffix.lower() not in _FILE_SUFFIXES:
+        raise HTTPException(status_code=400, detail="That kind of file is not accepted here.")
+
+    def save():
+        folder = _hermes_root() / "alice" / "files"
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(4)}-{name}"
+        target.write_bytes(content)
+        from urllib.parse import quote
+
+        return {"path": str(target), "link": f"alice://file?path={quote(str(target), safe='/')}"}
+
+    return JSONResponse(await asyncio.to_thread(save), headers=_NO_STORE)
 
 
 class _CalendarUpload(BaseModel):

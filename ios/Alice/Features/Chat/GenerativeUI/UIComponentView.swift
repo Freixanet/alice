@@ -26,7 +26,53 @@ struct UIComponentView: View {
             MonthCard(month: month, language: language)
         case let .article(article):
             ArticleCard(article: article, language: language)
+        case let .spending(spending):
+            SpendingCard(spending: spending)
         }
+    }
+}
+
+private struct SpendingCard: View {
+    @Environment(\.colorScheme) private var scheme
+    let spending: UIComponent.Spending
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Spending", systemImage: "chart.bar.xaxis")
+                .font(.headline)
+            if let from = spending.from, let to = spending.to {
+                Text("\(from) – \(to)").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                amount("Income", spending.income)
+                amount("Spent", spending.spent)
+                amount("Net", spending.net)
+            }
+            if !spending.categories.isEmpty {
+                Divider()
+                ForEach(spending.categories.prefix(5)) { category in
+                    HStack {
+                        Text(category.name).lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text(money(category.amount)).monospacedDigit()
+                    }
+                    .font(.footnote)
+                }
+            }
+        }
+        .componentCard(scheme)
+    }
+
+    private func amount(_ label: String, _ value: Double) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(money(value)).font(.subheadline.weight(.semibold)).monospacedDigit().minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func money(_ value: Double) -> String {
+        value.formatted(.currency(code: spending.currency))
     }
 }
 

@@ -43,3 +43,8 @@ regexes = ['''^test-fixture-secret-with-32-characters$''']
 [[allowlists]]
 description = "Routine identifier in muted-report test"
 regexes = ['''^chollometro/abc123$''']
+
+# These are profile/routine identifiers in receipt tests, never credentials.
+[[allowlists]]
+description = "Routine identifiers in reaction receipt tests"
+regexes = ['''^default/cffca6f34c20$''', '''^inbox/cffca6f34c20$''']

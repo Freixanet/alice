@@ -133,7 +133,9 @@ class BusinessIsolationTests(unittest.TestCase):
         # The Business boundary, and the observer that keeps Activity's record of actions.
         ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._pre_tool_call)
         ctx.register_hook.assert_any_call("post_tool_call", self.plugin._post_tool_call)
-        self.assertEqual(ctx.register_hook.call_count, 2)
+        # And the shared browser is started before an agent browses.
+        ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._browser_ready)
+        self.assertEqual(ctx.register_hook.call_count, 3)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
         self.assertEqual(ctx.register_system_prompt_section.call_count, 2)

@@ -19,6 +19,13 @@ fi
 
 mkdir -p "$dest"
 cp -R "$here/." "$dest/"
+
+# pypdf (BSD) for PDF forms, into the plugin's own folder: Hermes' environment is not touched.
+python=$hermes_home/hermes-agent/venv/bin/python
+[[ -x $python ]] || python=$(command -v python3)
+if ! "$python" -m pip install --quiet --upgrade --target "$dest/vendor" 'pypdf==6.18.0'; then
+  print -u2 "Could not install pypdf; PDF forms will ask for it until the plugin is installed again."
+fi
 hermes plugins enable alice --no-allow-tool-override
 
 service=gui/$(id -u)/ai.hermes.dashboard

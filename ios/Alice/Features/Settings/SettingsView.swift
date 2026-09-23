@@ -137,6 +137,14 @@ struct SettingsView: View {
                 } footer: {
                     Text("Your agents see what you connect here. Nothing leaves your own Hermes, and nothing is added to your calendar unless you tap Add.")
                 }
+
+                Section {
+                    NavigationLink { AgentWorkScreen() } label: {
+                        Label("Agent work", systemImage: "square.stack.3d.up")
+                    }
+                } footer: {
+                    Text("Watch pages, share a browser with your agents and give them documents to work on.")
+                }
             }
 
             Section {
