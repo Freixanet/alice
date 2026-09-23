@@ -80,8 +80,15 @@ enum HomeSuggestions {
             ))
         }
 
+        // A routine that has run fine since it failed no longer needs a look.
+        let lastSuccess = events.reduce(into: [String: Date]()) { latest, event in
+            guard event.kind == .automationSucceeded, let key = event.reference.routineKey else { return }
+            latest[key] = max(latest[key] ?? .distantPast, event.occurred)
+        }
         let failed = events.filter {
-            $0.kind == .automationFailed && now.timeIntervalSince($0.occurred) <= failureWindow
+            guard $0.kind == .automationFailed, now.timeIntervalSince($0.occurred) <= failureWindow else { return false }
+            guard let key = $0.reference.routineKey, let success = lastSuccess[key] else { return true }
+            return success < $0.occurred
         }
         if !failed.isEmpty {
             let title = failed.count == 1

@@ -89,4 +89,26 @@ final class HomeSuggestionTests: XCTestCase {
         XCTAssertEqual(HomeSuggestions.make(events: [alices], now: now).first?.action, .today)
         XCTAssertEqual(HomeSuggestions.make(events: [failed, alices], now: now).first?.action, .routines)
     }
+
+    func testAFailureFollowedByASuccessfulRunStaysQuiet() {
+        let reference = AliceEvent.Reference(profile: "radar-ia", routineKey: "radar-ia/c3cf")
+        let failed = AliceEvent(
+            id: "f", kind: .automationFailed, severity: .failure, profile: "radar-ia",
+            title: "Radar IA — informe diario", summary: "rate limit",
+            occurred: now.addingTimeInterval(-2 * 24 * 60 * 60), reference: reference
+        )
+        let fine = AliceEvent(
+            id: "ok", kind: .automationSucceeded, severity: .informational, profile: "radar-ia",
+            title: "Radar IA — informe diario", summary: "finished",
+            occurred: now.addingTimeInterval(-600), reference: reference
+        )
+        XCTAssertTrue(HomeSuggestions.make(events: [failed, fine], now: now).isEmpty)
+        // A success before the failure, or of another routine, does not settle it.
+        var earlier = fine
+        earlier.occurred = now.addingTimeInterval(-3 * 24 * 60 * 60)
+        XCTAssertEqual(HomeSuggestions.make(events: [failed, earlier], now: now).first?.id, "routines-failed")
+        var other = fine
+        other.reference = AliceEvent.Reference(profile: "radar-ia", routineKey: "radar-ia/other")
+        XCTAssertEqual(HomeSuggestions.make(events: [failed, other], now: now).first?.id, "routines-failed")
+    }
 }
