@@ -150,6 +150,52 @@ struct Composer: View {
         store.activeBotProfileForModelSelection != nil
     }
 
+    /// Keep the native TextField's glyphs, wrapping and caret untouched. Draw
+    /// a little extra ink over a mention using the very same regular font,
+    /// whose advances exactly match the field. The background never handles
+    /// touches or changes the field's measured size.
+    private func mentionInk(_ draft: String) -> AttributedString? {
+        let ranges = store.mentions(in: draft, bareSlugs: store.draftMentions.map(\.slug))
+        guard !ranges.isEmpty else { return nil }
+        var ink = AttributedString(draft)
+        ink.font = .body
+        ink.foregroundColor = .clear
+        for (range, _) in ranges {
+            guard let lower = AttributedString.Index(range.lowerBound, within: ink),
+                  let upper = AttributedString.Index(range.upperBound, within: ink)
+            else { continue }
+            ink[lower..<upper].foregroundColor = .primary
+        }
+        return ink
+    }
+
+    /// After the field starts scrolling, an independent visual layer could
+    /// remain at the old position. Hide the emphasis in that case.
+    private func mentionInkFits(_ draft: String, width: CGFloat) -> Bool {
+        guard width > 0 else { return false }
+        let font = UIFont.preferredFont(forTextStyle: .body)
+        let size = (draft as NSString).boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font], context: nil
+        ).height
+        return size <= font.lineHeight * 6
+    }
+
+    private func mentionBackdrop(_ draft: String) -> some View {
+        GeometryReader { geometry in
+            if let ink = mentionInk(draft), mentionInkFits(draft, width: geometry.size.width) {
+                Text(ink)
+                    .font(.body)
+                    .shadow(color: .primary, radius: 0, x: 0.45, y: 0)
+                    .frame(width: geometry.size.width, alignment: .leading)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
     private var botMentionQuery: String? {
         guard let atIndex = store.draft.lastIndex(of: "@") else { return nil }
         if atIndex > store.draft.startIndex {
@@ -376,6 +422,7 @@ struct Composer: View {
                     .scrollIndicators(.hidden)
                     .textFieldStyle(.plain)
                     .font(.body)
+                    .background { mentionBackdrop(store.draft) }
                     .focused(focused)
                     .padding(.horizontal, 4)
                     // The field only claims the height of its own text, so a
@@ -440,6 +487,7 @@ struct Composer: View {
                             .textFieldStyle(.plain)
                             .scrollIndicators(.hidden)
                             .font(.body)
+                            .background { mentionBackdrop(store.draft) }
                             .focused(focused)
                             .lineLimit(1...7)
                             .padding(.vertical, 6)
