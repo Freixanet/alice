@@ -107,6 +107,14 @@ KEY_OFFER = (
 )
 
 
+# Retrying the same search through execute_code or the terminal reaches the
+# same backend, fails the same way, and costs the person an approval prompt.
+NO_RETRY = (
+    "Do not retry this search through execute_code, the terminal or another tool: it reaches the same "
+    "search and fails the same way. Answer with what you know, say plainly that search is down, and stop."
+)
+
+
 def _env_file_value(path, name: str) -> str:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -241,10 +249,10 @@ def _build_provider_class():
             paid = _paid_provider()
             if paid is None:
                 if key:
-                    return {"success": False, "error": f"Search failed ({reason}) and no paid backend is set."}
+                    return {"success": False, "error": f"Search failed ({reason}) and no paid backend is set. " + NO_RETRY}
                 return {"success": False, "error": (
                     f"Search failed ({reason}): Exa's keyless endpoint is rate-limited and no paid backend is set. "
-                    + KEY_OFFER
+                    + KEY_OFFER + " " + NO_RETRY
                 )}
             return paid.search(query, limit)
 

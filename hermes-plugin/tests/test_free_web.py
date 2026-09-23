@@ -126,6 +126,17 @@ class ProviderTests(unittest.TestCase):
         # The agent is sent to Alice's secure card, never to ask for the key in the chat.
         self.assertIn("alice://connect/search", result["error"])
         self.assertIn("Do not ask for the key in the chat", result["error"])
+        # Nor retried through code, which only adds an approval prompt.
+        self.assertIn("Do not retry this search through execute_code", result["error"])
+
+    def test_a_failing_key_says_not_to_retry_through_code(self):
+        failed = {"success": False, "error": "Exa: HTTP 401"}
+        with mock.patch.object(free_web, "exa_key", return_value="k"), self._keyless(failed), \
+                mock.patch.object(free_web, "exa_search_keyed", return_value=failed), \
+                mock.patch.object(free_web, "RETRY_PAUSE", 0), mock.patch.object(free_web, "_paid_provider", return_value=None):
+            result = self.provider.search("q", 5)
+        self.assertIn("Do not retry this search through execute_code", result["error"])
+        self.assertNotIn("alice://connect/search", result["error"])
 
     def _keyless(self, result):
         module = types.ModuleType("plugins.web.keyless_mcp")
