@@ -138,7 +138,9 @@ class BusinessIsolationTests(unittest.TestCase):
         self.assertEqual(ctx.register_hook.call_count, 3)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
-        self.assertEqual(ctx.register_system_prompt_section.call_count, 2)
+        # How an agent asks for a key without it entering the chat.
+        ctx.register_system_prompt_section.assert_any_call("alice.claves", self.plugin.secret_prompt)
+        self.assertEqual(ctx.register_system_prompt_section.call_count, 3)
 
 
 if __name__ == "__main__":
