@@ -53,7 +53,13 @@ final class LiveBrowser {
             }
             do {
                 // Long-polls up to a second and a half for a newer frame.
-                let shot = try await store.sharedBrowserFrame(after: sequence, target: target)
+                // Follow the tab the agent is working in; hold still on this one
+                // while the person has control, so the page does not jump away.
+                let shot = try await store.sharedBrowserFrame(after: sequence, target: humanInControl ? target : nil)
+                if !shot.target.isEmpty, shot.target != target {
+                    // Another tab: its frames count from its own start.
+                    sequence = 0
+                }
                 if let data = shot.jpeg, let decoded = UIImage(data: data) {
                     sequence = shot.seq
                     image = decoded

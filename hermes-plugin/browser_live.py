@@ -440,6 +440,31 @@ class Screencast:
 
 _casts: Dict[str, Screencast] = {}
 _casts_lock = threading.Lock()
+# What each tab last showed and when it changed. An agent browses in a tab of its own
+# (Hermes pins each browser session to one), so "the page to watch" is the tab where
+# something last happened — opened, navigated or retitled — not the first in Chrome's list.
+_seen: Dict[str, Any] = {}
+_changed: Dict[str, float] = {}
+
+
+def busiest(tabs: List[Dict[str, str]], now: Optional[float] = None) -> Optional[Dict[str, str]]:
+    """The tab that changed most recently; a new tab counts as a change."""
+    now = time.monotonic() if now is None else now
+    first_look = not _seen
+    ids = set()
+    for tab in tabs:
+        ids.add(tab["id"])
+        shown = (tab.get("url"), tab.get("title"))
+        if _seen.get(tab["id"]) != shown:
+            _seen[tab["id"]] = shown
+            # A tab seen for the first time on the very first look is not news.
+            _changed[tab["id"]] = 0.0 if first_look and len(tabs) > 1 else now
+    for gone in [key for key in _seen if key not in ids]:
+        _seen.pop(gone, None)
+        _changed.pop(gone, None)
+    if not tabs:
+        return None
+    return max(tabs, key=lambda tab: (_changed.get(tab["id"], 0.0), -tabs.index(tab)))
 
 
 def _cast(root: Path, target: Optional[str] = None) -> Screencast:
@@ -456,7 +481,9 @@ def _cast(root: Path, target: Optional[str] = None) -> Screencast:
     tabs = pages(url)
     if not tabs:
         raise BrowserError("No hay ninguna página abierta.")
-    page = next((t for t in tabs if t["id"] == target), tabs[0]) if target else tabs[0]
+    chosen = next((t for t in tabs if t["id"] == target), None) if target else None
+    # Unless the phone asked for a tab, follow the one where the agent is working.
+    page = chosen or busiest(tabs) or tabs[0]
     with _casts_lock:
         # One live cast at a time: the tab the phone is looking at.
         for key, cast in list(_casts.items()):

@@ -55,5 +55,31 @@ class BrowserControlTests(unittest.TestCase):
             fake.ensure.assert_called()
 
 
+class FollowTheAgentTests(unittest.TestCase):
+    def setUp(self):
+        bl._seen.clear()
+        bl._changed.clear()
+
+    def test_the_view_follows_the_tab_where_something_last_happened(self):
+        old = {"id": "a", "url": "https://rodalies.gencat.cat/", "title": "Cookies"}
+        self.assertEqual(bl.busiest([old], now=1)["id"], "a")
+        # The agent opens its own tab: that is where to look.
+        mine = {"id": "b", "url": "about:blank", "title": ""}
+        self.assertEqual(bl.busiest([old, mine], now=2)["id"], "b")
+        mine = {"id": "b", "url": "https://rodalies.gencat.cat/horaris", "title": "Horaris"}
+        self.assertEqual(bl.busiest([old, mine], now=3)["id"], "b")
+        # Then something happens in the first one again.
+        old = {"id": "a", "url": "https://www.renfe.com/", "title": "Renfe"}
+        self.assertEqual(bl.busiest([old, mine], now=4)["id"], "a")
+        # A closed tab is forgotten.
+        self.assertEqual(bl.busiest([mine], now=5)["id"], "b")
+        self.assertNotIn("a", bl._seen)
+        self.assertIsNone(bl.busiest([], now=6))
+
+    def test_on_a_first_look_the_list_order_decides(self):
+        tabs = [{"id": "x", "url": "https://a.com", "title": "A"}, {"id": "y", "url": "https://b.com", "title": "B"}]
+        self.assertEqual(bl.busiest(tabs, now=1)["id"], "x")
+
+
 if __name__ == "__main__":
     unittest.main()
