@@ -277,6 +277,9 @@ struct WebSocketBotChatSource: BotChatSessionSource {
             // as a user turn. The person did not write it, and its raw JSON
             // showed in the chat as if they had.
             if role == .user, Self.isDelegationReport(text) { return nil }
+            // Hermes' goal loop sends the agent back to an unfinished task as a
+            // user turn; the person did not write it either.
+            if role == .user, Self.isGoalContinuation(text) { return nil }
             // Hermes persists assistant rows whose only payload is a tool call.
             // The projected history exposes those as assistant + empty text, while
             // the tool rows themselves are intentionally hidden. Rendering the
@@ -302,6 +305,11 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// and `[ASYNC DELEGATION TASK FAILED — …]`, as Hermes writes them.
     static func isDelegationReport(_ text: String) -> Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("[ASYNC DELEGATION ")
+    }
+
+    /// `[Continuing toward your standing goal]` and its variants, as Hermes writes them.
+    static func isGoalContinuation(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("[Continuing toward your standing goal")
     }
 
     private static func rowID(_ row: [String: Any]) -> String? {

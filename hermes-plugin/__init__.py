@@ -673,7 +673,8 @@ def resolve_prompt(_session_info=None) -> str:
         "Cuando te pares, deja todo listo y pregunta **una sola cosa, con una propuesta concreta** "
         "(«Hay otro producto en la cesta; lo quito y sigo, ¿vale?»), para que baste un «sí». "
         "Nunca termines con «no he avanzado» o «no he podido» sin haber intentado arreglarlo, y si de "
-        "verdad no se puede, di qué probaste y qué propones ahora."
+        "verdad no se puede, di qué probaste y qué propones ahora.\n"
+        + _task_finish().prompt()
     )
 
 
@@ -938,6 +939,19 @@ def goals_prompt(_session_info=None) -> str:
         return ""
 
 
+def _task_finish():
+    return _module("task_finish.py", "alice_task_finish")
+
+
+def _register_task_tools(ctx) -> None:
+    module = _task_finish()
+    ctx.register_tool(
+        name="finish_task", toolset="alice_tasks", schema=module.SCHEMA,
+        handler=lambda args, **_: _agent_json(module.run_tool(args or {})),
+        check_fn=_always, description=module.SCHEMA["description"], emoji="🏁",
+    )
+
+
 def _register_goal_tools(ctx) -> None:
     module = _goals_module()
     ctx.register_tool(
@@ -963,6 +977,8 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.tarjetas", cards_prompt)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)
     _register_goal_tools(ctx)
+    # A task of several steps is kept going by Hermes' goal judge until done or it needs the person.
+    _register_task_tools(ctx)
     _register_notes_tools(ctx)
     # Search and page reading free first (Exa, Jina); Firecrawl only as fallback.
     _free_web().register(ctx)
