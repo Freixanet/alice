@@ -23,7 +23,7 @@ struct AgentLiveActivity: Widget {
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    ElapsedTime(state: context.state)
+                    ElapsedTime(state: context.state, isStale: context.isStale)
                         .font(.title3.monospacedDigit().weight(.semibold))
                         .padding(.trailing, 4)
                 }
@@ -42,7 +42,7 @@ struct AgentLiveActivity: Widget {
                 if context.state.isDone {
                     PhaseSymbol(phase: context.state.phase)
                 } else {
-                    ElapsedTime(state: context.state)
+                    ElapsedTime(state: context.state, isStale: context.isStale)
                         .font(.caption.monospacedDigit().weight(.semibold))
                         .frame(maxWidth: 44)
                 }
@@ -68,7 +68,7 @@ private struct LockScreenAgentView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {
-                ElapsedTime(state: context.state)
+                ElapsedTime(state: context.state, isStale: context.isStale)
                     .font(.title2.monospacedDigit().weight(.semibold))
                 PhaseSymbol(phase: context.state.phase)
             }
@@ -91,9 +91,12 @@ private struct AgentAvatar: View {
 /// long it took.
 private struct ElapsedTime: View {
     let state: AgentActivityAttributes.ContentState
+    var isStale = false
 
     var body: some View {
-        if let ended = state.endedAt {
+        // Without news from Alice the clock stops at the last update: counting
+        // on said work was going on when nobody knew.
+        if let ended = state.endedAt ?? (isStale ? state.updatedAt : nil) {
             Text(Duration.seconds(max(0, ended.timeIntervalSince(state.startedAt))),
                  format: .time(pattern: .minuteSecond))
         } else {

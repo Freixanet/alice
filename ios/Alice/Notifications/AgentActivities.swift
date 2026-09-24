@@ -50,6 +50,9 @@ final class AgentActivities {
     private(set) var lastStartFailure: String?
     private let log = Logger(subsystem: "com.freixanet.alice", category: "live-activity")
 
+    // An activity past its stale date is `.stale`, not `.active`, yet still on
+    // the Lock Screen counting. Reading only `.active` left those to count for
+    // hours after the agent had finished, so both are read everywhere here.
     func sync(working: [Work], ending: (String) -> Ending, now: Date = Date()) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         // Only what an activity says is read here; changing one is left to the
@@ -58,7 +61,7 @@ final class AgentActivities {
         // needs nothing but its state.
         let requested = Self.uniqueWorks(working)
         let showing = Activity<AgentActivityAttributes>.activities
-            .filter { $0.activityState == .active && !$0.content.state.isDone }
+            .filter { [.active, .stale].contains($0.activityState) && !$0.content.state.isDone }
             .reduce(into: [String: AgentActivityAttributes.ContentState]()) { found, activity in
                 found[Self.key(activity.attributes)] = activity.content.state
             }
@@ -114,7 +117,7 @@ final class AgentActivities {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let shown = Activity<AgentActivityAttributes>.activities.first {
             Self.key($0.attributes) == conversationID
-                && $0.activityState == .active && !$0.content.state.isDone
+                && [.active, .stale].contains($0.activityState) && !$0.content.state.isDone
         }?.content.state
         end(conversationID: conversationID, as: ending, shown: shown, now: now)
     }
@@ -167,7 +170,7 @@ private enum AgentActivityBridge {
     nonisolated private static func current(_ conversationID: String) -> Activity<AgentActivityAttributes>? {
         Activity<AgentActivityAttributes>.activities.first {
             AgentActivities.key($0.attributes) == conversationID
-                && $0.activityState == .active && !$0.content.state.isDone
+                && [.active, .stale].contains($0.activityState) && !$0.content.state.isDone
         }
     }
 }

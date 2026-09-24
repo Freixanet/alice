@@ -7556,6 +7556,30 @@ final class AppStore {
         }
     }
 
+    /// What Hermes is still waiting on, back in the chat after the app was away.
+    /// A request sent while the phone was locked never reached this socket;
+    /// reported only to Activity, the payment confirmation waited unseen until
+    /// Hermes gave up and the purchase stopped.
+    private func showOpenRequests(in snapshot: JSONObject, reply: String, conversationID: String) {
+        guard let open = GatewayServerRequests.openRequests(in: snapshot) else { return }
+        for frame in open {
+            if case let .approval(approval)? = Self.chatEvent(from: frame),
+               let location = messageLocation(reply, conversationID: conversationID),
+               conversations[location.chat].messages[location.message].approval?.requestID != approval.requestID {
+                conversations[location.chat].messages[location.message].runID = approval.runID
+                conversations[location.chat].messages[location.message].runStatus = .waitingForApproval
+                conversations[location.chat].messages[location.message].approval = approval
+                persistConversations()
+                DiagnosticsLog.write("settle.openApproval reply=\(reply)")
+            }
+            if frame.type == "secure.request", secureRequest == nil,
+               let request = SecureRequest.parse(frame.payload) {
+                secureRequest = request
+                DiagnosticsLog.write("settle.openSecure reply=\(reply)")
+            }
+        }
+    }
+
     /// Fills a reply nobody saw finish with the answer its session kept.
     private func settleReply(
         _ reply: Message, in conversationID: String, profile: String?, storedID: String
@@ -7578,6 +7602,7 @@ final class AppStore {
             for request in LiveEvents.pendingEvents(from: snapshot, session: identity) {
                 observe(request)
             }
+            showOpenRequests(in: snapshot, reply: reply.id, conversationID: conversationID)
         } catch {
             DiagnosticsLog.write("settle.readFailed reply=\(reply.id) error=\(error.localizedDescription)")
             return false
