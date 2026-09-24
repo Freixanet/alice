@@ -937,6 +937,80 @@ async def post_secret(body: _SecretBody) -> Dict[str, Any]:
     return await asyncio.to_thread(_save_secret, body)
 
 
+# --- Payment cards the person gives in a secure card (vault_cards.py) -----------------------
+
+def _cards():
+    import importlib.util
+
+    name = "alice_vault_cards"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / "vault_cards.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class _CardBody(BaseModel):
+    profile: str = "default"
+    origin: str
+    # Either a saved card to use here too, or a new one. Never logged.
+    handle: Optional[str] = None
+    card_number: Optional[str] = None
+    cardholder_name: Optional[str] = None
+    exp_month: Optional[str] = None
+    exp_year: Optional[str] = None
+    cvc: Optional[str] = None
+    billing_postal_code: Optional[str] = None
+
+
+def _save_card(body: _CardBody) -> Dict[str, Any]:
+    cards = _cards()
+    profile = _known_profile(body.profile)
+    try:
+        with _profile_scope(profile):
+            if body.handle:
+                card = cards.bind(body.handle, body.origin)
+            else:
+                card = cards.save(body.origin, body.model_dump(exclude={"profile", "origin", "handle"}))
+    except cards.CardError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    # Which card label and site; never a number, expiry or code.
+    _log.info("alice: card %s saved for %s in profile %s", card["label"], card["origin"], profile)
+    return {"profile": profile, "card": card}
+
+
+def _list_cards(profile: str) -> Dict[str, Any]:
+    name = _known_profile(profile)
+    with _profile_scope(name):
+        return {"profile": name, "cards": _cards().cards()}
+
+
+def _remove_card(profile: str, handle: str) -> Dict[str, Any]:
+    name = _known_profile(profile)
+    with _profile_scope(name):
+        if not _cards().remove(handle):
+            raise HTTPException(status_code=404, detail="That card is no longer saved.")
+    return {"profile": name, "removed": handle}
+
+
+@router.get("/vault/cards")
+async def get_cards(profile: str = "default") -> JSONResponse:
+    """Saved cards: label, handle and the site each is bound to. Never the numbers."""
+    return JSONResponse(await asyncio.to_thread(_list_cards, profile), headers=_NO_STORE)
+
+
+@router.post("/vault/cards")
+async def post_card(body: _CardBody) -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(_save_card, body), headers=_NO_STORE)
+
+
+@router.delete("/vault/cards/{handle}")
+async def delete_card(handle: str, profile: str = "default") -> Dict[str, Any]:
+    return await asyncio.to_thread(_remove_card, profile, handle)
+
+
 # --- Notes: the store an agent keeps in its workspace ------------------------------------
 
 NOTES_STORE = Path("workspace") / "inbox-store"

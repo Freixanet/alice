@@ -887,6 +887,20 @@ def _goals_store():
     return _goals_module().Goals(Path(get_hermes_home()))
 
 
+def _cards_module():
+    return _module("vault_cards.py", "alice_vault_cards")
+
+
+def cards_prompt(_session_info=None) -> str:
+    try:
+        from hermes_cli.profiles import get_active_profile_name
+
+        profile = get_active_profile_name()
+    except Exception:
+        profile = "default"
+    return _cards_module().prompt(profile if profile != "custom" else "default")
+
+
 def goals_prompt(_session_info=None) -> str:
     """The open goals, so the agent knows them and keeps them current."""
     try:
@@ -916,6 +930,7 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
     ctx.register_system_prompt_section("alice.claves", secret_prompt)
+    ctx.register_system_prompt_section("alice.tarjetas", cards_prompt)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)
     _register_goal_tools(ctx)
     _register_notes_tools(ctx)

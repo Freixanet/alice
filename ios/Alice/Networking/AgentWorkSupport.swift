@@ -201,6 +201,26 @@ extension DashboardClient {
         _ = try await send("POST", "api/plugins/alice/secret", ["name": name, "value": value])
     }
 
+    // MARK: Payment cards
+
+    /// Cards saved in the profile's Hermes vault: label and bound site, never the numbers.
+    func savedCards(profile: String) async throws -> [SavedCard] {
+        let object = try await get("api/plugins/alice/vault/cards?profile=\(profile)")
+        return (object["cards"] as? [[String: Any]] ?? []).compactMap(SavedCard.init)
+    }
+
+    /// A new card, or a saved one (`handle`) used on this payment page too.
+    func saveCard(_ card: PaymentCardFields?, handle: String?, origin: String, profile: String) async throws -> SavedCard {
+        var body: [String: Any] = ["profile": profile, "origin": origin]
+        if let handle { body["handle"] = handle }
+        if let card { body.merge(card.body) { $1 } }
+        let object = try await send("POST", "api/plugins/alice/vault/cards", body)
+        guard let saved = (object["card"] as? [String: Any]).flatMap(SavedCard.init) else {
+            throw DashboardClient.Failure.http(500)
+        }
+        return saved
+    }
+
     // MARK: Connector logos
 
     /// A connector's own logo, as the plugin found it on the product's site.

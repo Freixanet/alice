@@ -4830,6 +4830,10 @@ final class AppStore {
     func deleteGoal(_ id: String) async throws { try await dashboard.deleteGoal(id) }
     func secretIsSet(_ name: String) async throws -> Bool { try await dashboard.secretIsSet(name) }
     func saveSecret(_ name: String, value: String) async throws { try await dashboard.saveSecret(name, value: value) }
+    func savedCards(profile: String) async throws -> [SavedCard] { try await dashboard.savedCards(profile: profile) }
+    func saveCard(_ card: PaymentCardFields?, handle: String?, origin: String, profile: String) async throws -> SavedCard {
+        try await dashboard.saveCard(card, handle: handle, origin: origin, profile: profile)
+    }
     func setSharedBrowser(on: Bool) async throws -> SharedBrowserState {
         try await dashboard.setSharedBrowser(on: on)
     }
