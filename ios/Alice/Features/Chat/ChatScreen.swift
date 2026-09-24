@@ -323,6 +323,7 @@ private struct ChatScreenContent: View, Equatable {
                         BotMarkView(mark: store.mark(for: bot), size: 72)
                     }
                 }
+                .contentShape(.contextMenuPreview, PortraitMenuShape(diameter: 72, gap: -14))
                 .accessibilityHint("Opens this bot’s settings")
                 // Held rather than tapped: the other bots. The name is where
                 // you look to know whose conversation this is, so it is also

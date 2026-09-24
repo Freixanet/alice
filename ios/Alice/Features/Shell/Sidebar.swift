@@ -55,10 +55,8 @@ struct Sidebar: View, Equatable {
             store.requestedDestination = nil
             open(target)
         }
-        .sheet(
-            item: $going,
-            onDismiss: {}
-        ) { destination in
+        // Pages, not sheets: the whole screen, back with a chevron.
+        .fullScreenCover(item: $going) { destination in
             Group {
                 switch destination {
                 case .activity: closable {
@@ -140,8 +138,10 @@ struct Sidebar: View, Equatable {
         NavigationStack {
             content()
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { going = nil }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { going = nil } label: {
+                            Label("Back", systemImage: "chevron.left").labelStyle(.iconOnly)
+                        }
                     }
                 }
         }
@@ -225,6 +225,7 @@ struct Sidebar: View, Equatable {
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
+            .contentShape(.contextMenuPreview, Circle())
             .accessibilityLabel("Settings")
             .accessibilityIdentifier("sidebar.settings")
             .contextMenu {
@@ -233,10 +234,20 @@ struct Sidebar: View, Equatable {
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
-                Button {
-                    going = .connect
-                } label: {
-                    Label(store.wellbeingSummary, systemImage: "antenna.radiowaves.left.and.right")
+                // An alert is read in Activity, where it is; the connection
+                // screen only knows whether Hermes answers.
+                if case .needsAttention = store.wellbeing {
+                    Button {
+                        going = .activity
+                    } label: {
+                        Label(store.wellbeingSummary, systemImage: "exclamationmark.triangle")
+                    }
+                } else {
+                    Button {
+                        going = .connect
+                    } label: {
+                        Label(store.wellbeingSummary, systemImage: "antenna.radiowaves.left.and.right")
+                    }
                 }
             }
 

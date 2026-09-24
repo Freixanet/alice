@@ -792,7 +792,7 @@ struct BotsScreen: View {
             }
             .frame(width: 100)
             .contentShape(.interaction, .rect)
-            .contentShape(.contextMenuPreview, .rect(cornerRadius: 18))
+            .contentShape(.contextMenuPreview, PortraitMenuShape(diameter: 76, gap: 6))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("bots.row.\(bot.name)")

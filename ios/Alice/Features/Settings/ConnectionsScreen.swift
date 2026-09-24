@@ -13,9 +13,18 @@ struct ConnectionsScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
 
-    @State private var catalog: [MCPCatalogEntry] = []
-    @State private var servers: [MCPServerConfiguration] = []
-    @State private var loaded = false
+    @State private var catalog: [MCPCatalogEntry] = Self.lastCatalog
+    @State private var servers: [MCPServerConfiguration] = Self.lastServers
+    @State private var loaded = !Self.lastCatalog.isEmpty
+    @State private var healthConnected = false
+    @State private var confirmingDevice: DeviceConnection?
+
+    /// What the last visit read, shown at once on the next: the list never
+    /// starts empty and fills in while the person looks at it.
+    @MainActor private static var lastCatalog: [MCPCatalogEntry] = []
+    @MainActor private static var lastServers: [MCPServerConfiguration] = []
+
+    fileprivate enum DeviceConnection: String, Identifiable { case calendar, health; var id: String { rawValue } }
     @State private var query = ""
     @State private var working: Set<String> = []
     @State private var problem: String?
@@ -44,12 +53,10 @@ struct ConnectionsScreen: View {
 
     var body: some View {
         List {
-            if query.isEmpty {
-                Section {
-                    CalendarConnectionRow()
-                    HealthConnectionRow()
-                } footer: {
-                    Text("Your agents see what you connect here. Nothing leaves your own Hermes, and nothing is added to your calendar unless you tap Add.")
+            if query.isEmpty || "calendar calendario health salud iphone".localizedStandardContains(query.lowercased()) {
+                Section("On this iPhone") {
+                    iPhoneCalendarRow
+                    iPhoneHealthRow
                 }
                 .listRowBackground(Palette.card(scheme))
             }
@@ -135,6 +142,68 @@ struct ConnectionsScreen: View {
         } message: {
             Text("Your agents stop using it. You can connect it again at any time.")
         }
+        .confirmationDialog(
+            confirmingDevice == .calendar ? String(localized: "Disconnect your calendar?") : String(localized: "Disconnect Health?"),
+            isPresented: Binding(get: { confirmingDevice != nil }, set: { if !$0 { confirmingDevice = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Disconnect", role: .destructive) {
+                let device = confirmingDevice
+                confirmingDevice = nil
+                Task {
+                    working.insert(device?.rawValue ?? "")
+                    if device == .calendar { problem = await store.disconnectCalendar() }
+                    if device == .health { await store.disconnectHealth(); healthConnected = false }
+                    working.remove(device?.rawValue ?? "")
+                }
+            }
+        } message: {
+            Text(confirmingDevice == .calendar
+                 ? "Your events are deleted from your Hermes and your agents stop seeing them."
+                 : "Alice stops reading Health and your Hermes forgets the days it kept. Nothing in Health changes.")
+        }
+        .task {
+            healthConnected = store.healthConnected
+            await store.refreshCalendarLink()
+        }
+    }
+
+    // MARK: This iPhone
+
+    private var iPhoneCalendarRow: some View {
+        let names = CalendarSync.accountNames()
+        return ConnectorRow(
+            name: "calendar", title: String(localized: "Calendar"),
+            detail: names.isEmpty ? String(localized: "Every account on this iPhone") : names.formatted(.list(type: .and)),
+            connected: store.calendarLink.isConnected, working: working.contains("calendar"),
+            onConnect: {
+                Task {
+                    working.insert("calendar")
+                    problem = await store.connectCalendar()
+                    working.remove("calendar")
+                }
+            },
+            onDisconnect: { confirmingDevice = .calendar }, onSignIn: nil,
+            icon: AnyView(CalendarAppIcon(size: 40))
+        )
+    }
+
+    private var iPhoneHealthRow: some View {
+        ConnectorRow(
+            name: "health", title: String(localized: "Health"),
+            detail: String(localized: "Sleep, activity, heart and medication · WHOOP, Apple Watch"),
+            connected: healthConnected, working: working.contains("health"),
+            onConnect: {
+                Task {
+                    working.insert("health")
+                    problem = await store.connectHealth()
+                    healthConnected = problem == nil
+                    working.remove("health")
+                }
+            },
+            onDisconnect: { confirmingDevice = .health }, onSignIn: nil,
+            icon: AnyView(HealthAppIcon(size: 40))
+        )
     }
 
     // MARK: Rows
@@ -171,7 +240,11 @@ struct ConnectionsScreen: View {
             }
         }
         if let configured { servers = configured }
+        Self.lastCatalog = catalog
+        Self.lastServers = servers
         loaded = true
+        // Every logo fetched now, in parallel, into the phone's cache.
+        ConnectorLogo.prefetch(catalog.map(\.name) + servers.map(\.name), store: store)
     }
 
     private func connect(_ entry: MCPCatalogEntry) async {
@@ -238,20 +311,22 @@ struct ConnectionsScreen: View {
 
 private struct ConnectorRow: View {
     let name: String
+    var title: String? = nil
     let detail: String
     let connected: Bool
     let working: Bool
     let onConnect: () -> Void
     let onDisconnect: () -> Void
     let onSignIn: (() -> Void)?
+    var icon: AnyView? = nil
 
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         HStack(spacing: 12) {
-            ConnectorLogo(name: name, size: 40)
+            if let icon { icon } else { ConnectorLogo(name: name, size: 40) }
             VStack(alignment: .leading, spacing: 2) {
-                Text(ConnectorNames.title(name))
+                Text(title ?? ConnectorNames.title(name))
                     .font(.body)
                 if !detail.isEmpty {
                     Text(detail)
@@ -299,7 +374,54 @@ struct ConnectorLogo: View {
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
 
+    init(name: String, size: CGFloat = 40) {
+        self.name = name
+        self.size = size
+        _image = State(initialValue: Self.stored(name))
+    }
+
     private static let cache = NSCache<NSString, UIImage>()
+
+    /// The phone keeps every logo it has shown, so the list opens with them.
+    private static var folder: URL? {
+        guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let url = base.appending(path: "connector-logos", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private static func file(_ name: String) -> URL? {
+        folder?.appending(path: name.replacingOccurrences(of: "/", with: "_") + ".img")
+    }
+
+    @MainActor static func stored(_ name: String) -> UIImage? {
+        if let hit = cache.object(forKey: name as NSString) { return hit }
+        guard let url = file(name), let data = try? Data(contentsOf: url), let image = UIImage(data: data) else { return nil }
+        cache.setObject(image, forKey: name as NSString)
+        return image
+    }
+
+    @MainActor static func fetch(_ name: String, store: AppStore) async -> UIImage? {
+        if let hit = stored(name) { return hit }
+        guard let data = await store.connectorIcon(name), let image = UIImage(data: data) else { return nil }
+        cache.setObject(image, forKey: name as NSString)
+        if let url = file(name) { try? data.write(to: url) }
+        return image
+    }
+
+    /// Fetches every missing logo at once, a few at a time.
+    @MainActor static func prefetch(_ names: [String], store: AppStore) {
+        let missing = names.filter { stored($0) == nil }
+        guard !missing.isEmpty else { return }
+        Task {
+            await withTaskGroup(of: Void.self) { group in
+                for (index, name) in missing.enumerated() {
+                    if index >= 6 { await group.next() }
+                    group.addTask { _ = await fetch(name, store: store) }
+                }
+            }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -324,12 +446,7 @@ struct ConnectorLogo: View {
         }
         .accessibilityHidden(true)
         .task(id: name) {
-            if let cached = Self.cache.object(forKey: name as NSString) {
-                image = cached
-                return
-            }
-            guard let data = await store.connectorIcon(name), let loaded = UIImage(data: data) else { return }
-            Self.cache.setObject(loaded, forKey: name as NSString)
+            guard image == nil, let loaded = await Self.fetch(name, store: store) else { return }
             withAnimation(.easeOut(duration: 0.2)) { image = loaded }
         }
     }
@@ -590,5 +707,50 @@ private struct AddConnectorSheet: View {
         } catch {
             problem = PlainWords.describe(error, doing: "add this connector")
         }
+    }
+}
+
+
+/// The Calendar app's own face: today's weekday in red over the date.
+struct CalendarAppIcon: View {
+    var size: CGFloat = 40
+
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            VStack(spacing: -size * 0.04) {
+                Text(context.date.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+                    .font(.system(size: size * 0.2, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.98, green: 0.24, blue: 0.2))
+                Text(context.date.formatted(.dateTime.day()))
+                    .font(.system(size: size * 0.5, weight: .regular))
+                    .foregroundStyle(.black)
+            }
+            .frame(width: size, height: size)
+            .background(Color.white, in: .rect(cornerRadius: size * 0.225, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
+                    .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// The Health app's own face: the pink heart on white.
+struct HealthAppIcon: View {
+    var size: CGFloat = 40
+
+    var body: some View {
+        Image(systemName: "heart.fill")
+            .font(.system(size: size * 0.5))
+            .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.38, blue: 0.53), Color(red: 1, green: 0.18, blue: 0.33)],
+                                            startPoint: .top, endPoint: .bottom))
+            .frame(width: size, height: size)
+            .background(Color.white, in: .rect(cornerRadius: size * 0.225, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
+                    .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5)
+            }
+            .accessibilityHidden(true)
     }
 }

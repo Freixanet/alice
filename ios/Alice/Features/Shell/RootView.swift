@@ -314,8 +314,10 @@ struct RootView: View {
                 NavigationStack {
                     LibraryToolScreen(tool: tool)
                         .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("Done") { store.presentedLibraryTool = nil }
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button { store.presentedLibraryTool = nil } label: {
+                                    Label("Back", systemImage: "chevron.left").labelStyle(.iconOnly)
+                                }
                             }
                         }
                 }
@@ -355,9 +357,10 @@ struct RootView: View {
                         // bots from inside one of them, which is where the
                         // finger already is.
                         if inBotChat { return velocity.x > 0 }
-                        // On Alice's own: right opens the drawer, left goes
-                        // to the bots.
-                        return true
+                        // On Alice's own: only rightward, which opens the
+                        // drawer. Leftward used to jump to the agents, a page
+                        // that has nothing to do with Today.
+                        return velocity.x > 0
                     },
                     onChange: { translation in
                         // In a bot's conversation the swipe is a back gesture,

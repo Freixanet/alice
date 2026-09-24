@@ -160,3 +160,23 @@ private struct ZoomSource: ViewModifier {
         }
     }
 }
+
+
+/// The outline a long-press lifts for a portrait with its name under it: the
+/// round face and a pill for the name, never the square box around both.
+struct PortraitMenuShape: Shape {
+    var diameter: CGFloat
+    /// Space between face and name; negative when the name overlaps the chin.
+    var gap: CGFloat = 6
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addEllipse(in: CGRect(x: rect.midX - diameter / 2, y: rect.minY, width: diameter, height: diameter))
+        let top = rect.minY + diameter + gap
+        if top < rect.maxY {
+            let label = CGRect(x: rect.minX, y: top, width: rect.width, height: rect.maxY - top)
+            path.addRoundedRect(in: label, cornerSize: CGSize(width: label.height / 2, height: label.height / 2))
+        }
+        return path
+    }
+}

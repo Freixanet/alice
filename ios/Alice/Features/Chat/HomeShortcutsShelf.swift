@@ -41,6 +41,7 @@ struct HomeShortcutsShelf: View {
             }
             .frame(width: 96, alignment: .top)
             .contentShape(.rect)
+            .contentShape(.contextMenuPreview, PortraitMenuShape(diameter: 52, gap: 6))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("home.shortcut.\(shortcut.id)")
@@ -92,7 +93,6 @@ struct HomeShortcutsShelf: View {
         }
         .frame(width: 96)
         .padding(.vertical, 8)
-        .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
     }
 }
 

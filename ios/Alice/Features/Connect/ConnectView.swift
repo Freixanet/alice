@@ -40,8 +40,8 @@ struct ConnectView: View {
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: { Label("Back", systemImage: "chevron.left").labelStyle(.iconOnly) }
                 }
             }
             .sheet(isPresented: $showScanner) {

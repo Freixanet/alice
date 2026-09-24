@@ -717,8 +717,8 @@ struct HermesRemoteFileDetail: View {
 
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            Button("Done") { dismiss() }
+        ToolbarItem(placement: .topBarLeading) {
+            Button { dismiss() } label: { Label("Back", systemImage: "chevron.left").labelStyle(.iconOnly) }
         }
         if editing {
             ToolbarItemGroup(placement: .primaryAction) {

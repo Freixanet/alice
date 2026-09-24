@@ -23,7 +23,8 @@ struct SettingsView: View {
                 }
             }
 
-            // What everything else depends on, then what it connects to.
+            // Like the account at the top of iOS Settings: what everything
+            // else depends on, alone.
             Section {
                 NavigationLink { ConnectView() } label: {
                     LabeledContent {
@@ -32,17 +33,9 @@ struct SettingsView: View {
                         Label("Hermes", systemImage: "antenna.radiowaves.left.and.right")
                     }
                 }
-                if store.dashboardReady {
-                    NavigationLink { ConnectionsScreen() } label: {
-                        Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
-                    }
-                    .accessibilityIdentifier("settings.connections")
-                    NavigationLink { AgentWorkScreen() } label: {
-                        Label("Agent work", systemImage: "square.stack.3d.up")
-                    }
-                }
             }
 
+            // What Alice has done and knows, then what she can reach.
             Section {
                 NavigationLink { ActivityScreen() } label: {
                     LabeledContent {
@@ -62,6 +55,19 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section {
+                if store.dashboardReady {
+                    NavigationLink { ConnectionsScreen() } label: {
+                        Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .accessibilityIdentifier("settings.connections")
+                    NavigationLink { AgentWorkScreen() } label: {
+                        Label("Agent work", systemImage: "square.stack.3d.up")
+                    }
+                }
+            }
+
 
             Section {
                 Toggle(isOn: Binding(
@@ -128,10 +134,13 @@ struct SettingsView: View {
                 if store.dashboardReady {
                     TimeZoneRow()
                 }
-                Button("Show Gesture Tips Again") {
+                Button {
                     GestureTips.showAgainNextLaunch()
                     tipsReset = true
+                } label: {
+                    Label("Show Gesture Tips Again", systemImage: "hand.tap")
                 }
+                .foregroundStyle(.primary)
                 .alert("Tips reset", isPresented: $tipsReset) {
                     Button("OK", role: .cancel) {}
                 } message: {
@@ -148,7 +157,7 @@ struct SettingsView: View {
             }
 
             let build = AliceBuildInfo.current
-            Section {
+            Section("Version") {
                 LabeledContent("Alice", value: build.versionLabel)
                 if store.dashboardReady {
                     HermesVersionRow()

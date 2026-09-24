@@ -1,6 +1,56 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "On this iPhone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En este iPhone"
+          }
+        }
+      }
+    },
+    "Calendar": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendario"
+          }
+        }
+      }
+    },
+    "Every account on this iPhone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas las cuentas de este iPhone"
+          }
+        }
+      }
+    },
+    "Sleep, activity, heart and medication · WHOOP, Apple Watch": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sueño, actividad, corazón y medicación · WHOOP, Apple Watch"
+          }
+        }
+      }
+    },
+    "Your events are deleted from your Hermes and your agents stop seeing them.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus eventos se borran de tu Hermes y tus agentes dejan de verlos."
+          }
+        }
+      }
+    },
     "Not connected": {
       "localizations": {
         "es": {
