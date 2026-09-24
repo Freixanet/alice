@@ -30,10 +30,16 @@ final class PlaceWatcher: NSObject, CLLocationManagerDelegate {
     /// the events have to be read before anything else.
     func start(store: AppStore) {
         self.store = store
-        guard listening == nil else { return }
+        // CLMonitor asserts (and took the app down at launch) when created
+        // before the person has allowed location; until then there is
+        // nothing to watch anyway.
+        guard listening == nil,
+              [.authorizedAlways, .authorizedWhenInUse].contains(manager.authorizationStatus)
+        else { return }
         listening = Task { [weak self] in
-            let monitor = await CLMonitor("alice-places")
+            let monitor = await CLMonitor("AlicePlaces")
             self?.monitor = monitor
+            Task { await self?.sync() }
             do {
                 for try await event in await monitor.events {
                     await self?.handle(event)
@@ -137,6 +143,10 @@ final class PlaceWatcher: NSObject, CLLocationManagerDelegate {
             // "While using" first, then iOS offers "Always" — the one that
             // lets a place be noticed with the app closed.
             if status == .authorizedWhenInUse { self.manager.requestAlwaysAuthorization() }
+            if let store = self.store, [.authorizedAlways, .authorizedWhenInUse].contains(status) {
+                self.start(store: store)
+                await self.sync()
+            }
         }
     }
 }
