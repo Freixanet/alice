@@ -260,7 +260,7 @@ struct MessageRow: View {
                         if let payment = PaymentApproval(command: approval.command) {
                             // The card itself has no words of Alice's; the chat around it does.
                             let said = message.content.isEmpty
-                                ? (store.activeConversation?.messages.last { $0.role == .assistant && !$0.content.isEmpty }?.content ?? "")
+                                ? (store.shownConversation?.messages.last { $0.role == .assistant && !$0.content.isEmpty }?.content ?? "")
                                 : message.content
                             PaymentApprovalCard(messageID: message.id, approval: approval, payment: payment,
                                                 language: ChatLanguage.of(said))
