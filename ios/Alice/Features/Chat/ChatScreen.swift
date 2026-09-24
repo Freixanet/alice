@@ -32,6 +32,16 @@ private struct ChatScreenContent: View, Equatable {
 
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
+    @State private var showingAlice = false
+
+    /// Alice's portrait and name, which open her settings.
+    private var aliceHeader: some View {
+        Button { showingAlice = true } label: {
+            AliceAvatar(zoomSource: ("alice-avatar", avatarZoom))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens Alice’s settings")
+    }
     /// The agent's page grows out of its face in the header, and goes back into it.
     @Namespace private var avatarZoom
     /// Today's own menu: asking before its history is thrown away.
@@ -153,6 +163,13 @@ private struct ChatScreenContent: View, Equatable {
         // twenty the page has, having been given no way to tell which was
         // which — and the name of a thing is where you expect to find all of
         // it, not a summary.
+        // Alice's own face opens her settings the way a contact opens in
+        // Messages: the page grows out of the portrait.
+        .sheet(isPresented: $showingAlice) {
+            NavigationStack { SettingsView() }
+                .preferredColorScheme(store.theme.colorScheme)
+                .navigationTransition(.zoom(sourceID: "alice-avatar", in: avatarZoom))
+        }
         .sheet(item: $configuring) { bot in
             NavigationStack {
                 BotDetail(bot: bot, onChange: { Task { await refreshBots() } })
@@ -296,7 +313,7 @@ private struct ChatScreenContent: View, Equatable {
             // Alice's own chat, so a bot's room is not a smaller kind of thing.
             // Today is Alice's own, so it wears her face.
             if isToday {
-                AliceAvatar()
+                aliceHeader
             } else if let bot {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
@@ -334,7 +351,7 @@ private struct ChatScreenContent: View, Equatable {
                     }
                 }
             } else {
-                AliceAvatar()
+                aliceHeader
             }
 
             Spacer(minLength: 0)

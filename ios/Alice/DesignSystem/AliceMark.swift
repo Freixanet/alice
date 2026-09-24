@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// The conversation's face at the top of a chat: a round portrait with
-/// the name on glass overlapping the chin.
+/// The conversation's face at the top of a chat, as Messages draws a
+/// contact: a round portrait with a soft shadow, and the name with a
+/// chevron on a glass capsule overlapping its chin. The chevron says the
+/// face opens something, as it does in Messages.
 struct ChatHeaderAvatar<Face: View>: View {
     var size: CGFloat = 72
     let name: String
@@ -9,12 +11,15 @@ struct ChatHeaderAvatar<Face: View>: View {
     /// When set, the face is where a zoom transition starts: the page it
     /// opens grows out of this disc and shrinks back into it.
     var zoomSource: (id: String, namespace: Namespace.ID)?
+    /// Whether tapping it opens a page: then the name carries Messages' chevron.
+    var opens = false
 
     init(size: CGFloat = 72, name: String, zoomSource: (id: String, namespace: Namespace.ID)? = nil,
-         @ViewBuilder face: () -> Face) {
+         opens: Bool? = nil, @ViewBuilder face: () -> Face) {
         self.size = size
         self.name = name
         self.zoomSource = zoomSource
+        self.opens = opens ?? (zoomSource != nil)
         self.face = face()
     }
 
@@ -29,15 +34,24 @@ struct ChatHeaderAvatar<Face: View>: View {
             }
             .frame(width: size, height: size)
             .clipShape(.circle)
+            .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
             .modifier(ZoomSource(source: zoomSource))
 
-            Text(name)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .glassEffect(.regular, in: .capsule)
-                .offset(y: -10)
+            HStack(spacing: 3) {
+                Text(name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if opens {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .offset(y: -12)
         }
         .padding(.bottom, -2)
         .accessibilityElement(children: .ignore)
@@ -48,13 +62,15 @@ struct ChatHeaderAvatar<Face: View>: View {
 /// Alice's face in her own chat, with her name on the glass under it.
 struct AliceAvatar: View {
     var size: CGFloat = 72
+    /// Where her settings page zooms out of, when tapping her opens it.
+    var zoomSource: (id: String, namespace: Namespace.ID)? = nil
     /// The god portraits paint a white ring of about 16px on a 384px
     /// square. Alice's cutout fills the disc, so the same fraction is
     /// inset here and the disc behind her shows through.
     private static let halo: CGFloat = 16.0 / 384.0
 
     var body: some View {
-        ChatHeaderAvatar(size: size, name: "Alice") {
+        ChatHeaderAvatar(size: size, name: "Alice", zoomSource: zoomSource) {
             Image("AliceAvatar")
                 .resizable()
                 .renderingMode(.original)
