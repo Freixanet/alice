@@ -371,6 +371,22 @@ extension AppStore {
         return true
     }
 
+    /// Something said while the agent is still working: handed to the running
+    /// task (Hermes' `/steer`, which it reads after its next step) instead of
+    /// waiting for the reply to end. False when it could not be delivered.
+    func steerWhileWorking(_ text: String) async -> Bool {
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !words.isEmpty, let chatIndex = conversations.firstIndex(where: { $0.id == activeID }) else { return false }
+        let chat = conversations[chatIndex]
+        do {
+            let output = try await executeHermesSlash(
+                "/steer " + words, conversationID: chat.id, profile: chat.routedBotName, earlier: chat.messages)
+            return !output.lowercased().contains("no active")
+        } catch {
+            return false
+        }
+    }
+
     private func presentSlashReply(
         command: String, chatIndex: Int, content: String
     ) {

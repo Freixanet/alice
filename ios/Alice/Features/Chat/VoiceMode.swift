@@ -55,6 +55,21 @@ final class VoiceConversation {
     private var baseline = 0
     private var conversationID: String?
 
+    /// The request the microphone feeds, swapped for a fresh one per thing
+    /// said while the engine keeps running (the tap runs on the audio thread).
+    private final class Feed: @unchecked Sendable {
+        private let lock = NSLock()
+        private var request: SFSpeechAudioBufferRecognitionRequest?
+        func set(_ new: SFSpeechAudioBufferRecognitionRequest?) { lock.withLock { request = new } }
+        func append(_ buffer: AVAudioPCMBuffer) { lock.withLock { request?.append(buffer) } }
+    }
+    private let feed = Feed()
+    /// Everything Alice has said aloud this turn, so her own voice picked up by
+    /// the microphone is never taken for the person talking over her.
+    private var saidAloud: Set<String> = []
+    /// Words that must be new (not her own) before talking over her stops her.
+    nonisolated static let bargeInWords = 3
+
     init() {
         synthesizer.delegate = finish
         finish.done = { [weak self] in self?.utteranceFinished() }
@@ -79,14 +94,14 @@ final class VoiceConversation {
     }
 
     /// The orb: while it speaks, stop and listen; while listening, send what
-    /// was heard now; at rest, listen again.
+    /// was heard now; at rest, listen again. Talking does the same without it.
     func tap() {
         switch phase {
-        case .speaking, .thinking:
-            if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
-            queued = 0
-            watcher?.cancel()
-            Task { await listen() }
+        case .speaking:
+            interrupt(keeping: "")
+        case .thinking:
+            phase = .listening
+            restartRecognition()
         case .listening:
             if heard.trimmingCharacters(in: .whitespaces).isEmpty {
                 pause()
@@ -105,66 +120,112 @@ final class VoiceConversation {
 
     // MARK: - Listening
 
+    /// The microphone stays open for the whole conversation — while Alice
+    /// thinks and while she speaks — with the phone's call echo cancellation,
+    /// so the person can talk over her or add something while she works.
     private func listen() async {
         guard store != nil else { return }
         guard await Self.permitted() else {
             phase = .unavailable("Alice needs the microphone and speech recognition. Turn them on in iOS Settings.")
             return
         }
-        stopListening()
-        heard = ""
         let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "es-ES")) ?? SFSpeechRecognizer()
         guard let recognizer, recognizer.isAvailable else {
             phase = .unavailable("Speech recognition is not available right now.")
             return
         }
         self.recognizer = recognizer
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default,
-                                    options: [.defaultToSpeaker, .allowBluetoothHFP, .duckOthers])
-            try session.setActive(true)
-
-            let request = SFSpeechAudioBufferRecognitionRequest()
-            request.shouldReportPartialResults = true
-            if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
-            self.request = request
-
-            let input = engine.inputNode
-            input.removeTap(onBus: 0)
-            let format = input.inputFormat(forBus: 0)
-            guard format.sampleRate > 0, format.channelCount > 0 else {
-                phase = .unavailable("The microphone is not available right now.")
+        if !engine.isRunning {
+            do {
+                let session = AVAudioSession.sharedInstance()
+                // voiceChat: the phone's echo cancellation, as in a call.
+                try session.setCategory(.playAndRecord, mode: .voiceChat,
+                                        options: [.defaultToSpeaker, .allowBluetoothHFP, .duckOthers])
+                try session.setActive(true)
+                let input = engine.inputNode
+                try? input.setVoiceProcessingEnabled(true)
+                input.removeTap(onBus: 0)
+                let format = input.outputFormat(forBus: 0)
+                guard format.sampleRate > 0, format.channelCount > 0 else {
+                    phase = .unavailable("The microphone is not available right now.")
+                    return
+                }
+                let feed = self.feed
+                input.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable [weak self] buffer, _ in
+                    feed.append(buffer)
+                    let power = Self.power(of: buffer)
+                    Task { @MainActor in self?.level = power }
+                }
+                engine.prepare()
+                try engine.start()
+            } catch {
+                phase = .unavailable("Couldn’t start the microphone.")
+                stopListening()
                 return
             }
-            // Realtime audio thread: nothing here may touch this actor directly.
-            nonisolated(unsafe) let sink = request
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable [weak self] buffer, _ in
-                sink.append(buffer)
-                let power = Self.power(of: buffer)
-                Task { @MainActor in self?.level = power }
-            }
-            engine.prepare()
-            try engine.start()
+        }
+        phase = .listening
+        restartRecognition()
+    }
 
-            recognition = recognizer.recognitionTask(with: request) { @Sendable [weak self] result, error in
-                let text = result?.bestTranscription.formattedString
-                let failed = error != nil && result == nil
-                Task { @MainActor in
-                    guard let self, self.phase == .listening else { return }
-                    if let text, !text.isEmpty {
-                        self.heard = text
-                        self.armSilence()
-                    } else if failed, self.heard.isEmpty {
-                        self.pause()
-                    }
-                }
+    /// A fresh recognition for the next thing said; the engine keeps running.
+    private func restartRecognition() {
+        silenceTimer?.cancel()
+        recognition?.cancel()
+        request?.endAudio()
+        heard = ""
+        guard let recognizer else { return }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
+        self.request = request
+        feed.set(request)
+        recognition = recognizer.recognitionTask(with: request) { @Sendable [weak self] result, error in
+            let text = result?.bestTranscription.formattedString
+            let failed = error != nil && result == nil
+            Task { @MainActor in self?.heard(text, failed: failed) }
+        }
+        if phase == .listening { armIdle() }
+    }
+
+    private func heard(_ text: String?, failed: Bool) {
+        guard let text, !text.isEmpty else {
+            if failed, phase == .listening, heard.isEmpty { pause() } else if failed { restartRecognition() }
+            return
+        }
+        switch phase {
+        case .listening:
+            heard = text
+            armSilence()
+        case .speaking:
+            // Only words that are not hers count: the rest is her own voice.
+            let fresh = Self.words(text).filter { !saidAloud.contains($0) }
+            if fresh.count >= Self.bargeInWords { interrupt(keeping: text) }
+        case .thinking:
+            // Something to add while she works: listen to it whole, then hand it over.
+            if Self.words(text).count >= 2 {
+                phase = .listening
+                heard = text
+                armSilence()
             }
-            phase = .listening
-            armIdle()
-        } catch {
-            phase = .unavailable("Couldn’t start the microphone.")
-            stopListening()
+        case .paused, .unavailable:
+            break
+        }
+    }
+
+    /// Talked over, or the orb tapped while she speaks: she stops at once and
+    /// listens; the rest of her reply stays in the chat, unread.
+    private func interrupt(keeping text: String) {
+        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        queued = 0
+        saying = ""
+        watcher?.cancel()
+        phase = .listening
+        if text.isEmpty {
+            restartRecognition()
+        } else {
+            heard = text
+            armSilence()
         }
     }
 
@@ -175,6 +236,7 @@ final class VoiceConversation {
         recognition = nil
         request?.endAudio()
         request = nil
+        feed.set(nil)
         if engine.isRunning { engine.stop() }
         engine.inputNode.removeTap(onBus: 0)
         level = 0
@@ -194,7 +256,8 @@ final class VoiceConversation {
         idleTimer?.cancel()
         idleTimer = Task { [weak self] in
             try? await Task.sleep(for: Self.idle)
-            guard !Task.isCancelled, let self, self.phase == .listening, self.heard.isEmpty else { return }
+            guard !Task.isCancelled, let self, self.phase == .listening, self.heard.isEmpty,
+                  self.store?.isSending != true else { return }
             self.pause()
         }
     }
@@ -203,9 +266,18 @@ final class VoiceConversation {
 
     private func sendHeard() {
         let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
-        stopListening()
         guard let store, !text.isEmpty else {
-            phase = .paused
+            restartRecognition()
+            return
+        }
+        // Still working on the last thing: this reaches the running task,
+        // which keeps going with it; the reply being watched stays the same.
+        if store.isSending {
+            restartRecognition()
+            phase = .thinking
+            Task { [weak self] in
+                if await store.steerWhileWorking(text) == false { self?.saying = "" }
+            }
             return
         }
         conversationID = store.activeChat.id
@@ -213,8 +285,10 @@ final class VoiceConversation {
         spoken = 0
         replyDone = false
         saying = ""
+        saidAloud = []
         store.sendQuickReply(text)
         phase = .thinking
+        restartRecognition()
         watch()
     }
 
@@ -243,10 +317,11 @@ final class VoiceConversation {
                 let whole = reply.map(\.content).joined(separator: "\n\n")
                 let done = sawActivity && !writing && !store.isSending
                 let ready = done ? whole : StreamingReply.split(whole).finished
-                self.speak(upTo: ready)
+                // Talking over her or adding something: do not start speaking over the person.
+                if self.phase != .listening { self.speak(upTo: ready) }
                 if done {
                     self.replyDone = true
-                    if self.queued == 0 { await self.listen() }
+                    if self.queued == 0, self.phase != .listening { self.phase = .listening; self.restartRecognition() }
                     return
                 }
             }
@@ -259,14 +334,10 @@ final class VoiceConversation {
         spoken = text.count
         let sentences = Self.speakable(fresh)
         guard !sentences.isEmpty else { return }
-        if phase != .speaking {
-            // Output only: the microphone stays off while it talks.
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-            try? AVAudioSession.sharedInstance().setActive(true)
-        }
         phase = .speaking
         let voice = Self.voice(for: sentences)
         for paragraph in sentences.components(separatedBy: "\n") where !paragraph.isEmpty {
+            saidAloud.formUnion(Self.words(paragraph))
             let utterance = AVSpeechUtterance(string: paragraph)
             utterance.voice = voice
             utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.04
@@ -279,10 +350,18 @@ final class VoiceConversation {
 
     private func utteranceFinished() {
         queued = max(0, queued - 1)
-        if queued == 0 {
+        if queued == 0, phase == .speaking {
             saying = ""
-            if replyDone { Task { await listen() } } else { phase = .thinking }
+            phase = replyDone ? .listening : .thinking
+            restartRecognition()
         }
+    }
+
+    /// Lowercased words without accents or punctuation, for telling her voice from the person's.
+    nonisolated static func words(_ text: String) -> [String] {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count > 1 }
     }
 
     // MARK: - Helpers
