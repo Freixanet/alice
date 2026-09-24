@@ -14,7 +14,15 @@ What it adds, all in the dashboard:
   the gateway and dashboard credentials. Authenticated through Hermes' token-auth seam
   (`Authorization: Bearer <code>`); only loopback and Tailscale addresses may claim.
 - `GET` / `POST /api/plugins/alice/memory` — read and edit a profile's curated memory
-  (MEMORY.md / USER.md), behind the dashboard login.
+  (MEMORY.md / USER.md), behind the dashboard login. `GET` also returns `origins`, one per
+  entry in the same order: who wrote it (`agent`, `person`, `hand`, `legacy`), when, and in
+  which session and profile. Edits made here are recorded as the person's.
+- **Memory that keeps itself tidy** (`memory_keeper.py`) — see below:
+  `GET /api/plugins/alice/memory/maintenance?profile=` (what cleanup would change now, and
+  what it has changed), `PUT …/memory/maintenance` `{profile, apply?, learn?}` (turn applying
+  cleanup on or off, off by default; and learning from conversations, on by default), `POST …/memory/maintenance/run` `{profile}` (a pass now),
+  `POST …/memory/changes/{id}/revert` `{profile}` (put back what one change removed) and
+  `GET …/memory/origin?profile=&target=&text=` (or `&entry=<id>`: "why do you know this?").
 - `GET` / `POST /api/plugins/alice/notes` — Alice's Notes: list and add to the notes store
   an agent keeps in `workspace/inbox-store` (the Inbox agent's; a remembered profile in
   `~/.hermes/.alice/notes_store.json`, else `inbox`, else the first profile with a store),
@@ -55,6 +63,60 @@ The agent gains one rule:
   message does not go.
   The hook runs only in profiles where the plugin is enabled; the team installer enables
   it in every profile.
+
+## Memory that keeps itself tidy
+
+Hermes keeps curated memory as plain `MEMORY.md` / `USER.md` files: entries separated by
+`§`, with no date, origin or id. The plugin leaves those files exactly as Hermes writes them
+and keeps its own record in `<profile home>/.alice/memory/`:
+
+- `entries.json` — where each entry came from, keyed by a hash of its text: an **agent**
+  (recorded by the `post_tool_call` hook on `memory`, with its session and profile), the
+  **person** (edits through `POST /memory`), **hand** (appeared in the file outside both — an
+  edit by hand), or **legacy** (already there the first time the plugin looked; no history,
+  still works as before).
+- `changes.json` — every change cleanup made, with the full text it removed. Any change can
+  be reverted; nothing is deleted without a trace. A reverted change is never proposed again.
+- `settings.json` — `apply`. **Off by default: cleanup only proposes.** And `learn`, on by
+  default (below).
+- `reviewed.json` — for each conversation, the last message already read for facts.
+
+Cleanup runs after each agent write to memory and on demand, and is conservative on
+purpose. It only acts on:
+
+1. **Clear duplicates** — the same entry again, ignoring case, spacing and final punctuation.
+   The oldest copy stays.
+2. **Dated events that have passed** — an entry about an appointment, flight, deadline… whose
+   every explicit date is more than a day behind. A fact with a date in it ("born on…") does
+   not expire.
+3. **"Ya no…" contradictions** — a newer entry saying something is no longer so retires the
+   older entry that says it is; the "ya no" stays.
+
+Anything doubtful is left alone. Entries from the person or edited by hand are never touched
+by any rule; legacy entries only take part in exact duplicates and in dates that name the
+year. Every write goes through Hermes' own `MemoryStore` (its lock, atomic writes and size
+limit); a revert that no longer fits the limit says so and changes nothing.
+
+### What the person said and no agent kept
+
+Hermes' agent saves to memory when it notices something, and reviews the conversation every
+few turns (`memory.nudge_interval`). A short exchange ("vivo en Súria", two turns) can end
+before either happens. `memory_review.py` closes that gap: every finished turn
+(`on_session_end`) restarts a 90-second wait for its conversation; once it is quiet, the
+plugin reads **only the person's own messages** since the last look — never the agent's
+replies, never routines (`cron`), never internal profiles — and asks the profile's own model
+(or `auxiliary.alice_memory_review`, if set) for durable facts about them. A fact is kept
+only when:
+
+- its `evidence` is the person's words, and they are really in one of their messages (case,
+  spacing and Markdown marks aside; fragments joined by "…" must appear in order);
+- it is short, one entry, and not already in memory;
+- if it updates an entry, that entry is named exactly and was not written by the person or
+  by hand.
+
+Each fact kept is a `learned` change in `changes.json`, with its session and evidence, and
+an origin of `learned`; reverting it removes the fact and puts back what it replaced. Each
+message is read once. At most five facts per look.
 
 ## Install
 

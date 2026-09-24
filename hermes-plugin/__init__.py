@@ -15,6 +15,8 @@ A note-taking profile also gains a ``notes`` toolset for the store it keeps in
 ``workspace/inbox-store``, so capturing a note is a tool call instead of a shell command.
 No changes to Hermes' own code.
 """
+import contextvars
+import threading
 from pathlib import Path
 
 BUSINESS_CHANNEL = "Business (Beta)"
@@ -385,7 +387,125 @@ def _post_tool_call(tool_name=None, args=None, result=None, session_id="", statu
                               session_id=session_id or "", status=status)
     except Exception:
         pass
+    if tool_name == "memory" and status != "error":
+        _keep_memory(args, session_id or "")
     return None
+
+
+def _memory_keeper():
+    return _module("memory_keeper.py", "alice_memory_keeper")
+
+
+def _keep_memory(args, session_id: str) -> None:
+    """An agent just wrote to memory: note where the entry came from, then tidy (or only
+    propose, by default). Never raises into the turn."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        home = Path(get_hermes_home())
+        _, profile = _root_and_sender(home)
+        a = args if isinstance(args, dict) else {}
+        target = str(a.get("target") or "memory")
+        keeper_module = _memory_keeper()
+        keeper = keeper_module.Keeper(home, keeper_module.HermesFiles())
+        # Recorded before anything looks: an entry nobody recorded reads as hand-written.
+        operations = a.get("operations") if isinstance(a.get("operations"), list) else [a]
+        targets = set()
+        for op in operations:
+            if not isinstance(op, dict):
+                continue
+            op_target = str(op.get("target") or target)
+            targets.add(op_target)
+            text = op.get("content") or op.get("new_text") or op.get("new_content")
+            if op.get("action") in ("add", "replace") and text:
+                keeper.record(op_target, str(text), "agent", session=session_id, profile=profile)
+        keeper.run(targets=tuple(t for t in sorted(targets) if t in keeper_module.TARGETS))
+    except Exception:
+        pass
+
+
+# A conversation counts as paused after this long without a new turn; then what the person
+# said in it is read once for facts about them that were not kept (memory_review.py).
+_REVIEW_AFTER_S = 90
+_review_timers: dict = {}
+_review_lock = threading.Lock()
+
+
+def _schedule_memory_review(session_id="", platform="", **_) -> None:
+    """Each finished turn restarts its conversation's wait; the look happens once it is quiet."""
+    try:
+        if not session_id or str(platform or "") == "cron":
+            return
+        from hermes_constants import get_hermes_home
+
+        home = Path(get_hermes_home())
+        root, profile = _root_and_sender(home)
+        if profile in internal_profiles(root):
+            return
+        key = f"{home}|{session_id}"
+        # The profile the turn ran under travels with the look, on another thread.
+        context = contextvars.copy_context()
+        timer = threading.Timer(_REVIEW_AFTER_S, lambda: context.run(_review_memory, home, profile, session_id))
+        timer.daemon = True
+        with _review_lock:
+            previous = _review_timers.pop(key, None)
+            if previous:
+                previous.cancel()
+            _review_timers[key] = timer
+        timer.start()
+    except Exception:
+        pass
+
+
+def _review_ask(messages):
+    """The profile's own model, so the person's words go nowhere their conversation did not
+    already go — unless ``auxiliary.alice_memory_review`` chooses another on purpose."""
+    from agent.auxiliary_client import call_llm, extract_content_or_reasoning
+    from hermes_cli.config import load_config
+
+    config = load_config() or {}
+    chosen = ((config.get("auxiliary") or {}).get("alice_memory_review") or {})
+    model = config.get("model") or {}
+    route = {} if chosen.get("provider") or not isinstance(model, dict) else {
+        "provider": model.get("provider") or None, "model": model.get("default") or None,
+        "base_url": model.get("base_url") or None}
+    response = call_llm(task="alice_memory_review", messages=messages, max_tokens=900, timeout=90, **route)
+    return extract_content_or_reasoning(response) or ""
+
+
+def _review_memory(home: Path, profile: str, session_id: str) -> None:
+    key = f"{home}|{session_id}"
+    with _review_lock:
+        _review_timers.pop(key, None)
+    try:
+        from hermes_state import SessionDB
+
+        keeper_module = _module("memory_keeper.py", "alice_memory_keeper")
+        review = _module("memory_review.py", "alice_memory_review")
+        keeper = keeper_module.Keeper(home, keeper_module.HermesFiles())
+        if not keeper.settings()["learn"] or not keeper.files.store.target_enabled("user"):
+            return
+        seen = keeper._read("reviewed.json", {})
+        seen = seen if isinstance(seen, dict) else {}
+        db = SessionDB(read_only=True)
+        try:
+            session = db.get_session(session_id) or {}
+            if str(session.get("source") or "") == "cron":
+                return
+            after = seen.get(session_id)
+            messages = db.get_messages(session_id, after_id=int(after) if after else None)
+        finally:
+            db.close()
+        if not messages:
+            return
+        turns = review.person_turns(messages)
+        if turns:
+            review.review(turns, keeper, _review_ask, session=session_id, profile=profile)
+        # Read once: the same words are never looked at again, whatever the model said.
+        seen[session_id] = max(int(m.get("id") or 0) for m in messages) or after
+        keeper._write("reviewed.json", dict(list(seen.items())[-500:]))
+    except Exception:
+        pass
 
 
 def _is_agent_maker(**_) -> bool:
@@ -774,6 +894,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _browser_ready)
     # What each agent did with consequences, for Alice's Activity.
     ctx.register_hook("post_tool_call", _post_tool_call)
+    # What the person said about themselves and no agent kept, read once a conversation pauses.
+    ctx.register_hook("on_session_end", _schedule_memory_review)
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
