@@ -16,6 +16,9 @@ struct PaymentCardOfferCard: View {
     @State private var saved: SavedCard?
     /// A card already saved for another site, offered here with one tap.
     @State private var known: SavedCard?
+    /// Whether the saved cards were read: until then no buttons, so the card
+    /// does not show "Add" and then swap to "Use Mastercard" a second later.
+    @State private var checked = false
     @State private var working = false
     @State private var problem: String?
 
@@ -43,7 +46,9 @@ struct PaymentCardOfferCard: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                if known == nil {
+                if !checked {
+                    ProgressView()
+                } else if known == nil {
                     Button(language.pick("Add", "Añadir")) { showingForm = true }
                         .buttonStyle(.borderedProminent)
                 }
@@ -78,7 +83,14 @@ struct PaymentCardOfferCard: View {
         }
         .task {
             let cards = (try? await store.savedCards(profile: offer.profile)) ?? []
-            known = cards.first { $0.origin != offer.origin }
+            // Already saved for this very page (bound when the shop sent you
+            // here): nothing to ask, it is ready.
+            if let ready = cards.first(where: { $0.origin == offer.origin }) {
+                saved = ready
+            } else {
+                known = cards.first { $0.origin != offer.origin }
+            }
+            checked = true
         }
     }
 

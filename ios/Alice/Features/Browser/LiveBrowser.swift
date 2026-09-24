@@ -172,6 +172,13 @@ struct LiveBrowserCard: View {
     @Environment(\.colorScheme) private var scheme
     @Namespace private var zoom
     @State private var open = false
+    @State private var following = false
+
+    private func follow(_ on: Bool) {
+        guard on != following else { return }
+        following = on
+        if on { live.watch() } else { live.unwatch() }
+    }
 
     private var live: LiveBrowser { store.liveBrowser }
 
@@ -233,8 +240,12 @@ struct LiveBrowserCard: View {
         .matchedTransitionSource(id: "live-browser", in: zoom)
         .accessibilityLabel(Text("Browser: \(live.title)"))
         .accessibilityHint("Opens the browser to watch or take over.")
-        .onAppear { live.watch() }
-        .onDisappear { live.unwatch() }
+        // Live only while the agent works: once the task is over the card
+        // keeps its last frame and stops following the browser, which kept
+        // moving under a finished reply. Opening it still shows it live.
+        .onAppear { follow(working) }
+        .onChange(of: working) { _, now in follow(now) }
+        .onDisappear { follow(false) }
         .fullScreenCover(isPresented: $open) {
             LiveBrowserScreen(agentWorking: working && browsing, caption: caption)
                 .navigationTransition(.zoom(sourceID: "live-browser", in: zoom))

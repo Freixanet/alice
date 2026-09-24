@@ -158,7 +158,11 @@ struct ThinkingTrace: View {
                         .allowsHitTesting(false)
                     }
             }
-            .fixedSize()
+            // Its own height, never more than the row's width: a long status
+            // ("Primary model restored: …") pushed the whole reply, browser
+            // card included, off the side of the screen.
+            .fixedSize(horizontal: false, vertical: true)
+            .truncationMode(.tail)
         } else if pending {
             // No shimmer, but the word still moves on: a redraw every beat.
             TimelineView(.periodic(from: .now, by: ToolCaption.musingBeat)) { timeline in

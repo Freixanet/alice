@@ -7825,6 +7825,23 @@ final class AppStore {
     ///
     /// An adapter rather than a second renderer: deltas, tools and approvals
     /// all reach `apply` the way the HTTP path's do.
+    /// Hermes' status line for the person, or nil. Its own plumbing — a model
+    /// falling back or restored, providers, context compression, retries — is
+    /// not something to read in a chat, and anything long is cut to a few
+    /// words: the caption sits on one line beside the thinking spark.
+    nonisolated static func statusCaption(_ raw: String) -> String? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        let lowered = text.lowercased()
+        let plumbing = ["model", "fallback", "provider", "restored", "compress", "context", "retry", "retrying",
+                        "rate limit", "token", "copilot", "credential", "reconnect", "gateway", "goal", "judge"]
+        if plumbing.contains(where: lowered.contains) { return nil }
+        let clean = text.drop { !$0.isLetter && !$0.isNumber }
+        guard !clean.isEmpty else { return nil }
+        let words = clean.split(separator: " ")
+        return words.count > 6 ? words.prefix(6).joined(separator: " ") + "…" : String(clean)
+    }
+
     nonisolated static func chatEvent(from event: HermesRPCEvent) -> ChatEvent? {
         switch event.type {
         case "message.interim":
@@ -7899,9 +7916,8 @@ final class AppStore {
             let text = (event.payload["text"] as? String)
                 ?? (event.payload["message"] as? String)
                 ?? (event.payload["status"] as? String)
-            guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else { return nil }
-            return .status(text)
+            guard let text, let shown = Self.statusCaption(text) else { return nil }
+            return .status(shown)
         case "approval.request":
             // Hermes' approval payload has no `title`: it carries `command`,
             // `description`, `pattern_key(s)`, `allow_session`,
