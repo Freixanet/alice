@@ -4,12 +4,11 @@ This is where the work stands and what comes next. The user writes in Spanish, a
 
 ## State
 
-- `main` holds everything from the `fix/ios-chat-bugs` branch plus the self-maintaining memory (`feat/memory-self-maintaining`, PR #31).
-- The iPhone has **build 95**. Build numbers only go up (`CURRENT_PROJECT_VERSION=96` next).
-- **Not merged yet:** `origin/rescue/plugin-exa-key-card`. That branch holds another session's work: Exa search with the person's `EXA_API_KEY`, and the secure key card (`secret_store.py`, `/api/plugins/alice/secret`, prompt section `alice.claves`). Merging it into main conflicts in `hermes-plugin/__init__.py`, `dashboard/plugin_api.py`, `README.md` and `tests/test_business_isolation.py`. The two sides are independent additions, so resolve by keeping both.
-- **The live plugin on the Mac (`~/.hermes/plugins/alice`) was replaced at 21:37 by another session.** Before deploying:
-  1. Compare it with the repo.
-  2. Merge; never just overwrite. Keep backups under `~/.hermes/backups/`.
+- `main` holds everything: `fix/ios-chat-bugs`, the self-maintaining memory, and the other session's work (Exa key, secure key card, site login that can create an account), merged in f0b2cc9.
+- The iPhone has **build 96**, built from `main`. Build numbers only go up (`CURRENT_PROJECT_VERSION=97` next). Always build from `main`, so nothing another session did disappears.
+- The live plugin on the Mac (`~/.hermes/plugins/alice`) matches `main`. The previous copy is backed up under `~/.hermes/backups/plugin-alice-*`. Before deploying again:
+  1. Compare the live copy with the repo.
+  2. Merge; never just overwrite.
   3. Restart `ai.hermes.gateway`, then `ai.hermes.dashboard`, one at a time. The iPhone chats run in the dashboard (port 9119).
 - **Never test in the shared agent browser (127.0.0.1:9222).** Use a temporary Chrome on another port.
 
@@ -32,7 +31,7 @@ This is where the work stands and what comes next. The user writes in Spanish, a
 
 ## Open problems
 
-1. **Card payment on Redsys never completes.** Alice reaches the Redsys page, but the card data isn't entered and "Pagar" stays disabled. Hermes' vault supports payment items: `browser_vault_fill` fills card fields after the user confirms. Next steps:
+1. **Card payment (Redsys) — fixed, not yet tried end to end.** The vault had no card, and nothing let the person give one. Now an agent at a payment page with no card ends with `[Añadir tarjeta](alice://connect/card?origin=…&profile=…)`; the app shows a native card form (`PaymentCardOfferCard`) and the plugin (`vault_cards.py`, `/api/plugins/alice/vault/cards`) stores it in Hermes' vault, bound to that page. Hermes fills it after the person confirms. Risk: Hermes finds card fields by English names and autocomplete tokens; if a Spanish bank page has neither, the fill finds nothing and Alice asks the person to type the card in the live view. The old notes: Alice reaches the Redsys page, but the card data isn't entered and "Pagar" stays disabled. Hermes' vault supports payment items: `browser_vault_fill` fills card fields after the user confirms. Next steps:
    - make sure the app answers the vault's payment confirmation, and a request to save a card if Hermes sends one (check the `tui_gateway/contracts/server_requests.py` vault requests);
    - teach Alice to use a saved card, or ask for one through a secure card, never the chat;
    - it still needs the person's explicit yes before paying.
