@@ -683,6 +683,14 @@ def resolve_prompt(_session_info=None) -> str:
 _PLAIN_TEXT_PLATFORMS = {"photon", "sms", "imessage", "bluebubbles"}
 
 
+def _text_channel():
+    return _module("text_channel.py", "alice_text_channel")
+
+
+def _plain_text_reply(**kwargs):
+    return _text_channel().transform(**kwargs)
+
+
 def channel_prompt(session_info=None) -> str:
     """How to write when the person reads Alice in iMessage or SMS rather than the app."""
     platform = str((session_info or {}).get("platform") or "").lower()
@@ -694,8 +702,13 @@ def channel_prompt(session_info=None) -> str:
         "asteriscos, almohadillas, tablas ni enlaces con corchetes. Escribe como un mensaje de texto "
         "entre personas: frases cortas, lo importante primero, y si hay varias cosas, una por línea "
         "empezando con «•». Los enlaces van como la dirección sola en su propia línea "
-        "(https://…), nunca como [texto](url). Si la respuesta es larga, divídela en mensajes breves "
-        "separados por una línea en blanco."
+        "(https://…), nunca como [texto](url). Nunca un párrafo largo: una idea por párrafo, "
+        "con una línea en blanco entre ellos. Por ejemplo:\n"
+        "Hoy en Chollometro, lo mejor:\n\n"
+        "• Sandwichera Create: 21,80 € (antes 54,95 €)\n"
+        "• Lidl: 3 € de descuento en compras de 30 €, solo hoy\n\n"
+        "Ojo: el de Apple Music es para estudiantes de India.\n\n"
+        "https://www.chollometro.com/ofertas"
     )
 
 
@@ -988,6 +1001,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _browser_ready)
     # What each agent did with consequences, for Alice's Activity.
     ctx.register_hook("post_tool_call", _post_tool_call)
+    # In iMessage and SMS the reply is made readable as a text message (text_channel.py).
+    ctx.register_hook("transform_llm_output", _plain_text_reply)
     # What the person said about themselves and no agent kept, read once a conversation pauses.
     ctx.register_hook("on_session_end", _schedule_memory_review)
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
