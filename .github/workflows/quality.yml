@@ -14,21 +14,23 @@ concurrency:
 
 jobs:
   verify:
-    # A self-hosted runner can read the host it runs on. Never execute a PR
-    # authored by another account on this personal Mac.
-    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
-    runs-on: [self-hosted, macOS]
-    timeout-minutes: 20
+    # GitHub-hosted: the repository is public, so these runners are free, and
+    # the development Mac must not run CI (a simulator made it unusable).
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      # Was the gitleaks container. The runner is a Mac now, where Docker is
-      # not always running, and the binary is the same scanner without that
-      # dependency. The version is printed so every run records which scanner
-      # judged it.
+      # The pinned gitleaks binary; the version is printed so every run
+      # records which scanner judged it.
       - name: Secret scan
+        env:
+          GITLEAKS_VERSION: 8.30.1
         run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP" gitleaks
+          export PATH="$RUNNER_TEMP:$PATH"
           gitleaks version
           gitleaks detect --source=. --no-banner --redact
       - uses: actions/setup-node@v5
@@ -42,17 +44,29 @@ jobs:
       # bundles:check reads .vercel/output/static/assets, so it needs the build.
       - run: npm run build
       - run: npm run bundles:check
+      # The plugin runs inside official Hermes, so its tests run against the
+      # same upstream commit the development Mac runs (0.21.3).
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install official Hermes
+        env:
+          HERMES_COMMIT: b889e4e91cfc5a4a1d7738d8943c801143bf7c7c
+        run: |
+          set -euo pipefail
+          git init -q "$RUNNER_TEMP/hermes-agent"
+          cd "$RUNNER_TEMP/hermes-agent"
+          git fetch -q --depth 1 https://github.com/NousResearch/hermes-agent.git "$HERMES_COMMIT"
+          git checkout -q FETCH_HEAD
+          python -m pip install -q .
       - name: Test Hermes plugin and Mac notifier
         run: |
           set -euo pipefail
-          HERMES_TEST_PYTHON="$HOME/.hermes/hermes-agent/venv/bin/python"
-          test -x "$HERMES_TEST_PYTHON"
-          "$HERMES_TEST_PYTHON" -m unittest discover -s hermes-plugin/tests
-          "$HERMES_TEST_PYTHON" -m unittest discover -s mac/notifier
+          python -m unittest discover -s hermes-plugin/tests
+          python -m unittest discover -s mac/notifier
 
   browser:
-    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
@@ -61,9 +75,7 @@ jobs:
           node-version: 24
       - run: npm install --global npm@11.19.0
       - run: npm ci
-      # `--with-deps` installs apt packages and this is macOS; the browsers
-      # themselves install the same way.
-      - run: npx playwright install chromium firefox webkit
+      - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v5
         if: failure()
@@ -73,12 +85,14 @@ jobs:
           retention-days: 14
 
   ios:
-    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
-    runs-on: [self-hosted, macOS]
+    # A GitHub-hosted Mac with Xcode 26 and its own simulators.
+    runs-on: macos-26
     # A cold simulator plus the full UI suite exceeds the old build-only budget.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+      - name: Select Xcode 26
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
       - name: Build and test native app
