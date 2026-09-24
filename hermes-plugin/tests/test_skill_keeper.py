@@ -37,5 +37,15 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(keeper.review(write(text)), reason, text)
 
 
+class ShortenTests(unittest.TestCase):
+    def test_a_long_description_becomes_one_short_sentence(self):
+        content = "---\nname: online-shopping\ndescription: Buy things on Spanish shops end to end — basket, address, delivery and the bank's payment page, with one yes.\n---\nBody"
+        out = keeper._shorten_descriptions({"operations": [{"content": content}]})["operations"][0]["content"]
+        line = [l for l in out.splitlines() if l.startswith("description:")][0]
+        self.assertLessEqual(len(line[len("description: "):]), 60)
+        self.assertTrue(line.endswith("."))
+        self.assertIn("Body", out)
+
+
 if __name__ == "__main__":
     unittest.main()

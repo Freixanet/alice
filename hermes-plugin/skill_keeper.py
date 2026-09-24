@@ -73,10 +73,72 @@ def _log(home: Path, entry: Dict[str, Any]) -> None:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+_DESCRIPTION = re.compile(r"^(description:\s*)(.+)$", re.M)
+DESCRIPTION_LIMIT = 60
+
+
+def _short(description: str) -> str:
+    """One sentence within Hermes' 60-character budget, ending with a period."""
+    text = description.strip().strip("'\"").strip()
+    first = re.split(r"(?<=[.;:—–])\s|\s[—–-]\s", text)[0].rstrip(".;:—– ")
+    if len(first) > DESCRIPTION_LIMIT - 1:
+        first = first[:DESCRIPTION_LIMIT - 1].rsplit(" ", 1)[0].rstrip(",;: ")
+    return first + "."
+
+
+def _shorten_descriptions(value: Any) -> Any:
+    """The same write with every skill description cut to fit (an older Hermes staged longer ones)."""
+    if isinstance(value, dict):
+        return {k: _shorten_descriptions(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_shorten_descriptions(v) for v in value]
+    if isinstance(value, str) and value.lstrip().startswith("---") and "description:" in value:
+        return _DESCRIPTION.sub(lambda m: m.group(1) + _short(m.group(2)), value, count=1)
+    return value
+
+
+# Writes that can no longer apply: the skill they patch is gone, or they were staged incomplete.
+_OBSOLETE = re.compile(r"not found in active profile|content is required", re.I)
+
+
+def _apply(payload: Dict[str, Any]) -> Dict[str, Any]:
+    from tools.skill_manager_tool import apply_skill_pending
+
+    try:
+        result = json.loads(apply_skill_pending(payload))
+    except Exception as exc:  # a broken write must not stop the others
+        return {"success": False, "error": f"{type(exc).__name__}: {exc}"}
+    if not result.get("success") and "Description is" in str(result.get("error")):
+        payload = _shorten_descriptions(payload)
+        try:
+            result = json.loads(apply_skill_pending(payload))
+        except Exception as exc:
+            return {"success": False, "error": f"{type(exc).__name__}: {exc}"}
+    if not result.get("success") and "already exists" in str(result.get("error")):
+        # A later lesson about a skill written meanwhile: it replaces it.
+        try:
+            result = json.loads(apply_skill_pending(_create_as_edit(payload)))
+        except Exception as exc:
+            return {"success": False, "error": f"{type(exc).__name__}: {exc}"}
+    return result
+
+
+def _create_as_edit(value: Any) -> Any:
+    """A ``create`` of a skill that now exists, as a rewrite of its SKILL.md."""
+    if isinstance(value, dict):
+        out = {k: _create_as_edit(v) for k, v in value.items()}
+        if out.get("action") == "create" and isinstance(out.get("content"), str):
+            return {"action": "write_file", "name": out.get("name"), "file_path": "SKILL.md",
+                    "file_content": out["content"]}
+        return out
+    if isinstance(value, list):
+        return [_create_as_edit(v) for v in value]
+    return value
+
+
 def run(home: Path) -> Dict[str, Any]:
     """Apply every staged skill write that passes review; hold the rest. Idempotent."""
     from tools import write_approval as wa
-    from tools.skill_manager_tool import apply_skill_pending
 
     learned, held, failed = [], [], []
     with _lock:
@@ -86,14 +148,14 @@ def run(home: Path) -> Dict[str, Any]:
             if reason:
                 held.append({"id": record.get("id"), "summary": summary, "reason": reason})
                 continue
-            try:
-                result = json.loads(apply_skill_pending(record.get("payload") or {}))
-            except Exception as exc:  # a broken write must not stop the others
-                result = {"success": False, "error": f"{type(exc).__name__}: {exc}"}
+            result = _apply(record.get("payload") or {})
             if result.get("success"):
                 wa.discard_pending(wa.SKILLS, record["id"])
                 learned.append(summary)
                 _log(home, {"at": time.time(), "learned": summary, "origin": record.get("origin")})
+            elif _OBSOLETE.search(str(result.get("error"))):
+                wa.discard_pending(wa.SKILLS, record["id"])
+                _log(home, {"at": time.time(), "dropped": summary, "reason": str(result.get("error"))[:160]})
             else:
                 failed.append({"id": record.get("id"), "summary": summary, "error": str(result.get("error"))[:200]})
         for item in held:
