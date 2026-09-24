@@ -79,6 +79,71 @@ fails, diagnose it; do not weaken the check or update snapshots merely to turn i
 green. Do not merge, tag, deploy or claim universal compatibility from incomplete
 evidence. The user's explicit instructions determine publication authorization.
 
+## Task checklist: close every task with evidence
+
+Apply to every task. Tick only what was actually checked; say when an item does
+not apply; leave anything that could not be checked as pending. A test that was
+defined but not run is still pending.
+
+**Before changing code**
+
+- [ ] Understand the project: read instructions, files, patterns, dependencies and
+  existing commands. Preserve other people's changes.
+- [ ] Define the outcome: what the person should be able to do, what they should
+  get, and what is out of scope. Resolve only the questions that would change the
+  solution significantly.
+- [ ] Choose the smallest solution: build on what exists. Justify every new
+  dependency, abstraction or service. Check unfamiliar APIs in official docs.
+
+**While implementing**
+
+- [ ] Cover the whole path: input → action → result → persistence where it
+  applies, including empty, loading, error and recovery states.
+- [ ] Protect data and actions: validate input, check permissions where the
+  operation runs, never expose secrets. Consider double submission, concurrency
+  and network failure when they affect the task.
+- [ ] Care for the real interface: reuse components and styles; check hierarchy,
+  copy, layout at every size, keyboard, focus and contrast. Inspect the rendered
+  result.
+- [ ] Preserve what already works: keep contracts and existing behaviour unless a
+  change was asked for. Avoid edits unrelated to the goal.
+
+**Before calling it done**
+
+- [ ] Check the behaviour: verify the acceptance criteria and the important
+  failures. Add tests that catch relevant regressions; for a bug, confirm it
+  reproduces and that the fix removes it.
+- [ ] Run the checks that apply: tests, types, lint and build. Never disable a
+  check or change an expectation just to make it pass.
+- [ ] Review the whole diff: accidental changes, unnecessary code, secrets,
+  incompatibilities and documentation left wrong.
+- [ ] Report precisely: what changed, what was checked, what could not be checked
+  and what risk remains.
+
+**If it ships**
+
+- [ ] Check delivery and recovery: know the version and where it went, how to
+  roll back, and test the main flow after deploying. Review migrations when data
+  changes.
+
+**Alice specifics**
+
+- [ ] iPhone builds: the build number only goes up (passed to `xcodebuild` as
+  `CURRENT_PROJECT_VERSION`, never set in `project.yml`). Before saying an install
+  arrived, read the version off the device (`xcrun devicectl device info apps`).
+- [ ] The Mac's Hermes plugin: back up `~/.hermes/plugins/alice` to
+  `~/.hermes/backups/` before deploying, then restart `ai.hermes.gateway` and, after
+  it answers, `ai.hermes.dashboard` — one at a time.
+- [ ] Never test in the person's shared agent browser (CDP on 127.0.0.1:9222); use
+  a separate temporary Chrome on another port.
+- [ ] End every report with three parts: **checked** (with the evidence),
+  **not checkable here** (on this Mac: anything visual on screen, since there is no
+  simulator; real purchases and payments; the model's behaviour in a live
+  conversation) and **remaining risk**.
+
+The question that matters most at the end: *what evidence shows this change does
+what was asked and keeps what already worked?*
+
 ## Keep the project maintainable
 
 New behavior belongs in a focused service, model or feature module. Avoid further
