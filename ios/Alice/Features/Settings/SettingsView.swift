@@ -12,47 +12,53 @@ struct SettingsView: View {
         Form {
             if let warning = store.storageWarning {
                 Section {
-                    Label("Something could not be kept on this phone", systemImage: "exclamationmark.triangle.fill")
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(Palette.warning(scheme))
-                    Text(warning)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
             }
-
             if let warning = store.liveActivityWarning {
                 Section {
-                    Label("Live Activity could not start", systemImage: "exclamationmark.triangle.fill")
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(Palette.warning(scheme))
-                    Text(warning)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
             }
 
-            // Developer mode's own place: checks, the live meter and tools.
-            if store.developerMode {
-                Section {
-                    NavigationLink { DeveloperScreen() } label: {
-                        Label("Developer", systemImage: "wrench.and.screwdriver")
+            // What everything else depends on, then what it connects to.
+            Section {
+                NavigationLink { ConnectView() } label: {
+                    LabeledContent {
+                        Text(store.isConnected ? "Connected" : "Not connected")
+                    } label: {
+                        Label("Hermes", systemImage: "antenna.radiowaves.left.and.right")
+                    }
+                }
+                if store.dashboardReady {
+                    NavigationLink { ConnectionsScreen() } label: {
+                        Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .accessibilityIdentifier("settings.connections")
+                    NavigationLink { AgentWorkScreen() } label: {
+                        Label("Agent work", systemImage: "square.stack.3d.up")
                     }
                 }
             }
 
-            // First: whether Alice can reach Hermes is what everything
-            // below depends on, and what people come here to check.
-            Section("Connection") {
-                NavigationLink { ConnectView() } label: {
-                    HStack {
-                        Label(
-                            store.isConnected ? "Hermes connected" : "Connect your Hermes",
-                            systemImage: "antenna.radiowaves.left.and.right"
-                        )
-                        Spacer()
-                        Circle()
-                            .fill(store.isConnected ? Palette.success(scheme) : Color.secondary.opacity(0.4))
-                            .frame(width: 8, height: 8)
-                            .accessibilityHidden(true)
+            Section {
+                NavigationLink { ActivityScreen() } label: {
+                    LabeledContent {
+                        if store.unreadActivity > 0 {
+                            Text("\(store.unreadActivity)")
+                                .monospacedDigit()
+                                .accessibilityLabel("\(store.unreadActivity) unread")
+                        }
+                    } label: {
+                        Label("Activity", systemImage: "bell")
+                    }
+                }
+                .accessibilityIdentifier("settings.activity")
+                if store.dashboardReady {
+                    NavigationLink { MemoryScreen() } label: {
+                        Label("Memory", systemImage: "person.text.rectangle")
                     }
                 }
             }
@@ -82,118 +88,46 @@ struct SettingsView: View {
                         Text("After 15 minutes").tag(900)
                     }
                 }
-            } header: {
-                Text("Privacy")
+                Toggle(isOn: $store.barkRelays) {
+                    Label("Notifications via Bark", systemImage: "bell.badge")
+                }
             } footer: {
-                Text(Biometrics.available
-                     ? "Alice asks for \(Biometrics.name) when it opens and when you come back to it, and hides its content in the app switcher. Notifications still arrive."
-                     : "Set a passcode for this iPhone in the Settings app to lock Alice.")
-            }
-
-            Section {
-                NavigationLink {
-                    ActivityScreen()
-                } label: {
-                    HStack {
-                        Label("Activity", systemImage: "bell")
-                        Spacer(minLength: 8)
-                        if store.unreadActivity > 0 {
-                            Text("\(store.unreadActivity)")
-                                .font(.caption2.weight(.semibold))
-                                .monospacedDigit()
-                                .foregroundStyle(store.accent.primary(scheme))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(store.accent.primary(scheme).opacity(0.16), in: .capsule)
-                                .accessibilityLabel("\(store.unreadActivity) unread")
-                        }
-                    }
-                }
-                .accessibilityIdentifier("settings.activity")
-            } footer: {
-                Text("What has happened, and what is waiting on you.")
-            }
-
-            // What Alice has learnt, where it can be read and corrected — the
-            // same memory Hermes gives her in every conversation. Asking her
-            // "what do you know about me?" or "forget …" works too.
-            if store.dashboardReady {
-                Section {
-                    NavigationLink { MemoryScreen() } label: {
-                        Label("What Alice knows about you", systemImage: "person.text.rectangle")
-                    }
-                } footer: {
-                    Text("She remembers what matters from your conversations. Change or remove anything here, or tell her “forget …”.")
+                if !Biometrics.available {
+                    Text("Set a passcode for this iPhone to lock Alice.")
                 }
             }
 
-            // Where a connection an agent offered in a chat can be made — or
-            // undone — whatever was said there.
-            if store.dashboardReady {
-                Section {
-                    NavigationLink { ConnectionsScreen() } label: {
-                        Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
-                    }
-                    .accessibilityIdentifier("settings.connections")
-                } footer: {
-                    Text("Your iPhone's calendar and every connector Hermes offers — Notion, Linear, Figma and more — to connect or disconnect.")
-                }
-
-                Section {
-                    NavigationLink { AgentWorkScreen() } label: {
-                        Label("Agent work", systemImage: "square.stack.3d.up")
-                    }
-                } footer: {
-                    Text("Watch pages, share a browser with your agents and give them documents to work on.")
-                }
-            }
-
-            Section {
-                Toggle("Replies and routines come through Bark", isOn: $store.barkRelays)
-            } header: {
-                Text("Notifications")
-            } footer: {
-                Text(store.barkRelays
-                     ? "Your Mac announces agent replies and routines through Bark, even while Alice is closed, so Alice does not announce them again. She still tells you about questions, approvals and problems with Hermes."
-                     : "Alice announces replies and routines herself, but only when iOS lets her run. With Bark and the Mac notifier set up, they arrive every time — and this switch keeps them from arriving twice.")
-            }
-
-            Section("General") {
-                if store.dashboardReady {
-                    TimeZoneRow()
-                }
+            Section("Appearance") {
                 Picker("Theme", selection: $store.theme) {
                     ForEach(ThemeChoice.allCases) { choice in
                         Text(choice.label).tag(choice)
                     }
                 }
                 .pickerStyle(.segmented)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Colour")
-                    HStack(spacing: 12) {
-                        ForEach(Accent.allCases) { accent in
-                            Button {
-                                store.accent = accent
-                            } label: {
-                                Circle()
-                                    .fill(accent.swatch)
-                                    .frame(width: 30, height: 30)
-                                    .overlay {
-                                        Circle().strokeBorder(
-                                            Color.primary,
-                                            lineWidth: store.accent == accent ? 2 : 0
-                                        )
-                                    }
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(.circle)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(accent.label)
+                HStack(spacing: 12) {
+                    ForEach(Accent.allCases) { accent in
+                        Button {
+                            store.accent = accent
+                        } label: {
+                            Circle()
+                                .fill(accent.swatch)
+                                .frame(width: 30, height: 30)
+                                .overlay {
+                                    Circle().strokeBorder(Color.primary, lineWidth: store.accent == accent ? 2 : 0)
+                                }
+                                .frame(width: 44, height: 44)
+                                .contentShape(.circle)
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(accent.label)
                     }
                 }
+            }
 
+            Section {
+                if store.dashboardReady {
+                    TimeZoneRow()
+                }
                 Button("Show Gesture Tips Again") {
                     GestureTips.showAgainNextLaunch()
                     tipsReset = true
@@ -201,37 +135,27 @@ struct SettingsView: View {
                 .alert("Tips reset", isPresented: $tipsReset) {
                     Button("OK", role: .cancel) {}
                 } message: {
-                    Text("They show again the next time Alice opens. Close Alice from the app switcher and open it.")
+                    Text("They show again the next time Alice opens.")
                 }
-            }
-
-            if store.isConnected || store.dashboardReady {
-                Section {
-                    NavigationLink { AdvancedSettingsView() } label: {
-                        Label("Advanced", systemImage: "gearshape.2")
-                    }
-                } footer: {
-                    Text("Models, memory, skills and Hermes administration live here. Everyday use stays in the chat.")
+                NavigationLink { AdvancedSettingsView() } label: {
+                    Label("Advanced", systemImage: "gearshape.2")
                 }
-            } else {
-                Section {
-                    NavigationLink { AdvancedSettingsView() } label: {
-                        Label("Advanced", systemImage: "gearshape.2")
+                if store.developerMode {
+                    NavigationLink { DeveloperScreen() } label: {
+                        Label("Developer", systemImage: "wrench.and.screwdriver")
                     }
-                } footer: {
-                    Text("Technical and developer options are kept here so everyday settings stay simple.")
                 }
             }
 
             let build = AliceBuildInfo.current
-            Section("About Alice") {
-                LabeledContent("Version", value: build.versionLabel)
+            Section {
+                LabeledContent("Alice", value: build.versionLabel)
+                if store.dashboardReady {
+                    HermesVersionRow()
+                }
                 if let revision = build.revision {
                     LabeledContent("Revision", value: revision)
                         .textSelection(.enabled)
-                }
-                if store.dashboardReady {
-                    HermesVersionRow()
                 }
             }
         }

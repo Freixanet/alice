@@ -1,6 +1,66 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Not connected": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin conectar"
+          }
+        }
+      }
+    },
+    "Notifications via Bark": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avisos por Bark"
+          }
+        }
+      }
+    },
+    "Appearance": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apariencia"
+          }
+        }
+      }
+    },
+    "Set a passcode for this iPhone to lock Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pon un código a este iPhone para bloquear Alice."
+          }
+        }
+      }
+    },
+    "They show again the next time Alice opens.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volverán a salir la próxima vez que abras Alice."
+          }
+        }
+      }
+    },
+    "Agent work": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trabajo de agentes"
+          }
+        }
+      }
+    },
     "Disconnect Health?": {
       "localizations": {
         "es": {
