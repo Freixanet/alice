@@ -79,6 +79,18 @@ class VaultTests(unittest.TestCase):
         self.assertTrue(cards.remove(saved["handle"]))
         self.assertEqual(cards.cards(), [])
 
+    def test_a_fill_goes_to_the_card_for_the_page_actually_open(self):
+        shop = cards.save("https://piensosraposo.es", self.card)
+        www = [c for c in cards.cards() if c["origin"] == "https://www.piensosraposo.es"][0]
+        # The shop's checkout on www: the www copy, not the bare one.
+        self.assertEqual(cards.route_fill(shop["handle"], ["https://www.piensosraposo.es/pedido"]), www["handle"])
+        # Sent to Redsys: the card is bound there and that copy used.
+        routed = cards.route_fill(shop["handle"], ["https://www.piensosraposo.es/pedido",
+                                                   "https://sis.redsys.es/sis/realizarPago"])
+        self.assertEqual(self.store.get_meta(routed).origin, "https://sis.redsys.es")
+        # Any other site: left alone (Hermes refuses it).
+        self.assertIsNone(cards.route_fill(shop["handle"], ["https://evil.example/pay"]))
+
     def test_twins(self):
         self.assertEqual(cards.twins("https://www.shop.es"), ["https://www.shop.es", "https://shop.es"])
         self.assertEqual(cards.twins("https://sis.redsys.es"), ["https://sis.redsys.es"])

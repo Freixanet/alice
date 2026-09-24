@@ -140,6 +140,21 @@ def _guard_egress(tool_name=None, args=None, session_id="", **_):
         return None
 
 
+def _route_card_fill(tool_name=None, args=None, **_):
+    """A card fill uses the saved card for the page actually open: the shop's www twin, or the
+    bank's payment page the shop sent the person to. Otherwise Hermes asks the person to pay and
+    then refuses the page (the Piensos Raposo purchase failed twice that way)."""
+    if tool_name != "browser_vault_fill" or not isinstance(args, dict) or not args.get("handle"):
+        return None
+    try:
+        live = _browser()
+        urls = [str(tab.get("url") or "") for tab in live.pages(live.configured_url(_hermes_root()))]
+        handle = _cards_module().route_fill(str(args["handle"]), urls)
+    except Exception:
+        return None
+    return {"action": "modify", "args": {"handle": handle}} if handle else None
+
+
 def _pre_tool_call(tool_name=None, args=None, **_):
     if tool_name not in MESSAGE_TOOLS:
         return None
@@ -1149,6 +1164,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _browser_ready)
     # After reading the web, sending data out or reading secrets needs the person (egress_guard.py).
     ctx.register_hook("pre_tool_call", _guard_egress)
+    # A card is filled with the copy for the page open, or bound to the bank's payment page.
+    ctx.register_hook("pre_tool_call", _route_card_fill)
     # What each agent did with consequences, for Alice's Activity.
     ctx.register_hook("post_tool_call", _post_tool_call)
     # In iMessage and SMS the reply is made readable as a text message (text_channel.py).

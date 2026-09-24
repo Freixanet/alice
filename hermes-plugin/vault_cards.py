@@ -148,6 +148,50 @@ def bind(handle: str, origin: str) -> Dict[str, Any]:
     return bound[0]
 
 
+# Banks' and processors' own payment pages, where a shop sends the person to type their card.
+# A saved card may be used there too (still only after the person's "Pagar" on Hermes' card).
+PAYMENT_GATEWAYS = {
+    "sis.redsys.es", "sis-t.redsys.es", "tpv.ceca.es", "pgw.ceca.es", "checkout.stripe.com",
+    "hpp.addonpayments.com", "secure.worldpay.com", "live.adyen.com", "checkoutshopper-live.adyen.com",
+    "pay.sumup.com", "secure.payu.com", "www.paygate.es",
+}
+
+
+def _host(origin: str) -> str:
+    return urlsplit(origin or "").hostname or ""
+
+
+def route_fill(handle: str, open_urls: List[str]) -> Optional[str]:
+    """The payment item a fill should use, given the pages open in the browser, or None to leave
+    the call as it is. A card saved for the shop is used on its www twin, and on the bank's payment
+    page the shop sent the person to — never on any other site."""
+    store = _store()
+    meta = store.get_meta(str(handle or ""))
+    if meta is None or meta.kind != "payment":
+        return None
+    open_origins = []
+    for url in open_urls:
+        parts = urlsplit(url or "")
+        if parts.scheme == "https" and parts.hostname:
+            open_origins.append(f"https://{parts.netloc}")
+    same_card = [m for m in store.list_items() if m.kind == "payment" and m.label == meta.label]
+    by_origin = {m.origin: m for m in same_card if m.origin}
+    # 1. The bank's payment page is open: that is where the card goes.
+    for origin in open_origins:
+        if _host(origin) in PAYMENT_GATEWAYS:
+            if origin in by_origin:
+                chosen = by_origin[origin]
+            else:
+                chosen_public = bind(meta.id, origin)
+                return chosen_public["handle"] if chosen_public["handle"] != meta.id else None
+            return chosen.id if chosen.id != meta.id else None
+    # 2. The shop's own checkout: the copy bound to the origin actually open (www or not).
+    for origin in open_origins:
+        if origin in by_origin and origin != meta.origin and origin in twins(meta.origin or origin):
+            return by_origin[origin].id
+    return None
+
+
 def remove(handle: str) -> bool:
     """Removes the card from that site and from its www twin."""
     store = _store()

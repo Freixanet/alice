@@ -140,7 +140,8 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_hook.assert_any_call("transform_llm_output", self.plugin._plain_text_reply)
         ctx.register_hook.assert_any_call("on_session_end", self.plugin._keep_reviewed_skills)
         ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._guard_egress)
-        self.assertEqual(ctx.register_hook.call_count, 7)
+        ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._route_card_fill)
+        self.assertEqual(ctx.register_hook.call_count, 8)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
         # How an agent asks for a key without it entering the chat.
