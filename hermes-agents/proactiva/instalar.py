@@ -33,20 +33,21 @@ HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 START = "<!-- alice:proactiva inicio -->"
 END = "<!-- alice:proactiva fin -->"
 
-PROMPT = """Escribe el «Buenos días» de Marcos a partir de los hechos de abajo, que su Hermes reunió esta mañana, y de lo que sepas de él por tu memoria.
+PROMPT = """Escribe el «Buenos días» de Marcos a partir de los hechos de abajo, que su Hermes reunió esta mañana, y de lo que sepas de él por tu memoria. No es un resumen de noticias: es su tablero de mando, lo que necesita su atención antes de empezar el día.
 
-Formato, en este orden y sin títulos de sección vacíos:
+Formato, en este orden, y omite cualquier sección sin nada que decir:
 1. Una línea de saludo con el día de la semana.
-2. **Mientras dormías**: de una a cuatro viñetas con lo más útil que trajeron sus agentes — quién y qué, una línea cada una. Agrupa lo repetitivo («Chollometro: 3 chollos nuevos») y omite lo trivial, las confirmaciones y los acuses de recibo.
-3. **Te espera**: solo si una rutina falló o algo quedó pendiente de él; di qué y el siguiente paso.
-4. **Hoy**: solo si sabes algo de su día (rutinas de hoy, su calendario si tienes acceso, lo que te haya contado).
-5. Una única sugerencia concreta y útil para hoy, con botones de respuesta si hay una acción clara.
+2. **Hoy**: sus citas en orden, y bajo cada una lo que hay que preparar, llevar o saber (por tu memoria, el lugar, la hora de salida); sus recordatorios de hoy y los vencidos.
+3. **Pendiente**: lo que espera algo de él — recordatorios vencidos o urgentes, el siguiente paso de un objetivo que no avanza, una rutina que falló — cada uno con el siguiente paso concreto.
+4. **Sistema**: si todo está en orden, una sola línea («Todo en orden: 118 GB libres, Hermes en marcha»). Si algo está en MAYÚSCULAS en los hechos (poco espacio, presión de memoria, batería baja, un servicio parado, una web caída) o hay muchos errores de un mismo origen, dilo primero en esta sección, con qué significa y qué hacer. No listes errores sueltos que no le afecten.
+5. **Mientras dormías**: de una a tres viñetas con lo más útil que trajeron sus agentes; agrupa lo repetitivo y omite lo trivial.
+6. Una única sugerencia concreta para hoy, con botones de respuesta si hay una acción clara (por ejemplo, «Sí, libera espacio» o «Reintenta la rutina»).
 
-Cuando una novedad encaje con algo que sabes que le importa, dilo en pocas palabras («te lo cuento porque…»); es lo que hace útil un briefing frente a una lista.
+Lo más urgente va primero dentro de cada sección. Cuando algo encaje con algo que sabes que le importa, dilo en pocas palabras.
 
-Entrégalo en tres partes separadas por una línea con solo `---`: el saludo del punto 1, una sola frase corta que avise de que ahí va su resumen de la mañana, sin análisis; los puntos 2 a 4; y el punto 5 como cierre, con lo que más le importa hoy, breve y personal. Alice muestra la primera y la última como tus mensajes y lo del medio en su tarjeta.
+Entrégalo en tres partes separadas por una línea con solo `---`: el saludo del punto 1, una sola frase corta que avise de que ahí va su resumen de la mañana, sin análisis; los puntos 2 a 5; y el punto 6 como cierre, breve y personal. Alice muestra la primera y la última como tus mensajes y lo del medio en su tarjeta.
 
-Menos de 150 palabras. No inventes nada que no esté en los hechos o en tu memoria. Si no hay nada que merezca contarse, dilo en una frase amable y termina (sin `---`).
+Menos de 200 palabras. No inventes nada que no esté en los hechos o en tu memoria. Si no hay nada que merezca contarse, dilo en una frase amable y termina (sin `---`).
 
 Hechos:"""
 

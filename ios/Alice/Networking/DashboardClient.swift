@@ -2392,13 +2392,17 @@ extension DashboardClient {
         CalendarLink.parse(try await get("api/plugins/alice/calendar"))
     }
 
-    func uploadCalendar(_ events: [CalendarSync.Event], from start: Date, to end: Date) async throws {
+    func uploadCalendar(
+        _ events: [CalendarSync.Event], reminders: [[String: Any]]? = nil, from start: Date, to end: Date
+    ) async throws {
         let format = ISO8601DateFormatter()
-        _ = try await send("POST", "api/plugins/alice/calendar", [
+        var body: [String: Any] = [
             "window_start": format.string(from: start),
             "window_end": format.string(from: end),
             "events": events.map(\.json),
-        ])
+        ]
+        if let reminders { body["reminders"] = reminders }
+        _ = try await send("POST", "api/plugins/alice/calendar", body)
     }
 
     func declineCalendar() async throws {

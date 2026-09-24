@@ -2031,6 +2031,8 @@ class _CalendarUpload(BaseModel):
     window_start: str
     window_end: str
     events: List[Dict[str, Any]] = Field(default_factory=list)
+    # Open to-dos from Reminders; absent from an app that cannot read them.
+    reminders: Optional[List[Dict[str, Any]]] = None
 
 
 @router.get("/calendar")
@@ -2044,7 +2046,8 @@ async def calendar_status() -> JSONResponse:
 async def calendar_upload(body: _CalendarUpload) -> JSONResponse:
     """The iPhone's latest window of events. Read-only for everyone who reads it."""
     payload = await asyncio.to_thread(
-        lambda: _calendar_module().save(_engine_home(), body.events, body.window_start, body.window_end)
+        lambda: _calendar_module().save(_engine_home(), body.events, body.window_start, body.window_end,
+                                        reminders=body.reminders)
     )
     return JSONResponse(payload, headers=_NO_STORE)
 

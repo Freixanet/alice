@@ -60,6 +60,21 @@ class CalendarSnapshotTests(unittest.TestCase):
         self.assertEqual([e["title"] for e in stored["events"]], ["Con notas"])
         self.assertNotIn("notes", stored["events"][0])
 
+    def test_open_reminders_are_kept_without_notes_and_only_when_sent(self):
+        self.cal.save(self.home, [], "a", "b")
+        self.assertNotIn("reminders", json.loads((self.home / ".alice" / "calendar.json").read_text()))
+        result = self.cal.save(self.home, [], "a", "b", reminders=[
+            {"title": "Pagar el IBI", "due": "2026-09-24T18:00:00+02:00", "list": "Casa", "priority": 3,
+             "notes": "privado"},
+            {"title": "Sin fecha", "due": "nunca"},
+            {"title": ""},
+        ])
+        stored = json.loads((self.home / ".alice" / "calendar.json").read_text())["reminders"]
+        self.assertEqual(result["reminders"], 2)
+        self.assertEqual(stored[0], {"title": "Pagar el IBI", "due": "2026-09-24T18:00:00+02:00",
+                                     "list": "Casa", "priority": 3})
+        self.assertEqual(stored[1], {"title": "Sin fecha"})
+
     def test_not_now_is_remembered_until_he_connects(self):
         self.cal.decline(self.home)
         self.assertEqual(self.cal.events(self.home)["status"], "declined")

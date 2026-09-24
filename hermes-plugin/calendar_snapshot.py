@@ -80,19 +80,54 @@ def _clean(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return cleaned
 
 
+MAX_REMINDERS = 60
+
+
+def _clean_reminder(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """A to-do still open: its title, when it is due (if ever), its list and priority. Never its notes."""
+    title = str(item.get("title") or "").strip()[:MAX_TEXT]
+    if not title:
+        return None
+    cleaned: Dict[str, Any] = {"title": title}
+    due = item.get("due")
+    if isinstance(due, str):
+        try:
+            datetime.fromisoformat(due.replace("Z", "+00:00"))
+            cleaned["due"] = due
+        except ValueError:
+            pass
+    if isinstance(item.get("list"), str) and item["list"].strip():
+        cleaned["list"] = item["list"].strip()[:MAX_TEXT]
+    try:
+        priority = int(item.get("priority") or 0)
+    except (TypeError, ValueError):
+        priority = 0
+    if priority in (1, 2, 3):
+        cleaned["priority"] = priority
+    return cleaned
+
+
 def save(home: Path, events: List[Dict[str, Any]], window_start: str, window_end: str,
-         now: Optional[float] = None) -> Dict[str, Any]:
-    """The phone's latest window. Connecting also lifts an earlier "not now"."""
+         now: Optional[float] = None, reminders: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """The phone's latest window. Connecting also lifts an earlier "not now".
+
+    ``reminders``: the open to-dos due by tomorrow, overdue ones and urgent undated ones,
+    sent by an app that can read Reminders; an older app sends none.
+    """
     kept = [e for e in (_clean(item) for item in events[:MAX_EVENTS] if isinstance(item, dict)) if e]
     kept.sort(key=lambda e: e["start"])
     stamp = datetime.fromtimestamp(now or time.time(), timezone.utc).isoformat(timespec="seconds")
-    _write(home, {
+    data = {
         "connected": True,
         "updated_at": stamp,
         "window": {"start": window_start, "end": window_end},
         "events": kept,
-    })
-    return {"ok": True, "events": len(kept)}
+    }
+    if reminders is not None:
+        data["reminders"] = [r for r in (_clean_reminder(item) for item in reminders[:MAX_REMINDERS]
+                                         if isinstance(item, dict)) if r]
+    _write(home, data)
+    return {"ok": True, "events": len(kept), "reminders": len(data.get("reminders") or [])}
 
 
 def decline(home: Path, now: Optional[float] = None) -> Dict[str, Any]:

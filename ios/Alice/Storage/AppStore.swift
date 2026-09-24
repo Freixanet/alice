@@ -6303,10 +6303,34 @@ final class AppStore {
         try? await uploadCalendar()
     }
 
+    /// Open reminders worth a morning's attention: due by the end of tomorrow
+    /// (overdue included), or undated and marked high priority. Never notes.
+    nonisolated static func briefingReminders(_ items: [AgendaItem], now: Date = Date()) -> [[String: Any]] {
+        let calendar = Calendar.current
+        let horizon = calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: now)) ?? now
+        let format = ISO8601DateFormatter()
+        return items
+            .filter { $0.isReminder && !$0.completed }
+            .filter { item in item.start.map { $0 < horizon } ?? (item.priority == 3) }
+            .sorted { ($0.start ?? .distantFuture) < ($1.start ?? .distantFuture) }
+            .prefix(60)
+            .map { item in
+                var row: [String: Any] = ["title": item.title, "priority": item.priority]
+                if let due = item.start { row["due"] = format.string(from: due) }
+                if let list = item.list { row["list"] = list }
+                return row
+            }
+    }
+
     private func uploadCalendar() async throws {
         let window = CalendarSync.window()
         let events = await CalendarSync.events(from: window.start, to: window.end)
-        try await dashboard.uploadCalendar(events, from: window.start, to: window.end)
+        // Open to-dos go too, when Reminders is allowed: the morning briefing
+        // says what is due or overdue. Only titles, dates, lists and priority.
+        let reminders: [[String: Any]]? = AgendaSource.remindersAllowed
+            ? Self.briefingReminders(await AgendaSource.reminders())
+            : nil
+        try await dashboard.uploadCalendar(events, reminders: reminders, from: window.start, to: window.end)
         calendarSyncedAt = Date()
         calendarLink = .connected(updatedAt: Date())
     }

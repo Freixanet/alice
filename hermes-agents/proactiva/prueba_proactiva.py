@@ -106,6 +106,60 @@ class FactsTests(unittest.TestCase):
         self.assertNotIn("Mañana", text)
 
 
+    def test_open_reminders_are_sorted_overdue_first_and_only_when_the_app_sent_them(self):
+        import json
+        now = 1790060400  # 2026-09-22 09:00 in Madrid
+        (self.hermes.root / ".alice").mkdir()
+        calendar = self.hermes.root / ".alice" / "calendar.json"
+        calendar.write_text(json.dumps({"connected": True, "events": []}))
+        self.assertNotIn("recordatorios", dias.facts(self.hermes.root, now, 16))
+        calendar.write_text(json.dumps({"connected": True, "events": [], "reminders": [
+            {"title": "Pagar el IBI", "due": "2026-09-22T18:00:00+02:00", "list": "Casa"},
+            {"title": "Renovar DNI", "due": "2026-09-20T09:00:00+02:00", "priority": 3},
+            {"title": "Llamar al gestor", "due": "2026-09-23T10:00:00+02:00"},
+            {"title": "Revisar seguro", "priority": 3},
+        ]}))
+        text = dias.facts(self.hermes.root, now, 16)
+        block = text.split("recordatorios abiertos")[1].split("\n\n")[0].splitlines()[1:]
+        self.assertEqual(block, [
+            "- VENCIDO desde el 20/9 (!!!): Renovar DNI",
+            "- hoy 18:00: Pagar el IBI · Casa",
+            "- mañana: Llamar al gestor",
+            "- sin fecha (!!!): Revisar seguro",
+        ])
+
+    def test_active_goals_come_with_their_next_step(self):
+        import json
+        (self.hermes.root / ".alice").mkdir()
+        (self.hermes.root / ".alice" / "goals.json").write_text(json.dumps({"goals": [
+            {"title": "Media maratón", "status": "active", "due": "2027-03-01",
+             "steps": [{"text": "Comprar zapatillas", "status": "done"}, {"text": "Correr 5 km", "status": "todo"}]},
+            {"title": "Viejo", "status": "done", "steps": []},
+        ]}))
+        text = dias.facts(self.hermes.root, time.time(), 16)
+        self.assertIn("- Media maratón (para el 2027-03-01) → siguiente paso: Correr 5 km", text)
+        self.assertNotIn("Viejo", text)
+
+    def test_overnight_errors_are_counted_by_origin_without_their_text(self):
+        (self.hermes.root / "logs").mkdir()
+        recent = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 3600))
+        old = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 3 * 86400))
+        (self.hermes.root / "logs" / "errors.log").write_text(
+            f"{recent},1 ERROR [s1] tools.web: secreto que no debe salir\n"
+            f"{recent},2 ERROR tools.web: otra vez\n"
+            f"{old},3 ERROR viejo.modulo: hace días\n"
+            f"{recent},4 WARNING tools.web: solo un aviso\n")
+        text = dias.facts(self.hermes.root, time.time(), 16)
+        self.assertIn("- tools.web: 2 error(es)", text)
+        self.assertNotIn("secreto", text)
+        self.assertNotIn("viejo.modulo", text)
+
+    def test_the_system_state_is_always_in_the_facts(self):
+        text = dias.facts(self.hermes.root, time.time(), 16)
+        self.assertIn("Estado del sistema", text)
+        self.assertIn("- Disco:", text)
+
+
 class AppointmentTests(unittest.TestCase):
     NOW = 1790060400  # 2026-09-22 09:00 in Madrid
 
