@@ -774,7 +774,7 @@ def calendar_events_tool(args=None) -> str:
         a = args or {}
         return _agent_json(_calendar().events(
             root, days_ahead=float(a.get("days_ahead", 7) or 7),
-            days_back=float(a.get("days_back", 0) or 0),
+            days_back=float(a.get("days_back", 0) or 0), tz=_calendar().zone(root),
         ))
     except Exception as exc:
         return _agent_json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
@@ -787,7 +787,7 @@ CALENDAR_TOOLS = (
      "connected it; `declined` when they said not now. Call it before answering anything about "
      "their schedule, plans, free time, meetings or trips.",
      ({"days_ahead": {"type": "number", "description": "How many days ahead to include (default 7, at most 60)."},
-       "days_back": {"type": "number", "description": "How many days back to include (default 0)."}}, []),
+       "days_back": {"type": "number", "description": "Whole days before today to include (default 0: from midnight today, so this morning is always in)."}}, []),
      calendar_events_tool),
 )
 

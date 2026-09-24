@@ -50,6 +50,16 @@ class CalendarSnapshotTests(unittest.TestCase):
         self.assertEqual([e["title"] for e in found["events"]], ["Dentista"])
         self.assertEqual(found["events"][0]["location"], "Clínica")
 
+    def test_today_starts_at_midnight_so_this_mornings_events_are_in(self):
+        from zoneinfo import ZoneInfo
+        self.cal.save(self.home, [
+            self.event("Peluquería", "2026-09-24T11:30:00+02:00", "2026-09-24T12:30:00+02:00"),
+            self.event("Ayer", "2026-09-23T11:30:00+02:00", "2026-09-23T12:30:00+02:00"),
+        ], "a", "b")
+        evening = datetime(2026, 9, 24, 16, 28, tzinfo=timezone.utc)  # 18:28 in Madrid
+        found = self.cal.events(self.home, days_ahead=1, now=evening, tz=ZoneInfo("Europe/Madrid"))
+        self.assertEqual([e["title"] for e in found["events"]], ["Peluquería"])
+
     def test_notes_and_malformed_events_are_not_kept(self):
         self.cal.save(self.home, [
             self.event("Con notas", "2026-09-24T09:00:00Z", "2026-09-24T10:00:00Z", notes="privado"),

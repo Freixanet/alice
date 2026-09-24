@@ -142,14 +142,36 @@ def disconnect(home: Path) -> Dict[str, Any]:
     return {"ok": True, "status": "not_connected"}
 
 
+def zone(home: Path):
+    """Hermes' own timezone (``timezone:`` in config.yaml), or None for the Mac's."""
+    import re
+
+    try:
+        text = (home / "config.yaml").read_text(encoding="utf-8")
+        match = re.search(r"^timezone:\s*['\"]?([\w/+-]+)", text, re.MULTILINE)
+        if match:
+            from zoneinfo import ZoneInfo
+
+            return ZoneInfo(match.group(1))
+    except Exception:
+        pass
+    return None
+
+
 def events(home: Path, days_ahead: float = 7, days_back: float = 0,
-           now: Optional[datetime] = None) -> Dict[str, Any]:
-    """What the ``calendar_events`` tool returns."""
+           now: Optional[datetime] = None, tz=None) -> Dict[str, Any]:
+    """What the ``calendar_events`` tool returns.
+
+    The window starts at midnight of the person's day, not at this minute: asked what they
+    had today, an agent read from now on and missed this morning's appointments.
+    """
     found = status(home)
     if found["status"] != "connected":
         return found
     now = now or datetime.now(timezone.utc)
-    start = now - timedelta(days=max(0.0, float(days_back)))
+    local = now.astimezone(tz) if tz else now.astimezone()
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = midnight - timedelta(days=max(0.0, float(days_back)))
     end = now + timedelta(days=max(0.0, min(float(days_ahead), 60.0)))
     chosen = []
     for event in read(home).get("events") or []:
