@@ -63,9 +63,10 @@ class FollowTheAgentTests(unittest.TestCase):
     def test_the_view_follows_the_tab_where_something_last_happened(self):
         old = {"id": "a", "url": "https://rodalies.gencat.cat/", "title": "Cookies"}
         self.assertEqual(bl.busiest([old], now=1)["id"], "a")
-        # The agent opens its own tab: that is where to look.
+        # The agent opens its own tab: blank at first, so still the page there was...
         mine = {"id": "b", "url": "about:blank", "title": ""}
-        self.assertEqual(bl.busiest([old, mine], now=2)["id"], "b")
+        self.assertEqual(bl.busiest([old, mine], now=2)["id"], "a")
+        # ...and its tab as soon as it loads a page.
         mine = {"id": "b", "url": "https://rodalies.gencat.cat/horaris", "title": "Horaris"}
         self.assertEqual(bl.busiest([old, mine], now=3)["id"], "b")
         # Then something happens in the first one again.
@@ -79,6 +80,22 @@ class FollowTheAgentTests(unittest.TestCase):
     def test_on_a_first_look_the_list_order_decides(self):
         tabs = [{"id": "x", "url": "https://a.com", "title": "A"}, {"id": "y", "url": "https://b.com", "title": "B"}]
         self.assertEqual(bl.busiest(tabs, now=1)["id"], "x")
+
+
+class BlankTabsTests(unittest.TestCase):
+    def setUp(self):
+        bl._seen.clear()
+        bl._changed.clear()
+
+    def test_a_blank_tab_is_not_followed_while_a_real_page_is_open(self):
+        shop = {"id": "a", "url": "https://www.piensosraposo.es/", "title": "Piensos"}
+        bl.busiest([shop], now=1)
+        blank = {"id": "b", "url": "about:blank", "title": ""}
+        self.assertEqual(bl.busiest([shop, blank], now=2)["id"], "a")
+        empty = {"id": "c", "url": "", "title": ""}
+        self.assertEqual(bl.busiest([shop, blank, empty], now=3)["id"], "a")
+        # Only blank tabs: one of them is still shown.
+        self.assertIn(bl.busiest([blank], now=4)["id"], ("b",))
 
 
 if __name__ == "__main__":

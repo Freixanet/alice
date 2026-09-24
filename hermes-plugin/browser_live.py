@@ -34,6 +34,8 @@ STATE = Path(".alice") / "browser.json"
 LEASE = Path(".alice") / "browser-lease.json"
 # A takeover nobody touches for this long goes back to the agents on its own.
 LEASE_IDLE_SECONDS = 15 * 60
+# With no new screencast frame for this long, a screenshot is taken instead.
+STALE_SECONDS = 1.5
 # Frames stop being produced once no phone has asked for one for this long.
 IDLE_SECONDS = 20
 # Tablet-portrait: sites lay out for it, and it reads on a phone without much zoom.
@@ -334,11 +336,18 @@ class Screencast:
                 self._send("Page.startScreencast", {"format": "jpeg", "quality": 62,
                                                     "maxWidth": 1200, "maxHeight": 1800, "everyNthFrame": 1})
                 self._send("Page.captureScreenshot", {"format": "jpeg", "quality": 62})
+                asked = time.monotonic()
                 while not self.closed:
-                    if time.monotonic() - self.touched > IDLE_SECONDS:
+                    now = time.monotonic()
+                    if now - self.touched > IDLE_SECONDS:
                         break
+                    # The screencast goes quiet after some navigations and on pages
+                    # that stop repainting: a picture every second and a half anyway.
+                    if now - max(getattr(self, "framed", 0.0), asked) > STALE_SECONDS:
+                        asked = now
+                        self._send("Page.captureScreenshot", {"format": "jpeg", "quality": 62})
                     try:
-                        raw = socket.recv(timeout=1.0)
+                        raw = socket.recv(timeout=0.5)
                     except TimeoutError:
                         continue
                     message = json.loads(raw)
@@ -351,10 +360,12 @@ class Screencast:
                         frame = (message.get("params") or {}).get("frame") or {}
                         if not frame.get("parentId"):
                             self.page["url"] = frame.get("url") or self.page["url"]
+                            # A new document ends the old screencast: start it again.
+                            self._send("Page.startScreencast", {"format": "jpeg", "quality": 62, "maxWidth": 1200,
+                                                                "maxHeight": 1800, "everyNthFrame": 1})
                     elif method == "Inspector.detached" or method == "Target.targetDestroyed":
                         break
-                    elif self.frame is None and isinstance(message.get("result"), dict) \
-                            and message["result"].get("data"):
+                    elif isinstance(message.get("result"), dict) and message["result"].get("data"):
                         self._store(message["result"]["data"], {})
                 try:
                     self._send("Page.stopScreencast", {})
@@ -372,6 +383,7 @@ class Screencast:
     def _store(self, data: Optional[str], meta: Dict[str, Any]) -> None:
         if not data:
             return
+        self.framed = time.monotonic()
         with self._changed:
             self.frame = base64.b64decode(data)
             if meta:
@@ -464,7 +476,9 @@ def busiest(tabs: List[Dict[str, str]], now: Optional[float] = None) -> Optional
         _changed.pop(gone, None)
     if not tabs:
         return None
-    return max(tabs, key=lambda tab: (_changed.get(tab["id"], 0.0), -tabs.index(tab)))
+    # A blank tab shows nothing: an agent's fresh tab is about:blank for a moment.
+    real = [tab for tab in tabs if str(tab.get("url") or "").startswith(("http://", "https://"))] or tabs
+    return max(real, key=lambda tab: (_changed.get(tab["id"], 0.0), -real.index(tab)))
 
 
 def _cast(root: Path, target: Optional[str] = None) -> Screencast:
