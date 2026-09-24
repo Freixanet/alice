@@ -138,7 +138,8 @@ class BusinessIsolationTests(unittest.TestCase):
         # And a paused conversation is read for what the person said and nobody kept.
         ctx.register_hook.assert_any_call("on_session_end", self.plugin._schedule_memory_review)
         ctx.register_hook.assert_any_call("transform_llm_output", self.plugin._plain_text_reply)
-        self.assertEqual(ctx.register_hook.call_count, 5)
+        ctx.register_hook.assert_any_call("on_session_end", self.plugin._keep_reviewed_skills)
+        self.assertEqual(ctx.register_hook.call_count, 6)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
         # How an agent asks for a key without it entering the chat.

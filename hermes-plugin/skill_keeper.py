@@ -1,0 +1,114 @@
+"""Alice learns on her own: skills she writes are kept at once, unless they look injected.
+
+Hermes can hold every skill write for the person's approval (``skills.write_approval``), which
+stops a web page from planting lasting instructions — but nobody ever saw the queue: lessons the
+person asked for ("learn it for next time") and Hermes' own after-conversation reviews piled up
+unapplied for months. The gate stays on; this reviews each staged write as soon as it lands and
+applies it, holding back only the ones that read like an injection rather than a lesson:
+
+- sending data or files somewhere (webhooks, pastebins, "email/forward/upload … to");
+- turning off protections or approvals, or acting without asking;
+- secrets or keys written into a skill;
+- shell that fetches and runs remote code, or deletes broadly;
+- "ignore previous instructions" and similar.
+
+A held write stays in Hermes' queue (``/skills pending``) with the reason logged. Every decision
+goes to ``<home>/.alice/learned.jsonl``: what was learned, when, and what was held and why.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import threading
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+LOG = Path(".alice") / "learned.jsonl"
+_lock = threading.Lock()
+
+_RISKS: List[Tuple[str, re.Pattern]] = [
+    ("sends data out", re.compile(
+        r"(webhook\.site|requestbin|pastebin|ngrok\.io|pipedream|hookb\.in|transfer\.sh|discord(app)?\.com/api/webhooks)"
+        r"|\b(send|post|upload|forward|exfiltrat\w*|email|mail|leak)\b[^\n]{0,60}\b(to|a)\b[^\n]{0,40}(https?://|\S+@\S+\.\w+)",
+        re.I)),
+    ("disables protections", re.compile(
+        r"\b(disable|turn off|bypass|skip|ignore|desactiva\w*|salta\w*)\b[^\n]{0,40}"
+        r"\b(approval|confirm\w*|safety|security|guard\w*|aprobaci\w+|confirmaci\w+|seguridad|vault)\b"
+        r"|without (asking|confirmation|approval)|sin (preguntar|confirmar|pedir permiso)|write_approval|yolo",
+        re.I)),
+    ("overrides instructions", re.compile(
+        r"ignore (all |any )?(previous|prior|above|earlier) (instructions|rules)|disregard (the )?(system|previous)"
+        r"|ignora (las )?instrucciones (anteriores|previas)|you are now|new system prompt", re.I)),
+    ("stores a secret", re.compile(
+        r"(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|xox[bp]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}"
+        r"|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(password|contraseña|api[_ -]?key|token|secret)\b\s*[:=]\s*\S{6,})",
+        re.I)),
+    ("runs remote code", re.compile(
+        r"(curl|wget)[^\n|]{0,200}\|\s*(ba|z)?sh\b|base64\s+(-d|--decode)[^\n]{0,80}\|\s*(ba|z)?sh"
+        r"|rm\s+-rf\s+(/|~|\$HOME)(\s|$)", re.I)),
+]
+
+
+def _text(record: Dict[str, Any]) -> str:
+    """Everything the write would put into a skill."""
+    payload = record.get("payload") or {}
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def review(record: Dict[str, Any]) -> Optional[str]:
+    """None when the write reads like a lesson; the reason when it should be held."""
+    text = _text(record)
+    for reason, pattern in _RISKS:
+        if pattern.search(text):
+            return reason
+    return None
+
+
+def _log(home: Path, entry: Dict[str, Any]) -> None:
+    path = Path(home) / LOG
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def run(home: Path) -> Dict[str, Any]:
+    """Apply every staged skill write that passes review; hold the rest. Idempotent."""
+    from tools import write_approval as wa
+    from tools.skill_manager_tool import apply_skill_pending
+
+    learned, held, failed = [], [], []
+    with _lock:
+        for record in wa.list_pending(wa.SKILLS):
+            summary = str(record.get("summary") or record.get("id"))
+            reason = review(record)
+            if reason:
+                held.append({"id": record.get("id"), "summary": summary, "reason": reason})
+                continue
+            try:
+                result = json.loads(apply_skill_pending(record.get("payload") or {}))
+            except Exception as exc:  # a broken write must not stop the others
+                result = {"success": False, "error": f"{type(exc).__name__}: {exc}"}
+            if result.get("success"):
+                wa.discard_pending(wa.SKILLS, record["id"])
+                learned.append(summary)
+                _log(home, {"at": time.time(), "learned": summary, "origin": record.get("origin")})
+            else:
+                failed.append({"id": record.get("id"), "summary": summary, "error": str(result.get("error"))[:200]})
+        for item in held:
+            _log(home, {"at": time.time(), "held": item["summary"], "reason": item["reason"], "id": item["id"]})
+    return {"learned": learned, "held": held, "failed": failed}
+
+
+def run_soon(home: Path, delay: float = 0.0) -> None:
+    """In the background: a skill write never waits on this, and this never breaks a turn."""
+    def work():
+        if delay:
+            time.sleep(delay)
+        try:
+            run(home)
+        except Exception:
+            pass
+
+    threading.Thread(target=work, name="alice-skill-keeper", daemon=True).start()

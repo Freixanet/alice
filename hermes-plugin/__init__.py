@@ -387,6 +387,9 @@ def _post_tool_call(tool_name=None, args=None, result=None, session_id="", statu
                               session_id=session_id or "", status=status)
     except Exception:
         pass
+    if tool_name == "skill_manage" and status != "error":
+        # A skill written now is kept now, unless it reads like an injection (skill_keeper.py).
+        _keep_skills(delay=1.0)
     if tool_name == "memory" and status != "error":
         _keep_memory(args, session_id or "")
     return None
@@ -429,6 +432,24 @@ def _keep_memory(args, session_id: str) -> None:
 _REVIEW_AFTER_S = 90
 _review_timers: dict = {}
 _review_lock = threading.Lock()
+
+
+def _skill_keeper():
+    return _module("skill_keeper.py", "alice_skill_keeper")
+
+
+def _keep_skills(delay: float = 0.0) -> None:
+    try:
+        from hermes_constants import get_hermes_home
+
+        _skill_keeper().run_soon(Path(get_hermes_home()), delay=delay)
+    except Exception:
+        pass
+
+
+def _keep_reviewed_skills(**_) -> None:
+    """Hermes reviews a finished conversation in the background and may stage skills from it."""
+    _keep_skills(delay=120.0)
 
 
 def _schedule_memory_review(session_id="", platform="", **_) -> None:
@@ -1023,6 +1044,8 @@ def register(ctx) -> None:
     ctx.register_hook("transform_llm_output", _plain_text_reply)
     # What the person said about themselves and no agent kept, read once a conversation pauses.
     ctx.register_hook("on_session_end", _schedule_memory_review)
+    # And what Hermes learned from it is kept, once reviewed (skill_keeper.py).
+    ctx.register_hook("on_session_end", _keep_reviewed_skills)
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
