@@ -2308,6 +2308,9 @@ def _connector_icon(name: str, profile: str) -> Optional[Tuple[bytes, str]]:
             if server.get("url"):
                 urls = [str(server["url"])]
     if not hosts and not urls:
+        # A connector that runs on the Mac: the product it wraps, when its name says which.
+        hosts = _connector_icons().known_hosts(name)
+    if not hosts and not urls and not _connector_icons().known_mark(name):
         return None
     return _connector_icons().Icons(_engine_home()).get(name, hosts, urls)
 

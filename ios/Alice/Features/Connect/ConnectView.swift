@@ -14,9 +14,15 @@ struct ConnectView: View {
     @State private var panelError: String?
     @State private var showScanner = false
     @State private var advancedExpanded = false
+    /// Pushed inside Settings' own stack: no second stack, and the system's
+    /// back button is the only one (two chevrons showed otherwise).
+    var pushed = false
 
     var body: some View {
-        NavigationStack {
+        if pushed { page } else { NavigationStack { page } }
+    }
+
+    private var page: some View {
             Form {
                 if store.isConnected {
                     connectionSummary
@@ -40,8 +46,10 @@ struct ConnectView: View {
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: { Label("Back", systemImage: "chevron.left").labelStyle(.iconOnly) }
+                if !pushed {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { dismiss() } label: { Label("Back", systemImage: "chevron.left").labelStyle(.iconOnly) }
+                    }
                 }
             }
             .sheet(isPresented: $showScanner) {
@@ -53,7 +61,6 @@ struct ConnectView: View {
                 if address.isEmpty { address = store.gatewayURL }
                 if panelAddress.isEmpty { panelAddress = store.dashboardURL }
             }
-        }
     }
 
     /// Address and key first. A Linux, Windows or cloud Hermes has no pairing

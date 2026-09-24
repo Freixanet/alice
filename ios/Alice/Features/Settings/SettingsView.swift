@@ -4,11 +4,7 @@ struct SettingsView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
-    @State private var tipsReset = false
-
     var body: some View {
-        @Bindable var store = store
-
         Form {
             if let warning = store.storageWarning {
                 Section {
@@ -23,10 +19,11 @@ struct SettingsView: View {
                 }
             }
 
+            // Layer one: a handful of rows, each opening its own detail.
             // Like the account at the top of iOS Settings: what everything
             // else depends on, alone.
             Section {
-                NavigationLink { ConnectView() } label: {
+                NavigationLink { ConnectView(pushed: true) } label: {
                     LabeledContent {
                         Text(store.isConnected ? "Connected" : "Not connected")
                     } label: {
@@ -35,7 +32,7 @@ struct SettingsView: View {
                 }
             }
 
-            // What Alice has done and knows, then what she can reach.
+            // What Alice does for you.
             Section {
                 NavigationLink { ActivityScreen() } label: {
                     LabeledContent {
@@ -53,11 +50,6 @@ struct SettingsView: View {
                     NavigationLink { MemoryScreen() } label: {
                         Label("Memory", systemImage: "person.text.rectangle")
                     }
-                }
-            }
-
-            Section {
-                if store.dashboardReady {
                     NavigationLink { ConnectionsScreen() } label: {
                         Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
                     }
@@ -68,7 +60,47 @@ struct SettingsView: View {
                 }
             }
 
+            // How the app itself behaves: each one a page of its own.
+            Section {
+                NavigationLink { PrivacySettingsView() } label: {
+                    LabeledContent {
+                        Text(store.requireUnlock ? Biometrics.name : String(localized: "Off"))
+                    } label: {
+                        Label("Privacy", systemImage: "hand.raised")
+                    }
+                }
+                NavigationLink { AppearanceSettingsView() } label: {
+                    Label("Appearance", systemImage: "circle.lefthalf.filled")
+                }
+                NavigationLink { GeneralSettingsView() } label: {
+                    Label("General", systemImage: "gearshape")
+                }
+            }
+        }
+        .navigationTitle("Settings")
+        .toolbar {
+            // A page, not a sheet: it goes back the way it came, with a chevron.
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .labelStyle(.iconOnly)
+                }
+            }
+        }
+        .aliceFormPaper(scheme)
+    }
+}
 
+/// Settings › Privacy: locking the app, and how notifications arrive.
+struct PrivacySettingsView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        @Bindable var store = store
+        Form {
             Section {
                 Toggle(isOn: Binding(
                     get: { store.requireUnlock },
@@ -94,22 +126,43 @@ struct SettingsView: View {
                         Text("After 15 minutes").tag(900)
                     }
                 }
-                Toggle(isOn: $store.barkRelays) {
-                    Label("Notifications via Bark", systemImage: "bell.badge")
-                }
             } footer: {
                 if !Biometrics.available {
                     Text("Set a passcode for this iPhone to lock Alice.")
                 }
             }
+            Section {
+                Toggle(isOn: $store.barkRelays) {
+                    Label("Notifications via Bark", systemImage: "bell.badge")
+                }
+            } footer: {
+                Text("On when your Mac already announces replies through Bark, so they don't arrive twice.")
+            }
+        }
+        .navigationTitle("Privacy")
+        .navigationBarTitleDisplayMode(.inline)
+        .aliceFormPaper(scheme)
+    }
+}
 
-            Section("Appearance") {
+/// Settings › Appearance: theme and colour.
+struct AppearanceSettingsView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        @Bindable var store = store
+        Form {
+            Section("Theme") {
                 Picker("Theme", selection: $store.theme) {
                     ForEach(ThemeChoice.allCases) { choice in
                         Text(choice.label).tag(choice)
                     }
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            Section("Colour") {
                 HStack(spacing: 12) {
                     ForEach(Accent.allCases) { accent in
                         Button {
@@ -129,7 +182,21 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+        .navigationTitle("Appearance")
+        .navigationBarTitleDisplayMode(.inline)
+        .aliceFormPaper(scheme)
+    }
+}
 
+/// Settings › General: the rest, with the technical parts one level deeper.
+struct GeneralSettingsView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @State private var tipsReset = false
+
+    var body: some View {
+        Form {
             Section {
                 if store.dashboardReady {
                     TimeZoneRow()
@@ -146,16 +213,7 @@ struct SettingsView: View {
                 } message: {
                     Text("They show again the next time Alice opens.")
                 }
-                NavigationLink { AdvancedSettingsView() } label: {
-                    Label("Advanced", systemImage: "gearshape.2")
-                }
-                if store.developerMode {
-                    NavigationLink { DeveloperScreen() } label: {
-                        Label("Developer", systemImage: "wrench.and.screwdriver")
-                    }
-                }
             }
-
             let build = AliceBuildInfo.current
             Section("Version") {
                 LabeledContent("Alice", value: build.versionLabel)
@@ -167,19 +225,19 @@ struct SettingsView: View {
                         .textSelection(.enabled)
                 }
             }
-        }
-        .navigationTitle("Settings")
-        .toolbar {
-            // A page, not a sheet: it goes back the way it came, with a chevron.
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Label("Back", systemImage: "chevron.left")
-                        .labelStyle(.iconOnly)
+            Section {
+                NavigationLink { AdvancedSettingsView() } label: {
+                    Label("Advanced", systemImage: "gearshape.2")
+                }
+                if store.developerMode {
+                    NavigationLink { DeveloperScreen() } label: {
+                        Label("Developer", systemImage: "wrench.and.screwdriver")
+                    }
                 }
             }
         }
+        .navigationTitle("General")
+        .navigationBarTitleDisplayMode(.inline)
         .aliceFormPaper(scheme)
     }
 }

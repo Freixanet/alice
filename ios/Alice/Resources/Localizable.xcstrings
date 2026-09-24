@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "On when your Mac already announces replies through Bark, so they don't arrive twice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actívalo si tu Mac ya te avisa por Bark, para que no te lleguen dos veces."
+          }
+        }
+      }
+    },
     "On this iPhone": {
       "localizations": {
         "es": {

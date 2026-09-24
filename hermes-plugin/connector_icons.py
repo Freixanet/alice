@@ -35,6 +35,37 @@ RASTER = {"image/png": "png", "image/x-icon": "ico", "image/vnd.microsoft.icon":
 NOT_A_LOGO = re.compile(r"(^|\.)(github\.com|githubusercontent\.com|gitlab\.com|bitbucket\.org|npmjs\.com|"
                         r"pypi\.org|readthedocs\.io|modelcontextprotocol\.io)$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
+# Connectors that run on the Mac (a command, no address) and so carry no site to read a mark
+# from: the product each one wraps, by the name it is usually installed under.
+KNOWN_SITES = {
+    "cobalt": "cobalt.tools", "notion": "notion.so", "github": "github.com", "gitlab": "gitlab.com",
+    "slack": "slack.com", "gmail": "mail.google.com", "google-calendar": "calendar.google.com",
+    "google-drive": "drive.google.com", "obsidian": "obsidian.md", "spotify": "spotify.com",
+    "home-assistant": "home-assistant.io", "homeassistant": "home-assistant.io", "filesystem": "",
+    "playwright": "playwright.dev", "puppeteer": "pptr.dev", "brave-search": "brave.com",
+    "youtube": "youtube.com", "whatsapp": "whatsapp.com", "telegram": "telegram.org",
+}
+
+
+# The product's own icon, published by the product itself, for a local connector whose site
+# cannot be read (cobalt.tools answers only browsers).
+KNOWN_MARKS = {
+    "cobalt": "https://raw.githubusercontent.com/imputnet/cobalt/main/web/static/icons/apple-touch-icon.png",
+}
+
+
+def known_mark(name: str) -> Optional[str]:
+    key = (name or "").lower()
+    return KNOWN_MARKS.get(key) or KNOWN_MARKS.get(key.replace("-mcp", ""))
+
+
+def known_hosts(name: str) -> List[str]:
+    """The product's site for a connector that runs locally, when its name says which."""
+    key = (name or "").lower()
+    for prefix in (key, key.split("-mcp")[0], key.replace("-mcp", ""), key.replace("mcp-", "")):
+        if KNOWN_SITES.get(prefix):
+            return [KNOWN_SITES[prefix]]
+    return []
 
 
 def _private(host: str) -> bool:
@@ -196,6 +227,14 @@ class Icons:
                 except (OSError, KeyError):
                     pass
         found = resolve(sites(hosts, urls, name), self.fetch)
+        mark = known_mark(name)
+        if found is None and mark:
+            try:
+                data, _ = self.fetch(mark, 512 * 1024)
+                mime = _sniff(data)
+                found = (data, mime) if mime in RASTER else None
+            except Exception:
+                found = None
         self.dir.mkdir(parents=True, exist_ok=True)
         if found is None:
             meta_path.write_text(json.dumps({"missing": True, "at": self.now()}), encoding="utf-8")
