@@ -6328,12 +6328,23 @@ final class AppStore {
         guard HealthSync.available else { return String(localized: "Health is not available on this device.") }
         do {
             try await HealthSync.requestAccess()
-            healthConnected = true
-            try await uploadHealth(days: 60)
-            return nil
+            DiagnosticsLog.write("health.authorized")
         } catch {
+            DiagnosticsLog.write("health.authorizeFailed \(error.localizedDescription)")
             return PlainWords.describe(error, doing: "connect Health")
         }
+        // Connected as soon as iOS answered; medication and the first 60 days
+        // follow on their own, so nothing here can leave the button waiting.
+        healthConnected = true
+        Task { [weak self] in
+            await HealthSync.requestMedicationAccess()
+            do {
+                try await self?.uploadHealth(days: 60)
+            } catch {
+                DiagnosticsLog.write("health.uploadFailed \(error.localizedDescription)")
+            }
+        }
+        return nil
     }
 
     func disconnectHealth() async {
@@ -6351,9 +6362,11 @@ final class AppStore {
 
     private func uploadHealth(days: Int) async throws {
         let rows = await HealthSync.days(days)
-        guard !rows.isEmpty else { return }
+        // Sent even when empty: the Mac then knows Health is connected.
+        let count = rows.count
         try await dashboard.uploadHealth(rows)
         healthSyncedAt = Date()
+        DiagnosticsLog.write("health.uploaded days=\(count)")
     }
 
     /// Open reminders worth a morning's attention: due by the end of tomorrow

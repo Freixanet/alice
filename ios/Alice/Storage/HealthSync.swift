@@ -27,7 +27,11 @@ enum HealthSync {
     /// so a connection is judged by whether any data comes back.
     static func requestAccess() async throws {
         try await store.requestAuthorization(toShare: [], read: reads)
-        // Medications are shared one by one: iOS lists them and the person picks.
+    }
+
+    /// Medications are shared one by one: iOS lists them and the person picks.
+    /// Asked separately and never awaited by the connection itself.
+    static func requestMedicationAccess() async {
         try? await store.requestPerObjectReadAuthorization(for: HKObjectType.userAnnotatedMedicationType(), predicate: nil)
     }
 
