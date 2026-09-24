@@ -157,7 +157,10 @@ class BusinessIsolationTests(unittest.TestCase):
         self.assertIn("Sin comprobar", self.plugin.resolve_prompt())
         self.assertIn("nada de Markdown", self.plugin.channel_prompt({"platform": "photon"}))
         self.assertEqual(self.plugin.channel_prompt({"platform": "telegram"}), "")
-        self.assertEqual(ctx.register_system_prompt_section.call_count, 7)
+        # And the errands she can run on her own (subscriptions, returns, slots, check-in).
+        ctx.register_system_prompt_section.assert_any_call("alice.recados", self.plugin.errands_prompt)
+        ctx.register_system_prompt_section.assert_any_call("alice.dudas", self.plugin.doubts_prompt)
+        self.assertEqual(ctx.register_system_prompt_section.call_count, 9)
 
 
 if __name__ == "__main__":

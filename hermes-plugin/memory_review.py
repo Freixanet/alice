@@ -117,9 +117,19 @@ def parse(reply: str) -> List[Dict[str, Any]]:
     return [f for f in facts if isinstance(f, dict)] if isinstance(facts, list) else []
 
 
+# Words that say something changed ("ahora vivo en…", "me he mudado", "ya no trabajo en…"): with
+# them, a fact replaces what memory held; without them, a contradiction is asked, not assumed.
+CHANGE = re.compile(
+    r"\b(ahora|ya no|me he mudado|me mud[eé]|nos hemos mudado|he cambiado|cambi[eé]|desde (hace|ayer|el|la)|"
+    r"nuev[oa]s?|actualmente|a partir de|now|no longer|moved|changed|since|currently|new)\b", re.IGNORECASE)
+MAX_QUESTIONS = 5
+QUESTION_DAYS = 21
+
+
 def accepted(facts: Sequence[Dict[str, Any]], turns: Sequence[str],
-             memory: Dict[str, List[str]]) -> List[Dict[str, Any]]:
-    """The facts that pass every check, at most ``MAX_FACTS``."""
+             memory: Dict[str, List[str]], doubts: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
+    """The facts that pass every check, at most ``MAX_FACTS``. A fact that contradicts memory
+    without the person saying it changed goes to ``doubts`` instead: Alice asks, never guesses."""
     known = {_plain(entry) for entries in memory.values() for entry in entries}
     keep: List[Dict[str, Any]] = []
     for fact in facts:
@@ -138,6 +148,10 @@ def accepted(facts: Sequence[Dict[str, Any]], turns: Sequence[str],
             replaces = next((e for e in memory.get(target, []) if _plain(e) == _plain(replaces)), None)
             if replaces is None:
                 continue
+            if not CHANGE.search(str(fact.get("evidence") or "")):
+                if doubts is not None:
+                    doubts.append({"known": replaces, "said": text, "evidence": str(fact["evidence"]).strip()})
+                continue
         known.add(_plain(text))
         keep.append({"target": target, "text": text, "evidence": str(fact["evidence"]).strip(),
                      "replaces": replaces})
@@ -152,7 +166,10 @@ def review(turns: Sequence[str], keeper, ask: Callable[[List[Dict[str, str]]], s
     if not turns:
         return []
     memory = {target: keeper.files.entries(target) for target in ("user", "memory")}
-    facts = accepted(parse(ask(prompt(turns, memory, today or date.today()))), turns, memory)
+    doubts: List[Dict[str, str]] = []
+    facts = accepted(parse(ask(prompt(turns, memory, today or date.today()))), turns, memory, doubts)
+    if doubts:
+        remember_doubts(keeper, doubts)
     changes = []
     for fact in facts:
         change = keeper.learn(fact["target"], fact["text"], replaces=fact["replaces"],
@@ -160,3 +177,41 @@ def review(turns: Sequence[str], keeper, ask: Callable[[List[Dict[str, str]]], s
         if change:
             changes.append(change)
     return changes
+
+
+# ── Contradictions to ask about ─────────────────────────────────────────────────
+
+def remember_doubts(keeper, doubts: Sequence[Dict[str, str]], now: Optional[float] = None) -> None:
+    import time as _time
+
+    now = now or _time.time()
+    kept = [q for q in keeper._read("questions.json", []) if isinstance(q, dict)]
+    for doubt in doubts:
+        if not any(_plain(q.get("known", "")) == _plain(doubt["known"]) and _plain(q.get("said", "")) == _plain(doubt["said"])
+                   for q in kept):
+            kept.append({**doubt, "at": now})
+    keeper._write("questions.json", kept[-MAX_QUESTIONS:])
+
+
+def open_doubts(keeper, now: Optional[float] = None) -> List[Dict[str, str]]:
+    """Contradictions still worth asking: recent, and memory still says the old thing."""
+    import time as _time
+
+    now = now or _time.time()
+    known = {_plain(e) for target in ("user", "memory") for e in keeper.files.entries(target)}
+    questions = [q for q in keeper._read("questions.json", []) if isinstance(q, dict)]
+    live = [q for q in questions
+            if now - float(q.get("at") or 0) < QUESTION_DAYS * 86400 and _plain(q.get("known", "")) in known
+            and _plain(q.get("said", "")) not in known]
+    if len(live) != len(questions):
+        keeper._write("questions.json", live)
+    return live[-2:]
+
+
+def doubts_prompt(doubts: Sequence[Dict[str, str]]) -> str:
+    if not doubts:
+        return ""
+    lines = "\n".join(f"- Tu memoria dice «{d['known']}», pero dijo «{d['evidence']}»." for d in doubts)
+    return ("## Algo no cuadra en lo que sabes de la persona\n" + lines + "\n"
+            "Cuando venga al caso —no de golpe, una sola cosa y con naturalidad— pregúntaselo "
+            "(«¿Te has mudado a Manresa?») y actualiza tu memoria con lo que diga. No lo des por hecho antes.")

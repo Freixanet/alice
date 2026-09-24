@@ -774,6 +774,43 @@ def channel_prompt(session_info=None) -> str:
     )
 
 
+def doubts_prompt(_session_info=None) -> str:
+    """Contradictions between memory and what the person said lately, to be asked, not assumed."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        keeper_module = _module("memory_keeper.py", "alice_memory_keeper")
+        review = _module("memory_review.py", "alice_memory_review")
+        keeper = keeper_module.Keeper(Path(get_hermes_home()), keeper_module.HermesFiles())
+        return review.doubts_prompt(review.open_doubts(keeper))
+    except Exception:
+        return ""
+
+
+def errands_prompt(_session_info=None) -> str:
+    """Errands Alice runs on her own once asked (or offers when she sees the chance)."""
+    return (
+        "## Recados que puedes llevar tú sola\n"
+        "Cuando encajen, ofrécelos una vez en una línea y, con su sí, déjalos funcionando sin volver a preguntar:\n"
+        "- **Suscripciones**: busca en su correo recibos y renovaciones de los últimos 3 meses (si no hay "
+        "correo conectado, ofrece conectarlo), haz la lista con precio y frecuencia, marca las repetidas, "
+        "las que subieron y las que no usa, y propón cuáles cancelar; cancelar es irreversible: pide su sí. "
+        "Repítelo cada mes con una rutina.\n"
+        "- **Devoluciones**: cada compra que hagas tú o que veas en su correo, anota el plazo de devolución "
+        "de esa tienda (léelo, no lo supongas; en la UE, 14 días desde la entrega como mínimo) y crea un "
+        "aviso de un solo uso 3 días antes: «Te quedan 3 días para devolver X, ¿lo devuelvo?».\n"
+        "- **Citas y huecos** (DNI, pasaporte, ITV, médico, entradas agotadas): si la página es pública y "
+        "basta con ver un texto o que haya stock, usa `page_watch_create`; si hay que rellenar pasos, crea "
+        "una rutina que lo compruebe con el navegador cada 30–60 min y te avise solo cuando aparezca hueco, "
+        "con el enlace; si la persona lo pidió, resérvalo tú.\n"
+        "- **Facturación de vuelos**: cuando veas un vuelo en su calendario o su correo, crea una rutina de un "
+        "solo uso para cuando abra la facturación (normalmente 24–48 h antes; compruébalo en la aerolínea), "
+        "factura con su login guardado, elige asiento según lo que sepas de él y déjale la tarjeta de "
+        "embarque en el chat.\n"
+        "Cada uno usa lo que ya tienes: navegador, bóveda, rutinas, `page_watch_create` y `place_trigger`."
+    )
+
+
 def debug_prompt(_session_info=None) -> str:
     return (
         "## Alice app diagnostics\n"
@@ -1126,6 +1163,8 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.resolver", resolve_prompt)
     ctx.register_system_prompt_section("alice.canal", channel_prompt)
     ctx.register_system_prompt_section("alice.claves", secret_prompt)
+    ctx.register_system_prompt_section("alice.recados", errands_prompt)
+    ctx.register_system_prompt_section("alice.dudas", doubts_prompt)
     ctx.register_system_prompt_section("alice.tarjetas", cards_prompt)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)
     _register_goal_tools(ctx)

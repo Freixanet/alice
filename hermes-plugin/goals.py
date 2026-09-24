@@ -25,6 +25,7 @@ STEP_STATUSES = ("todo", "doing", "done")
 MAX_GOALS = 60
 MAX_STEPS = 20
 MAX_LOG = 40
+MAX_DECISIONS = 20
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _lock = threading.Lock()
 
@@ -224,6 +225,37 @@ class Goals:
 
         return self._mutate(change)
 
+    def decide(self, goal_id: str, chosen: Any, rejected: Any = None, by: str = "agent") -> Dict[str, Any]:
+        """A decision on the way to a goal: what was chosen, and what was ruled out and why, so a
+        later turn does not bring back what was already discarded."""
+        chosen = _text(chosen, 200)
+        if not chosen:
+            raise GoalError("Say what was decided.")
+        items = rejected if isinstance(rejected, list) else ([rejected] if rejected else [])
+        ruled_out = []
+        for item in items[:6]:
+            if isinstance(item, dict):
+                option, why = _text(item.get("option"), 120), _text(item.get("why"), 200)
+            else:
+                option, why = _text(item, 120), ""
+            if option:
+                ruled_out.append({"option": option, "why": why})
+
+        def change(goals):
+            goal = self._find(goals, goal_id)
+            decisions = goal.setdefault("decisions", [])
+            decisions.append({"at": self.now(), "chosen": chosen, "rejected": ruled_out})
+            del decisions[:-MAX_DECISIONS]
+            words = f"Decidido: {chosen}"
+            if ruled_out:
+                words += ". Descartado: " + "; ".join(
+                    r["option"] + (f" ({r['why']})" if r["why"] else "") for r in ruled_out)
+            self._log(goal, words, by)
+            goal["updated_at"] = self.now()
+            return goal
+
+        return self._mutate(change)
+
     def link_routine(self, goal_id: str, routine: str) -> Dict[str, Any]:
         def change(goals):
             goal = self._find(goals, goal_id)
@@ -268,6 +300,10 @@ def summary(goals: List[Dict[str, Any]], limit: int = 12, measured: Optional[Cal
             bits.append(f"by {goal['due']}")
         if nxt:
             bits.append(f"next: {nxt['text']}")
+        ruled_out = [r for d in goal.get("decisions") or [] for r in d.get("rejected") or []][-4:]
+        if ruled_out:
+            bits.append("descartado (no lo vuelvas a proponer sin algo nuevo): " + "; ".join(
+                r["option"] + (f" — {r['why']}" if r.get("why") else "") for r in ruled_out))
         lines.append(" · ".join(bits))
     return "\n".join(lines)
 
@@ -293,7 +329,7 @@ def prompt_section(goals: List[Dict[str, Any]], measured: Optional[Callable] = N
 
 # ── The tool ────────────────────────────────────────────────────────────────────
 
-ACTIONS = ("list", "create", "update", "step", "link_routine", "remove")
+ACTIONS = ("list", "create", "update", "step", "decide", "link_routine", "remove")
 
 SCHEMA = {
     "name": "goals",
@@ -302,7 +338,9 @@ SCHEMA = {
         "list: open goals with ids. create: title, why, due (YYYY-MM-DD), steps (list of short texts). "
         "update: goal_id with title/why/due/status (active, paused, done) and/or note (a short progress note). "
         "step: goal_id plus add (text or list) for new steps, or step_id with status (todo, doing, done), "
-        "text, or remove=true. link_routine: goal_id and routine (the cronjob id working on it). "
+        "text, or remove=true. decide: goal_id, chosen (what was decided) and rejected (list of {option, why}) "
+        "whenever a choice is made with the person — hotel, date, provider — so it is not proposed again. "
+        "link_routine: goal_id and routine (the cronjob id working on it). "
         "remove: goal_id, only when the person asks. "
         "A goal about a health number (sleep, steps, exercise, resting heart rate, HRV) can be measured: "
         "pass metric (sleep_h, steps, workout_min, active_kcal, rhr, hrv), target, direction (at_least or "
@@ -329,6 +367,9 @@ SCHEMA = {
             "text": {"type": "string"},
             "remove": {"type": "boolean"},
             "routine": {"type": "string"},
+            "chosen": {"type": "string"},
+            "rejected": {"type": "array", "items": {"type": "object", "properties": {
+                "option": {"type": "string"}, "why": {"type": "string"}}}},
             "include_done": {"type": "boolean"},
             "metric": {"type": "string"},
             "target": {"type": "number"},
@@ -363,6 +404,8 @@ def run_tool(store: Goals, args: Dict[str, Any], measured: Optional[Callable] = 
             return {"ok": True, "goal": store.step(goal_id, add=args.get("add"), step_id=args.get("step_id"),
                                                    status=args.get("status"), text=args.get("text"),
                                                    remove=bool(args.get("remove")))}
+        if action == "decide":
+            return {"ok": True, "goal": _brief(store.decide(goal_id, args.get("chosen"), args.get("rejected")), measured)}
         if action == "link_routine":
             return {"ok": True, "goal": store.link_routine(goal_id, args.get("routine") or "")}
         if action == "remove":
@@ -377,6 +420,7 @@ def _brief(goal: Dict[str, Any], measured: Optional[Callable] = None) -> Dict[st
     nxt = Goals.next_step(goal)
     reading = measured(goal) if measured and goal.get("measure") else None
     return {"measure": goal.get("measure"), "measured": reading,
+            "decisions": (goal.get("decisions") or [])[-5:],
             "id": goal["id"], "title": goal["title"], "status": goal["status"], "due": goal.get("due"),
             "progress": Goals.progress(goal), "next": nxt and {"id": nxt["id"], "text": nxt["text"]},
             "steps": [{"id": s["id"], "text": s["text"], "status": s["status"]} for s in goal.get("steps") or []]}

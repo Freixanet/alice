@@ -140,6 +140,20 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(sorted(files.data["user"]), ["Se llama Marc.", "Vive en Madrid con su pareja."])
         self.assertEqual(keeper.origin("user", text="Vive en Madrid con su pareja.")["source"], "legacy")
 
+    def test_a_contradiction_without_a_change_is_asked_not_assumed(self):
+        files = FakeFiles(user=["Vive en Madrid."])
+        keeper = self.keeper(files)
+        keeper.scan("user")
+        ask = model({"target": "user", "text": "Vive en Manresa.", "evidence": "en Manresa, que es donde vivo",
+                     "replaces": "Vive en Madrid."})
+        self.assertEqual(mr.review(["en Manresa, que es donde vivo"], keeper, ask, today=TODAY), [])
+        self.assertEqual(files.data["user"], ["Vive en Madrid."])  # not overwritten
+        doubts = mr.open_doubts(keeper)
+        self.assertEqual(doubts[0]["known"], "Vive en Madrid.")
+        self.assertIn("pregúntaselo", mr.doubts_prompt(doubts))
+        files.data["user"] = ["Vive en Manresa."]  # answered: memory updated
+        self.assertEqual(mr.open_doubts(keeper), [])
+
     def test_the_persons_own_entries_are_never_replaced(self):
         files = FakeFiles(user=["Vive en Madrid."])
         keeper = self.keeper(files)

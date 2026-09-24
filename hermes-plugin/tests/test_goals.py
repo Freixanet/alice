@@ -24,6 +24,16 @@ class GoalsTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_what_was_ruled_out_is_remembered_and_not_proposed_again(self):
+        goal = self.goals.create("Viaje a Mallorca")
+        out = gm.run_tool(self.goals, {"action": "decide", "goal_id": goal["id"], "chosen": "Hotel Sol, 12–15 oct",
+                                       "rejected": [{"option": "Hotel Mar", "why": "no admite perros"}]})
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["goal"]["decisions"][0]["rejected"][0]["option"], "Hotel Mar")
+        line = gm.summary(self.goals.list())
+        self.assertIn("descartado (no lo vuelvas a proponer sin algo nuevo): Hotel Mar — no admite perros", line)
+        self.assertIn("Decidido: Hotel Sol", self.goals.get(goal["id"])["log"][-1]["text"])
+
     def test_a_measured_goal_reads_its_progress_from_health(self):
         out = gm.run_tool(self.goals, {"action": "create", "title": "Dormir 7 h", "metric": "sleep_h",
                                        "target": 7, "window_days": 7})
