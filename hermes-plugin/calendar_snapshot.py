@@ -15,12 +15,15 @@ sent; titles, times, places and the calendar's name are.
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+_WRITE_LOCK = threading.Lock()
 MAX_EVENTS = 600
 MAX_TEXT = 200
 
@@ -38,11 +41,23 @@ def read(home: Path) -> Dict[str, Any]:
 
 
 def _write(home: Path, data: Dict[str, Any]) -> None:
+    """Atomic, and safe when two uploads land at once: each writes its own temporary file
+    (a shared one made the second rename fail, and the dashboard reported itself degraded)."""
+    import os
+    import tempfile
+
     target = path(home)
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(".calendar.json.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(target)
+    with _WRITE_LOCK:
+        fd, tmp = tempfile.mkstemp(dir=str(target.parent), prefix=".calendar-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False)
+            os.replace(tmp, target)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
 
 
 def status(home: Path) -> Dict[str, Any]:

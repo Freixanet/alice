@@ -2278,12 +2278,17 @@ def _connector_icons():
     import importlib.util
 
     name = "alice_connector_icons"
-    if name in sys.modules:
-        return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / "connector_icons.py")
+    # A plugin update replaces the file while the dashboard keeps running: the copy
+    # in memory must not outlive it (an old one lacked what the new routes call).
+    source = Path(__file__).resolve().parents[1] / "connector_icons.py"
+    cached = sys.modules.get(name)
+    if cached is not None and getattr(cached, "_alice_mtime", None) == source.stat().st_mtime:
+        return cached
+    spec = importlib.util.spec_from_file_location(name, source)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
+    module._alice_mtime = source.stat().st_mtime
     return module
 
 
