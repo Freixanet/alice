@@ -587,6 +587,12 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         ]))
     }
 
+    /// Answers a secure request (a login, a code, a key) with the one string
+    /// Hermes asked for; `""` declines it.
+    func answerSecureRequest(_ requestID: String, value: String) async throws {
+        try await rpc.respond(toServerRequest: requestID, result: JSONObject(["value": value]))
+    }
+
     /// Answers a clarify question in that session.
     ///
     /// For a server→client request, a single question is answered by a response

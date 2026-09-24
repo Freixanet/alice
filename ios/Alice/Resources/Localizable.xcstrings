@@ -31,6 +31,16 @@
         }
       }
     },
+    "%@ master password": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contraseña maestra de %@"
+          }
+        }
+      }
+    },
     "%@ of %@": {
       "localizations": {
         "es": {
@@ -407,6 +417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Un canal es una carpeta para agentes y equipos. Los agentes que metes en él salen de Inicio y solo aparecen dentro; un agente puede estar en varios canales. Puede quedarse vacío hasta que añadas alguno."
+          }
+        }
+      }
+    },
+    "A key Alice needs.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Una clave que Alice necesita."
           }
         }
       }
@@ -1187,6 +1207,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alice necesita la conexión con el panel para leer conversaciones anteriores."
+          }
+        }
+      }
+    },
+    "Alice needs your account to continue.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice necesita tu cuenta para seguir."
           }
         }
       }
@@ -2497,6 +2527,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Código"
+          }
+        }
+      }
+    },
+    "Code from %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Código de %@"
           }
         }
       }
@@ -4141,6 +4181,16 @@
         }
       }
     },
+    "Email or username": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Email o usuario"
+          }
+        }
+      }
+    },
     "Emails sent, routines created, sign-ins and anything else your agents do that changes something will show here.": {
       "localizations": {
         "es": {
@@ -4571,6 +4621,16 @@
         }
       }
     },
+    "For Alice to use the logins it keeps.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para que Alice pueda usar los accesos que guarda."
+          }
+        }
+      }
+    },
     "Force reinstall": {
       "localizations": {
         "es": {
@@ -4777,6 +4837,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Objetivos"
+          }
+        }
+      }
+    },
+    "Goes straight into the page. It never appears in the chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Va directo a la página. Nunca aparece en el chat."
           }
         }
       }
@@ -4997,6 +5067,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hermes está conectado, pero algunas funciones no terminaron de conectar."
+          }
+        }
+      }
+    },
+    "Hermes is no longer waiting for this. Ask Alice to try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hermes ya no está esperando esto. Pídele a Alice que lo intente de nuevo."
           }
         }
       }
@@ -7591,6 +7671,16 @@
         }
       }
     },
+    "Not Now": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora no"
+          }
+        }
+      }
+    },
     "Not a Git repository": {
       "localizations": {
         "es": {
@@ -9821,12 +9911,32 @@
         }
       }
     },
+    "Saved encrypted in Hermes on your Mac, for %@ only. Alice fills it in without ever seeing it, and it never appears in the chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se guarda cifrada en Hermes, en tu Mac, solo para %@. Alice la rellena sin verla nunca y no aparece en el chat."
+          }
+        }
+      }
+    },
     "Saved in Hermes on your Mac. Alice does not keep a copy.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Se guarda en Hermes, en tu Mac. Alice no guarda copia."
+          }
+        }
+      }
+    },
+    "Saved in Hermes on your Mac. It never appears in the chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se guarda en Hermes, en tu Mac. Nunca aparece en el chat."
           }
         }
       }
@@ -10147,6 +10257,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Self-chat"
+          }
+        }
+      }
+    },
+    "Send": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar"
           }
         }
       }
@@ -10537,6 +10657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cargar manualmente un GGUF ya presente en el Mac"
+          }
+        }
+      }
+    },
+    "Sign In": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión"
           }
         }
       }
@@ -11901,6 +12031,16 @@
         }
       }
     },
+    "Type the code the site just sent you.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribe el código que te acaba de enviar la web."
+          }
+        }
+      }
+    },
     "Typical schedule": {
       "localizations": {
         "es": {
@@ -11987,6 +12127,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unidad"
+          }
+        }
+      }
+    },
+    "Unlock": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquear"
+          }
+        }
+      }
+    },
+    "Unlock %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquear %@"
           }
         }
       }
@@ -12231,6 +12391,16 @@
         }
       }
     },
+    "Used once to unlock it on your Mac, and not kept.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa una vez para desbloquearlo en tu Mac y no se guarda."
+          }
+        }
+      }
+    },
     "User profile memory": {
       "localizations": {
         "es": {
@@ -12267,6 +12437,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Valor"
+          }
+        }
+      }
+    },
+    "Verification code": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Código de verificación"
           }
         }
       }

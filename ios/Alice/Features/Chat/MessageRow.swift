@@ -180,7 +180,8 @@ struct MessageRow: View {
                     // It stays on the latest reply once done, so the page can still be opened.
                     if BrowserActivity.used(message.tools),
                        working || store.shownConversation?.messages.last?.id == message.id {
-                        LiveBrowserCard(working: working, browsing: BrowserActivity.running(message.tools))
+                        LiveBrowserCard(working: working, browsing: BrowserActivity.running(message.tools),
+                                        caption: BrowserActivity.caption(message.tools))
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
 

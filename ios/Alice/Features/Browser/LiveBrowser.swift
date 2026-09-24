@@ -140,6 +140,21 @@ enum BrowserActivity {
     static func running(_ tools: [Message.ToolCall]) -> Bool {
         tools.contains { isBrowserTool($0.name) && $0.status != .done }
     }
+
+    /// What the agent is doing in the browser, in its own words: Hermes asks
+    /// each browser step to open with a one-line comment for the person
+    /// ("# Adding the bag to the basket"), which arrives as the step's preview.
+    static func caption(_ tools: [Message.ToolCall]) -> String? {
+        guard let detail = tools.last(where: { isBrowserTool($0.name) })?.detail else { return nil }
+        for line in detail.split(separator: "\n") {
+            let text = line.trimmingCharacters(in: .whitespaces)
+            if text.hasPrefix("#") {
+                let said = text.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces)
+                return said.isEmpty ? nil : String(said.prefix(80))
+            }
+        }
+        return nil
+    }
 }
 
 // MARK: - The card in the chat
@@ -150,6 +165,8 @@ struct LiveBrowserCard: View {
     /// The agent is still working on this reply.
     let working: Bool
     let browsing: Bool
+    /// The step under way, as the agent described it.
+    var caption: String?
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -189,7 +206,9 @@ struct LiveBrowserCard: View {
                         Text(live.title.isEmpty ? String(localized: "Browser") : live.title)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
-                        Text(working && browsing ? String(localized: "Browsing now · tap to take over") : live.host)
+                        Text(working && browsing
+                             ? (caption ?? String(localized: "Browsing now · tap to take over"))
+                             : live.host)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -217,7 +236,7 @@ struct LiveBrowserCard: View {
         .onAppear { live.watch() }
         .onDisappear { live.unwatch() }
         .fullScreenCover(isPresented: $open) {
-            LiveBrowserScreen(agentWorking: working && browsing)
+            LiveBrowserScreen(agentWorking: working && browsing, caption: caption)
                 .navigationTransition(.zoom(sourceID: "live-browser", in: zoom))
         }
     }
@@ -246,6 +265,7 @@ struct LivePulse: View {
 /// taking over, and "Stop" ends the agent's turn if you want it to wait.
 struct LiveBrowserScreen: View {
     var agentWorking = false
+    var caption: String?
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -388,8 +408,17 @@ struct LiveBrowserScreen: View {
                 if agentOnIt { LivePulse() } else {
                     Image(systemName: "sparkles.rectangle.stack").foregroundStyle(.secondary)
                 }
-                Text(agentOnIt ? "Alice is browsing" : "Alice can use this browser")
-                    .font(.subheadline.weight(.medium))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(agentOnIt ? "Alice is browsing" : "Alice can use this browser")
+                        .font(.subheadline.weight(.medium))
+                    if agentOnIt, let caption {
+                        Text(caption)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .contentTransition(.opacity)
+                    }
+                }
                 Spacer(minLength: 0)
                 Button("Take Over") { Task { await live.takeOver() } }
                     .buttonStyle(.bordered)

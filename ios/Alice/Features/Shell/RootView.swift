@@ -302,6 +302,11 @@ struct RootView: View {
                     .presentationDragIndicator(.visible)
                     .preferredColorScheme(store.theme.colorScheme)
             }
+            // A login, code or key Hermes is waiting for: asked securely, wherever you are.
+            .sheet(item: Bindable(store).secureRequest) { request in
+                SecureRequestSheet(request: request)
+                    .preferredColorScheme(store.theme.colorScheme)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .aliceOpenReceipt)) { note in
                 if let url = note.object as? URL { store.openReceipt(url) }
             }

@@ -34,6 +34,54 @@ STATE = Path(".alice") / "browser.json"
 LEASE = Path(".alice") / "browser-lease.json"
 # A takeover nobody touches for this long goes back to the agents on its own.
 LEASE_IDLE_SECONDS = 15 * 60
+# While someone watches, the page draws where the agent acts — the pointer gliding to
+# it, a ripple on each click, a glow on the field it types into — so the person sees the
+# agent navigate rather than a page changing by itself. Drawn in a layer that takes no
+# input and is gone with the document; injected only on the tab being watched.
+POINTER_JS = r"""
+(() => {
+  if (window.__aliceWatch) return; window.__aliceWatch = true;
+  const make = () => {
+    if (!document.body) return null;
+    let p = document.getElementById('__alice_pointer');
+    if (p) return p;
+    p = document.createElement('div'); p.id = '__alice_pointer';
+    p.style.cssText = 'position:fixed;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;'
+      + 'background:rgba(255,59,48,.9);box-shadow:0 0 0 3px rgba(255,255,255,.9),0 2px 8px rgba(0,0,0,.35);'
+      + 'z-index:2147483647;pointer-events:none;transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .4s;'
+      + 'opacity:0;transform:translate(-40px,-40px)';
+    document.documentElement.appendChild(p);
+    return p;
+  };
+  const at = (x, y) => { const p = make(); if (!p) return; p.style.opacity = '1'; p.style.transform = `translate(${x}px,${y}px)`; };
+  const ripple = (x, y) => {
+    const r = document.createElement('div');
+    r.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;`
+      + 'border:3px solid rgba(255,59,48,.85);z-index:2147483647;pointer-events:none;'
+      + 'transition:transform .6s ease-out,opacity .6s ease-out;transform:scale(1);opacity:1';
+    document.documentElement.appendChild(r);
+    requestAnimationFrame(() => { r.style.transform = 'scale(5)'; r.style.opacity = '0'; });
+    setTimeout(() => r.remove(), 700);
+  };
+  const center = (el) => { const b = el.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; };
+  const glow = (el) => {
+    if (!el || !el.style) return;
+    const before = el.style.boxShadow;
+    el.style.boxShadow = '0 0 0 3px rgba(255,59,48,.75)';
+    clearTimeout(el.__aliceGlow); el.__aliceGlow = setTimeout(() => { el.style.boxShadow = before; }, 900);
+  };
+  addEventListener('mousemove', e => at(e.clientX, e.clientY), true);
+  addEventListener('mousedown', e => { at(e.clientX, e.clientY); ripple(e.clientX, e.clientY); }, true);
+  addEventListener('click', e => {
+    // A script click has no coordinates: show it on the element instead.
+    if (e.clientX || e.clientY) return;
+    const [x, y] = center(e.target); at(x, y); ripple(x, y);
+  }, true);
+  addEventListener('focusin', e => { const [x, y] = center(e.target); at(x, y); glow(e.target); }, true);
+  addEventListener('input', e => glow(e.target), true);
+})();
+"""
+
 # With no new screencast frame for this long, a screenshot is taken instead.
 STALE_SECONDS = 1.5
 # Frames stop being produced once no phone has asked for one for this long.
@@ -333,6 +381,9 @@ class Screencast:
                 self._socket = socket
                 self._connected.set()
                 self._send("Page.enable", {})
+                # Where the agent acts, drawn on the page while it is watched.
+                self._send("Page.addScriptToEvaluateOnNewDocument", {"source": POINTER_JS})
+                self._send("Runtime.evaluate", {"expression": POINTER_JS})
                 self._send("Page.startScreencast", {"format": "jpeg", "quality": 62,
                                                     "maxWidth": 1200, "maxHeight": 1800, "everyNthFrame": 1})
                 self._send("Page.captureScreenshot", {"format": "jpeg", "quality": 62})

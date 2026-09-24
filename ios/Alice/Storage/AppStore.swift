@@ -5843,6 +5843,9 @@ final class AppStore {
     var showingNotes = false
     /// The agenda, a page too (`AgendaScreen`).
     var showingAgenda = false
+    /// A login, code or key Hermes is waiting for the person to type (`SecureRequestSheet`).
+    var secureRequest: SecureRequest?
+
     /// The person's goals and Alice's plans, a page too (`GoalsScreen`).
     var showingGoals = false
     /// The agents' shared browser, live: one view of it for the chat's card
@@ -6302,6 +6305,21 @@ final class AppStore {
         try await dashboard.uploadCalendar(events, from: window.start, to: window.end)
         calendarSyncedAt = Date()
         calendarLink = .connected(updatedAt: Date())
+    }
+
+    // MARK: - Secure requests
+
+    /// Sends what the person typed straight to Hermes; `""` declines. The value
+    /// is never kept, logged or put in a message.
+    func answerSecureRequest(_ request: SecureRequest, value: String) async -> Bool {
+        defer { if secureRequest?.id == request.id { secureRequest = nil } }
+        guard let source = await botChatSource() else { return false }
+        do {
+            try await source.answerSecureRequest(request.id, value: value)
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: - Agenda
@@ -7089,6 +7107,15 @@ final class AppStore {
                         work.waitingOn.remove(at: index)
                         setBackgroundWork(work, for: conversationID)
                     }
+                    // A login, a code or a key only the person can type: a secure card.
+                    if event.type == "secure.request", let request = SecureRequest.parse(event.payload) {
+                        secureRequest = request
+                    }
+                    if event.type == "request.cancel",
+                       let cancelled = GatewayServerRequests.cancelledRequestID(event),
+                       secureRequest?.id == cancelled {
+                        secureRequest = nil
+                    }
                     if let chatEvent = Self.chatEvent(from: event) {
                         apply(
                             chatEvent, to: replyID, conversationID: conversationID,
@@ -7831,7 +7858,7 @@ final class AppStore {
         // Handled.
         "message.delta", "message.complete", "message.interim", "tool.start", "tool.complete",
         "todo.updated", "reasoning.delta",
-        "approval.request", "clarify.request", "error", "request.cancel",
+        "approval.request", "clarify.request", "secure.request", "error", "request.cancel",
         "subagent.start", "subagent.complete", "status.update",
         // Known and let pass.
         "message.start", "message.user", "message.react",

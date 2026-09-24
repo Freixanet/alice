@@ -33,6 +33,12 @@ enum GatewayServerRequests {
         case "clarify":
             payload["request_id"] = id
             return HermesRPCEvent(type: "clarify.request", sessionID: sessionID, payload: payload)
+        case "vault.save_login", "vault.code", "vault.unlock_prompt", "secret":
+            // What only the person can type — a login, a code, a key — asked in a
+            // secure card; the answer goes straight back to Hermes, never the chat.
+            payload["request_id"] = id
+            payload["kind"] = method
+            return HermesRPCEvent(type: "secure.request", sessionID: sessionID, payload: payload)
         default:
             return nil
         }
