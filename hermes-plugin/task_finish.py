@@ -39,7 +39,9 @@ STOP_WHEN = (
     "the site — a basket left from before, an incomplete or invalid form, a pop-up, an expired session, "
     "a page error, a button that does not respond — is NEVER a reason to stop: the agent must look at "
     "the page, fix it and try other ways. A reply that only reports such an obstacle is not done and "
-    "not blocked: continue."
+    "not blocked: continue. 'Not found' is an obstacle too, not a stop, until the agent has checked its "
+    "past conversations for it, tried the official product name and variants, and searched the web "
+    "restricted to that shop."
 )
 
 SCHEMA: Dict[str, Any] = {
