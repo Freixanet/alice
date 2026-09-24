@@ -4831,6 +4831,16 @@ final class AppStore {
     func secretIsSet(_ name: String) async throws -> Bool { try await dashboard.secretIsSet(name) }
     func saveSecret(_ name: String, value: String) async throws { try await dashboard.saveSecret(name, value: value) }
     func savedCards(profile: String) async throws -> [SavedCard] { try await dashboard.savedCards(profile: profile) }
+    func placeTriggers() async throws -> [PlaceTrigger] { try await dashboard.placeTriggers() }
+    func placeResolved(_ trigger: PlaceTrigger, latitude: Double, longitude: Double, label: String) async throws {
+        try await dashboard.placeResolved(trigger, latitude: latitude, longitude: longitude, label: label)
+    }
+    func placeEvent(id: String, profile: String, event: String) async throws {
+        try await dashboard.placeEvent(id: id, profile: profile, event: event)
+    }
+    func saveAuthenticatorKey(site: String, key: String) async throws -> String {
+        try await dashboard.saveAuthenticatorKey(site: site, key: key)
+    }
     func saveCard(_ card: PaymentCardFields?, handle: String?, origin: String, profile: String) async throws -> SavedCard {
         try await dashboard.saveCard(card, handle: handle, origin: origin, profile: profile)
     }
@@ -7265,6 +7275,8 @@ final class AppStore {
         DiagnosticsLog.write(
             "turn.end reply=\(replyID) profile=\(profile ?? "alice") mention=\(mention) ending=\(ending)"
         )
+        // A place the agent was just asked to watch starts being watched now.
+        Task { await PlaceWatcher.shared.sync() }
         guard activeBotTurns[conversationID]?.token == token else { return }
         activeBotTurns[conversationID] = nil
         switch ending {

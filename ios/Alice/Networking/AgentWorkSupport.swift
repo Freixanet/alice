@@ -201,6 +201,29 @@ extension DashboardClient {
         _ = try await send("POST", "api/plugins/alice/secret", ["name": name, "value": value])
     }
 
+    // MARK: Place triggers and authenticator keys
+
+    /// Every agent's place triggers (hermes-plugin/places.py).
+    func placeTriggers() async throws -> [PlaceTrigger] {
+        let object = try await get("api/plugins/alice/places")
+        return (object["triggers"] as? [[String: Any]] ?? []).compactMap(PlaceTrigger.init)
+    }
+
+    func placeResolved(_ trigger: PlaceTrigger, latitude: Double, longitude: Double, label: String) async throws {
+        _ = try await send("POST", "api/plugins/alice/places/\(trigger.id)/resolved",
+                           ["profile": trigger.profile, "lat": latitude, "lon": longitude, "label": label])
+    }
+
+    func placeEvent(id: String, profile: String, event: String) async throws {
+        _ = try await send("POST", "api/plugins/alice/places/\(id)/event", ["profile": profile, "event": event])
+    }
+
+    /// Attaches a site's authenticator key to its saved login; the current code back.
+    func saveAuthenticatorKey(site: String, key: String, profile: String = "default") async throws -> String {
+        let object = try await send("POST", "api/plugins/alice/vault/otp", ["profile": profile, "site": site, "key": key])
+        return object["code"] as? String ?? ""
+    }
+
     // MARK: Payment cards
 
     /// Cards saved in the profile's Hermes vault: label and bound site, never the numbers.

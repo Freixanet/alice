@@ -16,6 +16,10 @@ struct SecureRequestSheet: View {
     @State private var working = false
     @State private var failed = false
     @State private var answered = false
+    /// The site's authenticator key, given once so codes are never asked again.
+    @State private var authenticatorKey = ""
+    @State private var usingKey = false
+    @State private var keyProblem: String?
     /// A login Hermes asks for is either an account he has or one to create:
     /// the vault asks the same way for both, so he says which.
     @State private var newAccount = false
@@ -48,6 +52,11 @@ struct SecureRequestSheet: View {
                     Text(footer)
                 }
 
+                if let keyProblem {
+                    Text(keyProblem)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.danger(scheme))
+                }
                 if failed {
                     Text("Hermes is no longer waiting for this. Ask Alice to try again.")
                         .font(.footnote)
@@ -103,12 +112,26 @@ struct SecureRequestSheet: View {
                 .focused($focus, equals: .secret)
                 .submitLabel(.go)
                 .onSubmit { if ready { Task { await send(answer) } } }
-        case .code:
-            TextField("Code", text: $secret)
-                .textContentType(.oneTimeCode)
-                .keyboardType(.asciiCapableNumberPad)
-                .font(.title2.monospacedDigit())
-                .focused($focus, equals: .secret)
+        case let .code(site, _):
+            if usingKey {
+                SecureField("Setup key or otpauth:// link", text: $authenticatorKey)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused($focus, equals: .secret)
+            } else {
+                TextField("Code", text: $secret)
+                    .textContentType(.oneTimeCode)
+                    .keyboardType(.asciiCapableNumberPad)
+                    .font(.title2.monospacedDigit())
+                    .focused($focus, equals: .secret)
+            }
+            if site != nil {
+                Button(usingKey ? String(localized: "Type a code instead") : String(localized: "Never ask me for codes here")) {
+                    withAnimation { usingKey.toggle() }
+                    focus = .secret
+                }
+                .font(.subheadline)
+            }
         case .unlock, .secret:
             SecureField(prompt, text: $secret)
                 .textContentType(.password)
@@ -168,7 +191,9 @@ struct SecureRequestSheet: View {
         case .saveLogin:
             String(localized: "Saved encrypted in Hermes on your Mac, for \(host) only. Alice fills it in without ever seeing it, and it never appears in the chat.")
         case .code:
-            String(localized: "Goes straight into the page. It never appears in the chat.")
+            usingKey
+                ? String(localized: "Paste the key the site gives when you set up an authenticator app (\"setup key\" or \"can't scan the code?\"). It is kept encrypted with this login in Hermes on your Mac, and Alice makes the codes herself from now on.")
+                : String(localized: "Goes straight into the page. It never appears in the chat.")
         case .unlock:
             String(localized: "Used once to unlock it on your Mac, and not kept.")
         case .secret:
@@ -193,7 +218,8 @@ struct SecureRequestSheet: View {
     }
 
     private var ready: Bool {
-        !secret.isEmpty && (!needsIdentifier || !identifier.trimmingCharacters(in: .whitespaces).isEmpty)
+        if usingKey { return !authenticatorKey.trimmingCharacters(in: .whitespaces).isEmpty }
+        return !secret.isEmpty && (!needsIdentifier || !identifier.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     private var answer: String {
@@ -201,13 +227,30 @@ struct SecureRequestSheet: View {
         case .saveLogin:
             SecureRequest.loginAnswer(identifier: identifier.trimmingCharacters(in: .whitespaces), password: secret)
         case .code:
-            secret.filter { !$0.isWhitespace }
+            usingKey ? authenticatorKey : secret.filter { !$0.isWhitespace }
         case .unlock, .secret:
             secret
         }
     }
 
     private func send(_ value: String) async {
+        // A key instead of a code: saved with the login on the Mac, which
+        // answers with this moment's code — the sign-in goes on at once.
+        if usingKey, !value.isEmpty, case let .code(site?, _) = request.kind {
+            working = true
+            do {
+                let code = try await store.saveAuthenticatorKey(
+                    site: site, key: authenticatorKey.trimmingCharacters(in: .whitespacesAndNewlines))
+                authenticatorKey = ""
+                working = false
+                usingKey = false
+                await send(code)
+            } catch {
+                working = false
+                keyProblem = PlainWords.describe(error, doing: "save the key")
+            }
+            return
+        }
         guard !answered else { return }
         answered = true
         working = true

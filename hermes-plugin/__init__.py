@@ -973,6 +973,24 @@ def goals_prompt(_session_info=None) -> str:
         return ""
 
 
+def _places():
+    return _module("places.py", "alice_places")
+
+
+def _register_place_tools(ctx) -> None:
+    module = _places()
+
+    def handler(args, **_):
+        from hermes_constants import get_hermes_home
+
+        return _agent_json(module.run_tool(Path(get_hermes_home()), args or {}))
+
+    ctx.register_tool(
+        name="place_trigger", toolset="alice_places", schema=module.SCHEMA, handler=handler,
+        check_fn=_always, description=module.SCHEMA["description"], emoji="📍",
+    )
+
+
 def _task_finish():
     return _module("task_finish.py", "alice_task_finish")
 
@@ -1016,6 +1034,8 @@ def register(ctx) -> None:
     _register_goal_tools(ctx)
     # A task of several steps is kept going by Hermes' goal judge until done or it needs the person.
     _register_task_tools(ctx)
+    # When the person arrives at or leaves a place, their iPhone wakes the agent (places.py).
+    _register_place_tools(ctx)
     _register_notes_tools(ctx)
     # Search and page reading free first (Exa, Jina); Firecrawl only as fallback.
     _free_web().register(ctx)

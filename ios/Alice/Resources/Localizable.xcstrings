@@ -1,6 +1,46 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Never ask me for codes here": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No volver a pedirme códigos aquí"
+          }
+        }
+      }
+    },
+    "Paste the key the site gives when you set up an authenticator app (\"setup key\" or \"can't scan the code?\"). It is kept encrypted with this login in Hermes on your Mac, and Alice makes the codes herself from now on.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pega la clave que da la web al configurar una app de autenticación («clave de configuración» o «¿no puedes escanear el código?»). Se guarda cifrada con este login en Hermes, en tu Mac, y a partir de ahora Alice genera los códigos sola."
+          }
+        }
+      }
+    },
+    "Setup key or otpauth:// link": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clave de configuración o enlace otpauth://"
+          }
+        }
+      }
+    },
+    "Type a code instead": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribir un código"
+          }
+        }
+      }
+    },
     "#%lld %@": {
       "localizations": {
         "es": {

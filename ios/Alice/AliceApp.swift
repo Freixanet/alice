@@ -11,7 +11,7 @@ struct AliceApp: App {
 
     @Environment(\.scenePhase) private var scenePhase
     @UIApplicationDelegateAdaptor(NotificationApplicationDelegate.self) private var notificationDelegate
-    @State private var store = AppStore()
+    @State private var store: AppStore
     @State private var speech = ReadAloud()
     @State private var notifier = Notifier()
     @State private var activities = AgentActivities()
@@ -19,6 +19,11 @@ struct AliceApp: App {
 
     init() {
         GestureTips.configure()
+        let store = AppStore()
+        _store = State(initialValue: store)
+        // Here, not in a scene's task: iOS relaunches Alice in the background
+        // when a watched place is crossed, with no window to run one.
+        PlaceWatcher.shared.start(store: store)
     }
 
     var body: some Scene {
@@ -145,6 +150,8 @@ struct AliceApp: App {
                         await store.refreshVisibleBotChats()
                         Task { await store.syncCalendarIfConnected() }
                         Task { await store.refreshCommitments() }
+                        // Places an agent was asked to watch ("when I arrive…").
+                        Task { await PlaceWatcher.shared.sync() }
                         // The socket does not survive suspension; this is where
                         // it comes back, and it is idempotent.
                         store.startWatchingLiveEvents()

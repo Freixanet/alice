@@ -1011,6 +1011,121 @@ async def delete_card(handle: str, profile: str = "default") -> Dict[str, Any]:
     return await asyncio.to_thread(_remove_card, profile, handle)
 
 
+# --- Place triggers (places.py) and authenticator keys (vault_otp.py) ----------------------
+
+def _plugin_module(filename: str, name: str):
+    import importlib.util
+
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / filename)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _places():
+    return _plugin_module("places.py", "alice_places")
+
+
+def _all_places() -> Dict[str, Any]:
+    """Every agent's place triggers, for the iPhone to watch."""
+    from hermes_cli.profiles import get_profile_dir
+
+    rows = []
+    for profile in _list_profiles():
+        name = getattr(profile, "name", None)
+        if not name:
+            continue
+        for trigger in _places().read(Path(get_profile_dir(name))):
+            rows.append({**trigger, "profile": name})
+    return {"triggers": rows}
+
+
+class _PlaceResolved(BaseModel):
+    profile: str = "default"
+    lat: float
+    lon: float
+    label: str = ""
+
+
+class _PlaceEvent(BaseModel):
+    profile: str = "default"
+    event: str
+
+
+def _place_resolved(trigger_id: str, body: _PlaceResolved) -> Dict[str, Any]:
+    from hermes_cli.profiles import get_profile_dir
+
+    name = _known_profile(body.profile)
+    try:
+        return _places().resolved(Path(get_profile_dir(name)), trigger_id, body.lat, body.lon, body.label)
+    except _places().PlaceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+def _place_event(trigger_id: str, body: _PlaceEvent) -> Dict[str, Any]:
+    from hermes_cli.profiles import get_profile_dir
+
+    name = _known_profile(body.profile)
+    trigger = _places().fired(Path(get_profile_dir(name)), trigger_id, body.event)
+    if trigger is None:
+        return {"woke": False}
+    with _profile_scope(name):
+        job = _places().wake(trigger)
+    # Which trigger and routine; never where the person is.
+    _log.info("alice: place trigger %s woke %s (%s)", trigger_id, name, job.get("id"))
+    return {"woke": True, "job": job.get("id")}
+
+
+@router.get("/places")
+async def get_places() -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(_all_places), headers=_NO_STORE)
+
+
+@router.post("/places/{trigger_id}/resolved")
+async def post_place_resolved(trigger_id: str, body: _PlaceResolved) -> Dict[str, Any]:
+    return await asyncio.to_thread(_place_resolved, trigger_id, body)
+
+
+@router.post("/places/{trigger_id}/event")
+async def post_place_event(trigger_id: str, body: _PlaceEvent) -> Dict[str, Any]:
+    return await asyncio.to_thread(_place_event, trigger_id, body)
+
+
+@router.delete("/places/{trigger_id}")
+async def delete_place(trigger_id: str, profile: str = "default") -> Dict[str, Any]:
+    from hermes_cli.profiles import get_profile_dir
+
+    name = await asyncio.to_thread(_known_profile, profile)
+    return {"removed": await asyncio.to_thread(_places().remove, Path(get_profile_dir(name)), trigger_id)}
+
+
+class _OtpBody(BaseModel):
+    profile: str = "default"
+    site: str
+    key: str
+
+
+def _save_otp(body: _OtpBody) -> JSONResponse:
+    otp = _plugin_module("vault_otp.py", "alice_vault_otp")
+    name = _known_profile(body.profile)
+    try:
+        with _profile_scope(name):
+            result = otp.add(body.site, body.key)
+    except otp.OtpError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _log.info("alice: authenticator key saved for %d login(s) in profile %s", len(result["sites"]), name)
+    return JSONResponse(result, headers=_NO_STORE)
+
+
+@router.post("/vault/otp")
+async def post_vault_otp(body: _OtpBody) -> JSONResponse:
+    """The site's authenticator key, attached to its saved login; the current code back."""
+    return await asyncio.to_thread(_save_otp, body)
+
+
 # --- Notes: the store an agent keeps in its workspace ------------------------------------
 
 NOTES_STORE = Path("workspace") / "inbox-store"
