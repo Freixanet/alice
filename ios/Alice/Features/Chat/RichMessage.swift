@@ -869,7 +869,11 @@ enum RichMarkdown {
 
     // MARK: Reply buttons
 
-    private static let replyPattern = #"\[([^\]\n]+)\]\((alice://reply[^)\s]*)\)"#
+    /// The address may arrive broken across lines (a long `text=` the model
+    /// wrapped); it is taken whole up to its closing parenthesis and the
+    /// spaces and line breaks inside are dropped, instead of leaving the raw
+    /// link in the reply.
+    private static let replyPattern = #"\[([^\]\n]+)\]\((alice://reply[^)]*)\)"#
 
     static func replyButtons(in text: String) -> (text: String, buttons: [RichReplyButton]) {
         guard text.contains("alice://reply"),
@@ -886,7 +890,8 @@ enum RichMarkdown {
             else { continue }
             let title = String(text[titleRange]).trimmingCharacters(in: .whitespaces)
             buttons.insert(
-                RichReplyButton(title: title, reply: reply(from: String(text[linkRange]), title: title)),
+                RichReplyButton(title: title, reply: reply(from: String(text[linkRange]).filter { !$0.isWhitespace },
+                                                           title: title)),
                 at: 0
             )
             remaining.removeSubrange(removal)
