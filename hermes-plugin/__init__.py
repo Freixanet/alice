@@ -738,6 +738,36 @@ def _browser_ready(tool_name=None, **_):
     return None
 
 
+# ── Goals: what the person wants reached, and Alice's plan (goals.py) ───────────────
+
+
+def _goals_module():
+    return _module("goals.py", "alice_goals")
+
+
+def _goals_store():
+    from hermes_constants import get_hermes_home
+
+    return _goals_module().Goals(Path(get_hermes_home()))
+
+
+def goals_prompt(_session_info=None) -> str:
+    """The open goals, so the agent knows them and keeps them current."""
+    try:
+        return _goals_module().prompt_section(_goals_store().list(include_done=False))
+    except Exception:
+        return ""
+
+
+def _register_goal_tools(ctx) -> None:
+    module = _goals_module()
+    ctx.register_tool(
+        name="goals", toolset="alice_goals", schema=module.SCHEMA,
+        handler=lambda args, **_: _agent_json(module.run_tool(_goals_store(), args or {})),
+        check_fn=_always, description=module.SCHEMA["description"], emoji="🎯",
+    )
+
+
 def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # The shared browser the iPhone can watch is started before an agent needs it.
@@ -747,6 +777,8 @@ def register(ctx) -> None:
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
+    ctx.register_system_prompt_section("alice.objetivos", goals_prompt)
+    _register_goal_tools(ctx)
     _register_notes_tools(ctx)
     # Search and page reading free first (Exa, Jina); Firecrawl only as fallback.
     _free_web().register(ctx)

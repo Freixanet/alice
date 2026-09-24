@@ -3442,6 +3442,7 @@ final class AppStore {
         showingBots = false
         showingNotes = false
         showingAgenda = false
+        showingGoals = false
         switch link {
         case let .bot(name) where name == Self.todayProfile:
             openToday()
@@ -3494,6 +3495,7 @@ final class AppStore {
             showingBots = false
             showingNotes = false
             showingAgenda = false
+            showingGoals = false
             activeID = id
             return true
         }
@@ -3519,6 +3521,7 @@ final class AppStore {
             showingBots = false
             showingNotes = false
             showingAgenda = false
+            showingGoals = false
             let bot = cachedBots.first {
                 $0.name.caseInsensitiveCompare(profile) == .orderedSame
             } ?? BotRow(
@@ -3828,6 +3831,7 @@ final class AppStore {
         requestedAgentTemplate = "inbox"
         showingNotes = false
         showingAgenda = false
+        showingGoals = false
         showingBots = true
         markNoticesSeen(.agents)
     }
@@ -4816,6 +4820,14 @@ final class AppStore {
     // Alice's controls. Keep the screen independent of connection credentials.
     func sharedBrowser() async throws -> SharedBrowserState { try await dashboard.sharedBrowser() }
     func connectorIcon(_ name: String) async -> Data? { try? await dashboard.connectorIcon(name) }
+    func goals() async throws -> [Goal] { try await dashboard.goals() }
+    func createGoal(title: String, why: String) async throws -> Goal? {
+        try await dashboard.createGoal(title: title, why: why)
+    }
+    func changeGoal(_ id: String, _ change: GoalChange) async throws -> Goal? {
+        try await dashboard.changeGoal(id, change)
+    }
+    func deleteGoal(_ id: String) async throws { try await dashboard.deleteGoal(id) }
     func secretIsSet(_ name: String) async throws -> Bool { try await dashboard.secretIsSet(name) }
     func saveSecret(_ name: String, value: String) async throws { try await dashboard.saveSecret(name, value: value) }
     func setSharedBrowser(on: Bool) async throws -> SharedBrowserState {
@@ -5643,6 +5655,7 @@ final class AppStore {
         showingBots = false
         showingNotes = false
         showingAgenda = false
+        showingGoals = false
         switch shortcut.target {
         case let .destination(raw):
             guard let destination = AliceDestination.Target(rawValue: raw) else { return }
@@ -5651,6 +5664,8 @@ final class AppStore {
                 showingNotes = true
             case .agenda:
                 showingAgenda = true
+            case .goals:
+                showingGoals = true
             case .bots:
                 botsFromLeading = false
                 showingBots = true
@@ -5828,6 +5843,8 @@ final class AppStore {
     var showingNotes = false
     /// The agenda, a page too (`AgendaScreen`).
     var showingAgenda = false
+    /// The person's goals and Alice's plans, a page too (`GoalsScreen`).
+    var showingGoals = false
     /// The agents' shared browser, live: one view of it for the chat's card
     /// and the full-screen browser (`LiveBrowser`).
     @ObservationIgnored lazy var liveBrowser: LiveBrowser = {
@@ -6356,6 +6373,7 @@ final class AppStore {
         showingBots = false
         showingNotes = false
         showingAgenda = false
+        showingGoals = false
         openBotConversation(for: Self.todayBot)
     }
 
@@ -9895,6 +9913,7 @@ extension AppStore {
         showingBots = false
         showingNotes = false
         showingAgenda = false
+        showingGoals = false
         openConversation(chat.id)
         if let anchor { focusedMessage = FocusedMessage(conversationID: chat.id, remoteID: anchor) }
         return true
@@ -9961,6 +9980,7 @@ extension AppStore {
             showingBots = false
             showingNotes = false
             showingAgenda = false
+            showingGoals = false
             openConversation(id)
             return (true, nil)
         }

@@ -168,6 +168,7 @@ struct Sidebar: View, Equatable {
             }
             // Under Agents: the person's own day.
             row("Agenda", systemImage: "calendar", weight: .medium, destination: .agenda) { openAgenda() }
+            row("Goals", systemImage: "scope", weight: .medium, destination: .goals) { openGoals() }
             // Then Notes: a note is written in the moment or
             // not at all, so it is the shortest way in the drawer.
             row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
@@ -297,6 +298,7 @@ struct Sidebar: View, Equatable {
             store.showingBots = true
         case .notes: openNotes()
         case .agenda: openAgenda()
+        case .goals: openGoals()
         case .activity: going = .activity
         case .routines:
             store.markNoticesSeen(.routines)
@@ -320,6 +322,13 @@ struct Sidebar: View, Equatable {
         }
     }
 
+
+    /// Goals is a page like the agenda.
+    private func openGoals() {
+        onDismiss()
+        store.showingBots = false
+        store.showingGoals = true
+    }
 
     /// The agenda is a page like Notes: in off the right, out the same way.
     private func openAgenda() {

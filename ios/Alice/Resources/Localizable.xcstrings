@@ -191,12 +191,32 @@
         }
       }
     },
+    "%lld of %lld steps": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld de %2$lld pasos"
+          }
+        }
+      }
+    },
     "%lld prompts · %lld resources": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld prompts · %lld recursos"
+          }
+        }
+      }
+    },
+    "%lld routines": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld rutinas"
           }
         }
       }
@@ -531,6 +551,16 @@
         }
       }
     },
+    "About the goal “%@”: ": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sobre el objetivo «%@»: "
+          }
+        }
+      }
+    },
     "Absolute path": {
       "localizations": {
         "es": {
@@ -757,6 +787,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Añadir hook de shell"
+          }
+        }
+      }
+    },
+    "Add a Goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir objetivo"
+          }
+        }
+      }
+    },
+    "Add a step": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir un paso"
           }
         }
       }
@@ -1101,6 +1151,26 @@
         }
       }
     },
+    "Alice is making the plan": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice está preparando el plan"
+          }
+        }
+      }
+    },
+    "Alice is on it": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice está en ello"
+          }
+        }
+      }
+    },
     "Alice keeps seeing work happen in these folders, but they have no name yet. Make one a project to give it a name and keep its conversations together.": {
       "localizations": {
         "es": {
@@ -1157,6 +1227,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alice espera a que se lo devuelvas"
+          }
+        }
+      }
+    },
+    "Alice will make a plan, start on it and keep it up to date here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice hará un plan, se pondrá con ello y lo mantendrá al día aquí."
           }
         }
       }
@@ -1917,6 +1997,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ocupado"
+          }
+        }
+      }
+    },
+    "By %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para el %@"
           }
         }
       }
@@ -3401,6 +3491,16 @@
         }
       }
     },
+    "Delete Goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar objetivo"
+          }
+        }
+      }
+    },
     "Delete List and Its Reminders": {
       "localizations": {
         "es": {
@@ -3537,6 +3637,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "¿Eliminar el hook de shell?"
+          }
+        }
+      }
+    },
+    "Delete this goal?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar este objetivo?"
           }
         }
       }
@@ -4621,12 +4731,52 @@
         }
       }
     },
+    "Give a key": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dar una clave"
+          }
+        }
+      }
+    },
     "Go": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Ir"
+          }
+        }
+      }
+    },
+    "Goal not found": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objetivo no encontrado"
+          }
+        }
+      }
+    },
+    "Goal options": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opciones del objetivo"
+          }
+        }
+      }
+    },
+    "Goals": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objetivos"
           }
         }
       }
@@ -5661,6 +5811,16 @@
         }
       }
     },
+    "Its plan and history go. Routines working on it keep running until you stop them.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se borran su plan y su historial. Las rutinas que trabajan en él siguen hasta que las pares."
+          }
+        }
+      }
+    },
     "Its reply will appear here.": {
       "localizations": {
         "es": {
@@ -6331,6 +6491,16 @@
         }
       }
     },
+    "Make me a plan and get started.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hazme un plan y ponte con ello."
+          }
+        }
+      }
+    },
     "Make this the profile default": {
       "localizations": {
         "es": {
@@ -6367,6 +6537,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Clave de API manual"
+          }
+        }
+      }
+    },
+    "Mark as Reached": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como logrado"
+          }
+        }
+      }
+    },
+    "Mark as done": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como hecho"
           }
         }
       }
@@ -6851,6 +7041,16 @@
         }
       }
     },
+    "New Goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo objetivo"
+          }
+        }
+      }
+    },
     "New List": {
       "localizations": {
         "es": {
@@ -6991,6 +7191,16 @@
         }
       }
     },
+    "New goal: %@.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo objetivo: %@."
+          }
+        }
+      }
+    },
     "New managed folder": {
       "localizations": {
         "es": {
@@ -7091,6 +7301,16 @@
         }
       }
     },
+    "Next: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Siguiente: %@"
+          }
+        }
+      }
+    },
     "No Completed Reminders": {
       "localizations": {
         "es": {
@@ -7187,6 +7407,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "No hay diff para esta vista."
+          }
+        }
+      }
+    },
+    "No goals yet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no hay objetivos"
           }
         }
       }
@@ -7991,6 +8221,16 @@
         }
       }
     },
+    "Pause": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausar"
+          }
+        }
+      }
+    },
     "Paused": {
       "localizations": {
         "es": {
@@ -8087,6 +8327,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lugar"
+          }
+        }
+      }
+    },
+    "Plan": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan"
           }
         }
       }
@@ -8517,6 +8767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ejecutó la rutina «%@»"
+          }
+        }
+      }
+    },
+    "Reached · %lld": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logrados · %lld"
           }
         }
       }
@@ -9267,6 +9527,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Resultados"
+          }
+        }
+      }
+    },
+    "Resume": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reanudar"
           }
         }
       }
@@ -10791,6 +11061,16 @@
         }
       }
     },
+    "Talk about it with Alice": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hablarlo con Alice"
+          }
+        }
+      }
+    },
     "Tap a reply, then 👍 for yes or 👎 for no. A 👍 to a calendar card also adds or moves the event.": {
       "localizations": {
         "es": {
@@ -10867,6 +11147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Configuración de Telegram"
+          }
+        }
+      }
+    },
+    "Tell Alice something you want to get done — a project, a change, a list that weighs on you — and she'll make a plan and work on it.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuéntale a Alice algo que quieras conseguir —un proyecto, un cambio, una lista que te pesa— y hará un plan y se pondrá con ello."
           }
         }
       }
@@ -11661,6 +11951,16 @@
         }
       }
     },
+    "Under way": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En marcha"
+          }
+        }
+      }
+    },
     "Undo clear": {
       "localizations": {
         "es": {
@@ -12121,6 +12421,26 @@
         }
       }
     },
+    "What do you want to get done?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Qué quieres conseguir?"
+          }
+        }
+      }
+    },
+    "What happened": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo que ha pasado"
+          }
+        }
+      }
+    },
     "What should Hermes remember?": {
       "localizations": {
         "es": {
@@ -12241,6 +12561,26 @@
         }
       }
     },
+    "Why it matters (optional)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por qué importa (opcional)"
+          }
+        }
+      }
+    },
+    "Why: %@.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por qué: %@."
+          }
+        }
+      }
+    },
     "Working": {
       "localizations": {
         "es": {
@@ -12357,6 +12697,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ayer"
+          }
+        }
+      }
+    },
+    "You": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tú"
           }
         }
       }
