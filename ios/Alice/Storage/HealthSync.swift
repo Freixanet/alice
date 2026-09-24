@@ -18,7 +18,9 @@ enum HealthSync {
         HKQuantityType(.heartRateVariabilitySDNN),
         HKObjectType.workoutType(),
         HKCategoryType(.mindfulSession),
-        HKObjectType.medicationDoseEventType(),
+        // Not here: medication doses are shared per medication, with their own
+        // sheet below. Asking for them in this set makes HealthKit throw — it
+        // closed the app on Connect.
     ]
 
     /// iOS shows its own sheet; it never says what was allowed for reading,
