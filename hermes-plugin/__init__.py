@@ -522,6 +522,19 @@ def _review_memory(home: Path, profile: str, session_id: str) -> None:
         turns = review.person_turns(messages)
         if turns:
             review.review(turns, keeper, _review_ask, session=session_id, profile=profile)
+        # And what the person corrected, as a standing lesson (lessons.py): no model call
+        # unless a turn actually corrects the assistant.
+        try:
+            if keeper.files.store.target_enabled("memory"):
+                lessons = _module("lessons.py", "alice_lessons")
+                lessons.review(
+                    messages, keeper, _review_ask,
+                    person_text=lambda m: (review.person_turns([m]) or [""])[0],
+                    quoted=review.quoted, plain=review._plain,
+                    risky=lambda text: _skill_keeper().review({"payload": {"content": text}}),
+                    session=session_id, profile=profile)
+        except Exception:
+            pass
         # Read once: the same words are never looked at again, whatever the model said.
         seen[session_id] = max(int(m.get("id") or 0) for m in messages) or after
         keeper._write("reviewed.json", dict(list(seen.items())[-500:]))
