@@ -4,25 +4,36 @@ import UIKit
 
 /// Controls for work Alice can keep doing after a conversation ends.
 struct AgentWorkScreen: View {
+    @State private var showingBrowser = false
     @Environment(\.colorScheme) private var scheme
+    @Environment(AppStore.self) private var store
     var body: some View {
         List {
             Section {
                 NavigationLink { PageWatchesScreen() } label: {
                     Label("Page watches", systemImage: "eye")
                 }
-                NavigationLink { SharedBrowserScreen() } label: {
-                    Label("Shared browser", systemImage: "globe")
+                Button { showingBrowser = true } label: {
+                    Label("Browser", systemImage: "globe")
+                }
+                .foregroundStyle(.primary)
+                Toggle(isOn: Binding(
+                    get: { store.liveBrowser.state?.managed == true },
+                    set: { on in Task { _ = try? await store.setSharedBrowser(on: on); await store.liveBrowser.refresh() } }
+                )) {
+                    Label("Agents use it", systemImage: "person.2.badge.gearshape")
                 }
                 NavigationLink { AgentDocumentsScreen() } label: {
                     Label("Documents for agents", systemImage: "doc")
                 }
             } footer: {
-                Text("These tools use the Hermes dashboard on your Mac. Page watches notify you when a page changes; the shared browser lets you see and control the page your agents use.")
+                Text("Page watches tell you when a page changes. The browser runs on your Mac: watch your agents browse in it, and use it yourself to take over.")
             }
         }
         .navigationTitle("Agent work")
         .aliceFormPaper(scheme)
+        .task { await store.liveBrowser.refresh() }
+        .fullScreenCover(isPresented: $showingBrowser) { LiveBrowserScreen() }
     }
 }
 
@@ -227,140 +238,6 @@ private struct NewPageWatchSheet: View {
         } catch {
             failure = PlainWords.describe(error, doing: "watch the page")
         }
-    }
-}
-
-private struct SharedBrowserScreen: View {
-    @Environment(\.colorScheme) private var scheme
-    @Environment(AppStore.self) private var store
-    @State private var state: SharedBrowserState?
-    @State private var frame: SharedBrowserFrame?
-    @State private var address = ""
-    @State private var typing = ""
-    @State private var busy = false
-    @State private var failure: String?
-    @State private var showEnable = false
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let state {
-                    if state.watchable {
-                        if let frame, let data = frame.jpeg, let image = UIImage(data: data) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .overlay {
-                                    GeometryReader { geometry in
-                                        Color.clear.contentShape(Rectangle())
-                                            .gesture(SpatialTapGesture().onEnded { tap in
-                                                guard geometry.size.width > 0, geometry.size.height > 0 else { return }
-                                                let x = Double(tap.location.x / geometry.size.width)
-                                                let y = Double(tap.location.y / geometry.size.height)
-                                                Task { await input(.tap(x: x, y: y)) }
-                                            })
-                                    }
-                                }
-                                .accessibilityLabel("Browser page. Tap to interact.")
-                        } else {
-                            ContentUnavailableView("Waiting for the page", systemImage: "globe")
-                        }
-                        Text(frame?.title.isEmpty == false ? frame!.title : (state.pageTitle ?? "Shared browser"))
-                            .font(.headline)
-                        HStack {
-                            Button { Task { await input(.back) } } label: { Image(systemName: "chevron.left") }
-                            Button { Task { await input(.forward) } } label: { Image(systemName: "chevron.right") }
-                            Button { Task { await input(.reload) } } label: { Image(systemName: "arrow.clockwise") }
-                            Button("Scroll up") { Task { await input(.scroll(x: 0.5, y: 0.5, dy: -0.7)) } }
-                            Button("Scroll down") { Task { await input(.scroll(x: 0.5, y: 0.5, dy: 0.7)) } }
-                        }
-                        .buttonStyle(.bordered)
-                        HStack {
-                            TextField("Web address", text: $address)
-                                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            Button("Go") { Task { await input(.navigate(address)) } }.disabled(address.isEmpty)
-                        }
-                        HStack {
-                            TextField("Type into selected field", text: $typing)
-                            Button("Type") {
-                                let text = typing
-                                typing = ""
-                                Task { await input(.text(text)) }
-                            }
-                            .disabled(typing.isEmpty)
-                        }
-                        Text("Tap a field in the page before typing. Agents can see and use this same browser.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    } else {
-                        ContentUnavailableView("Browser unavailable", systemImage: "globe",
-                                               description: Text(state.configured && !state.local
-                                                                 ? "Hermes is using a browser on another machine."
-                                                                 : "Start a shared browser on your Mac to watch your agents work."))
-                    }
-                    if state.managed {
-                        Button("Stop shared browser", role: .destructive) { Task { await switchBrowser(false) } }
-                    } else if state.available {
-                        Button("Start shared browser") { showEnable = true }
-                            .buttonStyle(.borderedProminent)
-                    } else {
-                        Text("Install Chrome or another Chromium browser on your Mac to use this.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                } else {
-                    ProgressView()
-                }
-                if let failure { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
-            }
-            .padding()
-        }
-        .navigationTitle("Shared browser")
-        .aliceFormPaper(scheme)
-        .disabled(busy)
-        .confirmationDialog("Use Alice’s shared browser?", isPresented: $showEnable) {
-            Button("Use shared browser") { Task { await switchBrowser(true) } }
-        } message: {
-            Text("This switches your agents to one browser on this Mac. Turning it off restores their previous browser settings.")
-        }
-        .task { await refresh() }
-        .task(id: state?.watchable == true) {
-            guard state?.watchable == true else { return }
-            var sequence = 0
-            while !Task.isCancelled {
-                do {
-                    let shot = try await store.sharedBrowserFrame(after: sequence, target: frame?.target)
-                    if shot.jpeg != nil {
-                        sequence = shot.seq
-                        frame = shot
-                    }
-                    try await Task.sleep(for: .milliseconds(350))
-                } catch is CancellationError {
-                    return
-                } catch {
-                    failure = PlainWords.describe(error, doing: "watch the shared browser")
-                    return
-                }
-            }
-        }
-    }
-
-    private func refresh() async {
-        do { state = try await store.sharedBrowser(); failure = nil }
-        catch { failure = PlainWords.describe(error, doing: "load the shared browser") }
-    }
-
-    private func switchBrowser(_ on: Bool) async {
-        busy = true
-        defer { busy = false }
-        do {
-            state = try await store.setSharedBrowser(on: on)
-            frame = nil
-            failure = nil
-        } catch { failure = PlainWords.describe(error, doing: on ? "start the shared browser" : "stop the shared browser") }
-    }
-
-    private func input(_ action: SharedBrowserAction) async {
-        do { try await store.sharedBrowserInput(action, target: frame?.target); failure = nil }
-        catch { failure = PlainWords.describe(error, doing: "control the shared browser") }
     }
 }
 

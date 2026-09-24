@@ -95,49 +95,41 @@ struct MessageRow: View {
                 if let turn = ReactionTurn.parse(message.content) {
                     ReactionBubble(turn: turn)
                 } else if !message.content.isEmpty {
-                    // A tap shows the actions under it, as a reply's do; a
-                    // hold opens the menu. A menu only a long press reaches is
-                    // one most people never find — but a tap-opened SwiftUI
-                    // `Menu` crashed the app on a double tap: the second tap
-                    // made SwiftUI replace the menu while it was still
-                    // animating in, and UIKit aborted scrolling a list with no
-                    // rows yet (build 60).
-                    Button {
-                        withAnimation(.snappy(duration: 0.2)) { showingExtras.toggle() }
-                    } label: {
-                        // Only the named agent is emphasized; the bubble keeps one text colour.
-                        Text(store.mentionStyled(
-                            message.content,
-                            bareSlugs: message.mentionProfile.map { [$0] } ?? [],
-                            selectedRanges: message.selectedMentionRanges
-                        ))
-                            .foregroundStyle(.primary)
-                            .multilineTextAlignment(.leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
-                            .contentShape(.rect(cornerRadius: 18))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Shows actions. Hold for more.")
-                    .contentShape(.contextMenuPreview, .rect(cornerRadius: 18))
-                    .contextMenu { SentMessageMenu(message: message, selecting: $selectingText) }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    if showingExtras {
-                        SentMessageActions(message: message, selecting: $selectingText)
-                            .transition(.opacity)
-                    }
+                    // Only a hold opens its actions, as in Messages; a tap does
+                    // nothing. (A tap-opened SwiftUI `Menu` crashed on a double
+                    // tap in build 60, and a row of buttons under every sent
+                    // message on a tap was not wanted either.)
+                    // Only the named agent is emphasized; the bubble keeps one text colour.
+                    Text(store.mentionStyled(
+                        message.content,
+                        bareSlugs: message.mentionProfile.map { [$0] } ?? [],
+                        selectedRanges: message.selectedMentionRanges
+                    ))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
+                        .contentShape(.contextMenuPreview, .rect(cornerRadius: 18))
+                        .contextMenu { SentMessageMenu(message: message, selecting: $selectingText) }
+                        .accessibilityHint("Hold for actions.")
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             case .assistant:
                 // Ordinary turns are a conversation, not a log. A routine
                 // delivery is dated because it arrived on its own, later.
-                if showsTime, message.routineName != nil,
-                   let when = MessageTime.caption(message.createdAt) {
+                // Once, above the whole delivery: the agent's opening words,
+                // its card and its closing words are one routine.
+                if showsTime, message.routineName != nil || message.routinePart != nil,
+                   let when = MessageTime.routineCaption(message.createdAt) {
                     Text(when)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .accessibilityLabel("Sent \(when)")
+                        // Room from the agent's previous message and before the routine opens.
+                        .padding(.top, 16)
+                        .padding(.bottom, 6)
+                        .accessibilityLabel(Text("Sent \(String(when.characters))"))
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -164,7 +156,8 @@ struct MessageRow: View {
                     // far as the chat shows — nothing is "Thinking" meanwhile.
                     if store.pendingHomeModelConfirmation?.replyID != message.id,
                        (working && !writing && !store.activeAwaitsAnswers)
-                        || !ToolCaption.steps(in: message.tools).isEmpty {
+                        || !ToolCaption.steps(in: message.tools).isEmpty
+                        || shownReasoning != nil {
                         ThinkingTrace(
                             steps: message.tools,
                             pending: working && !writing && message.approval == nil
@@ -173,13 +166,23 @@ struct MessageRow: View {
                             thoughtSeconds: message.thoughtSeconds,
                             startedAt: message.createdAt,
                             seed: ToolCaption.seed(message.id),
-                            status: message.lastStatus
+                            status: message.lastStatus,
+                            reasoning: shownReasoning
                         )
                     }
 
                     // What the agent set out to do, step by step (`TaskPlan`).
                     if let plan = message.plan, plan.total > 0 {
                         TaskPlanCard(plan: plan, working: working)
+                    }
+
+                    // The page it is on, live, while it browses — tap to take over.
+                    // It stays on the latest reply once done, so the page can still be opened.
+                    if BrowserActivity.used(message.tools),
+                       working || store.shownConversation?.messages.last?.id == message.id {
+                        LiveBrowserCard(working: working, browsing: BrowserActivity.running(message.tools),
+                                        caption: BrowserActivity.caption(message.tools))
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
 
                     if let routine = message.routineName {
@@ -285,6 +288,16 @@ struct MessageRow: View {
         .sheet(isPresented: $selectingText) {
             SelectableTextSheet(text: message.content)
         }
+    }
+
+    /// The reasoning worth showing: not the reply over again, which is what
+    /// earlier builds stored from Hermes' misnamed `reasoning.available`.
+    private var shownReasoning: String? {
+        guard let text = message.reasoning?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+        let reply = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if reply.hasPrefix(text) || text.hasPrefix(reply.prefix(200)) { return nil }
+        return text
     }
 
     private var canShowActions: Bool {
@@ -399,8 +412,9 @@ private struct RoutineReportCard<Content: View>: View {
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Routine: \(name)")
             content
+                .environment(\.separatesEntries, true)
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
         .overlay {
@@ -663,64 +677,6 @@ private struct ActionIcon: View {
     }
 }
 
-/// Tapping a message you sent: the same things holding it offers, as a row
-/// under it that lines up with its right edge, the way a reply's row lines up
-/// with its left.
-private struct SentMessageActions: View {
-    @Environment(AppStore.self) private var store
-    let message: Message
-    @Binding var selecting: Bool
-    @State private var copied = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Button {
-                UIPasteboard.general.string = message.content
-                MessageActionsTip().invalidate(reason: .actionPerformed)
-                copied = true
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    copied = false
-                }
-            } label: {
-                ActionIcon(copied ? "checkmark" : "square.on.square", slot: 16.67)
-            }
-            .accessibilityLabel(copied ? "Copied" : "Copy")
-
-            // Only the latest message: Hermes can replace the last exchange
-            // and nothing before it.
-            if store.canEdit(message) {
-                Button {
-                    store.beginEditing(message)
-                    MessageActionsTip().invalidate(reason: .actionPerformed)
-                } label: {
-                    ActionIcon("pencil", slot: 12)
-                }
-                .accessibilityLabel("Edit")
-            }
-
-            Button {
-                selecting = true
-                MessageActionsTip().invalidate(reason: .actionPerformed)
-            } label: {
-                ActionIcon("text.cursor", slot: 15.67)
-            }
-            .accessibilityLabel("Select Text")
-
-            ShareLink(item: message.content, preview: SharePreview("Prompt")) {
-                ActionIcon("square.and.arrow.up", slot: 14)
-            }
-            .accessibilityLabel("Share Prompt")
-        }
-        // The mirror of a reply's row: the last glyph's ink on the bubble's
-        // right edge rather than its slot's.
-        .padding(.trailing, -ActionIcon.gap / 2)
-        .foregroundStyle(.secondary)
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .trailing)
-    }
-}
-
 /// Holding a message you sent: copy it, rewrite it, pick out part of it, or
 /// pass the prompt on.
 private struct SentMessageMenu: View {
@@ -881,8 +837,12 @@ enum ToolCaption {
             guard let elapsed else { return "Thinking" }
             return musing(elapsed: elapsed, seed: seed)
         }
-        guard let thoughtSeconds, thoughtSeconds >= 1 else { return "Thought for a moment" }
-        return "Thought for \(thoughtSeconds) second\(thoughtSeconds == 1 ? "" : "s")"
+        guard let thoughtSeconds, thoughtSeconds >= 1 else { return String(localized: "Thought for a moment") }
+        // "Thought for 53s", "Thought for 2m 5s".
+        let span = thoughtSeconds < 60 ? "\(thoughtSeconds)s"
+            : thoughtSeconds % 60 == 0 ? "\(thoughtSeconds / 60)m"
+            : "\(thoughtSeconds / 60)m \(thoughtSeconds % 60)s"
+        return String(localized: "Thought for \(span)")
     }
 
     /// Ways of saying "thinking" that a person waiting can smile at. Plain

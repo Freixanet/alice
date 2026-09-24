@@ -47,6 +47,11 @@ enum ChatTasks {
     }
 
     private static func continues(_ current: Message, _ next: Message) -> Bool {
-        next.role == .assistant && current.routineName == nil && next.routineName == nil
+        guard next.role == .assistant else { return false }
+        // A routine's opening words, card and closing words are one delivery.
+        if current.routineGroup != nil || next.routineGroup != nil {
+            return current.routineGroup == next.routineGroup
+        }
+        return current.routineName == nil && next.routineName == nil
     }
 }

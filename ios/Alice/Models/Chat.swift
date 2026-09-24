@@ -215,6 +215,19 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// The steps the agent set itself for this task (`TaskPlan`), on the
     /// newest reply of the task only.
     var plan: TaskPlan? = nil
+    /// Which part of a routine's delivery this is (`RoutineDelivery`): the
+    /// agent's opening words, the report card, its closing words, or its
+    /// note when there was no news. Set when a transcript is presented.
+    var routinePart: RoutinePart? = nil
+    /// The delivery the part belongs to, so its parts read as one message.
+    var routineGroup: String? = nil
+    /// The model's own reasoning for this reply, when Hermes sent it
+    /// (`display.show_reasoning`). Shown only inside the closed trace.
+    var reasoning: String? = nil
+
+    enum RoutinePart: String, Hashable, Sendable, Codable {
+        case opening, card, closing, quiet
+    }
 
     /// A model catalogue was stored as one chip per model. Those replies open
     /// the picker instead of painting the chat with buttons.
@@ -264,6 +277,9 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         slashChoices = try box.decodeIfPresent([SlashChoice].self, forKey: .slashChoices) ?? []
         offersModelChoice = try box.decodeIfPresent(Bool.self, forKey: .offersModelChoice) ?? false
         plan = try box.decodeIfPresent(TaskPlan.self, forKey: .plan)
+        routinePart = try box.decodeIfPresent(RoutinePart.self, forKey: .routinePart)
+        routineGroup = try box.decodeIfPresent(String.self, forKey: .routineGroup)
+        reasoning = try box.decodeIfPresent(String.self, forKey: .reasoning)
     }
 
     init(
@@ -462,6 +478,8 @@ enum ChatEvent: Sendable {
     case status(String)
     /// The agent's plan for the task changed (`TaskPlan`).
     case plan(TaskPlanChange)
+    /// The model's reasoning: a streamed piece, or a whole block.
+    case reasoning(String, block: Bool)
 }
 
 /// Whether two stretches of a turn are the same words, so an interim

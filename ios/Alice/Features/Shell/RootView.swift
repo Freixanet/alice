@@ -201,6 +201,63 @@ struct RootView: View {
                     .transition(.move(edge: .trailing))
                     .zIndex(2)
                 }
+
+                // The agenda, the same way: in off the right from the drawer
+                // or the home, out by its back button or a swipe to the right.
+                if store.showingAgenda {
+                    NavigationStack {
+                        AgendaScreen(onClose: closeAgenda)
+                            .containerBackground(Palette.background(scheme), for: .navigation)
+                    }
+                    .background {
+                        Palette.background(scheme)
+                            .ignoresSafeArea()
+                    }
+                    .overlay {
+                        DrawerPan(
+                            shouldBegin: { velocity in
+                                velocity.x > 0 && abs(velocity.x) > abs(velocity.y) * 1.5
+                            },
+                            onChange: { _ in },
+                            onEnd: { translation, predicted in
+                                guard translation > drawerWidth * 0.3 || predicted > 120
+                                else { return }
+                                closeAgenda()
+                            }
+                        )
+                        .allowsHitTesting(false)
+                    }
+                    .transition(.move(edge: .trailing))
+                    .zIndex(3)
+                }
+
+                // Goals, the same way.
+                if store.showingGoals {
+                    NavigationStack {
+                        GoalsScreen(onClose: closeGoals)
+                            .containerBackground(Palette.background(scheme), for: .navigation)
+                    }
+                    .background {
+                        Palette.background(scheme)
+                            .ignoresSafeArea()
+                    }
+                    .overlay {
+                        DrawerPan(
+                            shouldBegin: { velocity in
+                                velocity.x > 0 && abs(velocity.x) > abs(velocity.y) * 1.5
+                            },
+                            onChange: { _ in },
+                            onEnd: { translation, predicted in
+                                guard translation > drawerWidth * 0.3 || predicted > 120
+                                else { return }
+                                closeGoals()
+                            }
+                        )
+                        .allowsHitTesting(false)
+                    }
+                    .transition(.move(edge: .trailing))
+                    .zIndex(4)
+                }
             }
             // Developer › Performance meter: centred under the composer, in
             // the strip beside the home indicator, where it covers nothing —
@@ -245,6 +302,11 @@ struct RootView: View {
                     .presentationDragIndicator(.visible)
                     .preferredColorScheme(store.theme.colorScheme)
             }
+            // A login, code or key Hermes is waiting for: asked securely, wherever you are.
+            .sheet(item: Bindable(store).secureRequest) { request in
+                SecureRequestSheet(request: request)
+                    .preferredColorScheme(store.theme.colorScheme)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .aliceOpenReceipt)) { note in
                 if let url = note.object as? URL { store.openReceipt(url) }
             }
@@ -263,11 +325,15 @@ struct RootView: View {
             .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingBots)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingNotes)
+            .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingAgenda)
+            .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingGoals)
             // Leaving a screen puts its keyboard away. Kept up on a page with
             // no field — Agents, Notes, another chat's header — nothing on it
             // could take the focus back, so there was no way to close it.
             .onChange(of: store.showingBots) { dismissKeyboard() }
             .onChange(of: store.showingNotes) { dismissKeyboard() }
+            .onChange(of: store.showingAgenda) { dismissKeyboard() }
+            .onChange(of: store.showingGoals) { dismissKeyboard() }
             .onChange(of: store.activeID) { dismissKeyboard() }
             .onChange(of: drawerOpen) { _, open in if open { dismissKeyboard() } }
             // The drawer answers a sideways swipe from anywhere, not just from a
@@ -278,7 +344,7 @@ struct RootView: View {
                 // say no: both recognisers attach to the same ancestor, and
                 // one swipe was being answered twice — going home and opening
                 // the drawer on top of it.
-                if !store.showingBots && !store.showingNotes {
+                if !store.showingBots && !store.showingNotes && !store.showingAgenda && !store.showingGoals {
                     DrawerPan(
                     shouldBegin: { velocity in
                         // Sideways enough to be meant sideways.
@@ -438,6 +504,22 @@ struct RootView: View {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(280))
             botsRowSwipeRecognized = false
+        }
+    }
+
+    /// Goals leaves the way it came in, off the right.
+    private func closeGoals() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+            store.showingGoals = false
+        }
+    }
+
+    /// The agenda leaves the way it came in, off the right.
+    private func closeAgenda() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+            store.showingAgenda = false
         }
     }
 

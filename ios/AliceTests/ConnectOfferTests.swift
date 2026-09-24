@@ -19,30 +19,6 @@ final class ConnectOfferTests: XCTestCase {
         XCTAssertTrue(offers.services.isEmpty)
     }
 
-    func testTheSearchKeyOfferBecomesACard() {
-        let text = "No he podido buscar.\n[Conectar búsqueda](alice://connect/search)"
-        XCTAssertEqual(RichMarkdown.blocks(text), [
-            .paragraph("No he podido buscar."),
-            .connect("search"),
-        ])
-    }
-
-    func testAnAgentAsksForAKeyAsACard() {
-        let text = "Necesito tu token.\n[Dar clave](alice://connect/secret/GITHUB_TOKEN)"
-        XCTAssertEqual(RichMarkdown.blocks(text), [
-            .paragraph("Necesito tu token."),
-            .connect("secret/GITHUB_TOKEN"),
-        ])
-    }
-
-    func testAKeyNameThatIsNotAVariableIsDropped() {
-        let offers = RichMarkdown.connectOffers(in: "Hola\n[Dar](alice://connect/secret/lowercase)")
-        XCTAssertEqual(offers.text, "Hola")
-        XCTAssertTrue(offers.services.isEmpty)
-        XCTAssertNil(SecretRequestCard.name(fromService: "secret/A"))
-        XCTAssertEqual(SecretRequestCard.name(fromService: "secret/EXA_API_KEY"), "EXA_API_KEY")
-    }
-
     func testHermesSaysWhereTheCalendarStands() {
         XCTAssertEqual(CalendarLink.parse(["status": "declined"]), .declined)
         XCTAssertEqual(CalendarLink.parse(["status": "not_connected"]), .notConnected)

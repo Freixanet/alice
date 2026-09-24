@@ -14,7 +14,14 @@ struct AgentFace: View {
 
     var body: some View {
         if profile == AppStore.todayProfile {
-            AliceMark(size: size)
+            // Her portrait, as agents show theirs — not the web client's mark.
+            Image("AliceAvatar")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(.circle)
+                .accessibilityHidden(true)
         } else {
             BotMarkView(mark: store.mark(for: profile), size: size, floats: false)
         }

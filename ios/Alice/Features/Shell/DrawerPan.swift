@@ -23,6 +23,10 @@ struct DrawerPan: UIViewRepresentable {
     /// still start the pan. Used for full-width navigation rows: a tap keeps
     /// activating the row, while a horizontal swipe cancels it and navigates.
     let controlIdentifierPrefix: String?
+    /// When set, whether a drag starting at this point (in window
+    /// coordinates) may drive the pan: for a page where one area swipes
+    /// sideways itself.
+    let startsAt: ((CGPoint) -> Bool)?
     /// Given the pan's velocity, whether this drag should drive the drawer.
     let shouldBegin: (CGPoint) -> Bool
     let onChange: (CGFloat) -> Void
@@ -31,11 +35,13 @@ struct DrawerPan: UIViewRepresentable {
 
     init(
         controlIdentifierPrefix: String? = nil,
+        startsAt: ((CGPoint) -> Bool)? = nil,
         shouldBegin: @escaping (CGPoint) -> Bool,
         onChange: @escaping (CGFloat) -> Void,
         onEnd: @escaping (CGFloat, CGFloat) -> Void
     ) {
         self.controlIdentifierPrefix = controlIdentifierPrefix
+        self.startsAt = startsAt
         self.shouldBegin = shouldBegin
         self.onChange = onChange
         self.onEnd = onEnd
@@ -54,6 +60,7 @@ struct DrawerPan: UIViewRepresentable {
 
     func updateUIView(_ view: UIView, context: Context) {
         context.coordinator.controlIdentifierPrefix = controlIdentifierPrefix
+        context.coordinator.startsAt = startsAt
         context.coordinator.pan?.cancelsTouchesInView = true
         context.coordinator.shouldBegin = shouldBegin
         context.coordinator.onChange = onChange
@@ -62,7 +69,7 @@ struct DrawerPan: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
-            controlIdentifierPrefix: controlIdentifierPrefix,
+            controlIdentifierPrefix: controlIdentifierPrefix, startsAt: startsAt,
             shouldBegin: shouldBegin, onChange: onChange, onEnd: onEnd
         )
     }
@@ -74,6 +81,7 @@ struct DrawerPan: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var controlIdentifierPrefix: String?
+        var startsAt: ((CGPoint) -> Bool)?
         var shouldBegin: (CGPoint) -> Bool
         var onChange: (CGFloat) -> Void
         var onEnd: (CGFloat, CGFloat) -> Void
@@ -83,11 +91,13 @@ struct DrawerPan: UIViewRepresentable {
 
         init(
             controlIdentifierPrefix: String?,
+            startsAt: ((CGPoint) -> Bool)? = nil,
             shouldBegin: @escaping (CGPoint) -> Bool,
             onChange: @escaping (CGFloat) -> Void,
             onEnd: @escaping (CGFloat, CGFloat) -> Void
         ) {
             self.controlIdentifierPrefix = controlIdentifierPrefix
+            self.startsAt = startsAt
             self.shouldBegin = shouldBegin
             self.onChange = onChange
             self.onEnd = onEnd
@@ -142,6 +152,10 @@ struct DrawerPan: UIViewRepresentable {
                 // and make SwiftUI's Button tap lose on device. XCUI taps are
                 // perfectly still, which is why that failure escaped the test.
                 guard abs(velocity.x) >= 80 else { return false }
+                if let startsAt {
+                    let at = pan.location(in: nil), moved = pan.translation(in: nil)
+                    guard startsAt(CGPoint(x: at.x - moved.x, y: at.y - moved.y)) else { return false }
+                }
                 return shouldBegin(velocity)
             }
         }

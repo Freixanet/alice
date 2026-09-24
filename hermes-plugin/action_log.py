@@ -267,6 +267,10 @@ def observe(root: Path, profile: str, *, tool_name: str, args: Any, result: Any,
     found = classify(tool_name, args if isinstance(args, dict) else {}, result, root)
     if not found or not found.get("kind"):
         return None
+    # Hermes refusing its own background curator (a bundled or user-made skill)
+    # is a protection working, not something an agent did.
+    if status == "error" and "Refusing background curator" in str(result or ""):
+        return None
     return record(root, profile=profile, session=session_id, tool=tool_name, kind=found["kind"],
                   target=found.get("target"), ok=status != "error")
 

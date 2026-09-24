@@ -17,6 +17,8 @@ struct HomeSuggestion: Identifiable, Equatable, Sendable {
         case today
         /// One agent's chat, by profile.
         case agent(String)
+        /// The person's commitments (`AgendaScreen`).
+        case agenda
     }
 
     var id: String
@@ -39,7 +41,8 @@ struct HomeNotePrompt: Equatable, Sendable {
 
 /// The home's short list of things that need a person.
 ///
-/// Order is fixed: a request Hermes is still holding, a failed routine, an
+/// Order is fixed: a request Hermes is still holding, the next commitment
+/// within a day and a half, a failed routine, an
 /// open question, heavy recent usage, then a morning briefing when the routine
 /// list is known and none exists. At most three. A chat that merely ends on
 /// the person's message is not waiting. Usage and the briefing stay quiet
@@ -54,7 +57,9 @@ enum HomeSuggestions {
         routineNames: [String]? = nil,
         recentTokens: Int? = nil,
         todayUnread: Bool = false,
+        todayWrittenAt: Date? = nil,
         agentsWithNews: [HomeAgentNews] = [],
+        nextUp: String? = nil,
         now: Date = Date(),
         limit: Int = 3
     ) -> [HomeSuggestion] {
@@ -63,7 +68,8 @@ enum HomeSuggestions {
         // What Alice started on her own comes first: it is why she is proactive.
         if todayUnread {
             rows.append(HomeSuggestion(
-                id: "today", title: "Alice wrote to you", symbol: "sun.max", action: .today
+                id: "today", title: "Alice wrote to you",
+                symbol: timeOfDaySymbol(todayWrittenAt ?? now), action: .today
             ))
         }
 
@@ -80,8 +86,21 @@ enum HomeSuggestions {
             ))
         }
 
+        // What is next on the person's day, within a day and a half: the
+        // commitment they would otherwise have to go and look up.
+        if let nextUp, !nextUp.isEmpty {
+            rows.append(HomeSuggestion(id: "agenda-next", title: nextUp, symbol: "calendar", action: .agenda))
+        }
+
+        // A routine that has run fine since it failed no longer needs a look.
+        let lastSuccess = events.reduce(into: [String: Date]()) { latest, event in
+            guard event.kind == .automationSucceeded, let key = event.reference.routineKey else { return }
+            latest[key] = max(latest[key] ?? .distantPast, event.occurred)
+        }
         let failed = events.filter {
-            $0.kind == .automationFailed && now.timeIntervalSince($0.occurred) <= failureWindow
+            guard $0.kind == .automationFailed, now.timeIntervalSince($0.occurred) <= failureWindow else { return false }
+            guard let key = $0.reference.routineKey, let success = lastSuccess[key] else { return true }
+            return success < $0.occurred
         }
         if !failed.isEmpty {
             let title = failed.count == 1
@@ -146,6 +165,15 @@ enum HomeSuggestions {
         }
 
         return Array(rows.prefix(max(limit, 0)))
+    }
+
+    /// Sunrise in the morning, sun in the day, moon at night.
+    static func timeOfDaySymbol(_ date: Date, calendar: Calendar = .current) -> String {
+        switch calendar.component(.hour, from: date) {
+        case 5..<12: "sunrise"
+        case 12..<20: "sun.max"
+        default: "moon.stars"
+        }
     }
 
     private static func hasBriefing(_ names: [String]) -> Bool {

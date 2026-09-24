@@ -21,6 +21,26 @@
         }
       }
     },
+    "%@ is connected": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ está conectado"
+          }
+        }
+      }
+    },
+    "%@ master password": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contraseña maestra de %@"
+          }
+        }
+      }
+    },
     "%@ of %@": {
       "localizations": {
         "es": {
@@ -181,12 +201,32 @@
         }
       }
     },
+    "%lld of %lld steps": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld de %2$lld pasos"
+          }
+        }
+      }
+    },
     "%lld prompts · %lld resources": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld prompts · %lld recursos"
+          }
+        }
+      }
+    },
+    "%lld routines": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld rutinas"
           }
         }
       }
@@ -381,6 +421,16 @@
         }
       }
     },
+    "A key Alice needs.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Una clave que Alice necesita."
+          }
+        }
+      }
+    },
     "A name for this folder.": {
       "localizations": {
         "es": {
@@ -521,6 +571,16 @@
         }
       }
     },
+    "About the goal “%@”: ": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sobre el objetivo «%@»: "
+          }
+        }
+      }
+    },
     "Absolute path": {
       "localizations": {
         "es": {
@@ -537,6 +597,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ruta absoluta en Hermes"
+          }
+        }
+      }
+    },
+    "Access": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceso"
+          }
+        }
+      }
+    },
+    "Access is off for Alice. Turn on Calendars and Reminders in Settings › Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El acceso está desactivado para Alice. Activa Calendarios y Recordatorios en Ajustes › Alice."
+          }
+        }
+      }
+    },
+    "Access key": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clave de acceso"
           }
         }
       }
@@ -651,6 +741,16 @@
         }
       }
     },
+    "Add Connector": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir conector"
+          }
+        }
+      }
+    },
     "Add Credential": {
       "localizations": {
         "es": {
@@ -667,6 +767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Añadir carpeta"
+          }
+        }
+      }
+    },
+    "Add List": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir lista"
           }
         }
       }
@@ -697,6 +807,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Añadir hook de shell"
+          }
+        }
+      }
+    },
+    "Add a Goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir objetivo"
+          }
+        }
+      }
+    },
+    "Add a step": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir un paso"
           }
         }
       }
@@ -777,6 +907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dirección"
+          }
+        }
+      }
+    },
+    "Adds this date and takes it out of the title.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añade esta fecha y la quita del título."
           }
         }
       }
@@ -891,6 +1031,26 @@
         }
       }
     },
+    "Agenda": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agenda"
+          }
+        }
+      }
+    },
+    "Agenda options": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opciones de Agenda"
+          }
+        }
+      }
+    },
     "Agent": {
       "localizations": {
         "es": {
@@ -941,6 +1101,16 @@
         }
       }
     },
+    "Agents use it": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo usan los agentes"
+          }
+        }
+      }
+    },
     "Aggregator": {
       "localizations": {
         "es": {
@@ -957,6 +1127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alice"
+          }
+        }
+      }
+    },
+    "Alice can use this browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice puede usar este navegador"
           }
         }
       }
@@ -981,6 +1161,36 @@
         }
       }
     },
+    "Alice is browsing": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice está navegando"
+          }
+        }
+      }
+    },
+    "Alice is making the plan": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice está preparando el plan"
+          }
+        }
+      }
+    },
+    "Alice is on it": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice está en ello"
+          }
+        }
+      }
+    },
     "Alice keeps seeing work happen in these folders, but they have no name yet. Make one a project to give it a name and keep its conversations together.": {
       "localizations": {
         "es": {
@@ -1001,12 +1211,72 @@
         }
       }
     },
+    "Alice needs your account to continue.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice necesita tu cuenta para seguir."
+          }
+        }
+      }
+    },
     "Alice never stores this key. Hermes adds it to the provider's credential pool on the host.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Alice nunca guarda esta clave. Hermes la añade al pool de credenciales del proveedor en el host."
+          }
+        }
+      }
+    },
+    "Alice shows the next two weeks from the calendars on this iPhone. She changes nothing.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice muestra las próximas dos semanas de los calendarios de este iPhone. No cambia nada."
+          }
+        }
+      }
+    },
+    "Alice shows your calendars and reminders from this iPhone, and adds to them when you ask.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice muestra los calendarios y recordatorios de este iPhone, y les añade cosas cuando se lo pides."
+          }
+        }
+      }
+    },
+    "Alice waits until you hand it back": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice espera a que se lo devuelvas"
+          }
+        }
+      }
+    },
+    "Alice will make a plan, start on it and keep it up to date here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice hará un plan, se pondrá con ello y lo mantendrá al día aquí."
+          }
+        }
+      }
+    },
+    "Alice will write to you": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice te escribirá"
           }
         }
       }
@@ -1041,6 +1311,16 @@
         }
       }
     },
+    "All day": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo el día"
+          }
+        }
+      }
+    },
     "All local model GPU memory will be freed and automatic local-runtime startup will remain disabled until you turn it on again.": {
       "localizations": {
         "es": {
@@ -1057,6 +1337,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Se eliminarán todas las anulaciones de modelo por tarea de este perfil. El trabajo auxiliar volverá a seguir el modelo principal."
+          }
+        }
+      }
+    },
+    "Allow Access": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir acceso"
           }
         }
       }
@@ -1147,6 +1437,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Responder que sí"
+          }
+        }
+      }
+    },
+    "Any service with an MCP address. Connectors are added to Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cualquier servicio con dirección MCP. Los conectores se añaden a Alice."
           }
         }
       }
@@ -1267,6 +1567,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Argumentos separados por espacios o comas"
+          }
+        }
+      }
+    },
+    "Arriving": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al llegar"
           }
         }
       }
@@ -1541,6 +1851,16 @@
         }
       }
     },
+    "Biweekly": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada 2 semanas"
+          }
+        }
+      }
+    },
     "Blueprints": {
       "localizations": {
         "es": {
@@ -1641,6 +1961,46 @@
         }
       }
     },
+    "Browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navegador"
+          }
+        }
+      }
+    },
+    "Browser off": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navegador apagado"
+          }
+        }
+      }
+    },
+    "Browser: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navegador: %@"
+          }
+        }
+      }
+    },
+    "Browsing now · tap to take over": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navegando ahora · toca para tomar el control"
+          }
+        }
+      }
+    },
     "Built-in storage on Hermes host": {
       "localizations": {
         "es": {
@@ -1657,6 +2017,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ajustes auxiliares en bloque"
+          }
+        }
+      }
+    },
+    "Busy": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocupado"
+          }
+        }
+      }
+    },
+    "By %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para el %@"
           }
         }
       }
@@ -1687,6 +2067,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "CPU"
+          }
+        }
+      }
+    },
+    "Calendar access is off for Alice. Turn it on in Settings › Alice › Calendars.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El acceso al calendario está desactivado para Alice. Actívalo en Ajustes › Alice › Calendarios."
+          }
+        }
+      }
+    },
+    "Calendar and Reminders": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendario y Recordatorios"
           }
         }
       }
@@ -1777,6 +2177,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cambiar"
+          }
+        }
+      }
+    },
+    "Change Location": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambiar ubicación"
           }
         }
       }
@@ -2121,6 +2531,16 @@
         }
       }
     },
+    "Code from %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Código de %@"
+          }
+        }
+      }
+    },
     "Cold start": {
       "localizations": {
         "es": {
@@ -2197,6 +2617,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mensaje del commit"
+          }
+        }
+      }
+    },
+    "Complete": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completar"
+          }
+        }
+      }
+    },
+    "Completed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completados"
           }
         }
       }
@@ -2861,6 +3301,16 @@
         }
       }
     },
+    "Custom…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personalizar…"
+          }
+        }
+      }
+    },
     "DEFAULT": {
       "localizations": {
         "es": {
@@ -2887,6 +3337,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "BORRADOR"
+          }
+        }
+      }
+    },
+    "Daily": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada día"
           }
         }
       }
@@ -2927,6 +3387,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Usuario del panel"
+          }
+        }
+      }
+    },
+    "Date": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fecha"
+          }
+        }
+      }
+    },
+    "Date and Time": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fecha y hora"
+          }
+        }
+      }
+    },
+    "Day": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Día"
           }
         }
       }
@@ -3041,6 +3531,26 @@
         }
       }
     },
+    "Delete Goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar objetivo"
+          }
+        }
+      }
+    },
+    "Delete List and Its Reminders": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar la lista y sus recordatorios"
+          }
+        }
+      }
+    },
     "Delete Note": {
       "localizations": {
         "es": {
@@ -3067,6 +3577,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eliminar proyecto"
+          }
+        }
+      }
+    },
+    "Delete Reminder": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar recordatorio"
           }
         }
       }
@@ -3161,12 +3681,42 @@
         }
       }
     },
+    "Delete this goal?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar este objetivo?"
+          }
+        }
+      }
+    },
+    "Delete this reminder?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar este recordatorio?"
+          }
+        }
+      }
+    },
     "Delete this routine?": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "¿Eliminar esta rutina?"
+          }
+        }
+      }
+    },
+    "Delete “%@”?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar «%@»?"
           }
         }
       }
@@ -3401,6 +3951,16 @@
         }
       }
     },
+    "Disconnect your calendar?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Desconectar tu calendario?"
+          }
+        }
+      }
+    },
     "Discover models from /models": {
       "localizations": {
         "es": {
@@ -3621,6 +4181,16 @@
         }
       }
     },
+    "Email or username": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Email o usuario"
+          }
+        }
+      }
+    },
     "Emails sent, routines created, sign-ins and anything else your agents do that changes something will show here.": {
       "localizations": {
         "es": {
@@ -3741,6 +4311,16 @@
         }
       }
     },
+    "Events and reminders": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eventos y recordatorios"
+          }
+        }
+      }
+    },
     "Every %lld %@": {
       "localizations": {
         "es": {
@@ -3751,12 +4331,42 @@
         }
       }
     },
+    "Every 3 Months": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada 3 meses"
+          }
+        }
+      }
+    },
+    "Every 6 Months": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada 6 meses"
+          }
+        }
+      }
+    },
     "Every Hermes has at least a default profile.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Todo Hermes tiene al menos un perfil predeterminado."
+          }
+        }
+      }
+    },
+    "Every account on this iPhone: iCloud, Google, Outlook…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas las cuentas de este iPhone: iCloud, Google, Outlook…"
           }
         }
       }
@@ -3961,6 +4571,16 @@
         }
       }
     },
+    "Finish signing in on the page that opened, then come back to Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Termina de iniciar sesión en la página que se ha abierto y vuelve a Alice."
+          }
+        }
+      }
+    },
     "Fit is a rough pre-download estimate. Hermes reads the real GGUF header after staging and then applies its runtime placement policy.": {
       "localizations": {
         "es": {
@@ -3997,6 +4617,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Carpetas que Alice ha detectado"
+          }
+        }
+      }
+    },
+    "For Alice to use the logins it keeps.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para que Alice pueda usar los accesos que guarda."
           }
         }
       }
@@ -4047,6 +4677,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Olvidó algo que recordaba"
+          }
+        }
+      }
+    },
+    "Forward": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adelante"
           }
         }
       }
@@ -4121,6 +4761,16 @@
         }
       }
     },
+    "Getting the sign-in page ready…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparando la página de inicio de sesión…"
+          }
+        }
+      }
+    },
     "Git": {
       "localizations": {
         "es": {
@@ -4141,12 +4791,62 @@
         }
       }
     },
+    "Give a key": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dar una clave"
+          }
+        }
+      }
+    },
     "Go": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Ir"
+          }
+        }
+      }
+    },
+    "Goal not found": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objetivo no encontrado"
+          }
+        }
+      }
+    },
+    "Goal options": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opciones del objetivo"
+          }
+        }
+      }
+    },
+    "Goals": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objetivos"
+          }
+        }
+      }
+    },
+    "Goes straight into the page. It never appears in the chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Va directo a la página. Nunca aparece en el chat."
           }
         }
       }
@@ -4187,6 +4887,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "HTTP / SSE"
+          }
+        }
+      }
+    },
+    "Hand Back": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Devolver"
           }
         }
       }
@@ -4357,6 +5067,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hermes está conectado, pero algunas funciones no terminaron de conectar."
+          }
+        }
+      }
+    },
+    "Hermes is no longer waiting for this. Ask Alice to try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hermes ya no está esperando esto. Pídele a Alice que lo intente de nuevo."
           }
         }
       }
@@ -4641,6 +5361,36 @@
         }
       }
     },
+    "Hide Keyboard": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar teclado"
+          }
+        }
+      }
+    },
+    "Hides how it got there": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oculta cómo llegó a la respuesta"
+          }
+        }
+      }
+    },
+    "High": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alta"
+          }
+        }
+      }
+    },
     "History & usage": {
       "localizations": {
         "es": {
@@ -4861,6 +5611,46 @@
         }
       }
     },
+    "In %lld days": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En %lld días"
+          }
+        }
+      }
+    },
+    "In %lld h": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En %lld h"
+          }
+        }
+      }
+    },
+    "In %lld h %lld min": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En %1$lld h %2$lld min"
+          }
+        }
+      }
+    },
+    "In %lld min": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En %lld min"
+          }
+        }
+      }
+    },
     "In: %@": {
       "localizations": {
         "es": {
@@ -4927,6 +5717,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Instalar y usar"
+          }
+        }
+      }
+    },
+    "Install Chrome on your Mac to use the browser.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instala Chrome en tu Mac para usar el navegador."
           }
         }
       }
@@ -5091,6 +5891,16 @@
         }
       }
     },
+    "Its plan and history go. Routines working on it keep running until you stop them.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se borran su plan y su historial. Las rutinas que trabajan en él siguen hasta que las pares."
+          }
+        }
+      }
+    },
     "Its reply will appear here.": {
       "localizations": {
         "es": {
@@ -5251,6 +6061,16 @@
         }
       }
     },
+    "Leaving": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al salir"
+          }
+        }
+      }
+    },
     "Linked account": {
       "localizations": {
         "es": {
@@ -5277,6 +6097,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Los enlaces de estas notas aparecen aquí."
+          }
+        }
+      }
+    },
+    "List": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lista"
+          }
+        }
+      }
+    },
+    "List Name": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nombre de la lista"
+          }
+        }
+      }
+    },
+    "Lists": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listas"
           }
         }
       }
@@ -5531,6 +6381,16 @@
         }
       }
     },
+    "Location": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ubicación"
+          }
+        }
+      }
+    },
     "Lock": {
       "localizations": {
         "es": {
@@ -5591,6 +6451,16 @@
         }
       }
     },
+    "Low": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baja"
+          }
+        }
+      }
+    },
     "Lower case, words joined by hyphens — the agent calls it by this.": {
       "localizations": {
         "es": {
@@ -5617,6 +6487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "MCP"
+          }
+        }
+      }
+    },
+    "MCP address (https://…)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección MCP (https://…)"
           }
         }
       }
@@ -5691,6 +6571,16 @@
         }
       }
     },
+    "Make me a plan and get started.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hazme un plan y ponte con ello."
+          }
+        }
+      }
+    },
     "Make this the profile default": {
       "localizations": {
         "es": {
@@ -5731,6 +6621,26 @@
         }
       }
     },
+    "Mark as Reached": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como logrado"
+          }
+        }
+      }
+    },
+    "Mark as done": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como hecho"
+          }
+        }
+      }
+    },
     "Matcher (optional)": {
       "localizations": {
         "es": {
@@ -5747,6 +6657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Matcher: %@"
+          }
+        }
+      }
+    },
+    "Medium": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Media"
           }
         }
       }
@@ -5951,6 +6871,26 @@
         }
       }
     },
+    "Month": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mes"
+          }
+        }
+      }
+    },
+    "Monthly": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada mes"
+          }
+        }
+      }
+    },
     "More": {
       "localizations": {
         "es": {
@@ -6061,6 +7001,16 @@
         }
       }
     },
+    "My Lists": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mis listas"
+          }
+        }
+      }
+    },
     "Name": {
       "localizations": {
         "es": {
@@ -6121,6 +7071,16 @@
         }
       }
     },
+    "Never": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nunca"
+          }
+        }
+      }
+    },
     "New Agent": {
       "localizations": {
         "es": {
@@ -6141,12 +7101,42 @@
         }
       }
     },
+    "New Event": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo evento"
+          }
+        }
+      }
+    },
     "New Folder": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Carpeta nueva"
+          }
+        }
+      }
+    },
+    "New Goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo objetivo"
+          }
+        }
+      }
+    },
+    "New List": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nueva lista"
           }
         }
       }
@@ -6177,6 +7167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Proyecto nuevo"
+          }
+        }
+      }
+    },
+    "New Reminder": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo recordatorio"
           }
         }
       }
@@ -6241,12 +7241,42 @@
         }
       }
     },
+    "New events and reminders appear here on their own.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los eventos y recordatorios nuevos aparecen aquí solos."
+          }
+        }
+      }
+    },
+    "New events in your calendar appear here on their own.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los eventos nuevos de tu calendario aparecen aquí solos."
+          }
+        }
+      }
+    },
     "New folder": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Carpeta nueva"
+          }
+        }
+      }
+    },
+    "New goal: %@.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo objetivo: %@."
           }
         }
       }
@@ -6311,12 +7341,32 @@
         }
       }
     },
+    "Next Month": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mes siguiente"
+          }
+        }
+      }
+    },
     "Next Question": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Pregunta siguiente"
+          }
+        }
+      }
+    },
+    "Next Week": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La semana que viene"
           }
         }
       }
@@ -6331,12 +7381,52 @@
         }
       }
     },
+    "Next: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Siguiente: %@"
+          }
+        }
+      }
+    },
+    "No Completed Reminders": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay recordatorios completados"
+          }
+        }
+      }
+    },
+    "No Date": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin fecha"
+          }
+        }
+      }
+    },
     "No GGUF models are staged on this host.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "No hay modelos GGUF en staging en este host."
+          }
+        }
+      }
+    },
+    "No Reminders": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay recordatorios"
           }
         }
       }
@@ -6381,12 +7471,32 @@
         }
       }
     },
+    "No date": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin fecha"
+          }
+        }
+      }
+    },
     "No diff for this view.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "No hay diff para esta vista."
+          }
+        }
+      }
+    },
+    "No goals yet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no hay objetivos"
           }
         }
       }
@@ -6491,6 +7601,16 @@
         }
       }
     },
+    "No sign-in": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin inicio de sesión"
+          }
+        }
+      }
+    },
     "No workspace folders yet.": {
       "localizations": {
         "es": {
@@ -6551,6 +7671,16 @@
         }
       }
     },
+    "Not Now": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora no"
+          }
+        }
+      }
+    },
     "Not a Git repository": {
       "localizations": {
         "es": {
@@ -6581,6 +7711,16 @@
         }
       }
     },
+    "Notes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notas"
+          }
+        }
+      }
+    },
     "Notes are available here for 30 days, then deleted from this iPhone. Recovering one writes it back to the notes store.": {
       "localizations": {
         "es": {
@@ -6597,6 +7737,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Las notas las guarda un agente con almacén de notas, como Inbox. No se encontró ninguno en este Hermes."
+          }
+        }
+      }
+    },
+    "Nothing in the next two weeks": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada en las próximas dos semanas"
+          }
+        }
+      }
+    },
+    "Nothing on this day": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada este día"
           }
         }
       }
@@ -6731,6 +7891,16 @@
         }
       }
     },
+    "On My iPhone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En mi iPhone"
+          }
+        }
+      }
+    },
     "One KEY=VALUE per line. These values are secrets and are not shown again unredacted.": {
       "localizations": {
         "es": {
@@ -6771,6 +7941,36 @@
         }
       }
     },
+    "Open Calendar": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir Calendario"
+          }
+        }
+      }
+    },
+    "Open Settings": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir Ajustes"
+          }
+        }
+      }
+    },
+    "Open Sign-In Page": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir página de inicio de sesión"
+          }
+        }
+      }
+    },
     "Open authorization page": {
       "localizations": {
         "es": {
@@ -6797,6 +7997,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Abrir Ajustes de iOS"
+          }
+        }
+      }
+    },
+    "Open in Safari": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir en Safari"
           }
         }
       }
@@ -6891,6 +8101,16 @@
         }
       }
     },
+    "Opens the browser to watch or take over.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre el navegador para mirar o tomar el control."
+          }
+        }
+      }
+    },
     "Opens the chat": {
       "localizations": {
         "es": {
@@ -6961,6 +8181,16 @@
         }
       }
     },
+    "Overdue": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atrasado"
+          }
+        }
+      }
+    },
     "Overview": {
       "localizations": {
         "es": {
@@ -6997,6 +8227,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "PR #%lld"
+          }
+        }
+      }
+    },
+    "Page watches tell you when a page changes. The browser runs on your Mac: watch your agents browse in it, and use it yourself to take over.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las vigilancias te avisan cuando cambia una página. El navegador funciona en tu Mac: mira cómo navegan tus agentes y úsalo tú para tomar el control."
           }
         }
       }
@@ -7067,6 +8307,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Contraseña"
+          }
+        }
+      }
+    },
+    "Pause": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausar"
           }
         }
       }
@@ -7167,6 +8417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lugar"
+          }
+        }
+      }
+    },
+    "Plan": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan"
           }
         }
       }
@@ -7281,6 +8541,16 @@
         }
       }
     },
+    "Previous Month": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mes anterior"
+          }
+        }
+      }
+    },
     "Previous Question": {
       "localizations": {
         "es": {
@@ -7297,6 +8567,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Principal"
+          }
+        }
+      }
+    },
+    "Priority": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prioridad"
           }
         }
       }
@@ -7581,6 +8861,16 @@
         }
       }
     },
+    "Reached · %lld": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logrados · %lld"
+          }
+        }
+      }
+    },
     "Reading commit context…": {
       "localizations": {
         "es": {
@@ -7607,6 +8897,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Leyendo hardware…"
+          }
+        }
+      }
+    },
+    "Reasoning: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Razonamiento: %@"
           }
         }
       }
@@ -7791,6 +9091,16 @@
         }
       }
     },
+    "Reload": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recargar"
+          }
+        }
+      }
+    },
     "Reload server version": {
       "localizations": {
         "es": {
@@ -7817,6 +9127,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recordó algo sobre ti"
+          }
+        }
+      }
+    },
+    "Reminder": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recordatorio"
+          }
+        }
+      }
+    },
+    "Reminder from Alice": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recordatorio de Alice"
           }
         }
       }
@@ -7997,6 +9327,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reparar conexión completa"
+          }
+        }
+      }
+    },
+    "Repeat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repetir"
           }
         }
       }
@@ -8281,6 +9621,16 @@
         }
       }
     },
+    "Resume": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reanudar"
+          }
+        }
+      }
+    },
     "Resumed the routine “%@”": {
       "localizations": {
         "es": {
@@ -8561,6 +9911,36 @@
         }
       }
     },
+    "Saved encrypted in Hermes on your Mac, for %@ only. Alice fills it in without ever seeing it, and it never appears in the chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se guarda cifrada en Hermes, en tu Mac, solo para %@. Alice la rellena sin verla nunca y no aparece en el chat."
+          }
+        }
+      }
+    },
+    "Saved in Hermes on your Mac. Alice does not keep a copy.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se guarda en Hermes, en tu Mac. Alice no guarda copia."
+          }
+        }
+      }
+    },
+    "Saved in Hermes on your Mac. It never appears in the chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se guarda en Hermes, en tu Mac. Nunca aparece en el chat."
+          }
+        }
+      }
+    },
     "Saved the sign-in for %@": {
       "localizations": {
         "es": {
@@ -8671,12 +10051,32 @@
         }
       }
     },
+    "Search connectors": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar conectores"
+          }
+        }
+      }
+    },
     "Search curated models": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Buscar modelos curados"
+          }
+        }
+      }
+    },
+    "Search for a place": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Busca un lugar"
           }
         }
       }
@@ -8717,6 +10117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Buscar notas"
+          }
+        }
+      }
+    },
+    "Search or enter website": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Busca o escribe una web"
           }
         }
       }
@@ -8847,6 +10257,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Self-chat"
+          }
+        }
+      }
+    },
+    "Send": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar"
           }
         }
       }
@@ -9141,12 +10561,32 @@
         }
       }
     },
+    "Show Completed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar completados"
+          }
+        }
+      }
+    },
     "Show Gesture Tips Again": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Mostrar los gestos de nuevo"
+          }
+        }
+      }
+    },
+    "Show Reminders": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar Recordatorios"
           }
         }
       }
@@ -9201,12 +10641,62 @@
         }
       }
     },
+    "Shows how it got there": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muestra cómo llegó a la respuesta"
+          }
+        }
+      }
+    },
     "Sideload a GGUF already on the Mac": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Cargar manualmente un GGUF ya presente en el Mac"
+          }
+        }
+      }
+    },
+    "Sign In": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión"
+          }
+        }
+      }
+    },
+    "Sign In Again": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a iniciar sesión"
+          }
+        }
+      }
+    },
+    "Sign in to %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicia sesión en %@"
+          }
+        }
+      }
+    },
+    "Sign in with an account": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión con una cuenta"
           }
         }
       }
@@ -9381,6 +10871,16 @@
         }
       }
     },
+    "Start Browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encender navegador"
+          }
+        }
+      }
+    },
     "Start Telegram setup": {
       "localizations": {
         "es": {
@@ -9407,6 +10907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Iniciar servidor"
+          }
+        }
+      }
+    },
+    "Start the browser on your Mac to watch your agents browse and use it yourself.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enciende el navegador en tu Mac para ver navegar a tus agentes y usarlo tú."
           }
         }
       }
@@ -9671,6 +11181,26 @@
         }
       }
     },
+    "Take Over": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tomar el control"
+          }
+        }
+      }
+    },
+    "Talk about it with Alice": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hablarlo con Alice"
+          }
+        }
+      }
+    },
     "Tap a reply, then 👍 for yes or 👎 for no. A 👍 to a calendar card also adds or moves the event.": {
       "localizations": {
         "es": {
@@ -9751,6 +11281,16 @@
         }
       }
     },
+    "Tell Alice something you want to get done — a project, a change, a list that weighs on you — and she'll make a plan and work on it.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuéntale a Alice algo que quieras conseguir —un proyecto, un cambio, una lista que te pesa— y hará un plan y se pondrá con ello."
+          }
+        }
+      }
+    },
     "Templates": {
       "localizations": {
         "es": {
@@ -9787,6 +11327,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "Esa conversación ya no está en este Hermes, o hay que actualizar el plugin de Alice en tu Mac."
+          }
+        }
+      }
+    },
+    "That event is no longer in your calendar.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese evento ya no está en tu calendario."
+          }
+        }
+      }
+    },
+    "That list could not be created.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido crear esa lista."
+          }
+        }
+      }
+    },
+    "That list could not be deleted.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido eliminar esa lista."
+          }
+        }
+      }
+    },
+    "That reminder could not be completed.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido completar ese recordatorio."
+          }
+        }
+      }
+    },
+    "That reminder could not be deleted.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido eliminar ese recordatorio."
+          }
+        }
+      }
+    },
+    "That reminder could not be saved.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido guardar ese recordatorio."
+          }
+        }
+      }
+    },
+    "That reminder is no longer in Reminders.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese recordatorio ya no está en Recordatorios."
           }
         }
       }
@@ -9877,6 +11487,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "La entrada del proveedor y su credencial dedicada guardada se eliminarán. Si es la ruta de modelo activa, Hermes también la desvincula."
+          }
+        }
+      }
+    },
+    "The service's own documentation gives its MCP address.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La documentación del propio servicio indica su dirección MCP."
+          }
+        }
+      }
+    },
+    "The sign-in did not finish.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El inicio de sesión no terminó."
           }
         }
       }
@@ -10007,6 +11637,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Este host de Hermes"
+          }
+        }
+      }
+    },
+    "This Weekend": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este fin de semana"
           }
         }
       }
@@ -10161,6 +11801,26 @@
         }
       }
     },
+    "Thought for %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pensó durante %@"
+          }
+        }
+      }
+    },
+    "Thought for a moment": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pensó un momento"
+          }
+        }
+      }
+    },
     "Time": {
       "localizations": {
         "es": {
@@ -10221,12 +11881,52 @@
         }
       }
     },
+    "To-dos": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tareas"
+          }
+        }
+      }
+    },
     "Today": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Hoy"
+          }
+        }
+      }
+    },
+    "Today %@ · %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hoy %1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "Tomorrow": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mañana"
+          }
+        }
+      }
+    },
+    "Tomorrow %@ · %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mañana %1$@ · %2$@"
           }
         }
       }
@@ -10331,6 +12031,16 @@
         }
       }
     },
+    "Type the code the site just sent you.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribe el código que te acaba de enviar la web."
+          }
+        }
+      }
+    },
     "Typical schedule": {
       "localizations": {
         "es": {
@@ -10351,6 +12061,16 @@
         }
       }
     },
+    "URL": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL"
+          }
+        }
+      }
+    },
     "USER.md": {
       "localizations": {
         "es": {
@@ -10367,6 +12087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sin asignar"
+          }
+        }
+      }
+    },
+    "Under way": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En marcha"
           }
         }
       }
@@ -10397,6 +12127,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unidad"
+          }
+        }
+      }
+    },
+    "Unlock": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquear"
+          }
+        }
+      }
+    },
+    "Unlock %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquear %@"
           }
         }
       }
@@ -10641,6 +12391,16 @@
         }
       }
     },
+    "Used once to unlock it on your Mac, and not kept.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa una vez para desbloquearlo en tu Mac y no se guarda."
+          }
+        }
+      }
+    },
     "User profile memory": {
       "localizations": {
         "es": {
@@ -10681,6 +12441,16 @@
         }
       }
     },
+    "Verification code": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Código de verificación"
+          }
+        }
+      }
+    },
     "Verify completed work": {
       "localizations": {
         "es": {
@@ -10697,6 +12467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Versión"
+          }
+        }
+      }
+    },
+    "View": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vista"
           }
         }
       }
@@ -10751,6 +12531,16 @@
         }
       }
     },
+    "Web page: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Página web: %@"
+          }
+        }
+      }
+    },
     "Webhook URL": {
       "localizations": {
         "es": {
@@ -10771,12 +12561,62 @@
         }
       }
     },
+    "Weekdays": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entre semana"
+          }
+        }
+      }
+    },
+    "Weekends": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fines de semana"
+          }
+        }
+      }
+    },
+    "Weekly": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada semana"
+          }
+        }
+      }
+    },
     "What are we working on?": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "¿En qué estamos trabajando?"
+          }
+        }
+      }
+    },
+    "What do you want to get done?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Qué quieres conseguir?"
+          }
+        }
+      }
+    },
+    "What happened": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo que ha pasado"
           }
         }
       }
@@ -10861,6 +12701,16 @@
         }
       }
     },
+    "When": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuándo"
+          }
+        }
+      }
+    },
     "When Alice is open, or the next time iOS lets it check. It cannot wake the phone by itself, so a routine that finishes while Alice is closed may wait until you open it.": {
       "localizations": {
         "es": {
@@ -10887,6 +12737,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cuando tus agentes crean un archivo o comparten un enlace en un chat con Alice, aparece aquí."
+          }
+        }
+      }
+    },
+    "Why it matters (optional)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por qué importa (opcional)"
+          }
+        }
+      }
+    },
+    "Why: %@.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por qué: %@."
           }
         }
       }
@@ -10991,12 +12861,32 @@
         }
       }
     },
+    "Yearly": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada año"
+          }
+        }
+      }
+    },
     "Yesterday": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Ayer"
+          }
+        }
+      }
+    },
+    "You": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tú"
           }
         }
       }
@@ -11051,6 +12941,66 @@
         }
       }
     },
+    "You're in control": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tienes el control"
+          }
+        }
+      }
+    },
+    "Your agents can use it now.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus agentes ya pueden usarlo."
+          }
+        }
+      }
+    },
+    "Your agents see what you connect here. Nothing leaves your own Hermes, and nothing is added to your calendar unless you tap Add.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus agentes ven lo que conectes aquí. Nada sale de tu Hermes, y no se añade nada a tu calendario salvo que toques Añadir."
+          }
+        }
+      }
+    },
+    "Your agents stop using it. You can connect it again at any time.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus agentes dejan de usarlo. Puedes volver a conectarlo cuando quieras."
+          }
+        }
+      }
+    },
+    "Your calendar": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu calendario"
+          }
+        }
+      }
+    },
+    "Your iPhone's calendar and every connector Hermes offers — Notion, Linear, Figma and more — to connect or disconnect.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El calendario de tu iPhone y todos los conectores que ofrece Hermes (Notion, Linear, Figma y más) para conectarlos o desconectarlos."
+          }
+        }
+      }
+    },
     "a routine": {
       "localizations": {
         "es": {
@@ -11091,6 +13041,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "el otro agente"
+          }
+        }
+      }
+    },
+    "all-day": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "todo el día"
           }
         }
       }
@@ -11161,6 +13121,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "https://host.example/v1"
+          }
+        }
+      }
+    },
+    "iPhone Calendar": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendario del iPhone"
           }
         }
       }
@@ -11330,6 +13300,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sin novedades: la rutina se ejecutó y no encontró nada nuevo que contar."
+          }
+        }
+      }
+    },
+    "routine.quiet.noNews.agent %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I checked “%@” and there was nothing new worth your attention this time."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "He revisado «%@» y esta vez no hay nada nuevo que merezca tu atención."
           }
         }
       }

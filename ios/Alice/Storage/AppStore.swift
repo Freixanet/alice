@@ -173,9 +173,19 @@ final class AppStore {
     /// Routine runs that finished with nothing to report, keyed by bot. Hermes
     /// sends nothing for those, and without a card a routine with no news and
     /// one that never ran look the same.
-    var quietRoutineRuns: [String: [QuietRoutineRun]] = [:]
+    ///
+    /// Kept on the phone. Held only in memory, they were empty on every launch
+    /// until a bot chat's full refresh finished: an agent's chat ended at an
+    /// older failed run, with the later quiet ones missing, for as long as
+    /// that took — or for good when the refresh failed.
+    var quietRoutineRuns: [String: [QuietRoutineRun]] = [:] {
+        didSet { persistQuietRuns() }
+    }
     /// Run ids already read for silence, keyed by bot.
-    private var judgedRoutineRuns: [String: Set<String>] = [:]
+    private var judgedRoutineRuns: [String: Set<String>] = [:] {
+        didSet { persistQuietRuns() }
+    }
+    @ObservationIgnored private var quietRunsLoaded = false
     private let dashboard = DashboardClient()
     private let defaults: UserDefaults
     /// Where conversations are kept (`FileConversationStorage`), apart from
@@ -196,6 +206,8 @@ final class AppStore {
     private var protectedConversationIDs: Set<String> = []
 
     private enum Keys {
+        static let quietRuns = "alice.quietRoutineRuns"
+        static let judgedRuns = "alice.judgedRoutineRuns"
         static let phoneActions = "alice.phoneActions"
         static let theme = "alice.theme"
         static let accent = "alice.accent"
@@ -590,6 +602,7 @@ final class AppStore {
         recentModels = defaults.stringArray(forKey: Keys.recentModels) ?? []
         loadConversations()
         loadActivity()
+        loadQuietRuns()
         loadPhoneActions()
         if let data = defaults.data(forKey: Keys.notesSnapshot) {
             notesSnapshot = try? JSONDecoder().decode(NotesSnapshot.self, from: data)
@@ -1242,12 +1255,20 @@ final class AppStore {
         }
     }
 
+    /// Hermes' metadata decides once a row carries it — also a row from the
+    /// saved roster, before `profiles.list` has answered this launch. Only
+    /// the live read used to count, so every launch and reconnect showed the
+    /// Agents page without its pinned shelf until Hermes answered.
+    private func usesRemoteMetadata(_ bot: BotRow) -> Bool {
+        botMetadataIsRemote || bot.metadata.present
+    }
+
     func isBotPinned(_ bot: BotRow) -> Bool {
-        botMetadataIsRemote ? (bot.metadata.pinned ?? false) : pinnedBots.contains(bot.name)
+        usesRemoteMetadata(bot) ? (bot.metadata.pinned ?? false) : pinnedBots.contains(bot.name)
     }
 
     func isBotHidden(_ bot: BotRow) -> Bool {
-        botMetadataIsRemote ? (bot.metadata.hidden ?? false) : hiddenBots.contains(bot.name)
+        usesRemoteMetadata(bot) ? (bot.metadata.hidden ?? false) : hiddenBots.contains(bot.name)
     }
 
     func setBotPinned(_ bot: BotRow, pinned: Bool) async throws {
@@ -3420,6 +3441,8 @@ final class AppStore {
     func open(_ link: NotificationLink) {
         showingBots = false
         showingNotes = false
+        showingAgenda = false
+        showingGoals = false
         switch link {
         case let .bot(name) where name == Self.todayProfile:
             openToday()
@@ -3471,6 +3494,8 @@ final class AppStore {
         func show(_ id: String) -> Bool {
             showingBots = false
             showingNotes = false
+            showingAgenda = false
+            showingGoals = false
             activeID = id
             return true
         }
@@ -3495,6 +3520,8 @@ final class AppStore {
             }
             showingBots = false
             showingNotes = false
+            showingAgenda = false
+            showingGoals = false
             let bot = cachedBots.first {
                 $0.name.caseInsensitiveCompare(profile) == .orderedSame
             } ?? BotRow(
@@ -3803,6 +3830,8 @@ final class AppStore {
     func requestInboxAgent() {
         requestedAgentTemplate = "inbox"
         showingNotes = false
+        showingAgenda = false
+        showingGoals = false
         showingBots = true
         markNoticesSeen(.agents)
     }
@@ -4790,8 +4819,22 @@ final class AppStore {
     // Agent work lives behind the same authenticated dashboard as the rest of
     // Alice's controls. Keep the screen independent of connection credentials.
     func sharedBrowser() async throws -> SharedBrowserState { try await dashboard.sharedBrowser() }
+    func connectorIcon(_ name: String) async -> Data? { try? await dashboard.connectorIcon(name) }
+    func goals() async throws -> [Goal] { try await dashboard.goals() }
+    func createGoal(title: String, why: String) async throws -> Goal? {
+        try await dashboard.createGoal(title: title, why: why)
+    }
+    func changeGoal(_ id: String, _ change: GoalChange) async throws -> Goal? {
+        try await dashboard.changeGoal(id, change)
+    }
+    func deleteGoal(_ id: String) async throws { try await dashboard.deleteGoal(id) }
+    func secretIsSet(_ name: String) async throws -> Bool { try await dashboard.secretIsSet(name) }
+    func saveSecret(_ name: String, value: String) async throws { try await dashboard.saveSecret(name, value: value) }
     func setSharedBrowser(on: Bool) async throws -> SharedBrowserState {
         try await dashboard.setSharedBrowser(on: on)
+    }
+    func setSharedBrowserControl(human: Bool) async throws -> SharedBrowserState {
+        try await dashboard.setSharedBrowserControl(human: human)
     }
     func sharedBrowserFrame(after: Int, target: String?) async throws -> SharedBrowserFrame {
         try await dashboard.sharedBrowserFrame(after: after, target: target)
@@ -5454,23 +5497,6 @@ final class AppStore {
         try await dashboard.saveProviderCredential(profile: profile, key: key, value: value)
     }
 
-    /// Keys already given in a secure card, by name (never the value). Kept
-    /// here rather than in the card: a chat redraws its rows while the agent
-    /// answers, a card is made anew, and its own state would ask again.
-    private(set) var savedSecrets: Set<String> = []
-
-    func saveAliceSecret(name: String, value: String) async throws {
-        try await dashboard.saveAliceSecret(name: name, value: value)
-        savedSecrets.insert(name)
-    }
-
-    func aliceSecretIsSet(name: String) async throws -> Bool {
-        if savedSecrets.contains(name) { return true }
-        let set = try await dashboard.aliceSecretIsSet(name: name)
-        if set { savedSecrets.insert(name) }
-        return set
-    }
-
     func removeProviderCredential(profile: String, key: String) async throws {
         try await dashboard.removeProviderCredential(profile: profile, key: key)
     }
@@ -5628,12 +5654,18 @@ final class AppStore {
     func openHomeShortcut(_ shortcut: HomeShortcut) {
         showingBots = false
         showingNotes = false
+        showingAgenda = false
+        showingGoals = false
         switch shortcut.target {
         case let .destination(raw):
             guard let destination = AliceDestination.Target(rawValue: raw) else { return }
             switch destination {
             case .notes:
                 showingNotes = true
+            case .agenda:
+                showingAgenda = true
+            case .goals:
+                showingGoals = true
             case .bots:
                 botsFromLeading = false
                 showingBots = true
@@ -5809,6 +5841,23 @@ final class AppStore {
     var showingBots = false
     /// Notes is a page as well, reached sideways from the drawer.
     var showingNotes = false
+    /// The agenda, a page too (`AgendaScreen`).
+    var showingAgenda = false
+    /// A login, code or key Hermes is waiting for the person to type (`SecureRequestSheet`).
+    var secureRequest: SecureRequest?
+
+    /// The person's goals and Alice's plans, a page too (`GoalsScreen`).
+    var showingGoals = false
+    /// The agents' shared browser, live: one view of it for the chat's card
+    /// and the full-screen browser (`LiveBrowser`).
+    @ObservationIgnored lazy var liveBrowser: LiveBrowser = {
+        let live = LiveBrowser()
+        live.attach(self)
+        return live
+    }()
+    /// "Tomorrow 11:30 · Hairdresser": the next commitment within a day and a
+    /// half, read on this phone, for the home's suggestions.
+    private(set) var nextCommitment: String?
     /// A home pin that wants a particular note open once Notes is up.
     var requestedNote: String?
     /// A home pin that wants a particular folder open once Notes is up.
@@ -6258,6 +6307,41 @@ final class AppStore {
         calendarLink = .connected(updatedAt: Date())
     }
 
+    // MARK: - Secure requests
+
+    /// Sends what the person typed straight to Hermes; `""` declines. The value
+    /// is never kept, logged or put in a message.
+    func answerSecureRequest(_ request: SecureRequest, value: String) async -> Bool {
+        defer { if secureRequest?.id == request.id { secureRequest = nil } }
+        guard let source = await botChatSource() else { return false }
+        do {
+            try await source.answerSecureRequest(request.id, value: value)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    // MARK: - Agenda
+
+    /// What the agenda page just read, so the home can say what is next
+    /// without reading the calendar again.
+    func noteCommitments(_ items: [AgendaItem], now: Date = Date()) {
+        let line = Agenda.next(items, now: now).map { Agenda.glance($0, now: now) }
+        if line != nextCommitment { nextCommitment = line }
+    }
+
+    /// On each return to the app and each change to the phone's calendar.
+    func refreshCommitments() async {
+        guard CalendarSync.hasAccess else {
+            if nextCommitment != nil { nextCommitment = nil }
+            return
+        }
+        var items = AgendaSource.events()
+        items += await AgendaSource.reminders()
+        noteCommitments(items)
+    }
+
     // MARK: - Today
 
     /// Alice's own forever-chat: the main profile's canonical Bot Chat in
@@ -6283,6 +6367,13 @@ final class AppStore {
     /// Whether Alice has written something in Today since it was last opened.
     var todayUnread: Bool { isBotUnread(Self.todayProfile) }
 
+    /// When Alice last wrote in Today, for the home to say it with the time
+    /// of day it came: a night summary is not a sun.
+    var todayWrittenAt: Date? {
+        conversations.first(where: { $0.routedBotName == Self.todayProfile })?.messages
+            .last(where: { $0.role == .assistant && !$0.pending && MessageTime.isKnown($0.createdAt) })?.createdAt
+    }
+
     /// How many messages Alice wrote in Today since it was last opened.
     var todayNewCount: Int {
         guard let today = conversations.first(where: { $0.routedBotName == Self.todayProfile })
@@ -6299,6 +6390,8 @@ final class AppStore {
     func openToday() {
         showingBots = false
         showingNotes = false
+        showingAgenda = false
+        showingGoals = false
         openBotConversation(for: Self.todayBot)
     }
 
@@ -6486,7 +6579,29 @@ final class AppStore {
             // say the transcript may be behind, rather than pretending it is
             // complete or blanking it.
             botChatFailure[conversationID] = HermesErrors.describe(error)
+            // Its routine runs are read on their own route, and still count.
+            await refreshQuietRoutineRuns(profile: profile)
         }
+    }
+
+    private func persistQuietRuns() {
+        guard quietRunsLoaded else { return }
+        if let data = try? JSONEncoder().encode(quietRoutineRuns) {
+            defaults.set(data, forKey: Keys.quietRuns)
+        }
+        defaults.set(judgedRoutineRuns.mapValues { Array($0.suffix(200)) }, forKey: Keys.judgedRuns)
+    }
+
+    private func loadQuietRuns() {
+        if let data = defaults.data(forKey: Keys.quietRuns),
+           let saved = try? JSONDecoder().decode([String: [QuietRoutineRun]].self, from: data) {
+            let since = Date().addingTimeInterval(-QuietRoutineRun.window)
+            quietRoutineRuns = saved.mapValues { $0.filter { $0.finishedAt >= since } }
+        }
+        if let saved = defaults.dictionary(forKey: Keys.judgedRuns) as? [String: [String]] {
+            judgedRoutineRuns = saved.mapValues(Set.init)
+        }
+        quietRunsLoaded = true
     }
 
     /// Work each bot chat has going on out of sight, keyed by conversation.
@@ -6991,6 +7106,15 @@ final class AppStore {
                        let index = work.waitingOn.lastIndex(where: { $0.handle == handle }) {
                         work.waitingOn.remove(at: index)
                         setBackgroundWork(work, for: conversationID)
+                    }
+                    // A login, a code or a key only the person can type: a secure card.
+                    if event.type == "secure.request", let request = SecureRequest.parse(event.payload) {
+                        secureRequest = request
+                    }
+                    if event.type == "request.cancel",
+                       let cancelled = GatewayServerRequests.cancelledRequestID(event),
+                       secureRequest?.id == cancelled {
+                        secureRequest = nil
                     }
                     if let chatEvent = Self.chatEvent(from: event) {
                         apply(
@@ -7635,6 +7759,15 @@ final class AppStore {
                 name: name, status: .done,
                 detail: Self.toolDetail(from: event.payload)
             )
+        case "reasoning.delta":
+            // Only the streamed reasoning is reasoning. Despite its name,
+            // `reasoning.available` carries the start of the text the model
+            // wrote in that step (`agent/turn_response_intake._relay_thinking`),
+            // which showed the reply twice.
+            guard let text = (event.payload["text"] as? String) ?? (event.payload["delta"] as? String),
+                  !text.isEmpty
+            else { return nil }
+            return .reasoning(text, block: false)
         case "todo.updated":
             // The whole plan after every change; a bot chat's `todo` args
             // are not read, so the two never race.
@@ -7724,12 +7857,12 @@ final class AppStore {
     nonisolated static let knownSocketEventTypes: Set<String> = [
         // Handled.
         "message.delta", "message.complete", "message.interim", "tool.start", "tool.complete",
-        "todo.updated",
-        "approval.request", "clarify.request", "error", "request.cancel",
+        "todo.updated", "reasoning.delta",
+        "approval.request", "clarify.request", "secure.request", "error", "request.cancel",
         "subagent.start", "subagent.complete", "status.update",
         // Known and let pass.
         "message.start", "message.user", "message.react",
-        "reasoning.delta", "reasoning.available", "notification.show", "notification.clear",
+        "reasoning.available", "notification.show", "notification.clear",
         "session.info", "session.status", "session.reclaimed", "session.redirect",
         "session.resume_progress", "usage.bars",
         "tool.generating", "tool.output_risk", "turn.start", "turn.end", "turn.error",
@@ -9134,6 +9267,19 @@ final class AppStore {
             }
             conversations[chat].messages[index].tools = tools
 
+        case let .reasoning(text, block):
+            var reasoning = conversations[chat].messages[index].reasoning ?? ""
+            if block {
+                // A whole block: once, even when its pieces already streamed.
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, !reasoning.contains(trimmed) {
+                    reasoning += (reasoning.isEmpty ? "" : "\n\n") + trimmed
+                }
+            } else {
+                reasoning += text
+            }
+            conversations[chat].messages[index].reasoning = reasoning
+
         case let .plan(change):
             // One plan per task, on its newest reply: narration sealed into
             // bubbles earlier in the task gives it up.
@@ -9793,6 +9939,8 @@ extension AppStore {
         guard let chat = conversation(forSession: receipt.session) else { return false }
         showingBots = false
         showingNotes = false
+        showingAgenda = false
+        showingGoals = false
         openConversation(chat.id)
         if let anchor { focusedMessage = FocusedMessage(conversationID: chat.id, remoteID: anchor) }
         return true
@@ -9802,7 +9950,16 @@ extension AppStore {
 
     /// Everything, newest first: the Mac's record and this phone's.
     var allAgentActions: [AgentAction] {
-        (agentActions + phoneActions).sorted { $0.at > $1.at }
+        let all = (agentActions + phoneActions).sorted { $0.at > $1.at }
+        // A failed attempt the agent then made again successfully is not a
+        // failure worth showing: an edit whose first try matched twice and
+        // whose retry went through read as "Didn't go through".
+        return all.filter { action in
+            action.ok || !all.contains { other in
+                other.ok && other.at >= action.at && other.kind == action.kind
+                    && other.target == action.target && other.session == action.session
+            }
+        }
     }
 
     func refreshAgentActions() async {
@@ -9849,6 +10006,8 @@ extension AppStore {
            conversations.contains(where: { $0.id == id }) {
             showingBots = false
             showingNotes = false
+            showingAgenda = false
+            showingGoals = false
             openConversation(id)
             return (true, nil)
         }

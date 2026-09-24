@@ -44,7 +44,9 @@ Formato, en este orden y sin títulos de sección vacíos:
 
 Cuando una novedad encaje con algo que sabes que le importa, dilo en pocas palabras («te lo cuento porque…»); es lo que hace útil un briefing frente a una lista.
 
-Menos de 150 palabras. No inventes nada que no esté en los hechos o en tu memoria. Si no hay nada que merezca contarse, dilo en una frase amable y termina.
+Entrégalo en tres partes separadas por una línea con solo `---`: el saludo del punto 1, una sola frase corta que avise de que ahí va su resumen de la mañana, sin análisis; los puntos 2 a 4; y el punto 5 como cierre, con lo que más le importa hoy, breve y personal. Alice muestra la primera y la última como tus mensajes y lo del medio en su tarjeta.
+
+Menos de 150 palabras. No inventes nada que no esté en los hechos o en tu memoria. Si no hay nada que merezca contarse, dilo en una frase amable y termina (sin `---`).
 
 Hechos:"""
 
@@ -56,13 +58,15 @@ Si la hay, escríbele un aviso breve, de menos de 60 palabras:
 - lo útil que sepas por tu memoria sobre esa cita, la persona o el lugar, si sabes algo;
 - algo práctico solo si aplica: salir con tiempo si hay un lugar, qué llevar, qué preparar.
 
-Sin saludo ni relleno. No inventes nada que no esté en la cita o en tu memoria."""
+Entrégalo así: una frase tuya para él, cercana (qué viene y lo principal); una línea con solo `---`; debajo, el aviso. Sin relleno. No inventes nada que no esté en la cita o en tu memoria."""
 
 PROMPT_CIERRE = """Escribe el resumen de la noche de Marcos a partir de los hechos de abajo. Todo lo que necesitas está aquí: no cargues skills ni uses herramientas (su protocolo INICIO/CIERRE es otra cosa y no aplica). Sale todas las noches: corto, cálido y útil, nunca más de 90 palabras. En este orden:
 
 1. **Quedó abierto** (solo si hay algo): como mucho tres cosas que él dijo que haría, prometió a alguien o dejó sin cerrar hoy, una línea cada una, cada una con su botón `[Recuérdamelo mañana](alice://reply?text=Recu%C3%A9rdame%20ma%C3%B1ana%20a%20las%209%3A%20…)` (texto codificado como en una URL). Nada resuelto, nada que solo fuera una pregunta o una prueba.
 2. **Mañana**: una línea con su agenda —el calendario y lo que él te dijo hoy que tiene mañana—, o «mañana lo tienes libre» si no hay nada. Si algo que te dijo no está en el calendario, debajo, sola: `[Añadir a tu calendario](alice://calendar/add?title=…&date=AAAA-MM-DD)` (con `time` si lo sabes).
 3. Una última línea tuya, con su tono de siempre: una idea concreta para mañana o, si el día fue tranquilo, algo breve para desconectar. Sin frases hechas ni «¿algo más?».
+
+Entrégalo en tres partes separadas por una línea con solo `---`: una frase corta y cálida que avise de que ahí va su cierre del día, sin análisis; los puntos 1 y 2; y el punto 3 como cierre.
 
 No inventes nada que no esté en los hechos o en tu memoria. No respondas [SILENT].
 

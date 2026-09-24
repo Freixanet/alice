@@ -48,6 +48,11 @@ FAKE_HERMES = textwrap.dedent('''\
                                             "output_tokens": 20, "model": model}}))
         if profile == "evals":
             print('Veredicto: {{"calidad": 8, "afirmaciones": 4, "alucinaciones": 1, "formato_ok": true, "escalado_ok": null, "comentario": "bien"}}')
+        elif "quien" in prompt:
+            import time
+            soul = (home / "profiles" / profile / "SOUL.md").read_text()
+            time.sleep(0.3)
+            print(soul + "|" + (home / "profiles" / profile / "SOUL.md").read_text())
         elif "falla" in prompt:
             sys.exit(3)
         else:
@@ -138,6 +143,7 @@ def main() -> int:
         assert summary["herramientas_descartadas"] == ["terminal", "file"], summary
         assert summary["modelo"] == "muse" and summary["coste_medio_usd"] == 0.02, summary
         assert (sandbox / "SOUL.md").read_text() == "Eres Radar, mejor."
+
         assert (sandbox / "memories" / "MEMORY.md").read_text() == "otro recuerdo"
         assert yaml.safe_load((sandbox / "config.yaml").read_text())["model"]["default"] == "muse"
         calls = [json.loads(l) for l in (home / "llamadas.jsonl").read_text().splitlines()]
@@ -167,6 +173,19 @@ def main() -> int:
         cfg = yaml.safe_load((demo / "config.yaml").read_text())
         assert reverted["ok"] and cfg["model"]["default"] == "muse" and cfg["model"]["provider"] == "opencode-free", cfg
         assert "revertido" in (evals_dir / "radar" / "historial.md").read_text()
+
+        # Two suites at once take turns: neither syncs the sandbox over the other mid-run.
+        (evals_dir / "default").mkdir(exist_ok=True)
+        for agent in ("radar", "default"):
+            (evals_dir / agent / "suite.json").write_text(json.dumps(
+                {"tareas": [{"id": f"quien-{n}", "prompt": "quien eres"} for n in range(3)]}))
+        procs = [subprocess.Popen([sys.executable, str(TOOL), "ejecutar", agent], stdout=subprocess.PIPE,
+                                  text=True, env=env) for agent in ("radar", "default")]
+        for proc, soul in zip(procs, ("Eres Radar, mejor.", "Alice")):
+            out = json.loads(proc.communicate()[0])
+            assert out["ok"], out
+            rows = [json.loads(line) for line in Path(out["resultados"]).read_text().splitlines()]
+            assert [r["salida"] for r in rows] == [f"{soul}|{soul}"] * 3, rows
 
     print("ok: evals.py")
     return 0

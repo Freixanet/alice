@@ -1660,6 +1660,23 @@ async def browser_enable() -> JSONResponse:
         lambda: _browser_call(lambda: _browser_module().enable(_hermes_root(), _set_profile_cdp)))
 
 
+class _BrowserControl(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    holder: str
+
+
+@router.post("/browser/control")
+async def browser_control(body: _BrowserControl) -> JSONResponse:
+    """Take over the shared browser from the agents, or hand it back to them."""
+    if body.holder not in ("human", "agent"):
+        raise HTTPException(status_code=400, detail="holder must be human or agent")
+    module = _browser_module()
+    work = module.take_over if body.holder == "human" else module.hand_back
+    await asyncio.to_thread(work, _hermes_root())
+    return await asyncio.to_thread(lambda: _browser_call(lambda: module.status(_hermes_root())))
+
+
 @router.post("/browser/disable")
 async def browser_disable() -> JSONResponse:
     return await asyncio.to_thread(
@@ -1901,3 +1918,150 @@ async def timezones_refresh() -> JSONResponse:
 
 
 _register_claim_auth()
+
+
+# --- Connector logos (connector_icons.py) ---------------------------------------------------
+
+
+def _connector_icons():
+    import importlib.util
+
+    name = "alice_connector_icons"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / "connector_icons.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _connector_icon(name: str, profile: str) -> Optional[Tuple[bytes, str]]:
+    """Where a connector lives, from the catalog or the person's own server entry."""
+    hosts: List[str] = []
+    urls: List[str] = []
+    with contextlib.suppress(Exception):
+        from hermes_cli import mcp_catalog
+
+        entry = mcp_catalog.get_entry(name)
+        if entry is not None:
+            if entry.suggest:
+                hosts = list(entry.suggest.hosts or [])
+            urls = [u for u in (getattr(entry.transport, "url", None), entry.source) if u]
+    if not hosts and not urls:
+        with contextlib.suppress(Exception):
+            from hermes_cli.mcp_config import _get_mcp_servers
+
+            with _profile_scope(profile):
+                server = _get_mcp_servers().get(name) or {}
+            if server.get("url"):
+                urls = [str(server["url"])]
+    if not hosts and not urls:
+        return None
+    return _connector_icons().Icons(_engine_home()).get(name, hosts, urls)
+
+
+@router.get("/connectors/icon/{name}")
+async def connector_icon(name: str, profile: str = "default") -> Response:
+    """A connector's own logo, from its product's site (never an icon service), cached."""
+    if not re.match(r"^[a-z0-9][a-z0-9_.-]{0,63}$", name or ""):
+        raise HTTPException(status_code=400, detail="Invalid connector name")
+    found = await asyncio.to_thread(_connector_icon, name, profile)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No logo found for this connector")
+    data, mime = found
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=86400"})
+
+
+# --- Goals (goals.py) ----------------------------------------------------------------------
+
+
+def _goals_module():
+    import importlib.util
+
+    name = "alice_goals"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / "goals.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _with_goals(profile: str, work):
+    from hermes_constants import get_hermes_home
+
+    with _profile_scope(profile):
+        module = _goals_module()
+        try:
+            return work(module.Goals(Path(get_hermes_home())))
+        except module.GoalError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/goals")
+async def goals_list(profile: str = "default") -> JSONResponse:
+    """Every goal with its plan and log, open ones first."""
+    name = await asyncio.to_thread(_known_profile, profile)
+    goals = await asyncio.to_thread(lambda: _with_goals(name, lambda g: g.list(include_done=True)))
+    return JSONResponse({"profile": name, "goals": goals}, headers=_NO_STORE)
+
+
+class _NewGoal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile: str = "default"
+    title: str
+    why: str = ""
+    due: Optional[str] = None
+
+
+@router.post("/goals")
+async def goals_create(body: _NewGoal) -> JSONResponse:
+    name = await asyncio.to_thread(_known_profile, body.profile)
+    goal = await asyncio.to_thread(
+        lambda: _with_goals(name, lambda g: g.create(body.title, body.why, body.due, [], by="person")))
+    return JSONResponse({"profile": name, "goal": goal}, headers=_NO_STORE)
+
+
+class _GoalChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile: str = "default"
+    title: Optional[str] = None
+    why: Optional[str] = None
+    status: Optional[str] = None
+    note: Optional[str] = None
+    step_id: Optional[str] = None
+    step_status: Optional[str] = None
+    add_step: Optional[str] = None
+    remove_step: bool = False
+
+
+@router.patch("/goals/{goal_id}")
+async def goals_change(goal_id: str, body: _GoalChange) -> JSONResponse:
+    """What the person changes in the Goals tab: title, status, a note, a step."""
+    name = await asyncio.to_thread(_known_profile, body.profile)
+
+    def change(goals):
+        goal = None
+        if body.title is not None or body.why is not None or body.status is not None or body.note:
+            goal = goals.update(goal_id, title=body.title, why=body.why, status=body.status,
+                                note=body.note, by="person")
+        if body.add_step:
+            goal = goals.step(goal_id, add=body.add_step, by="person")
+        if body.step_id:
+            goal = goals.step(goal_id, step_id=body.step_id, status=body.step_status,
+                              remove=body.remove_step, by="person")
+        return goal or goals.get(goal_id)
+
+    goal = await asyncio.to_thread(lambda: _with_goals(name, change))
+    return JSONResponse({"profile": name, "goal": goal}, headers=_NO_STORE)
+
+
+@router.delete("/goals/{goal_id}")
+async def goals_delete(goal_id: str, profile: str = "default") -> JSONResponse:
+    name = await asyncio.to_thread(_known_profile, profile)
+    await asyncio.to_thread(lambda: _with_goals(name, lambda g: g.remove(goal_id)))
+    return JSONResponse({"profile": name, "removed": goal_id}, headers=_NO_STORE)

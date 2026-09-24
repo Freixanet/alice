@@ -166,7 +166,10 @@ struct Sidebar: View, Equatable {
                 store.botsFromLeading = false
                 store.showingBots = true
             }
-            // Second, right under Agents: a note is written in the moment or
+            // Under Agents: the person's own day.
+            row("Agenda", systemImage: "calendar", weight: .medium, destination: .agenda) { openAgenda() }
+            row("Goals", systemImage: "scope", weight: .medium, destination: .goals) { openGoals() }
+            // Then Notes: a note is written in the moment or
             // not at all, so it is the shortest way in the drawer.
             row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
             row("Routines", systemImage: "clock", weight: .medium,
@@ -294,6 +297,8 @@ struct Sidebar: View, Equatable {
             store.botsFromLeading = false
             store.showingBots = true
         case .notes: openNotes()
+        case .agenda: openAgenda()
+        case .goals: openGoals()
         case .activity: going = .activity
         case .routines:
             store.markNoticesSeen(.routines)
@@ -317,6 +322,20 @@ struct Sidebar: View, Equatable {
         }
     }
 
+
+    /// Goals is a page like the agenda.
+    private func openGoals() {
+        onDismiss()
+        store.showingBots = false
+        store.showingGoals = true
+    }
+
+    /// The agenda is a page like Notes: in off the right, out the same way.
+    private func openAgenda() {
+        onDismiss()
+        store.showingBots = false
+        store.showingAgenda = true
+    }
 
     /// Notes is a page, like Agents: it comes in sideways and stays until left,
     /// rather than a sheet a stray downward swipe closes mid-sentence.
@@ -488,7 +507,9 @@ private struct SidebarList: View, Equatable {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 240)
+            // Starts low, near the footer's buttons: at 240pt the recents
+            // were already fading halfway up the drawer.
+            .frame(height: 150)
         }
     }
 

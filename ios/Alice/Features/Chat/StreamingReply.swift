@@ -20,31 +20,52 @@ struct StreamingReply: View {
             if !parts.finished.isEmpty {
                 RichMessageView(content: parts.finished, onTap: onTap)
             }
-            if !parts.writing.isEmpty {
-                Self.tailText(parts.writing)
+            let tail = Self.stabilized(parts.writing)
+            if !tail.isEmpty {
+                // The same drawing as the finished reply, so nothing changes
+                // shape when the paragraph completes. Parsed fresh — it is one
+                // paragraph — and never cached, so it does not crowd out the
+                // finished blocks.
+                RichMessageView(content: tail, onTap: onTap, cachesParse: false)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The paragraph being written: a heading as a heading, the rest as
-    /// body text with bold, italics, code and links.
-    private static func tailText(_ tail: String) -> some View {
-        let heading = tail.prefix(while: { $0 == "#" }).count
-        let isHeading = (1...6).contains(heading) && tail.dropFirst(heading).first == " "
-        let text = isHeading ? String(tail.dropFirst(heading + 1)) : tail
-        return Text(inline(text))
-            .font(isHeading ? (heading <= 2 ? .title3.weight(.semibold) : .headline) : .body)
-            .lineSpacing(isHeading ? 2 : 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private static func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
-        )) ?? AttributedString(text)
+    /// The paragraph being written, as it can be drawn with the final look:
+    /// a bold or code span still open is closed, so it is bold as it is typed
+    /// instead of showing asterisks; a link, button or callout still being
+    /// written shows only its words, or nothing; a line that is so far only a
+    /// list or heading marker waits for its words.
+    nonisolated static func stabilized(_ tail: String) -> String {
+        var text = tail
+        if let open = text.range(of: "[", options: .backwards) {
+            let after = text[open.lowerBound...]
+            let complete = after.range(of: #"^\[[^\]]*\]\([^)\s]*\)"#, options: .regularExpression) != nil
+            if !complete {
+                let before = String(text[..<open.lowerBound])
+                let isBang = before.hasSuffix("!")
+                if after.hasPrefix("[!") || after.contains("alice://") || isBang {
+                    // A callout label, an image, or a button: nothing until whole.
+                    text = isBang ? String(before.dropLast()) : before
+                } else if let close = after.firstIndex(of: "]") {
+                    text = before + after[after.index(after: after.startIndex)..<close]
+                } else {
+                    text = before + after.dropFirst()
+                }
+            }
+        }
+        var lines = text.components(separatedBy: "\n")
+        if let last = lines.last?.trimmingCharacters(in: .whitespaces),
+           last.range(of: #"^([-*+>]|#{1,6}|\d{1,3}[.)])$"#, options: .regularExpression) != nil {
+            lines.removeLast()
+        }
+        text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.components(separatedBy: "**").count % 2 == 0 {
+            text = text.hasSuffix("**") ? String(text.dropLast(2)) : text + "**"
+        }
+        if text.filter({ $0 == "`" }).count % 2 == 1 { text += "`" }
+        return text
     }
 
     /// `finished`: whole blocks, up to the last blank line outside a code

@@ -27,12 +27,7 @@ extension EnvironmentValues {
 /// keeps the way back for a change of mind.
 struct ConnectOfferCard: View {
     /// What the app knows how to connect.
-    nonisolated static let services: Set<String> = ["calendar", "search"]
-
-    /// A service the app can show: one of `services`, or `secret/NAME`.
-    nonisolated static func supports(_ service: String) -> Bool {
-        services.contains(service) || SecretRequestCard.name(fromService: service) != nil
-    }
+    nonisolated static let services: Set<String> = ["calendar"]
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -54,11 +49,7 @@ struct ConnectOfferCard: View {
     }
 
     var body: some View {
-        if service == "search" {
-            SecretRequestCard(request: .search, language: language)
-        } else if let name = SecretRequestCard.name(fromService: service) {
-            SecretRequestCard(request: .named(name), language: language)
-        } else if !closed {
+        if !closed {
             offer
                 .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
         }
@@ -177,7 +168,13 @@ struct CalendarConnectionRow: View {
                     .foregroundStyle(store.accent.primary(scheme))
                     .frame(width: 24)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Calendar")
+                    // Which calendar: the iPhone's own, with every account on
+                    // it — not a Google or Outlook sign-in of its own.
+                    Text("iPhone Calendar")
+                    Text(accounts)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(status)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -212,6 +209,15 @@ struct CalendarConnectionRow: View {
         } message: {
             Text("Your events are deleted from your Hermes and your agents stop seeing them. Calendar access for Alice stays in iOS Settings until you turn it off there.")
         }
+    }
+
+    /// "iCloud, Gmail and Outlook", or what it will read before access.
+    private var accounts: String {
+        let names = CalendarSync.accountNames()
+        guard !names.isEmpty else {
+            return String(localized: "Every account on this iPhone: iCloud, Google, Outlook…")
+        }
+        return names.formatted(.list(type: .and))
     }
 
     private var status: String {

@@ -361,7 +361,11 @@ struct RichMedia: Equatable, Hashable {
 // MARK: - Parsing
 
 enum RichMarkdown {
-    static func blocks(_ source: String) -> [RichBlock] {
+    static func blocks(_ raw: String) -> [RichBlock] {
+        // Numbered citations are for papers. Their markers leave the prose
+        // and their list becomes the reply's link chips, titled.
+        let cited = Citations.clean(raw)
+        let source = cited.text
         let lines = source.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         var blocks: [RichBlock] = []
         var index = 0
@@ -565,8 +569,20 @@ enum RichMarkdown {
                 blocks.append(.changeEvent(change))
             }
         }
-        let cited = Receipts.linked(in: source)
-        if !cited.isEmpty { blocks.append(.receipts(cited)) }
+        if !cited.sources.isEmpty {
+            func key(_ url: URL) -> String {
+                (url.host(percentEncoded: false) ?? "").replacingOccurrences(of: "www.", with: "")
+                    + url.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            }
+            let shown = Set(blocks.flatMap { block -> [String] in
+                if case let .links(links) = block { return links.map { key($0.url) } }
+                return []
+            })
+            let fresh = cited.sources.filter { !shown.contains(key($0.url)) }
+            if !fresh.isEmpty { blocks.append(.links(RichLinks.unique(fresh))) }
+        }
+        let receipts = Receipts.linked(in: source)
+        if !receipts.isEmpty { blocks.append(.receipts(receipts)) }
         return blocks
     }
 
@@ -625,7 +641,7 @@ enum RichMarkdown {
 
     // MARK: Connect offers
 
-    private static let connectPattern = #"\[[^\]\n]+\]\(alice://connect/([a-z]+|secret/[A-Za-z0-9_]+)\)"#
+    private static let connectPattern = #"\[[^\]\n]+\]\(alice://connect/([a-z]+(?:/[A-Z][A-Z0-9_]{1,63})?)\)"#
 
     /// Offers to connect a service, taken out of the text: only services the
     /// app can connect become a card; any other is dropped rather than shown
@@ -641,7 +657,8 @@ enum RichMarkdown {
                   let removal = Range(match.range, in: remaining)
             else { continue }
             let service = String(text[serviceRange])
-            if ConnectOfferCard.supports(service), !services.contains(service) {
+            if (ConnectOfferCard.services.contains(service) || SecretKeyCard.keyName(for: service) != nil),
+               !services.contains(service) {
                 services.insert(service, at: 0)
             }
             remaining.removeSubrange(removal)
@@ -1253,6 +1270,10 @@ private struct AllowsRichTextSelectionKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
+    /// In a routine's card: each entry — a paragraph opening with a bold
+    /// title, or a heading — set apart from the one before it.
+    @Entry var separatesEntries = false
+
     var allowsRichTextSelection: Bool {
         get { self[AllowsRichTextSelectionKey.self] }
         set { self[AllowsRichTextSelectionKey.self] = newValue }
@@ -1281,10 +1302,20 @@ struct RichMessageView: View {
     var onTap: (@MainActor () -> Void)? = nil
     /// Off inside a callout: the reply around it lists the sources once.
     var listsSources = true
+    /// Off for a paragraph still being written, which changes every token.
+    var cachesParse = true
+
+    @Environment(\.separatesEntries) private var separatesEntries
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ForEach(Array(RichMarkdown.cached(shown).enumerated()), id: \.offset) { _, block in
+            ForEach(Array((cachesParse ? RichMarkdown.cached(shown) : RichMarkdown.blocks(shown)).enumerated()),
+                    id: \.offset) { index, block in
+                if separatesEntries, index > 0, Self.startsEntry(block) {
+                    // A report's entries read as a list of items, not one
+                    // block of text.
+                    Divider().padding(.vertical, 6)
+                }
                 view(for: block)
             }
         }
@@ -1304,6 +1335,14 @@ struct RichMessageView: View {
 
     private func inline(_ text: String) -> AttributedString {
         RichInline.cached(text, failed: failed, link: Palette.link(scheme))
+    }
+
+    private static func startsEntry(_ block: RichBlock) -> Bool {
+        switch block {
+        case .heading: true
+        case let .paragraph(text): text.hasPrefix("**")
+        default: false
+        }
     }
 
     @ViewBuilder
@@ -1340,7 +1379,11 @@ struct RichMessageView: View {
         case let .links(links):
             RichLinksView(links: links)
         case let .connect(service):
-            ConnectOfferCard(service: service, language: ChatLanguage.of(content))
+            if let key = SecretKeyCard.keyName(for: service) {
+                SecretKeyCard(name: key, language: ChatLanguage.of(content))
+            } else {
+                ConnectOfferCard(service: service, language: ChatLanguage.of(content))
+            }
         case let .addEvent(event):
             AddEventCard(proposed: event, language: ChatLanguage.of(content))
         case let .changeEvent(change):
@@ -1758,5 +1801,66 @@ private struct RichReplyButtonsView: View {
             .disabled(store.isSending)
             .accessibilityHint("Sends “\(button.reply)”")
         }
+    }
+}
+
+
+/// Academic-style citations turned into what a chat shows.
+///
+/// Some models, and skills such as `grounded-citations`, write `[1]` after a
+/// claim and a "Sources" list at the end: `[1] https://… — Title`. On a
+/// phone the numbers break up the text and the list repeats, as plain text,
+/// the links the reply already has. The markers are taken out; the list
+/// becomes link chips titled with what it said.
+enum Citations {
+    private static let heading = try! NSRegularExpression(
+        pattern: #"^\s*(?:#{1,4}\s*|\*\*)?(sources|fuentes|referencias|references|citations|citas)(?:\*\*)?\s*:?\s*$"#,
+        options: [.caseInsensitive]
+    )
+    private static let entry = try! NSRegularExpression(
+        pattern: #"^\s*(?:[-*]\s*)?\[?(\d{1,3})[\].:)]\s*(?:\[([^\]]+)\]\((https?://[^)\s]+)\)|<?(https?://[^\s>]+)>?)\s*(?:[—–:-]\s*(.+))?\s*$"#
+    )
+    private static let marker = try! NSRegularExpression(pattern: #"\s?\[\d{1,3}\](?!\()(?!:)"#)
+
+    static func clean(_ text: String) -> (text: String, sources: [RichLink]) {
+        guard text.range(of: #"\[\d{1,3}\]"#, options: .regularExpression) != nil else { return (text, []) }
+        var lines = text.components(separatedBy: "\n")
+        var sources: [RichLink] = []
+        // The list: a "Sources" heading followed only by numbered entries,
+        // at the end of the reply.
+        if let start = lines.lastIndex(where: { matches(heading, $0) }) {
+            let rest = lines[(start + 1)...].filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            let parsed = rest.compactMap(source)
+            if !rest.isEmpty, parsed.count == rest.count {
+                sources = parsed
+                lines.removeSubrange(start...)
+            }
+        }
+        var inCode = false
+        for index in lines.indices {
+            if lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") { inCode.toggle(); continue }
+            if inCode { continue }
+            let line = lines[index]
+            let ns = line as NSString
+            lines[index] = marker.stringByReplacingMatches(
+                in: line, range: NSRange(location: 0, length: ns.length), withTemplate: ""
+            )
+        }
+        let cleaned = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (cleaned, sources)
+    }
+
+    private static func matches(_ regex: NSRegularExpression, _ line: String) -> Bool {
+        regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil
+    }
+
+    private static func source(_ line: String) -> RichLink? {
+        guard let match = entry.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
+        func group(_ i: Int) -> String? {
+            Range(match.range(at: i), in: line).map { String(line[$0]).trimmingCharacters(in: .whitespaces) }
+        }
+        guard let address = group(3) ?? group(4), let url = URL(string: address) else { return nil }
+        let title = group(2) ?? group(5) ?? url.host(percentEncoded: false)?.replacingOccurrences(of: "www.", with: "") ?? address
+        return RichLink(title: title, url: url)
     }
 }

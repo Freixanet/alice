@@ -37,6 +37,17 @@ struct ThinkingTrace: View {
     var seed: Int = 0
     /// Last `status.update` Hermes sent for this reply.
     var status: String? = nil
+    /// The model's own reasoning, when Hermes sent it. Only ever inside the
+    /// trace, which stays closed until the reader opens it.
+    var reasoning: String? = nil
+
+    private var thoughts: String? {
+        let text = reasoning?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? nil : text
+    }
+
+    /// Something to show when opened.
+    private var opens: Bool { !rows.isEmpty || thoughts != nil }
 
     @State private var manual: Bool?
 
@@ -64,10 +75,10 @@ struct ThinkingTrace: View {
     }
 
     var body: some View {
-        if pending || !rows.isEmpty {
+        if pending || opens {
             VStack(alignment: .leading, spacing: 0) {
                 header
-                if expanded, !rows.isEmpty {
+                if expanded, opens {
                     trace.transition(.opacity)
                 }
             }
@@ -80,13 +91,13 @@ struct ThinkingTrace: View {
     // ── header ───────────────────────────────────────────────────────────────
 
     @ViewBuilder private var header: some View {
-        if rows.isEmpty {
+        if !opens {
             headerLine.accessibilityLabel(headline)
         } else {
             Button { manual = !expanded } label: { headerLine }
                 .buttonStyle(.plain)
                 .accessibilityLabel(headline)
-                .accessibilityHint(expanded ? "Hides the steps" : "Shows the steps")
+                .accessibilityHint(expanded ? "Hides how it got there" : "Shows how it got there")
         }
     }
 
@@ -100,11 +111,12 @@ struct ThinkingTrace: View {
                         : AnyShapeStyle(HierarchicalShapeStyle.tertiary)
                 )
             headlineText
-            if !rows.isEmpty {
-                Image(systemName: "chevron.down")
+            if opens {
+                // Right when closed, down when open, as a disclosure does.
+                Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(expanded ? 180 : 0))
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
             }
         }
         // A hairline of text and two small glyphs: without a shape of its own
@@ -172,11 +184,24 @@ struct ThinkingTrace: View {
                 .frame(width: 1)
                 .padding(.vertical, 1)
             VStack(alignment: .leading, spacing: 5) {
+                if let thoughts {
+                    Text(thoughts)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, rows.isEmpty ? 0 : 4)
+                        .accessibilityLabel(Text("Reasoning: \(thoughts)"))
+                }
                 ForEach(rows) { row in
                     step(row).transition(.opacity)
                 }
             }
         }
+        // As tall as what it holds: the rule beside the steps has no height
+        // of its own, and with reasoning text in the column it took all the
+        // height offered and left a screen of empty space under the trace.
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.leading, 5)
         .padding(.top, 5)
         .padding(.bottom, 2)

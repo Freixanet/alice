@@ -6,10 +6,15 @@ struct ChatHeaderAvatar<Face: View>: View {
     var size: CGFloat = 72
     let name: String
     var face: Face
+    /// When set, the face is where a zoom transition starts: the page it
+    /// opens grows out of this disc and shrinks back into it.
+    var zoomSource: (id: String, namespace: Namespace.ID)?
 
-    init(size: CGFloat = 72, name: String, @ViewBuilder face: () -> Face) {
+    init(size: CGFloat = 72, name: String, zoomSource: (id: String, namespace: Namespace.ID)? = nil,
+         @ViewBuilder face: () -> Face) {
         self.size = size
         self.name = name
+        self.zoomSource = zoomSource
         self.face = face()
     }
 
@@ -24,6 +29,7 @@ struct ChatHeaderAvatar<Face: View>: View {
             }
             .frame(width: size, height: size)
             .clipShape(.circle)
+            .modifier(ZoomSource(source: zoomSource))
 
             Text(name)
                 .font(.caption.weight(.semibold))
@@ -114,6 +120,23 @@ struct AliceMark: View {
                 control1: CGPoint(x: 16 + dx, y: 12.7),
                 control2: CGPoint(x: 16 + dx, y: 19.7)
             )
+        }
+    }
+}
+
+
+/// The disc a zoom transition grows from, clipped to its circle so the page
+/// leaves and returns as the face itself rather than as a square around it.
+private struct ZoomSource: ViewModifier {
+    let source: (id: String, namespace: Namespace.ID)?
+
+    func body(content: Content) -> some View {
+        if let source {
+            content.matchedTransitionSource(id: source.id, in: source.namespace) { config in
+                config.clipShape(RoundedRectangle(cornerRadius: 36)).background(Color(hex: 0xFDFDFD))
+            }
+        } else {
+            content
         }
     }
 }

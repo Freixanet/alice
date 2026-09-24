@@ -29,6 +29,78 @@ from urllib.parse import urlsplit
 PORT = 9222
 MANAGED_URL = f"http://127.0.0.1:{PORT}"
 STATE = Path(".alice") / "browser.json"
+# Who drives the shared browser: the agents, or the person who took over for a login, a
+# 2FA code, a CAPTCHA or a payment. While the person holds it, agents' browser tools wait.
+LEASE = Path(".alice") / "browser-lease.json"
+# A takeover nobody touches for this long goes back to the agents on its own.
+LEASE_IDLE_SECONDS = 15 * 60
+# While someone watches, the page draws where the agent acts — the pointer gliding to
+# it, a ripple on each click, a glow on the field it types into — so the person sees the
+# agent navigate rather than a page changing by itself. Drawn in a layer that takes no
+# input and is gone with the document; injected only on the tab being watched.
+POINTER_JS = r"""
+(() => {
+  if (window.__aliceWatch) return; window.__aliceWatch = true;
+  const make = () => {
+    if (!document.body) return null;
+    let p = document.getElementById('__alice_pointer');
+    if (p) return p;
+    p = document.createElement('div'); p.id = '__alice_pointer';
+    p.style.cssText = 'position:fixed;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;'
+      + 'background:rgba(255,59,48,.9);box-shadow:0 0 0 3px rgba(255,255,255,.9),0 2px 8px rgba(0,0,0,.35);'
+      + 'z-index:2147483647;pointer-events:none;transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .4s;'
+      + 'opacity:0;transform:translate(-40px,-40px)';
+    document.documentElement.appendChild(p);
+    return p;
+  };
+  const remember = (x, y) => { try { sessionStorage.setItem('__alicePointer', JSON.stringify([x, y, Date.now()])); } catch (e) {} };
+  const at = (x, y) => { const p = make(); if (!p) return; p.style.opacity = '1'; p.style.transform = `translate(${x}px,${y}px)`; remember(x, y); };
+  const ripple = (x, y) => {
+    const r = document.createElement('div');
+    r.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;`
+      + 'border:3px solid rgba(255,59,48,.85);z-index:2147483647;pointer-events:none;'
+      + 'transition:transform 1.2s ease-out,opacity 1.2s ease-out;transform:scale(1);opacity:1';
+    document.documentElement.appendChild(r);
+    requestAnimationFrame(() => { r.style.transform = 'scale(5)'; r.style.opacity = '0'; });
+    setTimeout(() => r.remove(), 1300);
+  };
+  const center = (el) => { const b = el.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; };
+  const glow = (el) => {
+    if (!el || !el.style) return;
+    const before = el.style.boxShadow;
+    el.style.boxShadow = '0 0 0 3px rgba(255,59,48,.75)';
+    clearTimeout(el.__aliceGlow); el.__aliceGlow = setTimeout(() => { el.style.boxShadow = before; }, 900);
+  };
+  // A click that loads a new page: the pointer comes back where it was, then fades,
+  // so it lasts long enough to be seen across the navigation.
+  const resume = () => {
+    try {
+      const [x, y, when] = JSON.parse(sessionStorage.getItem('__alicePointer') || 'null') || [];
+      if (x === undefined || Date.now() - when > 8000) return;
+      at(x, y); ripple(x, y);
+      setTimeout(() => { const p = document.getElementById('__alice_pointer'); if (p) p.style.opacity = '.55'; }, 2500);
+    } catch (e) {}
+  };
+  if (document.readyState === 'loading') addEventListener('DOMContentLoaded', resume); else resume();
+  addEventListener('mousemove', e => at(e.clientX, e.clientY), true);
+  addEventListener('mousedown', e => { at(e.clientX, e.clientY); ripple(e.clientX, e.clientY); }, true);
+  addEventListener('click', e => {
+    // A script click has no coordinates: show it on the element instead.
+    if (e.clientX || e.clientY) return;
+    const [x, y] = center(e.target); at(x, y); ripple(x, y);
+  }, true);
+  addEventListener('focusin', e => { const [x, y] = center(e.target); at(x, y); glow(e.target); }, true);
+  addEventListener('input', e => glow(e.target), true);
+})();
+"""
+
+# Frames travel to a phone, often over a slow link: small enough that several arrive a
+# second (the page is 820 CSS pixels wide; a phone shows it at about that).
+SCREENCAST = {"format": "jpeg", "quality": 45, "maxWidth": 700, "maxHeight": 1110, "everyNthFrame": 1}
+SHOT = {"format": "jpeg", "quality": 45, "clip": {"x": 0, "y": 0, "width": 820, "height": 1300, "scale": 0.85}}
+
+# With no new screencast frame for this long, a screenshot is taken instead.
+STALE_SECONDS = 1.5
 # Frames stop being produced once no phone has asked for one for this long.
 IDLE_SECONDS = 20
 # Tablet-portrait: sites lay out for it, and it reads on a phone without much zoom.
@@ -164,6 +236,59 @@ def _save_state(root: Path, state: Dict[str, Any]) -> None:
     path.write_text(json.dumps(state, indent=1), encoding="utf-8")
 
 
+# ── Who is in control ────────────────────────────────────────────────────────────
+
+
+def _read_lease(root: Path) -> Dict[str, Any]:
+    try:
+        data = json.loads((Path(root) / LEASE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_lease(root: Path, data: Dict[str, Any]) -> None:
+    path = Path(root) / LEASE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(data), encoding="utf-8")
+    os.replace(temp, path)
+
+
+def control(root: Path, now: Optional[float] = None) -> Dict[str, Any]:
+    """``{"holder": "human" | "agent", "since": …}``; a forgotten takeover lapses."""
+    now = time.time() if now is None else now
+    lease = _read_lease(root)
+    if lease.get("holder") == "human":
+        if now - float(lease.get("touched") or lease.get("since") or 0) < LEASE_IDLE_SECONDS:
+            return {"holder": "human", "since": lease.get("since")}
+        _write_lease(root, {"holder": "agent", "since": now, "lapsed": True})
+        return {"holder": "agent", "since": now}
+    return {"holder": "agent", "since": lease.get("since")}
+
+
+def take_over(root: Path, now: Optional[float] = None) -> Dict[str, Any]:
+    now = time.time() if now is None else now
+    current = _read_lease(root)
+    since = current.get("since") if current.get("holder") == "human" else now
+    _write_lease(root, {"holder": "human", "since": since, "touched": now})
+    return control(root, now)
+
+
+def hand_back(root: Path, now: Optional[float] = None) -> Dict[str, Any]:
+    now = time.time() if now is None else now
+    _write_lease(root, {"holder": "agent", "since": now})
+    return control(root, now)
+
+
+def touched(root: Path, now: Optional[float] = None) -> None:
+    """The person used the page: their takeover stays fresh."""
+    lease = _read_lease(root)
+    if lease.get("holder") == "human":
+        lease["touched"] = time.time() if now is None else now
+        _write_lease(root, lease)
+
+
 def managed(root: Path) -> bool:
     return bool(_state(root).get("managed"))
 
@@ -220,6 +345,7 @@ def status(root: Path) -> Dict[str, Any]:
     up = reachable(url) if url else False
     tabs = pages(url) if up else []
     return {"managed": managed(root), "configured": bool(url), "local": _local(url) if url else False,
+            "control": control(root)["holder"],
             "running": up, "available": _binary() is not None or up,
             "page": {"title": tabs[0]["title"], "url": tabs[0]["url"]} if tabs else None,
             "tabs": len(tabs)}
@@ -251,6 +377,8 @@ class Screencast:
         self._ids = 10
         self._changed = threading.Condition()
         self._socket = None
+        # Set once the tab's socket is open: an action that arrives first waits for it.
+        self._connected = threading.Event()
         self._send_lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, name="alice-screencast", daemon=True)
         self._thread.start()
@@ -268,15 +396,25 @@ class Screencast:
         try:
             with connect(self.page["ws"], open_timeout=5, max_size=None) as socket:
                 self._socket = socket
+                self._connected.set()
                 self._send("Page.enable", {})
-                self._send("Page.startScreencast", {"format": "jpeg", "quality": 62,
-                                                    "maxWidth": 1200, "maxHeight": 1800, "everyNthFrame": 1})
-                self._send("Page.captureScreenshot", {"format": "jpeg", "quality": 62})
+                # Where the agent acts, drawn on the page while it is watched.
+                self._send("Page.addScriptToEvaluateOnNewDocument", {"source": POINTER_JS})
+                self._send("Runtime.evaluate", {"expression": POINTER_JS})
+                self._send("Page.startScreencast", SCREENCAST)
+                self._send("Page.captureScreenshot", SHOT)
+                asked = time.monotonic()
                 while not self.closed:
-                    if time.monotonic() - self.touched > IDLE_SECONDS:
+                    now = time.monotonic()
+                    if now - self.touched > IDLE_SECONDS:
                         break
+                    # The screencast goes quiet after some navigations and on pages
+                    # that stop repainting: a picture every second and a half anyway.
+                    if now - max(getattr(self, "framed", 0.0), asked) > STALE_SECONDS:
+                        asked = now
+                        self._send("Page.captureScreenshot", SHOT)
                     try:
-                        raw = socket.recv(timeout=1.0)
+                        raw = socket.recv(timeout=0.5)
                     except TimeoutError:
                         continue
                     message = json.loads(raw)
@@ -289,10 +427,11 @@ class Screencast:
                         frame = (message.get("params") or {}).get("frame") or {}
                         if not frame.get("parentId"):
                             self.page["url"] = frame.get("url") or self.page["url"]
+                            # A new document ends the old screencast: start it again.
+                            self._send("Page.startScreencast", SCREENCAST)
                     elif method == "Inspector.detached" or method == "Target.targetDestroyed":
                         break
-                    elif self.frame is None and isinstance(message.get("result"), dict) \
-                            and message["result"].get("data"):
+                    elif isinstance(message.get("result"), dict) and message["result"].get("data"):
                         self._store(message["result"]["data"], {})
                 try:
                     self._send("Page.stopScreencast", {})
@@ -310,6 +449,7 @@ class Screencast:
     def _store(self, data: Optional[str], meta: Dict[str, Any]) -> None:
         if not data:
             return
+        self.framed = time.monotonic()
         with self._changed:
             self.frame = base64.b64decode(data)
             if meta:
@@ -324,6 +464,10 @@ class Screencast:
 
     def act(self, action: Dict[str, Any]) -> None:
         self.touched = time.monotonic()
+        # The first touch after a quiet spell reopens the tab's socket; give it time.
+        connected = getattr(self, "_connected", None)
+        if connected is not None:
+            connected.wait(timeout=5)
         kind = str(action.get("kind") or "")
         width = float(self.meta.get("deviceWidth") or 1000)
         height = float(self.meta.get("deviceHeight") or 1400)
@@ -374,6 +518,33 @@ class Screencast:
 
 _casts: Dict[str, Screencast] = {}
 _casts_lock = threading.Lock()
+# What each tab last showed and when it changed. An agent browses in a tab of its own
+# (Hermes pins each browser session to one), so "the page to watch" is the tab where
+# something last happened — opened, navigated or retitled — not the first in Chrome's list.
+_seen: Dict[str, Any] = {}
+_changed: Dict[str, float] = {}
+
+
+def busiest(tabs: List[Dict[str, str]], now: Optional[float] = None) -> Optional[Dict[str, str]]:
+    """The tab that changed most recently; a new tab counts as a change."""
+    now = time.monotonic() if now is None else now
+    first_look = not _seen
+    ids = set()
+    for tab in tabs:
+        ids.add(tab["id"])
+        shown = (tab.get("url"), tab.get("title"))
+        if _seen.get(tab["id"]) != shown:
+            _seen[tab["id"]] = shown
+            # A tab seen for the first time on the very first look is not news.
+            _changed[tab["id"]] = 0.0 if first_look and len(tabs) > 1 else now
+    for gone in [key for key in _seen if key not in ids]:
+        _seen.pop(gone, None)
+        _changed.pop(gone, None)
+    if not tabs:
+        return None
+    # A blank tab shows nothing: an agent's fresh tab is about:blank for a moment.
+    real = [tab for tab in tabs if str(tab.get("url") or "").startswith(("http://", "https://"))] or tabs
+    return max(real, key=lambda tab: (_changed.get(tab["id"], 0.0), -real.index(tab)))
 
 
 def _cast(root: Path, target: Optional[str] = None) -> Screencast:
@@ -390,7 +561,9 @@ def _cast(root: Path, target: Optional[str] = None) -> Screencast:
     tabs = pages(url)
     if not tabs:
         raise BrowserError("No hay ninguna página abierta.")
-    page = next((t for t in tabs if t["id"] == target), tabs[0]) if target else tabs[0]
+    chosen = next((t for t in tabs if t["id"] == target), None) if target else None
+    # Unless the phone asked for a tab, follow the one where the agent is working.
+    page = chosen or busiest(tabs) or tabs[0]
     with _casts_lock:
         # One live cast at a time: the tab the phone is looking at.
         for key, cast in list(_casts.items()):
@@ -422,6 +595,7 @@ def frame(root: Path, after: int = 0, wait: float = 1.5, target: Optional[str] =
 
 def act(root: Path, action: Dict[str, Any], target: Optional[str] = None) -> None:
     _cast(root, target).act(action)
+    touched(root)
 
 
 def stop_all() -> None:

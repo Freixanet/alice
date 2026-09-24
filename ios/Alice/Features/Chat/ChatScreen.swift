@@ -32,6 +32,8 @@ private struct ChatScreenContent: View, Equatable {
 
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
+    /// The agent's page grows out of its face in the header, and goes back into it.
+    @Namespace private var avatarZoom
     /// Today's own menu: asking before its history is thrown away.
     @State private var confirmingTodayClear = false
     @State private var clearingToday = false
@@ -156,6 +158,9 @@ private struct ChatScreenContent: View, Equatable {
                 BotDetail(bot: bot, onChange: { Task { await refreshBots() } })
             }
             .preferredColorScheme(store.theme.colorScheme)
+            // The system's zoom: the avatar becomes the page, and a swipe down
+            // follows the finger back into it.
+            .navigationTransition(.zoom(sourceID: "agent-avatar", in: avatarZoom))
         }
         // The list is where these are normally read, and a conversation can
         // be opened without ever going through it.
@@ -296,7 +301,8 @@ private struct ChatScreenContent: View, Equatable {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
                 } label: {
-                    ChatHeaderAvatar(name: store.botCurrentName(for: bot)) {
+                    ChatHeaderAvatar(name: store.botCurrentName(for: bot),
+                                     zoomSource: ("agent-avatar", avatarZoom)) {
                         BotMarkView(mark: store.mark(for: bot), size: 72)
                     }
                 }
@@ -520,6 +526,54 @@ private struct TranscriptView: View {
     /// The transcript's end as last measured, for decisions made a moment later.
     @State private var lastTail: Tail?
 
+    /// Where the laid-out window starts: the latest messages, back to about
+    /// twelve thousand characters or fifteen messages — a few screens.
+    ///
+    /// The whole window is laid out for real. A lazy stack over eighty rows
+    /// opened at the end of heights it guessed for rows it had not drawn —
+    /// Radar's transcript measured 211,828pt, then shrank to 147,311pt as
+    /// rows drew — and the view was left on empty space below the last
+    /// message: an agent chat that opened blank. Anchors and scrolling after
+    /// it lost that race; not guessing is what fixes it. Earlier history
+    /// comes in the same sized steps from the button at the top.
+    static func windowStart(_ messages: [Message], before end: Int) -> Int {
+        var start = end
+        var characters = 0
+        while start > 0 {
+            start -= 1
+            characters += max(messages[start].content.count, 200)
+            if end - start >= 15 || characters >= 12_000 { break }
+        }
+        return start
+    }
+
+    private func transcriptRow(
+        _ message: Message, position: ChatTasks.Position?, latestBusy: Bool,
+        superseded: Bool, reaction: Reaction?
+    ) -> some View {
+        let busy = (position?.isLatest ?? false) && latestBusy
+        return MessageRow(
+            message: message,
+            showsActions: (position?.isLast ?? true) && !busy,
+            showsTime: (position?.isFirst ?? true) && !busy,
+            showsAuthor: position?.isFirst ?? true,
+            actionsContent: position?.text
+        )
+        .environment(\.replySuperseded, superseded)
+        .environment(\.givenReaction, reaction)
+        // A cited message, opened from its receipt, glows once.
+        .background {
+            RoundedRectangle(cornerRadius: 18)
+                .fill(store.accent.primary(scheme).opacity(highlighted == message.id ? 0.12 : 0))
+                .padding(.horizontal, -10)
+                .padding(.vertical, -8)
+                .allowsHitTesting(false)
+        }
+        // Parts of one task sit closer than separate messages.
+        .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
+        .id(message.id)
+    }
+
     /// Scrolls to a message a receipt pointed at, loading earlier pages if it
     /// is further back, and lights it for a moment.
     private func bringIntoView(_ focus: AppStore.FocusedMessage?, in presented: [Message]) {
@@ -528,7 +582,9 @@ private struct TranscriptView: View {
         else { return }
         let target = presented[index].id
         store.focusedMessage = nil
-        shown = max(shown, presented.count - index)
+        let current = firstShownID.flatMap { id in presented.firstIndex { $0.id == id } }
+            ?? Self.windowStart(presented, before: presented.count)
+        if index < current { firstShownID = presented[index].id }
         following = false
         Task { @MainActor in
             // After the page that holds it is laid out.
@@ -557,11 +613,14 @@ private struct TranscriptView: View {
         let near: Bool
         /// Nothing left underneath the composer.
         let atEnd: Bool
+        /// Scrolled beyond the end: the transcript shrank under the reader,
+        /// and what is on screen is empty space below the last message.
+        var past = false
     }
 
-    /// How many messages are laid out at a time, and added per "earlier".
-    private static let page = 80
-    @State private var shown = TranscriptView.page
+    /// The first message laid out (`windowStart`), kept by id so a reply
+    /// arriving does not push what is being read out at the top.
+    @State private var firstShownID: String?
 
     private var presentedMessages: [Message] {
         RoutineDelivery.present(
@@ -573,20 +632,23 @@ private struct TranscriptView: View {
         // Read once per redraw: presenting walks the whole history, and the
         // page, the count above it and the rows each asked for it again.
         let presented = presentedMessages
-        let hiddenCount = max(0, presented.count - shown)
-        let messages = Array(presented.suffix(shown))
+        let start = firstShownID.flatMap { id in presented.firstIndex { $0.id == id } }
+            ?? Self.windowStart(presented, before: presented.count)
+        let hiddenCount = start
+        let messages = Array(presented[start...])
         GeometryReader { area in
             ScrollView {
-                // Bounded pages of messages, laid out lazily so a Radar report
-                // does not force every visible row to measure at once. Earlier
-                // history still loads with the button below — a years-long chat
-                // is never all in the view.
-                LazyVStack(alignment: .leading, spacing: 34) {
+                // A bounded window of the latest messages, laid out for real
+                // (`windowStart`). Earlier history loads with the button below
+                // — a years-long chat is never all in the view.
+                VStack(alignment: .leading, spacing: 34) {
                     if hiddenCount > 0 {
+                        let earlier = Self.windowStart(presented, before: start)
                         Button {
-                            shown += Self.page
+                            following = false
+                            firstShownID = presented[earlier].id
                         } label: {
-                            Text("Show \(min(hiddenCount, Self.page)) earlier messages")
+                            Text("Show \(start - earlier) earlier messages")
                                 .font(.footnote.weight(.medium))
                                 .padding(.horizontal, 14)
                                 .frame(height: 36)
@@ -612,28 +674,10 @@ private struct TranscriptView: View {
                     let answered = Set(lastAsked.map { messages[..<$0].map(\.id) } ?? [])
                         .union(given.filter { $0.value == .no }.keys)
                     ForEach(messages) { message in
-                        let position = positions[message.id]
-                        let busy = (position?.isLatest ?? false) && latestBusy
-                        MessageRow(
-                            message: message,
-                            showsActions: (position?.isLast ?? true) && !busy,
-                            showsTime: (position?.isFirst ?? true) && !busy,
-                            showsAuthor: position?.isFirst ?? true,
-                            actionsContent: position?.text
+                        transcriptRow(
+                            message, position: positions[message.id], latestBusy: latestBusy,
+                            superseded: answered.contains(message.id), reaction: given[message.id]
                         )
-                        .environment(\.replySuperseded, answered.contains(message.id))
-                        .environment(\.givenReaction, given[message.id])
-                        // A cited message, opened from its receipt, glows once.
-                        .background {
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(store.accent.primary(scheme).opacity(highlighted == message.id ? 0.12 : 0))
-                                .padding(.horizontal, -10)
-                                .padding(.vertical, -8)
-                                .allowsHitTesting(false)
-                        }
-                        // Parts of one task sit closer than separate messages.
-                        .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
-                        .id(message.id)
                     }
                     if conversation.messages.contains(where: { $0.role == .user }) {
                         TipView(MessageActionsTip())
@@ -668,10 +712,24 @@ private struct TranscriptView: View {
             }
             .scrollIndicators(.hidden)
             .scrollPosition($position)
+            .onAppear {
+                // Pinned once, so replies arriving later extend the window
+                // at the bottom instead of sliding it.
+                if firstShownID == nil, !presented.isEmpty {
+                    firstShownID = presented[Self.windowStart(presented, before: presented.count)].id
+                }
+            }
             .onChange(of: store.focusedMessage, initial: true) { _, focus in
                 bringIntoView(focus, in: presented)
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
+            // While the reader is at the end, the end stays put as the lazy
+            // rows draw and change the height: the transcript opened at the
+            // end of a height guessed for undrawn rows (211,828pt for Radar)
+            // and shrank to 149,828pt within a second, leaving the view on
+            // empty space below the last message. Off while they read higher
+            // up, so what they are reading does not move.
+            .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
             // The transcript extends under the Dynamic Island. Soft fade
             // starts there, rather than clipping the reply at the header.
@@ -698,10 +756,23 @@ private struct TranscriptView: View {
                 return Tail(
                     contentHeight: geometry.contentSize.height.rounded(),
                     viewportHeight: geometry.containerSize.height.rounded(),
-                    near: below < 120, atEnd: below < 2
+                    near: below < 120, atEnd: below < 2, past: below < -40
                 )
             } action: { old, tail in
                 lastTail = tail
+                // Past the end with nobody holding it: a lazy stack opens at
+                // the end of the height it estimated for rows it had not
+                // drawn, then shrinks as they draw, and the chat sat on empty
+                // space below its last message until the reader scrolled.
+                // The follow rule below waits for content to *grow*.
+                if tail.past, !readerScrolling {
+                    DiagnosticsLog.write("transcript.past content=\(Int(tail.contentHeight)) viewport=\(Int(tail.viewportHeight))")
+                    Task { @MainActor in
+                        guard !readerScrolling, lastTail?.past == true else { return }
+                        position.scrollTo(edge: .bottom)
+                    }
+                    return
+                }
                 if tail.near { settled = true }
                 let grew = tail.contentHeight != old.contentHeight
                     || tail.viewportHeight != old.viewportHeight
@@ -927,11 +998,15 @@ private struct EmptyChatView: View {
         } else {
             VStack(spacing: 8) {
                 Spacer()
-                Text("What are we working on?")
-                    .font(.aliceTitle(.title))
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 32)
+                // Alice's home opens on the day, as the agenda does.
+                TimelineView(.everyMinute) { context in
+                    Text(Agenda.dayTitle(context.date))
+                        .font(.aliceTitle(.title))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 32)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 Text("You talk to Alice. One thing at a time.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -970,15 +1045,13 @@ private struct HomeSuggestionStrip: View {
     private var suggestions: [HomeSuggestion] {
         HomeSuggestions.make(
             events: store.activity,
-            questions: (store.notesSnapshot?.notes ?? []).compactMap { note in
-                guard !note.openQuestions.isEmpty else { return nil }
-                let label = note.summary.isEmpty
-                    ? note.openQuestions[0]
-                    : note.summary
-                return HomeNotePrompt(id: note.id, label: label)
-            },
+            // A note's open questions stay in the note. On the home they read
+            // as notes picked at random: an old note's summary, with nothing
+            // saying what it wanted.
             todayUnread: store.todayUnread,
-            agentsWithNews: store.agentsWithNews
+            todayWrittenAt: store.todayWrittenAt,
+            agentsWithNews: store.agentsWithNews,
+            nextUp: store.nextCommitment
         )
     }
 
@@ -1029,6 +1102,8 @@ private struct HomeSuggestionStrip: View {
             } else {
                 store.requestedDestination = .bots
             }
+        case .agenda:
+            store.showingAgenda = true
         }
     }
 }

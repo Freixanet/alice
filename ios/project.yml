@@ -43,6 +43,7 @@ targets:
         # own Hermes so agents can plan with them. Asked for in the chat, only
         # when a request needs it (CalendarSync).
         NSCalendarsFullAccessUsageDescription: Alice reads your upcoming events and shares them with your own Hermes, so your agents can plan around your day. She adds an event only when you tap Add, and never changes or deletes one.
+        NSRemindersFullAccessUsageDescription: Alice shows your open reminders next to your events in Agenda, on this iPhone only, and marks one done only when you tick it.
         UIAppFonts:
           - InstrumentSerif-Regular.ttf
           - InstrumentSerif-Italic.ttf
