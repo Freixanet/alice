@@ -3,6 +3,7 @@
 This is where the work stands and what comes next. The user writes in Spanish, and expects plain explanations and a single recommendation (see AGENTS.md and CLAUDE.md).
 
 ## State
+
 - `main` holds everything from the `fix/ios-chat-bugs` branch plus the self-maintaining memory (`feat/memory-self-maintaining`, PR #31).
 - The iPhone has **build 95**. Build numbers only go up (`CURRENT_PROJECT_VERSION=96` next).
 - **Not merged yet:** `origin/rescue/plugin-exa-key-card`. That branch holds another session's work: Exa search with the person's `EXA_API_KEY`, and the secure key card (`secret_store.py`, `/api/plugins/alice/secret`, prompt section `alice.claves`). Merging it into main conflicts in `hermes-plugin/__init__.py`, `dashboard/plugin_api.py`, `README.md` and `tests/test_business_isolation.py`. The two sides are independent additions, so resolve by keeping both.
@@ -13,6 +14,7 @@ This is where the work stands and what comes next. The user writes in Spanish, a
 - **Never test in the shared agent browser (127.0.0.1:9222).** Use a temporary Chrome on another port.
 
 ## Done today
+
 - **Agenda:** events and reminders from the phone, a list without calendar views, a reminder composer with natural-language dates, reminder lists.
 - **Connections:** the Hermes MCP catalog with each connector's own logo (plugin `connector_icons.py`).
 - **Goals tab:**
@@ -29,6 +31,7 @@ This is where the work stands and what comes next. The user writes in Spanish, a
   - buy up to the pay button, and stop there.
 
 ## Open problems
+
 1. **Card payment on Redsys never completes.** Alice reaches the Redsys page, but the card data isn't entered and "Pagar" stays disabled. Hermes' vault supports payment items: `browser_vault_fill` fills card fields after the user confirms. Next steps:
    - make sure the app answers the vault's payment confirmation, and a request to save a card if Hermes sends one (check the `tui_gateway/contracts/server_requests.py` vault requests);
    - teach Alice to use a saved card, or ask for one through a secure card, never the chat;
@@ -43,16 +46,22 @@ This is where the work stands and what comes next. The user writes in Spanish, a
 4. **Gmail isn't connected yet.** The user has to do it.
 
 ## How to build and install
+
 See AGENTS.md. In short:
+
 ```
 cd ios && xcodegen generate && xcodebuild -project Alice.xcodeproj -scheme Alice -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath .build/DeviceData -allowProvisioningUpdates CURRENT_PROJECT_VERSION=96 build-for-testing
 xcrun devicectl device install app --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B .build/DeviceData/Build/Products/Debug-iphoneos/Alice.app
 ```
+
 Plugin tests:
+
 ```
 PYTHONPATH=$HOME/.hermes/hermes-agent ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests
 ```
+
 Static checks:
+
 ```
 npm run -s check:static
 ```

@@ -1,8 +1,10 @@
 """Web search and page reading that cost nothing unless they have to.
 
 Registered as the ``alice-free`` web provider and selected per agent with
-``web.search_backend`` / ``web.extract_backend``. Search goes to Exa's free
-public endpoint (the same one Hermes keeps as a last resort); a page is read
+``web.search_backend`` / ``web.extract_backend``. Search goes to Exa: with the
+person's own ``EXA_API_KEY`` when there is one (Exa's free tier), otherwise
+to its keyless public endpoint (the same one Hermes keeps as a last resort),
+which rate-limits hard and on its own leaves search dead; a page is read
 through Jina Reader, which is free. Only when those fail, or come back empty,
 does the call go on to the paid Firecrawl backend configured in Hermes — so a
 search never goes unanswered because it was cheap.
@@ -17,7 +19,9 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
+import os
 import socket
 import time
 import urllib.error
@@ -29,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 NAME = "alice-free"
 JINA_ENDPOINT = "https://r.jina.ai/"
+EXA_ENDPOINT = "https://api.exa.ai/search"
+EXA_TIMEOUT = 20
+SNIPPET = 600
 JINA_TIMEOUT = 25
 JINA_LIMIT = 400_000
 # Jina's free tier turns away bursts: a few pages at a time, one retry each.
@@ -91,6 +98,95 @@ def jina_read(url: str, fetch=None) -> Dict[str, Any]:
     }
 
 
+KEY_NAME = "EXA_API_KEY"
+KEY_OFFER = (
+    "Do not ask for the key in the chat. Say in one sentence that search needs a free Exa key "
+    "and end your reply with this line alone: [Conectar búsqueda](alice://connect/search) "
+    "(English replies: [Turn on search](alice://connect/search)). Alice asks for the key in a secure field "
+    "and saves it to Hermes; when the person says it is done, search again."
+)
+
+
+# Retrying the same search through execute_code or the terminal reaches the
+# same backend, fails the same way, and costs the person an approval prompt.
+NO_RETRY = (
+    "Do not retry this search through execute_code, the terminal or another tool: it reaches the same "
+    "search and fails the same way. Answer with what you know, say plainly that search is down, and stop."
+)
+
+
+def _env_file_value(path, name: str) -> str:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    for raw in lines:
+        line = raw.strip()
+        if line.startswith("export "):
+            line = line[len("export "):].strip()
+        if not line.startswith(name + "="):
+            continue
+        return line[len(name) + 1:].strip().strip("\"'")
+    return ""
+
+
+def exa_key() -> str:
+    """The person's Exa key: the process environment, else this profile's .env, else the main one.
+
+    Read at every search, so a key saved from Alice works without restarting Hermes.
+    """
+    key = os.environ.get(KEY_NAME, "").strip()
+    if key:
+        return key
+    try:
+        from pathlib import Path
+        from hermes_constants import get_default_hermes_root, get_hermes_home
+    except Exception:  # noqa: BLE001 — outside Hermes: no files to read
+        return ""
+    for root in (get_hermes_home(), get_default_hermes_root()):
+        try:
+            value = _env_file_value(Path(root) / ".env", KEY_NAME)
+        except Exception:  # noqa: BLE001
+            value = ""
+        if value:
+            return value
+    return ""
+
+
+def exa_search_keyed(query: str, limit: int, key: str, fetch=None) -> Dict[str, Any]:
+    """Exa search with the person's own key, in Hermes' search shape."""
+    body = json.dumps({
+        "query": query, "numResults": max(1, min(int(limit or 5), 10)), "type": "auto",
+        "contents": {"text": {"maxCharacters": SNIPPET}},
+    }).encode()
+    request = urllib.request.Request(
+        EXA_ENDPOINT, data=body, method="POST",
+        headers={"Content-Type": "application/json", "x-api-key": key, "User-Agent": "alice-hermes"},
+    )
+    try:
+        if fetch is not None:
+            status, raw = fetch(request)
+        else:
+            with urllib.request.urlopen(request, timeout=EXA_TIMEOUT) as response:
+                status, raw = response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        return {"success": False, "error": f"Exa: HTTP {exc.code}"}
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return {"success": False, "error": f"Exa: {exc}"}
+    if status >= 400:
+        return {"success": False, "error": f"Exa: HTTP {status}"}
+    try:
+        results = json.loads(raw).get("results") or []
+    except (ValueError, AttributeError):
+        return {"success": False, "error": "Exa: unreadable reply"}
+    web = [
+        {"url": item["url"], "title": item.get("title") or "",
+         "description": " ".join(str(item.get("text") or "").split())[:SNIPPET]}
+        for item in results if isinstance(item, dict) and item.get("url")
+    ]
+    return {"success": True, "data": {"web": web}}
+
+
 def _paid_provider():
     """Hermes' own Firecrawl provider, the paid fallback — or None."""
     try:
@@ -130,6 +226,13 @@ def _build_provider_class():
 
         def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
             reason = "no results"
+            key = exa_key()
+            if key:
+                result = exa_search_keyed(query, limit, key)
+                if result.get("success") and result["data"]["web"]:
+                    return result
+                reason = result.get("error") or "no results"
+                logger.info("alice-free: Exa with the person's key fell through (%s)", reason)
             # Twice: the free endpoint sheds load with an odd reply now and then.
             for attempt in range(2):
                 try:
@@ -145,7 +248,12 @@ def _build_provider_class():
             logger.info("alice-free: Exa free search fell through (%s); using the paid backend", reason)
             paid = _paid_provider()
             if paid is None:
-                return {"success": False, "error": f"Free search failed ({reason}) and no paid backend is set."}
+                if key:
+                    return {"success": False, "error": f"Search failed ({reason}) and no paid backend is set. " + NO_RETRY}
+                return {"success": False, "error": (
+                    f"Search failed ({reason}): Exa's keyless endpoint is rate-limited and no paid backend is set. "
+                    + KEY_OFFER + " " + NO_RETRY
+                )}
             return paid.search(query, limit)
 
         async def extract(self, urls: List[str], **kwargs: Any) -> List[Dict[str, Any]]:

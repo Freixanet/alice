@@ -886,6 +886,57 @@ async def memory_origin(target: str, profile: str = "default", text: Optional[st
                         headers=_NO_STORE)
 
 
+# --- Keys the person gives in a secure card -------------------------------------------
+
+def _secret_store():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "secret_store.py"
+    name = "alice_secret_store"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class _SecretBody(BaseModel):
+    name: str
+    value: str
+
+
+def _save_secret(body: _SecretBody) -> Dict[str, Any]:
+    store = _secret_store()
+    try:
+        profiles = store.save(_hermes_root(), body.name, body.value)
+    except store.SecretError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    # The name and where it went; never the value.
+    _log.info("alice: key %s saved for %d profile(s)", body.name.strip(), len(profiles))
+    return {"name": body.name.strip(), "set": True, "profiles": profiles}
+
+
+def _secret_state(name: str) -> Dict[str, Any]:
+    store = _secret_store()
+    try:
+        return {"name": name.strip(), "set": store.is_set(_hermes_root(), name)}
+    except store.SecretError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/secret")
+async def get_secret(name: str) -> Dict[str, Any]:
+    """Whether a key is set. The value is never read back."""
+    return await asyncio.to_thread(_secret_state, name)
+
+
+@router.post("/secret")
+async def post_secret(body: _SecretBody) -> Dict[str, Any]:
+    return await asyncio.to_thread(_save_secret, body)
+
+
 # --- Notes: the store an agent keeps in its workspace ------------------------------------
 
 NOTES_STORE = Path("workspace") / "inbox-store"

@@ -64,6 +64,22 @@ The agent gains one rule:
   The hook runs only in profiles where the plugin is enabled; the team installer enables
   it in every profile.
 
+Web search (`alice-free`, selected with `web.search_backend`) searches Exa with the person's
+own free `EXA_API_KEY` when there is one — read from the environment, the profile's `.env` or
+the main `.env` at every search, so no restart is needed — then Exa's keyless endpoint, then
+Firecrawl. Exa's keyless endpoint is rate-limited; when search fails without a key, the tool
+tells the agent not to ask for it in the chat but to end its reply with
+`[Conectar búsqueda](alice://connect/search)`, which Alice shows as the key card below.
+
+Keys an agent needs never go through the chat. A prompt section (`alice.claves`) tells every
+agent to end its reply with `[Dar clave](alice://connect/secret/NAME)` instead of asking for
+one; Alice shows a card with a secure field, and `POST /api/plugins/alice/secret`
+(`secret_store.py`) writes `NAME=value` to the main `.env` and to each profile's `.env` that
+exists, private (0600), replacing an earlier value. `GET /api/plugins/alice/secret?name=` says
+only whether it is set. Names are environment-variable style; Hermes' own settings
+(`HERMES_*`, `API_SERVER_*`, `PATH`, …) are refused. The value is never logged or read back.
+An agent with a terminal can still read `.env`, as with any key Hermes keeps.
+
 ## Memory that keeps itself tidy
 
 Hermes keeps curated memory as plain `MEMORY.md` / `USER.md` files: entries separated by

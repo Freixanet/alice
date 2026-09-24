@@ -16,6 +16,9 @@ struct SecureRequestSheet: View {
     @State private var working = false
     @State private var failed = false
     @State private var answered = false
+    /// A login Hermes asks for is either an account he has or one to create:
+    /// the vault asks the same way for both, so he says which.
+    @State private var newAccount = false
     @FocusState private var focus: Field?
 
     private enum Field { case identifier, secret }
@@ -79,7 +82,14 @@ struct SecureRequestSheet: View {
     private var fields: some View {
         switch request.kind {
         case .saveLogin:
-            TextField("Email or username", text: $identifier)
+            Picker("Account", selection: $newAccount) {
+                Text("I have an account").tag(false)
+                Text("Create one").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+            TextField(newAccount ? LocalizedStringKey("Email for the new account") : LocalizedStringKey("Email or username"), text: $identifier)
                 .textContentType(.username)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
@@ -87,8 +97,9 @@ struct SecureRequestSheet: View {
                 .focused($focus, equals: .identifier)
                 .submitLabel(.next)
                 .onSubmit { focus = .secret }
-            SecureField("Password", text: $secret)
-                .textContentType(.password)
+            SecureField(newAccount ? LocalizedStringKey("New password") : LocalizedStringKey("Password"), text: $secret)
+                // A new account gets iOS' own strong-password suggestion.
+                .textContentType(newAccount ? .newPassword : .password)
                 .focused($focus, equals: .secret)
                 .submitLabel(.go)
                 .onSubmit { if ready { Task { await send(answer) } } }
@@ -129,7 +140,7 @@ struct SecureRequestSheet: View {
 
     private var title: String {
         switch request.kind {
-        case .saveLogin: String(localized: "Sign in to \(host)")
+        case .saveLogin: newAccount ? String(localized: "Create an account on \(host)") : String(localized: "Sign in to \(host)")
         case let .code(site, _): site.map { String(localized: "Code from \($0)") } ?? String(localized: "Verification code")
         case let .unlock(manager): String(localized: "Unlock \(manager)")
         case let .secret(name, _): name
@@ -138,7 +149,9 @@ struct SecureRequestSheet: View {
 
     private var subtitle: String {
         switch request.kind {
-        case .saveLogin: String(localized: "Alice needs your account to continue.")
+        case .saveLogin: newAccount
+            ? String(localized: "Choose the email and password. Alice fills in the rest of the form and asks you for what is missing.")
+            : String(localized: "Alice needs your account to continue. No account? Choose “Create one”.")
         case let .code(_, hint): hint ?? String(localized: "Type the code the site just sent you.")
         case .unlock: String(localized: "For Alice to use the logins it keeps.")
         case let .secret(_, prompt): prompt.isEmpty ? String(localized: "A key Alice needs.") : prompt
@@ -165,7 +178,7 @@ struct SecureRequestSheet: View {
 
     private var confirmTitle: String {
         switch request.kind {
-        case .saveLogin: String(localized: "Sign In")
+        case .saveLogin: newAccount ? String(localized: "Create Account") : String(localized: "Sign In")
         case .code: String(localized: "Send")
         case .unlock: String(localized: "Unlock")
         case .secret: String(localized: "Save")
@@ -204,5 +217,10 @@ struct SecureRequestSheet: View {
         identifier = ""
         working = false
         if !delivered && !value.isEmpty { failed = true }
+        // The vault answer is the same for both; only this says it is a new
+        // account. No secret in it: the site, and what to do.
+        if delivered, !value.isEmpty, newAccount, case .saveLogin = request.kind {
+            store.sendQuickReply(String(localized: "I don't have an account on \(host): create it with the email and password I just gave. Ask me in the chat for anything else the form needs."))
+        }
     }
 }

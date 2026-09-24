@@ -632,6 +632,22 @@ def alice_recent_errors(_args=None) -> str:
     return _agent_json({"ok": True, "errors": errors[-40:], "scanned": len(lines)})
 
 
+def secret_prompt(_session_info=None) -> str:
+    """How an agent gets a key it needs, without the key ever entering the chat."""
+    return (
+        "## Claves y tokens\n"
+        "Si para un comando o una herramienta necesitas una clave, token o contraseña de la persona, "
+        "**nunca se la pidas en el chat** ni le pidas que la pegue en un mensaje o en la terminal. "
+        "Di en una frase para qué la necesitas y dónde conseguirla, y termina con esta línea sola: "
+        "`[Dar clave](alice://connect/secret/NOMBRE)`, con NOMBRE en mayúsculas como variable de entorno "
+        "(por ejemplo `EXA_API_KEY`). Alice la pide en un campo seguro y la guarda como `NOMBRE=…` en "
+        "`~/.hermes/.env` y en el `.env` de cada perfil. Cuando diga que está, úsala desde ahí sin mostrarla: "
+        "`NOMBRE=\"$(sed -n 's/^NOMBRE=//p' ~/.hermes/.env | tr -d '\\\"')\" comando`. "
+        "Nunca imprimas, repitas ni resumas su valor, ni lo escribas en notas, memoria o archivos. "
+        "No uses nombres de la configuración de Hermes (`HERMES_*`, `API_SERVER_*`)."
+    )
+
+
 def debug_prompt(_session_info=None) -> str:
     return (
         "## Alice app diagnostics\n"
@@ -899,6 +915,7 @@ def register(ctx) -> None:
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
+    ctx.register_system_prompt_section("alice.claves", secret_prompt)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)
     _register_goal_tools(ctx)
     _register_notes_tools(ctx)
