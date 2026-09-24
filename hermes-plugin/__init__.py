@@ -679,6 +679,26 @@ def resolve_prompt(_session_info=None) -> str:
     )
 
 
+# Channels that show text as it comes: markdown would show as ** and [text](url).
+_PLAIN_TEXT_PLATFORMS = {"photon", "sms", "imessage", "bluebubbles"}
+
+
+def channel_prompt(session_info=None) -> str:
+    """How to write when the person reads Alice in iMessage or SMS rather than the app."""
+    platform = str((session_info or {}).get("platform") or "").lower()
+    if platform not in _PLAIN_TEXT_PLATFORMS:
+        return ""
+    return (
+        "## Estás en iMessage\n"
+        "La persona te lee en iMessage, que muestra el texto tal cual: **nada de Markdown** — sin "
+        "asteriscos, almohadillas, tablas ni enlaces con corchetes. Escribe como un mensaje de texto "
+        "entre personas: frases cortas, lo importante primero, y si hay varias cosas, una por línea "
+        "empezando con «•». Los enlaces van como la dirección sola en su propia línea "
+        "(https://…), nunca como [texto](url). Si la respuesta es larga, divídela en mensajes breves "
+        "separados por una línea en blanco."
+    )
+
+
 def debug_prompt(_session_info=None) -> str:
     return (
         "## Alice app diagnostics\n"
@@ -974,6 +994,7 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
     ctx.register_system_prompt_section("alice.resolver", resolve_prompt)
+    ctx.register_system_prompt_section("alice.canal", channel_prompt)
     ctx.register_system_prompt_section("alice.claves", secret_prompt)
     ctx.register_system_prompt_section("alice.tarjetas", cards_prompt)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)

@@ -148,7 +148,11 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_system_prompt_section.assert_any_call("alice.tarjetas", self.plugin.cards_prompt)
         # And every agent finishes what it was asked, solving obstacles instead of stopping at them.
         ctx.register_system_prompt_section.assert_any_call("alice.resolver", self.plugin.resolve_prompt)
-        self.assertEqual(ctx.register_system_prompt_section.call_count, 6)
+        # And in iMessage or SMS, plain text: those channels show markdown as symbols.
+        ctx.register_system_prompt_section.assert_any_call("alice.canal", self.plugin.channel_prompt)
+        self.assertIn("nada de Markdown", self.plugin.channel_prompt({"platform": "photon"}))
+        self.assertEqual(self.plugin.channel_prompt({"platform": "telegram"}), "")
+        self.assertEqual(ctx.register_system_prompt_section.call_count, 7)
 
 
 if __name__ == "__main__":
