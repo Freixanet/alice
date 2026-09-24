@@ -52,7 +52,7 @@ struct ChatHeaderAvatar<Face: View>: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .glassEffect(.regular.interactive(), in: .capsule)
-            .offset(y: -12)
+            .offset(y: -5)
             // Tucked behind the portrait, as in Messages: the disc overlaps
             // the top of the name, not the other way round.
             .zIndex(-1)
