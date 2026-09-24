@@ -44,7 +44,13 @@ METRICS: Dict[str, Dict[str, Any]] = {
     "steps": {"name": "pasos", "unit": "", "digits": 0, "better": "up"},
     "active_kcal": {"name": "energía activa", "unit": "kcal", "digits": 0, "better": "up"},
     "workout_min": {"name": "ejercicio", "unit": "min", "digits": 0, "better": "up"},
+    "mindful_min": {"name": "minutos de atención plena", "unit": "min", "digits": 0, "better": "up"},
+    # Medication logged in Health (iOS 26 Medications): doses due and taken each day.
+    "meds_due": {"name": "dosis de medicación previstas", "unit": "", "digits": 0, "better": "up"},
+    "meds_taken": {"name": "dosis tomadas", "unit": "", "digits": 0, "better": "up"},
 }
+# Read by the anomaly and pattern checks; medication has its own, simpler rule (a dose missed).
+BODY = ("sleep_h", "hrv", "rhr", "steps", "active_kcal", "workout_min")
 _lock = threading.Lock()
 
 
@@ -80,6 +86,11 @@ def _clean_day(row: Dict[str, Any]) -> Optional[Tuple[str, Dict[str, float]]]:
         value = row.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
             values[key] = round(float(value), 2)
+    missed = row.get("meds_missed")
+    if isinstance(missed, list):
+        names = [" ".join(str(n).split())[:60] for n in missed if isinstance(n, str) and n.strip()][:6]
+        if names:
+            values["meds_missed"] = names
     return (day, values) if values else None
 
 
@@ -165,6 +176,11 @@ def notable(root: Path, today: Optional[date] = None) -> List[str]:
         direction = "por debajo" if value < mean else "por encima"
         lines.append(f"- {METRICS[metric]['name']} {when}: {fmt(metric, value)}, "
                      f"{abs(change) * 100:.0f} % {direction} de tu media de 4 semanas ({fmt(metric, mean)})")
+    # A dose due yesterday and not marked taken: the one medication fact worth a morning line.
+    yesterday = days.get((today - timedelta(days=1)).isoformat()) or {}
+    missed = yesterday.get("meds_missed") or []
+    if missed:
+        lines.append(f"- medicación ayer: sin marcar como tomada — {', '.join(missed)}")
     return lines
 
 
@@ -245,7 +261,7 @@ def week(root: Path, today: Optional[date] = None) -> List[str]:
     this = [(today - timedelta(days=i)).isoformat() for i in range(1, 8)]
     prev = [(today - timedelta(days=i)).isoformat() for i in range(8, 15)]
     lines = []
-    for metric in ("sleep_h", "hrv", "rhr", "steps", "workout_min"):
+    for metric in ("sleep_h", "hrv", "rhr", "steps", "workout_min", "mindful_min"):
         now_vals = [days[d][metric] for d in this if metric in days.get(d, {})]
         old_vals = [days[d][metric] for d in prev if metric in days.get(d, {})]
         if len(now_vals) < 4 or len(old_vals) < 4:
@@ -272,9 +288,51 @@ def week(root: Path, today: Optional[date] = None) -> List[str]:
     return lines
 
 
+def _met(value: float, target: float, direction: str) -> bool:
+    return value <= target if direction == "at_most" else value >= target
+
+
+def streak(root: Path, metric: str, target: float, direction: str = "at_least",
+           today: Optional[date] = None) -> Optional[Dict[str, Any]]:
+    """A daily habit ('10.000 pasos', '20 min de ejercicio', 'toda la medicación'): the run of
+    days in a row it was met, counting back from yesterday (today is not over), and the best run."""
+    days = read(root).get("days") or {}
+    today = today or date.today()
+    if metric == "meds_all":
+        def ok(row):
+            return row.get("meds_due", 0) > 0 and row.get("meds_taken", 0) >= row.get("meds_due", 0)
+        has = [d for d, r in days.items() if r.get("meds_due")]
+    else:
+        if metric not in METRICS:
+            return None
+        def ok(row):
+            return metric in row and _met(row[metric], target, direction)
+        has = [d for d, r in days.items() if metric in r]
+    if len(has) < 3:
+        return None
+    current, day = 0, today - timedelta(days=1)
+    while ok(days.get(day.isoformat()) or {}):
+        current += 1
+        day -= timedelta(days=1)
+    best = run = 0
+    for d in sorted(days):
+        run = run + 1 if ok(days[d]) else 0
+        best = max(best, run)
+    done_today = ok(days.get(today.isoformat()) or {})
+    return {"streak": current, "best": best, "today": done_today}
+
+
 def goal_progress(root: Path, metric: str, target: float, direction: str = "at_least",
-                  window_days: int = 7, today: Optional[date] = None) -> Optional[Dict[str, Any]]:
-    """A metric goal's progress from real data: the recent average against the target."""
+                  window_days: int = 7, today: Optional[date] = None, daily: bool = False) -> Optional[Dict[str, Any]]:
+    """A metric goal's progress from real data: the recent average against the target, or for a
+    daily habit the streak of days it was met."""
+    if daily:
+        run = streak(root, metric, target, direction, today)
+        if run is None:
+            return None
+        text = f"{run['streak']} días seguidos (mejor: {run['best']})" + (", hoy ya cumplido" if run["today"] else "")
+        return {"average": text, "percent": min(100, round(run["streak"] / 7 * 100)), "met": run["today"],
+                "streak": run["streak"], "best": run["best"]}
     if metric not in METRICS:
         return None
     days = read(root).get("days") or {}

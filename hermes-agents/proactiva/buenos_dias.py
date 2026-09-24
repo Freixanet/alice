@@ -205,6 +205,35 @@ def _health_module(home: Path):
     return module
 
 
+def _plugin_module(home: Path, filename: str, name: str):
+    import importlib.util
+
+    path = home / "plugins" / "alice" / filename
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    return module
+
+
+def alice_week(home: Path, now: float, local) -> List[str]:
+    """On Mondays: is Alice getting better (tasks finished alone, corrections, lessons)."""
+    if local(now).weekday() != 0:
+        return []
+    progress = _plugin_module(home, "alice_progress.py", "alice_progress_briefing")
+    lessons = _plugin_module(home, "lessons.py", "alice_lessons_briefing")
+    if progress is None or lessons is None:
+        return []
+    try:
+        return progress.week_lines(home, lambda text: bool(lessons.CORRECTION.search(text)), now)
+    except Exception:
+        return []
+
+
 def health_facts(home: Path, now: float, local) -> Optional[Dict[str, List[str]]]:
     """What is clearly off in last night's sleep and recovery, one pattern, and on Mondays the week."""
     module = _health_module(home)
@@ -235,7 +264,8 @@ def open_goals(home: Path, local) -> List[str]:
         measure = goal.get("measure")
         module = _health_module(home) if measure else None
         reading = module.goal_progress(home, measure.get("metric", ""), measure.get("target", 0),
-                                       measure.get("direction", "at_least"), measure.get("window_days", 7)) if module else None
+                                       measure.get("direction", "at_least"), measure.get("window_days", 7),
+                                       daily=bool(measure.get("daily"))) if module else None
         if reading:
             line += f" → media {reading['average']}, {reading['percent']} %" + (" (cumplido)" if reading["met"] else "")
         elif nxt:
@@ -377,6 +407,7 @@ def facts(home: Path, now: float, hours: float) -> str:
     web = sites(home)
     errors = overnight_errors(home, since)
     body = health_facts(home, now, local)
+    improving = alice_week(home, now, local)
 
     moment = local(now)
     lines = [
@@ -405,6 +436,9 @@ def facts(home: Path, now: float, hours: float) -> str:
         if "week" in body:
             lines.append("Su semana (últimos 7 días frente a los 7 anteriores):")
             lines += body["week"] or ["- Sin datos suficientes."]
+    if improving:
+        lines.append("\nCómo le fue a Alice la semana pasada:")
+        lines += improving
     lines.append("\nRutinas programadas para lo que queda de hoy:")
     lines += sorted(upcoming) or ["- Ninguna."]
     lines.append("\nEstado del sistema (su Mac y Hermes):")

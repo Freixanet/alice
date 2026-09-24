@@ -128,6 +128,18 @@ def team_prompt(_session_info=None) -> str:
         return ""
 
 
+def _egress_guard():
+    return _module("egress_guard.py", "alice_egress_guard")
+
+
+def _guard_egress(tool_name=None, args=None, session_id="", **_):
+    """After reading the web, a command that could send data out or read secrets asks first."""
+    try:
+        return _egress_guard().check(tool_name or "", args, session_id or "")
+    except Exception:
+        return None
+
+
 def _pre_tool_call(tool_name=None, args=None, **_):
     if tool_name not in MESSAGE_TOOLS:
         return None
@@ -379,6 +391,10 @@ def _post_tool_call(tool_name=None, args=None, result=None, session_id="", statu
     """Keeps what an agent did that changed something — sent, scheduled, signed in, deleted —
     for Alice's Activity. An observer: it never changes the call, and a failure here is
     swallowed so it can never break a turn."""
+    try:
+        _egress_guard().observe(session_id or "", tool_name or "")
+    except Exception:
+        pass
     try:
         from hermes_constants import get_hermes_home
 
@@ -697,8 +713,13 @@ def resolve_prompt(_session_info=None) -> str:
         "sesión, recarga, espera, prueba otra ruta (otro botón, la búsqueda, la URL directa), elige la "
         "opción estándar o la más barata cuando no te dijeron otra. No preguntes por nada de esto.\n"
         "3. **Si falla, prueba otra cosa**: al menos dos o tres enfoques distintos antes de rendirte.\n"
-        "4. **Comprueba el resultado** después de cada acción importante: que la cesta, el formulario "
-        "o la reserva dicen lo que debían.\n"
+        "4. **Comprueba el resultado** después de cada acción importante —vuelve a mirar la página— y, al "
+        "terminar, **cita la prueba**: el número de pedido o de reserva, el texto de confirmación, lo "
+        "guardado tal como lo muestra la web. Sin prueba no está hecho.\n"
+        "**Proyectos grandes y ambiguos** (un viaje, una mudanza, un regalo importante, algo de varios "
+        "días con decisiones suyas): antes de empezar pregunta de una vez, con la herramienta `clarify` "
+        "si la tienes, las 2 o 3 cosas que cambian el resultado —fechas, presupuesto, preferencias— con "
+        "opciones y tu propuesta por defecto; nada que puedas averiguar tú. Para recados, no preguntes.\n"
         "Solo te paras en tres casos: (a) un paso **irreversible** —pagar, enviar, publicar, borrar—, "
         "para el que basta **un sí** por tarea que cubre hasta el final (al pagar con tarjeta, ese sí es "
         "la confirmación de Hermes, sin preguntar también en el chat); (b) algo "
@@ -1022,7 +1043,8 @@ def _measured(goal):
     measure = goal.get("measure") or {}
     try:
         return _health().goal_progress(_health_root(), measure["metric"], measure["target"],
-                                       measure.get("direction", "at_least"), measure.get("window_days", 7))
+                                       measure.get("direction", "at_least"), measure.get("window_days", 7),
+                                       daily=bool(measure.get("daily")))
     except Exception:
         return None
 
@@ -1088,6 +1110,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # The shared browser the iPhone can watch is started before an agent needs it.
     ctx.register_hook("pre_tool_call", _browser_ready)
+    # After reading the web, sending data out or reading secrets needs the person (egress_guard.py).
+    ctx.register_hook("pre_tool_call", _guard_egress)
     # What each agent did with consequences, for Alice's Activity.
     ctx.register_hook("post_tool_call", _post_tool_call)
     # In iMessage and SMS the reply is made readable as a text message (text_channel.py).

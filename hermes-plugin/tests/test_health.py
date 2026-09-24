@@ -78,6 +78,20 @@ class HealthTests(unittest.TestCase):
         self.assertFalse(progress["met"])
         self.assertEqual(health.goal_progress(self.root, "rhr", 60, "at_most", today=TODAY), None)  # no data
 
+    def test_a_daily_habit_is_a_streak_counted_to_yesterday(self):
+        self.days(12, lambda i, d: {"steps": 11000 if i <= 5 else 3000})
+        run = health.streak(self.root, "steps", 10000, today=TODAY)
+        self.assertEqual((run["streak"], run["best"], run["today"]), (4, 5, True))
+        goal = health.goal_progress(self.root, "steps", 10000, today=TODAY, daily=True)
+        self.assertIn("4 días seguidos", goal["average"])
+
+    def test_medication_missed_yesterday_is_named_and_streaks_count_full_days(self):
+        self.days(6, lambda i, d: {"meds_due": 2, "meds_taken": 2})
+        yesterday = (TODAY - timedelta(days=1)).isoformat()
+        health.save(self.root, [{"date": yesterday, "meds_due": 2, "meds_taken": 1, "meds_missed": ["Omeprazol"]}])
+        self.assertIn("- medicación ayer: sin marcar como tomada — Omeprazol", health.notable(self.root, TODAY))
+        self.assertEqual(health.streak(self.root, "meds_all", 1, today=TODAY)["streak"], 0)
+
     def test_bad_rows_are_dropped(self):
         health.save(self.root, [{"date": "ayer", "sleep_h": 7}, {"date": "2026-09-01", "sleep_h": -1},
                                 {"date": "2026-09-02", "steps": True}])

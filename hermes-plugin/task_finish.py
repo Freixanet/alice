@@ -26,7 +26,9 @@ CONSTRAINTS = (
     "those go through the secure cards. Do not change what the person asked for (product, quantity, "
     "dates, price seen) on your own. Before claiming done, the facts the result depends on (price, "
     "date, availability, requirements) must have been checked with tools, not assumed; anything left "
-    "unchecked must be named in the reply as «Sin comprobar: …»."
+    "unchecked must be named in the reply as «Sin comprobar: …». Done requires PROOF in the reply, read "
+    "back after acting: an order or booking number, the confirmation text, the saved item as the page "
+    "shows it. A claim of success without that proof is not done: continue and verify."
 )
 STOP_WHEN = (
     "Stop ONLY when the reply shows one of these, and asks the person one concrete question: "
@@ -59,8 +61,8 @@ SCHEMA: Dict[str, Any] = {
             },
             "done_when": {
                 "type": "string",
-                "description": "What the finished result looks like, how you will show it and what must be "
-                               "checked to trust it, e.g. "
+                "description": "What the finished result looks like, the proof you will quote (order number, "
+                               "confirmation text) and what must be checked to trust it, e.g. "
                                "'order confirmation page with an order number' or, before their yes, "
                                "'checkout ready at the pay button with 1 × item, total and delivery'.",
             },

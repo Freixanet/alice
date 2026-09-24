@@ -2363,7 +2363,8 @@ async def goals_list(profile: str = "default") -> JSONResponse:
             measure = goal.get("measure")
             if measure:
                 goal["measured"] = health.goal_progress(_engine_home(), measure.get("metric", ""), measure.get("target", 0),
-                                                        measure.get("direction", "at_least"), measure.get("window_days", 7))
+                                                        measure.get("direction", "at_least"), measure.get("window_days", 7),
+                                       daily=bool(measure.get("daily")))
         return goals
 
     goals = await asyncio.to_thread(measured)

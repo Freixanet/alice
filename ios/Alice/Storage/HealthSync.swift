@@ -17,12 +17,16 @@ enum HealthSync {
         HKQuantityType(.restingHeartRate),
         HKQuantityType(.heartRateVariabilitySDNN),
         HKObjectType.workoutType(),
+        HKCategoryType(.mindfulSession),
+        HKObjectType.medicationDoseEventType(),
     ]
 
     /// iOS shows its own sheet; it never says what was allowed for reading,
     /// so a connection is judged by whether any data comes back.
     static func requestAccess() async throws {
         try await store.requestAuthorization(toShare: [], read: reads)
+        // Medications are shared one by one: iOS lists them and the person picks.
+        try? await store.requestPerObjectReadAuthorization(for: HKObjectType.userAnnotatedMedicationType(), predicate: nil)
     }
 
     /// The last `days` days, one dictionary each, keyed as health.py reads them.
@@ -37,9 +41,13 @@ enum HealthSync {
         async let hrv = averages(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: start, to: end)
         async let sleep = sleepHours(from: calendar.date(byAdding: .hour, value: -12, to: start) ?? start, to: end)
         async let workouts = workoutMinutes(from: start, to: end)
+        async let mindful = mindfulMinutes(from: start, to: end)
+        async let meds = medication(from: start, to: min(end, now))
+        let doses = await meds
         let columns: [(String, [Date: Double])] = await [
             ("steps", steps), ("active_kcal", energy), ("rhr", resting), ("hrv", hrv),
-            ("sleep_h", sleep), ("workout_min", workouts),
+            ("sleep_h", sleep), ("workout_min", workouts), ("mindful_min", mindful),
+            ("meds_due", doses.due), ("meds_taken", doses.taken),
         ]
         let format = DateFormatter()
         format.calendar = Calendar(identifier: .gregorian)
@@ -50,6 +58,9 @@ enum HealthSync {
             for (day, value) in values where day >= start && day < end {
                 rows[day, default: ["date": format.string(from: day)]][key] = (value * 100).rounded() / 100
             }
+        }
+        for (day, names) in doses.missed where day >= start && day < end && !names.isEmpty {
+            rows[day, default: ["date": format.string(from: day)]]["meds_missed"] = names
         }
         return rows.keys.sorted().compactMap { rows[$0] }.filter { $0.count > 1 }
     }
@@ -110,6 +121,52 @@ enum HealthSync {
             for (day, hours) in nights where hours < 16 { out[day] = max(out[day] ?? 0, hours) }
         }
         return out
+    }
+
+    private static func mindfulMinutes(from start: Date, to end: Date) async -> [Date: Double] {
+        let query = HKSampleQueryDescriptor(
+            predicates: [.categorySample(type: HKCategoryType(.mindfulSession),
+                                         predicate: HKQuery.predicateForSamples(withStart: start, end: end))],
+            sortDescriptors: [])
+        guard let samples = try? await query.result(for: store) else { return [:] }
+        var out: [Date: Double] = [:]
+        for sample in samples {
+            out[Calendar.current.startOfDay(for: sample.startDate), default: 0] +=
+                sample.endDate.timeIntervalSince(sample.startDate) / 60
+        }
+        return out
+    }
+
+    /// Scheduled doses per day, how many were logged as taken, and the names of
+    /// the ones not taken on days already over (today is still open).
+    private static func medication(from start: Date, to end: Date)
+        async -> (due: [Date: Double], taken: [Date: Double], missed: [Date: [String]]) {
+        let calendar = Calendar.current
+        var names: [String: String] = [:]
+        if let meds = try? await HKUserAnnotatedMedicationQueryDescriptor().result(for: store) {
+            for med in meds {
+                names[med.medication.identifier.description] = med.nickname ?? med.medication.displayText
+            }
+        }
+        let query = HKSampleQueryDescriptor(
+            predicates: [.sample(type: HKObjectType.medicationDoseEventType(),
+                                 predicate: HKQuery.predicateForSamples(withStart: start, end: end))],
+            sortDescriptors: [])
+        guard let samples = try? await query.result(for: store) else { return ([:], [:], [:]) }
+        var due: [Date: Double] = [:], taken: [Date: Double] = [:], missed: [Date: [String]] = [:]
+        let today = calendar.startOfDay(for: .now)
+        for case let dose as HKMedicationDoseEvent in samples {
+            guard dose.scheduleType == .schedule else { continue }
+            let day = calendar.startOfDay(for: dose.scheduledDate ?? dose.startDate)
+            due[day, default: 0] += 1
+            if dose.logStatus == .taken {
+                taken[day, default: 0] += 1
+            } else if day < today {
+                let name = names[dose.medicationConceptIdentifier.description] ?? String(localized: "Medication")
+                if !(missed[day] ?? []).contains(name) { missed[day, default: []].append(name) }
+            }
+        }
+        return (due, taken, missed)
     }
 
     private static func workoutMinutes(from start: Date, to end: Date) async -> [Date: Double] {

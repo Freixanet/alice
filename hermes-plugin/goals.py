@@ -36,7 +36,8 @@ class GoalError(Exception):
 DIRECTIONS = ("at_least", "at_most")
 
 
-def _measure(metric: Any, target: Any, direction: Any = None, window_days: Any = None) -> Optional[Dict[str, Any]]:
+def _measure(metric: Any, target: Any, direction: Any = None, window_days: Any = None,
+             daily: Any = False) -> Optional[Dict[str, Any]]:
     """A goal measured by the person's own data ('sleep 7 h on average'): what, how much, which way."""
     metric = str(metric or "").strip()
     if not metric:
@@ -52,7 +53,10 @@ def _measure(metric: Any, target: Any, direction: Any = None, window_days: Any =
         window = int(window_days or 7)
     except (TypeError, ValueError):
         window = 7
-    return {"metric": metric[:40], "target": target, "direction": direction, "window_days": max(3, min(window, 90))}
+    measure = {"metric": metric[:40], "target": target, "direction": direction, "window_days": max(3, min(window, 90))}
+    if daily:
+        measure["daily"] = True
+    return measure
 
 
 def _text(value: Any, limit: int) -> str:
@@ -303,7 +307,10 @@ SCHEMA = {
         "A goal about a health number (sleep, steps, exercise, resting heart rate, HRV) can be measured: "
         "pass metric (sleep_h, steps, workout_min, active_kcal, rhr, hrv), target, direction (at_least or "
         "at_most) and window_days (average over that many days, default 7) on create or update; its "
-        "progress then comes from their Health data, not from ticking steps."
+        "progress then comes from their Health data, not from ticking steps. A daily habit ('10,000 steps "
+        "a day', '20 minutes of exercise', 'take all my medication') is the same with daily=true, and its "
+        "progress is the streak of days met; metric meds_all means every medication dose logged as taken "
+        "in Health, and mindful_min is mindfulness minutes."
     ),
     "parameters": {
         "type": "object",
@@ -327,6 +334,7 @@ SCHEMA = {
             "target": {"type": "number"},
             "direction": {"type": "string", "enum": list(DIRECTIONS)},
             "window_days": {"type": "integer"},
+            "daily": {"type": "boolean", "description": "A habit: met or not each day; progress is the streak."},
         },
         "required": ["action"],
     },
@@ -336,7 +344,8 @@ SCHEMA = {
 def run_tool(store: Goals, args: Dict[str, Any], measured: Optional[Callable] = None) -> Dict[str, Any]:
     action = str(args.get("action") or "").strip()
     try:
-        measure = _measure(args.get("metric"), args.get("target"), args.get("direction"), args.get("window_days"))
+        measure = _measure(args.get("metric"), args.get("target", 1 if args.get("metric") == "meds_all" else None),
+                           args.get("direction"), args.get("window_days"), args.get("daily"))
         if action == "list":
             goals = store.list(include_done=bool(args.get("include_done")))
             return {"ok": True, "goals": [_brief(g, measured) for g in goals]}
