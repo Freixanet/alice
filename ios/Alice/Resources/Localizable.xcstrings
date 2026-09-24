@@ -13400,6 +13400,96 @@
           }
         }
       }
+    },
+    "I have an account": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya tengo cuenta"
+          }
+        }
+      }
+    },
+    "Create one": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crear una"
+          }
+        }
+      }
+    },
+    "Email for the new account": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Email para la cuenta nueva"
+          }
+        }
+      }
+    },
+    "New password": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contraseña nueva"
+          }
+        }
+      }
+    },
+    "Create an account on %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crea una cuenta en %@"
+          }
+        }
+      }
+    },
+    "Choose the email and password. Alice fills in the rest of the form and asks you for what is missing.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige el email y la contraseña. Alice rellena el resto del formulario y te pregunta lo que falte."
+          }
+        }
+      }
+    },
+    "Alice needs your account to continue. No account? Choose “Create one”.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice necesita tu cuenta para seguir. ¿No tienes? Elige «Crear una»."
+          }
+        }
+      }
+    },
+    "Create Account": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crear cuenta"
+          }
+        }
+      }
+    },
+    "I don't have an account on %@: create it with the email and password I just gave. Ask me in the chat for anything else the form needs.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No tengo cuenta en %@: créala con el email y la contraseña que te acabo de dar. Pregúntame en el chat lo que falte del formulario."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
