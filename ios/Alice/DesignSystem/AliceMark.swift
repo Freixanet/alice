@@ -36,6 +36,7 @@ struct ChatHeaderAvatar<Face: View>: View {
             .clipShape(.circle)
             .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
             .modifier(ZoomSource(source: zoomSource))
+            .zIndex(1)
 
             HStack(spacing: 3) {
                 Text(name)
@@ -52,9 +53,9 @@ struct ChatHeaderAvatar<Face: View>: View {
             .padding(.vertical, 5)
             .glassEffect(.regular.interactive(), in: .capsule)
             .offset(y: -12)
-            // Over the portrait, as in Messages: the zoom source and the
-            // shadow put the disc in its own layer, which drew above the name.
-            .zIndex(1)
+            // Tucked behind the portrait, as in Messages: the disc overlaps
+            // the top of the name, not the other way round.
+            .zIndex(-1)
         }
         .padding(.bottom, -2)
         .accessibilityElement(children: .ignore)
