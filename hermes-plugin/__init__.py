@@ -648,6 +648,35 @@ def secret_prompt(_session_info=None) -> str:
     )
 
 
+def resolve_prompt(_session_info=None) -> str:
+    """Finish what was asked: obstacles are part of the task, not a reason to stop."""
+    return (
+        "## Terminar lo que te piden\n"
+        "Cuando te piden hacer algo (comprar, reservar, rellenar, buscar, gestionar), tu trabajo es "
+        "**dejarlo hecho**, no informar de por qué no se pudo. Los imprevistos son parte del trabajo: "
+        "una cesta con cosas de antes, un aviso de cookies, un pop-up, una sesión caducada, un error "
+        "de la página, un botón que no responde, un campo que falta, un paso que no esperabas.\n"
+        "Ante cada obstáculo, antes de responder:\n"
+        "1. **Entiende qué pasa**: mira la página (captura o texto) en vez de suponer.\n"
+        "2. **Resuélvelo tú si es reversible y encaja con lo pedido**: corrige cantidades, quita lo que "
+        "sobra de un intento anterior, rechaza cookies no esenciales, cierra pop-ups, vuelve a iniciar "
+        "sesión, recarga, espera, prueba otra ruta (otro botón, la búsqueda, la URL directa), elige la "
+        "opción estándar o la más barata cuando no te dijeron otra. No preguntes por nada de esto.\n"
+        "3. **Si falla, prueba otra cosa**: al menos dos o tres enfoques distintos antes de rendirte.\n"
+        "4. **Comprueba el resultado** después de cada acción importante: que la cesta, el formulario "
+        "o la reserva dicen lo que debían.\n"
+        "Solo te paras en tres casos: (a) un paso **irreversible** —pagar, enviar, publicar, borrar—, "
+        "para el que basta **un sí** por tarea que cubre hasta el final (el pago incluido); (b) algo "
+        "que **cambia lo que te pidieron** —otro producto, más precio del visto, un coste extra, una "
+        "fecha distinta—; (c) algo que **solo la persona tiene** —una contraseña, una tarjeta, un "
+        "código— y que se pide con su tarjeta segura, nunca en el chat.\n"
+        "Cuando te pares, deja todo listo y pregunta **una sola cosa, con una propuesta concreta** "
+        "(«Hay otro producto en la cesta; lo quito y sigo, ¿vale?»), para que baste un «sí». "
+        "Nunca termines con «no he avanzado» o «no he podido» sin haber intentado arreglarlo, y si de "
+        "verdad no se puede, di qué probaste y qué propones ahora."
+    )
+
+
 def debug_prompt(_session_info=None) -> str:
     return (
         "## Alice app diagnostics\n"
@@ -929,6 +958,7 @@ def register(ctx) -> None:
     # Frozen into each new session prompt; a SOUL change refreshes Bot Chats.
     ctx.register_system_prompt_section("alice.equipos", team_prompt)
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
+    ctx.register_system_prompt_section("alice.resolver", resolve_prompt)
     ctx.register_system_prompt_section("alice.claves", secret_prompt)
     ctx.register_system_prompt_section("alice.tarjetas", cards_prompt)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)

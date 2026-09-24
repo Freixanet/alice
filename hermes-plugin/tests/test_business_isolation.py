@@ -146,7 +146,9 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_system_prompt_section.assert_any_call("alice.objetivos", self.plugin.goals_prompt)
         # How an agent pays with a card without the numbers entering the chat.
         ctx.register_system_prompt_section.assert_any_call("alice.tarjetas", self.plugin.cards_prompt)
-        self.assertEqual(ctx.register_system_prompt_section.call_count, 5)
+        # And every agent finishes what it was asked, solving obstacles instead of stopping at them.
+        ctx.register_system_prompt_section.assert_any_call("alice.resolver", self.plugin.resolve_prompt)
+        self.assertEqual(ctx.register_system_prompt_section.call_count, 6)
 
 
 if __name__ == "__main__":

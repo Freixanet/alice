@@ -141,9 +141,6 @@ def prompt(profile: str) -> str:
     """How an agent pays on a bank's page without a card number ever entering the chat."""
     return (
         "## Pagar con tarjeta\n"
-        "Antes de pagar, deja la cesta exactamente como te la pidieron: si ya tenía ese producto (a "
-        "menudo de un intento anterior), cambia la cantidad a la pedida y sigue, sin pararte a "
-        "preguntar; si tiene otros productos, pregunta en una línea si los quitas. "
         "Cuando la persona ya ha dicho que sí a una compra y la página de pago (la del banco o la "
         "pasarela, como Redsys) pide la tarjeta: llama a `browser_vault_list`. Si hay una tarjeta "
         "(`kind: payment`) con el `origin` de esa página, rellénala con `browser_vault_fill`: Hermes "
