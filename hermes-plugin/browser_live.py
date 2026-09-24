@@ -53,15 +53,16 @@ POINTER_JS = r"""
     document.documentElement.appendChild(p);
     return p;
   };
-  const at = (x, y) => { const p = make(); if (!p) return; p.style.opacity = '1'; p.style.transform = `translate(${x}px,${y}px)`; };
+  const remember = (x, y) => { try { sessionStorage.setItem('__alicePointer', JSON.stringify([x, y, Date.now()])); } catch (e) {} };
+  const at = (x, y) => { const p = make(); if (!p) return; p.style.opacity = '1'; p.style.transform = `translate(${x}px,${y}px)`; remember(x, y); };
   const ripple = (x, y) => {
     const r = document.createElement('div');
     r.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;`
       + 'border:3px solid rgba(255,59,48,.85);z-index:2147483647;pointer-events:none;'
-      + 'transition:transform .6s ease-out,opacity .6s ease-out;transform:scale(1);opacity:1';
+      + 'transition:transform 1.2s ease-out,opacity 1.2s ease-out;transform:scale(1);opacity:1';
     document.documentElement.appendChild(r);
     requestAnimationFrame(() => { r.style.transform = 'scale(5)'; r.style.opacity = '0'; });
-    setTimeout(() => r.remove(), 700);
+    setTimeout(() => r.remove(), 1300);
   };
   const center = (el) => { const b = el.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; };
   const glow = (el) => {
@@ -70,6 +71,17 @@ POINTER_JS = r"""
     el.style.boxShadow = '0 0 0 3px rgba(255,59,48,.75)';
     clearTimeout(el.__aliceGlow); el.__aliceGlow = setTimeout(() => { el.style.boxShadow = before; }, 900);
   };
+  // A click that loads a new page: the pointer comes back where it was, then fades,
+  // so it lasts long enough to be seen across the navigation.
+  const resume = () => {
+    try {
+      const [x, y, when] = JSON.parse(sessionStorage.getItem('__alicePointer') || 'null') || [];
+      if (x === undefined || Date.now() - when > 8000) return;
+      at(x, y); ripple(x, y);
+      setTimeout(() => { const p = document.getElementById('__alice_pointer'); if (p) p.style.opacity = '.55'; }, 2500);
+    } catch (e) {}
+  };
+  if (document.readyState === 'loading') addEventListener('DOMContentLoaded', resume); else resume();
   addEventListener('mousemove', e => at(e.clientX, e.clientY), true);
   addEventListener('mousedown', e => { at(e.clientX, e.clientY); ripple(e.clientX, e.clientY); }, true);
   addEventListener('click', e => {
@@ -81,6 +93,11 @@ POINTER_JS = r"""
   addEventListener('input', e => glow(e.target), true);
 })();
 """
+
+# Frames travel to a phone, often over a slow link: small enough that several arrive a
+# second (the page is 820 CSS pixels wide; a phone shows it at about that).
+SCREENCAST = {"format": "jpeg", "quality": 45, "maxWidth": 700, "maxHeight": 1110, "everyNthFrame": 1}
+SHOT = {"format": "jpeg", "quality": 45, "clip": {"x": 0, "y": 0, "width": 820, "height": 1300, "scale": 0.85}}
 
 # With no new screencast frame for this long, a screenshot is taken instead.
 STALE_SECONDS = 1.5
@@ -384,9 +401,8 @@ class Screencast:
                 # Where the agent acts, drawn on the page while it is watched.
                 self._send("Page.addScriptToEvaluateOnNewDocument", {"source": POINTER_JS})
                 self._send("Runtime.evaluate", {"expression": POINTER_JS})
-                self._send("Page.startScreencast", {"format": "jpeg", "quality": 62,
-                                                    "maxWidth": 1200, "maxHeight": 1800, "everyNthFrame": 1})
-                self._send("Page.captureScreenshot", {"format": "jpeg", "quality": 62})
+                self._send("Page.startScreencast", SCREENCAST)
+                self._send("Page.captureScreenshot", SHOT)
                 asked = time.monotonic()
                 while not self.closed:
                     now = time.monotonic()
@@ -396,7 +412,7 @@ class Screencast:
                     # that stop repainting: a picture every second and a half anyway.
                     if now - max(getattr(self, "framed", 0.0), asked) > STALE_SECONDS:
                         asked = now
-                        self._send("Page.captureScreenshot", {"format": "jpeg", "quality": 62})
+                        self._send("Page.captureScreenshot", SHOT)
                     try:
                         raw = socket.recv(timeout=0.5)
                     except TimeoutError:
@@ -412,8 +428,7 @@ class Screencast:
                         if not frame.get("parentId"):
                             self.page["url"] = frame.get("url") or self.page["url"]
                             # A new document ends the old screencast: start it again.
-                            self._send("Page.startScreencast", {"format": "jpeg", "quality": 62, "maxWidth": 1200,
-                                                                "maxHeight": 1800, "everyNthFrame": 1})
+                            self._send("Page.startScreencast", SCREENCAST)
                     elif method == "Inspector.detached" or method == "Target.targetDestroyed":
                         break
                     elif isinstance(message.get("result"), dict) and message["result"].get("data"):
