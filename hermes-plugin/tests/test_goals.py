@@ -24,6 +24,18 @@ class GoalsTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_a_measured_goal_reads_its_progress_from_health(self):
+        out = gm.run_tool(self.goals, {"action": "create", "title": "Dormir 7 h", "metric": "sleep_h",
+                                       "target": 7, "window_days": 7})
+        self.assertEqual(out["goal"]["measure"], {"metric": "sleep_h", "target": 7.0, "direction": "at_least",
+                                                  "window_days": 7})
+        reading = {"average": "6 h 18 min", "percent": 90, "met": False}
+        listed = gm.run_tool(self.goals, {"action": "list"}, measured=lambda g: reading)
+        self.assertEqual(listed["goals"][0]["measured"], reading)
+        self.assertIn("media 6 h 18 min = 90 %", gm.summary(self.goals.list(), measured=lambda g: reading))
+        bad = gm.run_tool(self.goals, {"action": "create", "title": "x", "metric": "steps", "target": "mucho"})
+        self.assertFalse(bad["ok"])
+
     def test_a_goal_with_its_plan_progresses_step_by_step(self):
         goal = self.goals.create("Vuelta al cole", "Que no se escape nada", "2026-09-30",
                                  ["Leer los correos del colegio", "Comprar el material", "Reservar la cena"])

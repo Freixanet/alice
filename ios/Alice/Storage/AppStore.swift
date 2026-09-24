@@ -6313,6 +6313,49 @@ final class AppStore {
         try? await uploadCalendar()
     }
 
+    // MARK: - Health
+
+    /// Health was connected on this iPhone (iOS never says what reading was
+    /// allowed, so this is what the person chose; no data simply sends nothing).
+    var healthConnected: Bool {
+        get { UserDefaults.standard.bool(forKey: "alice.health.connected") }
+        set { UserDefaults.standard.set(newValue, forKey: "alice.health.connected") }
+    }
+    private var healthSyncedAt: Date?
+
+    /// Asks iOS for reading access and sends the last 60 days. A problem, or nil.
+    func connectHealth() async -> String? {
+        guard HealthSync.available else { return String(localized: "Health is not available on this device.") }
+        do {
+            try await HealthSync.requestAccess()
+            healthConnected = true
+            try await uploadHealth(days: 60)
+            return nil
+        } catch {
+            return PlainWords.describe(error, doing: "connect Health")
+        }
+    }
+
+    func disconnectHealth() async {
+        healthConnected = false
+        try? await dashboard.disconnectHealth()
+    }
+
+    /// On return to the app and in background refresh: the last week again
+    /// (last night's sleep settles in the morning), at most every half hour.
+    func syncHealthIfConnected() async {
+        guard healthConnected, HealthSync.available else { return }
+        if let last = healthSyncedAt, Date().timeIntervalSince(last) < 30 * 60 { return }
+        try? await uploadHealth(days: 8)
+    }
+
+    private func uploadHealth(days: Int) async throws {
+        let rows = await HealthSync.days(days)
+        guard !rows.isEmpty else { return }
+        try await dashboard.uploadHealth(rows)
+        healthSyncedAt = Date()
+    }
+
     /// Open reminders worth a morning's attention: due by the end of tomorrow
     /// (overdue included), or undated and marked high priority. Never notes.
     nonisolated static func briefingReminders(_ items: [AgendaItem], now: Date = Date()) -> [[String: Any]] {

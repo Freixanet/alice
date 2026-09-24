@@ -23,6 +23,12 @@ targets:
     platform: iOS
     sources:
       - path: Alice
+    # Health: read-only daily summaries for the person's own Hermes (HealthSync).
+    entitlements:
+      path: Alice/Alice.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
     info:
       path: Alice/Info.plist
       properties:
@@ -44,6 +50,7 @@ targets:
         # when a request needs it (CalendarSync).
         NSCalendarsFullAccessUsageDescription: Alice reads your upcoming events and shares them with your own Hermes, so your agents can plan around your day. She adds an event only when you tap Add, and never changes or deletes one.
         NSRemindersFullAccessUsageDescription: Alice shows your open reminders next to your events in Agenda, and shares the ones due soon (title, date and list, never notes) with your own Hermes for your morning briefing. She marks one done only when you tick it.
+        NSHealthShareUsageDescription: Alice reads your daily sleep, steps, active energy, workouts, resting heart rate and HRV — including what your WHOOP or Apple Watch writes to Health — and sends one summary per day to your own Hermes, so she can tell you what stands out. She never writes to Health.
         NSLocationWhenInUseUsageDescription: Alice finds the places you ask her about, like "when I get to the supermarket", on the map near you.
         NSLocationAlwaysAndWhenInUseUsageDescription: So Alice can do what you asked when you arrive at or leave a place, even with the app closed. Your iPhone watches only those places; your location is never sent anywhere, only that you arrived or left.
         UIAppFonts:

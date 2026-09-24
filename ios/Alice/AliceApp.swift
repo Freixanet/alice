@@ -149,6 +149,7 @@ struct AliceApp: App {
                         // Alice is suspended, and events must route by that live id.
                         await store.refreshVisibleBotChats()
                         Task { await store.syncCalendarIfConnected() }
+                        Task { await store.syncHealthIfConnected() }
                         Task { await store.refreshCommitments() }
                         // Places an agent was asked to watch ("when I arrive…").
                         Task { await PlaceWatcher.shared.sync() }
@@ -248,6 +249,8 @@ struct AliceApp: App {
         store.liveActivityWarning = activities.lastStartFailure
         // So the morning briefing reads the day as it is, not as it was.
         await store.syncCalendarIfConnected()
+        // And last night's sleep, so the morning briefing has it.
+        await store.syncHealthIfConnected()
         guard notifier.permission.canDeliver else { return }
         await notifier.post(store.syncEvents())
     }

@@ -658,7 +658,7 @@ enum RichMarkdown {
             else { continue }
             let service = String(text[serviceRange])
             if (ConnectOfferCard.services.contains(service) || SecretKeyCard.keyName(for: service) != nil
-                || PaymentCardOffer.parse(service) != nil),
+                || PaymentCardOffer.parse(service) != nil || service == "health"),
                !services.contains(service) {
                 services.insert(service, at: 0)
             }
@@ -1382,6 +1382,8 @@ struct RichMessageView: View {
         case let .connect(service):
             if let key = SecretKeyCard.keyName(for: service) {
                 SecretKeyCard(name: key, language: ChatLanguage.of(content))
+            } else if service == "health" {
+                HealthConnectCard(language: ChatLanguage.of(content))
             } else if let offer = PaymentCardOffer.parse(service) {
                 PaymentCardOfferCard(offer: offer, language: ChatLanguage.of(content))
             } else {

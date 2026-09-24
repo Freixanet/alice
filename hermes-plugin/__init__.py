@@ -993,12 +993,42 @@ def cards_prompt(_session_info=None) -> str:
     return _cards_module().prompt(profile if profile != "custom" else "default")
 
 
+def _health():
+    return _module("health.py", "alice_health")
+
+
+def _health_root() -> Path:
+    from hermes_constants import get_hermes_home
+
+    root, _ = _root_and_sender(Path(get_hermes_home()))
+    return root
+
+
+def _measured(goal):
+    """A measured goal's progress from the person's Health data, or None without enough days."""
+    measure = goal.get("measure") or {}
+    try:
+        return _health().goal_progress(_health_root(), measure["metric"], measure["target"],
+                                       measure.get("direction", "at_least"), measure.get("window_days", 7))
+    except Exception:
+        return None
+
+
 def goals_prompt(_session_info=None) -> str:
     """The open goals, so the agent knows them and keeps them current."""
     try:
-        return _goals_module().prompt_section(_goals_store().list(include_done=False))
+        return _goals_module().prompt_section(_goals_store().list(include_done=False), measured=_measured)
     except Exception:
         return ""
+
+
+def _register_health_tools(ctx) -> None:
+    module = _health()
+    ctx.register_tool(
+        name="health", toolset="alice_health", schema=module.SCHEMA,
+        handler=lambda args, **_: _agent_json(module.run_tool(_health_root(), args or {})),
+        check_fn=_always, description=module.SCHEMA["description"], emoji="❤️",
+    )
 
 
 def _places():
@@ -1036,7 +1066,7 @@ def _register_goal_tools(ctx) -> None:
     module = _goals_module()
     ctx.register_tool(
         name="goals", toolset="alice_goals", schema=module.SCHEMA,
-        handler=lambda args, **_: _agent_json(module.run_tool(_goals_store(), args or {})),
+        handler=lambda args, **_: _agent_json(module.run_tool(_goals_store(), args or {}, measured=_measured)),
         check_fn=_always, description=module.SCHEMA["description"], emoji="🎯",
     )
 
@@ -1066,6 +1096,8 @@ def register(ctx) -> None:
     _register_task_tools(ctx)
     # When the person arrives at or leaves a place, their iPhone wakes the agent (places.py).
     _register_place_tools(ctx)
+    # Sleep, activity, heart rate and HRV from the iPhone's Health app (health.py).
+    _register_health_tools(ctx)
     _register_notes_tools(ctx)
     # Search and page reading free first (Exa, Jina); Firecrawl only as fallback.
     _free_web().register(ctx)

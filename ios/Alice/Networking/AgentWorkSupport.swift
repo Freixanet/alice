@@ -201,6 +201,16 @@ extension DashboardClient {
         _ = try await send("POST", "api/plugins/alice/secret", ["name": name, "value": value])
     }
 
+    // MARK: Health
+
+    func uploadHealth(_ days: [[String: Any]]) async throws {
+        _ = try await send("POST", "api/plugins/alice/health", ["days": days])
+    }
+
+    func disconnectHealth() async throws {
+        _ = try await send("POST", "api/plugins/alice/health/disconnect", [:])
+    }
+
     // MARK: Place triggers and authenticator keys
 
     /// Every agent's place triggers (hermes-plugin/places.py).

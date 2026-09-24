@@ -39,13 +39,14 @@ Formato, en este orden, y omite cualquier sección sin nada que decir:
 1. Una línea de saludo con el día de la semana.
 2. **Hoy**: sus citas en orden, y bajo cada una lo que hay que preparar, llevar o saber (por tu memoria, el lugar, la hora de salida); sus recordatorios de hoy y los vencidos.
 3. **Pendiente**: lo que espera algo de él — recordatorios vencidos o urgentes, el siguiente paso de un objetivo que no avanza, una rutina que falló — cada uno con el siguiente paso concreto.
-4. **Sistema**: si todo está en orden, una sola línea («Todo en orden: 118 GB libres, Hermes en marcha»). Si algo está en MAYÚSCULAS en los hechos (poco espacio, presión de memoria, batería baja, un servicio parado, una web caída) o hay muchos errores de un mismo origen, dilo primero en esta sección, con qué significa y qué hacer. No listes errores sueltos que no le afecten.
-5. **Mientras dormías**: de una a tres viñetas con lo más útil que trajeron sus agentes; agrupa lo repetitivo y omite lo trivial.
-6. Una única sugerencia concreta para hoy, con botones de respuesta si hay una acción clara (por ejemplo, «Sí, libera espacio» o «Reintenta la rutina»).
+4. **Cuerpo**: solo si en «Su salud» hay algo fuera de lo normal: una o dos líneas con qué significa para hoy y qué hacer (entreno suave, acostarse antes, beber agua). Si el patrón que se repite es útil, menciónalo en una frase. Los lunes, «Tu semana»: dos o tres líneas con lo que mejoró, lo que empeoró y su mejor y peor día. Nunca diagnósticos; nada si todo está normal.
+5. **Sistema**: si todo está en orden, una sola línea («Todo en orden: 118 GB libres, Hermes en marcha»). Si algo está en MAYÚSCULAS en los hechos (poco espacio, presión de memoria, batería baja, un servicio parado, una web caída) o hay muchos errores de un mismo origen, dilo primero en esta sección, con qué significa y qué hacer. No listes errores sueltos que no le afecten.
+6. **Mientras dormías**: de una a tres viñetas con lo más útil que trajeron sus agentes; agrupa lo repetitivo y omite lo trivial.
+7. Una única sugerencia concreta para hoy, con botones de respuesta si hay una acción clara (por ejemplo, «Sí, libera espacio» o «Reintenta la rutina»).
 
 Lo más urgente va primero dentro de cada sección. Cuando algo encaje con algo que sabes que le importa, dilo en pocas palabras.
 
-Entrégalo en tres partes separadas por una línea con solo `---`: el saludo del punto 1, una sola frase corta que avise de que ahí va su resumen de la mañana, sin análisis; los puntos 2 a 5; y el punto 6 como cierre, breve y personal. Alice muestra la primera y la última como tus mensajes y lo del medio en su tarjeta.
+Entrégalo en tres partes separadas por una línea con solo `---`: el saludo del punto 1, una sola frase corta que avise de que ahí va su resumen de la mañana, sin análisis; los puntos 2 a 6; y el punto 7 como cierre, breve y personal. Alice muestra la primera y la última como tus mensajes y lo del medio en su tarjeta.
 
 Menos de 200 palabras. No inventes nada que no esté en los hechos o en tu memoria. Si no hay nada que merezca contarse, dilo en una frase amable y termina (sin `---`).
 

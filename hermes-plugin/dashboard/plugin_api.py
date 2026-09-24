@@ -1126,6 +1126,35 @@ async def post_vault_otp(body: _OtpBody) -> JSONResponse:
     return await asyncio.to_thread(_save_otp, body)
 
 
+# --- Health (health.py) -----------------------------------------------------------------
+
+class _HealthUpload(BaseModel):
+    days: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+@router.get("/health")
+async def health_status() -> JSONResponse:
+    """Whether Health is connected, and how many days are kept. Never the values."""
+    def status():
+        data = _plugin_module("health.py", "alice_health").read(_engine_home())
+        return {"connected": bool(data.get("connected")), "days": len(data.get("days") or {}),
+                "updated_at": data.get("updated_at")}
+    return JSONResponse(await asyncio.to_thread(status), headers=_NO_STORE)
+
+
+@router.post("/health")
+async def health_upload(body: _HealthUpload) -> JSONResponse:
+    """The iPhone's daily Health summaries (sleep, steps, energy, workouts, resting HR, HRV)."""
+    result = await asyncio.to_thread(lambda: _plugin_module("health.py", "alice_health").save(_engine_home(), body.days))
+    return JSONResponse(result, headers=_NO_STORE)
+
+
+@router.post("/health/disconnect")
+async def health_disconnect() -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(lambda: _plugin_module("health.py", "alice_health").disconnect(_engine_home())),
+                        headers=_NO_STORE)
+
+
 # --- Notes: the store an agent keeps in its workspace ------------------------------------
 
 NOTES_STORE = Path("workspace") / "inbox-store"
@@ -2327,6 +2356,17 @@ async def goals_list(profile: str = "default") -> JSONResponse:
     """Every goal with its plan and log, open ones first."""
     name = await asyncio.to_thread(_known_profile, profile)
     goals = await asyncio.to_thread(lambda: _with_goals(name, lambda g: g.list(include_done=True)))
+
+    def measured():
+        health = _plugin_module("health.py", "alice_health")
+        for goal in goals:
+            measure = goal.get("measure")
+            if measure:
+                goal["measured"] = health.goal_progress(_engine_home(), measure.get("metric", ""), measure.get("target", 0),
+                                                        measure.get("direction", "at_least"), measure.get("window_days", 7))
+        return goals
+
+    goals = await asyncio.to_thread(measured)
     return JSONResponse({"profile": name, "goals": goals}, headers=_NO_STORE)
 
 

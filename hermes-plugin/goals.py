@@ -33,6 +33,28 @@ class GoalError(Exception):
     pass
 
 
+DIRECTIONS = ("at_least", "at_most")
+
+
+def _measure(metric: Any, target: Any, direction: Any = None, window_days: Any = None) -> Optional[Dict[str, Any]]:
+    """A goal measured by the person's own data ('sleep 7 h on average'): what, how much, which way."""
+    metric = str(metric or "").strip()
+    if not metric:
+        return None
+    try:
+        target = float(target)
+    except (TypeError, ValueError):
+        raise GoalError("A measured goal needs a numeric target.") from None
+    direction = str(direction or "at_least")
+    if direction not in DIRECTIONS:
+        raise GoalError("direction is at_least or at_most.")
+    try:
+        window = int(window_days or 7)
+    except (TypeError, ValueError):
+        window = 7
+    return {"metric": metric[:40], "target": target, "direction": direction, "window_days": max(3, min(window, 90))}
+
+
 def _text(value: Any, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
@@ -105,7 +127,7 @@ class Goals:
     # writing
 
     def create(self, title: str, why: str = "", due: Any = None, steps: Optional[List[Any]] = None,
-               by: str = "agent") -> Dict[str, Any]:
+               by: str = "agent", measure: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         title = _text(title, 120)
         if not title:
             raise GoalError("A goal needs a title.")
@@ -117,6 +139,8 @@ class Goals:
             goal = {"id": secrets.token_hex(4), "title": title, "why": _text(why, 400), "status": "active",
                     "due": _date(due), "created_at": now, "updated_at": now, "steps": [], "log": [],
                     "routines": []}
+            if measure:
+                goal["measure"] = measure
             for step in (steps or [])[:MAX_STEPS]:
                 self._add_step(goal, step)
             goal["log"].append({"at": now, "by": by, "text": "Goal set."})
@@ -137,9 +161,14 @@ class Goals:
         return item
 
     def update(self, goal_id: str, *, title: Any = None, why: Any = None, status: Any = None, due: Any = "",
-               note: Any = None, by: str = "agent") -> Dict[str, Any]:
+               note: Any = None, by: str = "agent", measure: Any = "") -> Dict[str, Any]:
         def change(goals):
             goal = self._find(goals, goal_id)
+            if measure != "":
+                if measure:
+                    goal["measure"] = measure
+                else:
+                    goal.pop("measure", None)
             if title is not None and _text(title, 120):
                 goal["title"] = _text(title, 120)
             if why is not None:
@@ -217,13 +246,16 @@ class Goals:
 # ── What the agent sees ─────────────────────────────────────────────────────────
 
 
-def summary(goals: List[Dict[str, Any]], limit: int = 12) -> str:
+def summary(goals: List[Dict[str, Any]], limit: int = 12, measured: Optional[Callable] = None) -> str:
     """The open goals, one line each, for the agent's prompt."""
     lines = []
     for goal in [g for g in goals if g.get("status") != "done"][:limit]:
         progress = Goals.progress(goal)
         nxt = Goals.next_step(goal)
         bits = [f"[{goal['id']}] {goal['title']}"]
+        reading = measured(goal) if measured and goal.get("measure") else None
+        if reading:
+            bits.append(f"media {reading['average']} = {reading['percent']} %" + (" (cumplido)" if reading["met"] else ""))
         if goal.get("status") == "paused":
             bits.append("(paused)")
         if progress["total"]:
@@ -248,8 +280,8 @@ PROMPT = (
 )
 
 
-def prompt_section(goals: List[Dict[str, Any]]) -> str:
-    open_goals = summary(goals)
+def prompt_section(goals: List[Dict[str, Any]], measured: Optional[Callable] = None) -> str:
+    open_goals = summary(goals, measured=measured)
     if not open_goals:
         return PROMPT
     return PROMPT + "\nObjetivos abiertos ahora:\n" + open_goals + "\n"
@@ -267,7 +299,11 @@ SCHEMA = {
         "update: goal_id with title/why/due/status (active, paused, done) and/or note (a short progress note). "
         "step: goal_id plus add (text or list) for new steps, or step_id with status (todo, doing, done), "
         "text, or remove=true. link_routine: goal_id and routine (the cronjob id working on it). "
-        "remove: goal_id, only when the person asks."
+        "remove: goal_id, only when the person asks. "
+        "A goal about a health number (sleep, steps, exercise, resting heart rate, HRV) can be measured: "
+        "pass metric (sleep_h, steps, workout_min, active_kcal, rhr, hrv), target, direction (at_least or "
+        "at_most) and window_days (average over that many days, default 7) on create or update; its "
+        "progress then comes from their Health data, not from ticking steps."
     ),
     "parameters": {
         "type": "object",
@@ -287,28 +323,33 @@ SCHEMA = {
             "remove": {"type": "boolean"},
             "routine": {"type": "string"},
             "include_done": {"type": "boolean"},
+            "metric": {"type": "string"},
+            "target": {"type": "number"},
+            "direction": {"type": "string", "enum": list(DIRECTIONS)},
+            "window_days": {"type": "integer"},
         },
         "required": ["action"],
     },
 }
 
 
-def run_tool(store: Goals, args: Dict[str, Any]) -> Dict[str, Any]:
+def run_tool(store: Goals, args: Dict[str, Any], measured: Optional[Callable] = None) -> Dict[str, Any]:
     action = str(args.get("action") or "").strip()
     try:
+        measure = _measure(args.get("metric"), args.get("target"), args.get("direction"), args.get("window_days"))
         if action == "list":
             goals = store.list(include_done=bool(args.get("include_done")))
-            return {"ok": True, "goals": [_brief(g) for g in goals]}
+            return {"ok": True, "goals": [_brief(g, measured) for g in goals]}
         if action == "create":
             return {"ok": True, "goal": store.create(args.get("title"), args.get("why") or "", args.get("due"),
-                                                     args.get("steps") or [])}
+                                                     args.get("steps") or [], measure=measure)}
         goal_id = str(args.get("goal_id") or "")
         if not goal_id:
             raise GoalError("goal_id is required.")
         if action == "update":
             return {"ok": True, "goal": store.update(goal_id, title=args.get("title"), why=args.get("why"),
                                                      status=args.get("status"), due=args.get("due", ""),
-                                                     note=args.get("note"))}
+                                                     note=args.get("note"), measure=measure if measure else "")}
         if action == "step":
             return {"ok": True, "goal": store.step(goal_id, add=args.get("add"), step_id=args.get("step_id"),
                                                    status=args.get("status"), text=args.get("text"),
@@ -323,8 +364,10 @@ def run_tool(store: Goals, args: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
-def _brief(goal: Dict[str, Any]) -> Dict[str, Any]:
+def _brief(goal: Dict[str, Any], measured: Optional[Callable] = None) -> Dict[str, Any]:
     nxt = Goals.next_step(goal)
-    return {"id": goal["id"], "title": goal["title"], "status": goal["status"], "due": goal.get("due"),
+    reading = measured(goal) if measured and goal.get("measure") else None
+    return {"measure": goal.get("measure"), "measured": reading,
+            "id": goal["id"], "title": goal["title"], "status": goal["status"], "due": goal.get("due"),
             "progress": Goals.progress(goal), "next": nxt and {"id": nxt["id"], "text": nxt["text"]},
             "steps": [{"id": s["id"], "text": s["text"], "status": s["status"]} for s in goal.get("steps") or []]}

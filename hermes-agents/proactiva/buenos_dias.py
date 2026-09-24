@@ -189,6 +189,35 @@ def reminders_due(home: Path, now: float, local) -> Optional[List[str]]:
     return [line for _, _, line in sorted(rows)]
 
 
+def _health_module(home: Path):
+    """Alice's plugin reads Health; the briefing reuses it rather than a second copy of the maths."""
+    import importlib.util
+
+    path = home / "plugins" / "alice" / "health.py"
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("alice_health_briefing", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    return module
+
+
+def health_facts(home: Path, now: float, local) -> Optional[Dict[str, List[str]]]:
+    """What is clearly off in last night's sleep and recovery, one pattern, and on Mondays the week."""
+    module = _health_module(home)
+    if module is None or not module.read(home).get("connected"):
+        return None
+    today = local(now).date()
+    facts = {"notable": module.notable(home, today),
+             "patterns": [p["text"] for p in module.patterns(home, today=today)[:1]]}
+    if today.weekday() == 0:
+        facts["week"] = module.week(home, today)
+    return facts
+
+
 def open_goals(home: Path, local) -> List[str]:
     """Active goals and the next step of each (`.alice/goals.json`, kept by the goals tool)."""
     try:
@@ -203,7 +232,13 @@ def open_goals(home: Path, local) -> List[str]:
         nxt = next((st.get("text") or st.get("title") for st in steps if st.get("status") != "done"), None)
         due = f" (para el {goal['due']})" if goal.get("due") else ""
         line = f"- {goal.get('title', 'Objetivo')}{due}"
-        if nxt:
+        measure = goal.get("measure")
+        module = _health_module(home) if measure else None
+        reading = module.goal_progress(home, measure.get("metric", ""), measure.get("target", 0),
+                                       measure.get("direction", "at_least"), measure.get("window_days", 7)) if module else None
+        if reading:
+            line += f" → media {reading['average']}, {reading['percent']} %" + (" (cumplido)" if reading["met"] else "")
+        elif nxt:
             line += f" → siguiente paso: {nxt}"
         rows.append(line)
     return rows[:6]
@@ -341,6 +376,7 @@ def facts(home: Path, now: float, hours: float) -> str:
     health = system_health(home, now)
     web = sites(home)
     errors = overnight_errors(home, since)
+    body = health_facts(home, now, local)
 
     moment = local(now)
     lines = [
@@ -360,6 +396,15 @@ def facts(home: Path, now: float, hours: float) -> str:
     if goals:
         lines.append("\nSus objetivos activos:")
         lines += goals
+    if body is not None:
+        lines.append("\nSu salud (app Salud del iPhone y su pulsera; solo lo que se sale de su normal):")
+        lines += body["notable"] or ["- Nada fuera de lo normal."]
+        if body["patterns"]:
+            lines.append("Un patrón que se repite en sus datos:")
+            lines += [f"- {p}" for p in body["patterns"]]
+        if "week" in body:
+            lines.append("Su semana (últimos 7 días frente a los 7 anteriores):")
+            lines += body["week"] or ["- Sin datos suficientes."]
     lines.append("\nRutinas programadas para lo que queda de hoy:")
     lines += sorted(upcoming) or ["- Ninguna."]
     lines.append("\nEstado del sistema (su Mac y Hermes):")
