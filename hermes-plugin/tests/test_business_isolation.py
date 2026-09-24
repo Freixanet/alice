@@ -152,6 +152,8 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_system_prompt_section.assert_any_call("alice.resolver", self.plugin.resolve_prompt)
         # And in iMessage or SMS, plain text: those channels show markdown as symbols.
         ctx.register_system_prompt_section.assert_any_call("alice.canal", self.plugin.channel_prompt)
+        # Hard tasks: what must be true is checked, and what was not is named.
+        self.assertIn("Sin comprobar", self.plugin.resolve_prompt())
         self.assertIn("nada de Markdown", self.plugin.channel_prompt({"platform": "photon"}))
         self.assertEqual(self.plugin.channel_prompt({"platform": "telegram"}), "")
         self.assertEqual(ctx.register_system_prompt_section.call_count, 7)

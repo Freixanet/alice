@@ -24,7 +24,9 @@ CONSTRAINTS = (
     "Never press a button that pays, sends, publishes or deletes without the person's explicit yes "
     "for this task (in the chat, or for a card payment in Hermes' card confirmation). Never ask for or write a password, card number or code in the chat: "
     "those go through the secure cards. Do not change what the person asked for (product, quantity, "
-    "dates, price seen) on your own."
+    "dates, price seen) on your own. Before claiming done, the facts the result depends on (price, "
+    "date, availability, requirements) must have been checked with tools, not assumed; anything left "
+    "unchecked must be named in the reply as «Sin comprobar: …»."
 )
 STOP_WHEN = (
     "Stop ONLY when the reply shows one of these, and asks the person one concrete question: "
@@ -57,7 +59,8 @@ SCHEMA: Dict[str, Any] = {
             },
             "done_when": {
                 "type": "string",
-                "description": "What the finished result looks like and how you will show it, e.g. "
+                "description": "What the finished result looks like, how you will show it and what must be "
+                               "checked to trust it, e.g. "
                                "'order confirmation page with an order number' or, before their yes, "
                                "'checkout ready at the pay button with 1 × item, total and delivery'.",
             },

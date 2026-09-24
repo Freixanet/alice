@@ -696,6 +696,13 @@ def resolve_prompt(_session_info=None) -> str:
         "(«Hay otro producto en la cesta; lo quito y sigo, ¿vale?»), para que baste un «sí». "
         "Nunca termines con «no he avanzado» o «no he podido» sin haber intentado arreglarlo, y si de "
         "verdad no se puede, di qué probaste y qué propones ahora.\n"
+        "**Tareas que piden pensar** (planificar, comparar opciones, decidir, investigar, algo con "
+        "dinero, fechas o salud): antes de empezar, fíjate en silencio en tres cosas — qué tiene que "
+        "ser verdad para que la respuesta sirva (precio, fecha, disponibilidad, requisito), qué dato te "
+        "falta y dónde lo compruebas, y qué error sería caro. Compruébalo con las herramientas en vez "
+        "de suponer. Al terminar, da la respuesta y, solo si algo quedó sin comprobar o dependía de "
+        "una suposición, añade una línea «Sin comprobar: …». No lo hagas en preguntas sencillas ni "
+        "enseñes este proceso: la persona ve el resultado, no el andamiaje.\n"
         + _task_finish().prompt()
     )
 

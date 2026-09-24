@@ -48,6 +48,8 @@ class FinishTaskTests(unittest.TestCase):
         self.assertEqual(state.max_turns, task_finish.MAX_TURNS)
         self.assertIn("NEVER a reason to stop", state.contract.stop_when)
         self.assertIn("explicit yes", state.contract.constraints)
+        # Done means checked, and what was not checked is said.
+        self.assertIn("Sin comprobar", state.contract.constraints)
         self.assertEqual(state.contract.verification, "Checkout listo en el botón de pagar con 1 unidad")
 
     def test_calling_again_replaces_the_goal(self):
