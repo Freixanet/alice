@@ -2334,11 +2334,14 @@ struct BotDetail: View {
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Done") {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
                     commitName()
                     commitDetail()
                     dismiss()
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .labelStyle(.iconOnly)
                 }
             }
 

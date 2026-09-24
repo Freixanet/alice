@@ -165,12 +165,12 @@ private struct ChatScreenContent: View, Equatable {
         // it, not a summary.
         // Alice's own face opens her settings the way a contact opens in
         // Messages: the page grows out of the portrait.
-        .sheet(isPresented: $showingAlice) {
+        .fullScreenCover(isPresented: $showingAlice) {
             NavigationStack { SettingsView() }
                 .preferredColorScheme(store.theme.colorScheme)
                 .navigationTransition(.zoom(sourceID: "alice-avatar", in: avatarZoom))
         }
-        .sheet(item: $configuring) { bot in
+        .fullScreenCover(item: $configuring) { bot in
             NavigationStack {
                 BotDetail(bot: bot, onChange: { Task { await refreshBots() } })
             }

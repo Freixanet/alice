@@ -52,6 +52,9 @@ struct ChatHeaderAvatar<Face: View>: View {
             .padding(.vertical, 5)
             .glassEffect(.regular.interactive(), in: .capsule)
             .offset(y: -12)
+            // Over the portrait, as in Messages: the zoom source and the
+            // shadow put the disc in its own layer, which drew above the name.
+            .zIndex(1)
         }
         .padding(.bottom, -2)
         .accessibilityElement(children: .ignore)
