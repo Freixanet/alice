@@ -147,8 +147,12 @@ struct PaymentCardSheet: View {
                     HStack {
                         TextField(language.pick("MM/YY", "MM/AA"), text: $fields.expiry)
                             .textContentType(.creditCardExpiration)
-                            .keyboardType(.numbersAndPunctuation)
+                            .keyboardType(.numberPad)
                             .focused($focus, equals: .expiry)
+                            .onChange(of: fields.expiry) { _, new in
+                                let formatted = PaymentCardFields.expiryFormatted(new)
+                                if formatted != new { fields.expiry = formatted }
+                            }
                         Divider()
                         SecureField("CVC", text: $fields.cvc)
                             .textContentType(.creditCardSecurityCode)
@@ -166,7 +170,7 @@ struct PaymentCardSheet: View {
                     Text(language.pick("Saved encrypted in Hermes on your Mac, for \(offer.host) only. Alice fills it in without seeing it, after you confirm, and it never appears in the chat.",
                                        "Se guarda cifrada en Hermes, en tu Mac, solo para \(offer.host). Alice la rellena sin verla, después de que lo confirmes, y nunca aparece en el chat."))
                 }
-                if let problem {
+                if let problem = problem ?? fields.problem(spanish: language == .spanish) {
                     Text(problem)
                         .font(.footnote)
                         .foregroundStyle(Palette.danger(scheme))

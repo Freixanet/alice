@@ -86,6 +86,32 @@ struct PaymentCardFields: Sendable {
         return body
     }
 
+    /// What is wrong with what was typed, once enough is typed to tell —
+    /// so a disabled Save never leaves the person guessing.
+    func problem(spanish: Bool, now: Date = .now) -> String? {
+        if digits.count >= 13, !(12...19).contains(digits.count) || !Self.luhn(digits) {
+            if digits.count >= 16 || !(12...19).contains(digits.count) {
+                return spanish ? "Revisa el número: no es una tarjeta válida." : "Check the number: it isn't a valid card."
+            }
+        }
+        if expiry.filter(\.isNumber).count >= 4 {
+            guard let parts = expiryParts else {
+                return spanish ? "La caducidad es MM/AA." : "The expiry is MM/YY."
+            }
+            let today = Calendar(identifier: .gregorian).dateComponents([.year, .month], from: now)
+            if (parts.year, parts.month) < (today.year ?? 0, today.month ?? 0) {
+                return spanish ? "Esta tarjeta ya ha caducado." : "This card has expired."
+            }
+        }
+        return nil
+    }
+
+    /// "0329" → "03/29" as it is typed.
+    static func expiryFormatted(_ text: String) -> String {
+        let digits = String(text.filter(\.isNumber).prefix(4))
+        return digits.count > 2 ? digits.prefix(2) + "/" + digits.dropFirst(2) : digits
+    }
+
     /// The number grouped in fours as it is typed.
     static func grouped(_ text: String) -> String {
         let digits = String(text.filter(\.isNumber).prefix(19))

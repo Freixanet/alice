@@ -1,6 +1,46 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Disconnect Health?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Desconectar Salud?"
+          }
+        }
+      }
+    },
+    "Alice stops reading Health and your Hermes forgets the days it kept. Nothing in Health changes.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice deja de leer Salud y tu Hermes olvida los días que guardaba. En Salud no cambia nada."
+          }
+        }
+      }
+    },
+    "Sleep, activity, heart and medication, one summary a day to your own Hermes.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sueño, actividad, corazón y medicación: un resumen al día para tu propio Hermes."
+          }
+        }
+      }
+    },
+    "Also brings what your WHOOP or Apple Watch writes to Health.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "También trae lo que tu WHOOP o Apple Watch escriben en Salud."
+          }
+        }
+      }
+    },
     "Never ask me for codes here": {
       "localizations": {
         "es": {

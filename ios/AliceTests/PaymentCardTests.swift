@@ -50,4 +50,17 @@ final class PaymentCardTests: XCTestCase {
         ]
         XCTAssertEqual(RoutineDelivery.present(messages, botName: nil).map(\.id), ["1"])
     }
+
+    func testTheFormSaysWhatIsWrongInsteadOfAMuteSaveButton() {
+        let now = DateComponents(calendar: Calendar(identifier: .gregorian), year: 2026, month: 9, day: 24).date!
+        var card = PaymentCardFields(number: "4242 4242 4242 4241", name: "", expiry: "", cvc: "")
+        XCTAssertEqual(card.problem(spanish: true, now: now), "Revisa el número: no es una tarjeta válida.")
+        card.number = "4242 4242 42"
+        XCTAssertNil(card.problem(spanish: true, now: now))  // still typing
+        card.number = "4242 4242 4242 4242"
+        card.expiry = "08/26"
+        XCTAssertEqual(card.problem(spanish: true, now: now), "Esta tarjeta ya ha caducado.")
+        XCTAssertEqual(PaymentCardFields.expiryFormatted("0329"), "03/29")
+        XCTAssertEqual(PaymentCardFields.expiryFormatted("03"), "03")
+    }
 }

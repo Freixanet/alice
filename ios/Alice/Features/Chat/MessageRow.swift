@@ -1113,7 +1113,12 @@ private struct PaymentApprovalCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if approval.resolving == true {
-                ProgressView().controlSize(.small)
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.small)
+                    Text(language.pick("Sending your answer…", "Enviando tu respuesta…"))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             if let error = approval.error {
                 Text(error).font(.caption).foregroundStyle(Palette.danger(scheme))

@@ -83,9 +83,11 @@ struct HealthConnectCard: View {
 /// Settings › Connections › Health.
 struct HealthConnectionRow: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     @State private var connected = false
     @State private var working = false
     @State private var problem: String?
+    @State private var confirmingDisconnect = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -95,13 +97,8 @@ struct HealthConnectionRow: View {
                 if working {
                     ProgressView()
                 } else if connected {
-                    Button("Disconnect", role: .destructive) {
-                        Task {
-                            await store.disconnectHealth()
-                            connected = false
-                        }
-                    }
-                    .buttonStyle(.borderless)
+                    Button("Disconnect", role: .destructive) { confirmingDisconnect = true }
+                        .buttonStyle(.borderless)
                 } else {
                     Button("Connect") {
                         Task {
@@ -114,7 +111,24 @@ struct HealthConnectionRow: View {
                     .buttonStyle(.borderless)
                 }
             }
-            if let problem { Text(problem).font(.footnote).foregroundStyle(.red) }
+            Text(connected
+                 ? String(localized: "Sleep, activity, heart and medication, one summary a day to your own Hermes.")
+                 : String(localized: "Also brings what your WHOOP or Apple Watch writes to Health."))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            if let problem {
+                Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
+            }
+        }
+        .confirmationDialog("Disconnect Health?", isPresented: $confirmingDisconnect, titleVisibility: .visible) {
+            Button("Disconnect", role: .destructive) {
+                Task {
+                    await store.disconnectHealth()
+                    connected = false
+                }
+            }
+        } message: {
+            Text("Alice stops reading Health and your Hermes forgets the days it kept. Nothing in Health changes.")
         }
         .task { connected = store.healthConnected }
     }
