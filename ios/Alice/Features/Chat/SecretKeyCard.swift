@@ -97,7 +97,7 @@ struct SecretKeyCard: View {
             try await store.saveSecret(name, value: value.trimmingCharacters(in: .whitespacesAndNewlines))
             value = ""
             withAnimation(.snappy) { saved = true }
-            store.sendQuickReply(language.pick("Done, the key is saved.", "Hecho, la clave está guardada."))
+            store.sendAppNote("The person saved \(name). Carry on with the task.")
         } catch {
             problem = PlainWords.describe(error, doing: "save the key")
         }

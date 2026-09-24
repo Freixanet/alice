@@ -257,7 +257,16 @@ struct MessageRow: View {
                             .foregroundStyle(.secondary)
                     }
                     if let approval = message.approval {
-                        RunApprovalCard(messageID: message.id, approval: approval)
+                        if let payment = PaymentApproval(command: approval.command) {
+                            // The card itself has no words of Alice's; the chat around it does.
+                            let said = message.content.isEmpty
+                                ? (store.activeConversation?.messages.last { $0.role == .assistant && !$0.content.isEmpty }?.content ?? "")
+                                : message.content
+                            PaymentApprovalCard(messageID: message.id, approval: approval, payment: payment,
+                                                language: ChatLanguage.of(said))
+                        } else {
+                            RunApprovalCard(messageID: message.id, approval: approval)
+                        }
                     }
                     if let limit = message.errorLimit {
                         ModelLimitNote(limit: limit)
@@ -1067,6 +1076,53 @@ private struct RunApprovalCard: View {
 
     private func label(for choice: Message.ApprovalChoice) -> String {
         ApprovalExplainer.label(choice)
+    }
+}
+
+/// The one yes a purchase needs: Hermes asks before it writes a saved card
+/// into the checkout. What is being bought and for how much is in Alice's
+/// message just above; this says where and with which card.
+private struct PaymentApprovalCard: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let messageID: String
+    let approval: Message.Approval
+    let payment: PaymentApproval
+    let language: ChatLanguage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(language.pick("Confirm the payment", "Confirmar el pago"), systemImage: "creditcard")
+                .font(.subheadline.weight(.semibold))
+            Text(language.pick("Alice will pay on \(payment.site) with your \(payment.card).",
+                               "Alice pagará en \(payment.site) con tu \(payment.card)."))
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                ApprovalChoiceButton(title: language.pick("Pay", "Pagar"), deny: false,
+                                     disabled: approval.resolving == true, tint: store.accent.control(scheme)) {
+                    Task { await store.resolveApproval(messageID: messageID, choice: .once) }
+                }
+                ApprovalChoiceButton(title: language.pick("Cancel", "Cancelar"), deny: true,
+                                     disabled: approval.resolving == true, tint: store.accent.control(scheme)) {
+                    Task { await store.resolveApproval(messageID: messageID, choice: .deny) }
+                }
+            }
+            Text(language.pick("The card numbers never go through the chat.",
+                               "Los números de la tarjeta nunca pasan por el chat."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if approval.resolving == true {
+                ProgressView().controlSize(.small)
+            }
+            if let error = approval.error {
+                Text(error).font(.caption).foregroundStyle(Palette.danger(scheme))
+            }
+        }
+        .padding(12)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14).stroke(Palette.border(scheme), lineWidth: 0.5) }
+        .accessibilityElement(children: .contain)
     }
 }
 

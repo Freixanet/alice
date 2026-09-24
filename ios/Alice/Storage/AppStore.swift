@@ -7919,6 +7919,12 @@ final class AppStore {
     /// A reply button in a message (`alice://reply`): its text goes into the
     /// chat on screen as if typed. Whatever the person was writing stays in
     /// the composer, and is not sent along with it.
+    /// Tells the agent something the person did in a card (a card saved, a key
+    /// given) so it carries on, without a message the person never wrote.
+    func sendAppNote(_ note: String) {
+        sendQuickReply(AppNote.text(note))
+    }
+
     func sendQuickReply(_ text: String) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reply.isEmpty else { return }

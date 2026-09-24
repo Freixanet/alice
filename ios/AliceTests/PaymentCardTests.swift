@@ -32,4 +32,22 @@ final class PaymentCardTests: XCTestCase {
         XCTAssertFalse(card.isValid(now: now))
         XCTAssertEqual(PaymentCardFields.grouped("4242424242424242"), "4242 4242 4242 4242")
     }
+
+    func testHermesCardConfirmationBecomesThePaymentQuestion() throws {
+        let payment = try XCTUnwrap(PaymentApproval(command: "Fill payment card 'Mastercard ···8133' on https://www.piensosraposo.es"))
+        XCTAssertEqual(payment.card, "Mastercard ···8133")
+        XCTAssertEqual(payment.site, "piensosraposo.es")
+        XCTAssertNil(PaymentApproval(command: "rm -rf /tmp/x"))
+    }
+
+    func testWhatTheAppTellsTheAgentIsNeverShownAsThePersonsMessage() {
+        XCTAssertTrue(AppNote.isNote(AppNote.text("The person saved Visa ···4242.")))
+        XCTAssertTrue(AppNote.isNote("@inbox " + AppNote.text("Carry on.")))
+        XCTAssertFalse(AppNote.isNote("Hecho, la tarjeta está guardada."))
+        let messages = [
+            Message(id: "1", role: .user, content: "Cómprame el pienso", createdAt: .now),
+            Message(id: "2", role: .user, content: AppNote.text("The person saved a card. Carry on."), createdAt: .now),
+        ]
+        XCTAssertEqual(RoutineDelivery.present(messages, botName: nil).map(\.id), ["1"])
+    }
 }

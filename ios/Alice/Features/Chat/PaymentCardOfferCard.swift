@@ -14,6 +14,10 @@ struct PaymentCardOfferCard: View {
     @Environment(\.replySuperseded) private var superseded
     @State private var showingForm = false
     @State private var saved: SavedCard?
+    /// A card already saved for another site, offered here with one tap.
+    @State private var known: SavedCard?
+    @State private var working = false
+    @State private var problem: String?
 
     var body: some View {
         if let saved {
@@ -39,8 +43,27 @@ struct PaymentCardOfferCard: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                Button(language.pick("Add", "Añadir")) { showingForm = true }
+                if known == nil {
+                    Button(language.pick("Add", "Añadir")) { showingForm = true }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            if let known {
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await use(known) }
+                    } label: {
+                        if working { ProgressView() } else { Text(language.pick("Use \(known.label)", "Usar \(known.label)")) }
+                    }
                     .buttonStyle(.borderedProminent)
+                    .disabled(working)
+                    Button(language.pick("Another card", "Otra tarjeta")) { showingForm = true }
+                        .buttonStyle(.bordered)
+                        .disabled(working)
+                }
+            }
+            if let problem {
+                Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
             }
             Text(language.pick("Kept encrypted in Hermes on your Mac. It never goes through the chat, and Alice asks before using it.",
                                "Se guarda cifrada en Hermes, en tu Mac. Nunca pasa por el chat, y Alice te pregunta antes de usarla."))
@@ -51,12 +74,28 @@ struct PaymentCardOfferCard: View {
         .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
         .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5) }
         .sheet(isPresented: $showingForm) {
-            PaymentCardSheet(offer: offer, language: language) { card in
-                withAnimation(.snappy) { saved = card }
-                store.sendQuickReply(language.pick("Done, the card is saved. Go ahead.",
-                                                   "Hecho, la tarjeta está guardada. Sigue."))
-            }
+            PaymentCardSheet(offer: offer, language: language) { card in finish(card) }
         }
+        .task {
+            let cards = (try? await store.savedCards(profile: offer.profile)) ?? []
+            known = cards.first { $0.origin != offer.origin }
+        }
+    }
+
+    private func use(_ card: SavedCard) async {
+        working = true
+        problem = nil
+        defer { working = false }
+        do {
+            finish(try await store.saveCard(nil, handle: card.handle, origin: offer.origin, profile: offer.profile))
+        } catch {
+            problem = PlainWords.describe(error, doing: "use the card")
+        }
+    }
+
+    private func finish(_ card: SavedCard) {
+        withAnimation(.snappy) { saved = card }
+        store.sendAppNote("The person saved \(card.label) for \(card.origin ?? offer.origin). Carry on with the task.")
     }
 }
 

@@ -220,7 +220,7 @@ struct SecureRequestSheet: View {
         // The vault answer is the same for both; only this says it is a new
         // account. No secret in it: the site, and what to do.
         if delivered, !value.isEmpty, newAccount, case .saveLogin = request.kind {
-            store.sendQuickReply(String(localized: "I don't have an account on \(host): create it with the email and password I just gave. Ask me in the chat for anything else the form needs."))
+            store.sendAppNote("The person has no account on \(host): create it with the email and password they just gave. Ask only for what the form needs and they have not given.")
         }
     }
 }

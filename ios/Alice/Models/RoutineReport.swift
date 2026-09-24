@@ -171,7 +171,9 @@ enum RoutineDelivery {
         _ messages: Messages, botName: String?, quietRuns: [QuietRoutineRun] = [],
         agentAnswers: Set<String> = []
     ) -> [Message] where Messages.Element == Message {
-        var shown = reports(Array(messages), botName: botName, agentAnswers: agentAnswers)
+        // What the app told the agent on the person's behalf is not theirs to see as sent.
+        let written = messages.filter { !($0.role == .user && AppNote.isNote($0.content)) }
+        var shown = reports(written, botName: botName, agentAnswers: agentAnswers)
         // Runs without news leave nothing in the transcript. The agent says
         // so in its own words where the run happened — a message, not a
         // card: there is no report to show.

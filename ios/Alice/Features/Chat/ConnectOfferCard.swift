@@ -141,7 +141,7 @@ struct ConnectOfferCard: View {
             self.problem = problem
         } else {
             // The agent carries on with what it was asked, now with the day in view.
-            store.sendQuickReply(language.pick("Done, my calendar is connected.", "Listo, ya he conectado el calendario."))
+            store.sendAppNote("The person connected their calendar. Carry on with the task.")
         }
     }
 

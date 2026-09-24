@@ -72,6 +72,17 @@ class VaultTests(unittest.TestCase):
         self.assertEqual(cards.cards(), [saved])
         self.assertNotIn("4242424242424242", repr(cards.cards()))
 
+    def test_a_shop_card_also_works_on_its_www_twin_and_is_removed_from_both(self):
+        saved = cards.save("https://piensosraposo.es", self.card)
+        self.assertEqual(sorted(c["origin"] for c in cards.cards()),
+                         ["https://piensosraposo.es", "https://www.piensosraposo.es"])
+        self.assertTrue(cards.remove(saved["handle"]))
+        self.assertEqual(cards.cards(), [])
+
+    def test_twins(self):
+        self.assertEqual(cards.twins("https://www.shop.es"), ["https://www.shop.es", "https://shop.es"])
+        self.assertEqual(cards.twins("https://sis.redsys.es"), ["https://sis.redsys.es"])
+
     def test_only_https_pages(self):
         with self.assertRaises(cards.CardError):
             cards.save("http://shop.example", self.card)
@@ -109,7 +120,9 @@ class PromptTests(unittest.TestCase):
     def test_the_link_names_the_profile_and_the_chat_never_carries_the_card(self):
         text = cards.prompt("default")
         self.assertIn("alice://connect/card?origin=ORIGEN&profile=default", text)
-        self.assertIn("nunca pidas los datos de la tarjeta en el chat", text)
+        self.assertIn("nunca pidas los datos en el chat", text)
+        # Hermes' card confirmation is the one yes; the agent does not ask again in the chat.
+        self.assertIn("es el sí de la compra", text)
 
 
 if __name__ == "__main__":

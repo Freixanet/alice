@@ -22,14 +22,14 @@ CONTINUATION_PREFIX = "[Continuing toward your standing goal]"
 
 CONSTRAINTS = (
     "Never press a button that pays, sends, publishes or deletes without the person's explicit yes "
-    "for this task in the chat. Never ask for or write a password, card number or code in the chat: "
+    "for this task (in the chat, or for a card payment in Hermes' card confirmation). Never ask for or write a password, card number or code in the chat: "
     "those go through the secure cards. Do not change what the person asked for (product, quantity, "
     "dates, price seen) on your own."
 )
 STOP_WHEN = (
     "Stop ONLY when the reply shows one of these, and asks the person one concrete question: "
     "(a) everything is ready and the next click is the irreversible one (pay, send, confirm), waiting "
-    "for their yes; (b) continuing would change what they asked for (another product, a higher price, "
+    "for their yes — for a card payment, Hermes' card confirmation is that yes; (b) continuing would change what they asked for (another product, a higher price, "
     "an extra cost, other dates); (c) something only the person has is needed (a password, a card, a "
     "code, a choice about their personal data) and was asked through the secure card. An obstacle on "
     "the site — a basket left from before, an incomplete or invalid form, a pop-up, an expired session, "

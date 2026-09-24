@@ -108,3 +108,21 @@ struct PaymentCardFields: Sendable {
         return total % 10 == 0
     }
 }
+
+/// Hermes' confirmation before it writes a saved card into a checkout
+/// (`Fill payment card 'Visa ···4242' on https://shop.example`). It is the one
+/// yes a purchase needs, so it is asked as that — pay or cancel — and never
+/// offers to stop asking.
+struct PaymentApproval: Hashable, Sendable {
+    let card: String
+    let site: String
+
+    init?(command: String?) {
+        guard let command, command.hasPrefix("Fill payment card '"),
+              let close = command.range(of: "' on ", options: .backwards)
+        else { return nil }
+        card = String(command[command.index(command.startIndex, offsetBy: "Fill payment card '".count)..<close.lowerBound])
+        let origin = String(command[close.upperBound...]).trimmingCharacters(in: .whitespaces)
+        site = URL(string: origin)?.host(percentEncoded: false)?.replacingOccurrences(of: "www.", with: "") ?? origin
+    }
+}

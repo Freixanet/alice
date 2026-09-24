@@ -50,6 +50,19 @@ def check_origin(origin: str) -> str:
     return normalize_origin(f"https://{parts.netloc}")
 
 
+def twins(origin: str) -> List[str]:
+    """The site with and without ``www.``: shops send checkouts to either, and it is the same site."""
+    parts = urlsplit(origin)
+    host, port = parts.hostname or "", f":{parts.port}" if parts.port else ""
+    if host.startswith("www."):
+        other = host[4:]
+    elif host.count(".") == 1:
+        other = f"www.{host}"
+    else:
+        return [origin]  # a subdomain such as sis.redsys.es has no www twin
+    return [origin, f"https://{other}{port}"]
+
+
 def luhn_ok(number: str) -> bool:
     total = 0
     for i, ch in enumerate(reversed(number)):
@@ -108,11 +121,14 @@ def save(origin: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     payload = clean_card(fields)
     label = f"{brand(payload['card_number'])} ···{payload['card_number'][-4:]}"
     store = _store()
-    # The same card for the same site replaces the earlier one (a new expiry or code).
-    for meta in store.list_items():
-        if meta.kind == "payment" and meta.origin == site and meta.label == label:
-            store.remove_item(meta.id)
-    return _public(store.add_item(kind="payment", label=label, secret=payload, origin=site))
+    saved = []
+    for origin_ in twins(site):
+        # The same card for the same site replaces the earlier one (a new expiry or code).
+        for meta in store.list_items():
+            if meta.kind == "payment" and meta.origin == origin_ and meta.label == label:
+                store.remove_item(meta.id)
+        saved.append(_public(store.add_item(kind="payment", label=label, secret=payload, origin=origin_)))
+    return saved[0]
 
 
 def bind(handle: str, origin: str) -> Dict[str, Any]:
@@ -122,18 +138,26 @@ def bind(handle: str, origin: str) -> Dict[str, Any]:
     meta = store.get_meta(str(handle or ""))
     if meta is None or meta.kind != "payment":
         raise CardError("That card is no longer saved.")
-    for other in store.list_items():
-        if other.kind == "payment" and other.origin == site and other.label == meta.label:
-            return _public(other)
     secret = store.resolve_secret(meta.id)
-    return _public(store.add_item(kind="payment", label=meta.label, secret=secret, origin=site))
+    bound = []
+    for origin_ in twins(site):
+        existing = next((o for o in store.list_items()
+                         if o.kind == "payment" and o.origin == origin_ and o.label == meta.label), None)
+        bound.append(_public(existing) if existing else
+                     _public(store.add_item(kind="payment", label=meta.label, secret=secret, origin=origin_)))
+    return bound[0]
 
 
 def remove(handle: str) -> bool:
+    """Removes the card from that site and from its www twin."""
     store = _store()
     meta = store.get_meta(str(handle or ""))
     if meta is None or meta.kind != "payment":
         return False
+    sites = set(twins(meta.origin)) if meta.origin else set()
+    for other in store.list_items():
+        if other.kind == "payment" and other.label == meta.label and other.origin in sites and other.id != meta.id:
+            store.remove_item(other.id)
     return bool(store.remove_item(meta.id))
 
 
@@ -141,16 +165,23 @@ def prompt(profile: str) -> str:
     """How an agent pays on a bank's page without a card number ever entering the chat."""
     return (
         "## Pagar con tarjeta\n"
-        "Cuando la persona ya ha dicho que sí a una compra y la página de pago (la del banco o la "
-        "pasarela, como Redsys) pide la tarjeta: llama a `browser_vault_list`. Si hay una tarjeta "
-        "(`kind: payment`) con el `origin` de esa página, rellénala con `browser_vault_fill`: Hermes "
-        "le pide a la persona que lo confirme, y tú nunca ves los números. Luego pulsa el botón de "
-        "pagar; si el banco pide aprobar en su app o un código, díselo y espera. "
-        "Si no hay tarjeta para esa página, **nunca pidas los datos de la tarjeta en el chat**: "
-        "di en una frase que falta la tarjeta y termina con esta línea sola: "
-        f"`[Añadir tarjeta](alice://connect/card?origin=ORIGEN&profile={profile})`, con ORIGEN el "
-        "origen de la página de pago (por ejemplo `https://sis.redsys.es`). Cuando diga que está, "
-        "rellénala y paga. Si el relleno no encuentra los campos, dile que toque la vista en directo "
-        "del navegador y la escriba desde ahí, y sigue cuando te lo diga. Nunca escribas, repitas ni "
-        "guardes números de tarjeta, caducidad o CVV en mensajes, notas, memoria o archivos."
+        "La confirmación de Hermes para rellenar la tarjeta **es el sí de la compra**: no pidas otro sí "
+        "en el chat antes ni después. Lleva la compra tú hasta la página donde se escribe la tarjeta "
+        "(en muchas tiendas es la del banco, como `sis.redsys.es`, después de «Realizar pedido»; acepta "
+        "las condiciones de la tienda como parte de la compra). Ahí escribe una sola línea con qué, "
+        "cuánto, dónde llega y cuándo, llama a `browser_vault_list` y, si hay una tarjeta "
+        "(`kind: payment`) con el `origin` de esa página, llama **una vez** a `browser_vault_fill`: "
+        "Hermes le muestra a la persona «Pagar / Cancelar». Si acepta, pulsa el botón de pagar; si el "
+        "banco pide aprobar en su app o un código, díselo y espera. Si cancela (`payment_declined`), "
+        "no lo reintentes. Si una tienda cobra sin pasar por una página de tarjeta, pide ese único sí "
+        "en el chat antes del clic que paga.\n"
+        "Si no hay tarjeta para el `origin` exacto de la página donde están los campos de tarjeta, "
+        "**no llames a `browser_vault_fill`** y nunca pidas los datos en el chat: termina con esta "
+        "línea sola, con ese origen: "
+        f"`[Añadir tarjeta](alice://connect/card?origin=ORIGEN&profile={profile})`. Si ya hay una "
+        "tarjeta para otro sitio, la persona podrá usarla aquí con un toque. Si `browser_vault_fill` "
+        "falla por `origin_mismatch`, no lo repitas: pide la tarjeta para el origen de la página actual. "
+        "Si el relleno no encuentra los campos, dile que toque la vista en directo del navegador y la "
+        "escriba desde ahí. Nunca escribas, repitas ni guardes números de tarjeta, caducidad o CVV en "
+        "mensajes, notas, memoria o archivos."
     )
