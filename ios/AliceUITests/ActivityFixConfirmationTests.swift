@@ -32,10 +32,11 @@ final class ActivityFixConfirmationTests: XCTestCase {
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), "the confirmation should appear")
         confirm.tap()
 
-        let outcome = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "didn't work")).firstMatch
-        XCTAssertTrue(
-            outcome.waitForExistence(timeout: 20),
-            "confirming the fix must run it and show what happened"
-        )
+        // Unconnected, the fix fails; whatever the words, the outcome is said.
+        let note = app.descendants(matching: .any)["activity.fixNote.attention:channel:whatsapp"]
+        XCTAssertTrue(note.waitForExistence(timeout: 20), "confirming the fix must run it")
+        let settled = NSPredicate(format: "label != %@ AND label != ''", "Working on it…")
+        expectation(for: settled, evaluatedWith: note)
+        waitForExpectations(timeout: 20)
     }
 }

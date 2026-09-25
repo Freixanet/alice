@@ -1024,6 +1024,7 @@ private struct EmptyChatView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 32)
                         .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("home.title")
                 }
                 Text("You talk to Alice. One thing at a time.")
                     .font(.subheadline)

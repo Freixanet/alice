@@ -58,7 +58,7 @@ jobs:
           cd "$RUNNER_TEMP/hermes-agent"
           git fetch -q --depth 1 https://github.com/NousResearch/hermes-agent.git "$HERMES_COMMIT"
           git checkout -q FETCH_HEAD
-          python -m pip install -q .
+          python -m pip install -q -e .
       - name: Test Hermes plugin and Mac notifier
         run: |
           set -euo pipefail

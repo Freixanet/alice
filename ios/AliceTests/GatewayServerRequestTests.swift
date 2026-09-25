@@ -129,11 +129,19 @@ final class GatewayServerRequestTests: XCTestCase {
     }
 
     func testQuestionsAliceCannotShowAreNotTurnedIntoCards() {
-        for method in ["sudo", "secret", "vault.unlock_prompt", "mcp.setup", "terminal.read", "tour"] {
+        for method in ["sudo", "mcp.setup", "terminal.read", "tour"] {
             XCTAssertNil(
                 GatewayServerRequests.event(id: "srq-9", method: method, params: ["session_id": "live-1"]),
                 method
             )
+        }
+    }
+
+    func testWhatOnlyThePersonCanTypeBecomesASecureCard() {
+        for method in ["secret", "vault.unlock_prompt", "vault.save_login", "vault.code"] {
+            let event = GatewayServerRequests.event(id: "srq-9", method: method, params: ["session_id": "live-1"])
+            XCTAssertEqual(event?.type, "secure.request", method)
+            XCTAssertEqual(event?.payload["kind"] as? String, method)
         }
     }
 

@@ -111,8 +111,10 @@ enum RoutineBrief {
             .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression) + " "
         var cadence: Cadence?
 
-        // Interval: "cada 2 horas", "every 30 minutes", "every hour".
-        if let match = firstMatch(#"(?i)\b(cada|every)\s+(\d+)?\s*(minutos?|minutes?|mins?|horas?|hours?|hrs?|d[ií]as?|days?)\b"#, in: sentence) {
+        // Interval: "cada 2 horas", "every 30 minutes", "every hour". A bare
+        // "every day" / "cada día" is daily at a time, read further down.
+        if let match = firstMatch(#"(?i)\b(cada|every)\s+(\d+)?\s*(minutos?|minutes?|mins?|horas?|hours?|hrs?|d[ií]as?|days?)\b"#, in: sentence),
+           !(match.groups[2].isEmpty && match.groups[3].lowercased().hasPrefix("d")) {
             let value = Int(match.groups[2]) ?? 1
             let unit = match.groups[3].lowercased()
             let code = unit.hasPrefix("min") ? "m" : (unit.hasPrefix("d") ? "d" : "h")

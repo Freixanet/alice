@@ -240,6 +240,7 @@ struct ActivityScreen: View {
                     Label(note, systemImage: "info.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("activity.fixNote.\(event.id)")
                 }
             }
 

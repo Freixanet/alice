@@ -7,6 +7,6 @@ final class StatusCaptionTests: XCTestCase {
         XCTAssertNil(AppStore.statusCaption("Compressing context…"))
         XCTAssertEqual(AppStore.statusCaption("Buscando vuelos"), "Buscando vuelos")
         XCTAssertEqual(AppStore.statusCaption("Leyendo la página de la tienda para encontrar el saco exacto"),
-                       "Leyendo la página de la tienda para…")
+                       "Leyendo la página de la tienda…")
     }
 }

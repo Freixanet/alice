@@ -151,7 +151,9 @@ final class NoteFolderTreeTests: XCTestCase {
         )
         XCTAssertNil(next?.parent["deep"])
         XCTAssertEqual(next?.parent["notes"], "work")
-        XCTAssertEqual(next?.order, ["work", "notes", "home", "deep"])
+        // `order` ranks siblings only; what shows is the top level's order.
+        let top = next.map { result in result.order.filter { result.parent[$0] == nil } }
+        XCTAssertEqual(top, ["work", "home", "deep"])
     }
 
     func testDraggingANestedFolderJustOutOfItsParentPromotesItOneLevel() {

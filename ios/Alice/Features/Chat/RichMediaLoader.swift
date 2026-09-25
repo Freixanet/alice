@@ -75,8 +75,12 @@ enum RichMediaLoader {
 
     /// Already on the phone, without fetching.
     static func cached(_ media: RichMedia) -> Loaded? {
-        guard let hit = loaded[media.cacheKey],
-              FileManager.default.fileExists(atPath: hit.file.path) else { return nil }
+        guard let hit = loaded[media.cacheKey] else { return nil }
+        guard FileManager.default.fileExists(atPath: hit.file.path) else {
+            // iOS purged the file: forget it, so the next load fetches again.
+            loaded[media.cacheKey] = nil
+            return nil
+        }
         return hit
     }
 

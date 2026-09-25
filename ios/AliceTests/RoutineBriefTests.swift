@@ -14,6 +14,7 @@ final class RoutineBriefTests: XCTestCase {
         let reading = RoutineBrief.read("Every day at 6:30pm summarize the news about Cuba")
         XCTAssertEqual(reading.cadence, .daily(hour: 18, minute: 30))
         XCTAssertEqual(reading.task, "Summarize the news about Cuba")
+        XCTAssertEqual(RoutineBrief.read("cada 2 días riega las plantas").cadence, .interval(value: 2, unit: "d"))
     }
 
     func testAnAfternoonWithoutATimeGetsASensibleHour() {

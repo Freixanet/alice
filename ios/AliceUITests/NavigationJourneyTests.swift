@@ -191,17 +191,18 @@ final class NavigationJourneyTests: XCTestCase {
             "Settings should open"
         )
         let general = app.staticTexts["General"]
-        let connection = app.staticTexts["Connection"]
+        let hermes = app.staticTexts["Hermes"]
         XCTAssertTrue(general.waitForExistence(timeout: 10))
-        XCTAssertTrue(connection.waitForExistence(timeout: 10))
-        // Connection leads: whether Alice can reach Hermes is what the rest of
-        // Settings depends on, and what people open it to check.
+        XCTAssertTrue(hermes.waitForExistence(timeout: 10))
+        // The Hermes connection leads: whether Alice can reach Hermes is what
+        // the rest of Settings depends on, and what people open it to check.
         XCTAssertLessThan(
-            connection.frame.minY, general.frame.minY,
-            "Connection should be the first settings section"
+            hermes.frame.minY, general.frame.minY,
+            "Hermes should be the first settings row"
         )
-        XCTAssertTrue(app.buttons["Advanced"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Sessions"].exists, "history is not a setting")
+        general.tap()
+        XCTAssertTrue(app.buttons["Advanced"].waitForExistence(timeout: 10), "Advanced sits under General")
     }
 
     func testActivityOwnsHistoryAndUsage() {

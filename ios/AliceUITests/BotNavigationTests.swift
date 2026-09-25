@@ -3,6 +3,16 @@ import XCTest
 /// The two controls that looked right on a phone and did nothing.
 @MainActor
 final class BotNavigationTests: XCTestCase {
+    /// A reply's text, drawn as a label or as selectable text.
+    private func chatText(_ app: XCUIApplication, _ format: String, _ text: String) -> XCUIElement {
+        let kind = NSPredicate(
+            format: "elementType == %d OR elementType == %d",
+            XCUIElement.ElementType.staticText.rawValue, XCUIElement.ElementType.textView.rawValue
+        )
+        let matching = NSCompoundPredicate(andPredicateWithSubpredicates: [kind, NSPredicate(format: format, text)])
+        return app.descendants(matching: .any).matching(matching).firstMatch
+    }
+
     /// Jump to latest has to reach the end of a long bot chat, the one kind
     /// of conversation long enough to need it.
     func testJumpToLatestReachesTheEndOfALongBotChat() {
@@ -10,7 +20,7 @@ final class BotNavigationTests: XCTestCase {
         app.launchArguments += ["-seedLongBotChat"]
         app.launch()
 
-        let last = app.staticTexts["Respuesta de prueba 30."]
+        let last = chatText(app, "label == %@", "Respuesta de prueba 30.")
         XCTAssertTrue(last.waitForExistence(timeout: 15), "the seeded chat opens at its end")
 
         let jump = app.buttons["chat.scrollToBottom"]
@@ -39,9 +49,7 @@ final class BotNavigationTests: XCTestCase {
 
         // A reply is drawn block by block, so the end of the latest reply is
         // its last headline, not the line it opens with.
-        let latest = app.staticTexts.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Titular de prueba 30.14")
-        ).firstMatch
+        let latest = chatText(app, "label BEGINSWITH %@", "Titular de prueba 30.14")
         XCTAssertTrue(
             latest.waitForExistence(timeout: 10),
             "the latest reply is drawn on open, without scrolling"
@@ -62,9 +70,7 @@ final class BotNavigationTests: XCTestCase {
         app.launchArguments += ["-seedLongBotChat", "-growSeededChat"]
         app.launch()
 
-        let grown = app.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS %@", "Fin del informe")
-        ).firstMatch
+        let grown = chatText(app, "label CONTAINS %@", "Fin del informe")
         XCTAssertTrue(grown.waitForExistence(timeout: 15), "the last reply grows")
         let composer = app.buttons["composer.action"]
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
@@ -89,7 +95,7 @@ final class BotNavigationTests: XCTestCase {
         app.launchArguments += ["-seedLongBotChat"]
         app.launch()
 
-        let last = app.staticTexts["Respuesta de prueba 30."]
+        let last = chatText(app, "label == %@", "Respuesta de prueba 30.")
         XCTAssertTrue(last.waitForExistence(timeout: 15))
         app.swipeDown(velocity: .fast)
         app.swipeDown(velocity: .fast)

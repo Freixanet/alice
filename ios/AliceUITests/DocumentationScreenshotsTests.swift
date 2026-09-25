@@ -13,7 +13,7 @@ final class DocumentationScreenshotsTests: XCTestCase {
         connect.tap()
         XCTAssertTrue(app.navigationBars["Connect"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Scan pairing QR"].exists)
-        app.buttons["Done"].tap()
+        app.navigationBars["Connect"].buttons["Back"].tap()
         app.buttons["chat.leading"].tap()
         XCTAssertTrue(app.buttons["sidebar.row.Agents"].waitForExistence(timeout: 10))
         capture(app, name: "alice-ios-navigation")

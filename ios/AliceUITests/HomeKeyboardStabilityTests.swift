@@ -6,7 +6,7 @@ final class HomeKeyboardStabilityTests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        let title = app.staticTexts["What are we working on?"]
+        let title = app.staticTexts["home.title"]
         if !title.waitForExistence(timeout: 8) {
             let leading = app.buttons["chat.leading"]
             XCTAssertTrue(leading.waitForExistence(timeout: 10))
@@ -63,7 +63,7 @@ final class HomeKeyboardStabilityTests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        let title = app.staticTexts["What are we working on?"]
+        let title = app.staticTexts["home.title"]
         if !title.waitForExistence(timeout: 8) {
             let leading = app.buttons["chat.leading"]
             XCTAssertTrue(leading.waitForExistence(timeout: 10))

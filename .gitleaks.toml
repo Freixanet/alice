@@ -48,3 +48,8 @@ regexes = ['''^chollometro/abc123$''']
 [[allowlists]]
 description = "Routine identifiers in reaction receipt tests"
 regexes = ['''^default/cffca6f34c20$''', '''^inbox/cffca6f34c20$''']
+
+# A routine identifier (`routineKey`) in activity record tests, not a key.
+[[allowlists]]
+description = "Routine identifier in activity record tests"
+regexes = ['''^default/morning$''']
