@@ -139,6 +139,7 @@ final class AppStore {
             // An edit belongs to the chat it was started in.
             if activeID != oldValue, editingMessageID != nil { cancelEditing() }
             if activeID != oldValue { markMentionRepliesSeen(in: activeID) }
+            if let activeID, unseenReplies.contains(activeID) { unseenReplies.remove(activeID) }
             guard activeID != oldValue,
                   let index = conversations.firstIndex(where: { $0.id == activeID })
             else { return }
@@ -224,6 +225,8 @@ final class AppStore {
         static let pinnedBots = "alice.bot.pinned"
         static let unreadBots = "alice.bot.unread"
         static let unreadBotsVersion = "alice.bot.unread.version"
+        static let unseenReplies = "alice.chat.unseenReplies"
+        static let unsentDrafts = "alice.chat.unsentDrafts"
         static let hiddenBots = "alice.bot.hidden"
         static let retiredBotSlugs = "alice.bot.retiredSlugs"
         static let botModels = "alice.bot.models"
@@ -384,6 +387,18 @@ final class AppStore {
     var unreadBots: Set<String> = [] {
         didSet { defaults.set(Array(unreadBots), forKey: Keys.unreadBots) }
     }
+    /// Chats whose reply ended while another chat was on screen: the ones he
+    /// left waiting and has not come back to.
+    private(set) var unseenReplies: Set<String> = [] {
+        didSet { defaults.set(Array(unseenReplies), forKey: Keys.unseenReplies) }
+    }
+    /// What was typed in a chat and not sent, by chat, kept when he moves to
+    /// another one from the drawer so each chat keeps its own. Text only; the
+    /// composer's attachments are kept for the session (`unsentAttachments`).
+    private(set) var unsentDrafts: [String: String] = [:] {
+        didSet { defaults.set(unsentDrafts, forKey: Keys.unsentDrafts) }
+    }
+    @ObservationIgnored private var unsentAttachments: [String: [Attachment]] = [:]
     var hiddenBots: Set<String> = [] {
         didSet { defaults.set(Array(hiddenBots), forKey: Keys.hiddenBots) }
     }
@@ -543,6 +558,12 @@ final class AppStore {
         }
         if let savedUnread = defaults.stringArray(forKey: Keys.unreadBots) {
             unreadBots = Set(savedUnread)
+        }
+        if let savedUnseen = defaults.stringArray(forKey: Keys.unseenReplies) {
+            unseenReplies = Set(savedUnseen)
+        }
+        if let savedDrafts = defaults.dictionary(forKey: Keys.unsentDrafts) as? [String: String] {
+            unsentDrafts = savedDrafts
         }
         // Older builds mixed a manual "Mark unread" preference with routine
         // runs rediscovered after launch. Clear that ambiguous legacy set
@@ -5782,6 +5803,7 @@ final class AppStore {
     }
 
     func newChat() {
+        stashDraft()
         let chat = Conversation.blank()
         conversations.insert(chat, at: 0)
         activeID = chat.id
@@ -5789,7 +5811,46 @@ final class AppStore {
         persistConversations()
     }
 
+    // MARK: Drawer states
+
+    /// Opens a chat from the drawer, keeping what was typed in the one being
+    /// left and bringing back what was typed in this one.
+    func openChat(_ id: String) {
+        guard id != activeID else { return }
+        stashDraft()
+        activeID = id
+        draft = unsentDrafts[id] ?? ""
+        draftMentions = []
+        draftAttachments = unsentAttachments[id] ?? []
+        unsentDrafts[id] = nil
+        unsentAttachments[id] = nil
+    }
+
+    /// Keeps the composer's text and attachments with the chat on screen.
+    private func stashDraft() {
+        guard let activeID, editingMessageID == nil else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        unsentDrafts[activeID] = text.isEmpty ? nil : draft
+        unsentAttachments[activeID] = draftAttachments.isEmpty ? nil : draftAttachments
+    }
+
+    /// What a chat in the drawer is waiting on (`ChatAttention`).
+    func attention(for chat: Conversation) -> ChatAttention? {
+        ChatAttention.of(
+            chat,
+            isActive: chat.id == activeID,
+            sending: sendingConversations.contains(chat.id),
+            workingOutOfSight: backgroundWorks[chat.id].map { !$0.isEmpty } ?? false,
+            waitingQuestion: !pendingQuestions(in: chat.id).isEmpty,
+            unseenReply: unseenReplies.contains(chat.id),
+            hasDraft: unsentDrafts[chat.id] != nil || unsentAttachments[chat.id] != nil
+        )
+    }
+
     func delete(_ id: String) {
+        unsentDrafts[id] = nil
+        unsentAttachments[id] = nil
+        unseenReplies.remove(id)
         conversations.removeAll { $0.id == id }
         if conversations.isEmpty { conversations = [.blank()] }
         if activeID == id { activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id }
@@ -9596,6 +9657,10 @@ final class AppStore {
 
     private func finish(_ id: String, conversationID: String) {
         flushStreamedText()
+        // Ended while he was in another chat: marked until he goes back.
+        if conversationID != activeID, sendingConversations.contains(conversationID) {
+            unseenReplies.insert(conversationID)
+        }
         sendingConversations.remove(conversationID)
         streamTasks[conversationID] = nil
         closeAgentActivity(for: conversationID)
