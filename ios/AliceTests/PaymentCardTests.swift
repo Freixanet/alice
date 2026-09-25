@@ -64,3 +64,35 @@ final class PaymentCardTests: XCTestCase {
         XCTAssertEqual(PaymentCardFields.expiryFormatted("03"), "03")
     }
 }
+
+final class SavedCardAliasTests: XCTestCase {
+    func testAnAliasIsReadFromThePluginOrFromTheLabel() {
+        let sent = SavedCard(["handle": "h1", "label": "Personal · Visa ···4242", "origin": "https://sis.redsys.es",
+                              "alias": "Personal", "card": "Visa ···4242"])
+        XCTAssertEqual(sent?.alias, "Personal")
+        XCTAssertEqual(sent?.card, "Visa ···4242")
+        // An older plugin sends only the label.
+        let older = SavedCard(["handle": "h2", "label": "Empresa · Mastercard ···5100"])
+        XCTAssertEqual(older?.alias, "Empresa")
+        XCTAssertEqual(older?.card, "Mastercard ···5100")
+        let plain = SavedCard(["handle": "h3", "label": "Visa ···4242"])
+        XCTAssertEqual(plain?.alias, "")
+        XCTAssertEqual(plain?.card, "Visa ···4242")
+    }
+
+    func testOneRowPerCardWhateverSitesItIsSavedFor() throws {
+        let cards = [
+            SavedCard(["handle": "a", "label": "Personal · Visa ···4242", "origin": "https://shop.es"]),
+            SavedCard(["handle": "b", "label": "Personal · Visa ···4242", "origin": "https://sis.redsys.es"]),
+            SavedCard(["handle": "c", "label": "Mastercard ···5100", "origin": "https://shop.es"]),
+        ].compactMap { $0 }
+        XCTAssertEqual(SavedCard.distinct(cards).map(\.handle), ["a", "c"])
+    }
+
+    func testTheAliasIsSentOnlyWhenGiven() {
+        var fields = PaymentCardFields(number: "4242 4242 4242 4242", expiry: "03/31", cvc: "123")
+        XCTAssertNil(fields.body["alias"])
+        fields.alias = "  Viajes "
+        XCTAssertEqual(fields.body["alias"] as? String, "Viajes")
+    }
+}

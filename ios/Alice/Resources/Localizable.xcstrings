@@ -8781,6 +8781,116 @@
         }
       }
     },
+    "Cards": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarjetas"
+          }
+        }
+      }
+    },
+    "No Cards": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin tarjetas"
+          }
+        }
+      }
+    },
+    "A card you add when Alice pays is kept here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aquí se guardan las tarjetas que añades cuando Alice paga."
+          }
+        }
+      }
+    },
+    "Tap a card to give it an alias.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toca una tarjeta para ponerle un alias."
+          }
+        }
+      }
+    },
+    "Alias": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alias"
+          }
+        }
+      }
+    },
+    "Personal, Work…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personal, Empresa…"
+          }
+        }
+      }
+    },
+    "Remove %@?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Quitar %@?"
+          }
+        }
+      }
+    },
+    "Remove from Hermes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar de Hermes"
+          }
+        }
+      }
+    },
+    "Alice won't be able to pay with it until you add it again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice no podrá pagar con ella hasta que la vuelvas a añadir."
+          }
+        }
+      }
+    },
+    "%lld sites": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sitios"
+          }
+        }
+      }
+    },
+    "Some copies of the card could not be removed. Pull down to try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Algunas copias de la tarjeta no se pudieron quitar. Desliza hacia abajo para reintentar."
+          }
+        }
+      }
+    },
     "Privacy": {
       "localizations": {
         "es": {

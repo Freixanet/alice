@@ -254,6 +254,20 @@ extension DashboardClient {
         return saved
     }
 
+    /// Gives a saved card an alias, or clears it, on every site it is saved for.
+    func renameCard(handle: String, alias: String, profile: String) async throws -> SavedCard {
+        let object = try await send("PATCH", "api/plugins/alice/vault/cards/\(handle)", ["profile": profile, "alias": alias])
+        guard let saved = (object["card"] as? [String: Any]).flatMap(SavedCard.init) else {
+            throw DashboardClient.Failure.http(500)
+        }
+        return saved
+    }
+
+    /// Removes a card from one site (and its www twin).
+    func removeCard(handle: String, profile: String) async throws {
+        _ = try await send("DELETE", "api/plugins/alice/vault/cards/\(handle)?profile=\(profile)", nil)
+    }
+
     // MARK: Connector logos
 
     /// A connector's own logo, as the plugin found it on the product's site.

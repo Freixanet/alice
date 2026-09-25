@@ -114,6 +114,34 @@ class VaultTests(unittest.TestCase):
                          self.store.resolve_secret(first["handle"]))
         self.assertEqual(cards.bind(first["handle"], "https://pay.example.com"), other)
 
+    def test_an_alias_names_the_card_everywhere_it_is_saved(self):
+        shop = cards.save("https://piensosraposo.es", {**self.card, "alias": "  Personal  "})
+        self.assertEqual(shop["label"], "Personal · Visa ···4242")
+        self.assertEqual((shop["alias"], shop["card"]), ("Personal", "Visa ···4242"))
+        # Used on the bank's page too, it keeps its alias and is still the same card.
+        routed = cards.route_fill(shop["handle"], ["https://sis.redsys.es/pago"])
+        self.assertEqual(self.store.get_meta(routed).label, "Personal · Visa ···4242")
+        # Renamed once, renamed on every site, secrets untouched.
+        renamed = cards.rename(shop["handle"], "Empresa")
+        self.assertEqual({c["label"] for c in cards.cards()}, {"Empresa · Visa ···4242"})
+        self.assertEqual(len(cards.cards()), 3)
+        self.assertEqual(self.store.resolve_secret(renamed["handle"])["cvc"], "123")
+        # Cleared, it is the card again.
+        cards.rename(renamed["handle"], "")
+        self.assertEqual({c["label"] for c in cards.cards()}, {"Visa ···4242"})
+
+    def test_saving_again_keeps_the_alias_and_replaces_the_card(self):
+        cards.save("https://sis.redsys.es", {**self.card, "alias": "Personal"})
+        cards.save("https://sis.redsys.es", {**self.card, "cvc": "456"})
+        self.assertEqual([c["label"] for c in cards.cards()], ["Personal · Visa ···4242"])
+
+    def test_an_alias_is_short_and_never_a_number(self):
+        with self.assertRaises(cards.CardError):
+            cards.save("https://sis.redsys.es", {**self.card, "alias": "4242 4242 4242"})
+        self.assertEqual(cards.clean_alias("x" * 50), "x" * 30)
+        self.assertEqual(cards.clean_alias("Viajes\n2026"), "Viajes 2026")
+        self.assertNotIn("4242424242424242", repr(cards.cards()))
+
     def test_logins_are_not_cards(self):
         login = self.store.add_item(kind="login", label="shop", origin="https://shop.example",
                                     secret={"identifier_type": "email", "identifier": "a@b.c", "password": "x"})

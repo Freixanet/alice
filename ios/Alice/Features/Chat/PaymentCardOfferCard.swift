@@ -126,7 +126,7 @@ struct PaymentCardSheet: View {
     @State private var problem: String?
     @FocusState private var focus: Field?
 
-    private enum Field { case number, expiry, cvc, name }
+    private enum Field { case number, expiry, cvc, name, alias }
 
     var body: some View {
         NavigationStack {
@@ -176,6 +176,10 @@ struct PaymentCardSheet: View {
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled()
                         .focused($focus, equals: .name)
+                    TextField(language.pick("Alias (optional)", "Alias (opcional)"), text: $fields.alias,
+                              prompt: Text(language.pick("Personal, Work…", "Personal, Empresa…")))
+                        .textInputAutocapitalization(.sentences)
+                        .focused($focus, equals: .alias)
                 } header: {
                     if !others.isEmpty { Text(language.pick("New card", "Tarjeta nueva")) }
                 } footer: {
@@ -205,10 +209,7 @@ struct PaymentCardSheet: View {
             .task {
                 focus = .number
                 let all = (try? await store.savedCards(profile: offer.profile)) ?? []
-                others = all.filter { $0.origin != offer.origin }
-                    .reduce(into: [SavedCard]()) { list, card in
-                        if !list.contains(where: { $0.label == card.label }) { list.append(card) }
-                    }
+                others = SavedCard.distinct(all.filter { $0.origin != offer.origin })
             }
             .onDisappear { fields = PaymentCardFields() }
             .interactiveDismissDisabled(working)

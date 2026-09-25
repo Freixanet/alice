@@ -4831,6 +4831,12 @@ final class AppStore {
     func secretIsSet(_ name: String) async throws -> Bool { try await dashboard.secretIsSet(name) }
     func saveSecret(_ name: String, value: String) async throws { try await dashboard.saveSecret(name, value: value) }
     func savedCards(profile: String) async throws -> [SavedCard] { try await dashboard.savedCards(profile: profile) }
+    func renameCard(handle: String, alias: String, profile: String) async throws -> SavedCard {
+        try await dashboard.renameCard(handle: handle, alias: alias, profile: profile)
+    }
+    func removeCard(handle: String, profile: String) async throws {
+        try await dashboard.removeCard(handle: handle, profile: profile)
+    }
     func placeTriggers() async throws -> [PlaceTrigger] { try await dashboard.placeTriggers() }
     func placeResolved(_ trigger: PlaceTrigger, latitude: Double, longitude: Double, label: String) async throws {
         try await dashboard.placeResolved(trigger, latitude: latitude, longitude: longitude, label: label)

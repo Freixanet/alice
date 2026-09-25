@@ -107,8 +107,35 @@ def clean_card(fields: Dict[str, Any], today: Optional[_dt.date] = None) -> Dict
     return payload
 
 
+ALIAS_SEP = " · "
+
+
+def identity(label: str) -> str:
+    """The card itself, "Visa ···4242", whatever alias the person gave it."""
+    return str(label or "").rsplit(ALIAS_SEP, 1)[-1]
+
+
+def alias_of(label: str) -> str:
+    text = str(label or "")
+    return text.rsplit(ALIAS_SEP, 1)[0] if ALIAS_SEP in text else ""
+
+
+def clean_alias(alias: Any) -> str:
+    """A short name for the card ("Personal", "Empresa"): one line, 30 characters, never digits
+    that could be taken for a card number."""
+    text = " ".join(str(alias or "").replace(ALIAS_SEP.strip(), " ").split())[:30].strip()
+    if sum(ch.isdigit() for ch in text) > 4:
+        raise CardError("An alias can't hold a number like that.")
+    return text
+
+
+def _labelled(alias: str, card: str) -> str:
+    return f"{alias}{ALIAS_SEP}{card}" if alias else card
+
+
 def _public(meta) -> Dict[str, Any]:
-    return {"handle": meta.id, "label": meta.label, "origin": meta.origin}
+    return {"handle": meta.id, "label": meta.label, "origin": meta.origin,
+            "alias": alias_of(meta.label), "card": identity(meta.label)}
 
 
 def cards() -> List[Dict[str, Any]]:
@@ -118,14 +145,19 @@ def cards() -> List[Dict[str, Any]]:
 
 def save(origin: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     site = check_origin(origin)
+    alias = clean_alias(fields.get("alias"))
     payload = clean_card(fields)
-    label = f"{brand(payload['card_number'])} ···{payload['card_number'][-4:]}"
+    card = f"{brand(payload['card_number'])} ···{payload['card_number'][-4:]}"
     store = _store()
+    # A card already saved elsewhere keeps its alias unless a new one is given.
+    alias = alias or next((alias_of(m.label) for m in store.list_items()
+                           if m.kind == "payment" and identity(m.label) == card and alias_of(m.label)), "")
+    label = _labelled(alias, card)
     saved = []
     for origin_ in twins(site):
         # The same card for the same site replaces the earlier one (a new expiry or code).
         for meta in store.list_items():
-            if meta.kind == "payment" and meta.origin == origin_ and meta.label == label:
+            if meta.kind == "payment" and meta.origin == origin_ and identity(meta.label) == card:
                 store.remove_item(meta.id)
         saved.append(_public(store.add_item(kind="payment", label=label, secret=payload, origin=origin_)))
     return saved[0]
@@ -142,7 +174,8 @@ def bind(handle: str, origin: str) -> Dict[str, Any]:
     bound = []
     for origin_ in twins(site):
         existing = next((o for o in store.list_items()
-                         if o.kind == "payment" and o.origin == origin_ and o.label == meta.label), None)
+                         if o.kind == "payment" and o.origin == origin_
+                         and identity(o.label) == identity(meta.label)), None)
         bound.append(_public(existing) if existing else
                      _public(store.add_item(kind="payment", label=meta.label, secret=secret, origin=origin_)))
     return bound[0]
@@ -174,7 +207,8 @@ def route_fill(handle: str, open_urls: List[str]) -> Optional[str]:
         parts = urlsplit(url or "")
         if parts.scheme == "https" and parts.hostname:
             open_origins.append(f"https://{parts.netloc}")
-    same_card = [m for m in store.list_items() if m.kind == "payment" and m.label == meta.label]
+    same_card = [m for m in store.list_items()
+                 if m.kind == "payment" and identity(m.label) == identity(meta.label)]
     by_origin = {m.origin: m for m in same_card if m.origin}
     # 1. The bank's payment page is open: that is where the card goes.
     for origin in open_origins:
@@ -192,6 +226,28 @@ def route_fill(handle: str, open_urls: List[str]) -> Optional[str]:
     return None
 
 
+def rename(handle: str, alias: str) -> Dict[str, Any]:
+    """Gives a card an alias (or clears it) on every site it is saved for. The vault has no
+    update, so each copy is saved again under the new label and the old one removed."""
+    store = _store()
+    meta = store.get_meta(str(handle or ""))
+    if meta is None or meta.kind != "payment":
+        raise CardError("That card is no longer saved.")
+    label = _labelled(clean_alias(alias), identity(meta.label))
+    renamed = None
+    for item in [m for m in store.list_items()
+                 if m.kind == "payment" and identity(m.label) == identity(meta.label)]:
+        if item.label == label:
+            fresh = item
+        else:
+            fresh = store.add_item(kind="payment", label=label, secret=store.resolve_secret(item.id),
+                                   origin=item.origin)
+            store.remove_item(item.id)
+        if item.id == meta.id:
+            renamed = _public(fresh)
+    return renamed
+
+
 def remove(handle: str) -> bool:
     """Removes the card from that site and from its www twin."""
     store = _store()
@@ -200,7 +256,8 @@ def remove(handle: str) -> bool:
         return False
     sites = set(twins(meta.origin)) if meta.origin else set()
     for other in store.list_items():
-        if other.kind == "payment" and other.label == meta.label and other.origin in sites and other.id != meta.id:
+        if (other.kind == "payment" and identity(other.label) == identity(meta.label)
+                and other.origin in sites and other.id != meta.id):
             store.remove_item(other.id)
     return bool(store.remove_item(meta.id))
 

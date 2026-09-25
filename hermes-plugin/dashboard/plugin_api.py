@@ -963,6 +963,23 @@ class _CardBody(BaseModel):
     exp_year: Optional[str] = None
     cvc: Optional[str] = None
     billing_postal_code: Optional[str] = None
+    alias: Optional[str] = None
+
+
+class _AliasBody(BaseModel):
+    profile: str = "default"
+    alias: str = ""
+
+
+def _rename_card(profile: str, handle: str, alias: str) -> Dict[str, Any]:
+    cards = _cards()
+    name = _known_profile(profile)
+    try:
+        with _profile_scope(name):
+            card = cards.rename(handle, alias)
+    except cards.CardError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"profile": name, "card": card}
 
 
 def _save_card(body: _CardBody) -> Dict[str, Any]:
@@ -1004,6 +1021,12 @@ async def get_cards(profile: str = "default") -> JSONResponse:
 @router.post("/vault/cards")
 async def post_card(body: _CardBody) -> JSONResponse:
     return JSONResponse(await asyncio.to_thread(_save_card, body), headers=_NO_STORE)
+
+
+@router.patch("/vault/cards/{handle}")
+async def patch_card(handle: str, body: _AliasBody) -> JSONResponse:
+    """The card's alias, on every site it is saved for. Only the name changes."""
+    return JSONResponse(await asyncio.to_thread(_rename_card, body.profile, handle, body.alias), headers=_NO_STORE)
 
 
 @router.delete("/vault/cards/{handle}")

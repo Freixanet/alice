@@ -33,6 +33,10 @@ struct SavedCard: Identifiable, Hashable, Sendable {
     let handle: String
     let label: String
     let origin: String?
+    /// The person's name for it ("Personal"), or empty.
+    let alias: String
+    /// The card itself, "Visa ···4242": the same card on every site it is saved for.
+    let card: String
 
     var id: String { handle }
 
@@ -41,6 +45,17 @@ struct SavedCard: Identifiable, Hashable, Sendable {
         self.handle = handle
         self.label = label
         origin = object["origin"] as? String
+        // Older plugins send only the label, "Alias · Visa ···4242".
+        let parts = label.components(separatedBy: " · ")
+        card = object["card"] as? String ?? parts.last ?? label
+        alias = object["alias"] as? String ?? (parts.count > 1 ? parts.dropLast().joined(separator: " · ") : "")
+    }
+
+    /// One row per card, whatever sites it is saved for.
+    static func distinct(_ cards: [SavedCard]) -> [SavedCard] {
+        cards.reduce(into: []) { list, card in
+            if !list.contains(where: { $0.card == card.card }) { list.append(card) }
+        }
     }
 }
 
@@ -50,6 +65,8 @@ struct PaymentCardFields: Sendable {
     var name = ""
     var expiry = ""
     var cvc = ""
+    /// Optional, to tell cards apart quickly: "Personal", "Empresa".
+    var alias = ""
 
     var digits: String { number.filter(\.isNumber) }
 
@@ -83,6 +100,8 @@ struct PaymentCardFields: Sendable {
         }
         let name = name.trimmingCharacters(in: .whitespaces)
         if !name.isEmpty { body["cardholder_name"] = name }
+        let alias = alias.trimmingCharacters(in: .whitespaces)
+        if !alias.isEmpty { body["alias"] = alias }
         return body
     }
 

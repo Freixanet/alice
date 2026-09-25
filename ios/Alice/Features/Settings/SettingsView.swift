@@ -138,6 +138,11 @@ struct PrivacySettingsView: View {
             } footer: {
                 Text("On when your Mac already announces replies through Bark, so they don't arrive twice.")
             }
+            Section {
+                NavigationLink { CardsSettingsView() } label: {
+                    Label("Cards", systemImage: "creditcard")
+                }
+            }
         }
         .navigationTitle("Privacy")
         .navigationBarTitleDisplayMode(.inline)
