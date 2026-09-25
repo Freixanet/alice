@@ -12,12 +12,15 @@ session). Before another card fill on the same shop:
 
 Only facts about the purchase are kept: shop, time, outcome, order number and total as the
 page showed them. Never card data. Entries older than a week are dropped.
+
+The shopping rules themselves live in ``skills/comprar/SKILL.md``.
 """
 from __future__ import annotations
 
 import fcntl
 import json
 import os
+import re
 import secrets
 import tempfile
 import time
@@ -27,6 +30,9 @@ from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlsplit
 
 WINDOW = 24 * 3600
+# A second fill in the same conversation, shortly after, is the same payment filled again
+# (the bank's form reloaded, a field came out empty) — not a second order.
+REFILL = 30 * 60
 KEEP = 7 * 24 * 3600
 OUTCOMES = ("paid", "declined", "not_charged", "unknown")
 
@@ -105,6 +111,14 @@ def record(home: Path, site: str, session: str = "", now: Optional[float] = None
              "status": "pending"}
     with _locked(home) as path:
         entries = [e for e in _read(path) if now - float(e.get("at") or 0) < KEEP]
+        again = next((e for e in reversed(entries) if e.get("shop") == entry["shop"] and session
+                      and e.get("session") == session and e.get("status") in ("pending", "unknown")
+                      and now - float(e.get("at") or 0) < REFILL), None)
+        if again is not None:
+            # A refill of the same payment: one entry, still waiting for its outcome.
+            again.update({"at": now, "status": "pending"})
+            _write(path, entries)
+            return again
         entries.append(entry)
         _write(path, entries)
     return entry
@@ -135,7 +149,7 @@ def _ago(seconds: float) -> str:
     return f"{minutes} min" if minutes < 90 else f"{round(minutes / 60)} h"
 
 
-def guard(home: Path, site: str, now: Optional[float] = None) -> Optional[Dict[str, str]]:
+def guard(home: Path, site: str, session: str = "", now: Optional[float] = None) -> Optional[Dict[str, str]]:
     """A pre_tool_call directive for a card fill on ``site``, or None to let it run."""
     now = now or time.time()
     name = shop(site)
@@ -144,6 +158,12 @@ def guard(home: Path, site: str, now: Optional[float] = None) -> Optional[Dict[s
     entries = [e for e in _read(_ledger(home))
                if e.get("shop") == name and now - float(e.get("at") or 0) < WINDOW]
     if not entries:
+        return None
+    open_ones = [e for e in entries if e.get("status") in ("pending", "unknown")]
+    if (session and not any(e.get("status") == "paid" for e in entries) and open_ones
+            and all(e.get("session") == session and now - float(e.get("at") or 0) < REFILL
+                    for e in open_ones)):
+        # The same payment, filled again before it was sent: Hermes' own «Pagar» still asks.
         return None
     pending = [e for e in entries if e.get("status") == "pending"]
     if pending:
@@ -168,38 +188,97 @@ def guard(home: Path, site: str, now: Optional[float] = None) -> Optional[Dict[s
             "rule_key": "alice-pay-again:" + secrets.token_hex(8)}
 
 
+# What a shop's or bank's page says when a payment did not go through.
+FAILURE = re.compile(
+    r"(denegad[ao]|rechazad[ao]|no (ha sido |fue )?autorizad[ao]|no se ha podido (realizar|completar|procesar)"
+    r"|error (en|durante) (el|la) (pago|operaci[oó]n|transacci[oó]n|compra)|pago (fallido|no realizado)"
+    r"|fondos insuficientes|saldo insuficiente|tarjeta (caducada|bloqueada|no v[aá]lida)"
+    r"|autenticaci[oó]n (fallida|no superada)|operaci[oó]n cancelada|SIS\d{4}"
+    r"|payment (failed|declined|was declined|unsuccessful)|card (was )?declined|transaction (failed|declined)"
+    r"|insufficient funds|authenticat\w+ failed)", re.IGNORECASE)
+FOLLOW_UP = 10 * 60
+
+
+def failure(text: Any) -> Optional[str]:
+    """The words on the page that say the payment failed, or None."""
+    found = FAILURE.search(str(text or ""))
+    return found.group(0) if found else None
+
+
+def open_payment(home: Path, session: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """This conversation's payment still waiting for its outcome, within the hour."""
+    now = now or time.time()
+    for entry in reversed(_read(_ledger(home))):
+        if (session and entry.get("session") == session and entry.get("status") in ("pending", "unknown")
+                and now - float(entry.get("at") or 0) < 3600):
+            return entry
+    return None
+
+
+def mark(home: Path, entry_id: str, **fields: Any) -> bool:
+    """Sets fields on one entry; False if it was already set that way (said only once)."""
+    with _locked(home) as path:
+        entries = _read(path)
+        entry = next((e for e in entries if e.get("id") == entry_id), None)
+        if entry is None or all(entry.get(k) == v for k, v in fields.items()):
+            return False
+        entry.update(fields)
+        _write(path, entries)
+    return True
+
+
+def error_note(home: Path, session: str, text: Any) -> Optional[str]:
+    """What the agent is told when the page it just read says its payment failed; once per payment."""
+    entry = open_payment(home, session)
+    said = failure(text) if entry else None
+    if not said or not mark(home, entry["id"], error_seen=True):
+        return None
+    return (f"\n\n[Alice] La página dice «{said}»: el pago en {entry['shop']} parece haber fallado. "
+            "Díselo a la persona ahora, en una línea, con lo que dice la página y si se cobró o no "
+            "(solo si lo ves), y registra `purchase_outcome` (declined si el banco lo rechazó, unknown "
+            "si no está claro). No vuelvas a pagar sin que ella lo pida.")
+
+
+def follow_up(home: Path, entry_id: str, now: Optional[float] = None) -> str:
+    """Run by a one-off script ten minutes after a payment: a line for the person when it still has
+    no known outcome, or nothing (a silent run)."""
+    now = now or time.time()
+    entry = next((e for e in _read(_ledger(home)) if e.get("id") == entry_id), None)
+    if entry is None or entry.get("status") not in ("pending", "unknown") or entry.get("followed_up"):
+        return ""
+    mark(home, entry_id, followed_up=True)
+    ago = _ago(now - float(entry.get("at") or now))
+    return (f"⚠️ El pago con tarjeta en {entry['shop']} de hace {ago} no tiene un resultado confirmado: "
+            "puede que haya fallado o que el banco espere tu aprobación en su app. Compruébalo en «Mis "
+            "pedidos» de la tienda o en la app del banco antes de volver a pagar.")
+
+
+def follow_up_script(plugin_dir: Path, home: Path, entry_id: str) -> str:
+    """The body of the one-off check: it prints the notice, if any, and removes itself."""
+    return (
+        "import importlib.util, os, sys\n"
+        f"spec = importlib.util.spec_from_file_location('alice_purchases_check', {str(Path(plugin_dir) / 'purchases.py')!r})\n"
+        "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n"
+        f"line = module.follow_up(module.Path({str(home)!r}), {entry_id!r})\n"
+        "if line:\n    print(line)\n"
+        "try:\n    os.remove(__file__)\nexcept OSError:\n    pass\n"
+    )
+
+
 def run_tool(home: Path, args: Dict[str, Any]) -> Dict[str, Any]:
     return settle(home, str(args.get("site") or ""), str(args.get("outcome") or ""),
                   str(args.get("order") or ""), str(args.get("total") or ""))
 
 
+SKILL = Path(__file__).resolve().parent / "skills" / "comprar" / "SKILL.md"
+
+
 def prompt() -> str:
-    """How an agent shops: the right thing, the real total, the best code that works, one payment."""
-    return (
-        "## Comprar\n"
-        "«Busca», «recomienda» o «prepara el carrito» es preparar, sin pagar. «Cómpralo» o «compra X "
-        "hasta Y €» es la autorización: no pidas otro sí (Hermes ya pregunta al rellenar la tarjeta). "
-        "Nunca inventes talla, compatibilidad, dirección ni presupuesto; si falta algo que cambia la "
-        "compra, junta las dudas en un solo mensaje con tu propuesta.\n"
-        "- **Elegir:** para un artículo exacto, comprueba modelo, variante, cantidad y estado; no lo "
-        "cambies por uno parecido sin permiso. Para elegir, mira hasta tres opciones buenas y para "
-        "cuando una cumple: no persigas céntimos. Precio, stock y entrega, en la tienda y para la "
-        "dirección real; los comparadores son pistas.\n"
-        "- **Total real:** producto + envío + comisiones + impuestos o aduanas + cambio de moneda. "
-        "Si algo del total no se sabe o supera el límite, no pagues.\n"
-        "- **Código de descuento:** antes de pagar, si la tienda tiene campo de cupón, busca en la web "
-        "«<tienda> código descuento» y en la propia tienda (banner, página de ofertas). Prueba en el "
-        "checkout hasta 5 códigos, de los más recientes a los más viejos, y quédate con el que más "
-        "baje el **total**; si ninguno funciona, sigue sin él. Solo cuenta lo que el checkout aplica. "
-        "No crees cuentas, no te suscribas a boletines, no instales extensiones y no salgas a webs "
-        "de pago raras por un descuento. Di en una línea qué código ahorró cuánto.\n"
-        "- **Carrito limpio:** no borres lo que la persona ya tenía; quita extras marcados de serie "
-        "(seguro, garantía ampliada, donación, suscripción, prueba que se renueva, financiación).\n"
-        "- **Un solo pago:** justo antes de pagar, vuelve a mirar producto, cantidad, dirección, total "
-        "y que no haya ya un pedido igual. Después de pagar llama siempre a `purchase_outcome` con "
-        "cómo acabó. Un corte, un error o una página cerrada después de pagar es «unknown»: "
-        "compruébalo (confirmación, correo, «Mis pedidos») antes de hacer nada más, y nunca pagues "
-        "otra vez ni cambies de tienda mientras no se sepa. Nunca digas «no se ha cobrado» sin verlo.\n"
-        "- **Cierre:** «Pedido confirmado: qué, total, tienda, entrega prevista, número de pedido». "
-        "Un cargo pendiente o un clic no es un pedido confirmado."
-    )
+    """The shopping rules, read from ``skills/comprar/SKILL.md`` — the one place to audit and edit
+    them — from its "## Comprar" heading on. If the file is missing, the payment rule still holds."""
+    try:
+        text = SKILL.read_text(encoding="utf-8")
+        return text[text.index("## Comprar"):].strip()
+    except (OSError, ValueError):
+        return ("## Comprar\nDespués de pagar llama siempre a `purchase_outcome`; nunca pagues otra vez "
+                "mientras no se sepa si el primer pago se cobró.")

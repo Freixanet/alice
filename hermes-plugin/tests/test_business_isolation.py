@@ -144,7 +144,8 @@ class BusinessIsolationTests(unittest.TestCase):
         # And the same order is never paid twice (purchases.py), checked before the fill is routed.
         hooks = [c.args[1] for c in ctx.register_hook.call_args_list]
         self.assertLess(hooks.index(self.plugin._guard_repeat_payment), hooks.index(self.plugin._route_card_fill))
-        self.assertEqual(ctx.register_hook.call_count, 9)
+        ctx.register_hook.assert_any_call("transform_tool_result", self.plugin._payment_error_note)
+        self.assertEqual(ctx.register_hook.call_count, 10)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
         # How an agent asks for a key without it entering the chat.

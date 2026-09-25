@@ -81,11 +81,58 @@ class LedgerTests(unittest.TestCase):
         purchases.record(self.home, "shop.es", now=NOW)
         self.assertEqual(purchases.guard(self.home, "shop.es", now=NOW + 1)["action"], "block")
 
+    def test_filling_the_same_form_again_is_the_same_payment(self):
+        first = purchases.record(self.home, "shop.es", session="s1", now=NOW)
+        self.assertIsNone(purchases.guard(self.home, "shop.es", "s1", now=NOW + 90))
+        again = purchases.record(self.home, "shop.es", session="s1", now=NOW + 100)
+        self.assertEqual(again["id"], first["id"], "one payment, one entry")
+        # Another conversation, or much later, is a second payment.
+        self.assertEqual(purchases.guard(self.home, "shop.es", "s2", now=NOW + 120)["action"], "block")
+        self.assertEqual(purchases.guard(self.home, "shop.es", "s1", now=NOW + purchases.REFILL + 200)["action"],
+                         "block")
+        # Once paid, even the same conversation asks the person.
+        purchases.settle(self.home, "shop.es", "paid", now=NOW + 150)
+        self.assertEqual(purchases.guard(self.home, "shop.es", "s1", now=NOW + 160)["action"], "approve")
+
+    def test_a_payment_error_on_the_page_is_flagged_once(self):
+        self.assertIsNone(purchases.error_note(self.home, "s1", "Operación denegada"), "no payment, no note")
+        purchases.record(self.home, "shop.es", session="s1")
+        self.assertIsNone(purchases.error_note(self.home, "s1", "Introduce los datos de tu tarjeta"))
+        note = purchases.error_note(self.home, "s1", "Error SIS0093: tarjeta no válida")
+        self.assertIn("shop.es", note)
+        self.assertIn("purchase_outcome", note)
+        self.assertIsNone(purchases.error_note(self.home, "s1", "SIS0093"), "said once")
+        self.assertIsNone(purchases.error_note(self.home, "s2", "denegada"), "only its own conversation")
+        for text in ("Your card was declined", "Fondos insuficientes", "Autenticación fallida"):
+            self.assertTrue(purchases.failure(text), text)
+        self.assertIsNone(purchases.failure("Pago realizado con éxito. Pedido 12345"))
+
+    def test_ten_minutes_later_an_unsettled_payment_is_told_once(self):
+        entry = purchases.record(self.home, "shop.es", session="s1", now=NOW)
+        line = purchases.follow_up(self.home, entry["id"], now=NOW + 600)
+        self.assertIn("shop.es", line)
+        self.assertEqual(purchases.follow_up(self.home, entry["id"], now=NOW + 700), "")
+        settled = purchases.record(self.home, "b.es", session="s1", now=NOW)
+        purchases.settle(self.home, "b.es", "paid", now=NOW + 60)
+        self.assertEqual(purchases.follow_up(self.home, settled["id"], now=NOW + 600), "", "settled: silent")
+
+    def test_the_follow_up_script_runs_on_its_own(self):
+        import subprocess
+        entry = purchases.record(self.home, "shop.es", session="s1")
+        script = self.home / "check.py"
+        script.write_text(purchases.follow_up_script(PATH.parent, self.home, entry["id"]))
+        out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, check=True).stdout
+        self.assertIn("shop.es", out)
+        self.assertFalse(script.exists(), "the one-off removes itself")
+
     def test_the_prompt_fits_and_asks_for_the_best_working_code(self):
         text = purchases.prompt()
         self.assertLess(len(text), 4000)
         self.assertIn("Código de descuento", text)
         self.assertIn("purchase_outcome", text)
+        # One source: the skill file, from its heading on, without the front matter.
+        self.assertTrue(text.startswith("## Comprar"))
+        self.assertIn(text, purchases.SKILL.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

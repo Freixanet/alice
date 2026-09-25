@@ -173,7 +173,7 @@ def _card_fill(tool_name, args):
     return meta if meta is not None and meta.kind == "payment" else None
 
 
-def _guard_repeat_payment(tool_name=None, args=None, **_):
+def _guard_repeat_payment(tool_name=None, args=None, session_id="", **_):
     """One payment per order (purchases.py): an unsettled payment on the same shop blocks the fill;
     a paid or unknown one sends it through Hermes' approval card. If the ledger cannot be read, the
     fill still needs Hermes' own payment confirmation, so nothing is spent without a yes."""
@@ -183,7 +183,7 @@ def _guard_repeat_payment(tool_name=None, args=None, **_):
             return None
         cards = _cards_module()
         site = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
-        return _purchases().guard(_hermes_root(), site)
+        return _purchases().guard(_hermes_root(), site, session_id or "")
     except Exception:
         return None
 
@@ -198,9 +198,47 @@ def _record_payment(tool_name, args, result, session_id) -> None:
             return
         site = _purchases().merchant(_open_tabs(), str(out.get("origin") or ""),
                                      _cards_module().PAYMENT_GATEWAYS)
-        _purchases().record(_hermes_root(), site, session_id or "")
+        entry = _purchases().record(_hermes_root(), site, session_id or "")
+        _schedule_payment_check(entry)
     except Exception:
         pass
+
+
+def _schedule_payment_check(entry) -> None:
+    """Ten minutes after a payment, a check that needs no model: if its outcome is still unknown,
+    the person gets a line in this same chat (a no_agent cron job; silent when all is settled)."""
+    import datetime as _dt
+
+    from hermes_constants import get_hermes_home
+
+    root = _hermes_root()
+    if not _purchases().mark(root, entry["id"], check_scheduled=True):
+        return  # a refill of the same payment: its check is already on the way
+    from cron.jobs import create_job
+    from tools.cronjob_job_args import _origin_from_env
+
+    scripts = Path(get_hermes_home()) / "scripts"
+    scripts.mkdir(parents=True, exist_ok=True)
+    name = f"alice-pago-{entry['id']}.py"
+    (scripts / name).write_text(
+        _purchases().follow_up_script(Path(__file__).resolve().parent, root, entry["id"]), encoding="utf-8")
+    at = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=_purchases().FOLLOW_UP)
+    origin = _origin_from_env()
+    # Telegram or iMessage: back to that chat. Alice's app chats have no such origin: the agent's chat.
+    create_job(None, at.isoformat(timespec="seconds"), name=f"Comprobar pago en {entry['shop']}",
+               repeat=1, origin=origin, deliver=None if origin else "bot-chat", script=name, no_agent=True)
+
+
+def _payment_error_note(tool_name=None, result=None, session_id="", **_):
+    """A browser page that says the payment failed is flagged to the agent at once, so the person
+    hears it now rather than never (purchases.error_note)."""
+    try:
+        if not str(tool_name or "").startswith("browser") or not isinstance(result, str):
+            return None
+        note = _purchases().error_note(_hermes_root(), session_id or "", result)
+        return result + note if note else None
+    except Exception:
+        return None
 
 
 def purchases_prompt(_session_info=None) -> str:
@@ -214,6 +252,9 @@ def _register_purchase_tools(ctx) -> None:
         handler=lambda args, **_: _agent_json(module.run_tool(_hermes_root(), args or {})),
         check_fn=_always, description=module.SCHEMA["description"], emoji="🧾",
     )
+    # The same rules as a skill anyone can open and audit (alice:comprar).
+    if hasattr(ctx, "register_skill"):
+        ctx.register_skill("comprar", module.SKILL, description="Cómo compra Alice online, de elegir a confirmar el pedido.")
 
 
 def _pre_tool_call(tool_name=None, args=None, **_):
@@ -1236,6 +1277,8 @@ def register(ctx) -> None:
     # One payment per order, kept by the plugin rather than the model (purchases.py).
     ctx.register_hook("pre_tool_call", _guard_repeat_payment)
     ctx.register_hook("pre_tool_call", _route_card_fill)
+    # A payment error on the page reaches the agent, and through it the person (purchases.py).
+    ctx.register_hook("transform_tool_result", _payment_error_note)
     # What each agent did with consequences, for Alice's Activity.
     ctx.register_hook("post_tool_call", _post_tool_call)
     # In iMessage and SMS the reply is made readable as a text message (text_channel.py).
