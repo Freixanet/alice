@@ -13800,6 +13800,66 @@
           }
         }
       }
+    },
+    "Needs you": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Te necesita"
+          }
+        }
+      }
+    },
+    "Working on it…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trabajando en ello…"
+          }
+        }
+      }
+    },
+    "Stopped before finishing": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se quedó a medias"
+          }
+        }
+      }
+    },
+    "New reply": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Respuesta nueva"
+          }
+        }
+      }
+    },
+    "Draft: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Borrador: %@"
+          }
+        }
+      }
+    },
+    "Draft": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Borrador"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

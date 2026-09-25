@@ -535,8 +535,9 @@ private struct SidebarList: View, Equatable {
 
     @ViewBuilder
     private func chatRow(_ conversation: Conversation) -> some View {
+        let attention = store.attention(for: conversation)
         Button {
-            store.activeID = conversation.id
+            store.openChat(conversation.id)
             onDismiss()
         } label: {
             HStack(spacing: 8) {
@@ -549,10 +550,22 @@ private struct SidebarList: View, Equatable {
                     }
                 }
                 .frame(width: 2, height: 22)
-                Text(store.titleStyled(for: conversation))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.titleStyled(for: conversation))
+                        .fontWeight(attention == .newReply || attention == .needsYou ? .semibold : nil)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let attention {
+                        ChatAttentionLine(
+                            attention: attention,
+                            draft: store.unsentDrafts[conversation.id]
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let attention {
+                    ChatAttentionMark(attention: attention)
+                }
             }
             .frame(width: width - 48, alignment: .leading)
             .padding(.horizontal, 12)
@@ -641,5 +654,75 @@ private struct SidebarList: View, Equatable {
         projects = ((try? await store.namedProjects(profile: "default")) ?? [])
             .filter { !$0.archived && $0.primaryPath != nil }
         projectsFetchedAt = Date()
+    }
+}
+
+
+/// The line under a chat's title in the drawer saying what it is waiting on.
+private struct ChatAttentionLine: View {
+    let attention: ChatAttention
+    let draft: String?
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Text(words)
+            .font(.caption.weight(attention == .needsYou ? .semibold : .regular))
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    private var words: String {
+        switch attention {
+        case .needsYou: String(localized: "Needs you")
+        case .working: String(localized: "Working on it…")
+        case .interrupted: String(localized: "Stopped before finishing")
+        case .newReply: String(localized: "New reply")
+        case .draft:
+            if let draft = draft?.trimmingCharacters(in: .whitespacesAndNewlines), !draft.isEmpty {
+                String(localized: "Draft: \(draft)")
+            } else {
+                String(localized: "Draft")
+            }
+        }
+    }
+
+    private var tint: Color {
+        switch attention {
+        case .needsYou: Palette.warning(scheme)
+        case .interrupted: Palette.danger(scheme)
+        case .newReply: Palette.info(scheme)
+        case .working, .draft: .secondary
+        }
+    }
+}
+
+/// The mark at the end of the row: seen before the words are read.
+private struct ChatAttentionMark: View {
+    let attention: ChatAttention
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Group {
+            switch attention {
+            case .needsYou:
+                Image(systemName: "hand.raised.fill")
+                    .foregroundStyle(Palette.warning(scheme))
+            case .working:
+                ProgressView().controlSize(.mini)
+            case .interrupted:
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(Palette.danger(scheme))
+            case .newReply:
+                Circle().fill(Palette.info(scheme)).frame(width: 8, height: 8)
+            case .draft:
+                Image(systemName: "pencil")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+        .frame(width: 16)
+        // The line under the title already says it.
+        .accessibilityHidden(true)
     }
 }
