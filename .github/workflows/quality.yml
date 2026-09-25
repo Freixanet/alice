@@ -10,7 +10,9 @@ permissions:
 
 concurrency:
   group: quality-${{ github.ref }}
-  cancel-in-progress: true
+  # A pull request's newer push replaces its older run. On main every push is
+  # checked: a cancelled run there showed as a failing badge.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
