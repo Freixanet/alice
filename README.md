@@ -53,7 +53,10 @@ side of that work:
 - **Buying online up to the payment.** Alice fills the basket, address and delivery, stops
   at your one "Pay" (a card that reads "Alice will pay on this site with your Visa ···4242"), pays on the bank's page (for example Redsys) with the card saved for it, then
   tells you whether the payment went through, was declined or failed. An approval sent
-  while the phone was locked comes back into the chat when you open it. Real
+  while the phone was locked comes back into the chat when you open it. Before paying she
+  tries the shop's discount codes and keeps the one that lowers the total most. The plugin
+  keeps a ledger of payments: a second payment on the same shop is refused until the first
+  one's outcome is known, and then needs your explicit approval. Real
   purchases have exposed bugs that have since been fixed. It is not yet reliable enough to
   leave unattended.
 - **Tasks that keep going until they are done.** For a task with several steps, the agent
@@ -176,7 +179,7 @@ More detail: [architecture](docs/architecture.md), [pairing protocol](docs/pairi
 
 ## Quality
 
-- **Tests:** about 980 iOS unit test cases, 281 plugin tests and 81 web test files, plus
+- **Tests:** about 980 iOS unit test cases, 291 plugin tests and 81 web test files, plus
   end-to-end browser tests.
 - **CI:** runs a secret scan, type and lint checks, bundle budgets, the plugin tests, the
   Playwright suites and the iOS simulator suites

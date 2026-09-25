@@ -141,7 +141,10 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_hook.assert_any_call("on_session_end", self.plugin._keep_reviewed_skills)
         ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._guard_egress)
         ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._route_card_fill)
-        self.assertEqual(ctx.register_hook.call_count, 8)
+        # And the same order is never paid twice (purchases.py), checked before the fill is routed.
+        hooks = [c.args[1] for c in ctx.register_hook.call_args_list]
+        self.assertLess(hooks.index(self.plugin._guard_repeat_payment), hooks.index(self.plugin._route_card_fill))
+        self.assertEqual(ctx.register_hook.call_count, 9)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
         # How an agent asks for a key without it entering the chat.
@@ -161,7 +164,8 @@ class BusinessIsolationTests(unittest.TestCase):
         # And the errands she can run on her own (subscriptions, returns, slots, check-in).
         ctx.register_system_prompt_section.assert_any_call("alice.recados", self.plugin.errands_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.dudas", self.plugin.doubts_prompt)
-        self.assertEqual(ctx.register_system_prompt_section.call_count, 9)
+        ctx.register_system_prompt_section.assert_any_call("alice.compras", self.plugin.purchases_prompt)
+        self.assertEqual(ctx.register_system_prompt_section.call_count, 10)
 
 
 if __name__ == "__main__":

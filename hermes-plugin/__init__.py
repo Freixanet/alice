@@ -16,6 +16,7 @@ A note-taking profile also gains a ``notes`` toolset for the store it keeps in
 No changes to Hermes' own code.
 """
 import contextvars
+import json
 import threading
 from pathlib import Path
 
@@ -153,6 +154,66 @@ def _route_card_fill(tool_name=None, args=None, **_):
     except Exception:
         return None
     return {"action": "modify", "args": {"handle": handle}} if handle else None
+
+
+def _purchases():
+    return _module("purchases.py", "alice_purchases")
+
+
+def _open_tabs() -> list:
+    live = _browser()
+    return [str(tab.get("url") or "") for tab in live.pages(live.configured_url(_hermes_root()))]
+
+
+def _card_fill(tool_name, args):
+    """The saved card a browser_vault_fill call is about to write, or None for any other call."""
+    if tool_name != "browser_vault_fill" or not isinstance(args, dict) or not args.get("handle"):
+        return None
+    meta = _cards_module()._store().get_meta(str(args["handle"]))
+    return meta if meta is not None and meta.kind == "payment" else None
+
+
+def _guard_repeat_payment(tool_name=None, args=None, **_):
+    """One payment per order (purchases.py): an unsettled payment on the same shop blocks the fill;
+    a paid or unknown one sends it through Hermes' approval card. If the ledger cannot be read, the
+    fill still needs Hermes' own payment confirmation, so nothing is spent without a yes."""
+    try:
+        meta = _card_fill(tool_name, args)
+        if meta is None:
+            return None
+        cards = _cards_module()
+        site = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
+        return _purchases().guard(_hermes_root(), site)
+    except Exception:
+        return None
+
+
+def _record_payment(tool_name, args, result, session_id) -> None:
+    """A card Hermes actually wrote into a checkout is a payment attempt until it is settled."""
+    try:
+        if tool_name != "browser_vault_fill":
+            return
+        out = json.loads(result) if isinstance(result, str) else (result or {})
+        if not (isinstance(out, dict) and out.get("success") and out.get("kind") == "payment"):
+            return
+        site = _purchases().merchant(_open_tabs(), str(out.get("origin") or ""),
+                                     _cards_module().PAYMENT_GATEWAYS)
+        _purchases().record(_hermes_root(), site, session_id or "")
+    except Exception:
+        pass
+
+
+def purchases_prompt(_session_info=None) -> str:
+    return _purchases().prompt()
+
+
+def _register_purchase_tools(ctx) -> None:
+    module = _purchases()
+    ctx.register_tool(
+        name="purchase_outcome", toolset="alice_purchases", schema=module.SCHEMA,
+        handler=lambda args, **_: _agent_json(module.run_tool(_hermes_root(), args or {})),
+        check_fn=_always, description=module.SCHEMA["description"], emoji="🧾",
+    )
 
 
 def _pre_tool_call(tool_name=None, args=None, **_):
@@ -418,6 +479,7 @@ def _post_tool_call(tool_name=None, args=None, result=None, session_id="", statu
                               session_id=session_id or "", status=status)
     except Exception:
         pass
+    _record_payment(tool_name, args, result, session_id)
     if tool_name == "skill_manage" and status != "error":
         # A skill written now is kept now, unless it reads like an injection (skill_keeper.py).
         _keep_skills(delay=1.0)
@@ -1171,6 +1233,8 @@ def register(ctx) -> None:
     # After reading the web, sending data out or reading secrets needs the person (egress_guard.py).
     ctx.register_hook("pre_tool_call", _guard_egress)
     # A card is filled with the copy for the page open, or bound to the bank's payment page.
+    # One payment per order, kept by the plugin rather than the model (purchases.py).
+    ctx.register_hook("pre_tool_call", _guard_repeat_payment)
     ctx.register_hook("pre_tool_call", _route_card_fill)
     # What each agent did with consequences, for Alice's Activity.
     ctx.register_hook("post_tool_call", _post_tool_call)
@@ -1189,10 +1253,13 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.recados", errands_prompt)
     ctx.register_system_prompt_section("alice.dudas", doubts_prompt)
     ctx.register_system_prompt_section("alice.tarjetas", cards_prompt)
+    ctx.register_system_prompt_section("alice.compras", purchases_prompt)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)
     _register_goal_tools(ctx)
     # A task of several steps is kept going by Hermes' goal judge until done or it needs the person.
     _register_task_tools(ctx)
+    # How a card payment ended, so the same order is never paid twice (purchases.py).
+    _register_purchase_tools(ctx)
     # When the person arrives at or leaves a place, their iPhone wakes the agent (places.py).
     _register_place_tools(ctx)
     # Sleep, activity, heart rate and HRV from the iPhone's Health app (health.py).
