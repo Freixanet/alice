@@ -8862,6 +8862,13 @@ final class AppStore {
             .last { $0.role == .user }
         guard let priorUser else { return }
 
+        // The session ID is saved before submitting. Without one, this task's
+        // first prompt never reached Hermes, so there is nothing to rewind.
+        if conversations[chat].isAgentTask, conversations[chat].hermesSessionID == nil {
+            resend(priorUser, replacing: messageID, in: conversations[chat].id, text: text)
+            return
+        }
+
         // A bot chat's history lives in Hermes, which still holds the failed
         // exchange. Resending alone put the same message there twice, and the
         // next refresh showed it twice. Rewind it there first.
@@ -9041,6 +9048,7 @@ final class AppStore {
             conversations[chat].messages.remove(at: userIndex)
         }
         draft = text ?? priorUser.content
+        draftAttachments = priorUser.attachments
         send()
     }
 

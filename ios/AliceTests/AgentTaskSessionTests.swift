@@ -123,6 +123,28 @@ final class AgentTaskConversationTests: XCTestCase {
         XCTAssertTrue(reopened.conversations.contains { $0.id == second })
     }
 
+    func testRetryBeforeSessionCreationKeepsTheEditedPromptAndAttachments() throws {
+        let suite = "alice.task-retry-test.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppStore(defaults: defaults)
+        let attachment = Attachment(id: "file", name: "brief.txt", mime: "text/plain", kind: .file, data: Data("Brief".utf8))
+        let now = Date()
+        store.conversations = [Conversation(
+            id: "task", title: "New Agent", createdAt: now, updatedAt: now,
+            messages: [
+                Message(id: "user", role: .user, content: "Old brief", createdAt: now, attachments: [attachment]),
+                Message(id: "failed", role: .assistant, content: "", createdAt: now),
+            ], botName: "forja", agentTaskID: "task"
+        )]
+        store.activeID = "task"
+        store.retry("failed", text: "Revised brief")
+        // Offline: the retry remains editable instead of requiring a nonexistent session.
+        XCTAssertEqual(store.draft, "Revised brief")
+        XCTAssertEqual(store.draftAttachments, [attachment])
+        XCTAssertNil(store.activeConversation?.hermesSessionID)
+    }
+
     func testOldArchivesRemainCanonicalAndPendingRequestsStaySeparate() throws {
         let old = try JSONDecoder().decode(Conversation.self, from: Data(#"{"id":"old","botName":"forja","hermesSessionID":"canonical"}"#.utf8))
         XCTAssertTrue(old.isCanonicalBotChat)
