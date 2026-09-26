@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UIKit
 
 /// The composer every model client has converged on: the text on its own line,
 /// and the controls underneath — attach and model on the left, send on the
@@ -35,6 +36,7 @@ struct Composer: View {
     @State private var micTaps = 0
     @State private var showingVoice = false
     @State private var pendingListen: Bool?
+    @State private var dictationFailure: String?
 
     /// One height for every control on the bottom row, so the send button and
     /// the model chip line up instead of each taking the size its own padding
@@ -128,6 +130,25 @@ struct Composer: View {
         .onDisappear {
             dictation.stop()
             pendingListen = nil
+        }
+        .onChange(of: dictation.state) { _, state in
+            pendingListen = state == .starting ? true : nil
+            if case let .unavailable(reason) = state { dictationFailure = reason }
+        }
+        .alert("Dictation unavailable", isPresented: Binding(
+            get: { dictationFailure != nil },
+            set: { if !$0 { dictationFailure = nil } }
+        )) {
+            if dictation.needsSettings {
+                Button("Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(dictationFailure ?? "")
         }
         .onChange(of: store.editingMessageID) { _, editing in
             if editing != nil { focused.wrappedValue = true }
@@ -789,7 +810,7 @@ struct Composer: View {
         .buttonStyle(.plain)
         // The accent's clearest home: the one control that acts.
         .foregroundStyle(
-            (acting ? store.isConnected : voiceAvailable)
+            (stopping || voiceAvailable)
                 ? store.accent.primary(scheme) : Color.secondary
         )
         .glassEffect(.regular.interactive(), in: .circle)

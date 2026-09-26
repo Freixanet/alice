@@ -13,12 +13,14 @@ import Speech
 final class Dictation {
     enum State: Equatable {
         case idle
+        case starting
         case listening
         /// The user said no, or the device cannot transcribe in this locale.
         case unavailable(String)
     }
 
     private(set) var state: State = .idle
+    private(set) var needsSettings = false
 
     private let engine = AVAudioEngine()
     private var recognizer: SFSpeechRecognizer?
@@ -48,6 +50,7 @@ final class Dictation {
         } else {
             generation += 1
             let token = generation
+            state = .starting
             startTask = Task { await start(locale: locale, generation: token, onText: onText) }
         }
     }
@@ -60,13 +63,15 @@ final class Dictation {
         defer { if token == generation { startTask = nil } }
         let allowed = if let permission { await permission() } else { await requestAccess() }
         guard token == generation, !Task.isCancelled else { return }
+        needsSettings = false
         guard allowed else {
-            state = .unavailable("Alice needs permission to use the microphone.")
+            needsSettings = true
+            state = .unavailable(String(localized: "Allow Microphone and Speech Recognition in Settings to dictate."))
             return
         }
         let recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer()
         guard let recognizer, recognizer.isAvailable else {
-            state = .unavailable("Dictation is not available for this language.")
+            state = .unavailable(String(localized: "Dictation is not available for this language."))
             return
         }
         self.recognizer = recognizer
@@ -88,7 +93,7 @@ final class Dictation {
             // `installTap` raises on that.
             let format = input.inputFormat(forBus: 0)
             guard format.sampleRate > 0, format.channelCount > 0 else {
-                state = .unavailable("The microphone is not available right now.")
+                state = .unavailable(String(localized: "The microphone is not available right now."))
                 teardown()
                 return
             }
@@ -121,7 +126,7 @@ final class Dictation {
             }
             state = .listening
         } catch {
-            state = .unavailable("Couldn’t start the microphone.")
+            state = .unavailable(String(localized: "Couldn’t start the microphone."))
             teardown()
         }
     }

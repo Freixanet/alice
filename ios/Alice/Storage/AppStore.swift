@@ -8184,6 +8184,7 @@ final class AppStore {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reply.isEmpty else { return }
         let savedDraft = draft
+        let savedMentions = draftMentions
         let savedAttachments = draftAttachments
         let keepsDraft = !savedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !savedAttachments.isEmpty
@@ -8199,10 +8200,12 @@ final class AppStore {
             addressed = "@\(agent) " + reply
         }
         draft = addressed
+        draftMentions = []
         draftAttachments = []
         send()
         if keepsDraft {
             draft = savedDraft
+            draftMentions = savedMentions
             draftAttachments = savedAttachments
         }
     }

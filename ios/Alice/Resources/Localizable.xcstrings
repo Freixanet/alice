@@ -13890,6 +13890,56 @@
           }
         }
       }
+    },
+    "Dictation unavailable": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictado no disponible"
+          }
+        }
+      }
+    },
+    "Allow Microphone and Speech Recognition in Settings to dictate.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permite el acceso al micrófono y al reconocimiento de voz en Ajustes para dictar."
+          }
+        }
+      }
+    },
+    "Dictation is not available for this language.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El dictado no está disponible en este idioma."
+          }
+        }
+      }
+    },
+    "The microphone is not available right now.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El micrófono no está disponible ahora."
+          }
+        }
+      }
+    },
+    "Couldn’t start the microphone.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo activar el micrófono."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
