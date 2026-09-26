@@ -3654,6 +3654,7 @@ final class AppStore {
         activeID = chat.id
         if arguments.contains("-seedAgentMaker"),
            let index = cachedBots.firstIndex(where: { $0.name == "uitest-bot" }) {
+            conversations.removeAll { $0.isAgentTask }
             cachedBots[index].aliceRole = "agent-maker"
             showingBots = true
         }

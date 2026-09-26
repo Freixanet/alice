@@ -463,6 +463,7 @@ struct Composer: View {
                     "", text: editorText,
                     prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
                 )
+                    .accessibilityIdentifier("composer.text")
                     .lineLimit(1...7)
                     .scrollIndicators(.hidden)
                     .textFieldStyle(.plain)
@@ -532,6 +533,7 @@ struct Composer: View {
                             "", text: editorText,
                             prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
                         )
+                            .accessibilityIdentifier("composer.text")
                             .textFieldStyle(.plain)
                             .scrollIndicators(.hidden)
                             .font(.body)
