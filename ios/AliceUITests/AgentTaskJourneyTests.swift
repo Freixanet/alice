@@ -18,7 +18,9 @@ final class AgentTaskJourneyTests: XCTestCase {
         // Return through the same public drawer used by every conversation.
         app.buttons["chat.leading"].tap()
         XCTAssertTrue(app.buttons["sidebar.settings"].waitForExistence(timeout: 5))
-        let task = app.buttons.containing(.staticText, identifier: "New Agent").firstMatch
+        let task = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "sidebar.chat.", "New Agent"
+        )).firstMatch
         XCTAssertTrue(task.waitForExistence(timeout: 5))
         task.tap()
         XCTAssertTrue(app.buttons["composer.action"].waitForExistence(timeout: 5))

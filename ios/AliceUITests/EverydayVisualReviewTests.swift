@@ -19,6 +19,9 @@ final class EverydayVisualReviewTests: XCTestCase {
         composer.tap()
         composer.typeText("Una idea pendiente")
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let send = app.buttons["composer.action"]
+        XCTAssertTrue(send.isHittable, "Send must remain reachable above the keyboard")
+        XCTAssertLessThanOrEqual(send.frame.maxY, app.keyboards.firstMatch.frame.minY + 1)
         capture(app, "keyboard-\(theme)")
         app.buttons["chat.leading"].tap()
         XCTAssertTrue(app.buttons["sidebar.row.Agents"].waitForExistence(timeout: 10))

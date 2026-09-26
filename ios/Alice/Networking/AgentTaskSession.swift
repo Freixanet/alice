@@ -16,7 +16,7 @@ extension WebSocketBotChatSource {
                 snapshot = try await resume(profile: profile, target: title)
             } catch let error where Self.isNotFound(error) {
                 snapshot = try await rpc.call("session.create", JSONObject([
-                    "profile": profile, "title": title,
+                    "profile": profile, "title": title, "follow_profile_config": true,
                 ]))
             }
         }

@@ -100,3 +100,39 @@ There are multiple OpenMuse projects, so both relevant implementations are recor
   device; this does not imply the CoreDevice installation connection is unavailable.
 - Changes, final checks and installed revision are recorded in the associated PR.
   No real purchases, calls or messages are sent as part of this audit.
+
+## Continuation: independent Agent Maker work
+
+Initial application candidate `2a4dbb4`, followed by corrections on PR #34:
+
+- Generic iPhone build and compilation of both test bundles passed with
+  `xcodebuild ... -destination 'generic/platform=iOS' ... build-for-testing`.
+  Candidate metadata: version 1.0, build 121, source revision `2a4dbb4`.
+- The official Hermes checkout's `tests/tui_gateway/test_resume_live_lazy_session.py`
+  passed all four tests with its isolated temporary homes. These check durable-ID
+  and pending-title recovery, rejection of cross-profile lookup, and a missing
+  session. They do not prompt a live model or use the person's Hermes state.
+- New native regressions cover separate task identity, archive compatibility,
+  canonical history/draft preservation, task-scoped requests, and retrying a
+  first send without losing its edited text or attachments.
+- Synthetic visual fixtures cover populated chats, agents, Recents, notes,
+  keyboard, settings and Agenda's unconnected state in light/dark and large text.
+  No real conversations are captured. Run `36262920016` passed both visual
+  journeys and all eight new session tests, but failed one drawer selector and
+  an older attachment test that incorrectly assumed serial upload start order.
+  The selector now names the actual Recents row. The attachment check preserves
+  resume-before-upload and submit-after-upload assertions; a deterministic
+  reversed-completion test checks that submitted references retain user order.
+- Image review found overcrowded chat hints, clipped agent rows at the largest
+  text size, and Agenda's white-on-light dark-mode access button. Corrections
+  hide navigation hints in populated chats and all chat hints while typing,
+  allow the model control to grow, stack agent metadata at accessibility sizes,
+  and explicitly contrast the Agenda action. The keyboard test also checks that
+  Send is reachable above the keyboard. Final CI and image review remain pending.
+- Seven isolated official Hermes persistence tests also passed. New task sessions
+  opt into `follow_profile_config`; explicit model changes update held sessions
+  without waking closed historical tasks. Reconnecting only auto-sends when both
+  the intended chat and its complete draft remain unchanged.
+- Rollback must keep the task-aware archive decoder and routing for existing
+  tasks. Disable the New Agent task entry point if necessary; an older binary
+  predating `agentTaskID` would mistake these conversations for canonical chats.

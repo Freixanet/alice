@@ -12,6 +12,7 @@ import UIKit
 struct Composer: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var focused: FocusState<Bool>.Binding
     var placeholder: String = "Talk to Alice…"
@@ -464,7 +465,7 @@ struct Composer: View {
                     prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
                 )
                     .accessibilityIdentifier("composer.text")
-                    .lineLimit(1...7)
+                    .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 3 : 7))
                     .scrollIndicators(.hidden)
                     .textFieldStyle(.plain)
                     .font(.body)
@@ -539,7 +540,7 @@ struct Composer: View {
                             .font(.body)
                             .background { mentionBackdrop(store.draft) }
                             .focused(focused)
-                            .lineLimit(1...7)
+                            .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 3 : 7))
                             .padding(.vertical, 6)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(.rect)
@@ -747,7 +748,7 @@ struct Composer: View {
                 .lineLimit(1)
                 .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
-            .frame(height: controlHeight)
+            .frame(minHeight: controlHeight)
             .background(Palette.muted(scheme).opacity(0.7), in: .capsule)
         }
         .buttonStyle(.plain)

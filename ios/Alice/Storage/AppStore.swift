@@ -2264,19 +2264,33 @@ final class AppStore {
     /// profile's configuration. The model was already accepted for this bot
     /// when the profile changed, so Hermes' confirmation is not asked twice.
     private func switchOpenBotChat(_ botName: String, model: String, provider: String) async throws {
-        guard let conversation = conversations.first(where: {
-            $0.isCanonicalBotChat && $0.routedBotName == botName
-        }), let source = await botChatSource() else { return }
-        let chat = try await resolveBotChat(botName, source: source)
-        let resumed = try await source.resume(profile: botName, target: chat.resolvedID)
-        guard let liveID = resumed["session_id"] as? String, !liveID.isEmpty else { return }
-        track(liveSessionID: liveID, for: conversation.id)
-        _ = try await source.rpc.call("config.set", JSONObject([
-            "session_id": liveID,
-            "key": "model",
-            "value": "\(model) --provider \(provider) --session",
-            "confirm_expensive_model": true,
-        ]))
+        // Closed tasks follow the profile when resumed; only held runtimes
+        // need switching now. Do not wake every historical task to change a model.
+        let chats = conversations.filter {
+            $0.isAgentSessionChat && $0.routedBotName == botName
+                && (!$0.isAgentTask || ($0.hermesSessionID != nil
+                    && ($0.id == activeID || botLiveSessionIDs[$0.id] != nil)))
+        }
+        guard !chats.isEmpty, let source = await botChatSource() else { return }
+        var failures: [String] = []
+        for conversation in chats {
+            do {
+                let chat = try await resolveConversationSession(conversation.id, profile: botName, source: source)
+                let resumed = try await source.resume(profile: botName, target: chat.resolvedID)
+                guard let liveID = resumed["session_id"] as? String, !liveID.isEmpty else {
+                    throw HermesRPCClient.Failure(reason: "Hermes did not return this chat's live session.")
+                }
+                track(liveSessionID: liveID, for: conversation.id)
+                _ = try await source.useModel(model, provider: provider, in: HomeChatSession(
+                    storedID: chat.resolvedID, liveID: liveID, model: nil, provider: nil
+                ), force: true, confirm: true)
+            } catch {
+                failures.append(HermesErrors.describe(error))
+            }
+        }
+        if let first = failures.first {
+            throw HermesRPCClient.Failure(reason: first)
+        }
     }
 
     // MARK: - Events
@@ -8300,9 +8314,15 @@ final class AppStore {
             $0.id == activeID && ($0.isHomeSessionChat || $0.isAgentSessionChat)
         }
         guard isConnected || overDashboard else {
+            let intendedDraft = ComposerDraft(text: draft, mentions: draftMentions, attachments: draftAttachments)
             Task { [weak self] in
                 await self?.restoreConnection()
-                if self?.isConnected == true { self?.send() }
+                guard let self, self.activeID == activeID,
+                      ComposerDraft(text: self.draft, mentions: self.draftMentions,
+                                    attachments: self.draftAttachments) == intendedDraft else { return }
+                // Reconnection must not send a different chat's draft, or an
+                // edit made while waiting. It stays on screen for the person.
+                if self.isConnected { self.send() }
             }
             return
         }

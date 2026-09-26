@@ -144,7 +144,7 @@ private struct ChatScreenContent: View, Equatable {
                     // In the page, not floating over it: a popover tip is
                     // presented, and while it is, a tap anywhere else only
                     // dismisses it — the header's buttons stopped answering.
-                    if bot == nil {
+                    if bot == nil, !hasTranscript, !keyboardShown {
                         TipView(SwipeNavigationTip())
                             .padding(.horizontal, 16)
                     }
@@ -712,12 +712,12 @@ private struct TranscriptView: View {
                             superseded: answered.contains(message.id), reaction: given[message.id]
                         )
                     }
-                    if conversation.messages.contains(where: { $0.role == .user }) {
+                    if !keyboardShown, conversation.messages.contains(where: { $0.role == .user }) {
                         TipView(MessageActionsTip())
                     }
                     // Once the actions hint has done its job, and only under a
                     // reply that asks or offers something: where a thumb helps.
-                    if let last = messages.last, Reactions.invites(last), !MessageActionsTip().shouldDisplay {
+                    if !keyboardShown, let last = messages.last, Reactions.invites(last), !MessageActionsTip().shouldDisplay {
                         TipView(ReactionTip())
                     }
                     BackgroundWorkCard(conversationID: conversation.id)

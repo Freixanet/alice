@@ -37,6 +37,7 @@ final class AgentTaskSessionTests: XCTestCase {
         let params = await hermes.parameters("session.create")
         XCTAssertEqual(params?["profile"] as? String, "forja")
         XCTAssertEqual(params?["title"] as? String, "Alice task unique")
+        XCTAssertEqual(params?["follow_profile_config"] as? Bool, true)
         XCTAssertNil(params?["model"])
         XCTAssertNil(params?["provider"])
         XCTAssertNil(params?["messages"])
