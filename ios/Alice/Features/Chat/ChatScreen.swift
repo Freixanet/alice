@@ -5,13 +5,12 @@ import UIKit
 struct ChatScreen: View {
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
-    let onOpenBots: () -> Void
     /// How far the drawer is open, 0 to 1, as it moves.
     var drawerProgress: CGFloat = 0
 
     var body: some View {
         ChatScreenContent(
-            onOpenDrawer: onOpenDrawer, onBack: onBack, onOpenBots: onOpenBots
+            onOpenDrawer: onOpenDrawer, onBack: onBack
         )
         .equatable()
         .environment(\.aliceDrawerProgress, drawerProgress)
@@ -28,7 +27,6 @@ private struct ChatScreenContent: View, Equatable {
     @Environment(\.colorScheme) private var scheme
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
-    let onOpenBots: () -> Void
 
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
@@ -372,31 +370,7 @@ private struct ChatScreenContent: View, Equatable {
 
             Spacer(minLength: 0)
 
-            // Where a bot's conversation has nothing to put here — it came
-            // from the bots and goes back with the chevron opposite — Alice's
-            // own gets the way in, so the list is one tap from the place you
-            // start, not two through a drawer.
-            if bot == nil {
-                Button(action: onOpenBots) {
-                    // The bots' own eyes rather than a symbol standing in
-                    // for them. Every bot in the app is a face with these two
-                    // marks in it, so the disc that leads to them reads as one
-                    // of them — a small bot sitting in the corner — instead of
-                    // as a generic pair of shoulders.
-                    // Stated, not inherited. `.primary` inside the glass came
-                    // out at a fifth of the contrast the glyph opposite has —
-                    // the disc's own vibrancy lightens what it holds, and a
-                    // shape fill takes more of that than a symbol stroke does.
-                    BotFaceView(
-                        size: 32,
-                        ink: scheme == .dark ? .white : .black
-                    )
-                    .frame(width: discSize, height: discSize)
-                    .contentShape(.circle)
-                }
-                .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Agents")
-            } else if isToday {
+            if isToday {
                 // Today fills up with briefings and closes of the day; this
                 // is where it starts again. Its routines, and what Alice
                 // knows about Marc, stay.
