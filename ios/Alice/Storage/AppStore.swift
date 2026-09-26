@@ -3615,7 +3615,7 @@ final class AppStore {
         // `-seedTallBotChat` gives every reply the length of a Radar IA report,
         // the kind of chat that opened blank on a phone.
         let tall = arguments.contains("-seedTallBotChat")
-        guard tall || arguments.contains("-seedLongBotChat") || arguments.contains("-seedAgentMaker") else { return }
+        guard tall || arguments.contains("-seedLongBotChat") || arguments.contains("-seedAgentMaker") || arguments.contains("-visualReview") else { return }
         // Headlines carry their reply's number, so the end of one reply can be
         // told from the end of another: replies are drawn block by block.
         let report = { (reply: Int) in
@@ -3656,6 +3656,16 @@ final class AppStore {
            let index = cachedBots.firstIndex(where: { $0.name == "uitest-bot" }) {
             cachedBots[index].aliceRole = "agent-maker"
             showingBots = true
+        }
+
+        if arguments.contains("-visualReview") {
+            let now = Date()
+            notesSnapshot = VisualReviewFixtures.notes(at: now)
+            for fixture in VisualReviewFixtures.conversations(at: now) {
+                conversations.removeAll { $0.id == fixture.id }
+                conversations.append(fixture)
+            }
+            activeID = "visual-home"
         }
 
         // `-growSeededChat` makes the last reply land whole a moment after
