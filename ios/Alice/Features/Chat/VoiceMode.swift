@@ -44,6 +44,12 @@ final class VoiceConversation {
     private var silenceTimer: Task<Void, Never>?
     private var idleTimer: Task<Void, Never>?
     private var watcher: Task<Void, Never>?
+    private var startTask: Task<Void, Never>?
+    private var generation = 0
+    private var recognitionGeneration = 0
+    private var tapInstalled = false
+    private var ownsAudioSession = false
+    private let permission: (@MainActor @Sendable () async -> Bool)?
 
     private let synthesizer = AVSpeechSynthesizer()
     private let finish = SpeechFinish()
@@ -70,7 +76,8 @@ final class VoiceConversation {
     /// Words that must be new (not her own) before talking over her stops her.
     nonisolated static let bargeInWords = 3
 
-    init() {
+    init(permission: (@MainActor @Sendable () async -> Bool)? = nil) {
+        self.permission = permission
         synthesizer.delegate = finish
         finish.done = { [weak self] in self?.utteranceFinished() }
     }
@@ -79,10 +86,16 @@ final class VoiceConversation {
 
     func begin(store: AppStore) {
         self.store = store
-        Task { await listen() }
+        conversationID = store.activeChat.id
+        startTask?.cancel()
+        startTask = Task { await listen() }
     }
 
     func end() {
+        generation += 1
+        startTask?.cancel()
+        startTask = nil
+        store = nil
         silenceTimer?.cancel()
         idleTimer?.cancel()
         watcher?.cancel()
@@ -90,7 +103,6 @@ final class VoiceConversation {
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
         queued = 0
         phase = .paused
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     /// The orb: while it speaks, stop and listen; while listening, send what
@@ -109,11 +121,14 @@ final class VoiceConversation {
                 sendHeard()
             }
         case .paused, .unavailable:
-            Task { await listen() }
+            startTask?.cancel()
+            startTask = Task { await listen() }
         }
     }
 
     private func pause() {
+        generation += 1
+        startTask?.cancel()
         stopListening()
         phase = .paused
     }
@@ -124,8 +139,13 @@ final class VoiceConversation {
     /// thinks and while she speaks — with the phone's call echo cancellation,
     /// so the person can talk over her or add something while she works.
     private func listen() async {
-        guard store != nil else { return }
-        guard await Self.permitted() else {
+        guard let store, store.activeChat.id == conversationID else { return }
+        generation += 1
+        let token = generation
+        let allowed = if let permission { await permission() } else { await Self.permitted() }
+        guard token == generation, !Task.isCancelled,
+              self.store === store, store.activeChat.id == conversationID else { return }
+        guard allowed else {
             phase = .unavailable("Alice needs the microphone and speech recognition. Turn them on in iOS Settings.")
             return
         }
@@ -142,12 +162,14 @@ final class VoiceConversation {
                 try session.setCategory(.playAndRecord, mode: .voiceChat,
                                         options: [.defaultToSpeaker, .allowBluetoothHFP, .duckOthers])
                 try session.setActive(true)
+                ownsAudioSession = true
                 let input = engine.inputNode
                 try? input.setVoiceProcessingEnabled(true)
                 input.removeTap(onBus: 0)
                 let format = input.outputFormat(forBus: 0)
                 guard format.sampleRate > 0, format.channelCount > 0 else {
                     phase = .unavailable("The microphone is not available right now.")
+                    stopListening()
                     return
                 }
                 let feed = self.feed
@@ -156,6 +178,7 @@ final class VoiceConversation {
                     let power = Self.power(of: buffer)
                     Task { @MainActor in self?.level = power }
                 }
+                tapInstalled = true
                 engine.prepare()
                 try engine.start()
             } catch {
@@ -170,6 +193,8 @@ final class VoiceConversation {
 
     /// A fresh recognition for the next thing said; the engine keeps running.
     private func restartRecognition() {
+        recognitionGeneration += 1
+        let token = recognitionGeneration
         silenceTimer?.cancel()
         recognition?.cancel()
         request?.endAudio()
@@ -183,12 +208,16 @@ final class VoiceConversation {
         recognition = recognizer.recognitionTask(with: request) { @Sendable [weak self] result, error in
             let text = result?.bestTranscription.formattedString
             let failed = error != nil && result == nil
-            Task { @MainActor in self?.heard(text, failed: failed) }
+            Task { @MainActor in
+                guard let self, self.recognitionGeneration == token else { return }
+                self.heard(text, failed: failed)
+            }
         }
         if phase == .listening { armIdle() }
     }
 
     private func heard(_ text: String?, failed: Bool) {
+        guard let store, store.activeChat.id == conversationID else { end(); return }
         guard let text, !text.isEmpty else {
             if failed, phase == .listening, heard.isEmpty { pause() } else if failed { restartRecognition() }
             return
@@ -230,6 +259,7 @@ final class VoiceConversation {
     }
 
     private func stopListening() {
+        recognitionGeneration += 1
         silenceTimer?.cancel()
         idleTimer?.cancel()
         recognition?.cancel()
@@ -238,7 +268,14 @@ final class VoiceConversation {
         request = nil
         feed.set(nil)
         if engine.isRunning { engine.stop() }
-        engine.inputNode.removeTap(onBus: 0)
+        if tapInstalled {
+            engine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        if ownsAudioSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            ownsAudioSession = false
+        }
         level = 0
     }
 
@@ -265,8 +302,9 @@ final class VoiceConversation {
     // MARK: - A turn
 
     private func sendHeard() {
+        guard let store, store.activeChat.id == conversationID else { end(); return }
         let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let store, !text.isEmpty else {
+        guard !text.isEmpty else {
             restartRecognition()
             return
         }
@@ -280,7 +318,6 @@ final class VoiceConversation {
             }
             return
         }
-        conversationID = store.activeChat.id
         baseline = store.shownConversation?.messages.count ?? 0
         spoken = 0
         replyDone = false
@@ -302,7 +339,7 @@ final class VoiceConversation {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard let self, let store = self.store else { return }
-                guard store.activeChat.id == self.conversationID else { return }
+                guard store.activeChat.id == self.conversationID else { self.end(); return }
                 // Nothing went out: say so, instead of thinking for ever.
                 if !sawActivity, (store.shownConversation?.messages.count ?? 0) <= self.baseline,
                    Date().timeIntervalSince(sentAt) > 12 {
@@ -508,6 +545,10 @@ struct VoiceModeView: View {
             voice.begin(store: store)
         }
         .onDisappear { voice.end() }
+        .onChange(of: store.activeChat.id) { _, _ in
+            voice.end()
+            dismiss()
+        }
         .sensoryFeedback(.impact(weight: .light), trigger: voice.phase)
     }
 

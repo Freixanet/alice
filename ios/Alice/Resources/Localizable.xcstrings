@@ -13860,6 +13860,86 @@
           }
         }
       }
+    },
+    "The draft could not be saved. Keep this chat open and try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo guardar el borrador. Mantén abierto este chat e inténtalo de nuevo."
+          }
+        }
+      }
+    },
+    "A saved draft could not be read. Its original data has been kept.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer un borrador guardado. Se han conservado sus datos originales."
+          }
+        }
+      }
+    },
+    "The attachment could not be saved. Try again before closing Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo guardar el adjunto. Inténtalo de nuevo antes de cerrar Alice."
+          }
+        }
+      }
+    },
+    "Dictation unavailable": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictado no disponible"
+          }
+        }
+      }
+    },
+    "Allow Microphone and Speech Recognition in Settings to dictate.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permite el acceso al micrófono y al reconocimiento de voz en Ajustes para dictar."
+          }
+        }
+      }
+    },
+    "Dictation is not available for this language.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El dictado no está disponible en este idioma."
+          }
+        }
+      }
+    },
+    "The microphone is not available right now.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El micrófono no está disponible ahora."
+          }
+        }
+      }
+    },
+    "Couldn’t start the microphone.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo activar el micrófono."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

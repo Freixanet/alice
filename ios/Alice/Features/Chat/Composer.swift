@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UIKit
 
 /// The composer every model client has converged on: the text on its own line,
 /// and the controls underneath — attach and model on the left, send on the
@@ -28,12 +29,14 @@ struct Composer: View {
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
+    @State private var attachmentConversationID: String?
     /// Counts taps rather than watching `listening`, so the tap is felt even
     /// when dictation fails to start — which is exactly when the reader most
     /// needs to know the button registered.
     @State private var micTaps = 0
     @State private var showingVoice = false
     @State private var pendingListen: Bool?
+    @State private var dictationFailure: String?
 
     /// One height for every control on the bottom row, so the send button and
     /// the model chip line up instead of each taking the size its own padding
@@ -78,7 +81,7 @@ struct Composer: View {
         )
         .sheet(isPresented: $showModels) { ModelPicker() }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { store.draftAttachments.append($0) }
+            CameraPicker { store.appendDraftAttachments([$0], to: attachmentConversationID) }
                 .ignoresSafeArea()
         }
         .photosPicker(
@@ -87,11 +90,12 @@ struct Composer: View {
         )
         .onChange(of: photos) { _, picked in
             guard !picked.isEmpty else { return }
+            let target = attachmentConversationID
             photos = []
             Task {
                 for item in picked {
                     if let attachment = await AttachmentLoader.image(from: item) {
-                        store.draftAttachments.append(attachment)
+                        store.appendDraftAttachments([attachment], to: target)
                     }
                 }
             }
@@ -111,12 +115,40 @@ struct Composer: View {
             guard case let .success(urls) = result else { return }
             for url in urls {
                 if let attachment = AttachmentLoader.file(at: url) {
-                    store.draftAttachments.append(attachment)
+                    store.appendDraftAttachments([attachment], to: attachmentConversationID)
                 }
             }
         }
         .onChange(of: store.draft) { _, _ in
             commandsDismissed = false
+        }
+        .onChange(of: store.activeChat.id) { _, _ in
+            dictation.stop()
+            pendingListen = nil
+            commandsDismissed = false
+        }
+        .onDisappear {
+            dictation.stop()
+            pendingListen = nil
+        }
+        .onChange(of: dictation.state) { _, state in
+            pendingListen = state == .starting ? true : nil
+            if case let .unavailable(reason) = state { dictationFailure = reason }
+        }
+        .alert("Dictation unavailable", isPresented: Binding(
+            get: { dictationFailure != nil },
+            set: { if !$0 { dictationFailure = nil } }
+        )) {
+            if dictation.needsSettings {
+                Button("Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(dictationFailure ?? "")
         }
         .onChange(of: store.editingMessageID) { _, editing in
             if editing != nil { focused.wrappedValue = true }
@@ -533,17 +565,20 @@ struct Composer: View {
         Menu {
             if CameraPicker.isAvailable {
                 Button {
+                    attachmentConversationID = store.activeChat.id
                     showCamera = true
                 } label: {
                     Label("Camera", systemImage: "camera")
                 }
             }
             Button {
+                attachmentConversationID = store.activeChat.id
                 showPhotos = true
             } label: {
                 Label("Photos", systemImage: "photo")
             }
             Button {
+                attachmentConversationID = store.activeChat.id
                 showFiles = true
             } label: {
                 Label("Files", systemImage: "folder")
@@ -647,10 +682,11 @@ struct Composer: View {
     private func toggleDictation(listening: Bool) {
         micTaps += 1
         pendingListen = !listening
-        let draft = store.draft
-        Task {
-            dictation.prime(with: draft)
-            dictation.toggle { store.draft = $0 }
+        let target = store.activeChat.id
+        dictation.prime(with: store.draft)
+        dictation.toggle {
+            guard store.activeChat.id == target else { return }
+            store.draft = $0
         }
     }
 
@@ -663,17 +699,20 @@ struct Composer: View {
         Menu {
             if CameraPicker.isAvailable {
                 Button {
+                    attachmentConversationID = store.activeChat.id
                     showCamera = true
                 } label: {
                     Label("Camera", systemImage: "camera")
                 }
             }
             Button {
+                attachmentConversationID = store.activeChat.id
                 showPhotos = true
             } label: {
                 Label("Photos", systemImage: "photo")
             }
             Button {
+                attachmentConversationID = store.activeChat.id
                 showFiles = true
             } label: {
                 Label("Files", systemImage: "folder")
@@ -771,7 +810,7 @@ struct Composer: View {
         .buttonStyle(.plain)
         // The accent's clearest home: the one control that acts.
         .foregroundStyle(
-            (acting ? store.isConnected : voiceAvailable)
+            (stopping || voiceAvailable)
                 ? store.accent.primary(scheme) : Color.secondary
         )
         .glassEffect(.regular.interactive(), in: .circle)
