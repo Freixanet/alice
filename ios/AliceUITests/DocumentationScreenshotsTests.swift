@@ -6,7 +6,7 @@ final class DocumentationScreenshotsTests: XCTestCase {
     func testCaptureChatWithLargeTextAndDarkAppearance() {
         let app = XCUIApplication()
         app.launchArguments += [
-            "-seedLongBotChat", "-AppleInterfaceStyle", "Dark",
+            "-seedLongBotChat", "-alice.theme", "dark",
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
         ]
         app.launch()

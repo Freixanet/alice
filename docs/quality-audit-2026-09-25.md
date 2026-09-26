@@ -76,8 +76,13 @@ projects, so both relevant implementations are recorded instead of conflated.
 
 ## Verification record
 
-- Base GitHub run: web/browser and static/plugin/notifier jobs passed; native job
-  was still running during the initial audit.
+- Base GitHub run `36205543716` passed all jobs.
+- Candidate run `36207313580` passed all jobs, including 1,005 unit tests and
+  26 UI tests on an isolated iPhone 17 Pro simulator running iOS 26.5.
+- The candidate's home, navigation, settings and largest-text chat screenshots
+  were inspected. The first intended dark capture was actually light: the
+  generic launch argument did not override the app theme. The fixture now sets
+  Alice's own theme preference; its new capture still needs visual verification.
 - Local simulator/UI execution is prohibited on this Intel Mac by `AGENTS.md`.
   Device builds and compilation of test bundles are available.
 - A physical-device screenshot attempt through libimobiledevice found no reachable
