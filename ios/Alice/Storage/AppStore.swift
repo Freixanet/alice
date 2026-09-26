@@ -2281,9 +2281,10 @@ final class AppStore {
                     throw HermesRPCClient.Failure(reason: "Hermes did not return this chat's live session.")
                 }
                 track(liveSessionID: liveID, for: conversation.id)
-                _ = try await source.useModel(model, provider: provider, in: HomeChatSession(
+                let switched = try await source.useModel(model, provider: provider, in: HomeChatSession(
                     storedID: chat.resolvedID, liveID: liveID, model: nil, provider: nil
                 ), force: true, confirm: true)
+                track(liveSessionID: switched.liveID, for: conversation.id)
             } catch {
                 failures.append(HermesErrors.describe(error))
             }
@@ -3980,7 +3981,7 @@ final class AppStore {
                 waitingOnPerson: !pendingQuestions(in: chat.id).isEmpty,
                 awaitedByPeer: awaitedByPeer && chat.isCanonicalBotChat
             )
-        } || (chats.isEmpty && awaitedByPeer)
+        } || (!chats.contains(where: { $0.isCanonicalBotChat }) && awaitedByPeer)
     }
 
     nonisolated static func isWorking(
