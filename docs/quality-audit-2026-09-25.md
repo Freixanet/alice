@@ -24,6 +24,11 @@ The draft archive preserves unreadable records and reports failed writes. Attach
 use the existing conversation file store, not the preferences plist. Existing
 text-only drafts remain readable and migrate after a successful save.
 
+The actual dark screenshots also exposed white text on the near-white prominent
+Connect button. Home and receipt actions now use a contrasting foreground for
+the selected scheme. The screenshot fixtures explicitly choose light or dark,
+including a separate dark home capture to inspect the connection action.
+
 ## Competitor reference map
 
 These are the likely products meant by the brief. Persona, Rene and Caddy are
@@ -82,7 +87,8 @@ projects, so both relevant implementations are recorded instead of conflated.
 - The candidate's home, navigation, settings and largest-text chat screenshots
   were inspected. The first intended dark capture was actually light: the
   generic launch argument did not override the app theme. The fixture now sets
-  Alice's own theme preference; its new capture still needs visual verification.
+  Alice's own theme preference. Run `36209235081` passed all 1,031 tests; its dark
+  images were inspected and exposed the prominent-button contrast defect above.
 - Local simulator/UI execution is prohibited on this Intel Mac by `AGENTS.md`.
   Device builds and compilation of test bundles are available.
 - A physical-device screenshot attempt through libimobiledevice found no reachable

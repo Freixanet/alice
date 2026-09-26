@@ -17,6 +17,7 @@ final class DocumentationScreenshotsTests: XCTestCase {
 
     func testCaptureMobileEntryPoints() {
         let app = XCUIApplication()
+        app.launchArguments += ["-alice.theme", "light"]
         app.launch()
         XCTAssertTrue(app.buttons["chat.leading"].waitForExistence(timeout: 20))
         capture(app, name: "alice-ios-chat")
@@ -32,6 +33,14 @@ final class DocumentationScreenshotsTests: XCTestCase {
         app.buttons["sidebar.settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 15))
         capture(app, name: "alice-ios-settings")
+    }
+
+    func testCaptureDarkHomeEntryPoint() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-alice.theme", "dark"]
+        app.launch()
+        XCTAssertTrue(app.buttons["home.connect"].waitForExistence(timeout: 20))
+        capture(app, name: "alice-ios-home-dark")
     }
 
     private func capture(_ app: XCUIApplication, name: String) {

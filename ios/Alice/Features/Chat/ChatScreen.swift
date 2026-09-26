@@ -971,6 +971,7 @@ extension ReplySelectionDismiss {
 
 private struct EmptyChatView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     @State private var showingConnection = false
     /// Home pins give way while the software keyboard is up.
     var keyboardShown = false
@@ -1036,6 +1037,7 @@ private struct EmptyChatView: View {
                 if store.gatewayURL.isEmpty {
                     Button("Connect to Hermes") { showingConnection = true }
                         .buttonStyle(.glassProminent)
+                        .foregroundStyle(scheme == .dark ? Color.black : Color.white)
                         .controlSize(.large)
                         .accessibilityIdentifier("home.connect")
                         .padding(.top, 12)

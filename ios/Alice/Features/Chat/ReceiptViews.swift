@@ -219,6 +219,7 @@ struct ReceiptSheet: View {
             }
             .buttonStyle(.glassProminent)
             .tint(store.accent.primary(scheme))
+            .foregroundStyle(scheme == .dark ? Color.black : Color.white)
             .padding(.horizontal, 18)
             .padding(.bottom, 8)
         }
