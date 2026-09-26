@@ -29,6 +29,15 @@ Si el complemento Alice está en el panel de Hermes:
 
 El ordenador debe seguir encendido y accesible.
 
+## Crear un agente sin mezclar encargos
+
+En **Agents → Add → New Agent**, Alice abre una conversación nueva con Forge
+(si está disponible). Escribe lo que necesitas y envíalo. El chat principal de
+Forge conserva su historial y sus borradores. Cada encargo aparece en **Recents**
+y se puede volver a abrir desde el botón de chats. El panel Hermes debe estar
+conectado. Si una sesión guardada ha desaparecido del servidor, Alice muestra el
+error en lugar de repetir el encargo en otra conversación.
+
 ## Trabajo de los agentes
 
 Con el complemento Alice y el panel conectados, abre **Settings → Agent work**

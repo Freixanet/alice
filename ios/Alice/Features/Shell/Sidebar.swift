@@ -579,6 +579,7 @@ private struct SidebarList: View, Equatable {
             .contentShape(.rect(cornerRadius: 10))
             .contentShape(.contextMenuPreview, .rect(cornerRadius: 10))
         }
+        .accessibilityIdentifier("sidebar.chat.\(conversation.id)")
         .buttonStyle(.plain)
         .contextMenu {
             menu(for: conversation)

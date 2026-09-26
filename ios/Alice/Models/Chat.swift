@@ -347,6 +347,8 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     /// a private conversation with the default profile instead of the bot's
     /// own forever-chat.
     var hermesSessionID: String? = nil
+    /// Independent work with this profile; absent in older canonical-chat archives.
+    var agentTaskID: String? = nil
     /// The bot a recovered conversation belongs to *on screen only*.
     ///
     /// Ownership and routing used to be the same field, and they are not the
@@ -384,6 +386,7 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
         botName = try box.decodeIfPresent(String.self, forKey: .botName)
         legacyBotName = try box.decodeIfPresent(String.self, forKey: .legacyBotName)
         hermesSessionID = try box.decodeIfPresent(String.self, forKey: .hermesSessionID)
+        agentTaskID = try box.decodeIfPresent(String.self, forKey: .agentTaskID)
         isChannel = try box.decodeIfPresent(Bool.self, forKey: .isChannel)
         channelBots = try box.decodeIfPresent([String].self, forKey: .channelBots)
         teamChannelID = try box.decodeIfPresent(String.self, forKey: .teamChannelID)
@@ -395,7 +398,7 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
         openedAt: Date? = nil, pinned: Bool = false, project: String? = nil,
         messages: [Message] = [], botName: String? = nil,
         legacyBotName: String? = nil,
-        hermesSessionID: String? = nil, isChannel: Bool? = false,
+        hermesSessionID: String? = nil, agentTaskID: String? = nil, isChannel: Bool? = false,
         channelBots: [String]? = [], teamChannelID: String? = nil
     ) {
         self.id = id
@@ -409,6 +412,7 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
         self.botName = botName
         self.legacyBotName = legacyBotName
         self.hermesSessionID = hermesSessionID
+        self.agentTaskID = agentTaskID
         self.isChannel = isChannel
         self.channelBots = channelBots
         self.teamChannelID = teamChannelID
@@ -434,8 +438,12 @@ struct Conversation: Identifiable, Hashable, Sendable, Codable {
     /// A live chat with a bot: it routes, and it has a canonical session to
     /// read and write. A recovered legacy thread is not one of these.
     var isCanonicalBotChat: Bool {
-        routedBotName != nil && isChannel != true
+        isAgentSessionChat && agentTaskID == nil
     }
+
+    var isAgentSessionChat: Bool { routedBotName != nil && isChannel != true }
+    var isAgentTask: Bool { isAgentSessionChat && agentTaskID != nil }
+    var appearsInRecents: Bool { !isBotChat || isAgentTask }
 
     /// Alice's own chat, continuing in a Hermes session over the dashboard
     /// socket rather than as gateway runs.
