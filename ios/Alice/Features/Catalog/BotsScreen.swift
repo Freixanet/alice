@@ -486,7 +486,20 @@ struct BotsScreen: View {
 
                     Menu {
                         Button {
-                            creatingBot = true
+                            // Forge designs new agents with its own intake and
+                            // guide; the form is only for when it is missing.
+                            if let forge = store.cachedBots.first(where: {
+                                AgentMaker.matches(profile: $0.name, role: $0.aliceRole)
+                            }) {
+                                store.showingBots = false
+                                store.draftAttachments = []
+                                _ = store.openBotConversation(
+                                    for: forge, replacingExisting: false, refresh: false
+                                )
+                                store.draft = "Quiero crear un agente nuevo: "
+                            } else {
+                                creatingBot = true
+                            }
                         } label: {
                             Label("New Agent", systemImage: "person.fill")
                         }
@@ -2001,10 +2014,8 @@ struct BotDetail: View {
     private var renameSlugNote: String? {
         let shown = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let id = try? AgentProfileID.parse(shown) else { return nil }
-        if id == bot.name {
-            return AgentProfileID.note(display: shown, id: id)
-        }
-        return "Hermes will also rename the profile to `\(id)`. Conversations and routines stay with it."
+        guard id == bot.name else { return nil }
+        return AgentProfileID.note(display: shown, id: id)
     }
 
     var body: some View {
@@ -2015,19 +2026,25 @@ struct BotDetail: View {
                     TextField("Name", text: $name)
                         .font(.headline)
                         .multilineTextAlignment(.center)
+                        .submitLabel(.done)
                         .onSubmit { commitName() }
                     Divider()
                     TextField("Title (optional)", text: $detail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                        .submitLabel(.done)
                         .onSubmit { commitDetail() }
                 }
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity)
                 .listRowBackground(Palette.card(scheme))
             } footer: {
-                if let note = renameSlugNote {
+                // A failed rename is said here, by the name, not at the foot
+                // of the page where it went unseen.
+                if let failure {
+                    Text(failure).foregroundStyle(.red)
+                } else if let note = renameSlugNote {
                     Text(note)
                 }
             }
@@ -2968,6 +2985,24 @@ private struct NewBotSheet: View {
         guard !trimmed.isEmpty else { return }
         dismissKeyboard()
         failure = nil
+        // Forge designs agents with its own intake and guide; the form only
+        // hands it the request. Without Forge, the agent is made here.
+        if let forge = store.cachedBots.first(where: {
+            AgentMaker.matches(profile: $0.name, role: $0.aliceRole)
+        }) {
+            store.showingBots = false
+            store.draft = ""
+            store.draftAttachments = []
+            _ = store.openBotConversation(for: forge, replacingExisting: false, refresh: false)
+            store.sendQuickReply(AgentMaker.createRequest(
+                name: trimmed, brief: brief,
+                extra: selectedTemplate?.soulExtra,
+                model: selectedModel.map { ($0.id, $0.provider) },
+                fallback: selectedFallback.map { ($0.id, $0.provider) }
+            ))
+            dismiss()
+            return
+        }
         progress = "Creating agent…"
         busy = true
         Task {

@@ -254,6 +254,7 @@ struct HermesFilesScreen: View {
                             .font(.caption.monospaced())
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .submitLabel(.done)
                             .onSubmit { Task { await goManagedPath() } }
                         Button("Go") { Task { await goManagedPath() } }
                             .disabled(managedPathDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -323,6 +324,7 @@ struct HermesFilesScreen: View {
                         .font(.caption.monospaced())
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .submitLabel(.done)
                         .onSubmit { Task { await goWorkspacePath() } }
                     Button("Go") { Task { await goWorkspacePath() } }
                         .disabled(workspacePathDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

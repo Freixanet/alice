@@ -452,13 +452,13 @@ struct Composer: View {
                     attachButton
                     modelChip
                     Spacer(minLength: 4)
-                    voiceModeButton
+                    dictateButton
                     actionButton
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .glassEffect(.regular, in: .rect(cornerRadius: 26))
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26))
             .glassEffectID("composer", in: glass)
             // The composer keeps its own presses. Glass is not a hit target,
             // so a press on its padding — or on Send while it is disabled —
@@ -479,7 +479,10 @@ struct Composer: View {
     private var botComposer: some View {
         @Bindable var store = store
 
-        return GlassEffectContainer(spacing: 10) {
+        // Just under the 10pt gap: apart at rest, but pressed, the field's
+        // glass swells across it and runs into the attach button's, as Mail's
+        // search bar does.
+        return GlassEffectContainer(spacing: 8) {
             VStack(spacing: 8) {
                 if !store.draftAttachments.isEmpty {
                     AttachmentChips(attachments: store.draftAttachments) { attachment in
@@ -508,7 +511,7 @@ struct Composer: View {
                             .contentShape(.rect)
                             .onTapGesture { focused.wrappedValue = true }
 
-                        voiceModeButton
+                        botDictateButton
                         botVoiceOrSendButton
                     }
                     .padding(.leading, 14)
@@ -517,7 +520,7 @@ struct Composer: View {
                     .frame(minHeight: 44)
                     // A 22pt radius is the capsule at one line, and stays a
                     // tidy rounded box instead of a stretched pill when taller.
-                    .glassEffect(.regular, in: .rect(cornerRadius: 22))
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
                     .glassEffectID("composer", in: glass)
                     .contentShape(.rect(cornerRadius: 22))
                     .onTapGesture {}
@@ -557,73 +560,83 @@ struct Composer: View {
         .accessibilityLabel("Attach")
     }
 
-    /// One trailing control: dictation while the field is empty, Send as soon
-    /// as there is content, and Stop while a reply is streaming.
-    @ViewBuilder
-    private var botVoiceOrSendButton: some View {
-        let listening = pendingListen ?? dictation.isListening
-        let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// Whether there is something to send: text or an attachment.
+    private var hasDraft: Bool {
+        !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !store.draftAttachments.isEmpty
-        let stopping = store.canStop && !hasDraft && !listening
+    }
 
-        Button {
-            if listening {
-                toggleDictation(listening: true)
-            } else if stopping {
-                store.stop()
-            } else if hasDraft {
-                store.send()
-            } else {
-                toggleDictation(listening: false)
-            }
+    /// Voice conversation needs a live Hermes to talk to.
+    private var voiceAvailable: Bool {
+        store.isConnected || store.dashboardReady
+    }
+
+    /// Send what is written, stopping dictation first so it cannot keep
+    /// writing into the field after the message has gone.
+    private func sendDraft() {
+        if dictation.isListening || pendingListen == true {
+            dictation.stop()
+            pendingListen = nil
+        }
+        store.send()
+    }
+
+    /// Dictation, always left of the trailing control: it only fills the
+    /// field, so it stays put whatever the trailing control has become.
+    private var botDictateButton: some View {
+        let listening = pendingListen ?? dictation.isListening
+        return Button {
+            toggleDictation(listening: listening)
         } label: {
-            let sending = hasDraft || stopping
-            Image(
-                systemName: listening
-                    ? "waveform" : (stopping ? "stop.fill" : (hasDraft ? "arrow.up" : "mic"))
-            )
-            .font(.system(size: 16, weight: sending ? .semibold : .medium))
-            .foregroundStyle(
-                sending
-                    ? (scheme == .dark ? Color.black : Color.white)
-                    : Color.secondary
-            )
-            .frame(width: 32, height: 32)
-            .background {
-                Circle().fill(sending ? botSendFill : Palette.muted(scheme))
-            }
-            .contentTransition(.symbolEffect(.replace))
-            .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
+            Image(systemName: listening ? "waveform" : "mic")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(listening ? store.accent.primary(scheme) : Color.secondary)
+                .frame(width: 32, height: 32)
+                .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
-        .accessibilityLabel(
-            listening ? "Stop dictating" : (stopping ? "Stop" : (hasDraft ? "Send" : "Dictate"))
-        )
-        .accessibilityIdentifier("composer.action")
+        .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
         .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
     }
 
-    /// Talk it through: a spoken conversation with this chat (`VoiceModeView`),
-    /// offered while there is nothing typed and nothing being written.
+    /// One trailing control: voice conversation while the field is empty,
+    /// Send as soon as there is content, and Stop while a reply is streaming.
     @ViewBuilder
-    private var voiceModeButton: some View {
-        let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !store.draftAttachments.isEmpty
-        if !hasDraft, !store.isSending, !dictation.isListening, store.isConnected || store.dashboardReady {
-            Button {
+    private var botVoiceOrSendButton: some View {
+        let stopping = store.canStop && !hasDraft
+        let sending = hasDraft || stopping
+
+        Button {
+            if stopping {
+                store.stop()
+            } else if hasDraft {
+                sendDraft()
+            } else {
                 showingVoice = true
-            } label: {
+            }
+        } label: {
+            if sending {
+                Image(systemName: stopping ? "stop.fill" : "arrow.up")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(scheme == .dark ? Color.black : Color.white)
+                    .frame(width: 32, height: 32)
+                    .background { Circle().fill(botSendFill) }
+                    .transition(.scale.combined(with: .opacity))
+            } else {
                 Image(systemName: "waveform.circle.fill")
                     .font(.system(size: 30))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(store.accent.primary(scheme))
+                    .foregroundStyle(voiceAvailable ? store.accent.primary(scheme) : Color.secondary)
                     .frame(width: 32, height: 32)
+                    .transition(.scale.combined(with: .opacity))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Voice conversation")
-            .transition(.scale.combined(with: .opacity))
         }
+        .buttonStyle(.plain)
+        .disabled(!sending && !voiceAvailable)
+        .accessibilityLabel(stopping ? "Stop" : (hasDraft ? "Send" : "Voice conversation"))
+        .accessibilityIdentifier("composer.action")
     }
 
     /// The accent's clearest home on a bot chat: the control that sends.
@@ -706,40 +719,51 @@ struct Composer: View {
             ?? (store.isConnected ? "Model" : "Not connected")
     }
 
-    /// One button holds the trailing slot, as in a bot's chat: dictation while
-    /// the field is empty, Send as soon as there is something written, and
-    /// Stop while a reply is streaming.
-    @ViewBuilder
-    private var actionButton: some View {
+    /// Dictation, always left of the trailing control.
+    private var dictateButton: some View {
         // What the finger asked for, until the recogniser catches up: starting
         // dictation sets up audio before `isListening` turns over.
         let listening = pendingListen ?? dictation.isListening
-        // Held on questions, a turn is delivered rather than streaming.
-        let sending = store.canStop
-        let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !store.draftAttachments.isEmpty
-        let stopping = sending && !hasDraft && !listening
-        let acting = listening || stopping || hasDraft
+        return Button {
+            toggleDictation(listening: listening)
+        } label: {
+            Image(systemName: listening ? "waveform" : "mic")
+                .font(.system(size: 16, weight: listening ? .semibold : .medium))
+                .frame(width: controlHeight, height: controlHeight)
+                .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(listening ? store.accent.primary(scheme) : Color.secondary)
+        .glassEffect(.regular.interactive(), in: .circle)
+        // Dictation starts listening before there is anything to see; the tap
+        // has to be felt.
+        .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
+        .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
+        .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
+    }
 
-        Button {
-            if listening {
-                toggleDictation(listening: true)
-            } else if stopping {
+    /// One button holds the trailing slot, as in a bot's chat: voice
+    /// conversation while the field is empty, Send as soon as there is
+    /// something written, and Stop while a reply is streaming.
+    private var actionButton: some View {
+        // Held on questions, a turn is delivered rather than streaming.
+        let stopping = store.canStop && !hasDraft
+        let acting = stopping || hasDraft
+
+        return Button {
+            if stopping {
                 store.stop()
             } else if hasDraft {
-                store.send()
+                sendDraft()
             } else {
-                toggleDictation(listening: false)
+                showingVoice = true
             }
         } label: {
-            Image(
-                systemName: listening
-                    ? "waveform" : (stopping ? "stop.fill" : (hasDraft ? "arrow.up" : "mic"))
-            )
-            .font(.system(size: 16, weight: acting ? .semibold : .medium))
-            .frame(width: controlHeight, height: controlHeight)
-            .contentTransition(.symbolEffect(.replace))
-            .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
+            Image(systemName: stopping ? "stop.fill" : (hasDraft ? "arrow.up" : "waveform"))
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: controlHeight, height: controlHeight)
+                .contentTransition(.symbolEffect(.replace))
         }
         // `.glassProminent` sizes itself, adding about 10pt of its own padding
         // around the label — measured at 44pt tall next to a 34pt chip. Applying
@@ -747,18 +771,13 @@ struct Composer: View {
         .buttonStyle(.plain)
         // The accent's clearest home: the one control that acts.
         .foregroundStyle(
-            acting && (store.isConnected || listening)
+            (acting ? store.isConnected : voiceAvailable)
                 ? store.accent.primary(scheme) : Color.secondary
         )
         .glassEffect(.regular.interactive(), in: .circle)
         .glassEffectID("send", in: glass)
-        // Dictation starts listening before there is anything to see; the tap
-        // has to be felt.
-        .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
-        .accessibilityLabel(
-            listening ? "Stop dictating" : (stopping ? "Stop" : (hasDraft ? "Send" : "Dictate"))
-        )
+        .disabled(!acting && !voiceAvailable)
+        .accessibilityLabel(stopping ? "Stop" : (hasDraft ? "Send" : "Voice conversation"))
         .accessibilityIdentifier("composer.action")
-        .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
     }
 }

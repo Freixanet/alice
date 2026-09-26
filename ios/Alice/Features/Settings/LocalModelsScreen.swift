@@ -634,6 +634,7 @@ private struct LocalModelBrowserSheet: View {
                         TextField("Model, author or repo", text: $query)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .submitLabel(.search)
                             .onSubmit { Task { await search() } }
                         Button { Task { await search() } } label: {
                             if loading && selectedRepo == nil { ProgressView() } else { Image(systemName: "magnifyingglass") }

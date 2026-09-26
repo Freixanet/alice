@@ -1098,6 +1098,9 @@ final class AppStore {
 
     func botCurrentName(for bot: BotRow) -> String {
         if bot.name == Self.todayProfile { return "Alice" }
+        // Screens hold the row they were opened with; the cache is what a
+        // rename updates, so a stale copy kept showing the old name.
+        let bot = cachedBots.first(where: { $0.name == bot.name }) ?? bot
         let shown: String
         if botMetadataIsRemote {
             shown = bot.displayName.isEmpty ? bot.name : bot.displayName
@@ -1312,65 +1315,13 @@ final class AppStore {
 
     /// Asks the plugin engine to rename. A Hermes directory identity change is
     /// refused until Hermes can coordinate it; a same-id title update still runs.
+    /// Renames what Alice shows for an agent. The Hermes profile keeps its
+    /// id: the plugin refuses to move a profile directory, since sessions keep
+    /// its path, so a new name is only ever the agent's title.
     func renameBot(_ name: String, to newName: String) async throws {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != botCurrentName(for: name) else { return }
-        let newID = try AgentProfileID.parse(trimmed)
-        if isProfileBusy(name) || isProfileBusy(newID) {
-            throw AgentOperationError.active(
-                "This agent is in the middle of a request. Wait for it to finish, then rename."
-            )
-        }
-
-        if newID == name {
-            try await applyDisplayTitle(name, title: trimmed)
-            return
-        }
-
-        let blocked = Set(takenBotSlugs().map { $0.lowercased() })
-        if blocked.contains(newID) {
-            throw AgentOperationError.occupied(
-                "`\(newID)` already exists. The original agent was left unchanged."
-            )
-        }
-
-        do {
-            let result = try await dashboard.renameAgent(
-                from: name, to: trimmed, busy: isProfileBusy(name)
-            )
-            let renamed = try result.requireRenamed()
-            if renamed.sameID {
-                try await applyDisplayTitle(name, title: trimmed)
-                return
-            }
-            rebindLocalProfile(from: renamed.from, to: renamed.to, title: trimmed)
-            if result.status != .completed {
-                throw AgentOperationError.remote(
-                    result.error ?? "The rename finished only in part. Alice will keep both names visible until it can verify."
-                )
-            }
-            return
-        } catch let failure as DashboardClient.Failure {
-            switch failure {
-            case .http(404, _), .http(405, _), .notConfigured:
-                break
-            default:
-                throw failure
-            }
-        }
-
-        // Official dashboard PATCH, with the already-normalized id — never a
-        // display-only rename presented as a profile migration.
-        do {
-            try await dashboard.rename(name, to: newID)
-        } catch {
-            throw AgentOperationError.remote(
-                (error as? LocalizedError)?.errorDescription
-                ?? "Hermes could not rename this agent. The original was left unchanged."
-            )
-        }
-        rebindLocalProfile(from: name, to: newID, title: trimmed)
-        try? await applyDisplayTitle(newID, title: trimmed)
+        try await applyDisplayTitle(name, title: trimmed)
     }
 
     private func applyDisplayTitle(_ name: String, title: String) async throws {
@@ -1383,6 +1334,11 @@ final class AppStore {
                 return meta
             }
             botCustomNames.removeValue(forKey: name)
+            // With remote metadata the shown name is read from this row; left
+            // alone it kept the old name until the next roster refresh.
+            if let index = cachedBots.firstIndex(where: { $0.name == name }) {
+                cachedBots[index].displayName = trimmed.isEmpty ? name : trimmed
+            }
         } else if trimmed.isEmpty {
             botCustomNames.removeValue(forKey: name)
         } else {

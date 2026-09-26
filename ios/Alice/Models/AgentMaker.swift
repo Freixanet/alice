@@ -27,6 +27,27 @@ enum AgentMaker {
         return shown
     }
 
+    /// What Forge is asked when the person fills in New Agent: it runs its
+    /// own intake and creates the agent with its guide and `agent_create`.
+    static func createRequest(
+        name: String, brief: String, extra: String?,
+        model: (id: String, provider: String?)?, fallback: (id: String, provider: String?)?
+    ) -> String {
+        var lines = ["Crea un agente nuevo llamado «\(name)»."]
+        let what = brief.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !what.isEmpty { lines.append("Lo que necesito:\n\(what)") }
+        if let extra = extra?.trimmingCharacters(in: .whitespacesAndNewlines), !extra.isEmpty {
+            lines.append("Parte de esta plantilla:\n\(extra)")
+        }
+        if let model {
+            lines.append("Modelo: `\(model.id)`" + (model.provider.map { " (\($0))" } ?? "") + ".")
+        }
+        if let fallback {
+            lines.append("Modelo de respaldo: `\(fallback.id)`" + (fallback.provider.map { " (\($0))" } ?? "") + ".")
+        }
+        return lines.joined(separator: "\n\n")
+    }
+
     /// What Agent Maker is asked, so it can shape an agent the person already made.
     static func request(name: String, profile: String, brief: String, jobID: String) -> String {
         let what = brief.trimmingCharacters(in: .whitespacesAndNewlines)
