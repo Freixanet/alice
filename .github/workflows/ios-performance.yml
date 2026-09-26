@@ -1,0 +1,66 @@
+name: iOS Performance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ios/AlicePerformanceTests/**
+      - ios/project.yml
+      - scripts/verify-ios.sh
+      - .github/workflows/ios-performance.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode 26
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+      - name: Measure offline journeys
+        run: |
+          set -euo pipefail
+          bash scripts/verify-ios.sh performance 2>&1 | tee "$RUNNER_TEMP/alice-performance.log"
+      - name: Export measurements and summary
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p ios/.build/performance
+          {
+            echo '# iOS simulator performance baseline'
+            echo "Commit: $GITHUB_SHA"
+            xcodebuild -version
+            echo 'Debug build; synthetic offline content; five measured iterations per journey.'
+            echo 'Journey wall time includes XCTest input, animations and idle waits. Not model/network latency, frame-rate or device battery evidence.'
+            echo 'No speedup or budget is claimed from this first baseline. Compare repeated runs with the same toolchain and fixture.'
+            echo '```text'
+            rg 'measured \[|Executed [0-9]+ test|\*\* TEST' "$RUNNER_TEMP/alice-performance.log" || true
+            echo '```'
+          } > ios/.build/performance/summary.md
+          cat ios/.build/performance/summary.md >> "$GITHUB_STEP_SUMMARY"
+          found=0
+          for result in ios/.build/DerivedData/Logs/Test/*.xcresult; do
+            [[ -d "$result" ]] || continue
+            found=1
+            xcrun xcresulttool export metrics --path "$result" --output-path "ios/.build/performance/$(basename "$result")-metrics"
+            xcrun xcresulttool get test-results summary --path "$result" --compact > "ios/.build/performance/$(basename "$result")-summary.json"
+          done
+          [[ "$found" == 1 ]] || { echo 'No native result bundle was produced.' >&2; exit 1; }
+          compgen -G 'ios/.build/performance/*-metrics/*.csv' > /dev/null || { echo 'No measurements were exported.' >&2; exit 1; }
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: ios-performance
+          path: |
+            ios/.build/performance
+            ios/.build/DerivedData/Logs/Test
+          retention-days: 30

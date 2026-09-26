@@ -55,8 +55,8 @@ There are multiple OpenMuse projects, so both relevant implementations are recor
 1. **Independent task conversations for an existing agent.** Implemented for
    New Agent: a persisted task identity, separate profile-scoped Hermes session,
    Recents entry, and scoped recovery/retry/stop/approval routes. The canonical
-   Forge chat stays intact. Local device build passed; the new regression and
-   navigation suites are pending CI execution. A live test with a dedicated
+   Forge chat stays intact. PR #34 passed 1,014 unit and 30 UI tests; build 121
+   was installed and read back from the iPhone (source `9a7db12`). A live test with a dedicated
    Hermes test profile remains required; no real agent was prompted for this check.
 2. **Full visual and interaction review.** Review home, populated chats, Recents,
    agents, notes, agenda, settings and connection in light/dark modes, large text
@@ -65,6 +65,10 @@ There are multiple OpenMuse projects, so both relevant implementations are recor
 3. **Measured performance.** Record time to open, send and first output; scroll
    hitches, memory, reconnect delay and battery impact on long chats. The draft
    write test establishes reduced redundant storage work, not a global speedup.
+   The dedicated `AlicePerformance` scheme now supplies
+   repeatable offline launch, long-chat and navigation measurements with CPU and
+   memory metrics. Initial execution is recorded in its PR and workflow artifacts;
+   physical-device frame rate, network/model latency and battery remain pending.
 4. **Remote task continuity and delivery.** Test the phone being locked, the Mac
    sleeping, a network change, reconnect and a process restart. Native iOS background
    refresh alone cannot guarantee timely delivery. A reliable hosted relay/APNs
@@ -128,7 +132,9 @@ Initial application candidate `2a4dbb4`, followed by corrections on PR #34:
   hide navigation hints in populated chats and all chat hints while typing,
   allow the model control to grow, stack agent metadata at accessibility sizes,
   and explicitly contrast the Agenda action. The keyboard test also checks that
-  Send is reachable above the keyboard. Final CI and image review remain pending.
+  Send is reachable above the keyboard. Final run `36264922610` passed all
+  1,044 native tests without failures or skips.
+  The corrected keyboard, agents and Agenda captures were visually reviewed.
 - Seven isolated official Hermes persistence tests also passed. New task sessions
   opt into `follow_profile_config`; explicit model changes update held sessions
   without waking closed historical tasks. Reconnecting only auto-sends when both
