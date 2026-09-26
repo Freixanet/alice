@@ -7,6 +7,8 @@ on:
       - ios/AlicePerformanceTests/**
       - ios/project.yml
       - scripts/verify-ios.sh
+      - scripts/ios_performance_summary.py
+      - scripts/tests/test_ios_performance_summary.py
       - .github/workflows/ios-performance.yml
 
 permissions:
@@ -26,6 +28,8 @@ jobs:
         run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
+      - name: Check measurement parser
+        run: python3 -m unittest discover -s scripts/tests -p test_ios_performance_summary.py
       - name: Measure offline journeys
         run: |
           set -euo pipefail
@@ -42,11 +46,7 @@ jobs:
             echo 'Debug build; synthetic offline content; five measured iterations per journey.'
             echo 'Journey wall time includes XCTest input, animations and idle waits. Not model/network latency, frame-rate or device battery evidence.'
             echo 'No speedup or budget is claimed from this first baseline. Compare repeated runs with the same toolchain and fixture.'
-            echo '```text'
-            rg 'measured \[|Executed [0-9]+ test|\*\* TEST' "$RUNNER_TEMP/alice-performance.log" || true
-            echo '```'
           } > ios/.build/performance/summary.md
-          cat ios/.build/performance/summary.md >> "$GITHUB_STEP_SUMMARY"
           found=0
           for result in ios/.build/DerivedData/Logs/Test/*.xcresult; do
             [[ -d "$result" ]] || continue
@@ -56,6 +56,8 @@ jobs:
           done
           [[ "$found" == 1 ]] || { echo 'No native result bundle was produced.' >&2; exit 1; }
           compgen -G 'ios/.build/performance/*-metrics/*.csv' > /dev/null || { echo 'No measurements were exported.' >&2; exit 1; }
+          python3 scripts/ios_performance_summary.py ios/.build/performance >> ios/.build/performance/summary.md
+          cat ios/.build/performance/summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v5
         if: always()
         with:

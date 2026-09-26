@@ -117,7 +117,10 @@ The normal `Alice` scheme keeps all unit and UI correctness tests, without addin
 benchmark repetitions to every app change.
 
 The workflow retains raw `.xcresult`, per-iteration CSV metrics and a compact job
-summary for 30 days. Record the commit, Xcode/iOS versions and fixture with every
+summary (mean, median and range without excluding slow samples) for 30 days.
+The summary reads exported CSV rather than relying on Xcode console wording,
+and handles the double `.csv.csv` filename in Xcode 26.6 manifests. Empty or
+non-finite measurements fail the reporter. Record the commit, Xcode/iOS versions and fixture with every
 comparison. XCTest records launch duration and journey wall time, app CPU use and
 memory. Journey wall time includes UI automation and idle waits: it is not pure
 rendering latency. These are Debug simulator baselines, not physical iPhone,
