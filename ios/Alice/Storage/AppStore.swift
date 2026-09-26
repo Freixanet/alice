@@ -134,10 +134,14 @@ final class AppStore {
         recentConversations = conversations.filter { !$0.pinned && !$0.isBotChat }
     }
     var activeID: String? {
+        willSet {
+            guard newValue != activeID else { return }
+            if editingMessageID != nil { cancelEditing() }
+            stashDraft()
+        }
         didSet {
             defer { refreshActiveChat() }
-            // An edit belongs to the chat it was started in.
-            if activeID != oldValue, editingMessageID != nil { cancelEditing() }
+            if activeID != oldValue { restoreDraft() }
             if activeID != oldValue { markMentionRepliesSeen(in: activeID) }
             if let activeID, unseenReplies.contains(activeID) { unseenReplies.remove(activeID) }
             guard activeID != oldValue,
@@ -147,13 +151,16 @@ final class AppStore {
         }
     }
     var draft: String = "" {
-        didSet { draftMentions = DraftMention.rebased(draftMentions, from: oldValue, to: draft) }
+        didSet {
+            draftMentions = DraftMention.rebased(draftMentions, from: oldValue, to: draft)
+            scheduleDraftSave()
+        }
     }
     /// Exact occurrences picked from the `@` menu. The `@` is gone from the
     /// text, so a slug alone would mark later ordinary uses of the same word.
-    var draftMentions: [DraftMention] = []
+    var draftMentions: [DraftMention] = [] { didSet { scheduleDraftSave() } }
     /// Waiting to go out with the next message.
-    var draftAttachments: [Attachment] = []
+    var draftAttachments: [Attachment] = [] { didSet { scheduleDraftSave() } }
     /// Chats with a reply under way. Each follows its own: one agent at work
     /// must not hold up — or offer Stop in — every other chat.
     private(set) var sendingConversations: Set<String> = []
@@ -192,6 +199,9 @@ final class AppStore {
     /// Where conversations are kept (`FileConversationStorage`), apart from
     /// the small settings in `defaults`.
     private let conversationStorage: ConversationStorage
+    private let draftArchive: ComposerDraftArchive
+    @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var restoringDraft = false
     /// The Face ID gate and per-note locks. Public surface is forwarded below
     /// so call sites keep `store.requireUnlock`-style access.
     let lock: AppLock
@@ -392,13 +402,11 @@ final class AppStore {
     private(set) var unseenReplies: Set<String> = [] {
         didSet { defaults.set(Array(unseenReplies), forKey: Keys.unseenReplies) }
     }
-    /// What was typed in a chat and not sent, by chat, kept when he moves to
-    /// another one from the drawer so each chat keeps its own. Text only; the
-    /// composer's attachments are kept for the session (`unsentAttachments`).
-    private(set) var unsentDrafts: [String: String] = [:] {
-        didSet { defaults.set(unsentDrafts, forKey: Keys.unsentDrafts) }
-    }
-    @ObservationIgnored private var unsentAttachments: [String: [Attachment]] = [:]
+    /// Lightweight previews for the drawer. Complete drafts, including selected
+    /// mentions and attachments, are saved separately in the conversation store.
+    private(set) var unsentDrafts: [String: String] = [:]
+    private var unsentAttachments: [String: [Attachment]] = [:]
+    @ObservationIgnored private var unsentMentions: [String: [DraftMention]] = [:]
     var hiddenBots: Set<String> = [] {
         didSet { defaults.set(Array(hiddenBots), forKey: Keys.hiddenBots) }
     }
@@ -516,7 +524,9 @@ final class AppStore {
 
     init(defaults: UserDefaults = .standard, conversationStorage: ConversationStorage? = nil) {
         self.defaults = defaults
-        self.conversationStorage = conversationStorage ?? Self.conversationStorage(for: defaults)
+        let storage = conversationStorage ?? Self.conversationStorage(for: defaults)
+        self.conversationStorage = storage
+        self.draftArchive = ComposerDraftArchive(storage: storage)
         self.lock = AppLock(defaults: defaults)
         botMarks = (defaults.data(forKey: Keys.marks))
             .flatMap { try? JSONDecoder().decode([String: BotMark].self, from: $0) } ?? [:]
@@ -635,6 +645,8 @@ final class AppStore {
         refreshActiveChat()
         refreshBotNameSets()
         ensureTodayConversation()
+        loadDrafts()
+        restoreDraft()
         #if DEBUG
         warnIfPreferencesOverBudget()
         #endif
@@ -3081,9 +3093,8 @@ final class AppStore {
         draft = ""
         Task { [weak self] in
             guard let self else { return }
-            if await !self.answerClarification(event, questionID: question.id, answer: answer),
-               self.draft.isEmpty {
-                self.draft = text
+            if await !self.answerClarification(event, questionID: question.id, answer: answer) {
+                self.restoreUnsentText(text, to: activeID)
             }
         }
         return true
@@ -5759,11 +5770,9 @@ final class AppStore {
     }
 
     func newChat() {
-        stashDraft()
         let chat = Conversation.blank()
         conversations.insert(chat, at: 0)
         activeID = chat.id
-        draft = ""
         persistConversations()
     }
 
@@ -5772,28 +5781,114 @@ final class AppStore {
     /// Opens a chat from the drawer, keeping what was typed in the one being
     /// left and bringing back what was typed in this one.
     func openChat(_ id: String) {
-        guard id != activeID else { return }
-        stashDraft()
+        guard id != activeID, conversations.contains(where: { $0.id == id }) else { return }
         activeID = id
-        draft = unsentDrafts[id] ?? ""
-        draftMentions = []
-        draftAttachments = unsentAttachments[id] ?? []
-        unsentDrafts[id] = nil
-        unsentAttachments[id] = nil
     }
 
     /// Keeps the composer's text and attachments with the chat on screen.
     private func stashDraft() {
-        guard let activeID, editingMessageID == nil else { return }
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        unsentDrafts[activeID] = text.isEmpty ? nil : draft
-        unsentAttachments[activeID] = draftAttachments.isEmpty ? nil : draftAttachments
+        draftSaveTask?.cancel()
+        guard let activeID, editingMessageID == nil,
+              conversations.contains(where: { $0.id == activeID }) else { return }
+        let value = ComposerDraft(text: draft, mentions: draftMentions, attachments: draftAttachments)
+        rememberDraft(value, for: activeID)
+        do {
+            try draftArchive.save(value, for: activeID)
+            // A successful file save supersedes the old text-only preference.
+            var legacy = defaults.dictionary(forKey: Keys.unsentDrafts) as? [String: String] ?? [:]
+            if legacy.removeValue(forKey: activeID) != nil {
+                defaults.set(legacy, forKey: Keys.unsentDrafts)
+            }
+        } catch {
+            storageWarning = String(localized: "The draft could not be saved. Keep this chat open and try again.")
+        }
+    }
+
+    private func scheduleDraftSave() {
+        guard !restoringDraft, editingMessageID == nil else { return }
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            self?.stashDraft()
+        }
+    }
+
+    private func rememberDraft(_ value: ComposerDraft, for id: String) {
+        unsentDrafts[id] = value.text.isEmpty ? nil : value.text
+        unsentAttachments[id] = value.attachments.isEmpty ? nil : value.attachments
+        unsentMentions[id] = value.mentions.isEmpty ? nil : value.mentions
+    }
+
+    private func loadDrafts() {
+        for chat in conversations {
+            do {
+                let value = try draftArchive.load(chat.id, legacyText: unsentDrafts[chat.id])
+                rememberDraft(value, for: chat.id)
+            } catch {
+                storageWarning = String(localized: "A saved draft could not be read. Its original data has been kept.")
+            }
+        }
+    }
+
+    private func restoreDraft() {
+        let id = activeID ?? ""
+        applyDraft(ComposerDraft(
+            text: unsentDrafts[id] ?? "", mentions: unsentMentions[id] ?? [],
+            attachments: unsentAttachments[id] ?? []
+        ))
+    }
+
+    private func applyDraft(_ value: ComposerDraft) {
+        restoringDraft = true
+        draft = value.text
+        draftMentions = value.mentions.filter { $0.range(in: value.text) != nil }
+        draftAttachments = value.attachments
+        restoringDraft = false
+    }
+
+    /// Pickers can finish after navigation. Their result stays with the chat
+    /// that opened them, never the next agent the person happens to visit.
+    func appendDraftAttachments(_ attachments: [Attachment], to id: String?) {
+        guard let id, !attachments.isEmpty,
+              conversations.contains(where: { $0.id == id && !$0.isRecoveredHistory }) else { return }
+        if id == activeID {
+            draftAttachments.append(contentsOf: attachments)
+            stashDraft()
+        } else {
+            var value = ComposerDraft(
+                text: unsentDrafts[id] ?? "", mentions: unsentMentions[id] ?? [],
+                attachments: unsentAttachments[id] ?? []
+            )
+            value.attachments.append(contentsOf: attachments)
+            rememberDraft(value, for: id)
+            do { try draftArchive.save(value, for: id) }
+            catch { storageWarning = String(localized: "The attachment could not be saved. Try again before closing Alice.") }
+        }
+    }
+
+    func restoreUnsentText(_ text: String, to id: String) {
+        guard conversations.contains(where: { $0.id == id }) else { return }
+        if id == activeID {
+            guard draft.isEmpty else { return }
+            draft = text
+            stashDraft()
+        } else {
+            guard unsentDrafts[id]?.isEmpty != false else { return }
+            let value = ComposerDraft(text: text, attachments: unsentAttachments[id] ?? [])
+            rememberDraft(value, for: id)
+            do { try draftArchive.save(value, for: id) }
+            catch { storageWarning = String(localized: "The draft could not be saved. Keep this chat open and try again.") }
+        }
     }
 
     /// What a chat in the drawer is waiting on (`ChatAttention`).
     func attention(for chat: Conversation) -> ChatAttention? {
-        ChatAttention.of(
-            chat,
+        // Shelf membership is cached while replies stream; its message snapshot
+        // can be older than the actual reply or approval.
+        guard let current = conversation(chat.id) else { return nil }
+        return ChatAttention.of(
+            current,
             isActive: chat.id == activeID,
             sending: sendingConversations.contains(chat.id),
             workingOutOfSight: backgroundWorks[chat.id].map { !$0.isEmpty } ?? false,
@@ -5806,6 +5901,10 @@ final class AppStore {
     func delete(_ id: String) {
         unsentDrafts[id] = nil
         unsentAttachments[id] = nil
+        unsentMentions[id] = nil
+        draftArchive.remove(id)
+        var legacy = defaults.dictionary(forKey: Keys.unsentDrafts) as? [String: String] ?? [:]
+        if legacy.removeValue(forKey: id) != nil { defaults.set(legacy, forKey: Keys.unsentDrafts) }
         unseenReplies.remove(id)
         conversations.removeAll { $0.id == id }
         if conversations.isEmpty { conversations = [.blank()] }
@@ -8273,6 +8372,7 @@ final class AppStore {
         draft = ""
         draftMentions = []
         draftAttachments = []
+        stashDraft()
         sendingConversations.insert(conversationID)
         latencyStartedAt[conversationID] = Date()
         latencyLogged[conversationID] = []
@@ -8639,6 +8739,7 @@ final class AppStore {
     /// The sent message the composer is rewriting. Sending replaces that
     /// exchange instead of adding a new one.
     var editingMessageID: String?
+    @ObservationIgnored private var draftBeforeEditing: ComposerDraft?
 
     /// Only the latest message can be rewritten: Hermes rewinds the last
     /// exchange, and nothing before it, so an earlier one could only be
@@ -8664,13 +8765,20 @@ final class AppStore {
               let last = conversations.first(where: { $0.id == activeID })?
                 .messages.last(where: { $0.role == .user })
         else { return }
+        if editingMessageID == nil {
+            stashDraft()
+            draftBeforeEditing = ComposerDraft(text: draft, mentions: draftMentions, attachments: draftAttachments)
+        }
         editingMessageID = last.id
         draft = message.content
+        draftMentions = []
+        draftAttachments = []
     }
 
     func cancelEditing() {
         editingMessageID = nil
-        draft = ""
+        applyDraft(draftBeforeEditing ?? ComposerDraft())
+        draftBeforeEditing = nil
     }
 
     /// Replaces the edited exchange: the reply goes the way Try Again takes it,
@@ -9767,6 +9875,7 @@ final class AppStore {
     /// which waits a beat so many deltas become one encode.
     func persistConversationsImmediately() {
         flushStreamedText()
+        stashDraft()
         persistTask?.cancel()
         persistGeneration += 1
         writeConversationsNow(conversations)

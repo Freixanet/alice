@@ -2,7 +2,7 @@ import Foundation
 
 /// One occurrence selected from the @ menu. A slug alone cannot distinguish
 /// that occurrence from the same name typed later as ordinary prose.
-struct DraftMention: Hashable, Sendable {
+struct DraftMention: Hashable, Sendable, Codable {
     let display: String
     let slug: String
     var location: Int

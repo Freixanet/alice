@@ -100,7 +100,7 @@ jobs:
       - name: Build and test native app
         run: bash scripts/verify-ios.sh all
       - uses: actions/upload-artifact@v5
-        if: failure()
+        if: always()
         with:
           name: ios-test-results
           path: ios/.build/DerivedData/Logs/Test

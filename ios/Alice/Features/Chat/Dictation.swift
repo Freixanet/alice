@@ -24,9 +24,18 @@ final class Dictation {
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
+    private var tapInstalled = false
+    private var ownsAudioSession = false
     /// What the draft held before dictation started, so the transcript extends
     /// the message rather than replacing it.
     private var prefix = ""
+    private var generation = 0
+    private var startTask: Task<Void, Never>?
+    private let permission: (@MainActor @Sendable () async -> Bool)?
+
+    init(permission: (@MainActor @Sendable () async -> Bool)? = nil) {
+        self.permission = permission
+    }
 
     var isListening: Bool { state == .listening }
 
@@ -34,18 +43,24 @@ final class Dictation {
         locale: Locale = .current,
         onText: @escaping @MainActor @Sendable (String) -> Void
     ) {
-        if isListening {
+        if isListening || startTask != nil {
             stop()
         } else {
-            Task { await start(locale: locale, onText: onText) }
+            generation += 1
+            let token = generation
+            startTask = Task { await start(locale: locale, generation: token, onText: onText) }
         }
     }
 
     private func start(
         locale: Locale,
+        generation token: Int,
         onText: @escaping @MainActor @Sendable (String) -> Void
     ) async {
-        guard await requestAccess() else {
+        defer { if token == generation { startTask = nil } }
+        let allowed = if let permission { await permission() } else { await requestAccess() }
+        guard token == generation, !Task.isCancelled else { return }
+        guard allowed else {
             state = .unavailable("Alice needs permission to use the microphone.")
             return
         }
@@ -60,6 +75,7 @@ final class Dictation {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .measurement, options: .duckOthers)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
+            ownsAudioSession = true
 
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
@@ -84,6 +100,7 @@ final class Dictation {
                 @Sendable buffer, _ in
                 sink.append(buffer)
             }
+            tapInstalled = true
             engine.prepare()
             try engine.start()
 
@@ -92,7 +109,7 @@ final class Dictation {
                 let spokenText = result?.bestTranscription.formattedString
                 let done = error != nil || result?.isFinal == true
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, self.generation == token else { return }
                     if let spokenText {
                         onText(
                             self.prefix.isEmpty
@@ -115,6 +132,9 @@ final class Dictation {
     }
 
     func stop() {
+        generation += 1
+        startTask?.cancel()
+        startTask = nil
         teardown()
         if case .unavailable = state { return }
         state = .idle
@@ -126,10 +146,14 @@ final class Dictation {
         request?.endAudio()
         request = nil
         if engine.isRunning { engine.stop() }
-        engine.inputNode.removeTap(onBus: 0)
-        try? AVAudioSession.sharedInstance().setActive(
-            false, options: .notifyOthersOnDeactivation
-        )
+        if tapInstalled {
+            engine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        if ownsAudioSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            ownsAudioSession = false
+        }
     }
 
     private func requestAccess() async -> Bool {

@@ -492,10 +492,11 @@ struct BotsScreen: View {
                                 AgentMaker.matches(profile: $0.name, role: $0.aliceRole)
                             }) {
                                 store.showingBots = false
-                                store.draftAttachments = []
                                 _ = store.openBotConversation(
                                     for: forge, replacingExisting: false, refresh: false
                                 )
+                                store.draftAttachments = []
+                                store.draftMentions = []
                                 store.draft = "Quiero crear un agente nuevo: "
                             } else {
                                 creatingBot = true
@@ -2991,9 +2992,10 @@ private struct NewBotSheet: View {
             AgentMaker.matches(profile: $0.name, role: $0.aliceRole)
         }) {
             store.showingBots = false
-            store.draft = ""
-            store.draftAttachments = []
             _ = store.openBotConversation(for: forge, replacingExisting: false, refresh: false)
+            store.draft = ""
+            store.draftMentions = []
+            store.draftAttachments = []
             store.sendQuickReply(AgentMaker.createRequest(
                 name: trimmed, brief: brief,
                 extra: selectedTemplate?.soulExtra,
@@ -3037,11 +3039,12 @@ private struct NewBotSheet: View {
                 // overlay, so dismissing it lands on the new chat — not back
                 // on the form for a frame.
                 store.showingBots = false
-                store.draft = ""
-                store.draftAttachments = []
                 _ = store.openBotConversation(
                     for: bot, replacingExisting: true, refresh: false
                 )
+                store.draft = ""
+                store.draftMentions = []
+                store.draftAttachments = []
                 if !brief.isEmpty {
                     store.sendQuickReply(brief)
                 }

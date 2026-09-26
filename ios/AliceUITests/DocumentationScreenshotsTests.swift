@@ -3,6 +3,18 @@ import XCTest
 /// Reproducible repository images from a fresh, isolated simulator.
 @MainActor
 final class DocumentationScreenshotsTests: XCTestCase {
+    func testCaptureChatWithLargeTextAndDarkAppearance() {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "-seedLongBotChat", "-AppleInterfaceStyle", "Dark",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+        ]
+        app.launch()
+        XCTAssertTrue(app.buttons["chat.leading"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["composer.action"].waitForExistence(timeout: 10))
+        capture(app, name: "alice-ios-chat-dark-accessibility")
+    }
+
     func testCaptureMobileEntryPoints() {
         let app = XCUIApplication()
         app.launch()

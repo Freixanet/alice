@@ -13860,6 +13860,36 @@
           }
         }
       }
+    },
+    "The draft could not be saved. Keep this chat open and try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo guardar el borrador. Mantén abierto este chat e inténtalo de nuevo."
+          }
+        }
+      }
+    },
+    "A saved draft could not be read. Its original data has been kept.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer un borrador guardado. Se han conservado sus datos originales."
+          }
+        }
+      }
+    },
+    "The attachment could not be saved. Try again before closing Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo guardar el adjunto. Inténtalo de nuevo antes de cerrar Alice."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
