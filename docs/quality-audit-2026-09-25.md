@@ -52,12 +52,12 @@ There are multiple OpenMuse projects, so both relevant implementations are recor
 
 ## Remaining work, ordered by user impact
 
-1. **Independent task conversations for an existing agent.** New Agent currently
-   opens Forge's canonical conversation. `replacingExisting` only replaces a local
-   cache; it does not produce a fresh remote session. A clean creation conversation
-   must have its own durable Hermes session and preserve existing Forge history,
-   pending work, approvals, model and profile identity. Do not implement it by
-   deleting the agent's canonical chat.
+1. **Independent task conversations for an existing agent.** Implemented for
+   New Agent: a persisted task identity, separate profile-scoped Hermes session,
+   Recents entry, and scoped recovery/retry/stop/approval routes. The canonical
+   Forge chat stays intact. Local device build passed; the new regression and
+   navigation suites are pending CI execution. A live test with a dedicated
+   Hermes test profile remains required; no real agent was prompted for this check.
 2. **Full visual and interaction review.** Review home, populated chats, Recents,
    agents, notes, agenda, settings and connection in light/dark modes, large text
    and with the keyboard. CI retains its screenshot attachments even on success.

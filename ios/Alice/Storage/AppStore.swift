@@ -130,8 +130,8 @@ final class AppStore {
         }
         guard fingerprint != conversationShelfFingerprint else { return }
         conversationShelfFingerprint = fingerprint
-        pinnedConversations = conversations.filter { $0.pinned && !$0.isBotChat }
-        recentConversations = conversations.filter { !$0.pinned && !$0.isBotChat }
+        pinnedConversations = conversations.filter { $0.pinned && $0.appearsInRecents }
+        recentConversations = conversations.filter { !$0.pinned && $0.appearsInRecents }
     }
     var activeID: String? {
         willSet {
@@ -685,7 +685,7 @@ final class AppStore {
     /// explicit prevents a model chip from promising one model while Hermes
     /// actually runs the profile's configured default.
     var activeBotProfileForModelSelection: String? {
-        guard activeChat.isCanonicalBotChat else { return nil }
+        guard shownConversation?.isAgentSessionChat == true else { return nil }
         return activeChat.routedBotName
     }
 
@@ -1796,7 +1796,7 @@ final class AppStore {
     /// ordinary chat replies and routine cards are derived from their dates.
     func isBotUnread(_ bot: String) -> Bool {
         if unreadBots.contains(bot) { return true }
-        guard let conversation = conversations.first(where: { $0.routedBotName == bot }),
+        guard let conversation = conversations.first(where: { $0.routedBotName == bot && $0.isCanonicalBotChat }),
               let newest = botChatPreview(conversation, botName: bot).newestReplyAt
         else { return false }
         return newest > (conversation.openedAt ?? .distantPast)
@@ -1809,7 +1809,7 @@ final class AppStore {
 
     func botChatPreview(_ conversation: Conversation, botName: String) -> BotChatPreview {
         botChatPreviews.preview(
-            for: conversation, botName: botName, quietRuns: quietRoutineRuns[botName] ?? []
+            for: conversation, botName: botName, quietRuns: conversation.isAgentTask ? [] : quietRoutineRuns[botName] ?? []
         )
     }
 
@@ -1843,7 +1843,7 @@ final class AppStore {
     /// Opening the conversation reads both chat replies and routine cards.
     func markBotRead(_ bot: String, at date: Date = Date()) {
         unreadBots.remove(bot)
-        guard let index = conversations.firstIndex(where: { $0.routedBotName == bot })
+        guard let index = conversations.firstIndex(where: { $0.routedBotName == bot && $0.isCanonicalBotChat })
         else { return }
         conversations[index].openedAt = date
         persistConversations()
@@ -1876,7 +1876,12 @@ final class AppStore {
 
     func markActiveBotRead() {
         guard let bot = activeConversation?.routedBotName else { return }
-        markBotRead(bot)
+        if let index = conversations.firstIndex(where: { $0.id == activeID }), conversations[index].isAgentTask {
+            conversations[index].openedAt = Date()
+            persistConversations()
+        } else {
+            markBotRead(bot)
+        }
     }
 
     func hideBot(_ bot: String) {
@@ -2602,7 +2607,7 @@ final class AppStore {
         if LiveEvents.isTurnOutcome(frame), let conversationID = identity.conversationID,
            conversationID == activeID,
            activeBotTurns[conversationID] == nil,
-           conversations.contains(where: { $0.id == conversationID && $0.isCanonicalBotChat }) {
+           conversations.contains(where: { $0.id == conversationID && $0.isAgentSessionChat }) {
             Task { [weak self] in await self?.refreshBotChat(conversationID) }
         }
         guard let raw = LiveEvents.event(from: frame, session: identity) else { return }
@@ -2645,7 +2650,7 @@ final class AppStore {
         let conversation: Conversation?
         // A bot's chat, or Alice's own chat held as a session: both can ask.
         let holdsSession = { (chat: Conversation) in
-            chat.isCanonicalBotChat || chat.isHomeSessionChat
+            chat.isAgentSessionChat || chat.isHomeSessionChat
         }
         if let direct = conversations.first(where: {
             $0.hermesSessionID == sessionID && holdsSession($0)
@@ -3610,7 +3615,7 @@ final class AppStore {
         // `-seedTallBotChat` gives every reply the length of a Radar IA report,
         // the kind of chat that opened blank on a phone.
         let tall = arguments.contains("-seedTallBotChat")
-        guard tall || arguments.contains("-seedLongBotChat") else { return }
+        guard tall || arguments.contains("-seedLongBotChat") || arguments.contains("-seedAgentMaker") else { return }
         // Headlines carry their reply's number, so the end of one reply can be
         // told from the end of another: replies are drawn block by block.
         let report = { (reply: Int) in
@@ -3647,6 +3652,11 @@ final class AppStore {
         conversations.removeAll { $0.id == chat.id }
         conversations.insert(chat, at: 0)
         activeID = chat.id
+        if arguments.contains("-seedAgentMaker"),
+           let index = cachedBots.firstIndex(where: { $0.name == "uitest-bot" }) {
+            cachedBots[index].aliceRole = "agent-maker"
+            showingBots = true
+        }
 
         // `-growSeededChat` makes the last reply land whole a moment after
         // opening, the way a bot's report arrives once its turn ends.
@@ -3933,20 +3943,19 @@ final class AppStore {
     /// person, not working.
     func isBotWorking(_ bot: String) -> Bool {
         let chats = conversations.filter {
-            $0.routedBotName == bot && $0.isCanonicalBotChat
+            $0.routedBotName == bot && $0.isAgentSessionChat
         }
-        let waitingOnPerson = chats.contains { !pendingQuestions(in: $0.id).isEmpty }
-        let sending = chats.contains { sendingConversations.contains($0.id) }
-        let backgroundEmpty = chats.allSatisfy { backgroundWork(for: $0.id).isEmpty }
         let awaitedByPeer = backgroundWorks.values.contains { work in
             work.waitingOn.contains { $0.handle == bot }
         }
-        return Self.isWorking(
-            sending: sending,
-            backgroundEmpty: backgroundEmpty,
-            waitingOnPerson: waitingOnPerson,
-            awaitedByPeer: awaitedByPeer
-        )
+        return chats.contains { chat in
+            Self.isWorking(
+                sending: sendingConversations.contains(chat.id),
+                backgroundEmpty: backgroundWork(for: chat.id).isEmpty,
+                waitingOnPerson: !pendingQuestions(in: chat.id).isEmpty,
+                awaitedByPeer: awaitedByPeer && chat.isCanonicalBotChat
+            )
+        } || (chats.isEmpty && awaitedByPeer)
     }
 
     nonisolated static func isWorking(
@@ -3999,7 +4008,7 @@ final class AppStore {
             if !pendingQuestions(in: chat.id).isEmpty { return nil }
             let work = backgroundWork(for: chat.id)
             guard sendingConversations.contains(chat.id) || !work.isEmpty else { return nil }
-            if chat.isCanonicalBotChat, let bot = chat.routedBotName {
+            if chat.isAgentSessionChat, let bot = chat.routedBotName {
                 return AgentActivities.Work(
                     conversationID: chat.id,
                     profile: bot, name: botCurrentName(for: bot), mark: mark(for: bot),
@@ -5577,7 +5586,7 @@ final class AppStore {
     /// to" means the chat you can talk in, never a recovered transcript.
     var lastBotConversation: Conversation? {
         conversations
-            .filter { $0.isCanonicalBotChat || $0.isChannel == true }
+            .filter { $0.isAgentSessionChat || $0.isChannel == true }
             .max { ($0.openedAt ?? $0.updatedAt) < ($1.openedAt ?? $1.updatedAt) }
     }
 
@@ -5693,7 +5702,7 @@ final class AppStore {
             }) {
                 openBotConversation(for: bot)
             } else if let existing = conversations.first(where: {
-                $0.botName?.caseInsensitiveCompare(name) == .orderedSame
+                $0.isCanonicalBotChat && $0.botName?.caseInsensitiveCompare(name) == .orderedSame
             }) {
                 openConversation(existing.id)
             }
@@ -6648,13 +6657,13 @@ final class AppStore {
     ) -> String {
         if replacingExisting {
             conversations.removeAll {
-                $0.botName?.caseInsensitiveCompare(bot.name) == .orderedSame
+                $0.isCanonicalBotChat && $0.botName?.caseInsensitiveCompare(bot.name) == .orderedSame
             }
         }
         let id: String
         if !replacingExisting,
            let existing = conversations.first(where: {
-               $0.botName?.caseInsensitiveCompare(bot.name) == .orderedSame
+               $0.isCanonicalBotChat && $0.botName?.caseInsensitiveCompare(bot.name) == .orderedSame
            }) {
             activeID = existing.id
             id = existing.id
@@ -6688,30 +6697,32 @@ final class AppStore {
     /// failure leaves the cache exactly as it was and reports itself — an
     /// unreachable agent is not a bot with nothing to say.
     func refreshBotChat(_ conversationID: String) async {
-        // Only a canonical bot chat has a remote transcript to read. Recovered
+        // Canonical chats and independent tasks have remote transcripts. Recovered
         // history is local by definition and has no session to refresh from.
         guard let index = conversations.firstIndex(where: { $0.id == conversationID }),
               let profile = conversations[index].routedBotName,
-              conversations[index].isCanonicalBotChat
+              conversations[index].isAgentSessionChat
         else { return }
         // A chat being cleared is emptied here first and deleted in Hermes
         // after. Until that finishes, the old chat is still readable there, and
         // a read would put every message back on the screen it just left.
-        guard !clearingBotChats.contains(profile) else { return }
+        guard conversations[index].isAgentTask || !clearingBotChats.contains(profile) else { return }
+        let isTask = conversations[index].isAgentTask
+        if isTask && conversations[index].hermesSessionID == nil { return }
         guard let source = await botChatSource() else {
             botChatFailure[conversationID] =
                 "Connect the Hermes dashboard to see this bot's own chat."
             return
         }
         do {
-            var chat = try await resolveBotChat(profile, source: source)
+            var chat = try await resolveConversationSession(conversationID, profile: profile, source: source)
             // One read gives both the transcript and what is still going on in
             // it: tool calls and whether a turn is running are in the same
             // projection, and are what the transcript alone leaves out.
             let resumed: JSONObject
             do {
                 resumed = try await source.resume(profile: profile, target: chat.resolvedID)
-            } catch let error where WebSocketBotChatSource.isNotFound(error) {
+            } catch let error where !isTask && WebSocketBotChatSource.isNotFound(error) {
                 // The chat moved — cleared or compressed elsewhere — since it
                 // was cached. One fresh lookup, then the read goes on.
                 forgetCanonicalBotChat(profile)
@@ -6789,14 +6800,14 @@ final class AppStore {
             ), for: conversationID)
             if botChatFailure[conversationID] != nil { botChatFailure[conversationID] = nil }
             if transcriptChanged { persistConversations() }
-            await refreshQuietRoutineRuns(profile: profile)
+            if !isTask { await refreshQuietRoutineRuns(profile: profile) }
         } catch {
             // Keep what is on screen. The reason is recorded so the chat can
             // say the transcript may be behind, rather than pretending it is
             // complete or blanking it.
             botChatFailure[conversationID] = HermesErrors.describe(error)
             // Its routine runs are read on their own route, and still count.
-            await refreshQuietRoutineRuns(profile: profile)
+            if !isTask { await refreshQuietRoutineRuns(profile: profile) }
         }
     }
 
@@ -7010,7 +7021,7 @@ final class AppStore {
         // and rebuilt the screens underneath Notes and Agents the whole time.
         await recoverWaitingReplies()
         if let activeID,
-           conversations.contains(where: { $0.id == activeID && $0.isCanonicalBotChat }),
+           conversations.contains(where: { $0.id == activeID && $0.isAgentSessionChat }),
            activeBotTurns[activeID] == nil {
             await refreshBotChat(activeID)
         }
@@ -7049,7 +7060,7 @@ final class AppStore {
         conversations.compactMap { conversation in
             guard let reply = conversation.messages.last(where: { $0.role == .assistant }),
                   reply.pending || reply.awaitingRemote,
-                  conversation.isHomeSessionChat || conversation.isCanonicalBotChat
+                  conversation.isHomeSessionChat || conversation.isAgentSessionChat
                     || reply.mentionSessionID != nil
             else { return nil }
             let followed = activeBotTurns[conversation.id]
@@ -7141,7 +7152,15 @@ final class AppStore {
             var storedSessionID: String
             let events = source.rpc.events()
             let submission: BotChatSubmission
-            if let profile {
+            if profile != nil, !mention,
+               let task = conversations.first(where: { $0.id == conversationID }), task.isAgentTask {
+                let session = try await openAgentTask(task, source: source)
+                guard activeBotTurns[conversationID]?.token == token, !Task.isCancelled else { return }
+                storedSessionID = session.storedID
+                submission = try await source.submit(
+                    liveSessionID: session.liveID, text: text, attachments: attachments
+                )
+            } else if let profile {
                 var chat = try await resolveBotChat(profile, source: source)
                 storedSessionID = chat.resolvedID
                 if mention {
@@ -8247,8 +8266,9 @@ final class AppStore {
             // Alice's own chat still waits its turn: a second prompt there would
             // queue behind the first with nobody following it.
             guard activeBotTurns[activeID] != nil,
-                  activeConversation?.isCanonicalBotChat == true
+                  activeConversation?.isAgentSessionChat == true
             else { return }
+            if activeConversation?.isAgentTask == true, activeBotTurns[activeID]?.disposition == nil { return }
             releaseBotTurn(activeID, stopped: false)
         }
 
@@ -8266,7 +8286,7 @@ final class AppStore {
         // it. Waiting on it for a dashboard chat held a message — the voice
         // mode's first one — until a reconnect that never came.
         let overDashboard = dashboardReady && conversations.contains {
-            $0.id == activeID && ($0.isHomeSessionChat || $0.isCanonicalBotChat)
+            $0.id == activeID && ($0.isHomeSessionChat || $0.isAgentSessionChat)
         }
         guard isConnected || overDashboard else {
             Task { [weak self] in
@@ -8399,7 +8419,8 @@ final class AppStore {
         )
         // Named by its subject, not its first forty keystrokes; a bare
         // greeting names nothing and the chat waits for the real question.
-        if ConversationTitle.isPlaceholder(conversations[index].title),
+        if (ConversationTitle.isPlaceholder(conversations[index].title)
+            || (conversations[index].isAgentTask && conversations[index].title == String(localized: "New Agent"))),
            let title = ConversationTitle.from(text, attachmentName: attachments.first?.name) {
             conversations[index].title = title
         }
@@ -8833,7 +8854,7 @@ final class AppStore {
         // A bot chat's history lives in Hermes, which still holds the failed
         // exchange. Resending alone put the same message there twice, and the
         // next refresh showed it twice. Rewind it there first.
-        if conversations[chat].isCanonicalBotChat,
+        if conversations[chat].isAgentSessionChat,
            let profile = conversations[chat].routedBotName {
             guard !botRetryInFlight else { return }
             botRetryInFlight = true
@@ -8844,7 +8865,7 @@ final class AppStore {
                     guard let source = await self.botChatSource() else {
                         throw HermesRPCClient.Failure(reason: "Hermes is not connected.")
                     }
-                    let target = try await self.resolveBotChat(profile, source: source)
+                    let target = try await self.resolveConversationSession(conversationID, profile: profile, source: source)
                     guard let current = self.conversations.first(where: { $0.id == conversationID })
                     else { throw HermesRPCClient.Failure(reason: "This chat is no longer open.") }
                     if let turnID = try await self.remoteTurnIDForRetry(
@@ -9023,7 +9044,7 @@ final class AppStore {
            let turn = activeBotTurns[activeID],
            let sessionID = turn.storedSessionID ?? conversations[index].hermesSessionID,
            turn.mentionProfile != nil
-            || conversations[index].isCanonicalBotChat || conversations[index].isHomeSessionChat {
+            || conversations[index].isAgentSessionChat || conversations[index].isHomeSessionChat {
             // A turn sent to an agent named with `@` stops in that agent's session.
             let profile = turn.mentionProfile ?? conversations[index].routedBotName
             guard botStopsInFlight[activeID] == nil else { return }
@@ -9318,7 +9339,7 @@ final class AppStore {
         // so does Alice's own chat when it runs there. Their `runID` field
         // holds the request id; do not send it to `/v1/runs`, which is a
         // different server and identity domain.
-        if conversations[location.chat].isCanonicalBotChat || approval.viaSocket == true {
+        if conversations[location.chat].isAgentSessionChat || approval.viaSocket == true {
             let requestID = approval.requestID ?? approval.runID
             // The session the question came from: an agent asked with `@` in
             // Alice's chat asks from its own session, which this chat does not

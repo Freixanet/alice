@@ -411,8 +411,10 @@ extension AppStore {
             )
         }
         let liveID: String
-        if let profile {
-            let chat = try await resolveBotChat(profile, source: source)
+        if let task = conversations.first(where: { $0.id == conversationID }), task.isAgentTask {
+            liveID = try await openAgentTask(task, source: source).liveID
+        } else if let profile {
+            let chat = try await resolveConversationSession(conversationID, profile: profile, source: source)
             let resumed = try await source.resume(
                 profile: profile, target: chat.resolvedID, omitMessages: true
             )

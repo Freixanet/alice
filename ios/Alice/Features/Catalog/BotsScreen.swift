@@ -492,9 +492,7 @@ struct BotsScreen: View {
                                 AgentMaker.matches(profile: $0.name, role: $0.aliceRole)
                             }) {
                                 store.showingBots = false
-                                _ = store.openBotConversation(
-                                    for: forge, replacingExisting: false, refresh: false
-                                )
+                                _ = store.openAgentTaskConversation(for: forge)
                                 store.draftAttachments = []
                                 store.draftMentions = []
                                 store.draft = "Quiero crear un agente nuevo: "
@@ -1890,7 +1888,7 @@ struct BotsScreen: View {
     private func preview(for bot: BotRow) -> BotChatPreview {
         // reads every chat: each row quotes its bot's latest reply, kept by
         // `BotChatPreviews` so a redraw costs a lookup, not a re-read.
-        guard let conversation = store.conversations.first(where: { $0.botName == bot.name })
+        guard let conversation = store.conversations.first(where: { $0.isCanonicalBotChat && $0.botName == bot.name })
         else { return .empty }
         return store.botChatPreview(conversation, botName: bot.name)
     }
@@ -2992,7 +2990,7 @@ private struct NewBotSheet: View {
             AgentMaker.matches(profile: $0.name, role: $0.aliceRole)
         }) {
             store.showingBots = false
-            _ = store.openBotConversation(for: forge, replacingExisting: false, refresh: false)
+            _ = store.openAgentTaskConversation(for: forge)
             store.draft = ""
             store.draftMentions = []
             store.draftAttachments = []

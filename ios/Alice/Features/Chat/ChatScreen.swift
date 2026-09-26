@@ -62,6 +62,7 @@ private struct ChatScreenContent: View, Equatable {
     /// Alice's own Today chat (`AppStore.openToday`): an agent chat in how it
     /// reads and sends, Alice's in how it looks and where Back leads.
     private var isToday: Bool { bot == AppStore.todayProfile }
+    private var isAgentTask: Bool { store.shownConversation?.isAgentTask == true }
 
     /// The bot this conversation belongs to, if it belongs to one.
     private var bot: String? {
@@ -183,14 +184,20 @@ private struct ChatScreenContent: View, Equatable {
         // be opened without ever going through it.
         .task(id: bot) {
             await refreshBots()
-            if let bot { await store.prepareBotChatIfNeeded(profile: bot) }
+            if let bot, store.shownConversation?.isCanonicalBotChat == true {
+                await store.prepareBotChatIfNeeded(profile: bot)
+            }
         }
         // Alice's own chat is resumed as it opens, keyed by the conversation
         // so moving between two home chats warms each. The task above keys
         // on the bot and would not fire again for a second home chat.
         .task(id: store.activeID) {
-            guard bot == nil, let id = store.activeID else { return }
-            await store.prepareHomeChatIfNeeded(conversationID: id)
+            guard let id = store.activeID else { return }
+            if store.shownConversation?.isAgentTask == true {
+                await store.refreshBotChat(id)
+            } else if bot == nil {
+                await store.prepareHomeChatIfNeeded(conversationID: id)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification
@@ -275,7 +282,7 @@ private struct ChatScreenContent: View, Equatable {
 
     private var topControls: some View {
         HStack(alignment: .top, spacing: 0) {
-            Button(action: bot == nil ? onOpenDrawer : (isToday ? { store.goHome() } : onBack)) {
+            Button(action: (bot == nil || isAgentTask) ? onOpenDrawer : (isToday ? { store.goHome() } : onBack)) {
                 // Two bars, not three, matched to the `plus` across from it.
                 // Both are math symbols, so the pairing is a real one — but
                 // not at the same settings: `equal` at 18pt medium matches
@@ -288,7 +295,7 @@ private struct ChatScreenContent: View, Equatable {
                 // list of bots, not a place the drawer leads anywhere useful
                 // from — so from here the same disc goes back instead.
                 Group {
-                    if bot == nil {
+                    if bot == nil || isAgentTask {
                         // The two bars turn into an X as the drawer opens,
                         // following the finger rather than switching at the end.
                         DrawerOpenMark()
@@ -304,7 +311,7 @@ private struct ChatScreenContent: View, Equatable {
                 .contentShape(.circle)
             }
             .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel(bot == nil ? "Chats" : (isToday ? "Home" : "Agents"))
+            .accessibilityLabel((bot == nil || isAgentTask) ? "Chats" : (isToday ? "Home" : "Agents"))
             .accessibilityIdentifier("chat.leading")
 
             Spacer(minLength: 0)
@@ -318,9 +325,17 @@ private struct ChatScreenContent: View, Equatable {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
                 } label: {
-                    ChatHeaderAvatar(name: store.botCurrentName(for: bot),
-                                     zoomSource: ("agent-avatar", avatarZoom)) {
-                        BotMarkView(mark: store.mark(for: bot), size: 72)
+                    VStack(spacing: 4) {
+                        ChatHeaderAvatar(name: store.botCurrentName(for: bot),
+                                         zoomSource: ("agent-avatar", avatarZoom)) {
+                            BotMarkView(mark: store.mark(for: bot), size: 72)
+                        }
+                        if isAgentTask, let task = store.shownConversation {
+                            Text(task.title)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
                 .contentShape(.contextMenuPreview, PortraitMenuShape(diameter: 72, gap: -14))
@@ -452,7 +467,7 @@ private struct ChatScreenContent: View, Equatable {
             // offset: a bot chat opened blank until the reader moved it.
             TranscriptView(
                 conversation: conversation,
-                quietRuns: store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? [],
+                quietRuns: conversation.isAgentTask ? [] : store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? [],
                 keyboardShown: keyboardShown
             )
                 .id(conversation.id)

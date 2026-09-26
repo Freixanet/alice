@@ -198,7 +198,7 @@ struct SearchScreen: View {
     private var recents: [Conversation] {
         // reads every chat: the search page lists recent chats, only while open.
         store.conversations
-            .filter { !$0.messages.isEmpty && !$0.isBotChat }
+            .filter { !$0.messages.isEmpty && $0.appearsInRecents }
             .sorted { ($0.openedAt ?? $0.updatedAt) > ($1.openedAt ?? $1.updatedAt) }
             .prefix(12)
             .map { $0 }
