@@ -3,12 +3,20 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 MODE=${1:-all}
-case "$MODE" in unit|ui|all|build) ;; *) echo 'Usage: scripts/verify-ios.sh [unit|ui|all|build]' >&2; exit 2 ;; esac
+case "$MODE" in unit|ui|all|build|performance) ;; *) echo 'Usage: scripts/verify-ios.sh [unit|ui|all|build|performance]' >&2; exit 2 ;; esac
+# Performance runs are isolated and repeatable on GitHub-hosted Macs. Never
+# accidentally boot a simulator on the person's resource-constrained Mac.
+if [[ "$MODE" == performance && "${GITHUB_ACTIONS:-}" != true ]]; then
+  echo 'Run the iOS Performance workflow on GitHub; local simulator benchmarks are disabled.' >&2
+  exit 2
+fi
 command -v xcodegen >/dev/null || { echo 'Install XcodeGen before running iOS verification.' >&2; exit 1; }
 (cd ios && xcodegen generate)
 
 DERIVED=${ALICE_DERIVED_DATA_PATH:-"$PWD/ios/.build/DerivedData"}
-ARGS=(-project ios/Alice.xcodeproj -scheme Alice -configuration Debug
+SCHEME=Alice
+[[ "$MODE" != performance ]] || SCHEME=AlicePerformance
+ARGS=(-project ios/Alice.xcodeproj -scheme "$SCHEME" -configuration Debug
   -sdk iphonesimulator
   -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO
   "CURRENT_PROJECT_VERSION=${GITHUB_RUN_NUMBER:-2}"

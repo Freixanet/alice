@@ -105,3 +105,33 @@ Settings › Advanced › Developer mode adds **Settings › Developer**:
 
 These run against the real Hermes and phone: they read, and only the tools
 write (a test notification, a diagnostics upload, a card's own action).
+
+## Native performance measurements
+
+Run **iOS Performance** from GitHub Actions (or `gh workflow run ios-performance.yml
+--ref <branch>`). It runs automatically when its harness changes. The dedicated
+`AlicePerformance` scheme measures five iterations of a responsive launch into
+30 long reports, scrolling back to the latest report, and opening Agents then
+returning to chat. Each journey checks that its destination was actually reached.
+The normal `Alice` scheme keeps all unit and UI correctness tests, without adding
+benchmark repetitions to every app change.
+
+The workflow retains raw `.xcresult`, per-iteration CSV metrics and a compact job
+summary (mean, median and range without excluding slow samples) for 30 days.
+The summary reads exported CSV rather than relying on Xcode console wording,
+and handles the double `.csv.csv` filename in Xcode 26.6 manifests. Empty or
+non-finite measurements fail the reporter. Record the commit, Xcode/iOS versions and fixture with every
+comparison. XCTest records launch duration and journey wall time, app CPU use and
+memory. Journey wall time includes UI automation and idle waits: it is not pure
+rendering latency. These are Debug simulator baselines, not physical iPhone,
+Release, cold-device boot, network/model latency, scroll frame-rate or battery
+measurements. Repeated launches benefit from warmed system caches. One
+run is not evidence of an improvement; compare repeated runs under matched
+conditions before setting a regression budget.
+
+`scripts/verify-ios.sh performance` refuses local execution outside GitHub Actions.
+This Mac must not boot a simulator. Generic-device test-bundle compilation is
+allowed; never point this harness at the person's iPhone or real Hermes. The CI
+runner has only synthetic fixtures and no Hermes credentials. For physical-device
+hitches, use the existing Developer performance meter and diagnostic report during
+normal use; do not fabricate device results from simulator measurements.
