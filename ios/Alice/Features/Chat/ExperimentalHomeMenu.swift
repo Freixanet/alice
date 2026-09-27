@@ -18,6 +18,7 @@ struct ExperimentalHomeMenu: View {
                     items
                 }
                 .scrollIndicators(.hidden)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("home.menu.scroll")
             } else {
                 items

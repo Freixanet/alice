@@ -92,6 +92,11 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["home.menu.chats"].waitForExistence(timeout: 20))
         capture(app, "experimental-home-dark-large-text")
+        app.descendants(matching: .any)["composer.text"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["home.menu.chats"].isHittable)
+        XCTAssertTrue(app.buttons["composer.action"].isHittable)
+        capture(app, "experimental-home-dark-large-keyboard")
         let scroll = app.scrollViews.containing(.button, identifier: "home.menu.chats").firstMatch
         XCTAssertTrue(scroll.exists)
         scroll.swipeLeft()
