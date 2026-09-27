@@ -7,7 +7,7 @@ enum HomeInterface: String {
 }
 
 struct ExperimentalHomeMenu: View {
-    private enum Section: String {
+    private enum Section: String, CaseIterable {
         case chat, today, goals, feed, library
     }
 
@@ -19,16 +19,32 @@ struct ExperimentalHomeMenu: View {
 
     var body: some View {
         GlassEffectContainer(spacing: 4) {
-            HStack(spacing: 0) {
-                item(.chat, symbol: "bubble.left", label: "Chat", action: onOpenChat)
-                item(.today, symbol: "sun.max", label: "Today", action: onOpenToday)
-                item(.goals, symbol: "scope", label: "Goals") { onOpenDestination(.goals) }
-                item(.feed, symbol: "rectangle.stack", label: "Feed") { onOpenDestination(.feed) }
-                item(.library, symbol: "photo.on.rectangle", label: "Library") {
-                    onOpenDestination(.library)
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    item(.chat, symbol: "bubble.left", label: "Chat")
+                    item(.today, symbol: "sun.max", label: "Today")
+                    item(.goals, symbol: "scope", label: "Goals")
+                    item(.feed, symbol: "rectangle.stack", label: "Feed")
+                    item(.library, symbol: "photo.on.rectangle", label: "Library")
                 }
+                .padding(6)
+                .contentShape(.rect)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 8)
+                        .onChanged { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            let section = section(at: value.location.x, width: geometry.size.width)
+                            if selected != section {
+                                withAnimation(.snappy(duration: 0.18)) { selected = section }
+                            }
+                        }
+                        .onEnded { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            activate(section(at: value.location.x, width: geometry.size.width))
+                        }
+                )
             }
-            .padding(6)
+            .frame(height: 60)
         }
         .glassEffect(.regular, in: .capsule)
         .padding(.horizontal, 16)
@@ -38,29 +54,44 @@ struct ExperimentalHomeMenu: View {
     }
 
     private func item(
-        _ section: Section, symbol: String, label: LocalizedStringKey,
-        action: @escaping () -> Void
+        _ section: Section, symbol: String, label: LocalizedStringKey
     ) -> some View {
         Button {
-            withAnimation(.snappy(duration: 0.22)) { selected = section }
-            action()
+            activate(section)
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 19, weight: .medium))
+                .font(.system(size: 19, weight: selected == section ? .semibold : .medium))
+                .foregroundStyle(selected == section ? Color.white : Color.primary)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .contentShape(.rect)
                 .background {
                     if selected == section {
                         Color.clear
-                            .glassEffect(.regular, in: .capsule)
+                            .glassEffect(.regular.tint(.black.opacity(0.72)), in: .capsule)
                             .glassEffectID("home-selection", in: glassSelection)
                     }
                 }
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.primary)
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected == section ? .isSelected : [])
         .accessibilityIdentifier("home.menu.\(section.rawValue)")
+    }
+
+    private func section(at x: CGFloat, width: CGFloat) -> Section {
+        let itemWidth = max((width - 12) / CGFloat(Section.allCases.count), 1)
+        let index = min(max(Int(floor((x - 6) / itemWidth)), 0), Section.allCases.count - 1)
+        return Section.allCases[index]
+    }
+
+    private func activate(_ section: Section) {
+        withAnimation(.snappy(duration: 0.18)) { selected = section }
+        switch section {
+        case .chat: onOpenChat()
+        case .today: onOpenToday()
+        case .goals: onOpenDestination(.goals)
+        case .feed: onOpenDestination(.feed)
+        case .library: onOpenDestination(.library)
+        }
     }
 }
