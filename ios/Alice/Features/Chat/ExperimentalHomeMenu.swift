@@ -8,7 +8,7 @@ enum HomeInterface: String {
 }
 
 struct ExperimentalHomeMenu: View {
-    private enum Section: String, CaseIterable {
+    enum Section: String, CaseIterable {
         case chat, today, goals, feed, library
 
         var symbol: String {
@@ -32,20 +32,14 @@ struct ExperimentalHomeMenu: View {
         }
     }
 
-    @State private var selected: Section = .chat
-    let onOpenToday: () -> Void
-    let onOpenDestination: (AliceDestination.Target) -> Void
+    @Binding var selected: Section
+    let onSelect: (Section) -> Void
 
     var body: some View {
         GeometryReader { geometry in
             NativeSegmentedPicker(selected: selected) { section in
                 selected = section
-                switch section {
-                case .chat, .today: onOpenToday()
-                case .goals: onOpenDestination(.goals)
-                case .feed: onOpenDestination(.feed)
-                case .library: onOpenDestination(.library)
-                }
+                onSelect(section)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .glassEffect(.regular, in: .capsule)
@@ -54,7 +48,6 @@ struct ExperimentalHomeMenu: View {
         .padding(.horizontal, 18)
         .padding(.top, 2)
         .padding(.bottom, 6)
-        .onAppear { selected = .chat }
     }
 
     /// The system control supplies the Liquid Glass thumb and its drag behavior.

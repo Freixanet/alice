@@ -107,3 +107,19 @@ El chat y las funciones de administración pueden usar servicios diferentes de
 Hermes. Conectar solo el servicio de chat no garantiza acceso al panel, sus
 agentes o su configuración. Alice muestra esa distinción después de conectar.
 Una función no comprobada no equivale a una función compatible.
+
+## Experimental Feed on iPhone
+
+Enable Developer Mode, hold your avatar in the sidebar, and choose
+Interface → Experimental. The five-icon menu stays available in Chat, Today,
+Goals, Feed and Library; Chat currently opens Today. It hides with the keyboard.
+Choose Current from the same avatar menu to restore the default interface.
+
+Feed shows headlines and excerpts from EL PAÍS, BBC News and NASA with links to
+the original articles. Use the sliders button to choose topics and sources.
+The heart requests more similar posts, the bookmark saves a post, and the
+overflow menu offers less similar content or hides a source. Personalization
+learns locally; Recent sorts by publication date and Saved keeps bookmarks.
+Pull to refresh. Reset learning in preferences keeps saved articles.
+Some articles require a publisher subscription; headlines retain their original
+language. The first catalogue is limited to the listed publishers.

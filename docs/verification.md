@@ -39,8 +39,16 @@ Today, Goals, Feed and Library directly below the composer. It retains the
 system selection indicator and applies Liquid Glass at the same bounds. Both
 controls keep rounded corners. Chat temporarily opens the same Today
 conversation as Today.
-Feed combines the agent action log with routine runs and alerts that Alice
-actually observed. Both presentations share the same conversations and drafts.
+The same selector remains at the bottom of Goals, Feed and Library. Switching
+sections preserves the Today draft. Both presentations share conversations.
+Feed is a source-linked news timeline with For You, Latest and Saved views.
+Its initial RSS catalogue is EL PAÍS, BBC News and NASA. Ranking combines recency,
+chosen topics, local feedback and source/topic diversity. Saves and explicit
+feedback outweigh opens; signals decay. It does not measure reading time.
+Interests and sources can be changed, and learning reset without deleting saves.
+Cached posts survive source failures. This is a bounded catalogue, not a crawl
+of the whole internet or a guarantee of factual accuracy. Preferences stay on
+the device; publishers receive feed/image requests; articles may have paywalls.
 Agent chats keep their existing layout. The menu hides while the on-screen
 keyboard is open and returns when it closes.
 
@@ -157,3 +165,15 @@ allowed; never point this harness at the person's iPhone or real Hermes. The CI
 runner has only synthetic fixtures and no Hermes credentials. For physical-device
 hitches, use the existing Developer performance meter and diagnostic report during
 normal use; do not fabricate device results from simulator measurements.
+
+### Feed parser and local ranking (host-only)
+
+```bash
+swiftc -swift-version 6 -parse-as-library -target x86_64-apple-macosx14.0 \
+  ios/Alice/Features/Feed/NewsFeed.swift scripts/check-news-feed.swift \
+  -o /tmp/alice-feed-check && /tmp/alice-feed-check
+```
+
+Checks RSS parsing, dates, unsafe links, malformed feeds, interest/feedback
+ranking, source exclusion, deduplication, persistence and unreadable archive
+preservation with isolated defaults. Does not verify the rendered iPhone UI.

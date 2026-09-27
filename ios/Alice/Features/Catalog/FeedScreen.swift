@@ -1,170 +1,184 @@
 import SwiftUI
 
-/// A chronological overview of updates Alice actually observed. Activity owns
-/// the detailed record and its response controls; this page brings its news
-/// together with the agent action log without inventing missing history.
+/// Source-linked internet posts. Agent activity remains in Activity.
 struct FeedScreen: View {
-    @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
-    let onOpenedChat: () -> Void
+    @Environment(\.openURL) private var openURL
+    var onOpenedChat: () -> Void = {}
+    @State private var feed = NewsFeedStore.shared
+    @State private var mode = 0
+    @State private var showPreferences = false
+    @State private var resetConfirmation = false
+    @State private var explanation: NewsPost?
 
-    @State private var opener = AgentActionOpener()
-    @State private var openedRoutine: JobRow?
-    @State private var routineNotice: String?
-
-    private enum Entry: Identifiable {
-        case action(AgentAction)
-        case event(AliceEvent)
-
-        var id: String {
-            switch self {
-            case .action(let value): "action:\(value.id)"
-            case .event(let value): "event:\(value.id)"
-            }
+    private var posts: [NewsPost] {
+        switch mode {
+        case 1: feed.timeline.sorted { ($0.published ?? .distantPast) > ($1.published ?? .distantPast) }
+        case 2: feed.saved
+        default: feed.timeline
         }
-        var at: Date {
-            switch self {
-            case .action(let value): value.at
-            case .event(let value): value.occurred
-            }
-        }
-    }
-
-    private var entries: [Entry] {
-        let visible = ActivityPresentation.partition(attention: store.attention, activity: store.activity)
-        return (store.allAgentActions.map(Entry.action)
-                + (visible.needsAttention + visible.history).map(Entry.event))
-            .sorted { $0.at > $1.at }
     }
 
     var body: some View {
-        List {
-            if entries.isEmpty {
-                ContentUnavailableView(
-                    "Nothing new yet", systemImage: "rectangle.stack",
-                    description: Text("Agent actions, routine runs and alerts Alice sees will appear here.")
-                )
-                .listRowBackground(Color.clear)
-            } else {
-                ForEach(entries) { entry in
-                    switch entry {
-                    case .action(let action):
-                        Button {
-                            opener.open(action, store: store, onOpenedChat: onOpenedChat)
-                        } label: {
-                            AgentActionRow(action: action)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("feed.action.\(action.id)")
-                    case .event(let event):
-                        eventRow(event)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                Picker("Orden del Feed", selection: $mode) {
+                    Text("Para ti").tag(0)
+                    Text("Recientes").tag(1)
+                    Text("Guardados").tag(2)
+                }
+                .pickerStyle(.segmented)
+                .padding(16)
+                if feed.archive.interests.isEmpty {
+                    Button { showPreferences = true } label: {
+                        Label("Elige tus intereses para empezar", systemImage: "slider.horizontal.3")
+                            .font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .padding(.horizontal, 20).padding(.bottom, 16)
+                }
+                if feed.storageFailure {
+                    Text("No se pudieron leer tus preferencias guardadas. Se han conservado sin sobrescribirlas.")
+                        .font(.footnote).foregroundStyle(.secondary).padding()
+                }
+                if let failure = feed.failure {
+                    VStack(spacing: 8) {
+                        Text(failure).font(.footnote).foregroundStyle(.secondary)
+                        Button("Reintentar") { Task { await feed.refresh(force: true) } }
+                    }.padding()
+                }
+                if posts.isEmpty {
+                    if feed.loading {
+                        ProgressView("Buscando publicaciones…").padding(40)
+                    } else {
+                        ContentUnavailableView(
+                            mode == 2 ? "Aún no has guardado publicaciones" : "No hay publicaciones disponibles",
+                            systemImage: mode == 2 ? "bookmark" : "newspaper",
+                            description: Text(mode == 2 ? "Guarda lo que quieras leer más tarde." : "Elige tus fuentes o desliza hacia abajo para actualizar.")
+                        )
+                    }
+                }
+                ForEach(posts) { post in
+                    postRow(post)
+                    Divider().padding(.leading, 68)
+                }
+                if !posts.isEmpty {
+                    Text("Estás al día con las publicaciones disponibles.")
+                        .font(.footnote).foregroundStyle(.secondary).padding(24)
                 }
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .navigationTitle("Feed")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await refresh() }
-        .task {
-            store.markActivitySeen()
-            await refresh()
-            store.markActivitySeen()
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showPreferences = true } label: { Image(systemName: "slider.horizontal.3") }
+                    .accessibilityLabel("Intereses y fuentes")
+            }
         }
-        .modifier(AgentActionOpener.Presenting(opener: opener, onOpenedChat: onOpenedChat))
-        .sheet(item: $openedRoutine) { routine in
-            RoutineDetailSheet(routine: routine) {}
-                .preferredColorScheme(store.theme.colorScheme)
-        }
-        .alert("Couldn’t open routine", isPresented: Binding(
-            get: { routineNotice != nil }, set: { if !$0 { routineNotice = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
+        .refreshable { await feed.refresh(force: true) }
+        .task { await feed.refresh() }
+        .sheet(isPresented: $showPreferences) { preferences }
+        .alert("Por qué aparece", isPresented: Binding(get: { explanation != nil }, set: { if !$0 { explanation = nil } })) {
+            Button("Entendido", role: .cancel) { explanation = nil }
         } message: {
-            Text(routineNotice ?? "")
-        }
-    }
-
-    @ViewBuilder
-    private func eventRow(_ event: AliceEvent) -> some View {
-        if event.opensAChat || event.reference.routineKey != nil {
-            Button { open(event) } label: { eventContent(event) }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("feed.event.\(event.id)")
-        } else {
-            NavigationLink { ActivityScreen(onOpenedChat: onOpenedChat) } label: {
-                eventContent(event)
+            if let post = explanation {
+                Text("Publicado por \(post.source), sobre \(post.topic). El orden combina actualidad, tus temas elegidos y tus acciones de abrir, guardar, más y menos como esto. También introduce variedad. Puedes cambiarlo en Intereses y fuentes.")
             }
-            .accessibilityIdentifier("feed.event.\(event.id)")
         }
     }
 
-    private func eventContent(_ event: AliceEvent) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: symbol(for: event))
-                .font(.body)
-                .foregroundStyle(event.severity == .failure ? .red : .primary)
-                .frame(width: 30)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(event.title)
-                    .font(.subheadline.weight(.medium))
-                Text(event.summary)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                Text(event.occurred, style: .relative)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 4)
-        .contentShape(.rect)
-    }
-
-    private func symbol(for event: AliceEvent) -> String {
-        switch event.kind {
-        case .finished, .automationSucceeded: "checkmark.circle"
-        case .needsInput: "hand.raised"
-        case .automationFailed, .attention: "exclamationmark.triangle"
-        case .recovered: "arrow.clockwise.circle"
-        }
-    }
-
-    private func open(_ event: AliceEvent) {
-        if let key = event.reference.routineKey, let slash = key.lastIndex(of: "/") {
-            let profile = String(key[..<slash])
-            let id = String(key[key.index(after: slash)...])
-            Task {
-                do {
-                    if let routine = try await store.routines(for: profile).first(where: { $0.id == id }) {
-                        openedRoutine = routine
-                    } else {
-                        routineNotice = String(localized: "That routine no longer exists.")
+    private func postRow(_ post: NewsPost) -> some View {
+        let feedback = feed.archive.feedback[post.id]
+        return HStack(alignment: .top, spacing: 12) {
+            Text(String(post.source.prefix(1)))
+                .font(.headline).frame(width: 36, height: 36)
+                .background(.quaternary, in: .circle).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(post.source).font(.subheadline.weight(.semibold))
+                    if let published = post.published {
+                        Text(published, style: .relative).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
-                } catch {
-                    routineNotice = PlainWords.describe(error, doing: "open the routine")
+                    Spacer(minLength: 0)
+                    Menu {
+                        Button("Por qué aparece", systemImage: "info.circle") { explanation = post }
+                        Button("Menos como esto", systemImage: "hand.thumbsdown") { feed.respond(post, vote: -1) }
+                        Button("Ocultar esta fuente", systemImage: "eye.slash") { feed.source(post.sourceID, enabled: false) }
+                    } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
+                    .accessibilityLabel("Opciones de la publicación")
+                }
+                Button {
+                    feed.respond(post, opened: true)
+                    openURL(post.url)
+                } label: {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(post.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                        if !post.excerpt.isEmpty {
+                            Text(post.excerpt).font(.subheadline).foregroundStyle(.secondary).lineLimit(4)
+                        }
+                        if let image = post.image {
+                            AsyncImage(url: image) { phase in
+                                if let image = phase.image {
+                                    image.resizable().scaledToFill().frame(height: 180).clipped()
+                                        .clipShape(.rect(cornerRadius: 14))
+                                }
+                            }.accessibilityHidden(true)
+                        }
+                        Label(post.url.host ?? post.source, systemImage: "arrow.up.right")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(.rect)
+                }.buttonStyle(.plain)
+                HStack(spacing: 24) {
+                    Button { feed.respond(post, vote: 1) } label: {
+                        Image(systemName: feedback?.vote == 1 ? "heart.fill" : "heart")
+                            .foregroundStyle(feedback?.vote == 1 ? Color.pink : Color.secondary)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }.accessibilityLabel(feedback?.vote == 1 ? "Quitar más como esto" : "Más como esto")
+                    Button { feed.respond(post, save: feedback?.saved != true) } label: {
+                        Image(systemName: feedback?.saved == true ? "bookmark.fill" : "bookmark")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }.accessibilityLabel(feedback?.saved == true ? "Quitar de guardados" : "Guardar publicación")
+                    ShareLink(item: post.url) {
+                        Image(systemName: "square.and.arrow.up").frame(minWidth: 44, minHeight: 44)
+                    }.accessibilityLabel("Compartir enlace")
+                    Spacer(minLength: 0)
+                }.buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+        }.padding(.horizontal, 16).padding(.vertical, 14)
+    }
+
+    private var preferences: some View {
+        NavigationStack {
+            Form {
+                Section("Tus temas") {
+                    ForEach(NewsSource.topics, id: \.self) { topic in
+                        Toggle(topic, isOn: Binding(get: { feed.archive.interests.contains(topic) }, set: { feed.interest(topic, enabled: $0) }))
+                    }
+                }
+                Section("Fuentes") {
+                    ForEach(NewsSource.catalogue) { source in
+                        Toggle("\(source.name) · \(source.topic)", isOn: Binding(
+                            get: { !feed.archive.mutedSources.contains(source.id) },
+                            set: { feed.source(source.id, enabled: $0) }
+                        ))
+                    }
+                }
+                Section {
+                    Text("Tus preferencias se guardan en este iPhone. Guardar y dar «más como esto» pesa más que abrir una noticia. No usamos el tiempo de pantalla. Las fuentes reciben las solicitudes de sus noticias e imágenes. Los artículos se abren en su web y pueden requerir suscripción.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("Reiniciar aprendizaje", role: .destructive) { resetConfirmation = true }
                 }
             }
-            return
+            .disabled(feed.storageFailure)
+            .navigationTitle("Intereses y fuentes")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Listo") {
+                showPreferences = false
+                Task { await feed.refresh(force: true) }
+            } } }
+            .confirmationDialog("¿Reiniciar los intereses aprendidos? Tus publicaciones guardadas se conservan.", isPresented: $resetConfirmation) {
+                Button("Reiniciar aprendizaje", role: .destructive) { feed.resetLearning() }
+            }
         }
-        var info: [AnyHashable: Any] = ["event": event.id]
-        info["installation"] = event.reference.installation
-        info["conversation"] = event.reference.conversationID
-        info["profile"] = event.reference.profile
-        info["session"] = event.reference.sessionID
-        info["request"] = event.reference.requestID
-        guard let route = Notifier.Route(userInfo: info)
-            ?? Notifier.Route(userInfo: ["event": event.id]), store.open(route) else { return }
-        onOpenedChat()
-    }
-
-    private func refresh() async {
-        async let actions: Void = store.refreshAgentActions()
-        await store.syncEvents()
-        await actions
     }
 }

@@ -32,6 +32,7 @@ private struct ChatScreenContent: View, Equatable {
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
     @State private var showingAlice = false
+    @State private var experimentalSection: ExperimentalHomeMenu.Section = .chat
 
     /// Alice's portrait and name, which open her settings.
     private var aliceHeader: some View {
@@ -116,7 +117,61 @@ private struct ChatScreenContent: View, Equatable {
         // and rebuilt all of it the moment one slid away. What made it worth
         // tearing down — every change to any chat redrew it — is gone: it
         // reads only the chat on screen (`AppStore.shownConversation`).
-        liveChat
+        ZStack {
+            liveChat
+                .opacity(experimentalDestinationVisible ? 0 : 1)
+                .allowsHitTesting(!experimentalDestinationVisible)
+                .accessibilityHidden(experimentalDestinationVisible)
+            if experimentalDestinationVisible {
+                NavigationStack {
+                    Group {
+                        switch experimentalSection {
+                        case .goals: GoalsScreen(onClose: { selectExperimental(.chat) })
+                        case .feed: FeedScreen()
+                        case .library: LibraryView()
+                        case .chat, .today: EmptyView()
+                        }
+                    }
+                    .toolbar {
+                        if experimentalSection != .goals {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button { selectExperimental(.chat) } label: { Image(systemName: "chevron.left") }
+                                    .accessibilityLabel("Back")
+                            }
+                        }
+                    }
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if !keyboardShown { experimentalMenu }
+                }
+                .background(Palette.background(scheme))
+            }
+        }
+        .onChange(of: experimentalEnabled, initial: true) { _, enabled in
+            if enabled, bot == nil { selectExperimental(.chat) }
+        }
+        .onChange(of: store.activeID) { _, _ in
+            if experimentalEnabled, bot == nil { selectExperimental(.chat) }
+        }
+    }
+
+    private var experimentalEnabled: Bool {
+        store.developerMode && homeInterface == .experimental && (bot == nil || isToday)
+    }
+
+    private var experimentalDestinationVisible: Bool {
+        experimentalEnabled && experimentalSection != .chat && experimentalSection != .today
+    }
+
+    private var experimentalMenu: some View {
+        ExperimentalHomeMenu(selected: $experimentalSection, onSelect: selectExperimental)
+    }
+
+    private func selectExperimental(_ section: ExperimentalHomeMenu.Section) {
+        composerFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        experimentalSection = section
+        if section == .chat || section == .today { store.openToday() }
     }
 
     private var liveChat: some View {
@@ -267,17 +322,11 @@ private struct ChatScreenContent: View, Equatable {
 
     @ViewBuilder
     private var composerArea: some View {
-        if store.developerMode, homeInterface == .experimental, bot == nil {
+        if experimentalEnabled {
             VStack(spacing: 0) {
                 composer
                 if !keyboardShown {
-                    ExperimentalHomeMenu(onOpenToday: {
-                        composerFocused = false
-                        store.openToday()
-                    }, onOpenDestination: { destination in
-                        composerFocused = false
-                        store.requestedDestination = destination
-                    })
+                    experimentalMenu
                 }
             }
         } else {
@@ -301,7 +350,7 @@ private struct ChatScreenContent: View, Equatable {
 
     private var topControls: some View {
         HStack(alignment: .top, spacing: 0) {
-            Button(action: (bot == nil || isAgentTask) ? onOpenDrawer : (isToday ? { store.goHome() } : onBack)) {
+            Button(action: (bot == nil || isAgentTask || (experimentalEnabled && isToday)) ? onOpenDrawer : (isToday ? { store.goHome() } : onBack)) {
                 // Two bars, not three, matched to the `plus` across from it.
                 // Both are math symbols, so the pairing is a real one — but
                 // not at the same settings: `equal` at 18pt medium matches
