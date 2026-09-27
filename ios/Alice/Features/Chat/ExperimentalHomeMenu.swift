@@ -59,8 +59,7 @@ struct ExperimentalHomeMenu: View {
                 }
             }
         )
-        .padding(6)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26))
         .padding(.horizontal, 18)
         .padding(.top, 5)
         .padding(.bottom, 6)
