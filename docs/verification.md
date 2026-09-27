@@ -34,13 +34,15 @@ Interface → Experimental. Interface → Current restores the default presentat
 The same selection is available in Settings → General → Developer. The choice
 persists locally, but the experiment is inactive whenever developer mode is off.
 
-The experimental Home adds native Liquid Glass shortcuts for Chats, Agents,
-Notes and Agenda above the existing composer. Both presentations share the same
+The experimental Home adds an icon-only Liquid Glass selector for Chat, Today,
+Goals, Feed and Library above the existing composer. Feed combines the agent
+action log with routine runs and alerts that Alice actually observed. Both
+presentations share the same
 conversations and drafts. Agent chats keep their existing layout. Accessibility
 text sizes use a horizontally scrollable menu.
 
 `ExperimentalHomeMenuTests` covers avatar switching, persistence, draft retention,
-the four routes, populated/empty Home with the keyboard, the developer-mode gate,
+the five routes, populated/empty Home with the keyboard, the developer-mode gate,
 and large text. Its screenshots are retained in the iOS CI result bundle. These
 fixture tests do not exercise a person's live Hermes.
 

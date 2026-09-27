@@ -269,9 +269,12 @@ private struct ChatScreenContent: View, Equatable {
     private var composerArea: some View {
         if store.developerMode, homeInterface == .experimental, bot == nil {
             VStack(spacing: 0) {
-                ExperimentalHomeMenu(onOpenChats: {
+                ExperimentalHomeMenu(onOpenChat: {
                     composerFocused = false
                     onOpenDrawer()
+                }, onOpenToday: {
+                    composerFocused = false
+                    store.openToday()
                 }, onOpenDestination: { destination in
                     composerFocused = false
                     store.requestedDestination = destination

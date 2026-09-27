@@ -13980,6 +13980,46 @@
           }
         }
       }
+    },
+    "Feed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Novedades"
+          }
+        }
+      }
+    },
+    "Library": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Biblioteca"
+          }
+        }
+      }
+    },
+    "Nothing new yet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía no hay novedades"
+          }
+        }
+      }
+    },
+    "Agent actions, routine runs and alerts Alice sees will appear here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aquí aparecerán las acciones de los agentes, las ejecuciones de rutinas y los avisos que Alice detecte."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
