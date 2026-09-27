@@ -37,14 +37,17 @@ struct ExperimentalHomeMenu: View {
     let onOpenDestination: (AliceDestination.Target) -> Void
 
     var body: some View {
-        NativeSegmentedPicker(selected: selected) { section in
-            selected = section
-            switch section {
-            case .chat, .today: onOpenToday()
-            case .goals: onOpenDestination(.goals)
-            case .feed: onOpenDestination(.feed)
-            case .library: onOpenDestination(.library)
+        GeometryReader { geometry in
+            NativeSegmentedPicker(selected: selected) { section in
+                selected = section
+                switch section {
+                case .chat, .today: onOpenToday()
+                case .goals: onOpenDestination(.goals)
+                case .feed: onOpenDestination(.feed)
+                case .library: onOpenDestination(.library)
+                }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(height: 56)
         .padding(.horizontal, 18)
@@ -78,6 +81,15 @@ struct ExperimentalHomeMenu: View {
             context.coordinator.onSelect = onSelect
             let index = Section.allCases.firstIndex(of: selected) ?? 0
             if control.selectedSegmentIndex != index { control.selectedSegmentIndex = index }
+        }
+
+        func sizeThatFits(
+            _ proposal: ProposedViewSize,
+            uiView: UISegmentedControl,
+            context: Context
+        ) -> CGSize? {
+            guard let width = proposal.width else { return nil }
+            return CGSize(width: width, height: proposal.height ?? 56)
         }
 
         final class Coordinator {

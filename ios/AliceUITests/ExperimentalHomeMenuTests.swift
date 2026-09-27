@@ -39,6 +39,9 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental", "-alice.theme", "light"]
         app.launch()
         XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20))
+        let picker = app.segmentedControls["home.experimentalMenu"]
+        XCTAssertGreaterThanOrEqual(picker.frame.width, app.windows.firstMatch.frame.width - 40)
+        XCTAssertGreaterThanOrEqual(picker.frame.height, 50)
         let field = app.descendants(matching: .any)["composer.text"]
         field.tap()
         field.typeText(" Menu route draft")
