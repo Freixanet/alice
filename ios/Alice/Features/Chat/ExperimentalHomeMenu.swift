@@ -48,11 +48,7 @@ struct ExperimentalHomeMenu: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
-            .background {
-                Color.clear
-                    .glassEffect(.regular, in: .rect(cornerRadius: 26))
-                    .allowsHitTesting(false)
-            }
+            .glassEffect(.regular, in: .rect(cornerRadius: 26))
         }
         .frame(height: 56)
         .padding(.horizontal, 18)
@@ -77,12 +73,6 @@ struct ExperimentalHomeMenu: View {
                 }
             }
             let control = UISegmentedControl(frame: .zero, actions: actions)
-            // The SwiftUI glass is the bar's only surface; keep the native
-            // segment selection and gestures without UIKit's opaque backing.
-            let transparent = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1))
-                .image { _ in }
-            control.setBackgroundImage(transparent, for: .normal, barMetrics: .default)
-            control.backgroundColor = .clear
             control.selectedSegmentIndex = 0
             control.accessibilityIdentifier = "home.experimentalMenu"
             return control
