@@ -34,9 +34,10 @@ Interface → Experimental. Interface → Current restores the default presentat
 The same selection is available in Settings → General → Developer. The choice
 persists locally, but the experiment is inactive whenever developer mode is off.
 
-The experimental Home adds a full-width native Liquid Glass segmented control
-for Chat, Today, Goals, Feed and Library directly below the composer. Both
-controls keep rounded corners. Chat temporarily opens the same Today
+The experimental Home adds a full-width Liquid Glass bar with a native
+segmented selector for Chat, Today, Goals, Feed and Library directly below the
+composer. Its native backing is transparent so the bar has one glass surface;
+both controls keep rounded corners. Chat temporarily opens the same Today
 conversation as Today.
 Feed combines the agent action log with routine runs and alerts that Alice
 actually observed. Both presentations share the same conversations and drafts.
