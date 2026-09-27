@@ -47,7 +47,7 @@ final class ExperimentalHomeMenuTests: XCTestCase {
             let button = app.buttons["home.menu.\(name)"]
             XCTAssertTrue(button.isHittable)
             XCTAssertGreaterThanOrEqual(button.frame.height, 44)
-            XCTAssertLessThanOrEqual(button.frame.maxY, field.frame.minY)
+            XCTAssertGreaterThanOrEqual(button.frame.minY, field.frame.maxY)
         }
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-home-keyboard")
