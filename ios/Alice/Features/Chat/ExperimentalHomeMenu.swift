@@ -31,7 +31,7 @@ struct ExperimentalHomeMenu: View {
         }
     }
 
-    @State private var selected: Section = .chat
+    @State private var selected: Section?
     let onOpenToday: () -> Void
     let onOpenDestination: (AliceDestination.Target) -> Void
 
@@ -41,7 +41,7 @@ struct ExperimentalHomeMenu: View {
                 Label(section.label, systemImage: section.symbol)
                     .labelStyle(.iconOnly)
                     .accessibilityIdentifier("home.menu.\(section.rawValue)")
-                    .tag(section)
+                    .tag(section as Section?)
             }
         }
         .pickerStyle(.segmented)
@@ -52,13 +52,16 @@ struct ExperimentalHomeMenu: View {
         .padding(.bottom, 8)
         .accessibilityIdentifier("home.experimentalMenu")
         .onChange(of: selected) { _, section in
+            guard let section else { return }
             switch section {
-            case .chat: break // Home is already the chat surface.
-            case .today: onOpenToday()
+            case .chat, .today: onOpenToday()
             case .goals: onOpenDestination(.goals)
             case .feed: onOpenDestination(.feed)
             case .library: onOpenDestination(.library)
             }
+            // This picker launches destinations. Clear its selection so the same
+            // icon can be chosen again after returning to Home.
+            selected = nil
         }
     }
 }

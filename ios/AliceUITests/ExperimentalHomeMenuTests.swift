@@ -52,6 +52,11 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-home-keyboard")
 
+        app.buttons["home.menu.chat"].tap()
+        XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
+        app.buttons["chat.leading"].tap()
+        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 5))
+
         app.buttons["home.menu.today"].tap()
         XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
         app.buttons["chat.leading"].tap()
