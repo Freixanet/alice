@@ -287,7 +287,8 @@ private struct ChatScreenContent: View, Equatable {
         Composer(
             focused: $composerFocused,
             placeholder: placeholder,
-            keyboardShown: keyboardShown
+            keyboardShown: keyboardShown,
+            joinsHomeMenu: store.developerMode && homeInterface == .experimental && bot == nil
         )
     }
 

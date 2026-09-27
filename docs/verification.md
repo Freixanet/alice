@@ -36,7 +36,8 @@ persists locally, but the experiment is inactive whenever developer mode is off.
 
 The experimental Home adds an icon-only Liquid Glass selector for Chat, Today,
 Goals, Feed and Library directly below the composer in experimental Home. The
-menu control itself uses Liquid Glass. Chat
+menu control itself uses Liquid Glass. The two facing edges have 2-point corner
+radii in experimental Home. Chat
 temporarily opens the same Today conversation as Today. Feed combines the agent
 action log with routine runs and alerts that Alice actually observed. Both
 presentations share the same conversations and drafts. Agent chats keep their

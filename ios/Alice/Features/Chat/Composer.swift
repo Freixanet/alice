@@ -17,6 +17,7 @@ struct Composer: View {
     var focused: FocusState<Bool>.Binding
     var placeholder: String = "Talk to Alice…"
     var keyboardShown = false
+    var joinsHomeMenu = false
     @Namespace private var glass
     @State private var showModels = false
     @State private var dictation = Dictation()
@@ -43,6 +44,15 @@ struct Composer: View {
     /// the model chip line up instead of each taking the size its own padding
     /// happens to produce.
     private let controlHeight: CGFloat = 34
+
+    private var glassShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 26,
+            bottomLeadingRadius: joinsHomeMenu ? 2 : 26,
+            bottomTrailingRadius: joinsHomeMenu ? 2 : 26,
+            topTrailingRadius: 26
+        )
+    }
 
     var body: some View {
         // The list grows upward out of a composer pinned to the bottom, so
@@ -492,13 +502,13 @@ struct Composer: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26))
+            .glassEffect(.regular.interactive(), in: glassShape)
             .glassEffectID("composer", in: glass)
             // The composer keeps its own presses. Glass is not a hit target,
             // so a press on its padding — or on Send while it is disabled —
             // fell through to the page behind, whose tap puts the keyboard
             // away. Its controls still take precedence over this.
-            .contentShape(.rect(cornerRadius: 26))
+            .contentShape(glassShape)
             .onTapGesture {}
         }
     }

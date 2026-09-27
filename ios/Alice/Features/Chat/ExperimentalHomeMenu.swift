@@ -59,7 +59,15 @@ struct ExperimentalHomeMenu: View {
                 }
             }
         )
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26))
+        .glassEffect(
+            .regular.interactive(),
+            in: UnevenRoundedRectangle(
+                topLeadingRadius: 2,
+                bottomLeadingRadius: 26,
+                bottomTrailingRadius: 26,
+                topTrailingRadius: 2
+            )
+        )
         .padding(.horizontal, 18)
         .padding(.top, 5)
         .padding(.bottom, 6)
