@@ -59,9 +59,8 @@ struct ExperimentalHomeMenu: View {
                 }
             }
         )
-        .glassEffect(
-            .regular.interactive(),
-            in: UnevenRoundedRectangle(
+        .clipShape(
+            UnevenRoundedRectangle(
                 topLeadingRadius: 2,
                 bottomLeadingRadius: 26,
                 bottomTrailingRadius: 26,
@@ -69,7 +68,7 @@ struct ExperimentalHomeMenu: View {
             )
         )
         .padding(.horizontal, 18)
-        .padding(.top, 5)
+        .padding(.top, 2)
         .padding(.bottom, 6)
         .accessibilityIdentifier("home.experimentalMenu")
         .onAppear { selected = .chat }
