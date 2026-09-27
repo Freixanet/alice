@@ -31,7 +31,8 @@ struct ExperimentalHomeMenu: View {
         }
     }
 
-    @State private var selected: Section?
+    @State private var selected: Section = .chat
+    @State private var pickerWidth: CGFloat = 0
     let onOpenToday: () -> Void
     let onOpenDestination: (AliceDestination.Target) -> Void
 
@@ -41,26 +42,38 @@ struct ExperimentalHomeMenu: View {
                 Label(section.label, systemImage: section.symbol)
                     .labelStyle(.iconOnly)
                     .accessibilityIdentifier("home.menu.\(section.rawValue)")
-                    .tag(section as Section?)
+                    .tag(section)
             }
         }
         .pickerStyle(.segmented)
         .controlSize(.large)
         .labelsHidden()
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pickerWidth = $0 }
+        .simultaneousGesture(
+            SpatialTapGesture().onEnded { value in
+                // A segmented Picker does not emit a selection change when its
+                // already-selected segment is tapped. Chat still opens Today.
+                if selected == .chat, pickerWidth > 0,
+                   value.location.x >= 0, value.location.x < pickerWidth / 5 {
+                    onOpenToday()
+                }
+            }
+        )
+        .padding(6)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
         .padding(.horizontal, 18)
+        .padding(.top, 5)
         .padding(.bottom, 6)
         .accessibilityIdentifier("home.experimentalMenu")
+        .onAppear { selected = .chat }
         .onChange(of: selected) { _, section in
-            guard let section else { return }
             switch section {
-            case .chat, .today: onOpenToday()
+            case .chat: break
+            case .today: onOpenToday()
             case .goals: onOpenDestination(.goals)
             case .feed: onOpenDestination(.feed)
             case .library: onOpenDestination(.library)
             }
-            // This picker launches destinations. Clear its selection so the same
-            // icon can be chosen again after returning to Home.
-            selected = nil
         }
     }
 }

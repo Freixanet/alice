@@ -35,7 +35,8 @@ The same selection is available in Settings → General → Developer. The choic
 persists locally, but the experiment is inactive whenever developer mode is off.
 
 The experimental Home adds an icon-only Liquid Glass selector for Chat, Today,
-Goals, Feed and Library directly below the composer in experimental Home. Chat
+Goals, Feed and Library in its own Liquid Glass bar directly below the composer
+in experimental Home. Chat
 temporarily opens the same Today conversation as Today. Feed combines the agent
 action log with routine runs and alerts that Alice actually observed. Both
 presentations share the same conversations and drafts. Agent chats keep their
