@@ -17,6 +17,7 @@ struct Composer: View {
     var focused: FocusState<Bool>.Binding
     var placeholder: String = "Talk to Alice…"
     var keyboardShown = false
+    var topMenu: ExperimentalHomeMenu? = nil
     @Namespace private var glass
     @State private var showModels = false
     @State private var dictation = Dictation()
@@ -453,7 +454,11 @@ struct Composer: View {
         @Bindable var store = store
 
         return GlassEffectContainer(spacing: 14) {
-            VStack(spacing: 18) {
+            VStack(spacing: topMenu == nil ? 18 : 12) {
+                if let topMenu {
+                    topMenu
+                }
+
                 if !store.draftAttachments.isEmpty {
                     AttachmentChips(attachments: store.draftAttachments) { attachment in
                         store.draftAttachments.removeAll { $0.id == attachment.id }

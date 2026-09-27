@@ -47,9 +47,6 @@ struct ExperimentalHomeMenu: View {
         .pickerStyle(.segmented)
         .controlSize(.large)
         .labelsHidden()
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
         .accessibilityIdentifier("home.experimentalMenu")
         .onChange(of: selected) { _, section in
             guard let section else { return }

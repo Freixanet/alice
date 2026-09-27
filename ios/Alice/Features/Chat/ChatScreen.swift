@@ -265,30 +265,26 @@ private struct ChatScreenContent: View, Equatable {
         }
     }
 
-    @ViewBuilder
     private var composerArea: some View {
-        if store.developerMode, homeInterface == .experimental, bot == nil {
-            VStack(spacing: 0) {
-                ExperimentalHomeMenu(onOpenToday: {
-                    composerFocused = false
-                    store.openToday()
-                }, onOpenDestination: { destination in
-                    composerFocused = false
-                    store.requestedDestination = destination
-                })
-                composer
-            }
-        } else {
-            composer
-        }
-    }
-
-    private var composer: some View {
         Composer(
             focused: $composerFocused,
             placeholder: placeholder,
-            keyboardShown: keyboardShown
+            keyboardShown: keyboardShown,
+            topMenu: experimentalHomeMenu
         )
+    }
+
+    private var experimentalHomeMenu: ExperimentalHomeMenu? {
+        guard store.developerMode, homeInterface == .experimental, bot == nil else {
+            return nil
+        }
+        return ExperimentalHomeMenu(onOpenToday: {
+            composerFocused = false
+            store.openToday()
+        }, onOpenDestination: { destination in
+            composerFocused = false
+            store.requestedDestination = destination
+        })
     }
 
     /// Keeps `cachedBots` good enough for the settings page to open from here.
