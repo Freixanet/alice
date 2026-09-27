@@ -12,7 +12,7 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES"]
         app.launch()
         chooseInterface("Current", in: app)
-        XCTAssertFalse(app.buttons["home.menu.chat"].exists)
+        XCTAssertFalse(menuButton("chat", in: app).exists)
 
         let draft = "Keep this draft while switching"
         let field = app.descendants(matching: .any)["composer.text"]
@@ -20,16 +20,16 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         field.tap()
         field.typeText(draft)
         chooseInterface("Experimental", in: app)
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue((field.value as? String)?.contains(draft) == true)
         capture(app, "experimental-home-light")
 
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 20), "The interface choice must survive relaunch")
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20), "The interface choice must survive relaunch")
         XCTAssertTrue((field.value as? String)?.contains(draft) == true)
         chooseInterface("Current", in: app)
-        XCTAssertFalse(app.buttons["home.menu.chat"].exists)
+        XCTAssertFalse(menuButton("chat", in: app).exists)
         XCTAssertTrue((field.value as? String)?.contains(draft) == true)
         capture(app, "current-home-restored")
     }
@@ -38,47 +38,47 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental", "-alice.theme", "light"]
         app.launch()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 20))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20))
         let field = app.descendants(matching: .any)["composer.text"]
         field.tap()
         field.typeText(" Menu route draft")
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         for name in ["chat", "today", "goals", "feed", "library"] {
-            XCTAssertFalse(app.buttons["home.menu.\(name)"].exists)
+            XCTAssertFalse(menuButton(name, in: app).exists)
         }
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-home-keyboard")
 
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 20))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20))
         XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
 
-        app.buttons["home.menu.chat"].tap()
+        menuButton("chat", in: app).tap()
         XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
         app.buttons["chat.leading"].tap()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 5))
 
-        app.buttons["home.menu.today"].tap()
+        menuButton("today", in: app).tap()
         XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
         app.buttons["chat.leading"].tap()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 5))
 
-        app.buttons["home.menu.goals"].tap()
+        menuButton("goals", in: app).tap()
         XCTAssertTrue(app.buttons["goals.back"].waitForExistence(timeout: 10))
         app.buttons["goals.back"].tap()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 5))
 
-        app.buttons["home.menu.feed"].tap()
+        menuButton("feed", in: app).tap()
         XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 10))
         capture(app, "experimental-feed")
         app.navigationBars["Feed"].buttons["Back"].tap()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 5))
 
-        app.buttons["home.menu.library"].tap()
+        menuButton("library", in: app).tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 10))
         app.navigationBars["Library"].buttons["Back"].tap()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
 
         app.buttons["chat.leading"].tap()
@@ -86,12 +86,12 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         XCTAssertTrue(app.buttons["sidebar.newChat"].isHittable)
         app.buttons["sidebar.newChat"].tap()
         XCTAssertTrue(app.staticTexts["home.title"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["home.menu.chat"].isHittable)
+        XCTAssertTrue(menuButton("chat", in: app).isHittable)
         capture(app, "experimental-empty-home")
         field.tap()
         field.typeText("Empty home draft")
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["home.menu.chat"].exists)
+        XCTAssertFalse(menuButton("chat", in: app).exists)
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-empty-home-keyboard")
     }
@@ -101,7 +101,7 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         app.launchArguments = ["-visualReview", "-alice.developerMode", "NO", "-alice.developer.homeInterface", "experimental"]
         app.launch()
         XCTAssertTrue(app.buttons["chat.leading"].waitForExistence(timeout: 20))
-        XCTAssertFalse(app.buttons["home.menu.chat"].exists, "Developer mode must gate the experiment")
+        XCTAssertFalse(menuButton("chat", in: app).exists, "Developer mode must gate the experiment")
         app.buttons["chat.leading"].tap()
         app.buttons["sidebar.settings"].press(forDuration: 1)
         XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 5))
@@ -110,27 +110,31 @@ final class ExperimentalHomeMenuTests: XCTestCase {
 
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental", "-alice.theme", "dark", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 20))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20))
         capture(app, "experimental-home-dark-large-text")
         app.descendants(matching: .any)["composer.text"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["home.menu.chat"].exists)
+        XCTAssertFalse(menuButton("chat", in: app).exists)
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-home-dark-large-keyboard")
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 20))
+        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20))
         for name in ["chat", "today", "goals", "feed", "library"] {
-            XCTAssertTrue(app.buttons["home.menu.\(name)"].isHittable)
+            XCTAssertTrue(menuButton(name, in: app).isHittable)
         }
-        app.buttons["home.menu.feed"].tap()
+        menuButton("feed", in: app).tap()
         XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 10))
         app.terminate()
 
         app.launchArguments = ["-seedLongBotChat", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental"]
         app.launch()
         XCTAssertTrue(app.buttons["chat.leading"].waitForExistence(timeout: 20))
-        XCTAssertFalse(app.buttons["home.menu.chat"].exists, "Agent chats retain their existing composer")
+        XCTAssertFalse(menuButton("chat", in: app).exists, "Agent chats retain their existing composer")
+    }
+
+    private func menuButton(_ name: String, in app: XCUIApplication) -> XCUIElement {
+        app.segmentedControls["home.experimentalMenu"].buttons[name.capitalized]
     }
 
     private func chooseInterface(_ name: String, in app: XCUIApplication) {

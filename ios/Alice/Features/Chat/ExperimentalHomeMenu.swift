@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Opt-in presentation only; both interfaces share chats, drafts and navigation.
 enum HomeInterface: String {
@@ -20,116 +21,71 @@ struct ExperimentalHomeMenu: View {
             }
         }
 
-        var label: LocalizedStringKey {
+        var title: String {
             switch self {
-            case .chat: "Chat"
-            case .today: "Today"
-            case .goals: "Goals"
-            case .feed: "Feed"
-            case .library: "Library"
+            case .chat: String(localized: "Chat")
+            case .today: String(localized: "Today")
+            case .goals: String(localized: "Goals")
+            case .feed: String(localized: "Feed")
+            case .library: String(localized: "Library")
             }
         }
     }
 
-    @Namespace private var selectionGlass
     @State private var selected: Section = .chat
     let onOpenToday: () -> Void
     let onOpenDestination: (AliceDestination.Target) -> Void
 
     var body: some View {
-        GlassEffectContainer(spacing: 2) {
-            GeometryReader { geometry in
-                HStack(spacing: 0) {
-                    ForEach(Section.allCases, id: \.self) { section in
-                        item(section)
-                    }
-                }
-                .padding(6)
-                .contentShape(.rect)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 8)
-                        .onChanged { value in
-                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                            let section = section(at: value.location.x, width: geometry.size.width)
-                            if selected != section {
-                                withAnimation(.snappy(duration: 0.18)) { selected = section }
-                            }
-                        }
-                        .onEnded { value in
-                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                            activate(section(at: value.location.x, width: geometry.size.width))
-                        }
-                )
+        NativeSegmentedPicker(selected: selected) { section in
+            selected = section
+            switch section {
+            case .chat, .today: onOpenToday()
+            case .goals: onOpenDestination(.goals)
+            case .feed: onOpenDestination(.feed)
+            case .library: onOpenDestination(.library)
             }
-            .frame(height: 56)
         }
-        .glassEffect(
-            .regular.interactive(),
-            in: UnevenRoundedRectangle(
-                topLeadingRadius: 2,
-                bottomLeadingRadius: 26,
-                bottomTrailingRadius: 26,
-                topTrailingRadius: 2
-            )
-        )
+        .frame(height: 56)
         .padding(.horizontal, 18)
         .padding(.top, 2)
         .padding(.bottom, 6)
-        .accessibilityIdentifier("home.experimentalMenu")
         .onAppear { selected = .chat }
     }
 
-    private func item(_ section: Section) -> some View {
-        Button {
-            activate(section)
-        } label: {
-            icon(for: section)
-                .contentShape(.rect)
+    /// The system control supplies the Liquid Glass thumb and its drag behavior.
+    /// Per-segment actions also let Chat open Today when Chat is already selected.
+    private struct NativeSegmentedPicker: UIViewRepresentable {
+        let selected: Section
+        let onSelect: (Section) -> Void
+
+        func makeCoordinator() -> Coordinator { Coordinator(onSelect: onSelect) }
+
+        func makeUIView(context: Context) -> UISegmentedControl {
+            let actions = Section.allCases.map { section in
+                UIAction(title: section.title, image: UIImage(systemName: section.symbol)) {
+                    [weak coordinator = context.coordinator] _ in
+                    coordinator?.onSelect(section)
+                }
+            }
+            let control = UISegmentedControl(frame: .zero, actions: actions)
+            control.selectedSegmentIndex = 0
+            control.accessibilityIdentifier = "home.experimentalMenu"
+            return control
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(section.label)
-        .accessibilityAddTraits(selected == section ? .isSelected : [])
-        .accessibilityIdentifier("home.menu.\(section.rawValue)")
-    }
 
-    @ViewBuilder
-    private func icon(for section: Section) -> some View {
-        let image = Image(systemName: section.symbol)
-            .font(.system(size: 19, weight: selected == section ? .semibold : .medium))
-            .foregroundStyle(selected == section ? Color.primary : Color.secondary)
-            .frame(maxWidth: .infinity, minHeight: 44)
-
-        if selected == section {
-            image
-                .glassEffect(.regular.interactive(), in: selectionShape(for: section))
-                .glassEffectID("home-selection", in: selectionGlass)
-        } else {
-            image
+        func updateUIView(_ control: UISegmentedControl, context: Context) {
+            context.coordinator.onSelect = onSelect
+            let index = Section.allCases.firstIndex(of: selected) ?? 0
+            if control.selectedSegmentIndex != index { control.selectedSegmentIndex = index }
         }
-    }
 
-    private func selectionShape(for section: Section) -> UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: section == .chat ? 2 : 22,
-            bottomLeadingRadius: 22,
-            bottomTrailingRadius: 22,
-            topTrailingRadius: section == .library ? 2 : 22
-        )
-    }
+        final class Coordinator {
+            var onSelect: (Section) -> Void
 
-    private func section(at x: CGFloat, width: CGFloat) -> Section {
-        let itemWidth = max((width - 12) / CGFloat(Section.allCases.count), 1)
-        let index = min(max(Int(floor((x - 6) / itemWidth)), 0), Section.allCases.count - 1)
-        return Section.allCases[index]
-    }
-
-    private func activate(_ section: Section) {
-        withAnimation(.snappy(duration: 0.18)) { selected = section }
-        switch section {
-        case .chat, .today: onOpenToday()
-        case .goals: onOpenDestination(.goals)
-        case .feed: onOpenDestination(.feed)
-        case .library: onOpenDestination(.library)
+            init(onSelect: @escaping (Section) -> Void) {
+                self.onSelect = onSelect
+            }
         }
     }
 }

@@ -17,7 +17,6 @@ struct Composer: View {
     var focused: FocusState<Bool>.Binding
     var placeholder: String = "Talk to Alice…"
     var keyboardShown = false
-    var joinsHomeMenu = false
     @Namespace private var glass
     @State private var showModels = false
     @State private var dictation = Dictation()
@@ -45,13 +44,8 @@ struct Composer: View {
     /// happens to produce.
     private let controlHeight: CGFloat = 34
 
-    private var glassShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 26,
-            bottomLeadingRadius: joinsHomeMenu ? 2 : 26,
-            bottomTrailingRadius: joinsHomeMenu ? 2 : 26,
-            topTrailingRadius: 26
-        )
+    private var glassShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 26, style: .continuous)
     }
 
     var body: some View {

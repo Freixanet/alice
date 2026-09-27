@@ -265,10 +265,6 @@ private struct ChatScreenContent: View, Equatable {
         }
     }
 
-    private var showsExperimentalMenu: Bool {
-        store.developerMode && homeInterface == .experimental && bot == nil && !keyboardShown
-    }
-
     @ViewBuilder
     private var composerArea: some View {
         if store.developerMode, homeInterface == .experimental, bot == nil {
@@ -293,8 +289,7 @@ private struct ChatScreenContent: View, Equatable {
         Composer(
             focused: $composerFocused,
             placeholder: placeholder,
-            keyboardShown: keyboardShown,
-            joinsHomeMenu: showsExperimentalMenu
+            keyboardShown: keyboardShown
         )
     }
 
