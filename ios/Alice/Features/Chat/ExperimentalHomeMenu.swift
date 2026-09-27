@@ -31,36 +31,41 @@ struct ExperimentalHomeMenu: View {
         }
     }
 
+    @Namespace private var selectionGlass
     @State private var selected: Section = .chat
-    @State private var pickerWidth: CGFloat = 0
     let onOpenToday: () -> Void
     let onOpenDestination: (AliceDestination.Target) -> Void
 
     var body: some View {
-        Picker("Home", selection: $selected) {
-            ForEach(Section.allCases, id: \.self) { section in
-                Label(section.label, systemImage: section.symbol)
-                    .labelStyle(.iconOnly)
-                    .accessibilityIdentifier("home.menu.\(section.rawValue)")
-                    .tag(section)
-            }
-        }
-        .pickerStyle(.segmented)
-        .controlSize(.large)
-        .labelsHidden()
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pickerWidth = $0 }
-        .simultaneousGesture(
-            SpatialTapGesture().onEnded { value in
-                // A segmented Picker does not emit a selection change when its
-                // already-selected segment is tapped. Chat still opens Today.
-                if selected == .chat, pickerWidth > 0,
-                   value.location.x >= 0, value.location.x < pickerWidth / 5 {
-                    onOpenToday()
+        GlassEffectContainer(spacing: 2) {
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    ForEach(Section.allCases, id: \.self) { section in
+                        item(section)
+                    }
                 }
+                .padding(6)
+                .contentShape(.rect)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 8)
+                        .onChanged { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            let section = section(at: value.location.x, width: geometry.size.width)
+                            if selected != section {
+                                withAnimation(.snappy(duration: 0.18)) { selected = section }
+                            }
+                        }
+                        .onEnded { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            activate(section(at: value.location.x, width: geometry.size.width))
+                        }
+                )
             }
-        )
-        .clipShape(
-            UnevenRoundedRectangle(
+            .frame(height: 56)
+        }
+        .glassEffect(
+            .regular.interactive(),
+            in: UnevenRoundedRectangle(
                 topLeadingRadius: 2,
                 bottomLeadingRadius: 26,
                 bottomTrailingRadius: 26,
@@ -72,14 +77,44 @@ struct ExperimentalHomeMenu: View {
         .padding(.bottom, 6)
         .accessibilityIdentifier("home.experimentalMenu")
         .onAppear { selected = .chat }
-        .onChange(of: selected) { _, section in
-            switch section {
-            case .chat: break
-            case .today: onOpenToday()
-            case .goals: onOpenDestination(.goals)
-            case .feed: onOpenDestination(.feed)
-            case .library: onOpenDestination(.library)
-            }
+    }
+
+    private func item(_ section: Section) -> some View {
+        Button {
+            activate(section)
+        } label: {
+            Image(systemName: section.symbol)
+                .font(.system(size: 19, weight: selected == section ? .semibold : .medium))
+                .foregroundStyle(selected == section ? Color.primary : Color.secondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background {
+                    if selected == section {
+                        Color.clear
+                            .glassEffect(.regular, in: .capsule)
+                            .glassEffectID("home-selection", in: selectionGlass)
+                    }
+                }
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(section.label)
+        .accessibilityAddTraits(selected == section ? .isSelected : [])
+        .accessibilityIdentifier("home.menu.\(section.rawValue)")
+    }
+
+    private func section(at x: CGFloat, width: CGFloat) -> Section {
+        let itemWidth = max((width - 12) / CGFloat(Section.allCases.count), 1)
+        let index = min(max(Int(floor((x - 6) / itemWidth)), 0), Section.allCases.count - 1)
+        return Section.allCases[index]
+    }
+
+    private func activate(_ section: Section) {
+        withAnimation(.snappy(duration: 0.18)) { selected = section }
+        switch section {
+        case .chat, .today: onOpenToday()
+        case .goals: onOpenDestination(.goals)
+        case .feed: onOpenDestination(.feed)
+        case .library: onOpenDestination(.library)
         }
     }
 }

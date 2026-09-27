@@ -41,8 +41,8 @@ radii in experimental Home. Chat
 temporarily opens the same Today conversation as Today. Feed combines the agent
 action log with routine runs and alerts that Alice actually observed. Both
 presentations share the same conversations and drafts. Agent chats keep their
-existing layout. The five icons use the system segmented Picker, which supplies
-its own Liquid Glass selection and accessibility behavior.
+existing layout. One SwiftUI Liquid Glass shape forms the menu, and a native
+glass selection moves among five accessible icon buttons.
 
 `ExperimentalHomeMenuTests` covers avatar switching, persistence, draft retention,
 the five sections, populated/empty Home with the keyboard, the developer-mode gate,
