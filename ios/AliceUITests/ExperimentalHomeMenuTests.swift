@@ -74,7 +74,7 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 5))
         XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
 
-        app.buttons["home.menu.chat"].tap()
+        app.buttons["chat.leading"].tap()
         XCTAssertTrue(app.buttons["sidebar.newChat"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["sidebar.newChat"].isHittable)
         app.buttons["sidebar.newChat"].tap()

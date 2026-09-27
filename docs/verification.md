@@ -37,12 +37,12 @@ persists locally, but the experiment is inactive whenever developer mode is off.
 The experimental Home adds an icon-only Liquid Glass selector for Chat, Today,
 Goals, Feed and Library above the existing composer. Feed combines the agent
 action log with routine runs and alerts that Alice actually observed. Both
-presentations share the same
-conversations and drafts. Agent chats keep their existing layout. Accessibility
-text sizes use a horizontally scrollable menu.
+presentations share the same conversations and drafts. Agent chats keep their
+existing layout. The five icons use the system segmented Picker, which supplies
+its own Liquid Glass selection and accessibility behavior.
 
 `ExperimentalHomeMenuTests` covers avatar switching, persistence, draft retention,
-the five routes, populated/empty Home with the keyboard, the developer-mode gate,
+the five sections, populated/empty Home with the keyboard, the developer-mode gate,
 and large text. Its screenshots are retained in the iOS CI result bundle. These
 fixture tests do not exercise a person's live Hermes.
 
