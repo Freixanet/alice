@@ -48,7 +48,7 @@ struct ExperimentalHomeMenu: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
-            .glassEffect(.regular, in: .rect(cornerRadius: 26))
+            .glassEffect(.regular, in: .capsule)
         }
         .frame(height: 56)
         .padding(.horizontal, 18)
