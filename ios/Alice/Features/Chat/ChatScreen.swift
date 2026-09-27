@@ -28,6 +28,7 @@ private struct ChatScreenContent: View, Equatable {
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
 
+    @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
     @State private var showingAlice = false
@@ -231,11 +232,7 @@ private struct ChatScreenContent: View, Equatable {
                 // last message still follows attachments, extra lines, and the
                 // keyboard.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Composer(
-                        focused: $composerFocused,
-                        placeholder: placeholder,
-                        keyboardShown: keyboardShown
-                    )
+                    composerArea
                 }
         } else {
             // Home is centred in the room between the header and the composer,
@@ -256,11 +253,7 @@ private struct ChatScreenContent: View, Equatable {
                     if bot == nil, !keyboardShown {
                         HomeSuggestionStrip()
                     }
-                    Composer(
-                        focused: $composerFocused,
-                        placeholder: placeholder,
-                        keyboardShown: keyboardShown
-                    )
+                    composerArea
                 }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                         guard !composerFocused, height > 0,
@@ -270,6 +263,32 @@ private struct ChatScreenContent: View, Equatable {
             }
             .scrollIndicators(.hidden)
         }
+    }
+
+    @ViewBuilder
+    private var composerArea: some View {
+        if store.developerMode, homeInterface == .experimental, bot == nil {
+            VStack(spacing: 0) {
+                ExperimentalHomeMenu(onOpenChats: {
+                    composerFocused = false
+                    onOpenDrawer()
+                }, onOpenDestination: { destination in
+                    composerFocused = false
+                    store.requestedDestination = destination
+                })
+                composer
+            }
+        } else {
+            composer
+        }
+    }
+
+    private var composer: some View {
+        Composer(
+            focused: $composerFocused,
+            placeholder: placeholder,
+            keyboardShown: keyboardShown
+        )
     }
 
     /// Keeps `cachedBots` good enough for the settings page to open from here.

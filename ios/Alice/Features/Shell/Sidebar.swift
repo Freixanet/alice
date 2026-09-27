@@ -9,6 +9,7 @@ struct Sidebar: View, Equatable {
     let width: CGFloat
     let onDismiss: () -> Void
 
+    @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @State private var showSearch = false
     @State private var going: Destination?
 
@@ -233,6 +234,32 @@ struct Sidebar: View, Equatable {
                     going = .settings
                 } label: {
                     Label("Settings", systemImage: "gearshape")
+                }
+                if store.developerMode {
+                    Menu {
+                        Button {
+                            homeInterface = .current
+                            onDismiss()
+                        } label: {
+                            if homeInterface == .current {
+                                Label("Current", systemImage: "checkmark")
+                            } else {
+                                Text("Current")
+                            }
+                        }
+                        Button {
+                            homeInterface = .experimental
+                            onDismiss()
+                        } label: {
+                            if homeInterface == .experimental {
+                                Label("Experimental", systemImage: "checkmark")
+                            } else {
+                                Text("Experimental")
+                            }
+                        }
+                    } label: {
+                        Label("Interface", systemImage: "rectangle.bottomthird.inset.filled")
+                    }
                 }
                 // An alert is read in Activity, where it is; the connection
                 // screen only knows whether Hermes answers.

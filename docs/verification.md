@@ -27,6 +27,23 @@ navigation, large text and a reconnect after the Hermes host restarts. Simulator
 tests cannot establish background delivery, camera behavior or all network
 conditions on a real phone. Validate iPad layout before claiming iPad readiness.
 
+## Experimental Home interface
+
+With developer mode enabled, hold the user avatar in the Chats drawer and choose
+Interface → Experimental. Interface → Current restores the default presentation.
+The same selection is available in Settings → General → Developer. The choice
+persists locally, but the experiment is inactive whenever developer mode is off.
+
+The experimental Home adds native Liquid Glass shortcuts for Chats, Agents,
+Notes and Agenda above the existing composer. Both presentations share the same
+conversations and drafts. Agent chats keep their existing layout. Accessibility
+text sizes use a horizontally scrollable menu.
+
+`ExperimentalHomeMenuTests` covers avatar switching, persistence, draft retention,
+the four routes, populated/empty Home with the keyboard, the developer-mode gate,
+and large text. Its screenshots are retained in the iOS CI result bundle. These
+fixture tests do not exercise a person's live Hermes.
+
 ## Web companion
 
 ```bash

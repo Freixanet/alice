@@ -13940,6 +13940,46 @@
           }
         }
       }
+    },
+    "Interface": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interfaz"
+          }
+        }
+      }
+    },
+    "Experimental": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimental"
+          }
+        }
+      }
+    },
+    "Experimental adds a glass menu above the Home composer. Switch back anytime; chats and drafts stay the same. Available only while developer mode is on.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La interfaz experimental añade un menú de cristal encima del campo de mensaje en Inicio. Puedes volver cuando quieras; los chats y borradores se conservan. Solo está disponible con el modo desarrollador activado."
+          }
+        }
+      }
+    },
+    "Chats": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
