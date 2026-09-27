@@ -83,23 +83,38 @@ struct ExperimentalHomeMenu: View {
         Button {
             activate(section)
         } label: {
-            Image(systemName: section.symbol)
-                .font(.system(size: 19, weight: selected == section ? .semibold : .medium))
-                .foregroundStyle(selected == section ? Color.primary : Color.secondary)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background {
-                    if selected == section {
-                        Color.clear
-                            .glassEffect(.regular, in: .capsule)
-                            .glassEffectID("home-selection", in: selectionGlass)
-                    }
-                }
+            icon(for: section)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(section.label)
         .accessibilityAddTraits(selected == section ? .isSelected : [])
         .accessibilityIdentifier("home.menu.\(section.rawValue)")
+    }
+
+    @ViewBuilder
+    private func icon(for section: Section) -> some View {
+        let image = Image(systemName: section.symbol)
+            .font(.system(size: 19, weight: selected == section ? .semibold : .medium))
+            .foregroundStyle(selected == section ? Color.primary : Color.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+
+        if selected == section {
+            image
+                .glassEffect(.regular.interactive(), in: selectionShape(for: section))
+                .glassEffectID("home-selection", in: selectionGlass)
+        } else {
+            image
+        }
+    }
+
+    private func selectionShape(for section: Section) -> UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: section == .chat ? 2 : 22,
+            bottomLeadingRadius: 22,
+            bottomTrailingRadius: 22,
+            topTrailingRadius: section == .library ? 2 : 22
+        )
     }
 
     private func section(at x: CGFloat, width: CGFloat) -> Section {
