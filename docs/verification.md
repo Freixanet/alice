@@ -44,6 +44,8 @@ presentations share the same conversations and drafts. Agent chats keep their
 existing layout. One SwiftUI Liquid Glass shape forms the menu, and an
 interactive native glass effect moves among five accessible icon buttons. At
 the end positions, the selected glass matches the menu's 2-point top corner.
+The menu hides while the on-screen keyboard is open; the composer regains round
+bottom corners until the menu returns.
 
 `ExperimentalHomeMenuTests` covers avatar switching, persistence, draft retention,
 the five sections, populated/empty Home with the keyboard, the developer-mode gate,

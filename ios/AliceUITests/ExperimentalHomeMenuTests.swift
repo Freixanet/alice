@@ -34,7 +34,7 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         capture(app, "current-home-restored")
     }
 
-    func testMenuRoutesKeepDraftAndStayAboveKeyboard() {
+    func testMenuRoutesKeepDraftAndHideForKeyboard() {
         let app = XCUIApplication()
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental", "-alice.theme", "light"]
         app.launch()
@@ -44,13 +44,15 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         field.typeText(" Menu route draft")
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         for name in ["chat", "today", "goals", "feed", "library"] {
-            let button = app.buttons["home.menu.\(name)"]
-            XCTAssertTrue(button.isHittable)
-            XCTAssertGreaterThanOrEqual(button.frame.height, 44)
-            XCTAssertGreaterThanOrEqual(button.frame.minY, field.frame.maxY)
+            XCTAssertFalse(app.buttons["home.menu.\(name)"].exists)
         }
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-home-keyboard")
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 20))
+        XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
 
         app.buttons["home.menu.chat"].tap()
         XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
@@ -89,7 +91,7 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         field.tap()
         field.typeText("Empty home draft")
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["home.menu.chat"].isHittable)
+        XCTAssertFalse(app.buttons["home.menu.chat"].exists)
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-empty-home-keyboard")
     }
@@ -112,9 +114,12 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         capture(app, "experimental-home-dark-large-text")
         app.descendants(matching: .any)["composer.text"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["home.menu.chat"].isHittable)
+        XCTAssertFalse(app.buttons["home.menu.chat"].exists)
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-home-dark-large-keyboard")
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["home.menu.chat"].waitForExistence(timeout: 20))
         for name in ["chat", "today", "goals", "feed", "library"] {
             XCTAssertTrue(app.buttons["home.menu.\(name)"].isHittable)
         }

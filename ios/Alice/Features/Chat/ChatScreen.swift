@@ -265,18 +265,24 @@ private struct ChatScreenContent: View, Equatable {
         }
     }
 
+    private var showsExperimentalMenu: Bool {
+        store.developerMode && homeInterface == .experimental && bot == nil && !keyboardShown
+    }
+
     @ViewBuilder
     private var composerArea: some View {
         if store.developerMode, homeInterface == .experimental, bot == nil {
             VStack(spacing: 0) {
                 composer
-                ExperimentalHomeMenu(onOpenToday: {
-                    composerFocused = false
-                    store.openToday()
-                }, onOpenDestination: { destination in
-                    composerFocused = false
-                    store.requestedDestination = destination
-                })
+                if !keyboardShown {
+                    ExperimentalHomeMenu(onOpenToday: {
+                        composerFocused = false
+                        store.openToday()
+                    }, onOpenDestination: { destination in
+                        composerFocused = false
+                        store.requestedDestination = destination
+                    })
+                }
             }
         } else {
             composer
@@ -288,7 +294,7 @@ private struct ChatScreenContent: View, Equatable {
             focused: $composerFocused,
             placeholder: placeholder,
             keyboardShown: keyboardShown,
-            joinsHomeMenu: store.developerMode && homeInterface == .experimental && bot == nil
+            joinsHomeMenu: showsExperimentalMenu
         )
     }
 
