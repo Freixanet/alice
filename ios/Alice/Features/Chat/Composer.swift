@@ -17,6 +17,11 @@ struct Composer: View {
     var focused: FocusState<Bool>.Binding
     var placeholder: String = "Talk to Alice…"
     var keyboardShown = false
+    /// The Experimental Home interface puts a round section button to this
+    /// composer's left in the same row (`ChatScreen.composerArea`); compact
+    /// trims Alice's own composer to a single 44pt-tall capsule, the bot
+    /// chat's shape, so the two controls read as one row at the same height.
+    var compact = false
     @Namespace private var glass
     @State private var showModels = false
     @State private var dictation = Dictation()
@@ -68,14 +73,18 @@ struct Composer: View {
                 if store.editingMessageID != nil { editingBanner }
                 if store.queuedSendNote != nil { queueBanner }
                 if isBotChat { botComposer }
+                else if compact { compactAliceComposer }
                 else { aliceComposer }
             }
         }
-        .padding(.horizontal, isBotChat ? 20 : 18)
+        // Compact leaves its own horizontal inset to the row it sits in
+        // (`ChatScreen.composerArea`), which paddings the round button beside
+        // it the same amount.
+        .padding(.horizontal, compact ? 0 : (isBotChat ? 20 : 18))
         // Bot chats sit flush with the bottom safe area. Keep the larger
         // keyboard gap requested for typing, and leave Alice's resting
         // position unchanged.
-        .padding(.bottom, keyboardShown ? 10 : (isBotChat ? 0 : 6))
+        .padding(.bottom, keyboardShown ? 10 : ((isBotChat || compact) ? 0 : 6))
         // Flicking the composer down puts the keyboard away, which is quicker
         // than reaching for the transcript to tap it.
         .gesture(
@@ -505,6 +514,92 @@ struct Composer: View {
             .contentShape(glassShape)
             .onTapGesture {}
         }
+    }
+
+    /// The Experimental interface's own composer: the bot chat's single
+    /// 44pt-tall capsule — attach, field, dictate and send in one row — so it
+    /// matches the round section button beside it instead of the taller
+    /// shape `aliceComposer` uses for its own bottom row of controls. The
+    /// model belongs in Settings while this is being tried.
+    private var compactAliceComposer: some View {
+        @Bindable var store = store
+
+        return GlassEffectContainer(spacing: 8) {
+            VStack(spacing: 8) {
+                if !store.draftAttachments.isEmpty {
+                    AttachmentChips(attachments: store.draftAttachments) { attachment in
+                        store.draftAttachments.removeAll { $0.id == attachment.id }
+                    }
+                }
+
+                HStack(alignment: .bottom, spacing: 6) {
+                    compactAttachButton
+
+                    TextField(
+                        "", text: editorText,
+                        prompt: Text(placeholder).foregroundStyle(.secondary), axis: .vertical
+                    )
+                        .accessibilityIdentifier("composer.text")
+                        .textFieldStyle(.plain)
+                        .scrollIndicators(.hidden)
+                        .font(.body)
+                        .background { mentionBackdrop(store.draft) }
+                        .focused(focused)
+                        .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 3 : 7))
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                        .onTapGesture { focused.wrappedValue = true }
+
+                    botDictateButton
+                    botVoiceOrSendButton
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 5)
+                .padding(.vertical, 5)
+                .frame(minHeight: 44)
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+                .glassEffectID("composer", in: glass)
+                .contentShape(.rect(cornerRadius: 22))
+                .onTapGesture {}
+            }
+        }
+    }
+
+    /// Attach, sized for `compactAliceComposer`'s own capsule rather than the
+    /// 44pt circle the other two composers hang outside theirs.
+    private var compactAttachButton: some View {
+        Menu {
+            if CameraPicker.isAvailable {
+                Button {
+                    attachmentConversationID = store.activeChat.id
+                    showCamera = true
+                } label: {
+                    Label("Camera", systemImage: "camera")
+                }
+            }
+            Button {
+                attachmentConversationID = store.activeChat.id
+                showPhotos = true
+            } label: {
+                Label("Photos", systemImage: "photo")
+            }
+            Button {
+                attachmentConversationID = store.activeChat.id
+                showFiles = true
+            } label: {
+                Label("Files", systemImage: "folder")
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .menuOrder(.fixed)
+        .accessibilityLabel("Attach")
     }
 
     /// Bot chats deliberately have a smaller composer. Their model belongs in

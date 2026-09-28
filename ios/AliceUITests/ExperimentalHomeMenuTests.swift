@@ -12,7 +12,7 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES"]
         app.launch()
         chooseInterface("Current", in: app)
-        XCTAssertFalse(menuButton("chat", in: app).exists)
+        XCTAssertFalse(menuButton(in: app).exists)
 
         chooseInterface("Experimental", in: app)
         XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
@@ -21,58 +21,56 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText(draft)
-        XCTAssertFalse(menuButton("chat", in: app).exists)
+        XCTAssertTrue(menuButton(in: app).exists)
         XCTAssertTrue((field.value as? String)?.contains(draft) == true)
         capture(app, "experimental-today-keyboard")
 
         app.terminate()
         app.launch()
-        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20), "The interface choice must survive relaunch")
+        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20), "The interface choice must survive relaunch")
         XCTAssertTrue((field.value as? String)?.contains(draft) == true)
         chooseInterface("Current", in: app)
-        XCTAssertFalse(menuButton("chat", in: app).exists)
+        XCTAssertFalse(menuButton(in: app).exists)
         XCTAssertTrue((field.value as? String)?.contains(draft) == true)
         capture(app, "current-home-restored")
     }
 
-    func testMenuRoutesKeepDraftAndHideForKeyboard() {
+    /// The round button and the composer sit in one row at the button's own
+    /// height, and both stay put — and hittable — once the keyboard is up.
+    func testMenuRoutesKeepDraftAndStayWithKeyboard() {
         let app = XCUIApplication()
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental", "-alice.theme", "light"]
         app.launch()
-        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20))
-        let picker = app.segmentedControls["home.experimentalMenu"]
-        XCTAssertGreaterThanOrEqual(picker.frame.width, app.windows.firstMatch.frame.width - 40)
-        XCTAssertGreaterThanOrEqual(picker.frame.height, 50)
+        let button = menuButton(in: app)
+        XCTAssertTrue(button.waitForExistence(timeout: 20))
+        XCTAssertEqual(button.frame.width, button.frame.height, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(button.frame.height, 44)
         let field = app.descendants(matching: .any)["composer.text"]
+        XCTAssertEqual(button.frame.minY, field.frame.maxY - button.frame.height, accuracy: 6)
+
         field.tap()
         field.typeText(" Menu route draft")
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        for name in ["chat", "today", "goals", "feed", "library"] {
-            XCTAssertFalse(menuButton(name, in: app).exists)
-        }
+        XCTAssertTrue(button.exists)
+        XCTAssertTrue(button.isHittable)
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-home-keyboard")
 
         app.terminate()
         app.launch()
-        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20))
+        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
         XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
 
         XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
-        for name in ["today", "goals", "feed", "library", "chat"] {
-            menuButton(name, in: app).tap()
-            XCTAssertTrue(menuButton(name, in: app).waitForExistence(timeout: 5))
-            XCTAssertTrue(menuButton(name, in: app).isSelected)
-            for other in ["chat", "today", "goals", "feed", "library"] {
-                XCTAssertTrue(menuButton(other, in: app).isHittable)
-            }
+        for name in ["Today", "Goals", "Feed", "Library", "Chat"] {
+            selectSection(name, in: app)
             switch name {
-            case "goals": XCTAssertTrue(app.buttons["goals.add"].waitForExistence(timeout: 5))
-            case "feed": XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 5))
-            case "library": XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+            case "Goals": XCTAssertTrue(app.buttons["goals.add"].waitForExistence(timeout: 5))
+            case "Feed": XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 5))
+            case "Library": XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
             default: XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 5))
             }
-            capture(app, "experimental-section-\(name)")
+            capture(app, "experimental-section-\(name.lowercased())")
         }
         XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
     }
@@ -82,7 +80,7 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         app.launchArguments = ["-visualReview", "-alice.developerMode", "NO", "-alice.developer.homeInterface", "experimental"]
         app.launch()
         XCTAssertTrue(app.buttons["chat.leading"].waitForExistence(timeout: 20))
-        XCTAssertFalse(menuButton("chat", in: app).exists, "Developer mode must gate the experiment")
+        XCTAssertFalse(menuButton(in: app).exists, "Developer mode must gate the experiment")
         app.buttons["chat.leading"].tap()
         app.buttons["sidebar.settings"].press(forDuration: 1)
         XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 5))
@@ -91,31 +89,40 @@ final class ExperimentalHomeMenuTests: XCTestCase {
 
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental", "-alice.theme", "dark", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
-        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20))
+        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
         capture(app, "experimental-home-dark-large-text")
         app.descendants(matching: .any)["composer.text"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(menuButton("chat", in: app).exists)
+        XCTAssertTrue(menuButton(in: app).isHittable)
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-home-dark-large-keyboard")
         app.terminate()
         app.launch()
-        XCTAssertTrue(menuButton("chat", in: app).waitForExistence(timeout: 20))
-        for name in ["chat", "today", "goals", "feed", "library"] {
-            XCTAssertTrue(menuButton(name, in: app).isHittable)
-        }
-        menuButton("feed", in: app).tap()
+        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
+        selectSection("Feed", in: app)
         XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 10))
         app.terminate()
 
         app.launchArguments = ["-seedLongBotChat", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental"]
         app.launch()
         XCTAssertTrue(app.buttons["chat.leading"].waitForExistence(timeout: 20))
-        XCTAssertFalse(menuButton("chat", in: app).exists, "Agent chats retain their existing composer")
+        XCTAssertFalse(menuButton(in: app).exists, "Agent chats retain their existing composer")
     }
 
-    private func menuButton(_ name: String, in app: XCUIApplication) -> XCUIElement {
-        app.segmentedControls["home.experimentalMenu"].buttons[name.capitalized]
+    /// The round button itself, wherever it sits — beside the composer or
+    /// alone above a destination page.
+    private func menuButton(in app: XCUIApplication) -> XCUIElement {
+        app.buttons["home.experimentalMenu"]
+    }
+
+    /// Opens the button's menu and taps a section by its title.
+    private func selectSection(_ name: String, in app: XCUIApplication) {
+        let button = menuButton(in: app)
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        button.tap()
+        let item = app.buttons[name]
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        item.tap()
     }
 
     private func chooseInterface(_ name: String, in app: XCUIApplication) {

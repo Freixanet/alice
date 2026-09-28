@@ -62,7 +62,7 @@ struct DeveloperScreen: View {
             } header: {
                 Text("Interface")
             } footer: {
-                Text("Experimental adds a glass menu above the Home composer. Switch back anytime; chats and drafts stay the same. Available only while developer mode is on.")
+                Text("Experimental adds a round glass button beside the Home composer, for Chat, Today, Goals, Feed and Library. Switch back anytime; chats and drafts stay the same. Available only while developer mode is on.")
             }
 
             Section("Tools") {

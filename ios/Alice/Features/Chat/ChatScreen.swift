@@ -142,7 +142,15 @@ private struct ChatScreenContent: View, Equatable {
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if !keyboardShown { experimentalMenu }
+                    if !keyboardShown {
+                        HStack(spacing: 0) {
+                            experimentalMenu
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+                        .padding(.top, 2)
+                    }
                 }
                 .background(Palette.background(scheme))
             }
@@ -323,12 +331,20 @@ private struct ChatScreenContent: View, Equatable {
     @ViewBuilder
     private var composerArea: some View {
         if experimentalEnabled {
-            VStack(spacing: 0) {
-                composer
-                if !keyboardShown {
-                    experimentalMenu
-                }
+            // The round section button and the composer's own capsule, at the
+            // same 44pt height, bottom-aligned so both grow from the same
+            // baseline as the field takes more lines.
+            HStack(alignment: .bottom, spacing: 10) {
+                experimentalMenu
+                Composer(
+                    focused: $composerFocused,
+                    placeholder: placeholder,
+                    keyboardShown: keyboardShown,
+                    compact: true
+                )
             }
+            .padding(.horizontal, 20)
+            .padding(.bottom, keyboardShown ? 10 : 6)
         } else {
             composer
         }
