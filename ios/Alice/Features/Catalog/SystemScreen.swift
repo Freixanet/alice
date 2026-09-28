@@ -445,6 +445,7 @@ struct SystemScreen: View {
                 TextField("Search log", text: $logSearch)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .submitLabel(.search)
                     .onSubmit { Task { await loadLogs() } }
                 Button { Task { await loadLogs() } } label: {
                     if logsLoading { ProgressView() } else { Image(systemName: "magnifyingglass") }

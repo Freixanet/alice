@@ -42,7 +42,7 @@ enum PendingRequestSessions {
         for chat in conversations {
             let reply = chat.messages.last(where: { $0.role == .assistant })
             let awaitsReply = reply.map { $0.pending || $0.awaitingRemote } ?? false
-            guard chat.isCanonicalBotChat
+            guard chat.isAgentSessionChat
                 || (chat.isHomeSessionChat && (awaitsReply || waitingConversations.contains(chat.id))),
                   let sessionID = chat.hermesSessionID, !sessionID.isEmpty
             else { continue }

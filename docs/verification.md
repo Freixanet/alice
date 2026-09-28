@@ -27,6 +27,36 @@ navigation, large text and a reconnect after the Hermes host restarts. Simulator
 tests cannot establish background delivery, camera behavior or all network
 conditions on a real phone. Validate iPad layout before claiming iPad readiness.
 
+## Experimental Home interface
+
+With developer mode enabled, hold the user avatar in the Chats drawer and choose
+Interface → Experimental. Interface → Current restores the default presentation.
+The same selection is available in Settings → General → Developer. The choice
+persists locally, but the experiment is inactive whenever developer mode is off.
+
+The experimental Home adds a full-width native segmented selector for Chat,
+Today, Goals, Feed and Library directly below the composer. It retains the
+system selection indicator and applies Liquid Glass at the same bounds. Both
+controls keep rounded corners. Chat temporarily opens the same Today
+conversation as Today.
+The same selector remains at the bottom of Goals, Feed and Library. Switching
+sections preserves the Today draft. Both presentations share conversations.
+Feed is a source-linked news timeline with For You, Latest and Saved views.
+Its initial RSS catalogue is EL PAÍS, BBC News and NASA. Ranking combines recency,
+chosen topics, local feedback and source/topic diversity. Saves and explicit
+feedback outweigh opens; signals decay. It does not measure reading time.
+Interests and sources can be changed, and learning reset without deleting saves.
+Cached posts survive source failures. This is a bounded catalogue, not a crawl
+of the whole internet or a guarantee of factual accuracy. Preferences stay on
+the device; publishers receive feed/image requests; articles may have paywalls.
+Agent chats keep their existing layout. The menu hides while the on-screen
+keyboard is open and returns when it closes.
+
+`ExperimentalHomeMenuTests` covers avatar switching, persistence, draft retention,
+the five sections, populated/empty Home with the keyboard, the developer-mode gate,
+and large text. Its screenshots are retained in the iOS CI result bundle. These
+fixture tests do not exercise a person's live Hermes.
+
 ## Web companion
 
 ```bash
@@ -105,3 +135,45 @@ Settings › Advanced › Developer mode adds **Settings › Developer**:
 
 These run against the real Hermes and phone: they read, and only the tools
 write (a test notification, a diagnostics upload, a card's own action).
+
+## Native performance measurements
+
+Run **iOS Performance** from GitHub Actions (or `gh workflow run ios-performance.yml
+--ref <branch>`). It runs automatically when its harness changes. The dedicated
+`AlicePerformance` scheme measures five iterations of a responsive launch into
+30 long reports, scrolling back to the latest report, and opening Agents then
+returning to chat. Each journey checks that its destination was actually reached.
+The normal `Alice` scheme keeps all unit and UI correctness tests, without adding
+benchmark repetitions to every app change.
+
+The workflow retains raw `.xcresult`, per-iteration CSV metrics and a compact job
+summary (mean, median and range without excluding slow samples) for 30 days.
+The summary reads exported CSV rather than relying on Xcode console wording,
+and handles the double `.csv.csv` filename in Xcode 26.6 manifests. Empty or
+non-finite measurements fail the reporter. Record the commit, Xcode/iOS versions and fixture with every
+comparison. XCTest records launch duration and journey wall time, app CPU use and
+memory. Journey wall time includes UI automation and idle waits: it is not pure
+rendering latency. These are Debug simulator baselines, not physical iPhone,
+Release, cold-device boot, network/model latency, scroll frame-rate or battery
+measurements. Repeated launches benefit from warmed system caches. One
+run is not evidence of an improvement; compare repeated runs under matched
+conditions before setting a regression budget.
+
+`scripts/verify-ios.sh performance` refuses local execution outside GitHub Actions.
+This Mac must not boot a simulator. Generic-device test-bundle compilation is
+allowed; never point this harness at the person's iPhone or real Hermes. The CI
+runner has only synthetic fixtures and no Hermes credentials. For physical-device
+hitches, use the existing Developer performance meter and diagnostic report during
+normal use; do not fabricate device results from simulator measurements.
+
+### Feed parser and local ranking (host-only)
+
+```bash
+swiftc -swift-version 6 -parse-as-library -target x86_64-apple-macosx14.0 \
+  ios/Alice/Features/Feed/NewsFeed.swift scripts/check-news-feed.swift \
+  -o /tmp/alice-feed-check && /tmp/alice-feed-check
+```
+
+Checks RSS parsing, dates, unsafe links, malformed feeds, interest/feedback
+ranking, source exclusion, deduplication, persistence and unreadable archive
+preservation with isolated defaults. Does not verify the rendered iPhone UI.

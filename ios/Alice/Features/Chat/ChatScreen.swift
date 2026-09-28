@@ -5,13 +5,12 @@ import UIKit
 struct ChatScreen: View {
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
-    let onOpenBots: () -> Void
     /// How far the drawer is open, 0 to 1, as it moves.
     var drawerProgress: CGFloat = 0
 
     var body: some View {
         ChatScreenContent(
-            onOpenDrawer: onOpenDrawer, onBack: onBack, onOpenBots: onOpenBots
+            onOpenDrawer: onOpenDrawer, onBack: onBack
         )
         .equatable()
         .environment(\.aliceDrawerProgress, drawerProgress)
@@ -28,11 +27,12 @@ private struct ChatScreenContent: View, Equatable {
     @Environment(\.colorScheme) private var scheme
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
-    let onOpenBots: () -> Void
 
+    @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @FocusState private var composerFocused: Bool
     @State private var configuring: BotRow?
     @State private var showingAlice = false
+    @State private var experimentalSection: ExperimentalHomeMenu.Section = .chat
 
     /// Alice's portrait and name, which open her settings.
     private var aliceHeader: some View {
@@ -62,6 +62,7 @@ private struct ChatScreenContent: View, Equatable {
     /// Alice's own Today chat (`AppStore.openToday`): an agent chat in how it
     /// reads and sends, Alice's in how it looks and where Back leads.
     private var isToday: Bool { bot == AppStore.todayProfile }
+    private var isAgentTask: Bool { store.shownConversation?.isAgentTask == true }
 
     /// The bot this conversation belongs to, if it belongs to one.
     private var bot: String? {
@@ -116,7 +117,61 @@ private struct ChatScreenContent: View, Equatable {
         // and rebuilt all of it the moment one slid away. What made it worth
         // tearing down — every change to any chat redrew it — is gone: it
         // reads only the chat on screen (`AppStore.shownConversation`).
-        liveChat
+        ZStack {
+            liveChat
+                .opacity(experimentalDestinationVisible ? 0 : 1)
+                .allowsHitTesting(!experimentalDestinationVisible)
+                .accessibilityHidden(experimentalDestinationVisible)
+            if experimentalDestinationVisible {
+                NavigationStack {
+                    Group {
+                        switch experimentalSection {
+                        case .goals: GoalsScreen(onClose: { selectExperimental(.chat) })
+                        case .feed: FeedScreen()
+                        case .library: LibraryView()
+                        case .chat, .today: EmptyView()
+                        }
+                    }
+                    .toolbar {
+                        if experimentalSection != .goals {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button { selectExperimental(.chat) } label: { Image(systemName: "chevron.left") }
+                                    .accessibilityLabel("Back")
+                            }
+                        }
+                    }
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if !keyboardShown { experimentalMenu }
+                }
+                .background(Palette.background(scheme))
+            }
+        }
+        .onChange(of: experimentalEnabled, initial: true) { _, enabled in
+            if enabled, bot == nil { selectExperimental(.chat) }
+        }
+        .onChange(of: store.activeID) { _, _ in
+            if experimentalEnabled, bot == nil { selectExperimental(.chat) }
+        }
+    }
+
+    private var experimentalEnabled: Bool {
+        store.developerMode && homeInterface == .experimental && (bot == nil || isToday)
+    }
+
+    private var experimentalDestinationVisible: Bool {
+        experimentalEnabled && experimentalSection != .chat && experimentalSection != .today
+    }
+
+    private var experimentalMenu: some View {
+        ExperimentalHomeMenu(selected: $experimentalSection, onSelect: selectExperimental)
+    }
+
+    private func selectExperimental(_ section: ExperimentalHomeMenu.Section) {
+        composerFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        experimentalSection = section
+        if section == .chat || section == .today { store.openToday() }
     }
 
     private var liveChat: some View {
@@ -143,7 +198,7 @@ private struct ChatScreenContent: View, Equatable {
                     // In the page, not floating over it: a popover tip is
                     // presented, and while it is, a tap anywhere else only
                     // dismisses it — the header's buttons stopped answering.
-                    if bot == nil {
+                    if bot == nil, !hasTranscript, !keyboardShown {
                         TipView(SwipeNavigationTip())
                             .padding(.horizontal, 16)
                     }
@@ -183,14 +238,20 @@ private struct ChatScreenContent: View, Equatable {
         // be opened without ever going through it.
         .task(id: bot) {
             await refreshBots()
-            if let bot { await store.prepareBotChatIfNeeded(profile: bot) }
+            if let bot, store.shownConversation?.isCanonicalBotChat == true {
+                await store.prepareBotChatIfNeeded(profile: bot)
+            }
         }
         // Alice's own chat is resumed as it opens, keyed by the conversation
         // so moving between two home chats warms each. The task above keys
         // on the bot and would not fire again for a second home chat.
         .task(id: store.activeID) {
-            guard bot == nil, let id = store.activeID else { return }
-            await store.prepareHomeChatIfNeeded(conversationID: id)
+            guard let id = store.activeID else { return }
+            if store.shownConversation?.isAgentTask == true {
+                await store.refreshBotChat(id)
+            } else if bot == nil {
+                await store.prepareHomeChatIfNeeded(conversationID: id)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification
@@ -226,11 +287,7 @@ private struct ChatScreenContent: View, Equatable {
                 // last message still follows attachments, extra lines, and the
                 // keyboard.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Composer(
-                        focused: $composerFocused,
-                        placeholder: placeholder,
-                        keyboardShown: keyboardShown
-                    )
+                    composerArea
                 }
         } else {
             // Home is centred in the room between the header and the composer,
@@ -251,11 +308,7 @@ private struct ChatScreenContent: View, Equatable {
                     if bot == nil, !keyboardShown {
                         HomeSuggestionStrip()
                     }
-                    Composer(
-                        focused: $composerFocused,
-                        placeholder: placeholder,
-                        keyboardShown: keyboardShown
-                    )
+                    composerArea
                 }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                         guard !composerFocused, height > 0,
@@ -267,6 +320,28 @@ private struct ChatScreenContent: View, Equatable {
         }
     }
 
+    @ViewBuilder
+    private var composerArea: some View {
+        if experimentalEnabled {
+            VStack(spacing: 0) {
+                composer
+                if !keyboardShown {
+                    experimentalMenu
+                }
+            }
+        } else {
+            composer
+        }
+    }
+
+    private var composer: some View {
+        Composer(
+            focused: $composerFocused,
+            placeholder: placeholder,
+            keyboardShown: keyboardShown
+        )
+    }
+
     /// Keeps `cachedBots` good enough for the settings page to open from here.
     private func refreshBots() async {
         guard bot != nil, store.dashboardReady else { return }
@@ -275,7 +350,7 @@ private struct ChatScreenContent: View, Equatable {
 
     private var topControls: some View {
         HStack(alignment: .top, spacing: 0) {
-            Button(action: bot == nil ? onOpenDrawer : (isToday ? { store.goHome() } : onBack)) {
+            Button(action: (bot == nil || isAgentTask || (experimentalEnabled && isToday)) ? onOpenDrawer : (isToday ? { store.goHome() } : onBack)) {
                 // Two bars, not three, matched to the `plus` across from it.
                 // Both are math symbols, so the pairing is a real one — but
                 // not at the same settings: `equal` at 18pt medium matches
@@ -288,7 +363,7 @@ private struct ChatScreenContent: View, Equatable {
                 // list of bots, not a place the drawer leads anywhere useful
                 // from — so from here the same disc goes back instead.
                 Group {
-                    if bot == nil {
+                    if bot == nil || isAgentTask {
                         // The two bars turn into an X as the drawer opens,
                         // following the finger rather than switching at the end.
                         DrawerOpenMark()
@@ -304,7 +379,7 @@ private struct ChatScreenContent: View, Equatable {
                 .contentShape(.circle)
             }
             .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel(bot == nil ? "Chats" : (isToday ? "Home" : "Agents"))
+            .accessibilityLabel((bot == nil || isAgentTask) ? "Chats" : (isToday ? "Home" : "Agents"))
             .accessibilityIdentifier("chat.leading")
 
             Spacer(minLength: 0)
@@ -318,9 +393,17 @@ private struct ChatScreenContent: View, Equatable {
                 Button {
                     configuring = store.cachedBots.first { $0.name == bot }
                 } label: {
-                    ChatHeaderAvatar(name: store.botCurrentName(for: bot),
-                                     zoomSource: ("agent-avatar", avatarZoom)) {
-                        BotMarkView(mark: store.mark(for: bot), size: 72)
+                    VStack(spacing: 4) {
+                        ChatHeaderAvatar(name: store.botCurrentName(for: bot),
+                                         zoomSource: ("agent-avatar", avatarZoom)) {
+                            BotMarkView(mark: store.mark(for: bot), size: 72)
+                        }
+                        if isAgentTask, let task = store.shownConversation {
+                            Text(task.title)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
                 .contentShape(.contextMenuPreview, PortraitMenuShape(diameter: 72, gap: -14))
@@ -357,31 +440,7 @@ private struct ChatScreenContent: View, Equatable {
 
             Spacer(minLength: 0)
 
-            // Where a bot's conversation has nothing to put here — it came
-            // from the bots and goes back with the chevron opposite — Alice's
-            // own gets the way in, so the list is one tap from the place you
-            // start, not two through a drawer.
-            if bot == nil {
-                Button(action: onOpenBots) {
-                    // The bots' own eyes rather than a symbol standing in
-                    // for them. Every bot in the app is a face with these two
-                    // marks in it, so the disc that leads to them reads as one
-                    // of them — a small bot sitting in the corner — instead of
-                    // as a generic pair of shoulders.
-                    // Stated, not inherited. `.primary` inside the glass came
-                    // out at a fifth of the contrast the glyph opposite has —
-                    // the disc's own vibrancy lightens what it holds, and a
-                    // shape fill takes more of that than a symbol stroke does.
-                    BotFaceView(
-                        size: 32,
-                        ink: scheme == .dark ? .white : .black
-                    )
-                    .frame(width: discSize, height: discSize)
-                    .contentShape(.circle)
-                }
-                .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Agents")
-            } else if isToday {
+            if isToday {
                 // Today fills up with briefings and closes of the day; this
                 // is where it starts again. Its routines, and what Alice
                 // knows about Marc, stay.
@@ -452,7 +511,7 @@ private struct ChatScreenContent: View, Equatable {
             // offset: a bot chat opened blank until the reader moved it.
             TranscriptView(
                 conversation: conversation,
-                quietRuns: store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? [],
+                quietRuns: conversation.isAgentTask ? [] : store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? [],
                 keyboardShown: keyboardShown
             )
                 .id(conversation.id)
@@ -697,12 +756,12 @@ private struct TranscriptView: View {
                             superseded: answered.contains(message.id), reaction: given[message.id]
                         )
                     }
-                    if conversation.messages.contains(where: { $0.role == .user }) {
+                    if !keyboardShown, conversation.messages.contains(where: { $0.role == .user }) {
                         TipView(MessageActionsTip())
                     }
                     // Once the actions hint has done its job, and only under a
                     // reply that asks or offers something: where a thumb helps.
-                    if let last = messages.last, Reactions.invites(last), !MessageActionsTip().shouldDisplay {
+                    if !keyboardShown, let last = messages.last, Reactions.invites(last), !MessageActionsTip().shouldDisplay {
                         TipView(ReactionTip())
                     }
                     BackgroundWorkCard(conversationID: conversation.id)
@@ -971,6 +1030,7 @@ extension ReplySelectionDismiss {
 
 private struct EmptyChatView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     @State private var showingConnection = false
     /// Home pins give way while the software keyboard is up.
     var keyboardShown = false
@@ -1036,6 +1096,7 @@ private struct EmptyChatView: View {
                 if store.gatewayURL.isEmpty {
                     Button("Connect to Hermes") { showingConnection = true }
                         .buttonStyle(.glassProminent)
+                        .foregroundStyle(scheme == .dark ? Color.black : Color.white)
                         .controlSize(.large)
                         .accessibilityIdentifier("home.connect")
                         .padding(.top, 12)

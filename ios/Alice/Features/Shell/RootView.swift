@@ -59,7 +59,6 @@ struct RootView: View {
                 ChatScreen(
                     onOpenDrawer: { setDrawer(true) },
                     onBack: { goBackToBots() },
-                    onOpenBots: { openBots() },
                     drawerProgress: progress
                 )
                     .overlay {

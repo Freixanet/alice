@@ -9,6 +9,7 @@ struct Sidebar: View, Equatable {
     let width: CGFloat
     let onDismiss: () -> Void
 
+    @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @State private var showSearch = false
     @State private var going: Destination?
 
@@ -16,7 +17,7 @@ struct Sidebar: View, Equatable {
     /// destinations are listed visibly; configuration is progressively disclosed
     /// through Settings while remaining searchable for expert users.
     private enum Destination: String, Identifiable {
-        case activity, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
+        case activity, feed, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
         var id: String { rawValue }
     }
 
@@ -59,6 +60,12 @@ struct Sidebar: View, Equatable {
         .fullScreenCover(item: $going) { destination in
             Group {
                 switch destination {
+                case .feed: closable {
+                    FeedScreen(onOpenedChat: {
+                        going = nil
+                        onDismiss()
+                    })
+                }
                 case .activity: closable {
                     ActivityScreen(onOpenedChat: {
                         going = nil
@@ -234,6 +241,32 @@ struct Sidebar: View, Equatable {
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
+                if store.developerMode {
+                    Menu {
+                        Button {
+                            homeInterface = .current
+                            onDismiss()
+                        } label: {
+                            if homeInterface == .current {
+                                Label("Current", systemImage: "checkmark")
+                            } else {
+                                Text("Current")
+                            }
+                        }
+                        Button {
+                            homeInterface = .experimental
+                            onDismiss()
+                        } label: {
+                            if homeInterface == .experimental {
+                                Label("Experimental", systemImage: "checkmark")
+                            } else {
+                                Text("Experimental")
+                            }
+                        }
+                    } label: {
+                        Label("Interface", systemImage: "rectangle.bottomthird.inset.filled")
+                    }
+                }
                 // An alert is read in Activity, where it is; the connection
                 // screen only knows whether Hermes answers.
                 if case .needsAttention = store.wellbeing {
@@ -311,6 +344,7 @@ struct Sidebar: View, Equatable {
         case .agenda: openAgenda()
         case .goals: openGoals()
         case .activity: going = .activity
+        case .feed: going = .feed
         case .routines:
             store.markNoticesSeen(.routines)
             going = .routines
@@ -579,6 +613,7 @@ private struct SidebarList: View, Equatable {
             .contentShape(.rect(cornerRadius: 10))
             .contentShape(.contextMenuPreview, .rect(cornerRadius: 10))
         }
+        .accessibilityIdentifier("sidebar.chat.\(conversation.id)")
         .buttonStyle(.plain)
         .contextMenu {
             menu(for: conversation)

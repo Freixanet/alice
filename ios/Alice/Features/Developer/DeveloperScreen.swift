@@ -11,6 +11,7 @@ struct DeveloperScreen: View {
     @Environment(Notifier.self) private var notifier
     @Environment(\.colorScheme) private var scheme
 
+    @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @AppStorage(PerformanceHUD.key) private var showsHUD = false
     @State private var results: [String: CheckResult] = [:]
     @State private var running = false
@@ -49,6 +50,19 @@ struct DeveloperScreen: View {
                 Text("Live")
             } footer: {
                 Text("A small meter at the top of the screen shows frames per second and freezes as they happen. While developer mode is on, each reply also shows its model, tokens and tools.")
+            }
+
+            Section {
+                Picker("Interface", selection: $homeInterface) {
+                    Text("Current").tag(HomeInterface.current)
+                    Text("Experimental").tag(HomeInterface.experimental)
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("developer.interface")
+            } header: {
+                Text("Interface")
+            } footer: {
+                Text("Experimental adds a glass menu above the Home composer. Switch back anytime; chats and drafts stay the same. Available only while developer mode is on.")
             }
 
             Section("Tools") {

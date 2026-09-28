@@ -19,6 +19,7 @@ struct BotsScreen: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Seeded from the cache, not empty. Starting at empty meant the page
     /// opened on "No bots" for the one frame before the cached list was
@@ -486,7 +487,19 @@ struct BotsScreen: View {
 
                     Menu {
                         Button {
-                            creatingBot = true
+                            // Forge designs new agents with its own intake and
+                            // guide; the form is only for when it is missing.
+                            if let forge = store.cachedBots.first(where: {
+                                AgentMaker.matches(profile: $0.name, role: $0.aliceRole)
+                            }) {
+                                store.showingBots = false
+                                _ = store.openAgentTaskConversation(for: forge)
+                                store.draftAttachments = []
+                                store.draftMentions = []
+                                store.draft = "Quiero crear un agente nuevo: "
+                            } else {
+                                creatingBot = true
+                            }
                         } label: {
                             Label("New Agent", systemImage: "person.fill")
                         }
@@ -1800,19 +1813,22 @@ struct BotsScreen: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .center, spacing: 6) {
+                let layout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+                    : AnyLayout(HStackLayout(alignment: .center, spacing: 6))
+                layout {
                     Text(store.botCurrentName(for: bot))
                         .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                         .layoutPriority(1)
 
                     let liveDetail = store.cachedBots.first(where: { $0.name == bot.name })?.detail ?? bot.detail
                     if !liveDetail.isEmpty {
                         Text(liveDetail)
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                     }
 
                     if store.isBotPinned(bot) {
@@ -1821,18 +1837,20 @@ struct BotsScreen: View {
                             .foregroundStyle(store.accent.primary(scheme))
                     }
 
-                    Spacer(minLength: 4)
+                    if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 4) }
 
                     Text(timestamp(for: bot))
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
 
                 Text(snippet(for: bot))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -1876,7 +1894,7 @@ struct BotsScreen: View {
     private func preview(for bot: BotRow) -> BotChatPreview {
         // reads every chat: each row quotes its bot's latest reply, kept by
         // `BotChatPreviews` so a redraw costs a lookup, not a re-read.
-        guard let conversation = store.conversations.first(where: { $0.botName == bot.name })
+        guard let conversation = store.conversations.first(where: { $0.isCanonicalBotChat && $0.botName == bot.name })
         else { return .empty }
         return store.botChatPreview(conversation, botName: bot.name)
     }
@@ -2001,10 +2019,8 @@ struct BotDetail: View {
     private var renameSlugNote: String? {
         let shown = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let id = try? AgentProfileID.parse(shown) else { return nil }
-        if id == bot.name {
-            return AgentProfileID.note(display: shown, id: id)
-        }
-        return "Hermes will also rename the profile to `\(id)`. Conversations and routines stay with it."
+        guard id == bot.name else { return nil }
+        return AgentProfileID.note(display: shown, id: id)
     }
 
     var body: some View {
@@ -2015,19 +2031,25 @@ struct BotDetail: View {
                     TextField("Name", text: $name)
                         .font(.headline)
                         .multilineTextAlignment(.center)
+                        .submitLabel(.done)
                         .onSubmit { commitName() }
                     Divider()
                     TextField("Title (optional)", text: $detail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                        .submitLabel(.done)
                         .onSubmit { commitDetail() }
                 }
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity)
                 .listRowBackground(Palette.card(scheme))
             } footer: {
-                if let note = renameSlugNote {
+                // A failed rename is said here, by the name, not at the foot
+                // of the page where it went unseen.
+                if let failure {
+                    Text(failure).foregroundStyle(.red)
+                } else if let note = renameSlugNote {
                     Text(note)
                 }
             }
@@ -2968,6 +2990,25 @@ private struct NewBotSheet: View {
         guard !trimmed.isEmpty else { return }
         dismissKeyboard()
         failure = nil
+        // Forge designs agents with its own intake and guide; the form only
+        // hands it the request. Without Forge, the agent is made here.
+        if let forge = store.cachedBots.first(where: {
+            AgentMaker.matches(profile: $0.name, role: $0.aliceRole)
+        }) {
+            store.showingBots = false
+            _ = store.openAgentTaskConversation(for: forge)
+            store.draft = ""
+            store.draftMentions = []
+            store.draftAttachments = []
+            store.sendQuickReply(AgentMaker.createRequest(
+                name: trimmed, brief: brief,
+                extra: selectedTemplate?.soulExtra,
+                model: selectedModel.map { ($0.id, $0.provider) },
+                fallback: selectedFallback.map { ($0.id, $0.provider) }
+            ))
+            dismiss()
+            return
+        }
         progress = "Creating agent…"
         busy = true
         Task {
@@ -3002,11 +3043,12 @@ private struct NewBotSheet: View {
                 // overlay, so dismissing it lands on the new chat — not back
                 // on the form for a frame.
                 store.showingBots = false
-                store.draft = ""
-                store.draftAttachments = []
                 _ = store.openBotConversation(
                     for: bot, replacingExisting: true, refresh: false
                 )
+                store.draft = ""
+                store.draftMentions = []
+                store.draftAttachments = []
                 if !brief.isEmpty {
                     store.sendQuickReply(brief)
                 }

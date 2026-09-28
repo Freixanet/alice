@@ -1,5 +1,7 @@
 # Alice
 
+![Alice: your own agent, on your iPhone. Conversations, visible work and your decisions.](docs/media/alice-iphone-hero.png)
+
 A native iPhone app for your own [Hermes agent](https://hermes-agent.nousresearch.com):
 talk to it, watch it work and let it run errands for you. Hermes and your model keys stay
 on your own Mac or server.
@@ -12,6 +14,15 @@ Store; you build it with Xcode. It needs iOS 26 and a Hermes you run yourself. I
 independent project, not a Nous Research product.
 
 [Get started](#get-started) · [What it does](#what-it-does) · [How it is built](#how-it-is-built) · [Limitations](#limitations) · [Guía en español](docs/getting-connected.md)
+
+## From a thought to a task
+
+![Describe a task in conversation, follow Hermes' work and respond to approval requests.](docs/media/alice-workflow.png)
+
+**Talk naturally. Follow the work. Make the decisions.** Alice brings the
+conversation, tool activity and approval requests together on your iPhone.
+
+<sub>Conceptual product illustrations. The app's interface evolves as it improves.</sub>
 
 ## Why it exists
 
@@ -179,8 +190,8 @@ More detail: [architecture](docs/architecture.md), [pairing protocol](docs/pairi
 
 ## Quality
 
-- **Tests:** about 980 iOS unit test cases, 291 plugin tests and 81 web test files, plus
-  end-to-end browser tests.
+- **Tests:** native iOS unit and UI suites, plugin tests, web unit and contract tests,
+  and end-to-end browser tests. Current results are linked in the Quality badge above.
 - **CI:** runs a secret scan, type and lint checks, bundle budgets, the plugin tests, the
   Playwright suites and the iOS simulator suites
   ([workflow](.github/workflows/quality.yml)).

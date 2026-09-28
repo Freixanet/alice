@@ -1,0 +1,133 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1440"
+  height="760"
+  viewBox="0 0 1440 760"
+  role="img"
+  aria-labelledby="title desc"
+>
+  <title id="title">Alice — your own agent, on your iPhone</title>
+  <desc id="desc">
+    An editorial illustration of a phone bearing the Alice name, linked to three
+    simple nodes. Warm paper, charcoal and sage shapes express a calm native
+    companion for your own Hermes agent. This is a conceptual product
+    illustration.
+  </desc>
+  <defs>
+    <linearGradient id="paper" x2="1" y2="1">
+      <stop stop-color="#F8F5EF" />
+      <stop offset="1" stop-color="#E9E7DC" />
+    </linearGradient>
+    <linearGradient id="phone" x2="1" y2="1">
+      <stop stop-color="#363C35" />
+      <stop offset="1" stop-color="#141914" />
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="760" rx="28" fill="url(#paper)" />
+  <circle cx="1120" cy="375" r="290" fill="#D9DFCF" />
+  <circle
+    cx="1120"
+    cy="375"
+    r="239"
+    fill="none"
+    stroke="#B9C4AE"
+    stroke-width="1.5"
+  />
+  <circle
+    cx="1120"
+    cy="375"
+    r="325"
+    fill="none"
+    stroke="#CDD2C3"
+    stroke-width="1.5"
+  />
+  <g fill="#1C241D">
+    <text x="88" y="124" font-family="Georgia, serif" font-size="66">
+      Alice
+    </text>
+    <text x="88" y="278" font-family="Georgia, serif" font-size="88">
+      Your own agent.
+    </text>
+    <text x="88" y="382" font-family="Georgia, serif" font-size="88">
+      On your iPhone.
+    </text>
+    <text
+      x="91"
+      y="462"
+      font-family="Arial, sans-serif"
+      font-size="31"
+      fill="#56604F"
+    >
+      A native companion for Hermes.
+    </text>
+  </g>
+  <path d="M90 547h642" stroke="#C5CABC" stroke-width="2" />
+  <g font-family="Arial, sans-serif" font-size="25" fill="#414B3C">
+    <text x="90" y="604">Conversations.</text>
+    <text x="317" y="604">Visible work.</text>
+    <text x="517" y="604">Your decisions.</text>
+  </g>
+  <g transform="translate(968 84) rotate(7 151 291)">
+    <rect
+      x="15"
+      y="16"
+      width="302"
+      height="584"
+      rx="58"
+      fill="#6A7564"
+      opacity=".14"
+    />
+    <rect width="302" height="584" rx="58" fill="#A4AC9D" />
+    <rect x="3" y="3" width="296" height="578" rx="56" fill="#20261F" />
+    <rect
+      x="12"
+      y="12"
+      width="278"
+      height="560"
+      rx="48"
+      fill="url(#phone)"
+      stroke="#4D5747"
+    />
+    <rect x="105" y="27" width="92" height="23" rx="12" fill="#10140F" />
+    <text
+      x="151"
+      y="261"
+      text-anchor="middle"
+      font-family="Georgia, serif"
+      font-size="65"
+      fill="#F5F1E8"
+    >
+      Alice
+    </text>
+    <path
+      d="M91 342h120M151 342v61"
+      fill="none"
+      stroke="#A2B28E"
+      stroke-width="2"
+    />
+    <g fill="#20291D" stroke="#BFCAA8" stroke-width="2">
+      <circle cx="91" cy="342" r="14" />
+      <circle cx="211" cy="342" r="14" />
+      <circle cx="151" cy="403" r="14" />
+    </g>
+    <circle cx="151" cy="403" r="4" fill="#D9E7C8" />
+    <rect x="104" y="548" width="94" height="4" rx="2" fill="#AAB59D" />
+  </g>
+  <circle cx="886" cy="224" r="34" fill="#F7F5EF" stroke="#B9C4AE" />
+  <path
+    d="M873 218h26v17h-15l-7 6v-6h-4z"
+    fill="none"
+    stroke="#4C6043"
+    stroke-width="2.5"
+    stroke-linejoin="round"
+  />
+  <circle cx="1330" cy="552" r="34" fill="#F7F5EF" stroke="#B9C4AE" />
+  <path
+    d="m1317 552 9 9 17-19"
+    fill="none"
+    stroke="#4C6043"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

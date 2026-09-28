@@ -41,6 +41,24 @@ The web supports an authenticated server proxy and a direct browser transport.
 Keep operation semantics and profile scoping equivalent. Local machine access
 belongs only to the configured, verified owner. See [security](../SECURITY.md).
 
+## Independent agent tasks
+
+New Agent opens a separate conversation with the Agent Maker profile. Its optional
+`agentTaskID` distinguishes it from the canonical Bot Chat in old and new archives.
+`AgentTaskSession` uses profile-scoped `session.create` / `session.resume`, retaining
+the durable session before submission and using the live ID for prompts. Creation
+sets neither model nor history. A lost creation response is recovered by a unique
+UUID title; a missing saved session fails rather than silently redirecting or
+replaying work. Retries, slash commands, stop and approval recovery address that
+same session. Tasks appear in Recents; opening or clearing the profile's canonical
+chat does not replace them. These are separate conversations, not isolated computers.
+
+Contract inspected in official Hermes checkout `b889e4e91cfc5a4a1d7738d8943c801143bf7c7c`,
+`tui_gateway/methods_session.py`: profile-scoped creation, lazy persistence on first
+prompt, and resume by durable ID or pending title. Fixture tests do not establish
+live model outcomes. Background agent-to-agent deliveries still use Hermes' own
+routing and are not automatically redirected into an independent task.
+
 ## Storage and lifecycle
 
 iOS stores connection secrets in Keychain and conversation archives/preferences

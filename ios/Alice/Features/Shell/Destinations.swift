@@ -15,7 +15,7 @@ import Foundation
 /// searching "webhook" or "gateway" is served by the same list.
 struct AliceDestination: Identifiable, Hashable, Sendable {
     enum Target: String, Sendable {
-        case bots, notes, agenda, goals, activity, routines, projects, files, library
+        case bots, notes, agenda, goals, activity, feed, routines, projects, files, library
         case channels, mcp, skills, tools, webhooks, git, system
         case settings, connect, memory, models, usage, sessions, insights
         case configuration, pairing, plugins

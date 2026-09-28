@@ -17,6 +17,20 @@ settings:
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: 2DYYWXP5XL
 
+schemes:
+  Alice:
+    build:
+      targets:
+        Alice: all
+    test:
+      targets: [AliceTests, AliceUITests]
+  AlicePerformance:
+    build:
+      targets:
+        Alice: all
+    test:
+      targets: [AlicePerformanceTests]
+
 targets:
   Alice:
     type: application
@@ -208,4 +222,17 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.uitests
+        TEST_TARGET_NAME: Alice
+
+  AlicePerformanceTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AlicePerformanceTests
+    dependencies:
+      - target: Alice
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.performance-tests
         TEST_TARGET_NAME: Alice

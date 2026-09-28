@@ -239,6 +239,7 @@ struct GitDevelopmentScreen: View {
                     .font(.caption.monospaced())
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .submitLabel(.done)
                     .onSubmit { selectPath(pathDraft) }
                 Button("Open") { selectPath(pathDraft) }
                     .disabled(pathDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working)
@@ -330,6 +331,7 @@ struct GitDevelopmentScreen: View {
                     TextField("Base SHA or ref", text: $comparisonBase)
                         .font(.caption.monospaced())
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .submitLabel(.done)
                         .onSubmit { Task { await refreshReview() } }
                     Button("Capture HEAD") { Task { await captureHead() } }
                 }

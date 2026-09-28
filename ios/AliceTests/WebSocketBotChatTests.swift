@@ -447,16 +447,58 @@ final class WebSocketBotChatTests: XCTestCase {
         let imageParams = await rpc.params(of: "image.attach_bytes")
         let fileParams = await rpc.params(of: "file.attach")
         let submitParams = await rpc.params(of: "prompt.submit")
-        XCTAssertEqual(
-            methods,
-            ["session.resume", "image.attach_bytes", "file.attach", "prompt.submit"]
-        )
+        // Attachments are intentionally concurrent. Both must finish before
+        // submit, but their start order belongs to the task scheduler.
+        XCTAssertEqual(methods.count, 4)
+        XCTAssertEqual(methods.first, "session.resume")
+        XCTAssertEqual(methods.last, "prompt.submit")
+        XCTAssertEqual(Set(methods.dropFirst().dropLast()), ["image.attach_bytes", "file.attach"])
         XCTAssertEqual(imageParams?["session_id"], "live")
         XCTAssertEqual(imageParams?["content_base64"], "AQID")
         XCTAssertTrue(fileParams?["data_url"]?.hasPrefix("data:text/plain;base64,") == true)
         let expected = "@file:`attachments/report.txt`\n\nPlease inspect"
         XCTAssertEqual(submitParams?["text"], expected)
         XCTAssertEqual(submission.submittedText, expected)
+    }
+
+    private actor ReorderedUploads: HermesRPCTransport {
+        private var firstWaiter: CheckedContinuation<Void, Never>?
+        private var secondFinished = false
+        private var completed = Set<String>()
+        private(set) var submittedText: String?
+        func call(_ method: String, _ params: JSONObject) async throws -> JSONObject {
+            if method == "file.attach", let name = params["name"] as? String {
+                if name == "first.txt", !secondFinished {
+                    await withCheckedContinuation { firstWaiter = $0 }
+                } else if name == "second.txt" {
+                    secondFinished = true
+                    firstWaiter?.resume()
+                    firstWaiter = nil
+                }
+                completed.insert(name)
+                return JSONObject(["attached": true, "ref_text": "@file:`\(name)`"])
+            }
+            if method == "prompt.submit" {
+                guard completed == ["first.txt", "second.txt"] else {
+                    throw HermesRPCClient.Failure(reason: "Submitted before all uploads completed")
+                }
+                submittedText = params["text"] as? String
+            }
+            return JSONObject(["status": "streaming"])
+        }
+        nonisolated func events() -> AsyncStream<HermesRPCEvent> { AsyncStream { $0.finish() } }
+    }
+
+    func testConcurrentUploadsKeepFileReferencesInThePersonsOrder() async throws {
+        let rpc = ReorderedUploads()
+        let files = ["first.txt", "second.txt"].map {
+            Attachment(id: $0, name: $0, mime: "text/plain", kind: .file, data: Data($0.utf8))
+        }
+        _ = try await WebSocketBotChatSource(rpc: rpc).submit(
+            liveSessionID: "live", text: "Read these", attachments: files
+        )
+        let text = await rpc.submittedText
+        XCTAssertEqual(text, "@file:`first.txt`\n@file:`second.txt`\n\nRead these")
     }
 
     /// The model the UI shows for a bot must be the one the turn actually

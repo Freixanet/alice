@@ -131,6 +131,7 @@ struct AgendaScreen: View {
                 Task { await allowAccess() }
             }
             .buttonStyle(.borderedProminent)
+            .foregroundStyle(scheme == .dark ? Color.black : Color.white)
             .accessibilityIdentifier("agenda.connect")
         }
     }
