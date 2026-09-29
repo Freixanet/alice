@@ -115,7 +115,8 @@ class CalendarToolTests(unittest.TestCase):
     def test_register_adds_the_calendar_tool(self):
         plugin = load(ROOT / "__init__.py", "alice_plugin_calendar_register_test")
         ctx = mock.Mock()
-        plugin.register(ctx)
+        with mock.patch.object(plugin, "_start_feed"):
+            plugin.register(ctx)
         names = [call.kwargs["name"] for call in ctx.register_tool.call_args_list]
         self.assertIn("calendar_events", names)
 

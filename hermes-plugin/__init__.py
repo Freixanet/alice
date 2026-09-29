@@ -193,6 +193,32 @@ def _errands():
     return _module("errands.py", "alice_errands")
 
 
+def _feed():
+    return _module("feed.py", "alice_feed")
+
+
+def _feed_sources(tool_name=None, result=None, session_id="", **_):
+    """In a feed run, each source a web or browser result carries is named [alice_source: src_N],
+    the only way feed_publish can cite it (feed.py)."""
+    try:
+        return _feed().annotate(_session_id(session_id), tool_name or "", result)
+    except Exception:
+        logging.getLogger(__name__).debug("feed: could not annotate sources", exc_info=True)
+        return None
+
+
+def _guard_feed_publish(tool_name=None, session_id="", **_):
+    """feed_publish belongs to the feed run under way; any other session is refused before it runs."""
+    if tool_name != "feed_publish":
+        return None
+    try:
+        if _feed().is_feed_session(_session_id(session_id)):
+            return None
+    except Exception:
+        pass
+    return {"action": "block", "message": "feed_publish only works inside a feed run. Use feed_steer to change the feed."}
+
+
 def _session_id(session_id: str = "") -> str:
     """The Hermes session a call belongs to. In a /v1/runs errand the approval key is the run's
     id, so the session comes from the hook's argument or the gateway's session vars."""
@@ -1565,6 +1591,42 @@ def _register_task_tools(ctx) -> None:
                       emoji="🧾")
 
 
+def _register_feed_tools(ctx) -> None:
+    """The editorial feed (feed.py): feed_publish for its own runs, feed_steer for Alice's chat,
+    and the schedule that queues runs twice a day."""
+    feed = _feed()
+    try:
+        import toolsets
+
+        core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
+        if isinstance(core, list):
+            for name in ("feed_publish", "feed_steer"):
+                if name not in core:
+                    core.append(name)
+    except Exception:
+        logging.getLogger(__name__).debug("feed: could not keep the tools out of tool_search", exc_info=True)
+
+    ctx.register_tool(
+        name="feed_publish", toolset="alice_feed", schema=feed.PUBLISH_SCHEMA,
+        handler=lambda args, **_: _agent_json(feed.run_publish(_hermes_root(), _session_id(), args or {})),
+        check_fn=_always, description=feed.PUBLISH_SCHEMA["description"], emoji="📰")
+    ctx.register_tool(
+        name="feed_steer", toolset="alice_feed", schema=feed.STEER_SCHEMA,
+        handler=lambda args, **_: _agent_json(feed.run_steer(_hermes_root(), args or {})),
+        check_fn=_always, description=feed.STEER_SCHEMA["description"], emoji="🧭")
+    _start_feed()
+
+
+def _start_feed() -> None:
+    """The schedule, and a run left queued or orphaned by a restart settled or followed again."""
+    try:
+        feed = _feed()
+        feed.ensure_schedule(_hermes_root())
+        feed.kick(_hermes_root())
+    except Exception:
+        logging.getLogger(__name__).debug("feed: could not set up the schedule", exc_info=True)
+
+
 def _register_goal_tools(ctx) -> None:
     module = _goals_module()
     ctx.register_tool(
@@ -1593,6 +1655,9 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _route_card_fill)
     # A payment error on the page reaches the agent, and through it the person (purchases.py).
     ctx.register_hook("transform_tool_result", _payment_error_note)
+    # In a feed run, every source research surfaces gets a citable id (feed.py).
+    ctx.register_hook("transform_tool_result", _feed_sources)
+    ctx.register_hook("pre_tool_call", _guard_feed_publish)
     # What each agent did with consequences, for Alice's Activity.
     ctx.register_hook("post_tool_call", _post_tool_call)
     # In iMessage and SMS the reply is made readable as a text message (text_channel.py).
@@ -1620,6 +1685,7 @@ def register(ctx) -> None:
     ctx.register_hook("post_llm_call", _repeat_guard)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)
     _register_goal_tools(ctx)
+    _register_feed_tools(ctx)
     # A task of several steps is kept going by Hermes' goal judge until done or it needs the person.
     _register_task_tools(ctx)
     _register_ask_tools(ctx)

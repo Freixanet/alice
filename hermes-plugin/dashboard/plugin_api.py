@@ -2504,6 +2504,91 @@ async def goals_delete(goal_id: str, profile: str = "default") -> JSONResponse:
     return JSONResponse({"profile": name, "removed": goal_id}, headers=_NO_STORE)
 
 
+# ── Feed: posts Alice writes from the person's brief (feed.py) ──
+
+
+def _feed_module():
+    return _sibling("feed.py", "alice_feed")
+
+
+@router.get("/feed")
+async def feed_list() -> JSONResponse:
+    """Posts newest first, each with what the person did with it, plus brief, schedule and the
+    generation under way. A run left queued or orphaned by a restart is picked up from here."""
+    def read():
+        module, root = _feed_module(), _hermes_root()
+        module.kick(root)
+        return module.listing(root)
+
+    return JSONResponse(await asyncio.to_thread(read), headers=_NO_STORE)
+
+
+@router.get("/feed/status")
+async def feed_status() -> JSONResponse:
+    """Only the revision and the generation: what the phone polls while a run is under way."""
+    def read():
+        module, root = _feed_module(), _hermes_root()
+        module.kick(root)
+        return module.status(root)
+
+    return JSONResponse(await asyncio.to_thread(read), headers=_NO_STORE)
+
+
+@router.post("/feed/generate")
+async def feed_generate() -> JSONResponse:
+    def queue():
+        module, root = _feed_module(), _hermes_root()
+        outcome = module.request(root, "refresh")
+        module.kick(root)
+        return outcome
+
+    return JSONResponse(await asyncio.to_thread(queue), headers=_NO_STORE)
+
+
+class _FeedBrief(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(default="", max_length=4000)
+
+
+@router.put("/feed/brief")
+async def feed_brief(body: _FeedBrief) -> JSONResponse:
+    def save():
+        module, root = _feed_module(), _hermes_root()
+        outcome = module.set_brief(root, body.text)
+        module.kick(root)
+        return outcome
+
+    return JSONResponse(await asyncio.to_thread(save), headers=_NO_STORE)
+
+
+class _FeedEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    kind: str
+    on: Optional[bool] = None
+    createdAt: Optional[float] = None
+
+
+@router.post("/feed/{post_id}/events")
+async def feed_event(post_id: str, body: _FeedEvent) -> JSONResponse:
+    """A love, discuss or delete, idempotent by its UUID: a repeat answers 200 as a duplicate,
+    a post no longer kept 410, a malformed event 400."""
+    module = _feed_module()
+
+    def add():
+        return module.add_event(_hermes_root(), post_id, body.model_dump(exclude_none=True))
+
+    try:
+        result = await asyncio.to_thread(add)
+    except module.FeedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError:
+        return JSONResponse({"expired": True}, status_code=410, headers=_NO_STORE)
+    return JSONResponse(result, headers=_NO_STORE)
+
+
 # ── Errands: tasks that run apart from the chat, and the checkout the person approves ──
 
 

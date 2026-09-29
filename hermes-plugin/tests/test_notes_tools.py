@@ -189,7 +189,8 @@ class NotesToolsTests(unittest.TestCase):
             def register_tool(self, **kw):
                 registered.append(kw)
 
-        self.plugin.register(Ctx())
+        with mock.patch.object(self.plugin, "_start_feed"):
+            self.plugin.register(Ctx())
         notes = [t for t in registered if t["toolset"] == "notes"]
         agents = [t for t in registered if t["toolset"] == "alice_agents"]
         debug = [t for t in registered if t["toolset"] == "alice_debug"]
@@ -243,7 +244,8 @@ class NotesToolsTests(unittest.TestCase):
             def register_tool(self, **kw):
                 registered[kw["name"]] = kw["handler"]
 
-        self.plugin.register(Ctx())
+        with mock.patch.object(self.plugin, "_start_feed"):
+            self.plugin.register(Ctx())
         added = json.loads(registered["note_add"]({"text": "por el handler"}))
         self.assertTrue(added["ok"])
         found = json.loads(registered["note_search"]({"query": "handler"}))
