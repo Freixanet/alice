@@ -42,6 +42,39 @@ struct MessageRow: View {
     /// The experimental interface draws every reply's words in a bubble, in Alice's chat and the agents'.
     private var bubblesReplies: Bool { store.developerMode && homeInterface == .experimental }
 
+    @ViewBuilder
+    private func inBubble<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if bubblesReplies { ReplyBubble { content() } } else { content() }
+    }
+
+    @ViewBuilder
+    private func routineReport(_ routine: String) -> some View {
+        let content = message.botName == "chollometro"
+            && routine == "Chollos del dia"
+            ? ChollometroReport.normalizedMarkdown(message.content)
+            : message.content
+        if message.botName == "chollometro",
+           let deals = ChollometroReport.deals(in: content) {
+            RoutineReportCard(name: routine) {
+                ChollometroDeals(
+                    deals: deals,
+                    tint: store.mark(for: "chollometro").color
+                )
+            }
+        } else if Self.saysNothing(content) {
+            // A run whose model answered only "---" (29-09): said, not a blank card.
+            RoutineReportCard(name: routine) {
+                Text("This run came back empty. The next one will try again.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            RoutineReportCard(name: routine) {
+                replyBody(content)
+            }
+        }
+    }
+
     /// While tokens arrive, finished blocks in their final layout and the
     /// paragraph being written as light Markdown (`StreamingReply`).
     @ViewBuilder
@@ -199,30 +232,8 @@ struct MessageRow: View {
                     }
 
                     if let routine = message.routineName {
-                        let content = message.botName == "chollometro"
-                            && routine == "Chollos del dia"
-                            ? ChollometroReport.normalizedMarkdown(message.content)
-                            : message.content
-                        if message.botName == "chollometro",
-                           let deals = ChollometroReport.deals(in: content) {
-                            RoutineReportCard(name: routine) {
-                                ChollometroDeals(
-                                    deals: deals,
-                                    tint: store.mark(for: "chollometro").color
-                                )
-                            }
-                        } else if Self.saysNothing(content) {
-                            // A run whose model answered only "---" (29-09): said, not a blank card.
-                            RoutineReportCard(name: routine) {
-                                Text("This run came back empty. The next one will try again.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } else {
-                            RoutineReportCard(name: routine) {
-                                replyBody(content)
-                            }
-                        }
+                        // In the reply's own bubble, like every other reply's words.
+                        inBubble { routineReport(routine) }
                     } else if let agent = message.fromAgent {
                         AgentMessageCard(handle: agent) {
                             replyBody(message.content)

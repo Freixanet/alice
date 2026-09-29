@@ -135,5 +135,18 @@ class ErrandHookTests(unittest.TestCase):
         entry = self.errand()
         self.assertIsNone(self.plugin._errand_turn(session_id=entry["session_id"], user_message="compra"))
 
+    def test_only_an_errands_browser_code_is_put_in_its_own_context(self):
+        entry = self.errand()
+        out = self.plugin._isolate_errand_browser("browser_exec", {"code": "# Abrir HSN\ngoto_url('x')"},
+                                                  session_id=entry["session_id"])
+        self.assertEqual(out["action"], "modify")
+        self.assertTrue(out["args"]["code"].endswith("# Abrir HSN\ngoto_url('x')"))
+        self.assertIsNone(self.plugin._isolate_errand_browser("browser_exec", {"code": "x"}, session_id="chat-1"))
+        self.assertIsNone(self.plugin._isolate_errand_browser("web_search", {"query": "x"},
+                                                              session_id=entry["session_id"]))
+        # The step shown is the agent's comment, not Alice's note in front of it.
+        self.plugin._errand_step("browser_exec", out["args"], entry["session_id"])
+        self.assertEqual(self.errands.get(self.home, entry["id"])["steps"][-1]["text"], "Abrir HSN")
+
 if __name__ == "__main__":
     unittest.main()

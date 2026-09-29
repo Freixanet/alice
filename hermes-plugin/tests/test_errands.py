@@ -3,6 +3,7 @@
     PYTHONPATH=~/.hermes/hermes-agent ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests
 """
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -518,6 +519,69 @@ class ExpiryTests(Base):
         errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
         self.assertIsNone(errands.decide_checkout(self.home, entry["id"], True, now=NOW + 3 * 3600))
         self.assertIn("checkout_request", errands.refresh_message(errands.get(self.home, entry["id"])["checkout"]))
+
+
+class ContextTests(Base):
+    def test_the_preamble_is_valid_code_naming_its_own_file(self):
+        code = errands.context_preamble("abc123def0")
+        compile(code, "<preamble>", "exec")
+        self.assertIn(str(errands.context_file("abc123def0")), code)
+        self.assertIn("Target.createBrowserContext", code)
+        # A strange id cannot reach the file name.
+        self.assertNotIn("..", str(errands.context_file("../../etc")))
+
+    def test_the_preamble_makes_and_then_keeps_one_context_and_tab(self):
+        calls = []
+        state = {"targets": [], "contexts": []}
+
+        def cdp(method, **params):
+            calls.append(method)
+            if method == "Target.getTargets":
+                return {"targetInfos": [{"targetId": t} for t in state["targets"]]}
+            if method == "Target.getBrowserContexts":
+                return {"browserContextIds": state["contexts"]}
+            if method == "Target.createBrowserContext":
+                state["contexts"].append("ctx1")
+                return {"browserContextId": "ctx1"}
+            if method == "Target.createTarget":
+                self.assertEqual(params["browserContextId"], "ctx1")
+                state["targets"].append("tab1")
+                return {"targetId": "tab1"}
+            return {}
+
+        switched = []
+        errand_id = "a1b2c3d4e5"
+        self.addCleanup(lambda: errands.context_file(errand_id).unlink(missing_ok=True))
+        code = errands.context_preamble(errand_id)
+        exec(code, {"cdp": cdp, "switch_tab": switched.append})
+        exec(code, {"cdp": cdp, "switch_tab": switched.append})
+        self.assertEqual(switched, ["tab1"])
+        self.assertEqual(calls.count("Target.createBrowserContext"), 1)
+
+    def test_a_failure_to_isolate_never_stops_the_errand(self):
+        def broken(method, **params):
+            raise RuntimeError("no CDP")
+
+        self.addCleanup(lambda: errands.context_file("ffff000011").unlink(missing_ok=True))
+        exec(errands.context_preamble("ffff000011"), {"cdp": broken, "switch_tab": lambda t: None})
+
+    def test_releasing_disposes_the_context_and_forgets_it(self):
+        path = errands.context_file("0a0b0c0d0e")
+        path.write_text(json.dumps({"context": "ctx9", "target": "t"}))
+        sent = []
+
+        class Socket:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def send(self, text): sent.append(json.loads(text))
+            def recv(self, timeout=None): return "{}"
+
+        with mock.patch("websockets.sync.client.connect", return_value=Socket()):
+            self.assertTrue(errands.release_context("0a0b0c0d0e", browser_ws="ws://x"))
+        self.assertEqual(sent[0]["method"], "Target.disposeBrowserContext")
+        self.assertEqual(sent[0]["params"]["browserContextId"], "ctx9")
+        self.assertFalse(path.exists())
+        self.assertFalse(errands.release_context("0a0b0c0d0e", browser_ws="ws://x"))
 
 class AnswerTests(unittest.TestCase):
     def test_answers_become_the_lines_ask_person_reads(self):

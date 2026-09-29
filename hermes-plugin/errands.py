@@ -599,7 +599,8 @@ def brief(entry: Dict[str, Any]) -> str:
     return (
         f"[Recado de Alice] {entry['request']}\n\n"
         "Trabajas en segundo plano, fuera de cualquier chat: la persona no lee tus respuestas, ve la "
-        "tarjeta del recado. Hazlo de principio a fin tú: nunca llames a `errand_start` (ya estás en el "
+        "tarjeta del recado. Navegas en un contexto propio, sin sesiones iniciadas: si la web pide "
+        "entrar, usa el login del vault. Hazlo de principio a fin tú: nunca llames a `errand_start` (ya estás en el "
         "recado). El comentario `#` con que empieza cada paso del navegador es lo que la persona ve: "
         "escríbelo en su idioma y en pocas palabras («Añadir al carrito», «Elegir envío»). "
         f"{login} "
@@ -615,6 +616,89 @@ def brief(entry: Dict[str, Any]) -> str:
         "`purchase_outcome` con el número de pedido, el total, los artículos y la tarjeta. Termina "
         "cada turno con una sola línea que diga en qué punto estás."
     )
+
+
+# ── Its own browser context ────────────────────────────────────────────────────
+#
+# Every agent shares the one Chrome, and Hermes gives each session its own tab — but tabs share
+# cookies, so three copies of one errand filled the same Apple bag. Each errand browses in a
+# browser context of its own (cookies, basket, session), made and pinned by a few lines put in
+# front of its browser_exec code; a login it needs comes from the vault.
+
+CONTEXT_FILE = "alice-errand-ctx-{id}.json"
+
+
+def context_file(errand_id: str) -> Path:
+    import tempfile
+
+    return Path(tempfile.gettempdir()) / CONTEXT_FILE.format(id=re.sub(r"[^a-f0-9]", "", errand_id))
+
+
+def context_preamble(errand_id: str) -> str:
+    """Code run before the errand's own: it switches the harness to the errand's tab in the
+    errand's context, making both when missing. Never stops the errand: on failure it says so."""
+    path = str(context_file(errand_id))
+    return f"""\
+# alice: this errand browses in its own browser context (its own cookies and basket)
+def _alice_own_context():
+    import json as _j, os as _o
+    _path = {path!r}
+    try:
+        from browser_harness import _ipc as _bipc
+        _dpid = _bipc.pid_path(_o.environ.get("BU_NAME", "default")).read_text().strip() or "0"
+    except Exception:
+        _dpid = "0"
+    try:
+        _saved = _j.load(open(_path))
+    except Exception:
+        _saved = {{}}
+    try:
+        _targets = {{t.get("targetId") for t in cdp("Target.getTargets").get("targetInfos", [])}}
+        if _saved.get("daemon") == _dpid and _saved.get("target") in _targets:
+            return
+        _contexts = set(cdp("Target.getBrowserContexts").get("browserContextIds", []))
+        _ctx = _saved.get("context") if _saved.get("context") in _contexts else None
+        if _ctx is None:
+            _ctx = cdp("Target.createBrowserContext").get("browserContextId")
+        _tid = _saved.get("target") if (_saved.get("target") in _targets and _saved.get("context") == _ctx) else None
+        if _tid is None:
+            _tid = cdp("Target.createTarget", url="about:blank", browserContextId=_ctx).get("targetId")
+        switch_tab(_tid)
+        _j.dump({{"context": _ctx, "target": _tid, "daemon": _dpid}}, open(_path, "w"))
+    except Exception as _e:
+        print("[alice] no se pudo aislar el navegador de este recado:", type(_e).__name__)
+_alice_own_context()
+del _alice_own_context
+"""
+
+
+def release_context(errand_id: str, browser_ws: Optional[str] = None) -> bool:
+    """The errand is over: its browser context (and its pages) is closed, its note removed."""
+    path = context_file(errand_id)
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    context = saved.get("context")
+    if not context:
+        return False
+    try:
+        if browser_ws is None:
+            with urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2) as response:  # noqa: S310
+                browser_ws = json.loads(response.read().decode("utf-8"))["webSocketDebuggerUrl"]
+        from websockets.sync.client import connect
+
+        with connect(browser_ws, open_timeout=3) as socket:
+            socket.send(json.dumps({"id": 1, "method": "Target.disposeBrowserContext",
+                                    "params": {"browserContextId": context}}))
+            socket.recv(timeout=3)
+        return True
+    except Exception:  # noqa: BLE001 — a closed Chrome took the context with it
+        return False
 
 
 # ── Talking to the gateway ──────────────────────────────────────────────────────
@@ -943,7 +1027,9 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
 
     def body():
         try:
-            (engine_factory or Engine)(home, errand_id).run(message)
+            final = (engine_factory or Engine)(home, errand_id).run(message)
+            if final in ("done", "stuck", "denied", "stopped", "missing"):
+                release_context(errand_id)
         except Exception as exc:  # noqa: BLE001 — never raised in a thread; the errand says what happened
             update(home, errand_id, status="stuck", reason=f"Error interno: {type(exc).__name__}.")
         finally:
@@ -1023,6 +1109,7 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
         pass
     if entry.get("run_id"):
         Gateway(home, entry.get("profile") or "").stop(entry["run_id"])
+    release_context(errand_id)
     return entry
 
 

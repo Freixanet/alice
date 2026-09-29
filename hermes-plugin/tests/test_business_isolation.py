@@ -152,7 +152,7 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_hook.assert_any_call("post_llm_call", self.plugin._repeat_guard)
         # And nothing is paid without the approved checkout, checked before the repeat guard.
         self.assertLess(hooks.index(self.plugin._guard_errand), hooks.index(self.plugin._guard_repeat_payment))
-        self.assertEqual(ctx.register_hook.call_count, 15)
+        self.assertEqual(ctx.register_hook.call_count, 16)
         ctx.register_hook.assert_any_call("pre_llm_call", self.plugin._errand_turn)
         ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._guard_chat_errand)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)

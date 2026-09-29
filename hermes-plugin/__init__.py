@@ -233,6 +233,18 @@ def _active_url() -> str:
         return ""
 
 
+def _isolate_errand_browser(tool_name=None, args=None, session_id="", **_):
+    """An errand's browser code runs in the errand's own browser context (errands.context_preamble)."""
+    if tool_name != "browser_exec" or not isinstance(args, dict) or not isinstance(args.get("code"), str):
+        return None
+    session = _session_id(session_id)
+    errands = _errands()
+    if not session.startswith(errands.SESSION_PREFIX):
+        return None
+    return {"action": "modify",
+            "args": {"code": errands.context_preamble(session[len(errands.SESSION_PREFIX):]) + args["code"]}}
+
+
 def _guard_errand(tool_name=None, args=None, session_id="", **_):
     """Nothing is paid without the person's approved checkout, and a saved login is used without
     asking unless they asked to be asked (errands.py). If the check itself fails, paying is refused."""
@@ -268,8 +280,8 @@ def _errand_step(tool_name, args, session_id) -> None:
     if not session.startswith(errands.SESSION_PREFIX) or not str(tool_name or "").startswith("browser"):
         return
     code = str((args or {}).get("code") or "") if isinstance(args, dict) else ""
-    found = _STEP.search(code)
-    text = found.group(1) if found else ""
+    # The first comment of the agent's own: not a note put there by Alice or Hermes.
+    text = next((c.strip() for c in _STEP.findall(code) if not c.strip().startswith(("alice:", "hermes:"))), "")
     if text:
         errands.add_step(_hermes_root(), session[len(errands.SESSION_PREFIX):], text, _active_url())
 
@@ -1566,6 +1578,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # The shared browser the iPhone can watch is started before an agent needs it.
     ctx.register_hook("pre_tool_call", _browser_ready)
+    # And each errand browses in its own context of it, never another errand's basket.
+    ctx.register_hook("pre_tool_call", _isolate_errand_browser)
     # After reading the web, sending data out or reading secrets needs the person (egress_guard.py).
     ctx.register_hook("pre_tool_call", _guard_egress)
     # A card is filled with the copy for the page open, or bound to the bank's payment page.
