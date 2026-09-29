@@ -523,10 +523,11 @@ struct CheckoutApprovalCard: View {
 
     private func itemRow(_ item: Errand.Item) -> some View {
         HStack(spacing: 14) {
-            CardImage(image: item.image, page: nil, symbol: "bag", fits: true)
-                .background(Color.white)
-                .frame(width: 56, height: 56)
-                .clipShape(.rect(cornerRadius: 12))
+            // Filled and cropped to the middle: shops' pictures are often wide banners with the
+            // product small in the centre, and fitted whole (with a margin) it became a speck.
+            ProductThumb(url: item.image)
+                .frame(width: 72, height: 72)
+                .clipShape(.rect(cornerRadius: 14))
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.name).font(.body.weight(.medium)).lineLimit(2)
                 Text(detail(item)).font(.subheadline).foregroundStyle(.secondary)
@@ -550,6 +551,69 @@ struct CheckoutApprovalCard: View {
             Spacer(minLength: 0)
         }
         .padding(14)
+    }
+}
+
+/// A product's picture as a thumbnail: the white around it trimmed off, so a shop's wide banner
+/// with the product small in the middle (Apple's) shows the product, not a speck on white.
+struct ProductThumb: View {
+    let url: URL?
+    @State private var picture: UIImage?
+    @State private var looked = false
+
+    var body: some View {
+        Color.white
+            .overlay {
+                if let picture {
+                    Image(uiImage: picture).resizable().scaledToFit().padding(6)
+                } else if looked || url == nil {
+                    Image(systemName: "bag").font(.title2).foregroundStyle(.gray)
+                } else {
+                    ProgressView()
+                }
+            }
+            .task(id: url) {
+                guard let url else { return }
+                let loaded = await CardImages.load(image: url, page: nil)
+                let trimmed = await Task.detached(priority: .userInitiated) { loaded.flatMap(Self.trimmingWhite) }.value
+                picture = trimmed ?? loaded
+                looked = true
+            }
+    }
+
+    /// The picture cropped to what is not (near) white around it; nil when there is nothing to crop.
+    nonisolated static func trimmingWhite(_ image: UIImage) -> UIImage? {
+        guard let cg = image.cgImage else { return nil }
+        let width = cg.width, height = cg.height
+        guard width > 8, height > 8,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = context.data
+        else { return nil }
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            let row = y * width * 4
+            for x in 0..<width {
+                let i = row + x * 4
+                let alpha = pixels[i + 3]
+                let blank = alpha < 16 || (pixels[i] > 240 && pixels[i + 1] > 240 && pixels[i + 2] > 240)
+                if !blank {
+                    if x < minX { minX = x }
+                    if x > maxX { maxX = x }
+                    if y < minY { minY = y }
+                    if y > maxY { maxY = y }
+                }
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        let box = CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+        // Nothing worth cropping: the picture already fills itself.
+        guard box.width * box.height < CGFloat(width * height) * 0.85,
+              let cropped = context.makeImage()?.cropping(to: box) else { return nil }
+        return UIImage(cgImage: cropped)
     }
 }
 
