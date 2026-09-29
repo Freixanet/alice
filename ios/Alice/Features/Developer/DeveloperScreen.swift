@@ -72,6 +72,9 @@ struct DeveloperScreen: View {
                 NavigationLink { PurchaseDemoScreen() } label: {
                     Label("Purchase walkthrough", systemImage: "creditcard")
                 }
+                NavigationLink { AvatarDemoScreen() } label: {
+                    Label("Alice working avatar", systemImage: "person.crop.circle")
+                }
                 ShareLink(item: report()) {
                     Label("Share report", systemImage: "square.and.arrow.up")
                 }
