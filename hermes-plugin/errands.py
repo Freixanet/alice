@@ -41,6 +41,9 @@ STATUSES = ("working", "needs_approval", "needs_input", "needs_card", "done", "s
 ACTIVE = ("working", "needs_approval", "needs_input", "needs_card")
 # An approved checkout pays within this window; later, the agent asks again.
 APPROVAL_TTL = 10 * 60
+# A checkout waiting longer than this is stale (shops close their checkout sessions; prices
+# and delivery move): it can no longer be approved, only prepared again.
+CHECKOUT_TTL = 15 * 60
 KEEP = 30 * 24 * 3600
 MAX_STEPS = 40
 POLL_SECONDS = 1.5
@@ -343,9 +346,30 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
                      "End your turn with one line saying the checkout is waiting for approval.")}
 
 
+def expire_checkouts(home: Path, now: Optional[float] = None) -> List[str]:
+    """Checkouts left waiting past CHECKOUT_TTL become «expired»: approving one resumed an errand
+    on a checkout Apple had closed hours before, without the person knowing."""
+    now = now or time.time()
+    expired = []
+    for entry in listing(home):
+        checkout = entry.get("checkout")
+        if (isinstance(checkout, dict) and checkout.get("status") == "pending"
+                and now - float(checkout.get("requested_at") or now) > CHECKOUT_TTL):
+            update(home, entry["id"], now=now, checkout={**checkout, "status": "expired"})
+            expired.append(entry["id"])
+    return expired
+
+
+def refresh_message(checkout: Dict[str, Any]) -> str:
+    return (f"[checkout caducado] El checkout de {checkout.get('merchant') or checkout.get('site')} esperó demasiado y "
+            "ya no vale. Vuelve a la tienda, comprueba que el pedido sigue igual (artículos, precio, envío), llega "
+            "otra vez al paso de pago y llama a `checkout_request` con lo que muestre la página ahora. No pagues.")
+
+
 def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float] = None,
                     card_label: str = "") -> Optional[Dict[str, Any]]:
     now = now or time.time()
+    expire_checkouts(home, now)
     entry = get(home, errand_id)
     checkout = (entry or {}).get("checkout")
     if entry is None or not isinstance(checkout, dict) or checkout.get("status") != "pending":
@@ -992,7 +1016,7 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
         return None
     if entry.get("status") not in ACTIVE:
         return entry
-    entry = update(home, errand_id, status="stopped", reason="Lo paraste tú.")
+    entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.")
     try:
         _goal_manager(entry["session_id"]).clear()
     except Exception:

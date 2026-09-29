@@ -97,6 +97,11 @@ final class ErrandBoard {
         await answer(errand) { try await store.errandCardReady(errand.id, label: label) }
     }
 
+    func refreshCheckout(_ errand: Errand) async {
+        guard let store else { return }
+        await answer(errand) { try await store.refreshCheckout(errand.id) }
+    }
+
     func stop(_ errand: Errand) async {
         guard let store else { return }
         await answer(errand) { try await store.stopErrand(errand.id) }
@@ -144,6 +149,8 @@ struct ErrandStack: View {
     let onAnswer: ([String: String]) -> Void
     let onConfirm: (Bool) -> Void
     var onCardReady: (String) -> Void = { _ in }
+    var onRefreshCheckout: () -> Void = {}
+    var onStop: () -> Void = {}
     /// The walkthrough's own cards, instead of the vault's.
     var demoCards: [SavedCard]? = nil
 
@@ -157,6 +164,8 @@ struct ErrandStack: View {
         case .pending: return errand.status == .needsApproval ? (sending ? .sending : .pending) : nil
         case .approved: return .approved
         case .denied: return .denied
+        case .expired: return errand.status.isOpen ? .expired : nil
+        case .replaced: return nil
         }
     }
 
@@ -186,8 +195,9 @@ struct ErrandStack: View {
                                      onOpenPage: phase == .pending ? onOpenBrowser : nil,
                                      cards: cards, chosenCard: chosen,
                                      onChooseCard: { chosen = $0 }, onAddCard: { addingCard = true },
+                                     onRefresh: onRefreshCheckout,
                                      onAllow: { onDecide(true, chosen?.label ?? checkout.cardLabel) },
-                                     onDeny: { onDecide(false, "") })
+                                     onDeny: { phase == .expired ? onStop() : onDecide(false, "") })
                     .task(id: checkout.id) { await loadCards(for: checkout) }
                     .sheet(isPresented: $addingCard) {
                         PaymentCardSheet(offer: PaymentCardOffer(origin: "https://" + checkout.site, profile: "default"),
@@ -279,7 +289,9 @@ struct ErrandChatBlock: View {
                     onDecide: { allow, card in Task { await board.decide(errand, allow: allow, card: card) } },
                     onAnswer: { answers in Task { await board.answerQuestions(errand, answers) } },
                     onConfirm: { allow in Task { await board.confirm(errand, allow: allow) } },
-                    onCardReady: { label in Task { await board.cardReady(errand, label: label) } })
+                    onCardReady: { label in Task { await board.cardReady(errand, label: label) } },
+                    onRefreshCheckout: { Task { await board.refreshCheckout(errand) } },
+                    onStop: { Task { await board.stop(errand) } })
                 .fullScreenCover(isPresented: $browsing) {
                     LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text)
                 }

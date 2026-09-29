@@ -4881,6 +4881,7 @@ final class AppStore {
     }
     func stopErrand(_ id: String) async throws -> Errand? { try await dashboard.stopErrand(id) }
     func errandIcon(_ id: String) async throws -> Data? { try await dashboard.errandIcon(id) }
+    func refreshCheckout(_ id: String) async throws -> Errand? { try await dashboard.refreshCheckout(id) }
     func errandCardReady(_ id: String, label: String) async throws -> Errand? {
         try await dashboard.errandCardReady(id, label: label)
     }

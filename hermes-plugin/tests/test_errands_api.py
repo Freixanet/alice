@@ -141,5 +141,19 @@ class ErrandRoutesTests(unittest.TestCase):
         self.assertIn("Visa ···4242", self.resumed[-1][1])
         self.assertIn("checkout_request", self.resumed[-1][1])
 
+    def test_a_stale_checkout_is_prepared_again_not_approved(self):
+        entry = self.waiting()
+        checkout = entry["checkout"]
+        self.errands.update(self.home, entry["id"], checkout={**checkout, "requested_at": 1.0})
+        late = self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                json={"decision": "allow", "checkout_id": checkout["id"]})
+        self.assertEqual(late.status_code, 409)
+        self.assertIn("caducado", late.json()["detail"])
+        self.assertEqual(self.resumed, [])
+        again = self.client.post(self.url(f"/{entry['id']}/refresh"))
+        self.assertEqual(again.status_code, 200)
+        self.assertIn("checkout_request", self.resumed[-1][1])
+        self.assertEqual(self.client.post(self.url(f"/{entry['id']}/refresh")).status_code, 409)
+
 if __name__ == "__main__":
     unittest.main()

@@ -158,7 +158,9 @@ struct ErrandDetailScreen: View {
                         onDecide: { allow, card in if preview == nil { Task { await board.decide(errand, allow: allow, card: card) } } },
                         onAnswer: { answers in if preview == nil { Task { await board.answerQuestions(errand, answers) } } },
                         onConfirm: { allow in if preview == nil { Task { await board.confirm(errand, allow: allow) } } },
-                        onCardReady: { label in if preview == nil { Task { await board.cardReady(errand, label: label) } } })
+                        onCardReady: { label in if preview == nil { Task { await board.cardReady(errand, label: label) } } },
+                        onRefreshCheckout: { if preview == nil { Task { await board.refreshCheckout(errand) } } },
+                        onStop: { if preview == nil { Task { await board.stop(errand) } } })
                     if errand.status.isOpen, preview == nil {
                         Button(role: .destructive) { confirmingStop = true } label: {
                             Text(errand.language.pick("Stop this errand", "Parar este recado"))

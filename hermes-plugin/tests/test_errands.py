@@ -503,6 +503,22 @@ class PictureTests(Base):
         self.assertEqual(decided["checkout"]["card_label"], "Mastercard ···4444")
 
 
+
+class ExpiryTests(Base):
+    def test_a_checkout_left_waiting_expires_and_cannot_be_approved(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
+        self.assertEqual(errands.expire_checkouts(self.home, now=NOW + 60), [])
+        self.assertEqual(errands.expire_checkouts(self.home, now=NOW + errands.CHECKOUT_TTL + 1), [entry["id"]])
+        self.assertEqual(errands.get(self.home, entry["id"])["checkout"]["status"], "expired")
+        self.assertIsNone(errands.decide_checkout(self.home, entry["id"], True, now=NOW + errands.CHECKOUT_TTL + 2))
+
+    def test_approving_late_is_refused_even_before_anything_marked_it(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
+        self.assertIsNone(errands.decide_checkout(self.home, entry["id"], True, now=NOW + 3 * 3600))
+        self.assertIn("checkout_request", errands.refresh_message(errands.get(self.home, entry["id"])["checkout"]))
+
 class AnswerTests(unittest.TestCase):
     def test_answers_become_the_lines_ask_person_reads(self):
         text = errands.answer_text({"size": "500 g", "flavour": "Sin sabor", "bad id!": "x"})

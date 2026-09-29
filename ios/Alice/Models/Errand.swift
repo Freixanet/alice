@@ -24,7 +24,7 @@ struct Errand: Identifiable, Hashable, Sendable {
 
     /// The checkout the agent sent before paying, as the shop's page showed it.
     struct Checkout: Hashable, Sendable {
-        enum Status: String, Sendable { case pending, approved, denied }
+        enum Status: String, Sendable { case pending, approved, denied, expired, replaced }
         let id: String
         var status: Status
         var merchant: String
@@ -250,6 +250,12 @@ extension DashboardClient {
 
     func errandCardReady(_ errandID: String, label: String) async throws -> Errand? {
         let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/card", ["label": label])
+        return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
+    }
+
+    /// A stale checkout, prepared again by the errand for a new approval.
+    func refreshCheckout(_ errandID: String) async throws -> Errand? {
+        let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/refresh")
         return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
     }
 

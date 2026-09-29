@@ -2523,6 +2523,7 @@ async def errands_list() -> JSONResponse:
     """Every errand, newest first. An errand left working by a restart goes on from here."""
     def read():
         module, root = _errands_module(), _hermes_root()
+        module.expire_checkouts(root)
         module.ensure_running(root)
         return [module.public(e) for e in module.listing(root)]
 
@@ -2551,8 +2552,11 @@ async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONRespo
 
     def decide():
         module, root = _errands_module(), _hermes_root()
+        module.expire_checkouts(root)
         entry = _errand_or_404(errand_id)
         checkout = entry.get("checkout") or {}
+        if checkout.get("id") == body.checkout_id and checkout.get("status") == "expired":
+            raise HTTPException(status_code=409, detail="Este checkout ha caducado: prepáralo de nuevo.")
         # The approval is for the checkout the person saw, never a newer one the agent sent meanwhile.
         if checkout.get("id") != body.checkout_id or checkout.get("status") != "pending":
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
@@ -2650,6 +2654,23 @@ async def errands_card(errand_id: str, body: _ErrandCard) -> JSONResponse:
         return module.public(module.get(root, errand_id) or entry)
 
     return JSONResponse({"errand": await asyncio.to_thread(ready)}, headers=_NO_STORE)
+
+
+@router.post("/errands/{errand_id}/refresh")
+async def errands_refresh(errand_id: str) -> JSONResponse:
+    """A stale checkout, prepared again: the errand goes back to the shop and asks for a new approval."""
+    def refresh():
+        module, root = _errands_module(), _hermes_root()
+        module.expire_checkouts(root)
+        entry = _errand_or_404(errand_id)
+        checkout = entry.get("checkout") or {}
+        if checkout.get("status") != "expired":
+            raise HTTPException(status_code=409, detail="Ese checkout no ha caducado.")
+        module.update(root, errand_id, checkout={**checkout, "status": "replaced"})
+        module.resume(root, errand_id, module.refresh_message(checkout))
+        return module.public(module.get(root, errand_id) or entry)
+
+    return JSONResponse({"errand": await asyncio.to_thread(refresh)}, headers=_NO_STORE)
 
 
 @router.post("/errands/{errand_id}/stop")

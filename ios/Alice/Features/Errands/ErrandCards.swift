@@ -356,7 +356,14 @@ struct ErrandProgressCard: View {
 
     private var statusLine: String {
         switch errand.status {
-        case .working: return errand.milestones.last ?? language.pick("Getting started…", "Empezando…")
+        case .working:
+            if errand.checkout?.status == .approved {
+                return language.pick("Completing the payment…", "Completando el pago…")
+            }
+            if errand.checkout?.status == .replaced {
+                return language.pick("Preparing the checkout again…", "Preparando el checkout de nuevo…")
+            }
+            return errand.milestones.last ?? language.pick("Getting started…", "Empezando…")
         case .done:
             return errand.receipt?.paid == true ? language.pick("Order placed", "Pedido realizado")
                                                 : errand.summary.nonEmpty(or: language.pick("Done", "Hecho"))
@@ -364,7 +371,7 @@ struct ErrandProgressCard: View {
         case .needsInput: return language.pick("Waiting for your answer", "Esperando tu respuesta")
         case .needsCard: return language.pick("Waiting for a card to pay with", "Esperando una tarjeta para pagar")
         case .stuck: return errand.reason.nonEmpty(or: language.pick("It got stuck", "Se ha atascado"))
-        case .stopped: return language.pick("You stopped it", "Lo paraste tú")
+        case .stopped: return language.pick("The errand was stopped", "El recado se ha detenido")
         case .denied: return language.pick("You denied the purchase. Nothing was paid.",
                                            "Denegaste la compra. No se ha pagado nada.")
         }
@@ -376,7 +383,7 @@ struct ErrandProgressCard: View {
 /// The checkout to approve: what is bought, where it goes, who is told, with which card, the
 /// total, and «Denegar» / «Permitir». The one who shows it asks for Face ID before answering.
 struct CheckoutApprovalCard: View {
-    enum Phase: Equatable { case pending, sending, approved, denied }
+    enum Phase: Equatable { case pending, sending, approved, denied, expired }
 
     @Environment(\.colorScheme) private var scheme
     let checkout: Errand.Checkout
@@ -391,6 +398,8 @@ struct CheckoutApprovalCard: View {
     var chosenCard: SavedCard? = nil
     var onChooseCard: (SavedCard) -> Void = { _ in }
     var onAddCard: (() -> Void)? = nil
+    /// A stale checkout: prepared again, or the purchase given up.
+    var onRefresh: () -> Void = {}
     let onAllow: () -> Void
     let onDeny: () -> Void
 
@@ -399,6 +408,53 @@ struct CheckoutApprovalCard: View {
     private var deciding: Bool { phase == .pending || phase == .sending }
 
     var body: some View {
+        switch phase {
+        case .approved: approvedLine
+        case .expired: expiredCard
+        default: fullCard
+        }
+    }
+
+    /// Approved: one line, so the checkout no longer reads as something still to answer.
+    private var approvedLine: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.seal.fill").font(.title3).foregroundStyle(Palette.success(scheme))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(language.pick("Approved · \(checkout.total.pricesKeptTogether)",
+                                   "Aprobado · \(checkout.total.pricesKeptTogether)"))
+                    .font(.body.weight(.medium))
+                Text(payingWith.isEmpty ? shop : language.pick("Paying with \(payingWith)", "Pagando con \(payingWith)"))
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if !payingWith.isEmpty { CardBrandBadge(label: payingWith) }
+        }
+        .padding(16)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+    }
+
+    /// Waited too long: shops close their checkout, and prices and delivery move. Not payable;
+    /// prepared again for a fresh approval, or the purchase given up.
+    private var expiredCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ComponentPill(text: language.pick("Expired", "Caducado"), tint: Palette.warning(scheme))
+            Text(language.pick("This checkout waited too long and \(shop) no longer holds it. Nothing was paid.",
+                               "Este checkout ha esperado demasiado y \(shop) ya no lo guarda. No se ha pagado nada."))
+                .font(.body)
+            Text(language.pick("Alice can prepare it again and ask you with the price as it is now.",
+                               "Alice puede prepararlo de nuevo y preguntarte con el precio de ahora."))
+                .font(.subheadline).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                PurchaseCapsuleButton(title: language.pick("Cancel purchase", "Cancelar compra"), action: onDeny)
+                PurchaseCapsuleButton(title: language.pick("Prepare it again", "Prepararlo de nuevo"), prominent: true,
+                                      tint: .approve, action: onRefresh)
+            }
+        }
+        .padding(16)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+    }
+
+    private var fullCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -537,6 +593,8 @@ struct CheckoutApprovalCard: View {
             ComponentPill(text: language.pick("Approved", "Aprobado"), tint: Palette.success(scheme))
         case .denied:
             ComponentPill(text: language.pick("Denied", "Denegado"), tint: nil)
+        case .expired:
+            ComponentPill(text: language.pick("Expired", "Caducado"), tint: Palette.warning(scheme))
         }
     }
 

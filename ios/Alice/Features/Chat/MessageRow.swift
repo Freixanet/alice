@@ -463,6 +463,8 @@ private struct RoutineReportCard<Content: View>: View {
     let name: String
     @ViewBuilder let content: Content
 
+    // Inside the reply's own bubble now: a card of its own inside it was a box in a box. The
+    // routine's name stays as a small line over what it brought.
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(name, systemImage: "clock.arrow.circlepath")
@@ -472,13 +474,7 @@ private struct RoutineReportCard<Content: View>: View {
             content
                 .environment(\.separatesEntries, true)
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Palette.border(scheme), lineWidth: 0.5)
-        }
         .accessibilityElement(children: .contain)
     }
 }
