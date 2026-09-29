@@ -694,6 +694,22 @@ final class AppStore {
     var activeBotForModelSelection: BotRow? {
         guard let profile = activeBotProfileForModelSelection else { return nil }
         return cachedBots.first { $0.name == profile }
+            ?? (mainProfileRow?.name == profile ? mainProfileRow : nil)
+    }
+
+    /// The main profile as a bot row: Alice's own chat is filed under it, and the roster leaves
+    /// it out on purpose, so her model is changed through this one.
+    private(set) var mainProfileRow: BotRow?
+
+    @discardableResult
+    func mainProfileBot() async -> BotRow? {
+        guard let rpc = await dashboardRPC(),
+              let result = try? await rpc.call("profiles.list", JSONObject(["include_sessions": false])),
+              let rows = try? DashboardClient.bots(from: result.fields, active: nil),
+              let main = rows.first(where: { $0.isDefault })
+        else { return mainProfileRow }
+        mainProfileRow = main
+        return main
     }
 
     /// The catalogue row backing the model that the CURRENT chat will use.

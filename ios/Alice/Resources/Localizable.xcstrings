@@ -41,6 +41,16 @@
         }
       }
     },
+    "Now using %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora usa %@"
+          }
+        }
+      }
+    },
     "On when your Mac already announces replies through Bark, so they don't arrive twice.": {
       "localizations": {
         "es": {

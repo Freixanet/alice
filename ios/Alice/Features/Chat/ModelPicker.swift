@@ -11,6 +11,8 @@ struct ModelPicker: View {
     @Environment(\.colorScheme) private var scheme
     @State private var query = ""
     @State private var applyingModel = false
+    /// The model Hermes just confirmed, shown before the sheet closes.
+    @State private var confirmed: String?
     @State private var pendingBotModel: HermesClient.ModelOption?
     @State private var modelConfirmation: String?
     @State private var failure: String?
@@ -45,16 +47,12 @@ struct ModelPicker: View {
         guard let profile = targetProfile else { return nil }
         return store.cachedBots.first { $0.name == profile }
             ?? (bot?.name == profile ? bot : nil)
+            ?? (store.mainProfileRow?.name == profile ? store.mainProfileRow : nil)
     }
 
     private var targetProfile: String? {
         guard onChoose == nil else { return nil }
-        if let bot { return bot.name }
-        // Alice's own chat is filed under the main profile, which the bot roster leaves out on
-        // purpose: looked up as a bot it was never found, and every change failed with «Hermes did
-        // not return this bot's current profile». Its model is Alice's, changed as Alice's.
-        guard let profile = store.activeBotProfileForModelSelection, profile != "default" else { return nil }
-        return profile
+        return bot?.name ?? store.activeBotProfileForModelSelection
     }
 
     private var currentModelLabel: String? {
@@ -295,6 +293,19 @@ struct ModelPicker: View {
             } message: {
                 Text(modelConfirmation ?? "Hermes requires confirmation.")
             }
+            .overlay(alignment: .bottom) {
+                if let confirmed {
+                    Label("Now using \(confirmed)", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .glassEffect(.regular, in: .capsule)
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+            }
+            .sensoryFeedback(.success, trigger: confirmed) { _, now in now != nil }
             .alert(
                 "Model change needs attention",
                 isPresented: Binding(
@@ -481,9 +492,12 @@ struct ModelPicker: View {
     /// dashboard restarting), which left no bot to change: it is read again before giving up.
     private func resolvedTargetBot() async -> BotRow? {
         if let bot = targetBot { return bot }
-        guard targetProfile != nil else { return nil }
+        guard let profile = targetProfile else { return nil }
         _ = try? await store.bots()
-        return targetBot
+        if let bot = targetBot { return bot }
+        // Alice's own chat: the main profile, which the roster leaves out.
+        if let main = await store.mainProfileBot(), main.name == profile { return main }
+        return nil
     }
 
     private func applyBotModel(
@@ -507,7 +521,13 @@ struct ModelPicker: View {
                 case let .applied(warning):
                     pendingBotModel = nil
                     failure = warning
-                    if warning == nil { dismiss() }
+                    if bot.isDefault { await store.mainProfileBot() }
+                    if warning == nil {
+                        // Said, not assumed: the change is confirmed before the sheet closes.
+                        withAnimation(.snappy) { confirmed = model.label }
+                        try? await Task.sleep(for: .milliseconds(900))
+                        dismiss()
+                    }
                 }
             } catch {
                 pendingBotModel = nil
