@@ -452,14 +452,15 @@ struct ModelPicker: View {
 
     private func applyBotFallback(_ model: HermesClient.ModelOption?) {
         guard !applyingModel else { return }
-        guard let bot = targetBot else {
-            failure = "Hermes did not return this bot’s current profile."
-            return
-        }
         applyingModel = true
         pendingBotModel = model
         Task {
             defer { applyingModel = false }
+            guard let bot = await resolvedTargetBot() else {
+                pendingBotModel = nil
+                failure = "Hermes did not return this bot’s current profile. Try again in a moment."
+                return
+            }
             do {
                 try await store.setBotFallback(bot, to: model)
                 pendingBotModel = nil
@@ -471,18 +472,28 @@ struct ModelPicker: View {
         }
     }
 
+    /// The bot being changed. The roster read when the sheet opened can have failed (the
+    /// dashboard restarting), which left no bot to change: it is read again before giving up.
+    private func resolvedTargetBot() async -> BotRow? {
+        if let bot = targetBot { return bot }
+        guard targetProfile != nil else { return nil }
+        _ = try? await store.bots()
+        return targetBot
+    }
+
     private func applyBotModel(
         _ model: HermesClient.ModelOption, confirm: Bool = false
     ) {
         guard !applyingModel else { return }
-        guard let bot = targetBot else {
-            failure = "Hermes did not return this bot’s current profile."
-            return
-        }
         applyingModel = true
         pendingBotModel = model
         Task {
             defer { applyingModel = false }
+            guard let bot = await resolvedTargetBot() else {
+                pendingBotModel = nil
+                failure = "Hermes did not return this bot’s current profile. Try again in a moment."
+                return
+            }
             do {
                 switch try await store.setBotModel(bot, to: model, confirm: confirm) {
                 case let .confirmation(message):
