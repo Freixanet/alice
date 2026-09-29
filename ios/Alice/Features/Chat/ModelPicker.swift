@@ -49,7 +49,12 @@ struct ModelPicker: View {
 
     private var targetProfile: String? {
         guard onChoose == nil else { return nil }
-        return bot?.name ?? store.activeBotProfileForModelSelection
+        if let bot { return bot.name }
+        // Alice's own chat is filed under the main profile, which the bot roster leaves out on
+        // purpose: looked up as a bot it was never found, and every change failed with «Hermes did
+        // not return this bot's current profile». Its model is Alice's, changed as Alice's.
+        guard let profile = store.activeBotProfileForModelSelection, profile != "default" else { return nil }
+        return profile
     }
 
     private var currentModelLabel: String? {
