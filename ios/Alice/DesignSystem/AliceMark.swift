@@ -39,19 +39,13 @@ struct ChatHeaderAvatar<Face: View>: View {
             .modifier(ZoomSource(source: zoomSource))
             .zIndex(1)
 
-            HStack(spacing: 3) {
-                Text(name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                if opens {
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+            // No chevron (29-09): the name is a label, and a touch larger than it was.
+            Text(name)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 7)
             .glassEffect(.regular.interactive(), in: .capsule)
             .offset(y: -5)
             // Tucked behind the portrait, as in Messages: the disc overlaps

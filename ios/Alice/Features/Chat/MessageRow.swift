@@ -32,7 +32,8 @@ struct MessageRow: View {
     /// is not its own.
     private var invokedAgent: String? {
         if let profile = message.mentionProfile, !profile.isEmpty { return profile }
-        guard let bot = message.botName, !bot.isEmpty,
+        // Alice's own words, kept in a session by `/new`, are hers: no name over them.
+        guard let bot = message.botName, !bot.isEmpty, bot != AppStore.todayProfile,
               store.activeChat.routedBotName == nil,
               !store.activeChat.isChannel
         else { return nil }
@@ -133,7 +134,13 @@ struct MessageRow: View {
 
     var body: some View {
         // Words said just before or after a routine are drawn inside the routine's bubble.
-        if absorbedIntoRoutine { EmptyView() } else { row }
+        if absorbedIntoRoutine {
+            EmptyView()
+        } else if let eventID = AgentRoutineRunCard.eventID(message.id) {
+            AgentRoutineRunCard(eventID: eventID)
+        } else {
+            row
+        }
     }
 
     /// A routine's opening or closing words: in a bubbled chat they are drawn inside the
@@ -179,7 +186,8 @@ struct MessageRow: View {
                 // delivery is dated because it arrived on its own, later.
                 // Once, above the whole delivery: the agent's opening words,
                 // its card and its closing words are one routine.
-                if showsTime, message.routineName != nil || message.routinePart != nil,
+                // A routine's report always says when it ran, even when its opening words came first.
+                if showsTime || message.routineName != nil, message.routineName != nil || message.routinePart != nil,
                    let when = MessageTime.routineCaption(message.createdAt) {
                     Text(when)
                         .font(.caption)
@@ -497,18 +505,15 @@ private struct RoutineReportCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     // Inside the reply's own bubble now: a card of its own inside it was a box in a box. The
-    // routine's name stays as a small line over what it brought.
+    // routine's name is not written over it (29-09): the time above says it arrived on its own.
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(name, systemImage: "clock.arrow.circlepath")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Routine: \(name)")
             content
                 .environment(\.separatesEntries, true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel("Routine: \(name)")
     }
 }
 
@@ -550,23 +555,16 @@ private struct ChollometroDeals: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             ForEach(Array(deals.enumerated()), id: \.offset) { _, deal in
-                VStack(alignment: .leading, spacing: 8) {
-                    let detail = deal.detail.map { " — \($0)" } ?? ""
-                    Text("\(Text(deal.title).bold())\(Text(detail))")
-                    .textSelection(.enabled)
-
-                    Link(destination: deal.url) {
-                        Text("Open deal")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(tint, in: .rect(cornerRadius: 7))
-                            .contentShape(.rect(cornerRadius: 7))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens the deal in the browser")
+                // The title is the link (29-09): no button under every deal.
+                let detail = deal.detail.map { " — \($0)" } ?? ""
+                Link(destination: deal.url) {
+                    Text("\(Text(deal.title).bold().foregroundStyle(tint))\(Text(detail).foregroundStyle(.primary))")
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
                 }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the deal in the browser")
             }
         }
     }
@@ -1416,5 +1414,100 @@ struct ApprovalChoiceButton: View {
             .buttonBorderShape(.capsule)
             .controlSize(small ? .small : .regular)
             .disabled(disabled)
+    }
+}
+
+/// Another agent's routine that just ran, as a card in Alice's own chat (`AppStore.agentRoutineRuns`):
+/// that it ran, and when. A tap opens the routine — its schedule, runs and controls.
+struct AgentRoutineRunCard: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let eventID: String
+
+    @State private var opened: JobRow?
+    @State private var opening = false
+    @State private var notice: String?
+
+    private static let prefix = "agentRun:"
+    static func messageID(_ eventID: String) -> String { prefix + eventID }
+    static func eventID(_ messageID: String) -> String? {
+        messageID.hasPrefix(prefix) ? String(messageID.dropFirst(prefix.count)) : nil
+    }
+
+    private var event: AliceEvent? { store.activity.first { $0.id == eventID } }
+
+    var body: some View {
+        if let event, let profile = event.profile {
+            let failed = event.kind == .automationFailed
+            VStack(spacing: 6) {
+                if let when = MessageTime.routineCaption(event.occurred) {
+                    Text(when)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 10)
+                }
+                Button { Task { await open(event) } } label: {
+                    HStack(spacing: 12) {
+                        BotMarkView(mark: store.mark(for: profile), size: 36)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(event.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text(failed
+                                 ? "\(store.botCurrentName(for: profile))’s routine did not finish"
+                                 : "\(store.botCurrentName(for: profile)) ran this routine")
+                                .font(.caption)
+                                .foregroundStyle(failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        if opening {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
+                    .contentShape(.rect(cornerRadius: 18))
+                }
+                .buttonStyle(.plain)
+                .disabled(opening)
+                .accessibilityHint("Opens the routine")
+            }
+            .sheet(item: $opened) { routine in
+                RoutineDetailSheet(routine: routine) {}
+                    .preferredColorScheme(store.theme.colorScheme)
+            }
+            .alert("Couldn’t open routine", isPresented: Binding(
+                get: { notice != nil }, set: { if !$0 { notice = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(notice ?? "")
+            }
+        }
+    }
+
+    private func open(_ event: AliceEvent) async {
+        guard let key = event.reference.routineKey, let slash = key.lastIndex(of: "/") else { return }
+        let profile = String(key[..<slash])
+        let id = String(key[key.index(after: slash)...])
+        opening = true
+        defer { opening = false }
+        do {
+            if let routine = try await store.routines(for: profile).first(where: { $0.id == id }) {
+                opened = routine
+            } else {
+                notice = String(localized: "That routine no longer exists.")
+            }
+        } catch {
+            notice = PlainWords.describe(error, doing: "open the routine")
+        }
     }
 }

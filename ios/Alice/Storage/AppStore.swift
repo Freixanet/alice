@@ -2410,6 +2410,19 @@ final class AppStore {
         activity.filter { $0.occurred > activitySeen }.count
     }
 
+    /// The other agents' routine runs to show as cards in Alice's own chat: only there, and
+    /// only since it last started again (`/new`).
+    func agentRoutineRuns(in conversation: Conversation) -> [AliceEvent] {
+        guard conversation.routedBotName == Self.todayProfile, conversation.isCanonicalBotChat else { return [] }
+        let since = botChatClearedAt[Self.todayProfile] ?? .distantPast
+        return activity.filter { event in
+            event.id.hasPrefix("routine:") && event.reference.routineKey != nil
+                && (event.kind == .automationSucceeded || event.kind == .automationFailed)
+                && event.profile != Self.todayProfile && event.occurred > since
+        }
+        .sorted { $0.occurred < $1.occurred }
+    }
+
     /// Unread notices that belong on one drawer row.
     func unreadNotices(in place: AliceEvent.NoticePlace) -> Int {
         let seen = switch place {
@@ -4885,13 +4898,21 @@ final class AppStore {
     func errandCardReady(_ id: String, label: String) async throws -> Errand? {
         try await dashboard.errandCardReady(id, label: label)
     }
-    /// `alice://errand?id=…`, from a notification: the errand, open.
+    /// `alice://errand?id=…`, from a notification: the chat that asked for it, where its cards are.
+    /// Alice's own chat when that one is not on the phone.
     func openErrand(_ url: URL) {
         let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems?.first { $0.name == "id" }?.value ?? ""
         guard id.range(of: "^[a-f0-9]{4,32}$", options: .regularExpression) != nil else { return }
-        requestedErrand = id
-        showingErrands = true
+        Task {
+            await errandBoard.refresh()
+            let session = errandBoard.errands.first { $0.id == id }?.originSession ?? ""
+            if !session.isEmpty, let chat = conversations.first(where: { $0.hermesSessionID == session }) {
+                openConversation(chat.id)
+            } else {
+                openToday()
+            }
+        }
     }
     func secretIsSet(_ name: String) async throws -> Bool { try await dashboard.secretIsSet(name) }
     func saveSecret(_ name: String, value: String) async throws { try await dashboard.saveSecret(name, value: value) }
@@ -6077,8 +6098,7 @@ final class AppStore {
     var showingGoals = false
     /// The feed, a page in off the right from Alice's chat with a leftward swipe (`FeedScreen`).
     var showingFeed = false
-    /// Errands, the tasks that run apart from the chat (`ErrandsScreen`), and one to open in it.
-    var showingErrands = false
+    /// An errand to open in `ErrandsScreen` (only the developer walkthrough shows it now).
     var requestedErrand: String?
     @ObservationIgnored lazy var errandBoard: ErrandBoard = {
         let board = ErrandBoard()
@@ -6800,6 +6820,12 @@ final class AppStore {
         // a read would put every message back on the screen it just left.
         guard conversations[index].isAgentTask || !clearingBotChats.contains(profile) else { return }
         let isTask = conversations[index].isAgentTask
+        // Nor may a read that set off before the clear. It comes back with the chat Hermes
+        // held when it asked, and folding that in put every message back seconds after `/new`.
+        let clearedAtStart = botChatClearedAt[profile]
+        let clearedMeanwhile = { [unowned self] in
+            !isTask && (clearingBotChats.contains(profile) || botChatClearedAt[profile] != clearedAtStart)
+        }
         if isTask && conversations[index].hermesSessionID == nil { return }
         guard let source = await botChatSource() else {
             botChatFailure[conversationID] =
@@ -6821,7 +6847,8 @@ final class AppStore {
                 chat = try await resolveBotChat(profile, source: source, fresh: true)
                 resumed = try await source.resume(profile: profile, target: chat.resolvedID)
             }
-            guard let current = conversations.firstIndex(where: { $0.id == conversationID })
+            guard !clearedMeanwhile(),
+                  let current = conversations.firstIndex(where: { $0.id == conversationID })
             else { return }
             if conversations[current].hermesSessionID != chat.resolvedID {
                 conversations[current].hermesSessionID = chat.resolvedID
@@ -6895,6 +6922,8 @@ final class AppStore {
             if transcriptChanged { persistConversations() }
             if !isTask { await refreshQuietRoutineRuns(profile: profile) }
         } catch {
+            // The chat it asked for was deleted under it: not a failure of the new one.
+            if clearedMeanwhile() { return }
             // Keep what is on screen. The reason is recorded so the chat can
             // say the transcript may be behind, rather than pretending it is
             // complete or blanking it.
@@ -7056,6 +7085,54 @@ final class AppStore {
             !conversations.contains { $0.id == entry.key && $0.routedBotName == profile }
         }
         persistConversations()
+    }
+
+    /// `/new` in Alice's main chat: what was said there is kept under Sessions, and the chat
+    /// starts again empty, here and in Hermes.
+    ///
+    /// Hermes will not file the canonical chat away (its title is its identity), so the kept
+    /// copy is the phone's: a session of Alice's own with no Hermes chat yet. Writing in it
+    /// opens one with that history, the way any session of hers begins.
+    func startTodayAgain() async throws {
+        guard let index = conversations.firstIndex(where: {
+            $0.routedBotName == Self.todayProfile && $0.isCanonicalBotChat
+        }) else { return }
+        let today = conversations[index]
+        // What the chat showed, as it showed it: other agents' asks and the notes the app
+        // wrote for Alice stay out, the way they stay out of the transcript.
+        let kept = RoutineDelivery.present(
+            today.messages, botName: today.botName, agentAnswers: Set(today.agentAnswerIDs ?? [])
+        ).filter { !$0.pending && $0.approval == nil && $0.routinePart != .quiet }
+        var keptID: String?
+        if !kept.isEmpty {
+            // Named for when it was put away: its first ask was often weeks old, and read as some
+            // other chat (29-09).
+            let title = "\(Self.todayTitle) · " + Date().formatted(.dateTime.day().month(.abbreviated).hour().minute())
+            let started = kept.first { MessageTime.isKnown($0.createdAt) }?.createdAt ?? today.createdAt
+            let session = Conversation(
+                id: UUID().uuidString, title: title, createdAt: started, updatedAt: Date(),
+                openedAt: Date(), messages: kept.map { message in
+                    var copy = message
+                    // Its own now: nothing in Hermes answers to these any more.
+                    copy.remoteID = nil
+                    copy.awaitingRemote = false
+                    if copy.botName == Self.todayProfile { copy.botName = nil }
+                    return copy
+                }
+            )
+            conversations.insert(session, at: 0)
+            keptID = session.id
+            persistConversations()
+        }
+        do {
+            try await clearBotChat(Self.todayProfile)
+        } catch {
+            if let keptID {
+                conversations.removeAll { $0.id == keptID }
+                persistConversations()
+            }
+            throw error
+        }
     }
 
     /// Finds this bot's routine runs that ended with nothing to say. Best

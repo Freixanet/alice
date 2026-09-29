@@ -329,6 +329,19 @@ extension AppStore {
             draft = ""
             if conversations[chatIndex].routedBotName == nil {
                 newChat()
+            } else if conversations[chatIndex].routedBotName == Self.todayProfile,
+                      conversations[chatIndex].isCanonicalBotChat {
+                Task {
+                    do {
+                        try await startTodayAgain()
+                    } catch {
+                        guard let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+                        presentSlashReply(
+                            command: text, chatIndex: index,
+                            content: PlainWords.describe(error, doing: "start a new chat")
+                        )
+                    }
+                }
             } else {
                 presentSlashReply(
                     command: text, chatIndex: chatIndex,

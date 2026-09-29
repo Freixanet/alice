@@ -225,12 +225,8 @@ struct Sidebar: View, Equatable {
             // menu beside the composer instead.
             if !experimental {
                 // Agenda and Goals are set aside (29-09): goals and their step-by-step plans are made
-                // in the chat, where the plan card follows the work.
-                row("Errands", systemImage: "bag", weight: .medium,
-                    badge: store.errandBoard.needingPerson.count) {
-                    onDismiss()
-                    store.showingErrands = true
-                }
+                // in the chat, where the plan card follows the work. So are Errands: each one's cards
+                // follow the message that started it, and that is where it is answered.
                 // Then Notes: a note is written in the moment or
                 // not at all, so it is the shortest way in the drawer.
                 row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
@@ -373,7 +369,7 @@ struct Sidebar: View, Equatable {
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel("New side chat")
+            .accessibilityLabel("New session")
             .accessibilityIdentifier("sidebar.newChat")
         }
         .padding(.horizontal, 16)
@@ -522,8 +518,8 @@ private struct SidebarList: View, Equatable {
                     Spacer(minLength: 14)
                 }
 
-                // Alice's other chats, off to one side of her main one.
-                sectionLabel("Side chats")
+                // Alice's other chats, off to one side of her main one, and what `/new` put away.
+                sectionLabel("Sessions")
                 ForEach(store.recentConversations) { conversation in
                     chatRow(conversation)
                 }

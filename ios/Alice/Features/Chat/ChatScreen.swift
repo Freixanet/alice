@@ -46,9 +46,6 @@ private struct ChatScreenContent: View, Equatable {
     /// The agent's page grows out of its face in the header, and goes back into it.
     @Namespace private var avatarZoom
     /// Today's own menu: asking before its history is thrown away.
-    @State private var confirmingTodayClear = false
-    @State private var clearingToday = false
-    @State private var todayClearFailure: String?
     @State private var homeComposerHeight: CGFloat = 120
     /// Extra room under the empty home while the keyboard is closed. The block
     /// centres in what is left, so it sits half of this higher.
@@ -162,7 +159,9 @@ private struct ChatScreenContent: View, Equatable {
             if enabled, bot == nil { selectExperimental(.chat) }
         }
         .onChange(of: store.activeID) { _, _ in
-            if experimentalEnabled, bot == nil { selectExperimental(.chat) }
+            // Back to the chat on screen, not to Alice's: `selectExperimental(.chat)` opens hers,
+            // and every session opened from the drawer bounced straight back to it (29-09).
+            if experimentalEnabled, bot == nil { experimentalSection = .chat }
         }
     }
 
@@ -316,7 +315,7 @@ private struct ChatScreenContent: View, Equatable {
                     .simultaneousGesture(dismissKeyboard)
 
                 VStack(spacing: 0) {
-                    if bot == nil, !keyboardShown {
+                    if bot == nil || isToday, !keyboardShown {
                         HomeSuggestionStrip()
                     }
                     composerArea
@@ -456,46 +455,27 @@ private struct ChatScreenContent: View, Equatable {
                     }
                 }
             } else {
-                // A side chat: Alice, off to one side of her main chat.
-                VStack(spacing: 4) {
-                    aliceHeader
-                    Button { store.goHome() } label: {
-                        Text("Side chat · Back to Alice")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("chat.sideChat.back")
-                }
+                // A session: Alice, off to one side of her main chat. No label under her (29-09).
+                aliceHeader
             }
 
             Spacer(minLength: 0)
 
             if isToday {
-                // Today fills up with briefings and closes of the day; this
-                // is where it starts again. Its routines, and what Alice
-                // knows about Marc, stay.
-                Menu {
-                    Button(role: .destructive) {
-                        confirmingTodayClear = true
-                    } label: {
-                        Label(clearingToday ? "Clearing…" : "Clear chat", systemImage: "eraser")
-                    }
-                    .disabled(clearingToday)
+                // The feed, the same page the leftward swipe pulls in (RootView). Starting the
+                // chat again is `/new`, which keeps what was said under Sessions.
+                Button {
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = true }
                 } label: {
-                    Group {
-                        if clearingToday {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 18, weight: .semibold))
-                        }
-                    }
-                    .frame(width: discSize, height: discSize)
-                    .contentShape(.circle)
+                    Image(systemName: "rectangle.stack")
+                        .font(.system(size: 18, weight: .medium))
+                        .frame(width: discSize, height: discSize)
+                        .contentShape(.circle)
                 }
                 .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Chat options")
+                .accessibilityLabel("Feed")
+                .accessibilityIdentifier("chat.feed")
             } else {
                 Color.clear
                     .frame(width: discSize, height: discSize)
@@ -507,35 +487,12 @@ private struct ChatScreenContent: View, Equatable {
         // edges. The drawer's search button keeps the same 20 on its side.
         .padding(.horizontal, 20)
         .padding(.top, 11)
-        .confirmationDialog("Clear chat?", isPresented: $confirmingTodayClear, titleVisibility: .visible) {
-            Button("Clear chat", role: .destructive) { clearToday() }
-        } message: {
-            Text("Every message in your chat with Alice goes, here and in Hermes. The morning briefing, the close of the day and what Alice knows about you stay.")
-        }
-        .alert("Chat not cleared", isPresented: Binding(
-            get: { todayClearFailure != nil }, set: { if !$0 { todayClearFailure = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(todayClearFailure ?? "")
-        }
-    }
-
-    private func clearToday() {
-        clearingToday = true
-        Task {
-            defer { clearingToday = false }
-            do {
-                try await store.clearBotChat(AppStore.todayProfile)
-            } catch {
-                todayClearFailure = PlainWords.describe(error, doing: "clear the chat")
-            }
-        }
     }
 
     @ViewBuilder
     private var transcript: some View {
-        if let conversation = store.shownConversation, !conversation.messages.isEmpty {
+        if let conversation = store.shownConversation,
+           !conversation.messages.isEmpty || !store.agentRoutineRuns(in: conversation).isEmpty {
             // A fresh transcript for every conversation. Reusing one scroll view
             // across chats carried the old chat's offset into the new one, and
             // a lazy stack scrolled by code alone did not draw the rows at that
@@ -731,10 +688,20 @@ private struct TranscriptView: View {
     @State private var firstShownID: String?
 
     private var presentedMessages: [Message] {
-        RoutineDelivery.present(
+        var shown = RoutineDelivery.present(
             conversation.messages, botName: conversation.botName, quietRuns: quietRuns,
             agentAnswers: Set(conversation.agentAnswerIDs ?? [])
         )
+        // In Alice's chat, the other agents' routines as they run: a card each, in time order.
+        for run in store.agentRoutineRuns(in: conversation) {
+            let card = Message(
+                id: AgentRoutineRunCard.messageID(run.id), role: .assistant, content: "",
+                createdAt: run.occurred, localOnly: true
+            )
+            let index = shown.firstIndex { MessageTime.isKnown($0.createdAt) && $0.createdAt > run.occurred }
+            shown.insert(card, at: index ?? shown.endIndex)
+        }
+        return shown
     }
     var body: some View {
         // Read once per redraw: presenting walks the whole history, and the
@@ -1084,7 +1051,8 @@ private struct EmptyChatView: View {
 
     @ViewBuilder
     private var centred: some View {
-        if let botName = store.activeChat.botName, !botName.isEmpty {
+        // Alice's own chat, emptied by `/new`, opens on the same home as a new session (29-09).
+        if let botName = store.activeChat.botName, !botName.isEmpty, botName != AppStore.todayProfile {
             VStack(spacing: 8) {
                 Spacer()
                 Text("What are we working on?")

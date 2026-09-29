@@ -289,22 +289,27 @@ struct ErrandProgressCard: View {
                 HStack(spacing: 12) {
                     ShopLogo(errandID: logoID, image: logo)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(errand.title).font(.body.weight(.medium)).lineLimit(2)
+                        // How long, on the title's first line: centred on the whole block it floated
+                        // between the title and the site (29-09).
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(errand.title).font(.body.weight(.medium)).lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                                Text(errand.elapsed.errandElapsed)
+                                    .font(.subheadline.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .fixedSize()
+                            if !errand.steps.isEmpty {
+                                Image(systemName: "chevron.down")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .rotationEffect(.degrees(expanded ? 180 : 0))
+                            }
+                        }
                         if !errand.site.isEmpty {
                             Text(errand.site).font(.subheadline).foregroundStyle(.secondary)
                         }
-                    }
-                    Spacer(minLength: 0)
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text(errand.elapsed.errandElapsed)
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    if !errand.steps.isEmpty {
-                        Image(systemName: "chevron.down")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(expanded ? 180 : 0))
                     }
                 }
                 .contentShape(.rect)

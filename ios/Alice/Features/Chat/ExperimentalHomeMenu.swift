@@ -50,9 +50,9 @@ struct ExperimentalHomeMenu: View {
 
     var body: some View {
         Menu {
-            // Today, Agenda, Goals and Projects are set aside for now: the chat is the one place for them.
+            // Today, Agenda, Goals, Errands and Projects are set aside for now: the chat is the one place for them.
             // The feed is a swipe away from the chat instead (RootView).
-            ForEach(Section.allCases.filter { ![.today, .agenda, .goals, .projects, .feed].contains($0) }, id: \.self) { section in
+            ForEach(Section.allCases.filter { ![.today, .agenda, .goals, .errands, .projects, .feed].contains($0) }, id: \.self) { section in
                 Button {
                     onSelect(section)
                 } label: {

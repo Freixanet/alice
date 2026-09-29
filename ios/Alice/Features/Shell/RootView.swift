@@ -343,13 +343,6 @@ struct RootView: View {
                 SecureRequestSheet(request: request)
                     .preferredColorScheme(store.theme.colorScheme)
             }
-            // Errands: the tasks that run apart from the chat, opened from the drawer or a notification.
-            .sheet(isPresented: Bindable(store).showingErrands) {
-                NavigationStack {
-                    ErrandsScreen(onClose: { store.showingErrands = false })
-                }
-                .preferredColorScheme(store.theme.colorScheme)
-            }
             .onReceive(NotificationCenter.default.publisher(for: .aliceOpenReceipt)) { note in
                 if let url = note.object as? URL { store.openReceipt(url) }
             }
