@@ -6075,6 +6075,8 @@ final class AppStore {
 
     /// The person's goals and Alice's plans, a page too (`GoalsScreen`).
     var showingGoals = false
+    /// The feed, a page in off the right from Alice's chat with a leftward swipe (`FeedScreen`).
+    var showingFeed = false
     /// Errands, the tasks that run apart from the chat (`ErrandsScreen`), and one to open in it.
     var showingErrands = false
     var requestedErrand: String?

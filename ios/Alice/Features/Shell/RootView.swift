@@ -231,6 +231,36 @@ struct RootView: View {
                     .zIndex(3)
                 }
 
+                // The feed, in off the right from Alice's chat with a leftward swipe.
+                if store.showingFeed {
+                    NavigationStack {
+                        FeedScreen(onOpenedChat: closeFeed)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    Button(action: closeFeed) { Image(systemName: "chevron.left") }
+                                        .accessibilityLabel("Back")
+                                }
+                            }
+                            .containerBackground(Palette.background(scheme), for: .navigation)
+                    }
+                    .background { Palette.background(scheme).ignoresSafeArea() }
+                    .overlay {
+                        DrawerPan(
+                            shouldBegin: { velocity in
+                                velocity.x > 0 && abs(velocity.x) > abs(velocity.y) * 1.5
+                            },
+                            onChange: { _ in },
+                            onEnd: { translation, predicted in
+                                guard translation > drawerWidth * 0.3 || predicted > 120 else { return }
+                                closeFeed()
+                            }
+                        )
+                        .allowsHitTesting(false)
+                    }
+                    .transition(.move(edge: .trailing))
+                    .zIndex(4)
+                }
+
                 // Goals, the same way.
                 if store.showingGoals {
                     NavigationStack {
@@ -343,6 +373,7 @@ struct RootView: View {
             .onChange(of: store.showingNotes) { dismissKeyboard() }
             .onChange(of: store.showingAgenda) { dismissKeyboard() }
             .onChange(of: store.showingGoals) { dismissKeyboard() }
+            .onChange(of: store.showingFeed) { dismissKeyboard() }
             .onChange(of: store.activeID) { dismissKeyboard() }
             .onChange(of: drawerOpen) { _, open in if open { dismissKeyboard() } }
             // The drawer answers a sideways swipe from anywhere, not just from a
@@ -353,7 +384,8 @@ struct RootView: View {
                 // say no: both recognisers attach to the same ancestor, and
                 // one swipe was being answered twice — going home and opening
                 // the drawer on top of it.
-                if !store.showingBots && !store.showingNotes && !store.showingAgenda && !store.showingGoals {
+                if !store.showingBots && !store.showingNotes && !store.showingAgenda && !store.showingGoals
+                    && !store.showingFeed {
                     DrawerPan(
                     shouldBegin: { velocity in
                         // Sideways enough to be meant sideways.
@@ -364,10 +396,8 @@ struct RootView: View {
                         // bots from inside one of them, which is where the
                         // finger already is.
                         if inBotChat { return velocity.x > 0 }
-                        // On Alice's own: only rightward, which opens the
-                        // drawer. Leftward used to jump to the agents, a page
-                        // that has nothing to do with Today.
-                        return velocity.x > 0
+                        // On Alice's own: rightward opens the drawer, leftward the feed.
+                        return true
                     },
                     onChange: { translation in
                         // In a bot's conversation the swipe is a back gesture,
@@ -392,10 +422,7 @@ struct RootView: View {
                             return
                         }
                         if !drawerOpen, translation < 0 {
-                            if travelled || flicked {
-                                SwipeNavigationTip().invalidate(reason: .actionPerformed)
-                                openBots(fromSwipe: true)
-                            }
+                            if travelled || flicked { openFeed() }
                             return
                         }
                         if !drawerOpen, travelled || flicked {
@@ -522,6 +549,16 @@ struct RootView: View {
     }
 
     /// Goals leaves the way it came in, off the right.
+    private func openFeed() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = true }
+    }
+
+    private func closeFeed() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = false }
+    }
+
     private func closeGoals() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
