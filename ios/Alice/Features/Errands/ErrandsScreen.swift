@@ -157,7 +157,8 @@ struct ErrandDetailScreen: View {
                         onOpenBrowser: { if preview == nil { browsing = true } },
                         onDecide: { allow in if preview == nil { Task { await board.decide(errand, allow: allow) } } },
                         onAnswer: { answers in if preview == nil { Task { await board.answerQuestions(errand, answers) } } },
-                        onConfirm: { allow in if preview == nil { Task { await board.confirm(errand, allow: allow) } } })
+                        onConfirm: { allow in if preview == nil { Task { await board.confirm(errand, allow: allow) } } },
+                        onCardReady: { label in if preview == nil { Task { await board.cardReady(errand, label: label) } } })
                     if errand.status.isOpen, preview == nil {
                         Button(role: .destructive) { confirmingStop = true } label: {
                             Text(errand.language.pick("Stop this errand", "Parar este recado"))

@@ -117,6 +117,7 @@ extension Errand.Status {
         case .working: language.pick("Working", "Trabajando")
         case .needsApproval: language.pick("Needs approval", "Necesita tu aprobación")
         case .needsInput: language.pick("Waiting for your answer", "Espera tu respuesta")
+        case .needsCard: language.pick("Needs a card", "Necesita una tarjeta")
         case .done: language.pick("Completed", "Completado")
         case .stuck: language.pick("Stuck", "Atascado")
         case .stopped: language.pick("Stopped", "Parado")
@@ -126,7 +127,7 @@ extension Errand.Status {
 
     func tint(_ scheme: ColorScheme) -> Color? {
         switch self {
-        case .needsApproval, .needsInput: Palette.warning(scheme)
+        case .needsApproval, .needsInput, .needsCard: Palette.warning(scheme)
         case .done: Palette.success(scheme)
         case .stuck: Palette.danger(scheme)
         case .working, .stopped, .denied: nil
@@ -288,10 +289,14 @@ struct ErrandProgressCard: View {
 
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(errand.steps.enumerated()), id: \.offset) { _, step in
+                    let stages = errand.milestones
+                    ForEach(Array(stages.enumerated()), id: \.offset) { index, stage in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Circle().fill(.tertiary).frame(width: 5, height: 5)
-                            Text(step.text).font(.subheadline).foregroundStyle(.secondary)
+                            Image(systemName: index == stages.count - 1 && errand.status == .working
+                                  ? "circle.dotted" : "checkmark.circle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(stage).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -314,7 +319,7 @@ struct ErrandProgressCard: View {
             ProgressView()
         case .done:
             Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(store.accent.control(scheme))
-        case .needsApproval, .needsInput:
+        case .needsApproval, .needsInput, .needsCard:
             Image(systemName: "hourglass").font(.title3).foregroundStyle(Palette.warning(scheme))
         case .stuck:
             Image(systemName: "exclamationmark.triangle.fill").font(.title3).foregroundStyle(Palette.danger(scheme))
@@ -325,12 +330,13 @@ struct ErrandProgressCard: View {
 
     private var statusLine: String {
         switch errand.status {
-        case .working: return errand.lastStep?.text ?? language.pick("Getting started…", "Empezando…")
+        case .working: return errand.milestones.last ?? language.pick("Getting started…", "Empezando…")
         case .done:
             return errand.receipt?.paid == true ? language.pick("Order placed", "Pedido realizado")
                                                 : errand.summary.nonEmpty(or: language.pick("Done", "Hecho"))
         case .needsApproval: return language.pick("Waiting for your approval", "Esperando tu aprobación")
         case .needsInput: return language.pick("Waiting for your answer", "Esperando tu respuesta")
+        case .needsCard: return language.pick("Waiting for a card to pay with", "Esperando una tarjeta para pagar")
         case .stuck: return errand.reason.nonEmpty(or: language.pick("It got stuck", "Se ha atascado"))
         case .stopped: return language.pick("You stopped it", "Lo paraste tú")
         case .denied: return language.pick("You denied the purchase. Nothing was paid.",

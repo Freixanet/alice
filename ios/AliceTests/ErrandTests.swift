@@ -70,6 +70,25 @@ final class ErrandTests: XCTestCase {
         XCTAssertTrue(ErrandRef.isTool("errand_start"))
     }
 
+    func testTheStepsReadAsStagesOfThePurchase() throws {
+        var working = row
+        working["status"] = "needs_card"
+        working["card_origin"] = "https://secure9.store.apple.com"
+        working["steps"] = [
+            ["text": "Abrir la ficha", "url": "https://www.apple.com/es/shop/buy-iphone/iphone-18-pro", "at": 1.0],
+            ["text": "Elegir color", "url": "https://www.apple.com/es/shop/buy-iphone/iphone-18-pro", "at": 2.0],
+            ["text": "Ver la bolsa", "url": "https://www.apple.com/es/shop/bag", "at": 3.0],
+            ["text": "Rellenar dirección", "url": "https://secure9.store.apple.com/es/shop/checkout?_s=Shipping-init", "at": 4.0],
+            ["text": "Otra vez", "url": "https://secure9.store.apple.com/es/shop/checkout?_s=Shipping-init", "at": 5.0],
+            ["text": "Pagar", "url": "https://secure9.store.apple.com/es/shop/checkout/payment", "at": 6.0],
+        ]
+        let errand = try XCTUnwrap(Errand.parse(working))
+        XCTAssertEqual(errand.status, .needsCard)
+        XCTAssertTrue(errand.status.needsPerson)
+        XCTAssertEqual(errand.cardOrigin, "https://secure9.store.apple.com")
+        XCTAssertEqual(errand.milestones, ["Abrir la ficha", "Cesta", "Datos de envío", "Pago"])
+    }
+
     func testElapsedReadsShort() {
         XCTAssertEqual(TimeInterval(42).errandElapsed, "42 s")
         XCTAssertEqual(TimeInterval(180).errandElapsed, "3 min")

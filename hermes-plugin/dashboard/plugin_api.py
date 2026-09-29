@@ -2627,6 +2627,29 @@ async def errands_approval(errand_id: str, body: _ErrandApproval) -> JSONRespons
     return JSONResponse({"errand": await asyncio.to_thread(approve)}, headers=_NO_STORE)
 
 
+class _ErrandCard(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(default="", max_length=80)
+
+
+@router.post("/errands/{errand_id}/card")
+async def errands_card(errand_id: str, body: _ErrandCard) -> JSONResponse:
+    """The person left a card ready for the errand's payment page (saved or bound in the vault)."""
+    def ready():
+        module, root = _errands_module(), _hermes_root()
+        entry = _errand_or_404(errand_id)
+        if entry.get("status") != "needs_card":
+            raise HTTPException(status_code=409, detail="Ese recado no está esperando una tarjeta.")
+        label = " ".join(body.label.split()) or "la tarjeta"
+        module.resume(root, errand_id, (
+            f"[tarjeta lista] La persona ha dejado {label} lista para {entry.get('card_origin')}. Sigue: "
+            "prepara el checkout y llama a `checkout_request` antes de pagar."))
+        return module.public(module.get(root, errand_id) or entry)
+
+    return JSONResponse({"errand": await asyncio.to_thread(ready)}, headers=_NO_STORE)
+
+
 @router.post("/errands/{errand_id}/stop")
 async def errands_stop(errand_id: str) -> JSONResponse:
     def halt():

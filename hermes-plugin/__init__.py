@@ -1377,6 +1377,11 @@ def _register_ask_tools(ctx) -> None:
         from hermes_constants import get_hermes_home
 
         key = _conversation_key()
+        if key.startswith(_errands().SESSION_PREFIX):
+            # Inside an errand only what changes the purchase reaches the person; cards have their own card.
+            refused = _errands().vet_questions(module._normalized(args or {}))
+            if refused:
+                return _agent_json({"ok": False, "error": refused})
         out = module.run_tool(Path(get_hermes_home()), args or {}, key)
         if key.startswith(_errands().SESSION_PREFIX) and out.get("asked"):
             wanted = set(out["asked"])
@@ -1440,7 +1445,7 @@ def _keep_errand_tools_visible() -> None:
 
         core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
         if isinstance(core, list):
-            for name in ("errand_start", "checkout_request"):
+            for name in ("errand_start", "checkout_request", "card_request"):
                 if name not in core:
                     core.append(name)
     except Exception:
@@ -1535,6 +1540,14 @@ def _register_task_tools(ctx) -> None:
 
     ctx.register_tool(name="errand_start", toolset="alice_tasks", schema=errands.START_SCHEMA, handler=start,
                       check_fn=_always, description=errands.START_SCHEMA["description"], emoji="🛍️")
+    def card(args, **_):
+        entry = errands.of_session(_hermes_root(), _session_id())
+        if entry is None:
+            return _agent_json({"ok": False, "error": "Only inside an errand."})
+        return _agent_json(errands.request_card(_hermes_root(), entry["id"], str((args or {}).get("page") or "")))
+
+    ctx.register_tool(name="card_request", toolset="alice_tasks", schema=errands.CARD_SCHEMA, handler=card,
+                      check_fn=_always, description=errands.CARD_SCHEMA["description"], emoji="💳")
     ctx.register_tool(name="checkout_request", toolset="alice_tasks", schema=errands.CHECKOUT_SCHEMA,
                       handler=checkout, check_fn=_always, description=errands.CHECKOUT_SCHEMA["description"],
                       emoji="🧾")

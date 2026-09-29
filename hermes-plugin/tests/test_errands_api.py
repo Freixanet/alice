@@ -131,5 +131,14 @@ class ErrandRoutesTests(unittest.TestCase):
         bare = self.errands.create(self.home, "Compra", title="Algo")
         self.assertEqual(self.client.get(self.url(f"/{bare['id']}/icon")).status_code, 404)
 
+    def test_a_card_left_ready_resumes_the_errand(self):
+        entry = self.errands.create(self.home, "Compra", title="iPhone")
+        self.assertEqual(self.client.post(self.url(f"/{entry['id']}/card"), json={"label": "Visa ···4242"}).status_code, 409)
+        self.errands.request_card(self.home, entry["id"], "https://secure.apple.com/pay")
+        answer = self.client.post(self.url(f"/{entry['id']}/card"), json={"label": "Visa ···4242"})
+        self.assertEqual(answer.status_code, 200)
+        self.assertIn("Visa ···4242", self.resumed[-1][1])
+        self.assertIn("checkout_request", self.resumed[-1][1])
+
 if __name__ == "__main__":
     unittest.main()

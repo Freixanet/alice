@@ -443,6 +443,25 @@ class CirclingTests(Base):
         self.assertEqual(gateway.stopped, ["run_1"])
         self.assertIn("misma página", errands.get(self.home, entry["id"])["reason"])
 
+
+class QuestionVettingTests(Base):
+    def test_trivial_and_card_questions_never_reach_the_person(self):
+        salutation = [{"id": "t", "question": "¿Qué tratamiento prefieres?", "choices": ["Sr.", "Sra."]}]
+        self.assertIn("choose it yourself", errands.vet_questions(salutation))
+        card = [{"id": "c", "question": "¿Tienes una tarjeta guardada?", "choices": []}]
+        self.assertIn("card_request", errands.vet_questions(card))
+        colour = [{"id": "c", "question": "¿Qué color quieres?", "choices": ["Burdeos", "Negro"]}]
+        self.assertIsNone(errands.vet_questions(colour))
+
+    def test_a_card_request_names_the_payment_pages_origin(self):
+        entry = self.errand()
+        self.assertFalse(errands.request_card(self.home, entry["id"], "http://insecure.example/pay")["ok"])
+        out = errands.request_card(self.home, entry["id"], "https://secure9.store.apple.com/es/shop/checkout?_s=Billing")
+        self.assertTrue(out["ok"])
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual((saved["status"], saved["card_origin"]), ("needs_card", "https://secure9.store.apple.com"))
+        self.assertIn("needs_card", errands.ACTIVE)
+
 class AnswerTests(unittest.TestCase):
     def test_answers_become_the_lines_ask_person_reads(self):
         text = errands.answer_text({"size": "500 g", "flavour": "Sin sabor", "bad id!": "x"})

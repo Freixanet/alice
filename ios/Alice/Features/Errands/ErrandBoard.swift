@@ -92,6 +92,11 @@ final class ErrandBoard {
         await answer(errand) { try await store.approveInErrand(errand.id, requestID: approval.requestID, allow: allow) }
     }
 
+    func cardReady(_ errand: Errand, label: String) async {
+        guard let store else { return }
+        await answer(errand) { try await store.errandCardReady(errand.id, label: label) }
+    }
+
     func stop(_ errand: Errand) async {
         guard let store else { return }
         await answer(errand) { try await store.stopErrand(errand.id) }
@@ -136,6 +141,7 @@ struct ErrandStack: View {
     let onDecide: (Bool) -> Void
     let onAnswer: ([String: String]) -> Void
     let onConfirm: (Bool) -> Void
+    var onCardReady: (String) -> Void = { _ in }
 
     private var checkoutPhase: CheckoutApprovalCard.Phase? {
         guard let checkout = errand.checkout, errand.receipt == nil else { return nil }
@@ -153,6 +159,11 @@ struct ErrandStack: View {
                                   onOpen: onOpenBrowser)
             }
             ErrandProgressCard(errand: errand, logoID: logoID, logo: logo)
+            if errand.status == .needsCard, !errand.cardOrigin.isEmpty {
+                PaymentCardOfferCard(offer: PaymentCardOffer(origin: errand.cardOrigin, profile: "default"),
+                                     language: errand.language,
+                                     onReady: { card in onCardReady(card.label) })
+            }
             if errand.status == .needsInput, !errand.questions.isEmpty {
                 ErrandQuestionsCard(errand: errand, sending: sending, onAnswer: onAnswer)
             }
@@ -227,7 +238,8 @@ struct ErrandChatBlock: View {
                     onOpenBrowser: { browsing = true },
                     onDecide: { allow in Task { await board.decide(errand, allow: allow) } },
                     onAnswer: { answers in Task { await board.answerQuestions(errand, answers) } },
-                    onConfirm: { allow in Task { await board.confirm(errand, allow: allow) } })
+                    onConfirm: { allow in Task { await board.confirm(errand, allow: allow) } },
+                    onCardReady: { label in Task { await board.cardReady(errand, label: label) } })
                 .fullScreenCover(isPresented: $browsing) {
                     LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text)
                 }

@@ -101,7 +101,7 @@ class ErrandHookTests(unittest.TestCase):
         registered = {}
         ctx = types.SimpleNamespace(register_tool=lambda **kw: registered.__setitem__(kw["name"], kw))
         self.plugin._register_task_tools(ctx)
-        self.assertEqual(set(registered), {"errand_start", "checkout_request"})
+        self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request"})
         handler = registered["checkout_request"]["handler"]
         with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):
             self.assertFalse(json.loads(handler({"merchant": "HSN"}))["ok"])

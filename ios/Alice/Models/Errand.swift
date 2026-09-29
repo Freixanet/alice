@@ -6,12 +6,12 @@ import Foundation
 /// its checkout here.
 struct Errand: Identifiable, Hashable, Sendable {
     enum Status: String, Sendable, CaseIterable {
-        case working, needsApproval = "needs_approval", needsInput = "needs_input"
+        case working, needsApproval = "needs_approval", needsInput = "needs_input", needsCard = "needs_card"
         case done, stuck, stopped, denied
 
         /// Still going, or waiting for the person.
-        var isOpen: Bool { self == .working || self == .needsApproval || self == .needsInput }
-        var needsPerson: Bool { self == .needsApproval || self == .needsInput }
+        var isOpen: Bool { self == .working || needsPerson }
+        var needsPerson: Bool { self == .needsApproval || self == .needsInput || self == .needsCard }
     }
 
     struct Item: Hashable, Sendable {
@@ -73,6 +73,8 @@ struct Errand: Identifiable, Hashable, Sendable {
     var request: String
     /// The Hermes session of the chat that asked for it.
     var originSession: String = ""
+    /// The payment page's origin a card is wanted for (`needs_card`).
+    var cardOrigin: String = ""
     var site: String
     var status: Status
     var checkout: Checkout?
@@ -88,6 +90,45 @@ struct Errand: Identifiable, Hashable, Sendable {
 
     var language: ChatLanguage { ChatLanguage.of(request) }
     var lastStep: Step? { steps.last }
+
+    /// Where it is in the purchase, a line per stage rather than per click: the steps grouped by
+    /// the page they were on, each group named by what that page is for.
+    var milestones: [String] {
+        var stages: [String] = []
+        var lastPage = ""
+        for step in steps {
+            let page = Self.page(step.url)
+            guard page != lastPage else { continue }
+            lastPage = page
+            let name = Self.stage(of: step.url, language: language) ?? step.text
+            if stages.last != name { stages.append(name) }
+        }
+        return stages
+    }
+
+    private static func page(_ url: String) -> String {
+        guard let parts = URLComponents(string: url) else { return url }
+        return (parts.host ?? "") + parts.path
+    }
+
+    /// What a page of a shop is for, from its address; nil when it says nothing.
+    static func stage(of url: String, language: ChatLanguage) -> String? {
+        let address = url.lowercased()
+        let stages: [([String], String, String)] = [
+            (["confirmation", "thank", "gracias", "success", "order-received", "pedido-realizado"],
+             "Order confirmation", "Confirmación del pedido"),
+            (["payment", "billing", "/pago", "pay?", "redsys", "stripe", "adyen"], "Payment", "Pago"),
+            (["shipping", "delivery", "fulfillment", "envio", "entrega", "address"], "Delivery details", "Datos de envío"),
+            (["signin", "login", "account/login", "iniciar"], "Signing in", "Inicio de sesión"),
+            (["checkout"], "Checkout", "Checkout"),
+            (["/bag", "/cart", "carrito", "cesta", "basket"], "Basket", "Cesta"),
+            (["search", "buscar", "?q=", "?s="], "Searching", "Buscando"),
+        ]
+        for (keys, english, spanish) in stages where keys.contains(where: address.contains) {
+            return language.pick(english, spanish)
+        }
+        return nil
+    }
     /// How long it has been going, or went.
     var elapsed: TimeInterval { max(0, (status.isOpen ? Date() : updatedAt).timeIntervalSince(startedAt)) }
 
@@ -135,7 +176,7 @@ struct Errand: Identifiable, Hashable, Sendable {
             return Step(text: words, url: text(raw["url"]), at: date(raw["at"]) ?? Date())
         }
         return Errand(
-            id: id, title: title, request: text(row["request"]), originSession: text(row["origin_session"]),
+            id: id, title: title, request: text(row["request"]), originSession: text(row["origin_session"]), cardOrigin: text(row["card_origin"]),
             site: text(row["site"]),
             status: Status(rawValue: text(row["status"])) ?? .working, checkout: checkout, receipt: receipt,
             questionsTitle: text(asked?["title"]), questions: questions, approval: approval,
@@ -205,6 +246,11 @@ extension DashboardClient {
         let (data, response) = try await raw("GET", "api/plugins/alice/errands/\(errandID)/icon")
         guard response.statusCode == 200, !data.isEmpty else { return nil }
         return data
+    }
+
+    func errandCardReady(_ errandID: String, label: String) async throws -> Errand? {
+        let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/card", ["label": label])
+        return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
     }
 
     func stopErrand(_ errandID: String) async throws -> Errand? {

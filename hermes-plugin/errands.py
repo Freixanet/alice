@@ -37,8 +37,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from urllib.parse import urlsplit
 
 SESSION_PREFIX = "errand-"
-STATUSES = ("working", "needs_approval", "needs_input", "done", "stuck", "stopped", "denied")
-ACTIVE = ("working", "needs_approval", "needs_input")
+STATUSES = ("working", "needs_approval", "needs_input", "needs_card", "done", "stuck", "stopped", "denied")
+ACTIVE = ("working", "needs_approval", "needs_input", "needs_card")
 # An approved checkout pays within this window; later, the agent asks again.
 APPROVAL_TTL = 10 * 60
 KEEP = 30 * 24 * 3600
@@ -370,11 +370,60 @@ def consent_site(approval: Optional[Dict[str, Any]]) -> str:
 
 # ── Questions ───────────────────────────────────────────────────────────────────
 
+# Asked inside an errand and refused: the agent decides these itself (a salutation, a newsletter),
+# or they have their own card (paying).
+TRIVIAL = re.compile(
+    r"(tratamiento|t[ií]tulo de cortes[ií]a|\bsr\.?\b|\bsra\.?\b|se[ñn]or|\bmr\b|\bmrs\b|\bms\b|salutation"
+    r"|newsletter|bolet[ií]n|publicidad|comunicaciones comerciales|ofertas por correo|prefijo|marketing)", re.I)
+CARD_QUESTION = re.compile(r"(tarjeta|\bcard\b|m[eé]todo de pago|forma de pago|payment|\bcvv\b|\bpagar con\b)", re.I)
+
+
+def vet_questions(questions: List[Dict[str, Any]]) -> Optional[str]:
+    """Why these questions must not reach the person from an errand, or None."""
+    text = " ".join(f"{q.get('question', '')} {' '.join(q.get('choices') or [])}" for q in questions)
+    if CARD_QUESTION.search(text):
+        return ("Do not ask about cards or how to pay. If the payment page needs a card, call "
+                "`card_request` with that page's address: Alice shows the person their saved cards or a "
+                "form to add one, and the errand resumes when it is ready.")
+    if TRIVIAL.search(text):
+        return ("Do not ask this: choose it yourself (a salutation, a newsletter, a prefix: the "
+                "neutral or default option, or none). Ask only what changes what is bought, where it "
+                "goes or what it costs, all in one go.")
+    return None
+
 
 def ask(home: Path, errand_id: str, title: str, questions: List[Dict[str, Any]]) -> None:
     """ask_person inside an errand: the phone answers it from the errand, not from a chat."""
     update(home, errand_id, status="needs_input",
            questions={"title": _clean(title, 80), "items": questions[:10]})
+
+
+# ── Cards ───────────────────────────────────────────────────────────────────────
+
+CARD_SCHEMA: Dict[str, Any] = {
+    "name": "card_request",
+    "description": (
+        "Only inside an errand. Call it when the payment page needs a card and `browser_vault_list` has "
+        "none for that page's origin. Alice shows the person their saved cards or a form to add one, "
+        "bound to that page; end your turn, and the errand resumes when the card is ready. Never ask "
+        "about cards with ask_person."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {"page": {"type": "string", "description": "The address of the page with the card fields"}},
+        "required": ["page"],
+    },
+}
+
+
+def request_card(home: Path, errand_id: str, page: str) -> Dict[str, Any]:
+    parts = urlsplit(str(page or ""))
+    if parts.scheme != "https" or not parts.hostname:
+        return {"ok": False, "error": "page must be the https address of the page with the card fields"}
+    origin = f"https://{parts.hostname}" + (f":{parts.port}" if parts.port else "")
+    update(home, errand_id, status="needs_card", card_origin=origin)
+    return {"ok": True, "status": "needs_card",
+            "next": "The person sees their cards now. End your turn with one line saying you wait for the card."}
 
 
 def answer_text(answers: Dict[str, Any]) -> str:
@@ -453,8 +502,12 @@ def brief(entry: Dict[str, Any]) -> str:
         "recado). El comentario `#` con que empieza cada paso del navegador es lo que la persona ve: "
         "escríbelo en su idioma y en pocas palabras («Añadir al carrito», «Elegir envío»). "
         f"{login} "
-        "Para una duda que solo ella puede resolver (talla, sabor, una alternativa) usa `ask_person` y "
-        "espera. Cuando el pedido esté listo en el paso de pago, NO rellenes la tarjeta ni pulses pagar: "
+        "Sé rápido: la persona quiere el recado hecho, no responder preguntas. Decide tú todo lo que "
+        "tenga una opción razonable (tratamiento, envío estándar, sin extras, sin cuenta nueva si se "
+        "puede comprar como invitado) y usa los datos de envío guardados. Pregunta con `ask_person` solo "
+        "lo que cambia qué se compra o cuánto cuesta (talla, color, capacidad, una alternativa), todo en "
+        "una sola vez y al principio. Nunca preguntes por tarjetas: si la página de pago pide una y "
+        "`browser_vault_list` no tiene ninguna para ella, llama a `card_request`. Cuando el pedido esté listo en el paso de pago, NO rellenes la tarjeta ni pulses pagar: "
         "llama a `checkout_request` con lo que muestra la página (tienda, artículos con variante, "
         "cantidad, precio e imagen, entrega, dirección, email, tarjeta y total) y termina tu turno. "
         f"El recado seguirá con «{APPROVED_PREFIX}» si lo aprueba. Después de pagar, registra "

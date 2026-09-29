@@ -211,6 +211,7 @@ SENTENCES = {
 ERRAND_SENTENCES = {
     'needs_approval': ('Un recado necesita tu aprobación', 'timeSensitive'),
     'needs_input': ('Un recado tiene una pregunta para ti', 'timeSensitive'),
+    'needs_card': ('Un recado necesita una tarjeta para pagar', 'timeSensitive'),
     'done': ('Un recado ha terminado', 'active'),
     'stuck': ('Un recado se ha atascado', 'active'),
 }

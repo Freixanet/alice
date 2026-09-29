@@ -11,6 +11,8 @@ struct PaymentCardOfferCard: View {
     /// The Developer › Purchase walkthrough: nothing is read from or saved to Hermes, and no note
     /// is sent to the chat. `demoHasCard` is whether a card is already "saved" to offer.
     var demo: Demo? = nil
+    /// In an errand: the card is ready for its payment page, and the errand is told (not the chat).
+    var onReady: ((SavedCard) -> Void)? = nil
 
     struct Demo {
         var hasCard = false
@@ -99,6 +101,12 @@ struct PaymentCardOfferCard: View {
             // Already saved for this very page (bound when the shop sent you
             // here): nothing to ask, it is ready.
             if let ready = cards.first(where: { $0.origin == offer.origin }) {
+                if onReady != nil {
+                    // Offered with one tap, so the errand hears it from the person.
+                    known = ready
+                    checked = true
+                    return
+                }
                 saved = ready
             } else {
                 known = cards.first { $0.origin != offer.origin }
@@ -117,7 +125,8 @@ struct PaymentCardOfferCard: View {
                 finish(SavedCard.demo(origin: offer.origin))
                 return
             }
-            finish(try await store.saveCard(nil, handle: card.handle, origin: offer.origin, profile: offer.profile))
+            finish(card.origin == offer.origin ? card
+                   : try await store.saveCard(nil, handle: card.handle, origin: offer.origin, profile: offer.profile))
         } catch {
             problem = PlainWords.describe(error, doing: "use the card")
         }
@@ -127,6 +136,10 @@ struct PaymentCardOfferCard: View {
         withAnimation(.snappy) { saved = card }
         if let demo {
             demo.onSaved(card)
+            return
+        }
+        if let onReady {
+            onReady(card)
             return
         }
         store.sendAppNote("The person saved \(card.label) for \(card.origin ?? offer.origin). Carry on with the task.")
