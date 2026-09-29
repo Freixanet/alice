@@ -236,6 +236,8 @@ enum RoutineDelivery {
                     delivered.routineGroup = group
                     delivered.botName = botName
                     delivered.routineName = report.name
+                    delivered.routineIntro = parts.intro
+                    delivered.routineOutro = parts.outro
                     shown.append(delivered)
                     if let outro = parts.outro {
                         var closing = Message(

@@ -50,7 +50,8 @@ struct ExperimentalHomeMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(Section.allCases, id: \.self) { section in
+            // Today, Agenda, Goals and Projects are set aside for now: the chat is the one place for them.
+            ForEach(Section.allCases.filter { ![.today, .agenda, .goals, .projects].contains($0) }, id: \.self) { section in
                 Button {
                     onSelect(section)
                 } label: {

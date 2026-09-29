@@ -221,6 +221,10 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var routinePart: RoutinePart? = nil
     /// The delivery the part belongs to, so its parts read as one message.
     var routineGroup: String? = nil
+    /// On a routine's report card: the agent's words before and after it, so a bubbled chat
+    /// draws the three as one bubble. Set when a transcript is presented.
+    var routineIntro: String? = nil
+    var routineOutro: String? = nil
     /// The model's own reasoning for this reply, when Hermes sent it
     /// (`display.show_reasoning`). Shown only inside the closed trace.
     var reasoning: String? = nil

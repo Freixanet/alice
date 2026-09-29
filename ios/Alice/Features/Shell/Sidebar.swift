@@ -219,20 +219,13 @@ struct Sidebar: View, Equatable {
             // First: Alice's main chat, where everything goes and where she
             // writes before you ask (`AppStore.openToday`). The count is what
             // she wrote since.
-            if !experimental {
-                row(AppStore.todayTitle, systemImage: "bubble.left.and.text.bubble.right", weight: .medium,
-                    badge: store.todayNewCount) {
-                    store.openToday()
-                    onDismiss()
-                }
-            }
+            // Today is set aside for now (29-09): Alice's chat is the one place.
             agentsSection
             // Under the experimental interface all of these live in the round
             // menu beside the composer instead.
             if !experimental {
-                // Under Agents: the person's own day.
-                row("Agenda", systemImage: "calendar", weight: .medium, destination: .agenda) { openAgenda() }
-                row("Goals", systemImage: "scope", weight: .medium, destination: .goals) { openGoals() }
+                // Agenda and Goals are set aside (29-09): goals and their step-by-step plans are made
+                // in the chat, where the plan card follows the work.
                 row("Errands", systemImage: "bag", weight: .medium,
                     badge: store.errandBoard.needingPerson.count) {
                     onDismiss()
@@ -246,7 +239,7 @@ struct Sidebar: View, Equatable {
                     store.markNoticesSeen(.routines)
                     going = .routines
                 }
-                row("Projects", systemImage: "folder", weight: .medium, destination: .projects) { going = .projects }
+                // Projects set aside for now (29-09).
                 row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
             }
         }
