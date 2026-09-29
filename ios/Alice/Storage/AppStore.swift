@@ -5877,6 +5877,34 @@ final class AppStore {
         }
     }
 
+    /// Discuss on a feed post: a new session that opens on the post, quoted as context the person
+    /// brought (`Message.feedContext`), so Alice reads it as theirs and not as something she said.
+    func discuss(_ post: FeedPost) {
+        newChat()
+        guard let index = conversations.firstIndex(where: { $0.id == activeID }) else { return }
+        var quoted = Message(
+            id: UUID().uuidString, role: .user, content: Self.feedContextText(post), createdAt: Date()
+        )
+        quoted.feedContext = post
+        conversations[index].messages.append(quoted)
+        conversations[index].title = post.headline
+        persistConversations()
+        Task { await feed.discussed(post) }
+    }
+
+    /// What the model reads for a discussed post: marked as context from the person's feed.
+    nonisolated static func feedContextText(_ post: FeedPost) -> String {
+        var lines = ["[From my feed — for context]", post.headline, "", post.body]
+        if !post.sourceLinks.isEmpty {
+            lines.append("")
+            lines.append("Sources:")
+            for (index, source) in post.sourceLinks.enumerated() {
+                lines.append("[\(index + 1)] \(source.title.isEmpty ? source.host : source.title) — \(source.url.absoluteString)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
     func newChat() {
         stashDraft()
         let chat = Conversation.blank()
@@ -6100,6 +6128,8 @@ final class AppStore {
     var showingFeed = false
     /// An errand to open in `ErrandsScreen` (only the developer walkthrough shows it now).
     var requestedErrand: String?
+    /// Alice's editorial feed: written on the Mac, kept here for reading offline (`FeedStore`).
+    @ObservationIgnored lazy var feed = FeedStore(client: dashboard)
     @ObservationIgnored lazy var errandBoard: ErrandBoard = {
         let board = ErrandBoard()
         board.attach(self)

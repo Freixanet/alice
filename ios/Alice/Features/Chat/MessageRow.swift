@@ -138,6 +138,8 @@ struct MessageRow: View {
             EmptyView()
         } else if let eventID = AgentRoutineRunCard.eventID(message.id) {
             AgentRoutineRunCard(eventID: eventID)
+        } else if let post = message.feedContext {
+            FeedContextCard(post: post)
         } else {
             row
         }
@@ -1509,5 +1511,29 @@ struct AgentRoutineRunCard: View {
         } catch {
             notice = PlainWords.describe(error, doing: "open the routine")
         }
+    }
+}
+
+
+/// The feed post a conversation was opened about (`AppStore.discuss`): quoted, not said.
+struct FeedContextCard: View {
+    @Environment(\.colorScheme) private var scheme
+    let post: FeedPost
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("From your feed", systemImage: "newspaper")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(post.headline)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            FeedBodyText(post: post, collapsed: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("From your feed: \(post.headline)")
     }
 }

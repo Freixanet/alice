@@ -256,6 +256,8 @@ struct AliceApp: App {
         await store.syncCalendarIfConnected()
         // And last night's sleep, so the morning briefing has it.
         await store.syncHealthIfConnected()
+        // The feed's new posts, read quietly: no notification, no badge (`FeedStore`).
+        await store.feed.sync()
         guard notifier.permission.canDeliver else { return }
         await notifier.post(store.syncEvents())
     }

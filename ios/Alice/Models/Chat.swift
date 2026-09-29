@@ -228,6 +228,10 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// The model's own reasoning for this reply, when Hermes sent it
     /// (`display.show_reasoning`). Shown only inside the closed trace.
     var reasoning: String? = nil
+    /// A feed post the person opened a conversation about (`AppStore.discuss`). Drawn as a
+    /// "From your feed" card; its text goes to the model on the person's side, as context they
+    /// brought, never as words of Alice's.
+    var feedContext: FeedPost? = nil
 
     enum RoutinePart: String, Hashable, Sendable, Codable {
         case opening, card, closing, quiet
@@ -284,6 +288,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         routinePart = try box.decodeIfPresent(RoutinePart.self, forKey: .routinePart)
         routineGroup = try box.decodeIfPresent(String.self, forKey: .routineGroup)
         reasoning = try box.decodeIfPresent(String.self, forKey: .reasoning)
+        feedContext = try? box.decodeIfPresent(FeedPost.self, forKey: .feedContext)
     }
 
     init(

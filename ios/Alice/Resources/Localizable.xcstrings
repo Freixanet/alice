@@ -14100,6 +14100,693 @@
           }
         }
       }
+    },
+    "feed.seed.feed.kicker": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your feed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu feed"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.feed.headline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is your feed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esto es tu feed"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.feed.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice writes these posts for you, fresh each time: one idea per post, with every fact linked to where she found it. Tap the page icon at the top to tell her what to cover, the tone you like and what to leave out."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice escribe estos posts para ti, nuevos cada vez: una idea por post, con cada dato enlazado a dónde lo encontró. Toca el icono de la página arriba para decirle qué cubrir, el tono que te gusta y qué dejar fuera."
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.chat.kicker": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.chat.headline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One chat for everything"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un chat para todo"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.chat.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask Alice anything in her chat. When a conversation has run its course, type /new: the chat starts empty and the old one is kept under Sessions in the side menu."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pregúntale a Alice lo que sea en su chat. Cuando una conversación se agote, escribe /new: el chat empieza vacío y el anterior se guarda en Sesiones, en el menú lateral."
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.agents.kicker": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agentes"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.agents.headline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents and their routines"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los agentes y sus rutinas"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.agents.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents are specialists that work for you on a schedule. When one of their routines runs, a card appears in Alice's chat; tap it to see the routine."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los agentes son especialistas que trabajan para ti con un horario. Cuando una de sus rutinas se ejecuta, aparece una tarjeta en el chat de Alice; tócala para ver la rutina."
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.errands.kicker": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Errands"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recados"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.errands.headline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Errands, right in the chat"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recados, en el propio chat"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.errands.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask Alice to buy or book something and she runs it on her own, apart from the chat. Its progress, questions and payment approval show up as cards in the conversation."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pídele a Alice que compre o reserve algo y lo hará por su cuenta, aparte del chat. Su progreso, sus preguntas y la aprobación del pago aparecen como tarjetas en la conversación."
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.library.kicker": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notas"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.library.headline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes and your library"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notas y tu biblioteca"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "feed.seed.library.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jot a note in the moment from the side menu, and find what Alice made for you — images, documents, files — in the Library."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apunta una nota al momento desde el menú lateral, y encuentra lo que Alice hizo para ti —imágenes, documentos, archivos— en la Biblioteca."
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "Writing new posts…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Writing new posts…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribiendo posts nuevos…"
+          }
+        }
+      }
+    },
+    "Couldn’t write new posts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t write new posts"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron escribir posts nuevos"
+          }
+        }
+      }
+    },
+    "Retry": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reintentar"
+          }
+        }
+      }
+    },
+    "Asks your Mac to write new posts again": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Asks your Mac to write new posts again"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pide a tu Mac que vuelva a escribir posts"
+          }
+        }
+      }
+    },
+    "Post deleted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Post deleted"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Post eliminado"
+          }
+        }
+      }
+    },
+    "Undo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deshacer"
+          }
+        }
+      }
+    },
+    "Brings the post back": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Brings the post back"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recupera el post"
+          }
+        }
+      }
+    },
+    "Coverage brief": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coverage brief"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Brief del feed"
+          }
+        }
+      }
+    },
+    "What the feed covers, its tone and what it leaves out": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What the feed covers, its tone and what it leaves out"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qué cubre el feed, su tono y qué deja fuera"
+          }
+        }
+      }
+    },
+    "Why this": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Why this"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por qué esto"
+          }
+        }
+      }
+    },
+    "Why this post": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Why this post"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por qué este post"
+          }
+        }
+      }
+    },
+    "Less": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Less"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menos"
+          }
+        }
+      }
+    },
+    "Show less": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show less"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar menos"
+          }
+        }
+      }
+    },
+    "Show the whole post": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show the whole post"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar el post entero"
+          }
+        }
+      }
+    },
+    "Discuss": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discuss"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comentar"
+          }
+        }
+      }
+    },
+    "Discuss with Alice": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discuss with Alice"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comentarlo con Alice"
+          }
+        }
+      }
+    },
+    "Love": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Love"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Me encanta"
+          }
+        }
+      }
+    },
+    "Unlove": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlove"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar me encanta"
+          }
+        }
+      }
+    },
+    "More options": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More options"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más opciones"
+          }
+        }
+      }
+    },
+    "From your feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "From your feed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De tu feed"
+          }
+        }
+      }
+    },
+    "From your feed: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "From your feed: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De tu feed: %@"
+          }
+        }
+      }
+    },
+    "Source %lld: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source %lld: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fuente %lld: %@"
+          }
+        }
+      }
+    },
+    "Opens it in the browser": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens it in the browser"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo abre en el navegador"
+          }
+        }
+      }
+    },
+    "Topics to follow, the tone you like, and anything to leave out. Alice writes the next posts from this.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Topics to follow, the tone you like, and anything to leave out. Alice writes the next posts from this."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temas a seguir, el tono que te gusta y lo que quieras dejar fuera. Alice escribe los próximos posts a partir de esto."
+          }
+        }
+      }
+    },
+    "Alice is writing posts now. The new brief applies to the next run.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice is writing posts now. The new brief applies to the next run."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice está escribiendo posts ahora. El brief nuevo se aplica a la siguiente tanda."
+          }
+        }
+      }
+    },
+    "The brief couldn’t be saved. Check that your Mac is reachable and try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The brief couldn’t be saved. Check that your Mac is reachable and try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo guardar el brief. Comprueba que tu Mac está accesible e inténtalo de nuevo."
+          }
+        }
+      }
+    },
+    "Saves the brief and asks Alice for new posts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saves the brief and asks Alice for new posts"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guarda el brief y pide posts nuevos a Alice"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
