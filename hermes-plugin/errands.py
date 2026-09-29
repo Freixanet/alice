@@ -831,7 +831,9 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
 
 def public(entry: Dict[str, Any]) -> Dict[str, Any]:
     """What Alice shows: everything but the internal session wiring."""
-    hidden = {"origin_session", "run_id"}
+    # The chat it came from stays: Alice finds an errand's cards by it when the chat's reply
+    # never called errand_start (the plugin starts it anyway).
+    hidden = {"run_id"}
     out = {k: v for k, v in entry.items() if k not in hidden}
     if isinstance(out.get("approval"), dict):
         out["approval"] = {k: v for k, v in out["approval"].items() if k != "run_id"}

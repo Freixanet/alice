@@ -60,7 +60,7 @@ class ErrandRoutesTests(unittest.TestCase):
                                     origin_session="chat-1")
         body = self.client.get(self.url()).json()
         self.assertEqual([e["id"] for e in body["errands"]], [entry["id"]])
-        self.assertNotIn("origin_session", body["errands"][0])
+        self.assertEqual(body["errands"][0]["origin_session"], "chat-1")
         self.assertEqual(self.client.get(self.url("/nope")).status_code, 404)
 
     def test_allow_approves_the_checkout_seen_and_resumes_the_errand(self):

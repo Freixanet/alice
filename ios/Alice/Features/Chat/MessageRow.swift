@@ -262,6 +262,16 @@ struct MessageRow: View {
                                 ErrandChatBlock(ref: ref)
                             }
                         }
+                        // Or one the plugin started for this turn without the call.
+                        if !message.tools.contains(where: { ErrandRef.isTool($0.name) }),
+                           let conversation = store.shownConversation,
+                           let session = conversation.hermesSessionID,
+                           let at = conversation.messages.firstIndex(where: { $0.id == message.id }),
+                           let asked = conversation.messages[..<at].last(where: { $0.role == .user }) {
+                            ErrandTurnBlock(
+                                session: session, asked: asked.createdAt,
+                                until: conversation.messages[(at + 1)...].first { $0.role == .user }?.createdAt)
+                        }
                     }
 
                     if showingExtras, let line = developerLine {

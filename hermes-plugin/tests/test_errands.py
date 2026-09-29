@@ -62,7 +62,7 @@ class StoreTests(Base):
                                approval={"run_id": "run_1", "request_id": "r1", "title": "¿Entrar?"})
         shown = errands.public(entry)
         self.assertNotIn("run_id", shown)
-        self.assertNotIn("origin_session", shown)
+        self.assertIn("origin_session", shown)
         self.assertNotIn("run_id", shown["approval"])
 
 

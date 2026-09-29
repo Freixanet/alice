@@ -71,6 +71,8 @@ struct Errand: Identifiable, Hashable, Sendable {
     let id: String
     var title: String
     var request: String
+    /// The Hermes session of the chat that asked for it.
+    var originSession: String = ""
     var site: String
     var status: Status
     var checkout: Checkout?
@@ -133,7 +135,8 @@ struct Errand: Identifiable, Hashable, Sendable {
             return Step(text: words, url: text(raw["url"]), at: date(raw["at"]) ?? Date())
         }
         return Errand(
-            id: id, title: title, request: text(row["request"]), site: text(row["site"]),
+            id: id, title: title, request: text(row["request"]), originSession: text(row["origin_session"]),
+            site: text(row["site"]),
             status: Status(rawValue: text(row["status"])) ?? .working, checkout: checkout, receipt: receipt,
             questionsTitle: text(asked?["title"]), questions: questions, approval: approval,
             reason: text(row["reason"]), summary: text(row["summary"]), steps: steps,
