@@ -1078,6 +1078,7 @@ enum RichInline {
     }
 
     @MainActor static func attributed(_ text: String, body: Color, link: Color) -> AttributedString {
+        let text = text.pricesKeptTogether
         var output = AttributedString()
         for segment in segments(text) {
             switch segment {
@@ -1310,10 +1311,62 @@ struct RichMessageView: View {
     var listsSources = true
     /// Off for a paragraph still being written, which changes every token.
     var cachesParse = true
+    /// The words of the reply in a bubble (the experimental interface). Cards, buttons, media and
+    /// code stay outside it, as their own surfaces.
+    var bubbled = false
 
     @Environment(\.separatesEntries) private var separatesEntries
+    @Environment(\.colorScheme) private var bubbleScheme
+
+    /// Prose, as opposed to a block that is a surface of its own.
+    private static func isProse(_ block: RichBlock) -> Bool {
+        switch block {
+        case .heading, .paragraph, .list, .math, .rule: true
+        default: false
+        }
+    }
+
+    /// Runs of prose and single other blocks, in order.
+    private func groups(_ blocks: [RichBlock]) -> [(prose: Bool, blocks: [(Int, RichBlock)])] {
+        var out: [(prose: Bool, blocks: [(Int, RichBlock)])] = []
+        for (index, block) in blocks.enumerated() {
+            let prose = Self.isProse(block)
+            if prose, let last = out.last, last.prose {
+                out[out.count - 1].blocks.append((index, block))
+            } else {
+                out.append((prose, [(index, block)]))
+            }
+        }
+        return out
+    }
 
     var body: some View {
+        if bubbled {
+            let blocks = cachesParse ? RichMarkdown.cached(shown) : RichMarkdown.blocks(shown)
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(Array(groups(blocks).enumerated()), id: \.offset) { _, group in
+                    if group.prose {
+                        ReplyBubble {
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach(group.blocks, id: \.0) { view(for: $0.1) }
+                            }
+                        }
+                    } else {
+                        ForEach(group.blocks, id: \.0) { view(for: $0.1) }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .task(id: content) {
+                let cited = Receipts.cited(in: content)
+                if !cited.isEmpty { await store.loadReceiptTitles(cited) }
+            }
+        } else {
+            plainBody
+        }
+    }
+
+    private var plainBody: some View {
         VStack(alignment: .leading, spacing: 14) {
             ForEach(Array((cachesParse ? RichMarkdown.cached(shown) : RichMarkdown.blocks(shown)).enumerated()),
                     id: \.offset) { index, block in
@@ -1872,5 +1925,22 @@ enum Citations {
         guard let address = group(3) ?? group(4), let url = URL(string: address) else { return nil }
         let title = group(2) ?? group(5) ?? url.host(percentEncoded: false)?.replacingOccurrences(of: "www.", with: "") ?? address
         return RichLink(title: title, url: url)
+    }
+}
+
+
+/// Alice's words in a bubble: the reply's side of the conversation, to the left, leaving room on the right.
+struct ReplyBubble<Content: View>: View {
+    @Environment(\.colorScheme) private var scheme
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Palette.muted(scheme), in: .rect(cornerRadius: 22))
+            Spacer(minLength: 32)
+        }
     }
 }

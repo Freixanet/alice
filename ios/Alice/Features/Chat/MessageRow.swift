@@ -17,6 +17,7 @@ struct MessageRow: View {
     var showsAuthor = true
     /// What copying, sharing and reading aloud take: the whole task.
     var actionsContent: String? = nil
+    @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @State private var selectingText = false
     @State private var showingModelPicker = false
     /// Copy, share, speak, retry and developer usage stay off until the reply is tapped.
@@ -33,14 +34,22 @@ struct MessageRow: View {
         return bot
     }
 
+    /// The experimental interface draws every reply's words in a bubble, in Alice's chat and the agents'.
+    private var bubblesReplies: Bool { store.developerMode && homeInterface == .experimental }
+
     /// While tokens arrive, finished blocks in their final layout and the
     /// paragraph being written as light Markdown (`StreamingReply`).
     @ViewBuilder
-    private func replyBody(_ content: String) -> some View {
+    private func replyBody(_ content: String, bubbled: Bool = false) -> some View {
         if message.pending {
-            StreamingReply(content: content, onTap: revealReplyExtras)
+            if bubbled {
+                ReplyBubble { StreamingReply(content: content, onTap: revealReplyExtras) }
+            } else {
+                StreamingReply(content: content, onTap: revealReplyExtras)
+            }
         } else {
-            RichMessageView(content: content, failed: message.error != nil, onTap: revealReplyExtras)
+            RichMessageView(content: content, failed: message.error != nil, onTap: revealReplyExtras,
+                            bubbled: bubbled)
         }
     }
 
@@ -101,7 +110,7 @@ struct MessageRow: View {
                     // message on a tap was not wanted either.)
                     // Only the named agent is emphasized; the bubble keeps one text colour.
                     Text(store.mentionStyled(
-                        message.content,
+                        AskPerson.display(message.content),
                         bareSlugs: message.mentionProfile.map { [$0] } ?? [],
                         selectedRanges: message.selectedMentionRanges
                     ))
@@ -221,7 +230,7 @@ struct MessageRow: View {
                         // While the reply is still arriving it stays plain
                         // text: parsing the whole answer on every token is
                         // what made the phone stop taking taps.
-                        replyBody(message.content)
+                        replyBody(message.content, bubbled: bubblesReplies)
                     }
                     }
                     .accessibilityHint(
@@ -237,6 +246,17 @@ struct MessageRow: View {
                             .controlSize(.regular)
                     } else if message.role == .assistant, !message.slashChoices.isEmpty {
                         SlashChoiceButtons(choices: message.slashChoices)
+                    }
+
+                    // What the agent asked while it kept working (`ask_person`).
+                    if message.role == .assistant {
+                        ForEach(message.tools.filter { AskPerson.isTool($0.name) }) { call in
+                            if let ask = AskPerson.parse(call.detail),
+                               !AskPerson.superseded(ask, callID: call.id,
+                                                     in: store.shownConversation?.messages ?? []) {
+                                AskPersonCard(ask: ask)
+                            }
+                        }
                     }
 
                     if showingExtras, let line = developerLine {
@@ -821,7 +841,7 @@ enum ToolCaption {
     /// Listing it as a step would leave "Asking a question" standing in the
     /// trace under an answer they have already given.
     static func steps(in tools: [Message.ToolCall]) -> [Message.ToolCall] {
-        tools.filter { !$0.name.lowercased().contains("clarify") }
+        tools.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) }
     }
 
     /// The line above the reply: what it is doing, or what it took.
@@ -1082,13 +1102,17 @@ private struct RunApprovalCard: View {
 /// The one yes a purchase needs: Hermes asks before it writes a saved card
 /// into the checkout. What is being bought and for how much is in Alice's
 /// message just above; this says where and with which card.
-private struct PaymentApprovalCard: View {
+struct PaymentApprovalCard: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let messageID: String
     let approval: Message.Approval
     let payment: PaymentApproval
     let language: ChatLanguage
+    /// The Developer › Purchase walkthrough answers here instead of asking Hermes.
+    var demoChoice: ((Message.ApprovalChoice) -> Void)? = nil
+    @State private var unconfirmed = false
+    @State private var approved = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1101,11 +1125,24 @@ private struct PaymentApprovalCard: View {
             HStack(spacing: 8) {
                 ApprovalChoiceButton(title: language.pick("Pay", "Pagar"), deny: false,
                                      disabled: approval.resolving == true, tint: store.accent.control(scheme)) {
-                    Task { await store.resolveApproval(messageID: messageID, choice: .once) }
+                    // Paying is the person's own decision: Face ID (or the passcode) first.
+                    Task {
+                        unconfirmed = false
+                        guard await Biometrics.authenticate(
+                            reason: language.pick("Confirm the payment on \(payment.site)",
+                                                  "Confirma el pago en \(payment.site)")
+                        ) else { unconfirmed = true; return }
+                        approved += 1
+                        if let demoChoice { demoChoice(.once) } else {
+                            await store.resolveApproval(messageID: messageID, choice: .once)
+                        }
+                    }
                 }
                 ApprovalChoiceButton(title: language.pick("Cancel", "Cancelar"), deny: true,
                                      disabled: approval.resolving == true, tint: store.accent.control(scheme)) {
-                    Task { await store.resolveApproval(messageID: messageID, choice: .deny) }
+                    if let demoChoice { demoChoice(.deny) } else {
+                        Task { await store.resolveApproval(messageID: messageID, choice: .deny) }
+                    }
                 }
             }
             Text(language.pick("The card numbers never go through the chat.",
@@ -1120,6 +1157,11 @@ private struct PaymentApprovalCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+            if unconfirmed {
+                Text(language.pick("Couldn't confirm it's you, so nothing was paid.",
+                                   "No se ha podido confirmar que eres tú, así que no se ha pagado."))
+                    .font(.caption).foregroundStyle(Palette.danger(scheme))
+            }
             if let error = approval.error {
                 Text(error).font(.caption).foregroundStyle(Palette.danger(scheme))
             }
@@ -1128,6 +1170,7 @@ private struct PaymentApprovalCard: View {
         .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
         .overlay { RoundedRectangle(cornerRadius: 14).stroke(Palette.border(scheme), lineWidth: 0.5) }
         .accessibilityElement(children: .contain)
+        .sensoryFeedback(.success, trigger: approved)
     }
 }
 

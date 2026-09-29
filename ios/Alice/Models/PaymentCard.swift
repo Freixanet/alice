@@ -51,6 +51,13 @@ struct SavedCard: Identifiable, Hashable, Sendable {
         alias = object["alias"] as? String ?? (parts.count > 1 ? parts.dropLast().joined(separator: " · ") : "")
     }
 
+    /// The made-up card of the Developer › Purchase walkthrough. Never stored.
+    static func demo(origin: String?) -> SavedCard {
+        var object: [String: Any] = ["handle": "demo", "label": "Visa ···4242", "alias": "", "card": "Visa ···4242"]
+        if let origin { object["origin"] = origin }
+        return SavedCard(object)!
+    }
+
     /// One row per card, whatever sites it is saved for.
     static func distinct(_ cards: [SavedCard]) -> [SavedCard] {
         cards.reduce(into: []) { list, card in
@@ -169,5 +176,15 @@ struct PaymentApproval: Hashable, Sendable {
         card = String(command[command.index(command.startIndex, offsetBy: "Fill payment card '".count)..<close.lowerBound])
         let origin = String(command[close.upperBound...]).trimmingCharacters(in: .whitespaces)
         site = URL(string: origin)?.host(percentEncoded: false)?.replacingOccurrences(of: "www.", with: "") ?? origin
+    }
+}
+
+extension String {
+    /// The amount and its currency on one line: a no-break space between "249" and "€" (and "$" and
+    /// "20", or "EUR"), so a price never wraps with the symbol alone on the next line.
+    var pricesKeptTogether: String {
+        guard contains(where: \.isNumber) else { return self }
+        let pattern = #"(?<=\d) (?=[€$£¥]|(?:EUR|USD|GBP)\b)|(?<=[€$£¥]) (?=\d)"#
+        return replacingOccurrences(of: pattern, with: "\u{00A0}", options: .regularExpression)
     }
 }

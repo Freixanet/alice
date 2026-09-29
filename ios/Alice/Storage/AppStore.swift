@@ -640,11 +640,13 @@ final class AppStore {
         }
         restoreSalvagedConversationsIfPossible()
         migrateLegacyChannels()
-        activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
         refreshConversationShelves()
-        refreshActiveChat()
         refreshBotNameSets()
         ensureTodayConversation()
+        // Alice's main chat is where the app opens; other chats are side chats.
+        activeID = todayConversationID
+            ?? conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
+        refreshActiveChat()
         loadDrafts()
         restoreDraft()
         #if DEBUG
@@ -4854,6 +4856,12 @@ final class AppStore {
     func secretIsSet(_ name: String) async throws -> Bool { try await dashboard.secretIsSet(name) }
     func saveSecret(_ name: String, value: String) async throws { try await dashboard.saveSecret(name, value: value) }
     func savedCards(profile: String) async throws -> [SavedCard] { try await dashboard.savedCards(profile: profile) }
+    func deliveryDetails(profile: String) async throws -> [String: String] {
+        try await dashboard.deliveryDetails(profile: profile)
+    }
+    func saveDeliveryDetails(_ details: [String: String], profile: String) async throws -> [String: String] {
+        try await dashboard.saveDeliveryDetails(details, profile: profile)
+    }
     func renameCard(handle: String, alias: String, profile: String) async throws -> SavedCard {
         try await dashboard.renameCard(handle: handle, alias: alias, profile: profile)
     }
@@ -4870,7 +4878,7 @@ final class AppStore {
     func saveAuthenticatorKey(site: String, key: String) async throws -> String {
         try await dashboard.saveAuthenticatorKey(site: site, key: key)
     }
-    func saveCard(_ card: PaymentCardFields?, handle: String?, origin: String, profile: String) async throws -> SavedCard {
+    func saveCard(_ card: PaymentCardFields?, handle: String?, origin: String?, profile: String) async throws -> SavedCard {
         try await dashboard.saveCard(card, handle: handle, origin: origin, profile: profile)
     }
     func setSharedBrowser(on: Bool) async throws -> SharedBrowserState {
@@ -5622,7 +5630,11 @@ final class AppStore {
     /// of the bots page onto the bot you had just been talking to is not
     /// backing out of anything.
     func goHome() {
-        if let home = conversations.first(where: { !$0.isBotChat }) {
+        // The main chat. A phone whose conversations could not be read has
+        // none, and falls back to a side chat as before.
+        if todayConversationID != nil {
+            openToday()
+        } else if let home = conversations.first(where: { !$0.isBotChat }) {
             activeID = home.id
         } else {
             newChat()
@@ -5944,7 +5956,10 @@ final class AppStore {
         unseenReplies.remove(id)
         conversations.removeAll { $0.id == id }
         if conversations.isEmpty { conversations = [.blank()] }
-        if activeID == id { activeID = conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id }
+        if activeID == id {
+            activeID = todayConversationID
+                ?? conversations.first(where: { !$0.isBotChat })?.id ?? conversations.first?.id
+        }
         persistConversations()
     }
 
@@ -6602,7 +6617,7 @@ final class AppStore {
     /// without you. Her other chats are conversations you start; this one is
     /// hers, and reads, replies and approvals work as in any agent's chat.
     nonisolated static let todayProfile = "default"
-    nonisolated static let todayTitle = "Today"
+    nonisolated static let todayTitle = "Alice"
 
     private static var todayBot: BotRow {
         BotRow(
@@ -6649,7 +6664,7 @@ final class AppStore {
 
     /// Today is kept on the phone from the start, so a briefing that arrives
     /// while the app is closed has somewhere to be read into and counted as
-    /// new. Added at the end: it is never the chat the app opens on.
+    /// new. It is the chat the app opens on: Alice's main chat.
     private func ensureTodayConversation() {
         guard conversationsUnreadable == nil, todayConversationID == nil else { return }
         let now = Date()
@@ -6769,7 +6784,7 @@ final class AppStore {
                     into: conversations[current].messages,
                     botName: profile
                 ),
-                watching: Set(activeBotTurns.values.map(\.replyID)),
+                watching: Set(activeBotTurns.values.map(\.replyID)).union(controlReplyIDs),
                 note: Self.lostTouchNote(label: botCurrentName(for: profile))
             )
             // Same transcript as last time: assigning it anyway rebuilt every
@@ -6824,6 +6839,7 @@ final class AppStore {
                 waitingOn: delegations.pending,
                 // Shown in the reply itself when there is one to show it in.
                 running: runningRemotely && !resumedReply
+                    && !Self.endsInFinalReply(resumed.rows)
             ), for: conversationID)
             if botChatFailure[conversationID] != nil { botChatFailure[conversationID] = nil }
             if transcriptChanged { persistConversations() }
@@ -6861,6 +6877,16 @@ final class AppStore {
     /// Work each bot chat has going on out of sight, keyed by conversation.
     private(set) var backgroundWorks: [String: AgentMessages.BackgroundWork] = [:]
     private var backgroundFollowers: [String: Task<Void, Never>] = [:]
+
+    /// The transcript ends in the agent's answer: text with no tool after it.
+    /// Hermes can still report the turn as running while it winds down, which
+    /// kept "is working on it" under a reply that asked the person something.
+    static func endsInFinalReply(_ rows: [[String: Any]]) -> Bool {
+        guard let last = rows.last, (last["role"] as? String) == "assistant",
+              let text = last["text"] as? String
+        else { return false }
+        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     func backgroundWork(for conversationID: String) -> AgentMessages.BackgroundWork {
         var work = backgroundWorks[conversationID] ?? AgentMessages.BackgroundWork()
@@ -8121,6 +8147,13 @@ final class AppStore {
 
     /// A file, query or command Hermes sent with a tool, for the activity line.
     nonisolated static func toolDetail(from payload: [String: Any]) -> String? {
+        // A question for the person: its whole call, to draw the card from.
+        if let name = payload["name"] as? String, AskPerson.isTool(name) {
+            guard let args = dictionary(payload["args"]),
+                  let data = try? JSONSerialization.data(withJSONObject: args)
+            else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
         let top = ["preview", "context", "path", "file", "query", "command", "target", "url", "args_text"]
         if let preview = string(in: payload, keys: top) { return preview }
         if let args = dictionary(payload["args"]) {
@@ -8207,6 +8240,10 @@ final class AppStore {
     var activeIsRecoveredHistory: Bool {
         activeChat.isRecoveredHistory
     }
+
+    /// Replies to slash commands still running (`/compress`): answered by the
+    /// command, never by the transcript.
+    var controlReplyIDs: Set<String> = []
 
     func setControlSending(_ value: Bool) {
         guard let activeID else { return }
@@ -9350,7 +9387,9 @@ final class AppStore {
         case .started:
             return nil
         case .foldedIn:
-            return "\(label) is busy with something else. It will read this before it finishes."
+            // Folded into the task running now (an answer to her question,
+            // a correction): it is being used, not waiting behind other work.
+            return "\(label) got this and is using it in what she is doing."
         case .queued:
             return "\(label) is finishing something else. Your message is next."
         }

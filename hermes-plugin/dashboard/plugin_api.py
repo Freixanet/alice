@@ -954,7 +954,8 @@ def _cards():
 
 class _CardBody(BaseModel):
     profile: str = "default"
-    origin: str
+    # None: a general card given from Settings, bound to no site until it is used on one.
+    origin: Optional[str] = None
     # Either a saved card to use here too, or a new one. Never logged.
     handle: Optional[str] = None
     card_number: Optional[str] = None
@@ -988,13 +989,15 @@ def _save_card(body: _CardBody) -> Dict[str, Any]:
     try:
         with _profile_scope(profile):
             if body.handle:
+                if not body.origin:
+                    raise cards.CardError("A saved card is used on a payment page.")
                 card = cards.bind(body.handle, body.origin)
             else:
                 card = cards.save(body.origin, body.model_dump(exclude={"profile", "origin", "handle"}))
     except cards.CardError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     # Which card label and site; never a number, expiry or code.
-    _log.info("alice: card %s saved for %s in profile %s", card["label"], card["origin"], profile)
+    _log.info("alice: card %s saved for %s in profile %s", card["label"], card["origin"] or "no site yet", profile)
     return {"profile": profile, "card": card}
 
 
@@ -1010,6 +1013,46 @@ def _remove_card(profile: str, handle: str) -> Dict[str, Any]:
         if not _cards().remove(handle):
             raise HTTPException(status_code=404, detail="That card is no longer saved.")
     return {"profile": name, "removed": handle}
+
+
+def _ask_person():
+    import importlib.util
+
+    name = "alice_ask_person"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / "ask_person.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class _DetailsBody(BaseModel):
+    profile: str = "default"
+    details: Dict[str, str] = {}
+
+
+def _details(profile: str, values: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """The person's delivery details, kept once given so no agent asks for them again."""
+    from hermes_constants import get_hermes_home
+
+    name = _known_profile(profile)
+    with _profile_scope(name):
+        home = Path(get_hermes_home())
+        module = _ask_person()
+        kept = module.load_details(home) if values is None else module.save_details(home, values)
+    return {"profile": name, "fields": list(_ask_person().FIELDS), "details": kept}
+
+
+@router.get("/details")
+async def get_details(profile: str = "default") -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(_details, profile), headers=_NO_STORE)
+
+
+@router.put("/details")
+async def put_details(body: _DetailsBody) -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(_details, body.profile, body.details), headers=_NO_STORE)
 
 
 @router.get("/vault/cards")

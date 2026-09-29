@@ -126,30 +126,30 @@ private struct ChatScreenContent: View, Equatable {
                 NavigationStack {
                     Group {
                         switch experimentalSection {
+                        case .agenda: AgendaScreen(onClose: { selectExperimental(.chat) })
                         case .goals: GoalsScreen(onClose: { selectExperimental(.chat) })
+                        case .notes: NotesFoldersScreen(onClose: { selectExperimental(.chat) })
+                        case .routines: RoutinesScreen()
+                        case .projects: ProjectsScreen()
                         case .feed: FeedScreen()
                         case .library: LibraryView()
                         case .chat, .today: EmptyView()
                         }
                     }
                     .toolbar {
-                        if experimentalSection != .goals {
+                        if experimentalSection != .goals, experimentalSection != .notes, experimentalSection != .agenda {
                             ToolbarItem(placement: .topBarLeading) {
                                 Button { selectExperimental(.chat) } label: { Image(systemName: "chevron.left") }
                                     .accessibilityLabel("Back")
                             }
                         }
                     }
-                }
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if !keyboardShown {
-                        HStack(spacing: 0) {
-                            experimentalMenu
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 6)
-                        .padding(.top, 2)
+                    // Inside the stack, not on it: RootView lays this screen
+                    // out ignoring the safe area and only the stack takes the
+                    // window's insets back, so an inset on the outside sat
+                    // flush against the home indicator.
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        composerArea
                     }
                 }
                 .background(Palette.background(scheme))
@@ -366,7 +366,9 @@ private struct ChatScreenContent: View, Equatable {
 
     private var topControls: some View {
         HStack(alignment: .top, spacing: 0) {
-            Button(action: (bot == nil || isAgentTask || (experimentalEnabled && isToday)) ? onOpenDrawer : (isToday ? { store.goHome() } : onBack)) {
+            // Alice's main chat and her side chats open the drawer; an agent's
+            // chat goes back to the agents.
+            Button(action: (bot == nil || isAgentTask || isToday) ? onOpenDrawer : onBack) {
                 // Two bars, not three, matched to the `plus` across from it.
                 // Both are math symbols, so the pairing is a real one — but
                 // not at the same settings: `equal` at 18pt medium matches
@@ -379,7 +381,7 @@ private struct ChatScreenContent: View, Equatable {
                 // list of bots, not a place the drawer leads anywhere useful
                 // from — so from here the same disc goes back instead.
                 Group {
-                    if bot == nil || isAgentTask {
+                    if bot == nil || isAgentTask || isToday {
                         // The two bars turn into an X as the drawer opens,
                         // following the finger rather than switching at the end.
                         DrawerOpenMark()
@@ -395,7 +397,7 @@ private struct ChatScreenContent: View, Equatable {
                 .contentShape(.circle)
             }
             .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel((bot == nil || isAgentTask) ? "Chats" : (isToday ? "Home" : "Agents"))
+            .accessibilityLabel((bot == nil || isAgentTask || isToday) ? "Chats" : "Agents")
             .accessibilityIdentifier("chat.leading")
 
             Spacer(minLength: 0)
@@ -451,7 +453,17 @@ private struct ChatScreenContent: View, Equatable {
                     }
                 }
             } else {
-                aliceHeader
+                // A side chat: Alice, off to one side of her main chat.
+                VStack(spacing: 4) {
+                    aliceHeader
+                    Button { store.goHome() } label: {
+                        Text("Side chat · Back to Alice")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("chat.sideChat.back")
+                }
             }
 
             Spacer(minLength: 0)
@@ -464,7 +476,7 @@ private struct ChatScreenContent: View, Equatable {
                     Button(role: .destructive) {
                         confirmingTodayClear = true
                     } label: {
-                        Label(clearingToday ? "Clearing…" : "Clear Today", systemImage: "eraser")
+                        Label(clearingToday ? "Clearing…" : "Clear chat", systemImage: "eraser")
                     }
                     .disabled(clearingToday)
                 } label: {
@@ -480,7 +492,7 @@ private struct ChatScreenContent: View, Equatable {
                     .contentShape(.circle)
                 }
                 .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Today options")
+                .accessibilityLabel("Chat options")
             } else {
                 Color.clear
                     .frame(width: discSize, height: discSize)
@@ -492,12 +504,12 @@ private struct ChatScreenContent: View, Equatable {
         // edges. The drawer's search button keeps the same 20 on its side.
         .padding(.horizontal, 20)
         .padding(.top, 11)
-        .confirmationDialog("Clear Today?", isPresented: $confirmingTodayClear, titleVisibility: .visible) {
-            Button("Clear Today", role: .destructive) { clearToday() }
+        .confirmationDialog("Clear chat?", isPresented: $confirmingTodayClear, titleVisibility: .visible) {
+            Button("Clear chat", role: .destructive) { clearToday() }
         } message: {
-            Text("Every briefing and message in Today goes, here and in Hermes. The morning briefing, the close of the day and what Alice knows about you stay.")
+            Text("Every message in your chat with Alice goes, here and in Hermes. The morning briefing, the close of the day and what Alice knows about you stay.")
         }
-        .alert("Today not cleared", isPresented: Binding(
+        .alert("Chat not cleared", isPresented: Binding(
             get: { todayClearFailure != nil }, set: { if !$0 { todayClearFailure = nil } }
         )) {
             Button("OK", role: .cancel) {}
@@ -513,7 +525,7 @@ private struct ChatScreenContent: View, Equatable {
             do {
                 try await store.clearBotChat(AppStore.todayProfile)
             } catch {
-                todayClearFailure = PlainWords.describe(error, doing: "clear Today")
+                todayClearFailure = PlainWords.describe(error, doing: "clear the chat")
             }
         }
     }

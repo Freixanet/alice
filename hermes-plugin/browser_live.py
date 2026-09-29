@@ -199,7 +199,11 @@ def _binary() -> Optional[str]:
 
 
 def launch(root: Path, *, binary: Optional[str] = None, port: int = PORT, wait: float = 15.0) -> bool:
-    """A headless Chromium on the Hermes debug profile, unless one already answers."""
+    """A Chromium on the Hermes debug profile, unless one already answers.
+
+    A real window parked off-screen, not ``--headless``: headless Chrome announces itself as
+    "HeadlessChrome" and anti-bot checks (Cloudflare) stopped shops at a challenge. The profile
+    persists, so a challenge the person passes once is remembered by the site."""
     url = f"http://127.0.0.1:{port}"
     if reachable(url):
         return True
@@ -210,9 +214,9 @@ def launch(root: Path, *, binary: Optional[str] = None, port: int = PORT, wait: 
     data.mkdir(parents=True, exist_ok=True)
     log = open(data / "alice-headless.log", "ab")  # noqa: SIM115 — handed to the child
     subprocess.Popen(  # noqa: S603 — a fixed browser binary and fixed flags
-        [binary, "--headless=new", f"--remote-debugging-port={port}", "--remote-debugging-address=127.0.0.1",
+        [binary, f"--remote-debugging-port={port}", "--remote-debugging-address=127.0.0.1",
          f"--user-data-dir={data}", "--no-first-run", "--no-default-browser-check",
-         f"--window-size={WINDOW}", "about:blank"],
+         f"--window-size={WINDOW}", "--window-position=-10000,-10000", "about:blank"],
         stdout=subprocess.DEVNULL, stderr=log, start_new_session=True)
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:

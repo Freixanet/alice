@@ -8,6 +8,14 @@ import SwiftUI
 struct PaymentCardOfferCard: View {
     let offer: PaymentCardOffer
     var language: ChatLanguage = .english
+    /// The Developer › Purchase walkthrough: nothing is read from or saved to Hermes, and no note
+    /// is sent to the chat. `demoHasCard` is whether a card is already "saved" to offer.
+    var demo: Demo? = nil
+
+    struct Demo {
+        var hasCard = false
+        var onSaved: (SavedCard) -> Void = { _ in }
+    }
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -79,9 +87,14 @@ struct PaymentCardOfferCard: View {
         .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
         .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5) }
         .sheet(isPresented: $showingForm) {
-            PaymentCardSheet(offer: offer, language: language) { card in finish(card) }
+            PaymentCardSheet(offer: offer, language: language, demo: demo != nil) { card in finish(card) }
         }
         .task {
+            if let demo {
+                known = demo.hasCard ? SavedCard.demo(origin: nil) : nil
+                checked = true
+                return
+            }
             let cards = (try? await store.savedCards(profile: offer.profile)) ?? []
             // Already saved for this very page (bound when the shop sent you
             // here): nothing to ask, it is ready.
@@ -99,6 +112,11 @@ struct PaymentCardOfferCard: View {
         problem = nil
         defer { working = false }
         do {
+            if demo != nil {
+                try? await Task.sleep(for: .milliseconds(400))
+                finish(SavedCard.demo(origin: offer.origin))
+                return
+            }
             finish(try await store.saveCard(nil, handle: card.handle, origin: offer.origin, profile: offer.profile))
         } catch {
             problem = PlainWords.describe(error, doing: "use the card")
@@ -107,14 +125,22 @@ struct PaymentCardOfferCard: View {
 
     private func finish(_ card: SavedCard) {
         withAnimation(.snappy) { saved = card }
+        if let demo {
+            demo.onSaved(card)
+            return
+        }
         store.sendAppNote("The person saved \(card.label) for \(card.origin ?? offer.origin). Carry on with the task.")
     }
 }
 
 /// The card form. Nothing typed here is kept after it closes.
 struct PaymentCardSheet: View {
-    let offer: PaymentCardOffer
+    /// The payment page the card is for, or nil for a general card added from Settings.
+    let offer: PaymentCardOffer?
+    var profile = "default"
     let language: ChatLanguage
+    /// The purchase walkthrough: a made-up test card is filled in, and saving keeps nothing anywhere.
+    var demo = false
     let onSaved: (SavedCard) -> Void
 
     @Environment(AppStore.self) private var store
@@ -127,6 +153,8 @@ struct PaymentCardSheet: View {
     @FocusState private var focus: Field?
 
     private enum Field { case number, expiry, cvc, name, alias }
+
+    private var cardProfile: String { offer?.profile ?? profile }
 
     var body: some View {
         NavigationStack {
@@ -183,8 +211,13 @@ struct PaymentCardSheet: View {
                 } header: {
                     if !others.isEmpty { Text(language.pick("New card", "Tarjeta nueva")) }
                 } footer: {
-                    Text(language.pick("Saved encrypted in Hermes on your Mac, for \(offer.host) only. Alice fills it in without seeing it, after you confirm, and it never appears in the chat.",
-                                       "Se guarda cifrada en Hermes, en tu Mac, solo para \(offer.host). Alice la rellena sin verla, después de que lo confirmes, y nunca aparece en el chat."))
+                    if let offer {
+                        Text(language.pick("Saved encrypted in Hermes on your Mac, for \(offer.host) only. Alice fills it in without seeing it, after you confirm, and it never appears in the chat.",
+                                           "Se guarda cifrada en Hermes, en tu Mac, solo para \(offer.host). Alice la rellena sin verla, después de que lo confirmes, y nunca aparece en el chat."))
+                    } else {
+                        Text(language.pick("Saved encrypted in Hermes on your Mac. It never goes through the chat, and Alice asks before using it on a site.",
+                                           "Se guarda cifrada en Hermes, en tu Mac. Nunca pasa por el chat, y Alice te pregunta antes de usarla en una web."))
+                    }
                 }
                 if let problem = problem ?? fields.problem(spanish: language == .spanish) {
                     Text(problem)
@@ -193,7 +226,7 @@ struct PaymentCardSheet: View {
                 }
             }
             .aliceFormPaper(scheme)
-            .navigationTitle(offer.host)
+            .navigationTitle(offer?.host ?? language.pick("Add a card", "Añadir tarjeta"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -207,9 +240,14 @@ struct PaymentCardSheet: View {
                 }
             }
             .task {
+                if demo {
+                    fields = PaymentCardFields(number: "4242 4242 4242 4242", name: "Marc Freixanet",
+                                               expiry: "03/31", cvc: "123")
+                    return
+                }
                 focus = .number
-                let all = (try? await store.savedCards(profile: offer.profile)) ?? []
-                others = SavedCard.distinct(all.filter { $0.origin != offer.origin })
+                let all = (try? await store.savedCards(profile: cardProfile)) ?? []
+                others = SavedCard.distinct(all.filter { offer != nil && $0.origin != offer?.origin })
             }
             .onDisappear { fields = PaymentCardFields() }
             .interactiveDismissDisabled(working)
@@ -222,8 +260,15 @@ struct PaymentCardSheet: View {
         problem = nil
         defer { working = false }
         do {
+            if demo {
+                try? await Task.sleep(for: .milliseconds(500))
+                fields = PaymentCardFields()
+                onSaved(SavedCard.demo(origin: offer?.origin))
+                dismiss()
+                return
+            }
             let card = try await store.saveCard(handle == nil ? fields : nil, handle: handle,
-                                                origin: offer.origin, profile: offer.profile)
+                                                origin: offer?.origin, profile: cardProfile)
             fields = PaymentCardFields()
             onSaved(card)
             dismiss()

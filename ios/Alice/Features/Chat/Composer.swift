@@ -22,6 +22,9 @@ struct Composer: View {
     /// trims Alice's own composer to a single 44pt-tall capsule, the bot
     /// chat's shape, so the two controls read as one row at the same height.
     var compact = false
+    /// One line of `.body` plus the field's 6pt vertical padding, so the
+    /// compact capsule's buttons centre on its first line at any text size.
+    @ScaledMetric(relativeTo: .body) private var compactRowHeight: CGFloat = 34
     @Namespace private var glass
     @State private var showModels = false
     @State private var dictation = Dictation()
@@ -72,8 +75,12 @@ struct Composer: View {
                 else if !matchingBots.isEmpty { botMentionList }
                 if store.editingMessageID != nil { editingBanner }
                 if store.queuedSendNote != nil { queueBanner }
-                if isBotChat { botComposer }
-                else if compact { compactAliceComposer }
+                // Compact (the Experimental Home row) always wins: it is its
+                // own unified composer regardless of which bot backs the
+                // chat underneath, since a plain agent chat opened on its own
+                // still needs the bot's own composer.
+                if compact { compactAliceComposer }
+                else if isBotChat { botComposer }
                 else { aliceComposer }
             }
         }
@@ -84,7 +91,9 @@ struct Composer: View {
         // Bot chats sit flush with the bottom safe area. Keep the larger
         // keyboard gap requested for typing, and leave Alice's resting
         // position unchanged.
-        .padding(.bottom, keyboardShown ? 10 : ((isBotChat || compact) ? 0 : 6))
+        // The compact row sits beside the section button, which is bottom-aligned with it: its
+        // own bottom gap would lift the capsule off the button once the keyboard is up.
+        .padding(.bottom, compact ? 0 : (keyboardShown ? 10 : (isBotChat ? 0 : 6)))
         // Flicking the composer down puts the keyboard away, which is quicker
         // than reaching for the transcript to tap it.
         .gesture(
@@ -534,6 +543,7 @@ struct Composer: View {
 
                 HStack(alignment: .bottom, spacing: 6) {
                     compactAttachButton
+                        .frame(height: compactRowHeight)
 
                     TextField(
                         "", text: editorText,
@@ -552,10 +562,11 @@ struct Composer: View {
                         .onTapGesture { focused.wrappedValue = true }
 
                     botDictateButton
+                        .frame(height: compactRowHeight)
                     botVoiceOrSendButton
+                        .frame(height: compactRowHeight)
                 }
-                .padding(.leading, 14)
-                .padding(.trailing, 5)
+                .padding(.horizontal, 5)
                 .padding(.vertical, 5)
                 .frame(minHeight: 44)
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
@@ -598,6 +609,10 @@ struct Composer: View {
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
+        // Without this, Menu's own automatic style paints a background pill
+        // behind the label, on top of whatever the label draws — a second,
+        // separate glass circle floating apart from the capsule it sits in.
+        .menuStyle(.borderlessButton)
         .menuOrder(.fixed)
         .accessibilityLabel("Attach")
     }

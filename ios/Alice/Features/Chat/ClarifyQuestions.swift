@@ -367,3 +367,203 @@ struct ChatQuestionsCard: View {
         }
     }
 }
+
+// MARK: - Questions that do not stop the work (`ask_person`)
+
+/// What an agent asked with the Alice plugin's `ask_person` tool. Unlike
+/// clarify, the tool returns at once and the agent keeps working: the card is
+/// drawn from the tool call, and the answer goes back as the person's own
+/// message, `[respuesta:<id>] <value>` per line, which Hermes folds into the
+/// running turn.
+struct AskPerson: Hashable, Sendable {
+    struct Question: Hashable, Sendable, Identifiable {
+        let id: String
+        let question: String
+        let choices: [String]
+        let multi: Bool
+        /// A personal or delivery detail (`name`, `id`, `address`…): typed.
+        let field: String?
+    }
+
+    static let toolName = "ask_person"
+
+    let title: String?
+    let questions: [Question]
+
+    static func isTool(_ name: String) -> Bool { name == toolName }
+
+    /// The tool call's arguments, kept as the step's detail (`AppStore.toolDetail`).
+    static func parse(_ detail: String?) -> AskPerson? {
+        guard let data = detail?.data(using: .utf8),
+              let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let raw = args["questions"] as? [[String: Any]]
+        else { return nil }
+        let questions = raw.compactMap { item -> Question? in
+            guard let id = item["id"] as? String, !id.isEmpty,
+                  let text = item["question"] as? String, !text.isEmpty
+            else { return nil }
+            let field = (item["field"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            return Question(id: id, question: text,
+                            choices: (item["choices"] as? [String]) ?? [],
+                            multi: (item["multi"] as? Bool) ?? false, field: field)
+        }
+        guard !questions.isEmpty else { return nil }
+        let title = (args["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return AskPerson(title: title, questions: questions)
+    }
+
+    static func answer(_ values: [(id: String, value: String)]) -> String {
+        values.map { "[respuesta:\($0.id)] \($0.value)" }.joined(separator: "\n")
+    }
+
+    /// A sent answer as the person reads it: the values, without the ids.
+    static func display(_ text: String) -> String {
+        guard text.contains("[respuesta:") else { return text }
+        return text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.replacing(/^\[respuesta:[A-Za-z0-9_.-]{1,40}\]\s?/, with: "") }
+            .joined(separator: "\n")
+    }
+
+    /// Asked again later with the same ids — once the agent knew the real options — so this
+    /// card gives way to the newer one instead of both waiting for an answer.
+    static func superseded(_ ask: AskPerson, callID: String, in messages: [Message]) -> Bool {
+        let ids = Set(ask.questions.map(\.id))
+        var seen = false
+        for message in messages where message.role == .assistant {
+            for call in message.tools where isTool(call.name) {
+                if seen, let later = parse(call.detail), !ids.isDisjoint(with: later.questions.map(\.id)) {
+                    return true
+                }
+                if call.id == callID { seen = true }
+            }
+        }
+        return false
+    }
+
+    static func answered(_ questionID: String, in messages: [Message]) -> Bool {
+        messages.contains { $0.role == .user && $0.content.contains("[respuesta:\(questionID)]") }
+    }
+}
+
+/// The card for an `ask_person` call, inside the reply that asked it. The agent
+/// is still working meanwhile; answering sends the values as one message.
+struct AskPersonCard: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    let ask: AskPerson
+
+    @State private var typed: [String: String] = [:]
+    @State private var picked: [String: Set<String>] = [:]
+    @State private var sent = false
+
+    private var answered: Bool {
+        sent || AskPerson.answered(ask.questions[0].id, in: store.shownConversation?.messages ?? [])
+    }
+
+    private func value(_ question: AskPerson.Question) -> String {
+        let text = (typed[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { return text }
+        return question.choices.filter { (picked[question.id] ?? []).contains($0) }.joined(separator: ", ")
+    }
+
+    private var complete: Bool { ask.questions.allSatisfy { !value($0).isEmpty } }
+
+    var body: some View {
+        let tint = store.accent.primary(scheme)
+        VStack(alignment: .leading, spacing: 14) {
+            if let title = ask.title {
+                Text(title).font(.headline)
+            }
+            if answered {
+                Label("Answered", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(ask.questions) { question in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(question.question).font(.subheadline.weight(.semibold))
+                        ForEach(question.choices, id: \.self) { choice in
+                            let on = (picked[question.id] ?? []).contains(choice)
+                            Button {
+                                var set = question.multi ? (picked[question.id] ?? []) : []
+                                if on { set.remove(choice) } else { set.insert(choice) }
+                                picked[question.id] = set
+                                typed[question.id] = nil
+                                // One question, one tap: answered at once.
+                                if ask.questions.count == 1, !question.multi, !on { submit() }
+                            } label: {
+                                HStack {
+                                    Text(choice).foregroundStyle(.primary)
+                                    Spacer()
+                                    if on { Image(systemName: "checkmark.circle.fill").foregroundStyle(tint) }
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .background(Palette.background(scheme), in: .rect(cornerRadius: 12))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .strokeBorder(on ? tint : Palette.border(scheme),
+                                                      style: StrokeStyle(lineWidth: 1, dash: on ? [] : [4, 3]))
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        TextField(question.choices.isEmpty ? question.question : "Something else",
+                                  text: Binding(get: { typed[question.id] ?? "" },
+                                                set: { typed[question.id] = $0 }))
+                            .textFieldStyle(.plain)
+                            .keyboardType(Self.keyboard(question.field))
+                            .textContentType(Self.content(question.field))
+                            .autocorrectionDisabled(question.field != nil)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(Palette.background(scheme), in: .rect(cornerRadius: 12))
+                    }
+                }
+                if ask.questions.count > 1 || ask.questions.contains(where: { $0.choices.isEmpty || $0.multi }) {
+                    Button("Send", action: submit)
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .disabled(!complete)
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 20))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20).stroke(Palette.border(scheme), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("chat.askPerson")
+    }
+
+    private func submit() {
+        guard complete, !sent else { return }
+        sent = true
+        store.sendQuickReply(AskPerson.answer(ask.questions.map { ($0.id, value($0)) }))
+    }
+
+    private static func keyboard(_ field: String?) -> UIKeyboardType {
+        switch field {
+        case "email": .emailAddress
+        case "phone": .phonePad
+        case "postcode": .numberPad
+        default: .default
+        }
+    }
+
+    private static func content(_ field: String?) -> UITextContentType? {
+        switch field {
+        case "name": .givenName
+        case "surname": .familyName
+        case "address": .streetAddressLine1
+        case "postcode": .postalCode
+        case "city": .addressCity
+        case "province": .addressState
+        case "phone": .telephoneNumber
+        case "email": .emailAddress
+        default: nil
+        }
+    }
+}

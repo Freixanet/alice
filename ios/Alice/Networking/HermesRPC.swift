@@ -9,6 +9,9 @@ protocol HermesRPCTransport: Sendable {
     /// Calls a method and returns its `result` object.
     func call(_ method: String, _ params: JSONObject) async throws -> JSONObject
 
+    /// The same, for a call known to take longer than the usual deadline.
+    func call(_ method: String, _ params: JSONObject, within limit: Duration) async throws -> JSONObject
+
     /// Every `event` frame the agent pushes, for as long as the caller listens.
     /// Questions Hermes asks as server→client requests arrive here too, as the
     /// events Alice renders (see `GatewayServerRequests`).
@@ -19,6 +22,10 @@ protocol HermesRPCTransport: Sendable {
 }
 
 extension HermesRPCTransport {
+    func call(_ method: String, _ params: JSONObject, within limit: Duration) async throws -> JSONObject {
+        try await call(method, params)
+    }
+
     func respond(toServerRequest id: String, result: JSONObject) async throws {
         throw HermesRPCClient.Failure(reason: "This connection cannot answer Hermes' questions.")
     }
@@ -143,6 +150,8 @@ actor HermesRPCClient: HermesRPCTransport {
 
     private var socket: URLSessionWebSocketTask?
     private var pending: [Int: CheckedContinuation<JSONObject, Error>] = [:]
+    /// Calls given longer than the usual deadline (`/compress`), by id, with when they give up.
+    private var longCalls: [Int: ContinuousClock.Instant] = [:]
     private var listeners: [UUID: AsyncStream<HermesRPCEvent>.Continuation] = [:]
     private var nextID = 1
     private var pump: Task<Void, Never>?
@@ -202,6 +211,8 @@ actor HermesRPCClient: HermesRPCTransport {
         nextID += 1
         let message = try Self.requestMessage(id: id, method: method, params: params)
         guard let socket else { throw Failure(reason: "Not connected to Hermes.") }
+        if limit > Self.callDeadline { longCalls[id] = .now + limit }
+        defer { longCalls[id] = nil }
         return try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
             Task { [weak self] in
@@ -228,6 +239,11 @@ actor HermesRPCClient: HermesRPCTransport {
         settle(id, with: .failure(Failure(
             reason: "Hermes did not answer `\(method)` within \(seconds) seconds."
         )))
+        // A long call still inside its own time (a `/compress` summarising the
+        // chat) keeps Hermes busy: this one waited behind it, the connection is
+        // fine. Dropping it failed the compression Hermes went on to finish.
+        let now = ContinuousClock.now
+        if longCalls.contains(where: { pending[$0.key] != nil && $0.value > now }) { return }
         disconnect(Failure(reason: "The Hermes connection stopped answering; reconnecting."))
     }
 

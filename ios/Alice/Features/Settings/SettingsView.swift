@@ -142,6 +142,9 @@ struct PrivacySettingsView: View {
                 NavigationLink { CardsSettingsView() } label: {
                     Label("Cards", systemImage: "creditcard")
                 }
+                NavigationLink { DeliveryDetailsView() } label: {
+                    Label("Delivery details", systemImage: "shippingbox")
+                }
             }
         }
         .navigationTitle("Privacy")

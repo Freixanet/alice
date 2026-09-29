@@ -16,6 +16,7 @@ A note-taking profile also gains a ``notes`` toolset for the store it keeps in
 No changes to Hermes' own code.
 """
 import contextvars
+import logging
 import json
 import threading
 from pathlib import Path
@@ -1249,6 +1250,81 @@ def _task_finish():
     return _module("task_finish.py", "alice_task_finish")
 
 
+def _ask_person():
+    return _module("ask_person.py", "alice_ask_person")
+
+
+def _keep_ask_person_visible() -> None:
+    """Plugin tools are deferred behind tool_search; ask_person behind it was looked up under the
+    wrong name, not found, and the question went into the reply as text — the one thing it exists
+    to prevent. Like clarify, it stays in view. Core's list is extended, not replaced."""
+    try:
+        import toolsets
+
+        core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
+        if isinstance(core, list) and "ask_person" not in core:
+            core.append("ask_person")
+    except Exception:
+        logging.getLogger(__name__).debug("ask_person: could not keep it out of tool_search", exc_info=True)
+
+
+def _register_ask_tools(ctx) -> None:
+    module = _ask_person()
+    _keep_ask_person_visible()
+
+    def handler(args, **_):
+        from hermes_constants import get_hermes_home
+        from tools.approval_context import get_current_session_key
+
+        return _agent_json(module.run_tool(Path(get_hermes_home()), args or {}, get_current_session_key(default="")))
+
+    ctx.register_tool(
+        name="ask_person", toolset="alice_tasks", schema=module.SCHEMA, handler=handler,
+        check_fn=_always, description=module.SCHEMA["description"], emoji="💬",
+    )
+
+
+def _auto_goal(user_message=None, **_):
+    """An errand the person asks for gets its goal at once, so a judge sends the agent back when it
+    stops at an obstacle instead of solving it or asking about the real alternatives."""
+    try:
+        from tools.approval_context import get_current_session_key
+
+        _task_finish().auto_start(user_message, get_current_session_key(default=""))
+    except Exception:
+        logging.getLogger(__name__).debug("finish_task: could not open the goal", exc_info=True)
+
+
+def _repeat_guard(user_message=None, assistant_response=None, **_):
+    """The goal stops sending the agent back once it only repeats itself (task_finish.guard_repeat)."""
+    try:
+        from tools.approval_context import get_current_session_key
+
+        _task_finish().guard_repeat(user_message, assistant_response, get_current_session_key(default=""))
+    except Exception:
+        logging.getLogger(__name__).debug("finish_task: repeat guard failed", exc_info=True)
+
+
+def _absorb_answers(conversation_history=None, **_):
+    """The person's answers to ask_person, steered into the turn or sent as the next one."""
+    try:
+        from hermes_constants import get_hermes_home
+        from tools.approval_context import get_current_session_key
+
+        _ask_person().absorb(Path(get_hermes_home()), get_current_session_key(default=""),
+                             # Every user row: after an answer a turn can run a hundred browser
+                             # steps, and a window of the last rows missed the answer itself.
+                             [m for m in (conversation_history or []) if m.get("role") == "user"])
+    except Exception:
+        logging.getLogger(__name__).debug("ask_person: could not read the answers", exc_info=True)
+
+
+def ask_prompt(_session_info=None) -> str:
+    from hermes_constants import get_hermes_home
+
+    return _ask_person().prompt(Path(get_hermes_home()))
+
+
 def _register_task_tools(ctx) -> None:
     module = _task_finish()
     ctx.register_tool(
@@ -1297,10 +1373,18 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.dudas", doubts_prompt)
     ctx.register_system_prompt_section("alice.tarjetas", cards_prompt)
     ctx.register_system_prompt_section("alice.compras", purchases_prompt)
+    ctx.register_system_prompt_section("alice.preguntas", ask_prompt)
+    # Answers to ask_person close their questions and release a goal parked on them.
+    ctx.register_hook("post_llm_call", _absorb_answers)
+    # And an errand the person asks for is kept open by the goal loop from its first turn.
+    ctx.register_hook("pre_llm_call", _auto_goal)
+    # And a goal whose agent only repeats itself is paused, not replayed to the person.
+    ctx.register_hook("post_llm_call", _repeat_guard)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)
     _register_goal_tools(ctx)
     # A task of several steps is kept going by Hermes' goal judge until done or it needs the person.
     _register_task_tools(ctx)
+    _register_ask_tools(ctx)
     # How a card payment ended, so the same order is never paid twice (purchases.py).
     _register_purchase_tools(ctx)
     # When the person arrives at or leaves a place, their iPhone wakes the agent (places.py).

@@ -143,7 +143,12 @@ def cards() -> List[Dict[str, Any]]:
     return [_public(m) for m in _store().list_items() if m.kind == "payment"]
 
 
-def save(origin: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+def save(origin: Optional[str], fields: Dict[str, Any]) -> Dict[str, Any]:
+    """Saves a card for one site, or, with no ``origin``, as a general card given from Settings.
+    A general card is bound to no site, and Hermes refuses to fill it anywhere (``no_origin``)
+    until ``bind`` ties a copy to the payment page it is wanted on."""
+    if not (origin or "").strip():
+        return _save_general(fields)
     site = check_origin(origin)
     alias = clean_alias(fields.get("alias"))
     payload = clean_card(fields)
@@ -161,6 +166,19 @@ def save(origin: str, fields: Dict[str, Any]) -> Dict[str, Any]:
                 store.remove_item(meta.id)
         saved.append(_public(store.add_item(kind="payment", label=label, secret=payload, origin=origin_)))
     return saved[0]
+
+
+def _save_general(fields: Dict[str, Any]) -> Dict[str, Any]:
+    alias = clean_alias(fields.get("alias"))
+    payload = clean_card(fields)
+    card = f"{brand(payload['card_number'])} ···{payload['card_number'][-4:]}"
+    store = _store()
+    alias = alias or next((alias_of(m.label) for m in store.list_items()
+                           if m.kind == "payment" and identity(m.label) == card and alias_of(m.label)), "")
+    for meta in store.list_items():
+        if meta.kind == "payment" and not meta.origin and identity(meta.label) == card:
+            store.remove_item(meta.id)
+    return _public(store.add_item(kind="payment", label=_labelled(alias, card), secret=payload))
 
 
 def bind(handle: str, origin: str) -> Dict[str, Any]:

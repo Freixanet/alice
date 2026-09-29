@@ -15,6 +15,7 @@ final irreversible click, a change to what was asked, or something only the pers
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict
 
 MAX_TURNS = 12
@@ -23,7 +24,9 @@ CONTINUATION_PREFIX = "[Continuing toward your standing goal]"
 CONSTRAINTS = (
     "Never press a button that pays, sends, publishes or deletes without the person's explicit yes "
     "for this task (in the chat, or for a card payment in Hermes' card confirmation). Never ask for or write a password, card number or code in the chat: "
-    "those go through the secure cards. Do not change what the person asked for (product, quantity, "
+    "those go through the secure cards. Anything else the person must choose or give (an option, how to pay, how to sign "
+    "in, name, ID/NIF, address, phone, email) is asked with ask_person, never in the text of the reply, and the "
+    "work that does not depend on the answer goes on meanwhile. Do not change what the person asked for (product, quantity, "
     "dates, price seen) on your own. Before claiming done, the facts the result depends on (price, "
     "date, availability, requirements) must have been checked with tools, not assumed; anything left "
     "unchecked must be named in the reply as «Sin comprobar: …». Done requires PROOF in the reply, read "
@@ -35,10 +38,17 @@ STOP_WHEN = (
     "(a) everything is ready and the next click is the irreversible one (pay, send, confirm), waiting "
     "for their yes — for a card payment, Hermes' card confirmation is that yes; (b) continuing would change what they asked for (another product, a higher price, "
     "an extra cost, other dates); (c) something only the person has is needed (a password, a card, a "
-    "code, a choice about their personal data) and was asked through the secure card. An obstacle on "
+    "code) and was asked through the secure card; or (d) a question is open with ask_person and nothing "
+    "else can be done until it is answered — that is a wait, not a stop to repeat. A reply that asks "
+    "the person something in its own text (a question mark addressed to them) is never a valid stop: "
+    "continue, telling the agent to ask that same question with ask_person (a card) instead. A CAPTCHA or anti-bot "
+    "check (Cloudflare, «verify you are human») is only the person's: ask them with ask_person to solve it in "
+    "the live browser («Abrir navegador» in Alice) and wait. Any other obstacle on "
     "the site — a basket left from before, an incomplete or invalid form, a pop-up, an expired session, "
     "a page error, a button that does not respond — is NEVER a reason to stop: the agent must look at "
-    "the page, fix it and try other ways. A reply that only reports such an obstacle is not done and "
+    "the page, fix it and try other ways. When what was asked does not exist exactly (that size, that "
+    "flavour, out of stock), a reply that only says so is not a stop either: continue, telling the agent to "
+    "ask with ask_person between the real alternatives it has checked on the page. A reply that only reports such an obstacle is not done and "
     "not blocked: continue. 'Not found' is an obstacle too, not a stop, until the agent has checked its "
     "past conversations for it, tried the official product name and variants, and searched the web "
     "restricted to that shop."
@@ -91,6 +101,59 @@ def start(task: str, done_when: str, session_key: str) -> Dict[str, Any]:
             "next": "Work until done_when is met or a real stop condition; obstacles on the site are yours to solve."}
 
 
+# An errand the person asked for: buy, order, book, or fill a basket. Left to the model, a
+# "prepare the basket" was never given a goal, so nothing sent it back when it stopped to report
+# that the size it wanted did not exist instead of offering the real ones.
+ERRAND = re.compile(
+    r"\b(c[oó]mpra(me|lo|la|los|las)?|comprar|p[ií]de(me|lo|la)?|pedir|res[eé]rva(me|lo|la)?|reservar"
+    r"|carrito|cesta|a[nñ]ade\w*\s+al\s+carrito)\b", re.I)
+
+
+def auto_start(user_message: Any, session_key: str) -> bool:
+    """Opens the goal for an errand the person just asked for, when the agent has none yet."""
+    from hermes_cli.goals import GoalManager
+
+    text = " ".join(str(user_message or "").split())
+    if not session_key or not text or text.startswith(("[respuesta:", CONTINUATION_PREFIX)):
+        return False
+    if not ERRAND.search(text) or GoalManager(session_id=session_key).is_active():
+        return False
+    return start(text, "What was asked is done or ready at the last step (in the basket, or at the pay "
+                       "or confirm button waiting for the person), checked on the page itself.",
+                 session_key).get("ok", False)
+
+
+# The last reply to a goal continuation, by session, as its words.
+_LAST_REPLY: Dict[str, set] = {}
+
+
+def _words(text: str) -> set:
+    return set(re.findall(r"\w{3,}", str(text or "").lower()))
+
+
+def guard_repeat(user_message: Any, reply: Any, session_key: str) -> bool:
+    """Pauses the goal when the agent, sent back by the judge, answers what it answered last time.
+
+    Agent and judge could disagree for good: the agent would not change the basket without asking,
+    the judge would not accept it, and the same message reached the person turn after turn. Only
+    replies to the goal's own continuations count; the person's messages never do."""
+    from hermes_cli.goals import GoalManager
+
+    if not session_key or not str(user_message or "").startswith(CONTINUATION_PREFIX):
+        return False
+    manager = GoalManager(session_id=session_key)
+    if not manager.is_active():
+        _LAST_REPLY.pop(session_key, None)
+        return False
+    now, before = _words(reply), _LAST_REPLY.get(session_key)
+    _LAST_REPLY[session_key] = now
+    if before and len(now) >= 6 and len(now & before) / len(now | before) >= 0.6:
+        manager.pause("sin avances: repetía la misma respuesta")
+        _LAST_REPLY.pop(session_key, None)
+        return True
+    return False
+
+
 def run_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     from tools.approval_context import get_current_session_key
 
@@ -100,7 +163,8 @@ def run_tool(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def prompt() -> str:
     return (
-        "Cuando empieces una tarea de varios pasos (una compra, una reserva, un formulario, un alta), "
+        "Cuando empieces una tarea de varios pasos (una compra, preparar un carrito, una reserva, un "
+        "formulario, un alta), "
         "llama primero a `finish_task` con la tarea y cómo se ve terminada; vuelve a llamarla cuando la "
         "persona te dé lo que esperabas (su sí, una tarjeta, una elección). Así un juez revisa cada "
         "respuesta y te devuelve al trabajo si paraste por un obstáculo que podías resolver."

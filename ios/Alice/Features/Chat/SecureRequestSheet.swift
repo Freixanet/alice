@@ -106,6 +106,9 @@ struct SecureRequestSheet: View {
                 .focused($focus, equals: .identifier)
                 .submitLabel(.next)
                 .onSubmit { focus = .secret }
+            if let problem = identifierProblem, !problem.isEmpty, focus != .identifier {
+                Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
+            }
             SecureField(newAccount ? LocalizedStringKey("New password") : LocalizedStringKey("Password"), text: $secret)
                 // A new account gets iOS' own strong-password suggestion.
                 .textContentType(newAccount ? .newPassword : .password)
@@ -219,7 +222,18 @@ struct SecureRequestSheet: View {
 
     private var ready: Bool {
         if usingKey { return !authenticatorKey.trimmingCharacters(in: .whitespaces).isEmpty }
-        return !secret.isEmpty && (!needsIdentifier || !identifier.trimmingCharacters(in: .whitespaces).isEmpty)
+        return !secret.isEmpty && (!needsIdentifier || identifierProblem == nil)
+    }
+
+    /// Why the email or username cannot be used, or nil. A new account needs a
+    /// real email; anything typed with an `@` must be one too. A plain name is
+    /// a username.
+    private var identifierProblem: String? {
+        let typed = identifier.trimmingCharacters(in: .whitespaces)
+        if typed.isEmpty { return "" }
+        let isEmail = typed.wholeMatch(of: /[^@\s]+@[^@\s]+\.[A-Za-z]{2,}/) != nil
+        if (newAccount || typed.contains("@")) && !isEmail { return "That is not a valid email." }
+        return nil
     }
 
     private var answer: String {

@@ -276,6 +276,9 @@ extension AppStore {
         conversations[chatIndex].messages.append(
             Message(id: replyID, role: .assistant, content: "", createdAt: Date(), pending: true)
         )
+        // Answered here, not by a turn in Hermes' transcript: a read of the chat
+        // meanwhile must not take it for a lost reply.
+        controlReplyIDs.insert(replyID)
         if ConversationTitle.isPlaceholder(conversations[chatIndex].title),
            let title = ConversationTitle.from(text) {
             conversations[chatIndex].title = title
@@ -346,6 +349,9 @@ extension AppStore {
         conversations[chatIndex].messages.append(
             Message(id: replyID, role: .assistant, content: "", createdAt: Date(), pending: true)
         )
+        // Answered here, not by a turn in Hermes' transcript: a read of the chat
+        // meanwhile must not take it for a lost reply.
+        controlReplyIDs.insert(replyID)
         if ConversationTitle.isPlaceholder(conversations[chatIndex].title),
            let title = ConversationTitle.from(text) {
             conversations[chatIndex].title = title
@@ -434,9 +440,32 @@ extension AppStore {
             }
             liveID = session.liveID
         }
-        return try await source.execSlash(
-            liveSessionID: liveID, command: command, profile: profile
-        )
+        // `/compress` summarises the chat with a model for a minute or more,
+        // long enough for iOS to suspend Alice and drop the socket. Hermes
+        // finishes it all the same, so a lost answer is checked against the
+        // chat itself instead of being reported as a failure.
+        let compressing = command.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("/compress")
+        func storedCount() async -> Int? {
+            guard compressing, let profile,
+                  let chat = try? await resolveConversationSession(conversationID, profile: profile, source: source),
+                  let resumed = try? await source.resume(profile: profile, target: chat.resolvedID, omitMessages: true)
+            else { return nil }
+            return resumed["message_count"] as? Int
+        }
+        let before = await storedCount()
+        do {
+            return try await source.execSlash(
+                liveSessionID: liveID, command: command, profile: profile
+            )
+        } catch where compressing && before != nil {
+            for _ in 0..<18 {
+                try? await Task.sleep(for: .seconds(10))
+                if let after = await storedCount(), let before, after < before {
+                    return "Compressed: \(before) → \(after) messages."
+                }
+            }
+            throw error
+        }
     }
 
     private struct ControlResult {
@@ -464,7 +493,10 @@ extension AppStore {
             ? []
             : (choices.isEmpty ? presented.choices : choices)
         conversations[chat].messages[message].pending = false
+        conversations[chat].messages[message].awaitingRemote = false
+        conversations[chat].messages[message].deliveryNote = nil
         conversations[chat].messages[message].error = error
+        controlReplyIDs.remove(replyID)
         conversations[chat].updatedAt = Date()
         setControlSending(false)
         persistConversations()

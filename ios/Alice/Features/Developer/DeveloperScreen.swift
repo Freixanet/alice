@@ -69,6 +69,9 @@ struct DeveloperScreen: View {
                 NavigationLink { ComponentGallery() } label: {
                     Label("Component gallery", systemImage: "square.grid.2x2")
                 }
+                NavigationLink { PurchaseDemoScreen() } label: {
+                    Label("Purchase walkthrough", systemImage: "creditcard")
+                }
                 ShareLink(item: report()) {
                     Label("Share report", systemImage: "square.and.arrow.up")
                 }

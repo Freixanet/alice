@@ -57,7 +57,7 @@ struct ThinkingTrace: View {
     /// chat. Listing it would leave "Asking a question" sitting in the trace
     /// under an answer the reader has already given.
     private var rows: [Message.ToolCall] {
-        steps.filter { !$0.name.lowercased().contains("clarify") }
+        steps.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) }
     }
 
     private var expanded: Bool { manual ?? false }

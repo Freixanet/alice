@@ -8801,12 +8801,32 @@
         }
       }
     },
-    "A card you add when Alice pays is kept here.": {
+    "Add a card": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aquí se guardan las tarjetas que añades cuando Alice paga."
+            "value": "Añadir tarjeta"
+          }
+        }
+      }
+    },
+    "Not used yet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin usar todavía"
+          }
+        }
+      }
+    },
+    "Add a card, or Alice will ask for one when she has to pay.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añade una tarjeta, o Alice te la pedirá cuando tenga que pagar."
           }
         }
       }

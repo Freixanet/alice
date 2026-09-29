@@ -154,38 +154,96 @@ struct Sidebar: View, Equatable {
         }
     }
 
-    /// The drawer is for places people use while working with Alice, not for
-    /// configuring Hermes. Technical administration remains searchable and is
-    /// grouped under Settings → Advanced instead of competing with recents.
-    private var destinations: some View {
-        VStack(spacing: 2) {
-            // First: Alice's own chat, where she writes before you ask
-            // (`AppStore.openToday`). The count is what she wrote since.
-            row(AppStore.todayTitle, systemImage: "sun.max", weight: .medium,
-                badge: store.todayNewCount) {
-                store.openToday()
-                onDismiss()
+    private var experimental: Bool {
+        store.developerMode && homeInterface == .experimental
+    }
+
+    /// The agents themselves, not a row that leads to them: each opens its own
+    /// chat. Pinned first, then the rest in the order the dashboard lists them,
+    /// with "All Agents" for the full page.
+    private var agentsSection: some View {
+        let bots = store.cachedBots
+            .filter { !store.isBotHidden($0) && !AgentMaker.matches(profile: $0.name, role: $0.aliceRole) }
+        let shown = (bots.filter { store.isBotPinned($0) } + bots.filter { !store.isBotPinned($0) })
+            .prefix(Self.agentRowLimit)
+        return VStack(spacing: 2) {
+            Text("Agents")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
+            ForEach(Array(shown)) { bot in
+                Button {
+                    store.markNoticesSeen(.agents)
+                    onDismiss()
+                    store.showingBots = false
+                    store.openBotConversation(for: bot)
+                } label: {
+                    HStack(spacing: 10) {
+                        BotMarkView(mark: store.mark(for: bot.name), size: 30)
+                            .frame(width: 30, height: 30)
+                        Text(store.botCurrentName(for: bot))
+                        Spacer(minLength: 0)
+                        if store.isBotUnread(bot.name) {
+                            Circle().fill(store.accent.primary(scheme)).frame(width: 8, height: 8)
+                                .accessibilityLabel("Unread")
+                        }
+                    }
+                    .font(.subheadline)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 40)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("sidebar.agent.\(bot.name)")
             }
-            row("Agents", systemImage: "person.2", weight: .medium,
+            row("All Agents", systemImage: "square.grid.2x2", weight: .medium, iconWidth: 30,
                 badge: store.unreadNotices(in: .agents), destination: .bots) {
                 store.markNoticesSeen(.agents)
                 onDismiss()
                 store.botsFromLeading = false
                 store.showingBots = true
             }
-            // Under Agents: the person's own day.
-            row("Agenda", systemImage: "calendar", weight: .medium, destination: .agenda) { openAgenda() }
-            row("Goals", systemImage: "scope", weight: .medium, destination: .goals) { openGoals() }
-            // Then Notes: a note is written in the moment or
-            // not at all, so it is the shortest way in the drawer.
-            row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
-            row("Routines", systemImage: "clock", weight: .medium,
-                badge: store.unreadNotices(in: .routines), destination: .routines) {
-                store.markNoticesSeen(.routines)
-                going = .routines
+        }
+    }
+
+    private static let agentRowLimit = 6
+
+    /// The drawer is for places people use while working with Alice, not for
+    /// configuring Hermes. Technical administration remains searchable and is
+    /// grouped under Settings → Advanced instead of competing with recents.
+    private var destinations: some View {
+        VStack(spacing: 2) {
+            // First: Alice's main chat, where everything goes and where she
+            // writes before you ask (`AppStore.openToday`). The count is what
+            // she wrote since.
+            if !experimental {
+                row(AppStore.todayTitle, systemImage: "bubble.left.and.text.bubble.right", weight: .medium,
+                    badge: store.todayNewCount) {
+                    store.openToday()
+                    onDismiss()
+                }
             }
-            row("Projects", systemImage: "folder", weight: .medium, destination: .projects) { going = .projects }
-            row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
+            agentsSection
+            // Under the experimental interface all of these live in the round
+            // menu beside the composer instead.
+            if !experimental {
+                // Under Agents: the person's own day.
+                row("Agenda", systemImage: "calendar", weight: .medium, destination: .agenda) { openAgenda() }
+                row("Goals", systemImage: "scope", weight: .medium, destination: .goals) { openGoals() }
+                // Then Notes: a note is written in the moment or
+                // not at all, so it is the shortest way in the drawer.
+                row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
+                row("Routines", systemImage: "clock", weight: .medium,
+                    badge: store.unreadNotices(in: .routines), destination: .routines) {
+                    store.markNoticesSeen(.routines)
+                    going = .routines
+                }
+                row("Projects", systemImage: "folder", weight: .medium, destination: .projects) { going = .projects }
+                row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
+            }
         }
         .padding(.horizontal, 12)
         // Most of the gap to Pinned is the list's own top inset, which has to
@@ -317,7 +375,7 @@ struct Sidebar: View, Equatable {
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel("New chat")
+            .accessibilityLabel("New side chat")
             .accessibilityIdentifier("sidebar.newChat")
         }
         .padding(.horizontal, 16)
@@ -394,7 +452,7 @@ struct Sidebar: View, Equatable {
     @ViewBuilder
     private func row(
         _ title: String, systemImage: String, weight: Font.Weight = .regular,
-        badge: Int = 0, destination: AliceDestination.Target? = nil,
+        iconWidth: CGFloat = 22, badge: Int = 0, destination: AliceDestination.Target? = nil,
         action: @escaping () -> Void
     ) -> some View {
         let button = Button(action: action) {
@@ -402,7 +460,7 @@ struct Sidebar: View, Equatable {
                 Image(systemName: systemImage)
                     .font(.system(size: 15, weight: weight))
                     .foregroundStyle(store.accent.primary(scheme))
-                    .frame(width: 22, alignment: .center)
+                    .frame(width: iconWidth, alignment: .center)
                 Text(title)
                 Spacer(minLength: 0)
                 if badge > 0 {
@@ -466,7 +524,8 @@ private struct SidebarList: View, Equatable {
                     Spacer(minLength: 14)
                 }
 
-                sectionLabel("Recents")
+                // Alice's other chats, off to one side of her main one.
+                sectionLabel("Side chats")
                 ForEach(store.recentConversations) { conversation in
                     chatRow(conversation)
                 }

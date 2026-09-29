@@ -50,6 +50,10 @@ struct BotChatTurn: Equatable, Sendable {
     let role: Message.Role
     let content: String
     let createdAt: Date
+    /// The steps the agent took for this reply, read back from the transcript's
+    /// tool rows: a turn this phone did not follow still shows its browser and
+    /// its question cards.
+    var tools: [Message.ToolCall] = []
 }
 
 /// Resolves a bot's canonical chat and keeps Alice's copy of it honest.
@@ -131,6 +135,7 @@ struct BotChatSync: Sendable {
                 botName: turn.role == .assistant ? botName : nil,
                 remoteID: turn.id
             )
+            byRemoteID[turn.id]?.tools = turn.tools
         }
 
         // Hermes intentionally coalesces consecutive text-only queued prompts

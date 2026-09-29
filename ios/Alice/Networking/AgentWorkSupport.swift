@@ -242,9 +242,11 @@ extension DashboardClient {
         return (object["cards"] as? [[String: Any]] ?? []).compactMap(SavedCard.init)
     }
 
-    /// A new card, or a saved one (`handle`) used on this payment page too.
-    func saveCard(_ card: PaymentCardFields?, handle: String?, origin: String, profile: String) async throws -> SavedCard {
-        var body: [String: Any] = ["profile": profile, "origin": origin]
+    /// A new card, or a saved one (`handle`) used on this payment page too. With no `origin`, a general
+    /// card given from Settings, bound to no site until it is used on one.
+    func saveCard(_ card: PaymentCardFields?, handle: String?, origin: String?, profile: String) async throws -> SavedCard {
+        var body: [String: Any] = ["profile": profile]
+        if let origin { body["origin"] = origin }
         if let handle { body["handle"] = handle }
         if let card { body.merge(card.body) { $1 } }
         let object = try await send("POST", "api/plugins/alice/vault/cards", body)
@@ -266,6 +268,19 @@ extension DashboardClient {
     /// Removes a card from one site (and its www twin).
     func removeCard(handle: String, profile: String) async throws {
         _ = try await send("DELETE", "api/plugins/alice/vault/cards/\(handle)?profile=\(profile)", nil)
+    }
+
+    // MARK: Delivery details
+
+    /// The person's delivery details (name, ID, address…), kept by the plugin so no agent asks twice.
+    func deliveryDetails(profile: String) async throws -> [String: String] {
+        let object = try await get("api/plugins/alice/details?profile=\(profile)")
+        return object["details"] as? [String: String] ?? [:]
+    }
+
+    func saveDeliveryDetails(_ details: [String: String], profile: String) async throws -> [String: String] {
+        let object = try await send("PUT", "api/plugins/alice/details", ["profile": profile, "details": details])
+        return object["details"] as? [String: String] ?? [:]
     }
 
     // MARK: Connector logos

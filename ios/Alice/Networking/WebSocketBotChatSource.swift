@@ -257,7 +257,52 @@ struct WebSocketBotChatSource: BotChatSessionSource {
     /// the live stream. Tool and system rows are scaffolding this screen does
     /// not draw.
     static func turns(from rows: [[String: Any]]) -> [BotChatTurn] {
-        rows.indices.compactMap { index in
+        // Tool rows since the person last wrote, handed to the reply they led to.
+        var toolsFor: [Int: [Message.ToolCall]] = [:]
+        var gathered: [Message.ToolCall] = []
+        for index in rows.indices {
+            let row = rows[index]
+            switch row["role"] as? String {
+            case "user": gathered = []
+            case "tool": gathered += toolCalls(from: row, index: index)
+            case "assistant":
+                let text = (row["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let leadsToTool = index + 1 < rows.count && (rows[index + 1]["role"] as? String) == "tool"
+                if !text.isEmpty, !leadsToTool, !gathered.isEmpty {
+                    toolsFor[index] = gathered
+                    gathered = []
+                }
+            default: break
+            }
+        }
+        return rows.indices.compactMap { index -> BotChatTurn? in
+            guard var turn = turn(from: rows, at: index) else { return nil }
+            turn.tools = toolsFor[index] ?? []
+            return turn
+        }
+    }
+
+    /// One transcript tool row as steps. A tool the model reached through the
+    /// deferred-tool bridge (`tool_call` with `calls`) counts as the tools it called.
+    static func toolCalls(from row: [String: Any], index: Int) -> [Message.ToolCall] {
+        let name = row["name"] as? String ?? "tool"
+        let args = row["args"] as? [String: Any] ?? [:]
+        func call(_ name: String, _ args: [String: Any], _ n: Int) -> Message.ToolCall {
+            let detail = AppStore.toolDetail(from: ["name": name, "args": args,
+                                                    "context": row["context"] as Any])
+            return Message.ToolCall(id: "row-\(index)-\(n)", name: name, status: .done, detail: detail)
+        }
+        if let calls = args["calls"] as? [[String: Any]], name == "tool_call" {
+            return calls.enumerated().compactMap { n, item in
+                guard let inner = item["name"] as? String else { return nil }
+                return call(inner, item["arguments"] as? [String: Any] ?? [:], n)
+            }
+        }
+        return [call(name, args, 0)]
+    }
+
+    private static func turn(from rows: [[String: Any]], at index: Int) -> BotChatTurn? {
+        do {
             let row = rows[index]
             // Text an assistant row carries alongside a tool call is the model
             // on its way to an answer, not the answer: Hermes lists that call's
@@ -542,7 +587,10 @@ struct WebSocketBotChatSource: BotChatSessionSource {
             "command": body,
         ]
         if let profile, !profile.isEmpty { params["profile"] = profile }
-        let result = try await rpc.call("slash.exec", JSONObject(params))
+        // `/compress` summarises the whole chat with a model: on Alice's main
+        // chat it took 55 s, past the usual 45 s, and was reported as failed
+        // while it went on to succeed.
+        let result = try await rpc.call("slash.exec", JSONObject(params), within: .seconds(300))
         return Self.slashOutput(result, command: body)
     }
 

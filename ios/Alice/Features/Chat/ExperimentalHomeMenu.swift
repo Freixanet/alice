@@ -12,13 +12,17 @@ enum HomeInterface: String {
 /// read as one control rather than a bar stacked over another.
 struct ExperimentalHomeMenu: View {
     enum Section: String, CaseIterable {
-        case chat, today, goals, feed, library
+        case chat, today, agenda, goals, notes, routines, projects, feed, library
 
         var symbol: String {
             switch self {
             case .chat: "bubble.left"
             case .today: "sun.max"
+            case .agenda: "calendar"
             case .goals: "scope"
+            case .notes: "note.text"
+            case .routines: "clock"
+            case .projects: "folder"
             case .feed: "rectangle.stack"
             case .library: "photo.on.rectangle"
             }
@@ -28,7 +32,11 @@ struct ExperimentalHomeMenu: View {
             switch self {
             case .chat: String(localized: "Chat")
             case .today: String(localized: "Today")
+            case .agenda: String(localized: "Agenda")
             case .goals: String(localized: "Goals")
+            case .notes: String(localized: "Notes")
+            case .routines: String(localized: "Routines")
+            case .projects: String(localized: "Projects")
             case .feed: String(localized: "Feed")
             case .library: String(localized: "Library")
             }
@@ -44,11 +52,7 @@ struct ExperimentalHomeMenu: View {
                 Button {
                     onSelect(section)
                 } label: {
-                    if section == selected {
-                        Label(section.title, systemImage: "checkmark")
-                    } else {
-                        Text(section.title)
-                    }
+                    Label(section.title, systemImage: section.symbol)
                 }
             }
         } label: {

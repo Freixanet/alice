@@ -22,6 +22,7 @@ struct RootView: View {
     /// A row may receive its Button action after the full-screen pan ends.
     /// Keep that late action from reopening the bot we just swiped away from.
     @State private var botsRowSwipeRecognized = false
+    @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @State private var screenWidth: CGFloat = 0
     /// Display corner radius, read once.
     @State private var cornerRadius: CGFloat = 55
@@ -413,9 +414,13 @@ struct RootView: View {
         }
     }
 
-    /// Whether the conversation on screen belongs to a bot.
+    /// Whether the conversation on screen belongs to a bot, so that a swipe
+    /// right goes back to the agents page. Not under the experimental
+    /// interface: the drawer lists the agents there, Today is a "bot" chat
+    /// only by implementation, and a swipe should always open the drawer.
     private var inBotChat: Bool {
-        !(store.activeChat.botName ?? "").isEmpty
+        guard !(store.developerMode && homeInterface == .experimental) else { return false }
+        return !(store.activeChat.botName ?? "").isEmpty
     }
 
     /// Dismisses the bots page by sliding it off the side it is leaving by.

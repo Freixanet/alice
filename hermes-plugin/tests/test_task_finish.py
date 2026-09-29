@@ -73,5 +73,32 @@ class FinishTaskTests(unittest.TestCase):
         self.assertIn("session-9", self.saved)
 
 
+@unittest.skipIf(goals is None, "Hermes is not on the path")
+class AutoGoalTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        env = mock.patch.dict(os.environ, {"HERMES_HOME": self.tmp.name})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_an_errand_opens_its_goal(self):
+        self.assertTrue(task_finish.auto_start("prepárame en el carrito una whey de 1 kg", "s-a"))
+        self.assertTrue(goals.GoalManager(session_id="s-a").is_active())
+
+    def test_the_same_reply_twice_pauses_the_goal(self):
+        task_finish.auto_start("prepárame en el carrito una whey de 1 kg", "s-r")
+        cont = task_finish.CONTINUATION_PREFIX + "\nGoal: x"
+        reply = "Comprobado en HSN: hay 2 × Evobasic whey de 500 g chocolate en la cesta; no he comprado."
+        self.assertFalse(task_finish.guard_repeat(cont, reply, "s-r"))
+        self.assertTrue(task_finish.guard_repeat(cont, reply + " Nada más.", "s-r"))
+        self.assertFalse(goals.GoalManager(session_id="s-r").is_active())
+
+    def test_a_question_or_an_answer_does_not(self):
+        self.assertFalse(task_finish.auto_start("¿qué tiempo hace mañana?", "s-b"))
+        self.assertFalse(task_finish.auto_start("[respuesta:sabor] Chocolate", "s-b"))
+        self.assertFalse(goals.GoalManager(session_id="s-b").is_active())
+
+
 if __name__ == "__main__":
     unittest.main()

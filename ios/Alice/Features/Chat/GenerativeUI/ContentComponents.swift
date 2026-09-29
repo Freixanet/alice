@@ -49,7 +49,8 @@ struct ProductsCarousel: View {
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2, reservesSpace: true)
                 if let price = product.price {
-                    Text(price)
+                    Text(price.pricesKeptTogether)
+                        .lineLimit(1)
                         .font(.subheadline.weight(.bold).monospacedDigit())
                         .padding(.top, 2)
                 }

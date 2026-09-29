@@ -142,6 +142,30 @@ class VaultTests(unittest.TestCase):
         self.assertEqual(cards.clean_alias("Viajes\n2026"), "Viajes 2026")
         self.assertNotIn("4242424242424242", repr(cards.cards()))
 
+    def test_a_general_card_has_no_site_and_can_be_bound_later(self):
+        general = cards.save(None, {"card_number": VISA, "exp_month": "3", "exp_year": "2031", "cvc": "123",
+                                    "alias": "Personal"})
+        self.assertIsNone(general["origin"])
+        self.assertEqual((general["alias"], general["card"]), ("Personal", "Visa ···4242"))
+        self.assertEqual(len(cards.cards()), 1)
+        bound = cards.bind(general["handle"], "https://shop.example")
+        self.assertEqual(bound["origin"], "https://shop.example")
+        self.assertEqual(bound["card"], "Visa ···4242")
+        self.assertEqual(len(cards.cards()), 3)  # the general one stays, plus the shop and its www twin
+
+    def test_saving_a_general_card_again_replaces_it(self):
+        fields = {"card_number": VISA, "exp_month": "3", "exp_year": "2031", "cvc": "123"}
+        cards.save(None, fields)
+        cards.save("", {**fields, "cvc": "456"})
+        self.assertEqual(len(cards.cards()), 1)
+
+    def test_a_general_card_is_removed_on_its_own(self):
+        general = cards.save(None, {"card_number": VISA, "exp_month": "3", "exp_year": "2031", "cvc": "123"})
+        cards.bind(general["handle"], "https://shop.example")
+        self.assertTrue(cards.remove(general["handle"]))
+        self.assertEqual(sorted(c["origin"] for c in cards.cards()),
+                         ["https://shop.example", "https://www.shop.example"])
+
     def test_logins_are_not_cards(self):
         login = self.store.add_item(kind="login", label="shop", origin="https://shop.example",
                                     secret={"identifier_type": "email", "identifier": "a@b.c", "password": "x"})

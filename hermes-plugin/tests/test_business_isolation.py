@@ -145,7 +145,11 @@ class BusinessIsolationTests(unittest.TestCase):
         hooks = [c.args[1] for c in ctx.register_hook.call_args_list]
         self.assertLess(hooks.index(self.plugin._guard_repeat_payment), hooks.index(self.plugin._route_card_fill))
         ctx.register_hook.assert_any_call("transform_tool_result", self.plugin._payment_error_note)
-        self.assertEqual(ctx.register_hook.call_count, 10)
+        # And the answers to ask_person close their questions and release a parked goal.
+        ctx.register_hook.assert_any_call("post_llm_call", self.plugin._absorb_answers)
+        ctx.register_hook.assert_any_call("pre_llm_call", self.plugin._auto_goal)
+        ctx.register_hook.assert_any_call("post_llm_call", self.plugin._repeat_guard)
+        self.assertEqual(ctx.register_hook.call_count, 13)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)
         # How an agent asks for a key without it entering the chat.
@@ -166,7 +170,8 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_system_prompt_section.assert_any_call("alice.recados", self.plugin.errands_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.dudas", self.plugin.doubts_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.compras", self.plugin.purchases_prompt)
-        self.assertEqual(ctx.register_system_prompt_section.call_count, 10)
+        ctx.register_system_prompt_section.assert_any_call("alice.preguntas", self.plugin.ask_prompt)
+        self.assertEqual(ctx.register_system_prompt_section.call_count, 11)
 
 
 if __name__ == "__main__":
