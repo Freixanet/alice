@@ -413,6 +413,36 @@ class RestartTests(Base):
         self.assertEqual(len(gateway.started), 1)
         self.assertEqual(gateway.started[0][1], errands.CONTINUATION)
 
+
+class CirclingTests(Base):
+    def steps(self, entry, n, url, start=NOW, gap=30):
+        for i in range(n):
+            errands.add_step(self.home, entry["id"], f"Paso {i}", url, now=start + i * gap)
+
+    def test_many_steps_on_one_page_for_minutes_is_going_round(self):
+        entry = self.errand()
+        self.steps(entry, errands.CIRCLE_STEPS, "https://secure.store.apple.com/es/shop/checkout?_s=Shipping-init")
+        self.assertEqual(errands.circling(errands.get(self.home, entry["id"])), "secure.store.apple.com/es/shop/checkout")
+
+    def test_moving_on_or_being_quick_is_not(self):
+        entry = self.errand()
+        self.steps(entry, errands.CIRCLE_STEPS, "https://shop.es/checkout", gap=5)
+        self.assertIsNone(errands.circling(errands.get(self.home, entry["id"])))
+        other = self.errand()
+        self.steps(other, errands.CIRCLE_STEPS - 1, "https://shop.es/checkout")
+        errands.add_step(self.home, other["id"], "Pago", "https://shop.es/pago", now=NOW + 999)
+        self.assertIsNone(errands.circling(errands.get(self.home, other["id"])))
+
+    def test_the_engine_stops_a_run_going_round_and_says_why(self):
+        entry = self.errand()
+        self.steps(entry, errands.CIRCLE_STEPS, "https://shop.es/checkout")
+        gateway = FakeGateway([[{"status": "running"}]])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None)
+        self.assertEqual(engine.run(), "stuck")
+        self.assertEqual(gateway.stopped, ["run_1"])
+        self.assertIn("misma página", errands.get(self.home, entry["id"])["reason"])
+
 class AnswerTests(unittest.TestCase):
     def test_answers_become_the_lines_ask_person_reads(self):
         text = errands.answer_text({"size": "500 g", "flavour": "Sin sabor", "bad id!": "x"})

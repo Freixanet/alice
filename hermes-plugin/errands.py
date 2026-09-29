@@ -49,6 +49,10 @@ MAX_RUNS = 14
 # A run with no event for this long has stalled (a model call that never returned): it is
 # stopped and the errand goes on once; a second stall leaves it stuck.
 STALL_SECONDS = 240
+# Going round in circles on one page (a form the shop keeps rejecting): this many steps on
+# the same page over this long, and the errand stops and says so instead of trying forever.
+CIRCLE_STEPS = 12
+CIRCLE_SECONDS = 240
 # The same chat asking again while its errand is starting gets that errand, not a second one.
 DEDUPE_SECONDS = 10 * 60
 
@@ -529,6 +533,26 @@ class Gateway:
 FINISHED = ("completed", "failed", "cancelled", "interrupted")
 
 
+def page_of(url: str) -> str:
+    """A page without its query: the same checkout step whatever its tokens."""
+    parts = urlsplit(str(url or ""))
+    return f"{parts.netloc}{parts.path}".rstrip("/")
+
+
+def circling(entry: Dict[str, Any]) -> Optional[str]:
+    """The page an errand keeps going round on without getting past, or None."""
+    steps = [s for s in entry.get("steps") or [] if s.get("url")]
+    if len(steps) < CIRCLE_STEPS:
+        return None
+    last = steps[-CIRCLE_STEPS:]
+    page = page_of(last[-1]["url"])
+    if any(page_of(s["url"]) != page for s in last):
+        return None
+    if float(last[-1].get("at") or 0) - float(last[0].get("at") or 0) < CIRCLE_SECONDS:
+        return None
+    return page
+
+
 def _words(text: str) -> set:
     return set(re.findall(r"\w{3,}", str(text or "").lower()))
 
@@ -635,6 +659,10 @@ class Engine:
                     return {"status": "interrupted"}
                 raise
             status = str(state.get("status") or "")
+            page = circling(self._entry())
+            if page and status == "running":
+                self.gateway.stop(run_id)
+                return {"status": "circling", "page": page}
             mark = (state.get("updated_at"), state.get("last_event"), status)
             if mark != seen:
                 seen, since = mark, time.time()
@@ -688,6 +716,11 @@ class Engine:
                 update(self.home, self.errand_id, summary=reply[:300])
             if entry.get("status") != "working":
                 return entry.get("status", "missing")
+            if state.get("status") == "circling":
+                update(self.home, self.errand_id, status="stuck", reason=(
+                    "Lleva varios minutos en la misma página sin poder avanzar (" + str(state.get("page"))[:80]
+                    + "). Ábrela en el navegador para ver qué pide la tienda."))
+                return "stuck"
             if state.get("status") == "stalled":
                 stalls += 1
                 if stalls >= 2:
