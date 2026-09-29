@@ -186,9 +186,8 @@ struct MessageRow: View {
                     }
 
                     // The page it is on, live, while it browses — tap to take over.
-                    // It stays on the latest reply once done, so the page can still be opened.
-                    if BrowserActivity.used(message.tools),
-                       working || store.shownConversation?.messages.last?.id == message.id {
+                    // Gone once the task ends: left behind, it was a grey box with a spinner.
+                    if BrowserActivity.used(message.tools), working {
                         LiveBrowserCard(working: working, browsing: BrowserActivity.running(message.tools),
                                         caption: BrowserActivity.caption(message.tools))
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
