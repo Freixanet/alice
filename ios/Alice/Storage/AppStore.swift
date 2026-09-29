@@ -4853,6 +4853,25 @@ final class AppStore {
         try await dashboard.changeGoal(id, change)
     }
     func deleteGoal(_ id: String) async throws { try await dashboard.deleteGoal(id) }
+    func listErrands() async throws -> [Errand] { try await dashboard.errands() }
+    func decideCheckout(_ id: String, checkoutID: String, allow: Bool) async throws -> Errand? {
+        try await dashboard.decideCheckout(id, checkoutID: checkoutID, allow: allow)
+    }
+    func answerErrand(_ id: String, answers: [String: String]) async throws -> Errand? {
+        try await dashboard.answerErrand(id, answers: answers)
+    }
+    func approveInErrand(_ id: String, requestID: String, allow: Bool) async throws -> Errand? {
+        try await dashboard.approveInErrand(id, requestID: requestID, allow: allow)
+    }
+    func stopErrand(_ id: String) async throws -> Errand? { try await dashboard.stopErrand(id) }
+    /// `alice://errand?id=…`, from a notification: the errand, open.
+    func openErrand(_ url: URL) {
+        let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "id" }?.value ?? ""
+        guard id.range(of: "^[a-f0-9]{4,32}$", options: .regularExpression) != nil else { return }
+        requestedErrand = id
+        showingErrands = true
+    }
     func secretIsSet(_ name: String) async throws -> Bool { try await dashboard.secretIsSet(name) }
     func saveSecret(_ name: String, value: String) async throws { try await dashboard.saveSecret(name, value: value) }
     func savedCards(profile: String) async throws -> [SavedCard] { try await dashboard.savedCards(profile: profile) }
@@ -6035,6 +6054,14 @@ final class AppStore {
 
     /// The person's goals and Alice's plans, a page too (`GoalsScreen`).
     var showingGoals = false
+    /// Errands, the tasks that run apart from the chat (`ErrandsScreen`), and one to open in it.
+    var showingErrands = false
+    var requestedErrand: String?
+    @ObservationIgnored lazy var errandBoard: ErrandBoard = {
+        let board = ErrandBoard()
+        board.attach(self)
+        return board
+    }()
     /// The agents' shared browser, live: one view of it for the chat's card
     /// and the full-screen browser (`LiveBrowser`).
     @ObservationIgnored lazy var liveBrowser: LiveBrowser = {
@@ -8147,6 +8174,14 @@ final class AppStore {
 
     /// A file, query or command Hermes sent with a tool, for the activity line.
     nonisolated static func toolDetail(from payload: [String: Any]) -> String? {
+        // An errand the reply started: its arguments and, once done, its result (the errand's id).
+        if let name = payload["name"] as? String, ErrandRef.isTool(name) {
+            var call: [String: Any] = [:]
+            if let args = dictionary(payload["args"]) { call["args"] = args }
+            if let result = dictionary(payload["result"]) { call["result"] = result }
+            guard !call.isEmpty, let data = try? JSONSerialization.data(withJSONObject: call) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
         // A question for the person: its whole call, to draw the card from.
         if let name = payload["name"] as? String, AskPerson.isTool(name) {
             guard let args = dictionary(payload["args"]),

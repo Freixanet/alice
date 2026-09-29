@@ -128,6 +128,7 @@ private struct ChatScreenContent: View, Equatable {
                         switch experimentalSection {
                         case .agenda: AgendaScreen(onClose: { selectExperimental(.chat) })
                         case .goals: GoalsScreen(onClose: { selectExperimental(.chat) })
+                        case .errands: ErrandsScreen(onClose: { selectExperimental(.chat) })
                         case .notes: NotesFoldersScreen(onClose: { selectExperimental(.chat) })
                         case .routines: RoutinesScreen()
                         case .projects: ProjectsScreen()
@@ -137,7 +138,8 @@ private struct ChatScreenContent: View, Equatable {
                         }
                     }
                     .toolbar {
-                        if experimentalSection != .goals, experimentalSection != .notes, experimentalSection != .agenda {
+                        if experimentalSection != .goals, experimentalSection != .errands,
+                           experimentalSection != .notes, experimentalSection != .agenda {
                             ToolbarItem(placement: .topBarLeading) {
                                 Button { selectExperimental(.chat) } label: { Image(systemName: "chevron.left") }
                                     .accessibilityLabel("Back")

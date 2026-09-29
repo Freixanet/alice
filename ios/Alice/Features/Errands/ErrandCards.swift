@@ -1,0 +1,735 @@
+import SwiftUI
+
+// An errand, as the cards of a checkout the person can follow: the browser working, the order
+// under way, the checkout to approve, the receipt. Big rounded surfaces with no outline, inner
+// grey groups for the rows, dotted dividers, and tall capsule buttons — the language of the
+// purchase flows Alice is measured against. The cards are pure views: the chat and the list feed
+// them from `ErrandBoard`, the developer walkthrough from a script.
+
+struct DottedDivider: View {
+    var body: some View {
+        Line()
+            .stroke(style: StrokeStyle(lineWidth: 1, dash: [1.5, 3.5]))
+            .foregroundStyle(.tertiary)
+            .frame(height: 1)
+    }
+
+    private struct Line: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.width, y: rect.midY))
+            return path
+        }
+    }
+}
+
+/// A tall capsule, the grey one for refusing and the accent one for going on.
+struct PurchaseCapsuleButton: View {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(AppStore.self) private var store
+    let title: String
+    var prominent = false
+    var disabled = false
+    var busy = false
+    /// An SF Symbol before the title, such as Face ID on the button that pays.
+    var symbol: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if busy {
+                    ProgressView().tint(prominent ? .white : .primary)
+                } else {
+                    Label { Text(title) } icon: { if let symbol { Image(systemName: symbol) } }
+                }
+            }
+            .font(.headline)
+            .foregroundStyle(prominent ? Color.white : Color.primary)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(prominent ? store.accent.control(scheme) : Palette.muted(scheme), in: .capsule)
+            .opacity(disabled ? 0.5 : 1)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled || busy)
+    }
+}
+
+/// "Visa ···4242" as a small brand mark, so the card reads at a glance.
+struct CardBrandBadge: View {
+    let label: String
+
+    private var brand: String {
+        let first = label.split(separator: " ").first.map(String.init) ?? label
+        return first.count > 10 ? String(first.prefix(4)) : first
+    }
+
+    var body: some View {
+        Text(brand.uppercased())
+            .font(.system(size: 11, weight: .heavy).italic())
+            .foregroundStyle(Color(red: 0.10, green: 0.12, blue: 0.45))
+            .minimumScaleFactor(0.6)
+            .lineLimit(1)
+            .padding(.horizontal, 4)
+            .frame(width: 46, height: 30)
+            .background(Color.white, in: .rect(cornerRadius: 7))
+            .overlay { RoundedRectangle(cornerRadius: 7).stroke(.black.opacity(0.08), lineWidth: 0.5) }
+            .accessibilityHidden(true)
+    }
+}
+
+/// The shop's mark: its initial on a colour of its own, in a circle.
+struct MerchantMark: View {
+    let name: String
+    var size: CGFloat = 44
+
+    private var initial: String {
+        let letters = name.replacingOccurrences(of: "www.", with: "").filter(\.isLetter)
+        return letters.first.map { String($0).uppercased() } ?? "•"
+    }
+
+    private var tint: Color {
+        let hues: [Double] = [0.02, 0.08, 0.14, 0.33, 0.45, 0.55, 0.62, 0.75, 0.86, 0.93]
+        let sum = name.lowercased().unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) }
+        return Color(hue: hues[abs(sum % hues.count)], saturation: 0.55, brightness: 0.62)
+    }
+
+    var body: some View {
+        Text(initial)
+            .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(tint, in: .circle)
+            .accessibilityHidden(true)
+    }
+}
+
+/// How an errand's state reads, in the conversation's language.
+extension Errand.Status {
+    func label(_ language: ChatLanguage) -> String {
+        switch self {
+        case .working: language.pick("Working", "Trabajando")
+        case .needsApproval: language.pick("Needs approval", "Necesita tu aprobación")
+        case .needsInput: language.pick("Waiting for your answer", "Espera tu respuesta")
+        case .done: language.pick("Completed", "Completado")
+        case .stuck: language.pick("Stuck", "Atascado")
+        case .stopped: language.pick("Stopped", "Parado")
+        case .denied: language.pick("Cancelled", "Cancelado")
+        }
+    }
+
+    func tint(_ scheme: ColorScheme) -> Color? {
+        switch self {
+        case .needsApproval, .needsInput: Palette.warning(scheme)
+        case .done: Palette.success(scheme)
+        case .stuck: Palette.danger(scheme)
+        case .working, .stopped, .denied: nil
+        }
+    }
+}
+
+extension TimeInterval {
+    /// "42 s", "3 min", "1 h 5 min".
+    var errandElapsed: String {
+        let seconds = Int(self)
+        if seconds < 60 { return "\(seconds) s" }
+        if seconds < 3600 { return "\(seconds / 60) min" }
+        let minutes = (seconds % 3600) / 60
+        return minutes == 0 ? "\(seconds / 3600) h" : "\(seconds / 3600) h \(minutes) min"
+    }
+}
+
+extension String {
+    /// This string, or `fallback` when it is empty.
+    func nonEmpty(or fallback: @autoclosure () -> String) -> String { isEmpty ? fallback() : self }
+}
+
+// MARK: - The browser
+
+/// The browser at work on the errand: its state and title over the page, live while it works,
+/// with the way in to watch or take over.
+struct ErrandBrowserCard: View {
+    enum Snapshot { case live, still(URL?), none }
+
+    @Environment(\.colorScheme) private var scheme
+    @Environment(AppStore.self) private var store
+    let errand: Errand
+    var snapshot: Snapshot = .live
+    let onOpen: () -> Void
+
+    private var language: ChatLanguage { errand.language }
+    private var live: LiveBrowser { store.liveBrowser }
+    private var following: Bool {
+        if case .live = snapshot { return errand.status.isOpen }
+        return false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: errand.status == .done ? "checkmark.circle" : "globe")
+                    .font(.title3)
+                    .foregroundStyle(errand.status == .done ? Palette.success(scheme) : Color.primary)
+                    .frame(width: 44, height: 44)
+                    .background(Palette.muted(scheme), in: .rect(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(language.pick("Browser", "Navegador")).font(.body.weight(.medium))
+                    Text("\(errand.status.label(language)) · \(errand.title)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if errand.status == .working { LivePulse() }
+            }
+
+            if showsPage {
+                page
+                    .frame(height: 190)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(.rect(cornerRadius: 18))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18)
+                            .strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5)
+                    }
+                PurchaseCapsuleButton(title: language.pick("Open browser", "Abrir navegador"), action: onOpen)
+            }
+        }
+        .padding(14)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+        .accessibilityElement(children: .contain)
+        .onAppear { if following { live.watch() } }
+        .onDisappear { if following { live.unwatch() } }
+    }
+
+    private var showsPage: Bool {
+        if case .none = snapshot { return false }
+        return errand.status != .denied && errand.status != .stopped
+    }
+
+    @ViewBuilder private var page: some View {
+        switch snapshot {
+        case .live:
+            ZStack {
+                Palette.muted(scheme)
+                if let image = live.image {
+                    Image(uiImage: image).resizable().scaledToFill()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .clipped()
+                } else {
+                    Image(systemName: "globe").font(.largeTitle).foregroundStyle(.tertiary)
+                }
+            }
+        case .still(let url):
+            CardImage(image: url, page: nil, symbol: "globe")
+        case .none:
+            EmptyView()
+        }
+    }
+}
+
+// MARK: - Progress
+
+/// The order under way, and then that it went through: what, where, how long, the steps.
+struct ErrandProgressCard: View {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(AppStore.self) private var store
+    let errand: Errand
+    @State private var expanded = false
+
+    private var language: ChatLanguage { errand.language }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Button { withAnimation(.snappy) { expanded.toggle() } } label: {
+                HStack(spacing: 12) {
+                    MerchantMark(name: (errand.checkout?.merchant ?? "").nonEmpty(or: errand.site.nonEmpty(or: errand.title)))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(errand.title).font(.body.weight(.medium)).lineLimit(2)
+                        if !errand.site.isEmpty {
+                            Text(errand.site).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        Text(errand.elapsed.errandElapsed)
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    if !errand.steps.isEmpty {
+                        Image(systemName: "chevron.down")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(expanded ? 180 : 0))
+                    }
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(errand.steps.isEmpty)
+            .accessibilityHint(language.pick("Shows the steps", "Muestra los pasos"))
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(errand.steps.enumerated()), id: \.offset) { _, step in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Circle().fill(.tertiary).frame(width: 5, height: 5)
+                            Text(step.text).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .transition(.opacity)
+            }
+
+            HStack(spacing: 10) {
+                statusMark
+                Text(statusLine).font(.body).lineLimit(2)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+    }
+
+    @ViewBuilder private var statusMark: some View {
+        switch errand.status {
+        case .working:
+            ProgressView()
+        case .done:
+            Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(store.accent.control(scheme))
+        case .needsApproval, .needsInput:
+            Image(systemName: "hourglass").font(.title3).foregroundStyle(Palette.warning(scheme))
+        case .stuck:
+            Image(systemName: "exclamationmark.triangle.fill").font(.title3).foregroundStyle(Palette.danger(scheme))
+        case .stopped, .denied:
+            Image(systemName: "xmark.circle").font(.title3).foregroundStyle(.secondary)
+        }
+    }
+
+    private var statusLine: String {
+        switch errand.status {
+        case .working: return errand.lastStep?.text ?? language.pick("Getting started…", "Empezando…")
+        case .done:
+            return errand.receipt?.paid == true ? language.pick("Order placed", "Pedido realizado")
+                                                : errand.summary.nonEmpty(or: language.pick("Done", "Hecho"))
+        case .needsApproval: return language.pick("Waiting for your approval", "Esperando tu aprobación")
+        case .needsInput: return language.pick("Waiting for your answer", "Esperando tu respuesta")
+        case .stuck: return errand.reason.nonEmpty(or: language.pick("It got stuck", "Se ha atascado"))
+        case .stopped: return language.pick("You stopped it", "Lo paraste tú")
+        case .denied: return language.pick("You denied the purchase. Nothing was paid.",
+                                           "Denegaste la compra. No se ha pagado nada.")
+        }
+    }
+}
+
+// MARK: - Checkout
+
+/// The checkout to approve: what is bought, where it goes, who is told, with which card, the
+/// total, and «Denegar» / «Permitir». The one who shows it asks for Face ID before answering.
+struct CheckoutApprovalCard: View {
+    enum Phase: Equatable { case pending, sending, approved, denied }
+
+    @Environment(\.colorScheme) private var scheme
+    let checkout: Errand.Checkout
+    var language: ChatLanguage = .spanish
+    var phase: Phase = .pending
+    var error: String? = nil
+    var onOpenPage: (() -> Void)? = nil
+    let onAllow: () -> Void
+    let onDeny: () -> Void
+
+    private var shop: String { checkout.merchant.nonEmpty(or: checkout.site) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Checkout").font(.title3.weight(.semibold))
+                    Text(language.pick("Alice wants to place an order at \(checkout.site)",
+                                       "Alice quiere hacer un pedido en \(checkout.site)"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                MerchantMark(name: shop, size: 40)
+            }
+            .padding(.horizontal, 4)
+
+            badge.padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(checkout.items.enumerated()), id: \.offset) { index, item in
+                    if index > 0 { DottedDivider().padding(.horizontal, 14) }
+                    itemRow(item).padding(14)
+                }
+                if !checkout.delivery.isEmpty {
+                    DottedDivider().padding(.horizontal, 14)
+                    row(symbol: "shippingbox", text: checkout.delivery)
+                }
+                if !checkout.address.isEmpty {
+                    DottedDivider().padding(.horizontal, 14)
+                    row(symbol: "mappin.and.ellipse", text: checkout.address)
+                }
+                if !checkout.email.isEmpty {
+                    DottedDivider().padding(.horizontal, 14)
+                    row(symbol: "envelope", text: checkout.email)
+                }
+            }
+            .background(Palette.background(scheme), in: .rect(cornerRadius: 22))
+
+            if !checkout.cardLabel.isEmpty {
+                HStack(spacing: 12) {
+                    CardBrandBadge(label: checkout.cardLabel)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(checkout.cardLabel).font(.body)
+                        Text(language.pick("Saved card · filled in by Alice", "Tarjeta guardada · la rellena Alice"))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
+                .background(Palette.background(scheme), in: .rect(cornerRadius: 22))
+            }
+
+            HStack(alignment: .firstTextBaseline) {
+                Text("Total").font(.title3.weight(.semibold))
+                Spacer()
+                Text(checkout.total.pricesKeptTogether).font(.title3.weight(.semibold).monospacedDigit())
+            }
+            .padding(.horizontal, 6)
+
+            if phase == .pending || phase == .sending {
+                Text(language.pick("Check the order and the shop's terms before approving.",
+                                   "Revisa el pedido y las condiciones de la tienda antes de aprobar."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                if let onOpenPage {
+                    Button(action: onOpenPage) {
+                        Label(language.pick("Review it in the browser", "Revisarlo en el navegador"),
+                              systemImage: "arrow.up.right.square")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.link(scheme))
+                    .padding(.horizontal, 6)
+                }
+                HStack(spacing: 10) {
+                    PurchaseCapsuleButton(title: language.pick("Deny", "Denegar"), disabled: phase == .sending, action: onDeny)
+                    PurchaseCapsuleButton(title: language.pick("Allow", "Permitir"), prominent: true,
+                                          busy: phase == .sending, symbol: Biometrics.symbol, action: onAllow)
+                }
+                if let error {
+                    Text(error).font(.footnote).foregroundStyle(Palette.danger(scheme)).padding(.horizontal, 6)
+                }
+                Text(language.pick("By continuing you accept \(shop)'s terms, privacy and returns policies.",
+                                   "Al continuar aceptas las condiciones, la privacidad y las devoluciones de \(shop)."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(16)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder private var badge: some View {
+        switch phase {
+        case .pending, .sending:
+            ComponentPill(text: language.pick("Needs approval", "Necesita tu aprobación"), tint: Palette.warning(scheme))
+        case .approved:
+            ComponentPill(text: language.pick("Approved", "Aprobado"), tint: Palette.success(scheme))
+        case .denied:
+            ComponentPill(text: language.pick("Denied", "Denegado"), tint: nil)
+        }
+    }
+
+    private func itemRow(_ item: Errand.Item) -> some View {
+        HStack(spacing: 14) {
+            CardImage(image: item.image, page: nil, symbol: "bag", fits: true)
+                .background(Color.white)
+                .frame(width: 56, height: 56)
+                .clipShape(.rect(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.name).font(.body.weight(.medium)).lineLimit(2)
+                Text(detail(item)).font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if !item.price.isEmpty {
+                Text(item.price.pricesKeptTogether).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func detail(_ item: Errand.Item) -> String {
+        let qty = language.pick("Qty: \(item.qty)", "Cant.: \(item.qty)")
+        return item.variant.isEmpty ? qty : "\(qty) · \(item.variant)"
+    }
+
+    private func row(symbol: String, text: String) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: symbol).font(.title3).frame(width: 30)
+            Text(text).font(.body)
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+    }
+}
+
+// MARK: - Receipt
+
+/// The receipt: the shop and order number, the lines, what was paid, with which card, approved.
+struct ErrandReceiptCard: View {
+    @Environment(\.colorScheme) private var scheme
+    let receipt: Errand.Receipt
+    var language: ChatLanguage = .spanish
+
+    private var shop: String { receipt.merchant.nonEmpty(or: receipt.site) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                MerchantMark(name: shop, size: 48)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(shop).font(.title3.weight(.semibold))
+                    if !receipt.order.isEmpty {
+                        Text(language.pick("Order #\(receipt.order)", "Pedido #\(receipt.order)"))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            DottedDivider()
+            ForEach(Array(receipt.items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(item.qty > 1 ? "\(item.qty) × \(item.name)" : item.name).font(.body).lineLimit(2)
+                    Spacer()
+                    Text(item.price.pricesKeptTogether).font(.body.monospacedDigit())
+                }
+            }
+            if !receipt.delivery.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "shippingbox").foregroundStyle(.secondary)
+                    Text(receipt.delivery).font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            DottedDivider()
+            HStack {
+                Text(receipt.paid ? language.pick("Paid", "Pagado") : "Total").font(.title3.weight(.semibold))
+                Spacer()
+                Text(receipt.total.pricesKeptTogether).font(.title3.weight(.semibold).monospacedDigit())
+            }
+            if !receipt.cardLabel.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "creditcard").foregroundStyle(.secondary)
+                    Text(receipt.cardLabel).font(.subheadline)
+                    Spacer()
+                    Text(outcome).font(.subheadline)
+                        .foregroundStyle(receipt.paid ? Palette.success(scheme) : Color.secondary)
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var outcome: String {
+        switch receipt.outcome {
+        case "paid": language.pick("Approved", "Aprobado")
+        case "declined": language.pick("Declined", "Rechazado")
+        case "not_charged": language.pick("Not charged", "Sin cargo")
+        default: language.pick("Unconfirmed", "Sin confirmar")
+        }
+    }
+}
+
+// MARK: - Questions and confirmations
+
+/// Questions the errand asked (size, flavour, an alternative), answered here.
+struct ErrandQuestionsCard: View {
+    @Environment(\.colorScheme) private var scheme
+    let errand: Errand
+    var sending = false
+    let onAnswer: ([String: String]) -> Void
+
+    @State private var answers: [String: String] = [:]
+
+    private var language: ChatLanguage { errand.language }
+    private var complete: Bool {
+        errand.questions.allSatisfy { !(answers[$0.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+    private var needsSend: Bool {
+        errand.questions.count > 1 || errand.questions.contains { $0.choices.isEmpty }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(errand.questionsTitle.nonEmpty(or: language.pick("A question", "Una pregunta")))
+                .font(.title3.weight(.semibold))
+            ForEach(errand.questions) { question in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(question.question).font(.body)
+                    if question.choices.isEmpty {
+                        TextField(language.pick("Your answer", "Tu respuesta"), text: binding(question.id))
+                            .textFieldStyle(.plain)
+                            .padding(12)
+                            .background(Palette.background(scheme), in: .rect(cornerRadius: 14))
+                    } else {
+                        ForEach(question.choices, id: \.self) { choice in
+                            choiceButton(question, choice)
+                        }
+                    }
+                }
+            }
+            if needsSend {
+                PurchaseCapsuleButton(title: language.pick("Send", "Enviar"), prominent: true,
+                                      disabled: !complete, busy: sending) { onAnswer(answers) }
+            }
+        }
+        .padding(16)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+    }
+
+    private func choiceButton(_ question: Errand.Question, _ choice: String) -> some View {
+        let chosen = answers[question.id] == choice
+        return Button {
+            answers[question.id] = choice
+            if !needsSend { onAnswer(answers) }
+        } label: {
+            HStack {
+                Text(choice).font(.body)
+                Spacer()
+                if chosen { Image(systemName: "checkmark.circle.fill") }
+            }
+            .padding(14)
+            .background(Palette.background(scheme), in: .rect(cornerRadius: 16))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: chosen ? [] : [4, 3]))
+                    .foregroundStyle(chosen ? Color.primary : Color.secondary.opacity(0.5))
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(sending)
+    }
+
+    private func binding(_ id: String) -> Binding<String> {
+        Binding(get: { answers[id] ?? "" }, set: { answers[id] = $0 })
+    }
+}
+
+/// Another confirmation Hermes asked inside the errand, such as signing in when the person wanted
+/// to be asked first.
+struct ErrandConfirmCard: View {
+    @Environment(\.colorScheme) private var scheme
+    let approval: Errand.Approval
+    var language: ChatLanguage = .spanish
+    var sending = false
+    let onAllow: () -> Void
+    let onDeny: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ComponentPill(text: language.pick("Needs approval", "Necesita tu aprobación"), tint: Palette.warning(scheme))
+            Text(approval.title).font(.body)
+            HStack(spacing: 10) {
+                PurchaseCapsuleButton(title: language.pick("Deny", "Denegar"), disabled: sending, action: onDeny)
+                PurchaseCapsuleButton(title: language.pick("Allow", "Permitir"), prominent: true, busy: sending,
+                                      action: onAllow)
+            }
+        }
+        .padding(16)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+    }
+}
+
+// MARK: - The product
+
+/// The item on its own: a big photo, who sells it, the price with the old one struck through, an
+/// option to choose, and the two ways on: buy it with Alice, or go to the shop.
+struct PurchaseProductSheet: View {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+
+    let image: URL?
+    let seller: String
+    let title: String
+    let price: String
+    let oldPrice: String?
+    var language: ChatLanguage = .english
+    var options: [String] = []
+    let onBuy: () -> Void
+
+    @State private var chosen = 0
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                CardImage(image: image, page: nil, symbol: "bag", fits: true)
+                    .background(Color.white)
+                    .frame(height: 300)
+                    .clipShape(.rect(cornerRadius: 28))
+                    .overlay(alignment: .topTrailing) {
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
+                                .frame(width: 40, height: 40)
+                        }
+                        .buttonStyle(.plain)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                        .padding(12)
+                        .accessibilityLabel(language.pick("Close", "Cerrar"))
+                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(language.pick("From \(seller)", "De \(seller)")).font(.body).foregroundStyle(.secondary)
+                    Text(title).font(.title2.weight(.medium))
+                    HStack(spacing: 8) {
+                        Text(price.pricesKeptTogether).font(.title3.monospacedDigit())
+                        if let oldPrice {
+                            Text(oldPrice.pricesKeptTogether).font(.body.monospacedDigit())
+                                .strikethrough().foregroundStyle(.secondary)
+                        }
+                    }
+                    if !options.isEmpty { optionPicker.padding(.top, 10) }
+                    PurchaseCapsuleButton(title: language.pick("Buy with Alice", "Comprar con Alice"), prominent: true) {
+                        dismiss()
+                        onBuy()
+                    }
+                    .padding(.top, 10)
+                    PurchaseCapsuleButton(title: language.pick("Visit website", "Visitar la web")) { dismiss() }
+                }
+                .padding(.top, 18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(16)
+        }
+        .background(Palette.card(scheme))
+        .presentationDetents([.large])
+        .presentationCornerRadius(32)
+    }
+
+    /// The options in a grey track with the chosen one lifted on a white pill.
+    private var optionPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(options.enumerated()), id: \.offset) { index, name in
+                Button { withAnimation(.snappy) { chosen = index } } label: {
+                    Text(name).font(.body)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background {
+                            if chosen == index { Capsule().fill(Palette.card(scheme)) }
+                        }
+                        .foregroundStyle(chosen == index ? Color.primary : Color.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(Palette.muted(scheme), in: .capsule)
+    }
+}

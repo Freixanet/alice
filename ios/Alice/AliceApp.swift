@@ -68,6 +68,11 @@ struct AliceApp: App {
                         store.openReceipt(url)
                         return
                     }
+                    // From the Mac's notifier: an errand that needs the person, or ended.
+                    if url.host?.lowercased() == "errand" {
+                        store.openErrand(url)
+                        return
+                    }
                     if url.host?.lowercased() == "compose" {
                         acceptSharedCompose(url)
                         return

@@ -233,6 +233,11 @@ struct Sidebar: View, Equatable {
                 // Under Agents: the person's own day.
                 row("Agenda", systemImage: "calendar", weight: .medium, destination: .agenda) { openAgenda() }
                 row("Goals", systemImage: "scope", weight: .medium, destination: .goals) { openGoals() }
+                row("Errands", systemImage: "bag", weight: .medium,
+                    badge: store.errandBoard.needingPerson.count) {
+                    onDismiss()
+                    store.showingErrands = true
+                }
                 // Then Notes: a note is written in the moment or
                 // not at all, so it is the shortest way in the drawer.
                 row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }

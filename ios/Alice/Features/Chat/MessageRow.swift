@@ -257,6 +257,12 @@ struct MessageRow: View {
                                 AskPersonCard(ask: ask)
                             }
                         }
+                        // An errand this reply started: it runs apart, and its cards follow it here.
+                        ForEach(message.tools.filter { ErrandRef.isTool($0.name) }) { call in
+                            if let ref = ErrandRef.parse(call.detail) {
+                                ErrandChatBlock(ref: ref)
+                            }
+                        }
                     }
 
                     if showingExtras, let line = developerLine {
@@ -841,7 +847,7 @@ enum ToolCaption {
     /// Listing it as a step would leave "Asking a question" standing in the
     /// trace under an answer they have already given.
     static func steps(in tools: [Message.ToolCall]) -> [Message.ToolCall] {
-        tools.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) }
+        tools.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) && !ErrandRef.isTool($0.name) }
     }
 
     /// The line above the reply: what it is doing, or what it took.

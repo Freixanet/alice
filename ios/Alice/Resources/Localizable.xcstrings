@@ -1,6 +1,46 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Ask Alice to buy, order or book something. She does it in the background and asks you before paying.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pídele a Alice que compre, pida o reserve algo. Lo hace en segundo plano y te pregunta antes de pagar."
+          }
+        }
+      }
+    },
+    "Errands": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recados"
+          }
+        }
+      }
+    },
+    "Finished": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminados"
+          }
+        }
+      }
+    },
+    "No errands yet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no hay recados"
+          }
+        }
+      }
+    },
     "On when your Mac already announces replies through Bark, so they don't arrive twice.": {
       "localizations": {
         "es": {

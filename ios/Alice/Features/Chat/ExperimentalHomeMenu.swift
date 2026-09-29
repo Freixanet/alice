@@ -12,7 +12,7 @@ enum HomeInterface: String {
 /// read as one control rather than a bar stacked over another.
 struct ExperimentalHomeMenu: View {
     enum Section: String, CaseIterable {
-        case chat, today, agenda, goals, notes, routines, projects, feed, library
+        case chat, today, agenda, goals, errands, notes, routines, projects, feed, library
 
         var symbol: String {
             switch self {
@@ -20,6 +20,7 @@ struct ExperimentalHomeMenu: View {
             case .today: "sun.max"
             case .agenda: "calendar"
             case .goals: "scope"
+            case .errands: "bag"
             case .notes: "note.text"
             case .routines: "clock"
             case .projects: "folder"
@@ -34,6 +35,7 @@ struct ExperimentalHomeMenu: View {
             case .today: String(localized: "Today")
             case .agenda: String(localized: "Agenda")
             case .goals: String(localized: "Goals")
+            case .errands: String(localized: "Errands")
             case .notes: String(localized: "Notes")
             case .routines: String(localized: "Routines")
             case .projects: String(localized: "Projects")
