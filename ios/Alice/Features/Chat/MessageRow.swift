@@ -256,14 +256,16 @@ struct MessageRow: View {
                                 AskPersonCard(ask: ask)
                             }
                         }
-                        // An errand this reply started: it runs apart, and its cards follow it here.
-                        ForEach(message.tools.filter { ErrandRef.isTool($0.name) }) { call in
+                        // An errand this reply started: it runs apart, and its cards follow it here —
+                        // under the reply's words, so they wait until there are some.
+                        let replied = !message.pending || !message.content.isEmpty
+                        ForEach(replied ? message.tools.filter { ErrandRef.isTool($0.name) } : []) { call in
                             if let ref = ErrandRef.parse(call.detail) {
                                 ErrandChatBlock(ref: ref)
                             }
                         }
                         // Or one the plugin started for this turn without the call.
-                        if !message.tools.contains(where: { ErrandRef.isTool($0.name) }),
+                        if replied, !message.tools.contains(where: { ErrandRef.isTool($0.name) }),
                            let conversation = store.shownConversation,
                            let session = conversation.hermesSessionID,
                            let at = conversation.messages.firstIndex(where: { $0.id == message.id }),

@@ -50,8 +50,9 @@ struct PurchaseDemoScreen: View {
                         ErrandStack(
                             errand: errand, snapshot: .still(page), logo: shopLogo, sending: step == .approving,
                             onOpenBrowser: { showingBrowser = true },
-                            onDecide: { allow in if allow { approve() } else { advance(to: .denied) } },
-                            onAnswer: { _ in }, onConfirm: { _ in })
+                            onDecide: { allow, _ in if allow { approve() } else { advance(to: .denied) } },
+                            onAnswer: { _ in }, onConfirm: { _ in },
+                            demoCards: [SavedCard.demo(origin: nil)])
                     }
                     if step == .done {
                         aliceBubble(said("Hecho. Pedido 100123456: llega el viernes.",

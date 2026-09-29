@@ -33,7 +33,7 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 SESSION_PREFIX = "errand-"
@@ -215,13 +215,15 @@ CHECKOUT_SCHEMA: Dict[str, Any] = {
                 "items": {"type": "object", "properties": {
                     "name": {"type": "string"}, "variant": {"type": "string"},
                     "qty": {"type": "integer"}, "price": {"type": "string"},
-                    "image": {"type": "string", "description": "The product image URL on the page"}},
+                    "image": {"type": "string", "description": "The product picture's exact src, read from the "
+                                                           "page (document.querySelector), never guessed"}},
                     "required": ["name"]},
             },
             "delivery": {"type": "string", "description": "Delivery as shown, e.g. 'Envío gratis · llega el viernes 2 oct'"},
             "address": {"type": "string", "description": "Where it is delivered, as shown"},
             "email": {"type": "string"},
-            "card_label": {"type": "string", "description": "The saved card that will pay, e.g. 'Visa ···4242'"},
+            "card_label": {"type": "string", "description": "The saved card that will pay, e.g. 'Visa ···4242', "
+                                                         "or empty: the person chooses it when approving"},
             "total": {"type": "string", "description": "The total to pay as the page shows it, e.g. '27,98 €'"},
             "currency": {"type": "string", "description": "ISO code, e.g. EUR"},
         },
@@ -246,7 +248,78 @@ def _items(raw: Any) -> List[Dict[str, Any]]:
     return items[:20]
 
 
-def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Optional[float] = None) -> Dict[str, Any]:
+USER_AGENT = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+              "Version/18.0 Safari/605.1.15")
+OG_IMAGE = re.compile(
+    r"""<meta[^>]+(?:property|name)=["'](?:og:image(?::secure_url)?|twitter:image)["'][^>]*content=["']([^"']+)["']"""
+    r"""|<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:image(?::secure_url)?|twitter:image)["']""",
+    re.I)
+
+
+def _fetch(url: str, limit: int, accept: str) -> Tuple[bytes, str]:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
+    with urllib.request.urlopen(request, timeout=6) as response:  # noqa: S310 — https only, checked by callers
+        return response.read(limit), str(response.headers.get("Content-Type") or "")
+
+
+def is_picture(url: str, fetch: Callable[..., Tuple[bytes, str]] = _fetch) -> bool:
+    """Whether an address really serves a picture (an agent once named one that answered 404)."""
+    if not str(url or "").startswith("https://"):
+        return False
+    try:
+        data, kind = fetch(url, 64_000, "image/*")
+    except Exception:  # noqa: BLE001 — unreachable is not a picture
+        return False
+    return kind.lower().startswith("image/") and len(data) > 200
+
+
+def page_picture(page: str, fetch: Callable[..., Tuple[bytes, str]] = _fetch) -> str:
+    """The product page's own picture (its og:image), or ""."""
+    if not str(page or "").startswith("https://"):
+        return ""
+    try:
+        data, _ = fetch(page, 400_000, "text/html")
+    except Exception:  # noqa: BLE001
+        return ""
+    found = OG_IMAGE.search(data.decode("utf-8", "replace"))
+    if not found:
+        return ""
+    address = (found.group(1) or found.group(2) or "").replace("&amp;", "&")
+    return address if address.startswith("https://") else ""
+
+
+def product_pages(entry: Dict[str, Any]) -> List[str]:
+    """The pages the errand looked at before the basket and checkout, newest first."""
+    pages: List[str] = []
+    for step in reversed(entry.get("steps") or []):
+        url = str(step.get("url") or "")
+        low = url.lower()
+        if not url.startswith("https://") or any(k in low for k in ("checkout", "/bag", "/cart", "carrito", "cesta",
+                                                                     "signin", "login", "payment", "pago")):
+            continue
+        base = url.split("#")[0]
+        if base not in pages:
+            pages.append(base)
+    return pages[:3]
+
+
+def real_pictures(entry: Dict[str, Any], items: List[Dict[str, Any]],
+                  fetch: Callable[..., Tuple[bytes, str]] = _fetch) -> List[Dict[str, Any]]:
+    """Every item's picture checked from the Mac; one that does not load is replaced by the
+    product page's own picture, or left out rather than shown as a broken placeholder."""
+    fallback: Optional[str] = None
+    for item in items:
+        if item.get("image") and is_picture(item["image"], fetch):
+            continue
+        if fallback is None:
+            fallback = next((found for page in product_pages(entry)
+                             if (found := page_picture(page, fetch)) and is_picture(found, fetch)), "")
+        item["image"] = fallback
+    return items
+
+
+def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Optional[float] = None,
+                     fetch: Optional[Callable[..., Tuple[bytes, str]]] = None) -> Dict[str, Any]:
     now = now or time.time()
     entry = get(home, errand_id)
     if entry is None:
@@ -256,6 +329,7 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
     items = _items(args.get("items"))
     if not site or not total or not items:
         return {"ok": False, "error": "site, items and total are required, read from the checkout page."}
+    items = real_pictures(entry, items, fetch or _fetch)
     checkout = {
         "id": secrets.token_hex(4), "status": "pending", "merchant": _clean(args.get("merchant"), 60) or site,
         "site": site, "items": items, "delivery": _clean(args.get("delivery"), 120),
@@ -269,13 +343,16 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
                      "End your turn with one line saying the checkout is waiting for approval.")}
 
 
-def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float] = None,
+                    card_label: str = "") -> Optional[Dict[str, Any]]:
     now = now or time.time()
     entry = get(home, errand_id)
     checkout = (entry or {}).get("checkout")
     if entry is None or not isinstance(checkout, dict) or checkout.get("status") != "pending":
         return None
     checkout = {**checkout, "status": "approved" if allow else "denied", "decided_at": now}
+    if allow and _clean(card_label, 60):
+        checkout["card_label"] = _clean(card_label, 60)
     status = "working" if allow else "denied"
     return update(home, errand_id, now=now, checkout=checkout, status=status,
                   reason="" if allow else "Has denegado la compra.")

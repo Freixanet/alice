@@ -2540,6 +2540,7 @@ class _CheckoutDecision(BaseModel):
 
     decision: str
     checkout_id: str
+    card_label: str = Field(default="", max_length=80)
 
 
 @router.post("/errands/{errand_id}/checkout")
@@ -2555,11 +2556,12 @@ async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONRespo
         # The approval is for the checkout the person saw, never a newer one the agent sent meanwhile.
         if checkout.get("id") != body.checkout_id or checkout.get("status") != "pending":
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
-        entry = module.decide_checkout(root, errand_id, body.decision == "allow")
+        entry = module.decide_checkout(root, errand_id, body.decision == "allow", card_label=body.card_label)
         if entry is None:
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
         if body.decision == "allow":
-            card = f" ({checkout['card_label']})" if checkout.get("card_label") else ""
+            chosen = (entry.get("checkout") or {}).get("card_label") or ""
+            card = f" ({chosen})" if chosen else ""
             module.resume(root, errand_id, (
                 f"{module.APPROVED_PREFIX} La persona ha aprobado pagar {checkout.get('total')} en "
                 f"{checkout.get('merchant')}. Paga ahora con la tarjeta guardada{card} y, después, registra "

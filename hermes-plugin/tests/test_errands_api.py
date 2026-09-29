@@ -42,6 +42,7 @@ class ErrandRoutesTests(unittest.TestCase):
         for patch in (
             mock.patch.object(self.api, "_hermes_root", return_value=self.home),
             mock.patch.object(self.errands, "launch", return_value=False),
+            mock.patch.object(self.errands, "_fetch", side_effect=OSError("offline")),
             mock.patch.object(self.errands, "resume", side_effect=lambda h, i, m: self.resumed.append((i, m)) or True),
         ):
             patch.start()

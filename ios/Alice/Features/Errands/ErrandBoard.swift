@@ -69,7 +69,7 @@ final class ErrandBoard {
     }
 
     /// «Permitir» pays, so it asks for Face ID first; «Denegar» does not.
-    func decide(_ errand: Errand, allow: Bool) async {
+    func decide(_ errand: Errand, allow: Bool, card: String = "") async {
         guard let store, let checkout = errand.checkout, checkout.status == .pending else { return }
         if allow {
             let language = errand.language
@@ -78,7 +78,7 @@ final class ErrandBoard {
             guard await Biometrics.authenticate(reason: reason) else { return }
         }
         await answer(errand) {
-            try await store.decideCheckout(errand.id, checkoutID: checkout.id, allow: allow)
+            try await store.decideCheckout(errand.id, checkoutID: checkout.id, allow: allow, card: card)
         }
     }
 
@@ -130,6 +130,7 @@ final class ErrandBoard {
 /// chat, the Errands page and the walkthrough; what the buttons do is given.
 struct ErrandStack: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(AppStore.self) private var store
     let errand: Errand
     var snapshot: ErrandBrowserCard.Snapshot = .live
     /// Whose logo the cards show: the errand's from the plugin, or `logo` in the walkthrough.
@@ -138,10 +139,17 @@ struct ErrandStack: View {
     var sending = false
     var problem: String? = nil
     let onOpenBrowser: () -> Void
-    let onDecide: (Bool) -> Void
+    /// Allowed or not, and with which card.
+    let onDecide: (Bool, String) -> Void
     let onAnswer: ([String: String]) -> Void
     let onConfirm: (Bool) -> Void
     var onCardReady: (String) -> Void = { _ in }
+    /// The walkthrough's own cards, instead of the vault's.
+    var demoCards: [SavedCard]? = nil
+
+    @State private var cards: [SavedCard] = []
+    @State private var chosen: SavedCard?
+    @State private var addingCard = false
 
     private var checkoutPhase: CheckoutApprovalCard.Phase? {
         guard let checkout = errand.checkout, errand.receipt == nil else { return nil }
@@ -154,7 +162,8 @@ struct ErrandStack: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if errand.status.isOpen || errand.status == .done {
+            // The browser once it is being used, not before.
+            if (errand.status.isOpen || errand.status == .done) && !errand.steps.isEmpty {
                 ErrandBrowserCard(errand: errand, snapshot: errand.status == .done ? .none : snapshot,
                                   onOpen: onOpenBrowser)
             }
@@ -175,7 +184,18 @@ struct ErrandStack: View {
                 CheckoutApprovalCard(checkout: checkout, logoID: logoID, logo: logo,
                                      language: errand.language, phase: phase, error: problem,
                                      onOpenPage: phase == .pending ? onOpenBrowser : nil,
-                                     onAllow: { onDecide(true) }, onDeny: { onDecide(false) })
+                                     cards: cards, chosenCard: chosen,
+                                     onChooseCard: { chosen = $0 }, onAddCard: { addingCard = true },
+                                     onAllow: { onDecide(true, chosen?.label ?? checkout.cardLabel) },
+                                     onDeny: { onDecide(false, "") })
+                    .task(id: checkout.id) { await loadCards(for: checkout) }
+                    .sheet(isPresented: $addingCard) {
+                        PaymentCardSheet(offer: PaymentCardOffer(origin: "https://" + checkout.site, profile: "default"),
+                                         language: errand.language, demo: demoCards != nil) { card in
+                            cards.append(card)
+                            chosen = card
+                        }
+                    }
             }
             if let receipt = errand.receipt {
                 ErrandReceiptCard(receipt: receipt, logoID: logoID, logo: logo, language: errand.language)
@@ -220,6 +240,26 @@ struct ErrandTurnBlock: View {
     }
 }
 
+extension ErrandStack {
+    /// The saved cards; the one the agent named, or the only one, is chosen to start with.
+    fileprivate func loadCards(for checkout: Errand.Checkout) async {
+        let found: [SavedCard]
+        if let demoCards {
+            found = demoCards
+        } else {
+            let all = (try? await store.savedCards(profile: "default")) ?? []
+            // The same card saved for several sites is one choice.
+            var seen = Set<String>()
+            found = all.filter { seen.insert($0.card).inserted }
+        }
+        cards = found
+        if chosen == nil {
+            chosen = found.first { $0.card == checkout.cardLabel || $0.label == checkout.cardLabel }
+                ?? (found.count == 1 ? found.first : nil)
+        }
+    }
+}
+
 /// The errand a reply started (`errand_start`), live from the board, in the chat.
 struct ErrandChatBlock: View {
     let ref: ErrandRef
@@ -236,7 +276,7 @@ struct ErrandChatBlock: View {
                     errand: errand, logoID: errand.id,
                     sending: board.sending.contains(errand.id), problem: board.problems[errand.id],
                     onOpenBrowser: { browsing = true },
-                    onDecide: { allow in Task { await board.decide(errand, allow: allow) } },
+                    onDecide: { allow, card in Task { await board.decide(errand, allow: allow, card: card) } },
                     onAnswer: { answers in Task { await board.answerQuestions(errand, answers) } },
                     onConfirm: { allow in Task { await board.confirm(errand, allow: allow) } },
                     onCardReady: { label in Task { await board.cardReady(errand, label: label) } })

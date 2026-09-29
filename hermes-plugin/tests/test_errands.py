@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.dont_write_bytecode = True
 PATH = Path(__file__).resolve().parents[1] / "errands.py"
@@ -25,9 +26,17 @@ CHECKOUT = {
 }
 
 
+def offline(url, limit, accept):
+    raise OSError("tests do not go online")
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())
+        # Pictures are checked from the Mac; tests never go online.
+        patch = mock.patch.object(errands, "_fetch", offline)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def errand(self, **kwargs):
         return errands.create(self.home, "Compra la creatina Creapure de HSN", title="Comprar Creapure en HSN",
@@ -461,6 +470,38 @@ class QuestionVettingTests(Base):
         saved = errands.get(self.home, entry["id"])
         self.assertEqual((saved["status"], saved["card_origin"]), ("needs_card", "https://secure9.store.apple.com"))
         self.assertIn("needs_card", errands.ACTIVE)
+
+
+class PictureTests(Base):
+    def test_a_picture_that_does_not_load_is_replaced_by_the_product_pages_own(self):
+        entry = self.errand()
+        errands.add_step(self.home, entry["id"], "Ficha", "https://www.apple.com/es/shop/buy-iphone/iphone-18-pro")
+        errands.add_step(self.home, entry["id"], "Pago", "https://secure9.store.apple.com/es/shop/checkout")
+        good = "https://store.storeimages.cdn-apple.com/real.png"
+        page = b'<head><meta property="og:image" content="https://store.storeimages.cdn-apple.com/real.png?a=1&amp;b=2"></head>'
+
+        def fetch(url, limit, accept):
+            if url.startswith("https://www.apple.com/es/shop/buy-iphone"):
+                return page, "text/html"
+            if url.startswith(good):
+                return b"\x89PNG" + b"0" * 400, "image/png"
+            raise OSError("404")
+
+        items = [{"name": "iPhone", "image": "https://store.storeimages.cdn-apple.com/invented.webp"}]
+        out = errands.real_pictures(errands.get(self.home, entry["id"]), items, fetch)
+        self.assertEqual(out[0]["image"], good + "?a=1&b=2")
+
+    def test_no_picture_at_all_is_left_empty_not_broken(self):
+        entry = self.errand()
+        out = errands.real_pictures(entry, [{"name": "X", "image": "https://nope.example/x.jpg"}], offline)
+        self.assertEqual(out[0]["image"], "")
+
+    def test_the_card_the_person_chose_travels_with_the_approval(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "card_label": ""})
+        decided = errands.decide_checkout(self.home, entry["id"], True, card_label="Mastercard ···4444")
+        self.assertEqual(decided["checkout"]["card_label"], "Mastercard ···4444")
+
 
 class AnswerTests(unittest.TestCase):
     def test_answers_become_the_lines_ask_person_reads(self):

@@ -41,6 +41,7 @@ class ErrandHookTests(unittest.TestCase):
         cards = types.SimpleNamespace(_store=lambda: store, PAYMENT_GATEWAYS={"sis.redsys.es"})
         for patch in (
             mock.patch.object(self.plugin, "_hermes_root", return_value=self.home),
+            mock.patch.object(self.errands, "_fetch", side_effect=OSError("offline")),
             mock.patch.object(self.plugin, "_cards_module", return_value=cards),
             mock.patch.object(self.plugin, "_open_tabs", return_value=["https://www.hsnstore.com/checkout"]),
             mock.patch.object(self.plugin, "_active_url", return_value="https://www.hsnstore.com/checkout/step/payment/"),

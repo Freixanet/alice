@@ -34,6 +34,8 @@ struct PurchaseCapsuleButton: View {
     var busy = false
     /// An SF Symbol before the title, such as Face ID on the button that pays.
     var symbol: String? = nil
+    /// A colour of its own for the prominent one, such as blue on «Permitir».
+    var tint: Color? = nil
     let action: () -> Void
 
     var body: some View {
@@ -48,7 +50,7 @@ struct PurchaseCapsuleButton: View {
             .font(.headline)
             .foregroundStyle(prominent ? Color.white : Color.primary)
             .frame(maxWidth: .infinity, minHeight: 52)
-            .background(prominent ? store.accent.control(scheme) : Palette.muted(scheme), in: .capsule)
+            .background(prominent ? (tint ?? store.accent.control(scheme)) : Palette.muted(scheme), in: .capsule)
             .opacity(disabled ? 0.5 : 1)
             .contentShape(.capsule)
         }
@@ -144,6 +146,11 @@ extension TimeInterval {
         let minutes = (seconds % 3600) / 60
         return minutes == 0 ? "\(seconds / 3600) h" : "\(seconds / 3600) h \(minutes) min"
     }
+}
+
+/// The blue of a payment approval: it has to read as the one button that pays, on any accent.
+extension Color {
+    static let approve = Color(red: 0.23, green: 0.42, blue: 0.96)
 }
 
 extension String {
@@ -360,10 +367,17 @@ struct CheckoutApprovalCard: View {
     var phase: Phase = .pending
     var error: String? = nil
     var onOpenPage: (() -> Void)? = nil
+    /// The person's saved cards, the one chosen to pay, and how to add another.
+    var cards: [SavedCard] = []
+    var chosenCard: SavedCard? = nil
+    var onChooseCard: (SavedCard) -> Void = { _ in }
+    var onAddCard: (() -> Void)? = nil
     let onAllow: () -> Void
     let onDeny: () -> Void
 
     private var shop: String { checkout.merchant.nonEmpty(or: checkout.site) }
+    private var payingWith: String { chosenCard?.label ?? checkout.cardLabel }
+    private var deciding: Bool { phase == .pending || phase == .sending }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -402,19 +416,7 @@ struct CheckoutApprovalCard: View {
             }
             .background(Palette.background(scheme), in: .rect(cornerRadius: 22))
 
-            if !checkout.cardLabel.isEmpty {
-                HStack(spacing: 12) {
-                    CardBrandBadge(label: checkout.cardLabel)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(checkout.cardLabel).font(.body)
-                        Text(language.pick("Saved card · filled in by Alice", "Tarjeta guardada · la rellena Alice"))
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(14)
-                .background(Palette.background(scheme), in: .rect(cornerRadius: 22))
-            }
+            paymentRow
 
             HStack(alignment: .firstTextBaseline) {
                 Text("Total").font(.title3.weight(.semibold))
@@ -442,7 +444,12 @@ struct CheckoutApprovalCard: View {
                 HStack(spacing: 10) {
                     PurchaseCapsuleButton(title: language.pick("Deny", "Denegar"), disabled: phase == .sending, action: onDeny)
                     PurchaseCapsuleButton(title: language.pick("Allow", "Permitir"), prominent: true,
-                                          busy: phase == .sending, symbol: Biometrics.symbol, action: onAllow)
+                                          disabled: payingWith.isEmpty, busy: phase == .sending,
+                                          symbol: Biometrics.symbol, tint: .approve, action: onAllow)
+                }
+                if payingWith.isEmpty {
+                    Text(language.pick("Choose the card to pay with.", "Elige la tarjeta con la que pagar."))
+                        .font(.footnote).foregroundStyle(Palette.warning(scheme)).padding(.horizontal, 6)
                 }
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(Palette.danger(scheme)).padding(.horizontal, 6)
@@ -458,6 +465,49 @@ struct CheckoutApprovalCard: View {
         .padding(16)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
         .accessibilityElement(children: .contain)
+    }
+
+    /// With which card: the one chosen, and a menu of the others and «Añadir tarjeta» while deciding.
+    @ViewBuilder private var paymentRow: some View {
+        let row = HStack(spacing: 12) {
+            if payingWith.isEmpty {
+                Image(systemName: "creditcard").font(.title3).frame(width: 46, height: 30)
+            } else {
+                CardBrandBadge(label: payingWith)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(payingWith.nonEmpty(or: language.pick("Choose a card", "Elegir tarjeta"))).font(.body)
+                Text(language.pick("Saved in Alice · she fills it in", "Guardada en Alice · la rellena ella"))
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if deciding {
+                Image(systemName: "chevron.up.chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(14)
+        .background(Palette.background(scheme), in: .rect(cornerRadius: 22))
+        .contentShape(.rect(cornerRadius: 22))
+
+        if deciding {
+            Menu {
+                ForEach(cards) { card in
+                    Button {
+                        onChooseCard(card)
+                    } label: {
+                        if card.id == chosenCard?.id { Label(card.label, systemImage: "checkmark") } else { Text(card.label) }
+                    }
+                }
+                if let onAddCard {
+                    Button(action: onAddCard) {
+                        Label(language.pick("Add a card…", "Añadir tarjeta…"), systemImage: "plus")
+                    }
+                }
+            } label: { row }
+            .buttonStyle(.plain)
+        } else if !payingWith.isEmpty {
+            row
+        }
     }
 
     @ViewBuilder private var badge: some View {

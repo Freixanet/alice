@@ -4870,8 +4870,8 @@ final class AppStore {
     }
     func deleteGoal(_ id: String) async throws { try await dashboard.deleteGoal(id) }
     func listErrands() async throws -> [Errand] { try await dashboard.errands() }
-    func decideCheckout(_ id: String, checkoutID: String, allow: Bool) async throws -> Errand? {
-        try await dashboard.decideCheckout(id, checkoutID: checkoutID, allow: allow)
+    func decideCheckout(_ id: String, checkoutID: String, allow: Bool, card: String = "") async throws -> Errand? {
+        try await dashboard.decideCheckout(id, checkoutID: checkoutID, allow: allow, card: card)
     }
     func answerErrand(_ id: String, answers: [String: String]) async throws -> Errand? {
         try await dashboard.answerErrand(id, answers: answers)

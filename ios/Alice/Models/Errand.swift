@@ -224,9 +224,9 @@ extension DashboardClient {
     }
 
     /// «Permitir» or «Denegar» on the checkout the person saw; `checkoutID` pins that exact one.
-    func decideCheckout(_ errandID: String, checkoutID: String, allow: Bool) async throws -> Errand? {
+    func decideCheckout(_ errandID: String, checkoutID: String, allow: Bool, card: String = "") async throws -> Errand? {
         let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/checkout",
-                                    ["decision": allow ? "allow" : "deny", "checkout_id": checkoutID])
+                                    ["decision": allow ? "allow" : "deny", "checkout_id": checkoutID, "card_label": card])
         return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
     }
 
