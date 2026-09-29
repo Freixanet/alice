@@ -86,7 +86,7 @@ struct ErrandsScreen: View {
         if !items.isEmpty {
             Section {
                 ForEach(items) { errand in
-                    Button { opened = errand.id } label: { ErrandRow(errand: errand) }
+                    Button { opened = errand.id } label: { ErrandRow(errand: errand, showsLogo: preview == nil) }
                         .buttonStyle(.plain)
                 }
             } header: {
@@ -103,11 +103,12 @@ private struct OpenedErrand: Identifiable { let id: String }
 struct ErrandRow: View {
     @Environment(\.colorScheme) private var scheme
     let errand: Errand
+    /// The shop's logo from the plugin; off in the walkthrough.
+    var showsLogo = true
 
     var body: some View {
         HStack(spacing: 12) {
-            MerchantMark(name: (errand.checkout?.merchant ?? "").nonEmpty(or: errand.site.nonEmpty(or: errand.title)),
-                         size: 40)
+            ShopLogo(errandID: showsLogo ? errand.id : nil, size: 40)
             VStack(alignment: .leading, spacing: 4) {
                 Text(errand.title).font(.body.weight(.medium)).lineLimit(2)
                 HStack(spacing: 6) {
@@ -151,6 +152,7 @@ struct ErrandDetailScreen: View {
                         .padding(.horizontal, 4)
                     ErrandStack(
                         errand: errand, snapshot: preview == nil ? .live : .none,
+                        logoID: preview == nil ? errand.id : nil,
                         sending: board.sending.contains(errand.id), problem: board.problems[errand.id],
                         onOpenBrowser: { if preview == nil { browsing = true } },
                         onDecide: { allow in if preview == nil { Task { await board.decide(errand, allow: allow) } } },

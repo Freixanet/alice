@@ -197,6 +197,13 @@ extension DashboardClient {
         return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
     }
 
+    /// The shop's own logo, as the plugin found it on the shop's site; nil when it has none.
+    func errandIcon(_ errandID: String) async throws -> Data? {
+        let (data, response) = try await raw("GET", "api/plugins/alice/errands/\(errandID)/icon")
+        guard response.statusCode == 200, !data.isEmpty else { return nil }
+        return data
+    }
+
     func stopErrand(_ errandID: String) async throws -> Errand? {
         let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/stop")
         return (object["errand"] as? [String: Any]).flatMap(Errand.parse)

@@ -4864,6 +4864,7 @@ final class AppStore {
         try await dashboard.approveInErrand(id, requestID: requestID, allow: allow)
     }
     func stopErrand(_ id: String) async throws -> Errand? { try await dashboard.stopErrand(id) }
+    func errandIcon(_ id: String) async throws -> Data? { try await dashboard.errandIcon(id) }
     /// `alice://errand?id=…`, from a notification: the errand, open.
     func openErrand(_ url: URL) {
         let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?

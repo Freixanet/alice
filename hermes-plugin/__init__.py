@@ -1393,6 +1393,52 @@ def _register_ask_tools(ctx) -> None:
     )
 
 
+# Chat turns that asked for an errand, by session: until the turn ends the chat does not browse
+# or ask — it once browsed Apple and asked capacity and colour itself before starting the errand.
+_ERRAND_TURNS: set = set()
+
+
+def _errand_turn(session_id="", user_message=None, **_):
+    """A chat turn that asks for an errand is told to start it at once (errands.TURN_NOTE)."""
+    try:
+        session = _session_id(session_id)
+        errands = _errands()
+        if not session or session.startswith(errands.SESSION_PREFIX):
+            return None
+        if errands.is_errand_request(user_message):
+            _ERRAND_TURNS.add(session)
+            return {"context": errands.TURN_NOTE}
+        _ERRAND_TURNS.discard(session)
+    except Exception:
+        logging.getLogger(__name__).debug("errands: could not read the turn", exc_info=True)
+    return None
+
+
+def _guard_chat_errand(tool_name=None, session_id="", **_):
+    """In a chat turn that asked for an errand, the browser and questions are the errand's."""
+    name = str(tool_name or "")
+    if not (name.startswith("browser") or name == "ask_person"):
+        return None
+    if _session_id(session_id) in _ERRAND_TURNS:
+        return {"action": "block", "message": _errands().TURN_BLOCK}
+    return None
+
+
+def _keep_errand_tools_visible() -> None:
+    """Behind tool_search, the chat went looking for errand_start after browsing and asking on its
+    own; like ask_person, the errand tools stay in view. Core's list is extended, not replaced."""
+    try:
+        import toolsets
+
+        core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
+        if isinstance(core, list):
+            for name in ("errand_start", "checkout_request"):
+                if name not in core:
+                    core.append(name)
+    except Exception:
+        logging.getLogger(__name__).debug("errands: could not keep the tools out of tool_search", exc_info=True)
+
+
 def _pause_chat_goals() -> None:
     """Goals the old errand loop opened on chats (its contract) are paused: judged after every
     later turn of that chat, they resumed purchases nobody had asked about again."""
@@ -1457,6 +1503,7 @@ def _register_task_tools(ctx) -> None:
     """Errands (errands.py) replace finish_task: a goal on a chat's session was judged after every
     later turn of that chat, and an old purchase resumed in the middle of an unrelated question."""
     errands = _errands()
+    _keep_errand_tools_visible()
 
     def start(args, **_):
         from hermes_constants import get_hermes_home
@@ -1504,6 +1551,9 @@ def register(ctx) -> None:
     # One payment per order, kept by the plugin rather than the model (purchases.py).
     # Nothing is paid without the person's approved checkout (errands.py).
     ctx.register_hook("pre_tool_call", _guard_errand)
+    # A chat turn that asks for an errand starts it, and neither browses nor asks itself.
+    ctx.register_hook("pre_llm_call", _errand_turn)
+    ctx.register_hook("pre_tool_call", _guard_chat_errand)
     ctx.register_hook("pre_tool_call", _guard_repeat_payment)
     ctx.register_hook("pre_tool_call", _route_card_fill)
     # A payment error on the page reaches the agent, and through it the person (purchases.py).

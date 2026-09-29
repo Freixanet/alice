@@ -80,29 +80,33 @@ struct CardBrandBadge: View {
     }
 }
 
-/// The shop's mark: its initial on a colour of its own, in a circle.
-struct MerchantMark: View {
-    let name: String
+/// Who the errand is with: the shop's own logo, found on its site by the plugin, or else
+/// Alice herself, who is doing it.
+struct ShopLogo: View {
+    /// The errand whose shop it is; nil in the walkthrough, which gives its own `image`.
+    var errandID: String?
+    var image: URL? = nil
     var size: CGFloat = 44
 
-    private var initial: String {
-        let letters = name.replacingOccurrences(of: "www.", with: "").filter(\.isLetter)
-        return letters.first.map { String($0).uppercased() } ?? "•"
-    }
-
-    private var tint: Color {
-        let hues: [Double] = [0.02, 0.08, 0.14, 0.33, 0.45, 0.55, 0.62, 0.75, 0.86, 0.93]
-        let sum = name.lowercased().unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) }
-        return Color(hue: hues[abs(sum % hues.count)], saturation: 0.55, brightness: 0.62)
-    }
+    @Environment(AppStore.self) private var store
 
     var body: some View {
-        Text(initial)
-            .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(tint, in: .circle)
-            .accessibilityHidden(true)
+        Group {
+            if let errandID, let logo = store.errandBoard.logos[errandID] {
+                Image(uiImage: logo).resizable().scaledToFit().padding(size * 0.14)
+                    .background(Color.white)
+            } else if let image {
+                CardImage(image: image, page: nil, symbol: "bag", fits: true).padding(size * 0.1)
+                    .background(Color.white)
+            } else {
+                Image("AliceAvatar").resizable().renderingMode(.original).scaledToFill()
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(.circle)
+        .overlay { Circle().stroke(.black.opacity(0.08), lineWidth: 0.5) }
+        .task(id: errandID) { if let errandID { await store.errandBoard.loadLogo(errandID) } }
+        .accessibilityHidden(true)
     }
 }
 
@@ -159,10 +163,14 @@ struct ErrandBrowserCard: View {
     var snapshot: Snapshot = .live
     let onOpen: () -> Void
 
+    @State private var still: UIImage?
+
     private var language: ChatLanguage { errand.language }
     private var live: LiveBrowser { store.liveBrowser }
+    /// Live only while the agent is at work: waiting for the person, the page stays as it was
+    /// instead of following whatever the browser shows next.
     private var following: Bool {
-        if case .live = snapshot { return errand.status.isOpen }
+        if case .live = snapshot { return errand.status == .working }
         return false
     }
 
@@ -182,7 +190,7 @@ struct ErrandBrowserCard: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if errand.status == .working { LivePulse() }
+                if errand.status == .working { LivePulse(color: Palette.success(scheme)) }
             }
 
             if showsPage {
@@ -202,6 +210,10 @@ struct ErrandBrowserCard: View {
         .accessibilityElement(children: .contain)
         .onAppear { if following { live.watch() } }
         .onDisappear { if following { live.unwatch() } }
+        .onChange(of: following) { was, now in
+            if was && !now { still = live.image; live.unwatch() }
+            if now && !was { still = nil; live.watch() }
+        }
     }
 
     private var showsPage: Bool {
@@ -214,7 +226,7 @@ struct ErrandBrowserCard: View {
         case .live:
             ZStack {
                 Palette.muted(scheme)
-                if let image = live.image {
+                if let image = following ? live.image : (still ?? live.image) {
                     Image(uiImage: image).resizable().scaledToFill()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .clipped()
@@ -237,6 +249,9 @@ struct ErrandProgressCard: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     let errand: Errand
+    /// nil in the walkthrough, which shows `logo` instead.
+    var logoID: String?
+    var logo: URL? = nil
     @State private var expanded = false
 
     private var language: ChatLanguage { errand.language }
@@ -245,7 +260,7 @@ struct ErrandProgressCard: View {
         VStack(alignment: .leading, spacing: 14) {
             Button { withAnimation(.snappy) { expanded.toggle() } } label: {
                 HStack(spacing: 12) {
-                    MerchantMark(name: (errand.checkout?.merchant ?? "").nonEmpty(or: errand.site.nonEmpty(or: errand.title)))
+                    ShopLogo(errandID: logoID, image: logo)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(errand.title).font(.body.weight(.medium)).lineLimit(2)
                         if !errand.site.isEmpty {
@@ -333,6 +348,8 @@ struct CheckoutApprovalCard: View {
 
     @Environment(\.colorScheme) private var scheme
     let checkout: Errand.Checkout
+    var logoID: String? = nil
+    var logo: URL? = nil
     var language: ChatLanguage = .spanish
     var phase: Phase = .pending
     var error: String? = nil
@@ -353,7 +370,7 @@ struct CheckoutApprovalCard: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                MerchantMark(name: shop, size: 40)
+                ShopLogo(errandID: logoID, image: logo, size: 40)
             }
             .padding(.horizontal, 4)
 
@@ -486,6 +503,8 @@ struct CheckoutApprovalCard: View {
 struct ErrandReceiptCard: View {
     @Environment(\.colorScheme) private var scheme
     let receipt: Errand.Receipt
+    var logoID: String? = nil
+    var logo: URL? = nil
     var language: ChatLanguage = .spanish
 
     private var shop: String { receipt.merchant.nonEmpty(or: receipt.site) }
@@ -493,7 +512,7 @@ struct ErrandReceiptCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                MerchantMark(name: shop, size: 48)
+                ShopLogo(errandID: logoID, image: logo, size: 48)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(shop).font(.title3.weight(.semibold))
                     if !receipt.order.isEmpty {
@@ -551,7 +570,8 @@ struct ErrandReceiptCard: View {
 
 // MARK: - Questions and confirmations
 
-/// Questions the errand asked (size, flavour, an alternative), answered here.
+/// Questions the errand asked (size, colour, an alternative), answered here one at a time: a
+/// tap on a choice moves on, and the last one sends them all.
 struct ErrandQuestionsCard: View {
     @Environment(\.colorScheme) private var scheme
     let errand: Errand
@@ -559,48 +579,68 @@ struct ErrandQuestionsCard: View {
     let onAnswer: ([String: String]) -> Void
 
     @State private var answers: [String: String] = [:]
+    @State private var index = 0
 
     private var language: ChatLanguage { errand.language }
-    private var complete: Bool {
-        errand.questions.allSatisfy { !(answers[$0.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
-    }
-    private var needsSend: Bool {
-        errand.questions.count > 1 || errand.questions.contains { $0.choices.isEmpty }
-    }
+    private var questions: [Errand.Question] { errand.questions }
+    private var current: Errand.Question? { questions.indices.contains(index) ? questions[index] : questions.last }
+    private var isLast: Bool { index >= questions.count - 1 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(errand.questionsTitle.nonEmpty(or: language.pick("A question", "Una pregunta")))
-                .font(.title3.weight(.semibold))
-            ForEach(errand.questions) { question in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(question.question).font(.body)
-                    if question.choices.isEmpty {
-                        TextField(language.pick("Your answer", "Tu respuesta"), text: binding(question.id))
-                            .textFieldStyle(.plain)
-                            .padding(12)
-                            .background(Palette.background(scheme), in: .rect(cornerRadius: 14))
-                    } else {
-                        ForEach(question.choices, id: \.self) { choice in
-                            choiceButton(question, choice)
-                        }
-                    }
+            HStack(alignment: .firstTextBaseline) {
+                Text(errand.questionsTitle.nonEmpty(or: language.pick("A question", "Una pregunta")))
+                    .font(.title3.weight(.semibold))
+                Spacer()
+                if questions.count > 1 {
+                    Text("\(min(index, questions.count - 1) + 1) / \(questions.count)")
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
-            if needsSend {
-                PurchaseCapsuleButton(title: language.pick("Send", "Enviar"), prominent: true,
-                                      disabled: !complete, busy: sending) { onAnswer(answers) }
+            if let question = current {
+                Text(question.question).font(.body)
+                if question.choices.isEmpty {
+                    TextField(language.pick("Your answer", "Tu respuesta"), text: binding(question.id))
+                        .textFieldStyle(.plain)
+                        .padding(12)
+                        .background(Palette.background(scheme), in: .rect(cornerRadius: 14))
+                        .submitLabel(isLast ? .send : .next)
+                        .onSubmit { advance() }
+                    PurchaseCapsuleButton(title: isLast ? language.pick("Send", "Enviar") : language.pick("Next", "Siguiente"),
+                                          prominent: true,
+                                          disabled: (answers[question.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty,
+                                          busy: sending) { advance() }
+                } else {
+                    ForEach(question.choices, id: \.self) { choice in
+                        choiceButton(question, choice)
+                    }
+                }
+                if index > 0 {
+                    Button { withAnimation(.snappy) { index -= 1 } } label: {
+                        Label(language.pick("Back", "Atrás"), systemImage: "chevron.left").font(.subheadline)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .disabled(sending)
+                }
             }
         }
         .padding(16)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+        .animation(.snappy, value: index)
+    }
+
+    private func advance() {
+        guard let question = current, !(answers[question.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+        else { return }
+        if isLast { onAnswer(answers) } else { index += 1 }
     }
 
     private func choiceButton(_ question: Errand.Question, _ choice: String) -> some View {
         let chosen = answers[question.id] == choice
         return Button {
             answers[question.id] = choice
-            if !needsSend { onAnswer(answers) }
+            advance()
         } label: {
             HStack {
                 Text(choice).font(.body)

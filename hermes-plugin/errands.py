@@ -46,6 +46,11 @@ MAX_STEPS = 40
 POLL_SECONDS = 1.5
 # One errand: at most this many runs, whatever the judge says.
 MAX_RUNS = 14
+# A run with no event for this long has stalled (a model call that never returned): it is
+# stopped and the errand goes on once; a second stall leaves it stuck.
+STALL_SECONDS = 240
+# The same chat asking again while its errand is starting gets that errand, not a second one.
+DEDUPE_SECONDS = 10 * 60
 
 CONTINUATION = "[Continuing toward your standing goal]"
 APPROVED_PREFIX = "[checkout aprobado]"
@@ -100,9 +105,14 @@ def _write(path: Path, entries: List[Dict[str, Any]]) -> None:
 
 
 def shop(value: str) -> str:
-    """The shop a URL or domain belongs to: its host without ``www.``."""
+    """The shop a URL or domain belongs to: its host without ``www.``; "" for anything else."""
     text = str(value or "").strip().lower()
-    host = urlsplit(text if "//" in text else "https://" + text).hostname or ""
+    try:
+        host = urlsplit(text if "//" in text else "https://" + text).hostname or ""
+    except ValueError:
+        return ""
+    if "." not in host or not re.fullmatch(r"[a-z0-9.-]+", host):
+        return ""
     return host[4:] if host.startswith("www.") else host
 
 
@@ -435,7 +445,9 @@ def brief(entry: Dict[str, Any]) -> str:
     return (
         f"[Recado de Alice] {entry['request']}\n\n"
         "Trabajas en segundo plano, fuera de cualquier chat: la persona no lee tus respuestas, ve la "
-        "tarjeta del recado. Hazlo de principio a fin. "
+        "tarjeta del recado. Hazlo de principio a fin tú: nunca llames a `errand_start` (ya estás en el "
+        "recado). El comentario `#` con que empieza cada paso del navegador es lo que la persona ve: "
+        "escríbelo en su idioma y en pocas palabras («Añadir al carrito», «Elegir envío»). "
         f"{login} "
         "Para una duda que solo ella puede resolver (talla, sabor, una alternativa) usa `ask_person` y "
         "espera. Cuando el pedido esté listo en el paso de pago, NO rellenes la tarjeta ni pulses pagar: "
@@ -611,6 +623,7 @@ class Engine:
                              "choices": [c for c in approval.get("choices") or ["once", "deny"] if c in ("once", "deny")]})
 
     def _wait_run(self, run_id: str) -> Dict[str, Any]:
+        seen, since = None, time.time()
         while True:
             if self._entry().get("status") == "stopped":
                 self.gateway.stop(run_id)
@@ -622,6 +635,12 @@ class Engine:
                     return {"status": "interrupted"}
                 raise
             status = str(state.get("status") or "")
+            mark = (state.get("updated_at"), state.get("last_event"), status)
+            if mark != seen:
+                seen, since = mark, time.time()
+            elif status == "running" and time.time() - since > STALL_SECONDS:
+                self.gateway.stop(run_id)
+                return {"status": "stalled"}
             if status == "waiting_for_approval" and isinstance(state.get("approval"), dict):
                 self._answer_approval(run_id, state["approval"])
             elif self._entry().get("approval") and status == "running":
@@ -637,6 +656,7 @@ class Engine:
             return "missing"
         text = message or brief(entry)
         previous = ""
+        stalls = 0
         while True:
             entry = self._entry()
             if entry.get("status") != "working":
@@ -658,6 +678,15 @@ class Engine:
                 update(self.home, self.errand_id, summary=reply[:300])
             if entry.get("status") != "working":
                 return entry.get("status", "missing")
+            if state.get("status") == "stalled":
+                stalls += 1
+                if stalls >= 2:
+                    update(self.home, self.errand_id, status="stuck",
+                           reason="El modelo dejó de responder dos veces seguidas.")
+                    return "stuck"
+                text = (CONTINUATION + " El paso anterior se quedó colgado: mira en qué punto está la "
+                        "página y sigue desde ahí.")
+                continue
             if state.get("status") == "failed":
                 update(self.home, self.errand_id, status="stuck",
                        reason=_clean(state.get("error") or "El agente falló.", 200))
@@ -744,8 +773,21 @@ def ensure_running(home: Path) -> List[str]:
     return started
 
 
-def start(home: Path, args: Dict[str, Any], *, origin_session: str = "", profile: str = "") -> Dict[str, Any]:
-    """``errand_start``: records the errand, opens its goal and starts it."""
+def start(home: Path, args: Dict[str, Any], *, origin_session: str = "", profile: str = "",
+          now: Optional[float] = None) -> Dict[str, Any]:
+    """``errand_start``: records the errand, opens its goal and starts it.
+
+    Never from inside an errand (one started three copies of itself, all driving the same
+    browser), and a chat that asks again while its errand is under way gets that one."""
+    now = now or time.time()
+    if str(origin_session or "").startswith(SESSION_PREFIX):
+        return {"ok": False, "errand_id": origin_session[len(SESSION_PREFIX):], "status": "working",
+                "error": "You are already inside this errand: do the task here, do not start another."}
+    for other in listing(home):
+        if (origin_session and other.get("origin_session") == origin_session and other.get("status") in ACTIVE
+                and now - float(other.get("started_at") or 0) < DEDUPE_SECONDS):
+            return {"errand_id": other["id"], "title": other["title"], "status": other["status"],
+                    "next": "This errand is already under way; say so in one line. Do not start another."}
     entry = create(home, str(args.get("task") or ""), title=str(args.get("title") or ""),
                    site=str(args.get("site") or ""), origin_session=origin_session, profile=profile,
                    ask_before_login=bool(args.get("ask_before_login")))
@@ -799,8 +841,24 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
 PROMPT = (
     "## Recados\n"
     "Una compra, un pedido, una reserva o llenar una cesta en una web es un recado: llama a "
-    "`errand_start` con lo que pidió la persona y responde en una línea que lo pones en marcha. No "
-    "lo hagas en esta conversación: el recado corre aparte, Alice lo muestra y pide su aprobación "
-    "antes de pagar. Solo si la persona pide expresamente que se le pregunte antes de iniciar sesión, "
-    "pasa `ask_before_login: true`."
+    "`errand_start` **enseguida**, con lo que pidió la persona tal cual, y responde en una línea que lo "
+    "pones en marcha. No abras el navegador ni hagas preguntas antes: el recado busca, pregunta lo que "
+    "falte (talla, color, capacidad) y pide su aprobación antes de pagar, todo desde su tarjeta. Solo si "
+    "la persona pide expresamente que se le pregunte antes de iniciar sesión, pasa "
+    "`ask_before_login: true`. Cada recado vive en su tarjeta y en «Recados»: no hables de otros "
+    "recados ni de compras anteriores salvo que te pregunte por ellos."
 )
+
+# A chat turn that asks for an errand: the chat may not browse or ask meanwhile (errand_turn).
+ERRAND_REQUEST = re.compile(
+    r"\b(c[oó]mpra(me|lo|la|los|las)?|comprar|p[ií]de(me|lo|la)?|pedir|res[eé]rva(me|lo|la)?|reservar"
+    r"|carrito|cesta|a[nñ]ade\w*\s+al\s+carrito)\b", re.I)
+TURN_NOTE = ("[Alice] Esto es un recado: llama a `errand_start` ahora con lo que pidió, y responde en una "
+             "línea. No abras el navegador ni preguntes aquí: el recado lo hace y pregunta desde su tarjeta.")
+TURN_BLOCK = ("Esta petición es un recado: no se navega ni se pregunta desde el chat. Llama a "
+              "`errand_start` con lo que pidió la persona y responde en una línea que lo pones en marcha.")
+
+
+def is_errand_request(text: Any) -> bool:
+    text = " ".join(str(text or "").split())
+    return bool(text) and not text.startswith(("[respuesta:", CONTINUATION)) and bool(ERRAND_REQUEST.search(text))

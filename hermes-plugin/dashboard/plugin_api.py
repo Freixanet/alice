@@ -2634,3 +2634,23 @@ async def errands_stop(errand_id: str) -> JSONResponse:
         return _errands_module().public(_errands_module().stop(_hermes_root(), errand_id))
 
     return JSONResponse({"errand": await asyncio.to_thread(halt)}, headers=_NO_STORE)
+
+
+@router.get("/errands/{errand_id}/icon")
+async def errands_icon(errand_id: str) -> Response:
+    """The shop's own logo for an errand's cards, found on its site (connector_icons.py), cached."""
+    def find():
+        entry = _errand_or_404(errand_id)
+        module = _errands_module()
+        urls = [str(s.get("url") or "") for s in entry.get("steps") or []][:5]
+        host = module.shop((entry.get("checkout") or {}).get("site") or "") or entry.get("site") or next(
+            (module.shop(u) for u in urls if module.shop(u)), "")
+        if not host:
+            return None
+        return _connector_icons().Icons(_hermes_root()).get(host, [host], urls)
+
+    found = await asyncio.to_thread(find)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No logo found for this shop")
+    data, mime = found
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=86400"})

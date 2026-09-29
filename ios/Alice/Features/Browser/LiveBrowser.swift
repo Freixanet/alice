@@ -255,11 +255,12 @@ struct LiveBrowserCard: View {
 
 /// A small red dot that breathes: live.
 struct LivePulse: View {
+    var color: Color = .red
     @State private var on = false
 
     var body: some View {
         Circle()
-            .fill(Color.red)
+            .fill(color)
             .frame(width: 8, height: 8)
             .opacity(on ? 1 : 0.35)
             .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)

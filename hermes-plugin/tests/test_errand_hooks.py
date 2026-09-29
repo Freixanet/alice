@@ -113,5 +113,18 @@ class ErrandHookTests(unittest.TestCase):
         self.assertEqual(self.errands.get(self.home, entry["id"])["status"], "needs_approval")
 
 
+    def test_a_chat_turn_that_asks_to_buy_neither_browses_nor_asks(self):
+        note = self.plugin._errand_turn(session_id="chat-9", user_message="compra un iphone 18 pro max")
+        self.assertIn("errand_start", note["context"])
+        for tool in ("browser_exec", "browser_navigate", "ask_person"):
+            self.assertEqual(self.plugin._guard_chat_errand(tool, session_id="chat-9")["action"], "block")
+        self.assertIsNone(self.plugin._guard_chat_errand("errand_start", session_id="chat-9"))
+        # The next turn about something else browses again.
+        self.assertIsNone(self.plugin._errand_turn(session_id="chat-9", user_message="dame los titulares de HN"))
+        self.assertIsNone(self.plugin._guard_chat_errand("browser_exec", session_id="chat-9"))
+        # Inside an errand nothing changes.
+        entry = self.errand()
+        self.assertIsNone(self.plugin._errand_turn(session_id=entry["session_id"], user_message="compra"))
+
 if __name__ == "__main__":
     unittest.main()

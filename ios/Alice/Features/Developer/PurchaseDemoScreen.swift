@@ -26,6 +26,7 @@ struct PurchaseDemoScreen: View {
     @State private var banner = false
 
     private let photo = URL(string: "https://placehold.co/600x600/ffffff/1f3b73/png?text=Creapure+500+g")
+    private let shopLogo = URL(string: "https://placehold.co/120x120/ffffff/e30613/png?text=HSN")
     private let page = URL(string: "https://placehold.co/820x520/f3f4f6/1f2937/png?text=hsnstore.com+Checkout")
 
     private func said(_ spanish: String, _ english: String) -> String { language.pick(english, spanish) }
@@ -47,7 +48,7 @@ struct PurchaseDemoScreen: View {
                         aliceBubble(said("Lo pongo en marcha. Te aviso antes de pagar.",
                                          "I'm on it. I'll check with you before paying."))
                         ErrandStack(
-                            errand: errand, snapshot: .still(page), sending: step == .approving,
+                            errand: errand, snapshot: .still(page), logo: shopLogo, sending: step == .approving,
                             onOpenBrowser: { showingBrowser = true },
                             onDecide: { allow in if allow { approve() } else { advance(to: .denied) } },
                             onAnswer: { _ in }, onConfirm: { _ in })

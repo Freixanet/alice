@@ -112,5 +112,24 @@ class ErrandRoutesTests(unittest.TestCase):
         self.assertEqual(body["errand"]["status"], "stopped")
 
 
+    def test_the_icon_is_the_shops_own_logo(self):
+        entry = self.errands.create(self.home, "Compra", title="iPhone", site="apple.com")
+        seen = {}
+
+        class Icons:
+            def __init__(self, home):
+                pass
+
+            def get(self, name, hosts, urls):
+                seen["name"] = name
+                return (b"\x89PNG", "image/png")
+
+        with mock.patch.object(self.api, "_connector_icons", return_value=mock.Mock(Icons=Icons)):
+            answer = self.client.get(self.url(f"/{entry['id']}/icon"))
+        self.assertEqual(answer.status_code, 200)
+        self.assertEqual(seen["name"], "apple.com")
+        bare = self.errands.create(self.home, "Compra", title="Algo")
+        self.assertEqual(self.client.get(self.url(f"/{bare['id']}/icon")).status_code, 404)
+
 if __name__ == "__main__":
     unittest.main()

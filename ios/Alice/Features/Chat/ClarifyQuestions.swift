@@ -455,6 +455,8 @@ struct AskPersonCard: View {
     @State private var typed: [String: String] = [:]
     @State private var picked: [String: Set<String>] = [:]
     @State private var sent = false
+    /// One question at a time: the one on screen.
+    @State private var step = 0
 
     private var answered: Bool {
         sent || AskPerson.answered(ask.questions[0].id, in: store.shownConversation?.messages ?? [])
@@ -467,64 +469,105 @@ struct AskPersonCard: View {
     }
 
     private var complete: Bool { ask.questions.allSatisfy { !value($0).isEmpty } }
+    private var current: AskPerson.Question { ask.questions[min(step, ask.questions.count - 1)] }
+    private var isLast: Bool { step >= ask.questions.count - 1 }
+
+    /// On to the next question, or send them all after the last.
+    private func advance() {
+        guard !value(current).isEmpty else { return }
+        if isLast { submit() } else { withAnimation(.snappy) { step += 1 } }
+    }
 
     var body: some View {
         let tint = store.accent.primary(scheme)
         VStack(alignment: .leading, spacing: 14) {
-            if let title = ask.title {
-                Text(title).font(.headline)
+            HStack(alignment: .firstTextBaseline) {
+                if let title = ask.title {
+                    Text(title).font(.headline)
+                }
+                Spacer()
+                if !answered, ask.questions.count > 1 {
+                    Text("\(min(step, ask.questions.count - 1) + 1) / \(ask.questions.count)")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
             if answered {
                 Label("Answered", systemImage: "checkmark.circle.fill")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(ask.questions) { question in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(question.question).font(.subheadline.weight(.semibold))
-                        ForEach(question.choices, id: \.self) { choice in
-                            let on = (picked[question.id] ?? []).contains(choice)
-                            Button {
-                                var set = question.multi ? (picked[question.id] ?? []) : []
-                                if on { set.remove(choice) } else { set.insert(choice) }
-                                picked[question.id] = set
-                                typed[question.id] = nil
-                                // One question, one tap: answered at once.
-                                if ask.questions.count == 1, !question.multi, !on { submit() }
-                            } label: {
-                                HStack {
-                                    Text(choice).foregroundStyle(.primary)
-                                    Spacer()
-                                    if on { Image(systemName: "checkmark.circle.fill").foregroundStyle(tint) }
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 12)
-                                .background(Palette.background(scheme), in: .rect(cornerRadius: 12))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .strokeBorder(on ? tint : Palette.border(scheme),
-                                                      style: StrokeStyle(lineWidth: 1, dash: on ? [] : [4, 3]))
-                                }
+                let question = current
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(question.question).font(.subheadline.weight(.semibold))
+                    ForEach(question.choices, id: \.self) { choice in
+                        let on = (picked[question.id] ?? []).contains(choice)
+                        Button {
+                            var set = question.multi ? (picked[question.id] ?? []) : []
+                            if on { set.remove(choice) } else { set.insert(choice) }
+                            picked[question.id] = set
+                            typed[question.id] = nil
+                            // A single choice is its answer: on to the next, or sent.
+                            if !question.multi, !on { advance() }
+                        } label: {
+                            HStack {
+                                Text(choice).foregroundStyle(.primary)
+                                Spacer()
+                                if on { Image(systemName: "checkmark.circle.fill").foregroundStyle(tint) }
                             }
-                            .buttonStyle(.plain)
-                        }
-                        TextField(question.choices.isEmpty ? question.question : "Something else",
-                                  text: Binding(get: { typed[question.id] ?? "" },
-                                                set: { typed[question.id] = $0 }))
-                            .textFieldStyle(.plain)
-                            .keyboardType(Self.keyboard(question.field))
-                            .textContentType(Self.content(question.field))
-                            .autocorrectionDisabled(question.field != nil)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
                             .background(Palette.background(scheme), in: .rect(cornerRadius: 12))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .strokeBorder(on ? tint : Palette.border(scheme),
+                                                  style: StrokeStyle(lineWidth: 1, dash: on ? [] : [4, 3]))
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
+                    TextField(question.choices.isEmpty ? question.question : "Something else",
+                              text: Binding(get: { typed[question.id] ?? "" },
+                                            set: { typed[question.id] = $0 }))
+                        .textFieldStyle(.plain)
+                        .keyboardType(Self.keyboard(question.field))
+                        .textContentType(Self.content(question.field))
+                        .autocorrectionDisabled(question.field != nil)
+                        .submitLabel(isLast ? .send : .next)
+                        .onSubmit { advance() }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(Palette.background(scheme), in: .rect(cornerRadius: 12))
                 }
-                if ask.questions.count > 1 || ask.questions.contains(where: { $0.choices.isEmpty || $0.multi }) {
-                    Button("Send", action: submit)
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                        .disabled(!complete)
+                .id(question.id)
+                .transition(.opacity)
+                HStack {
+                    if step > 0 {
+                        Button { withAnimation(.snappy) { step -= 1 } } label: {
+                            Label("Back", systemImage: "chevron.left").font(.subheadline)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    // Typed or several choices: a button moves on. Drawn on the accent's
+                    // control colour so its white label always reads (the prominent default
+                    // put white on near-white Stone in dark mode).
+                    if !question.choices.isEmpty && !question.multi && (typed[question.id] ?? "").isEmpty {
+                        EmptyView()
+                    } else {
+                        Button(action: advance) {
+                            Text(isLast ? "Send" : "Next")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(store.accent.control(scheme), in: .capsule)
+                        }
+                        .buttonStyle(.plain)
+                        .opacity(value(question).isEmpty ? 0.45 : 1)
+                        .disabled(value(question).isEmpty)
+                    }
                 }
             }
         }

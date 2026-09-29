@@ -13,6 +13,9 @@ final class ErrandBoard {
     private(set) var sending: Set<String> = []
     /// What went wrong with the last answer to an errand, by errand.
     private(set) var problems: [String: String] = [:]
+    /// The shop's logo, by errand; an errand looked up and without one is left out for good.
+    private(set) var logos: [String: UIImage] = [:]
+    @ObservationIgnored private var lookedUp: Set<String> = []
 
     @ObservationIgnored private weak var store: AppStore?
     @ObservationIgnored private var watchers = 0
@@ -43,6 +46,14 @@ final class ErrandBoard {
         if watchers == 0 {
             loop?.cancel()
             loop = nil
+        }
+    }
+
+    func loadLogo(_ errandID: String) async {
+        guard let store, !lookedUp.contains(errandID) else { return }
+        lookedUp.insert(errandID)
+        if let data = try? await store.errandIcon(errandID), let image = UIImage(data: data) {
+            logos[errandID] = image
         }
     }
 
@@ -116,6 +127,9 @@ struct ErrandStack: View {
     @Environment(\.colorScheme) private var scheme
     let errand: Errand
     var snapshot: ErrandBrowserCard.Snapshot = .live
+    /// Whose logo the cards show: the errand's from the plugin, or `logo` in the walkthrough.
+    var logoID: String? = nil
+    var logo: URL? = nil
     var sending = false
     var problem: String? = nil
     let onOpenBrowser: () -> Void
@@ -138,7 +152,7 @@ struct ErrandStack: View {
                 ErrandBrowserCard(errand: errand, snapshot: errand.status == .done ? .none : snapshot,
                                   onOpen: onOpenBrowser)
             }
-            ErrandProgressCard(errand: errand)
+            ErrandProgressCard(errand: errand, logoID: logoID, logo: logo)
             if errand.status == .needsInput, !errand.questions.isEmpty {
                 ErrandQuestionsCard(errand: errand, sending: sending, onAnswer: onAnswer)
             }
@@ -147,12 +161,13 @@ struct ErrandStack: View {
                                   onAllow: { onConfirm(true) }, onDeny: { onConfirm(false) })
             }
             if let checkout = errand.checkout, let phase = checkoutPhase {
-                CheckoutApprovalCard(checkout: checkout, language: errand.language, phase: phase, error: problem,
+                CheckoutApprovalCard(checkout: checkout, logoID: logoID, logo: logo,
+                                     language: errand.language, phase: phase, error: problem,
                                      onOpenPage: phase == .pending ? onOpenBrowser : nil,
                                      onAllow: { onDecide(true) }, onDeny: { onDecide(false) })
             }
             if let receipt = errand.receipt {
-                ErrandReceiptCard(receipt: receipt, language: errand.language)
+                ErrandReceiptCard(receipt: receipt, logoID: logoID, logo: logo, language: errand.language)
             }
             if let problem, checkoutPhase == nil {
                 Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
@@ -174,7 +189,8 @@ struct ErrandChatBlock: View {
         Group {
             if let errand = ref.find(in: board.errands) {
                 ErrandStack(
-                    errand: errand, sending: board.sending.contains(errand.id), problem: board.problems[errand.id],
+                    errand: errand, logoID: errand.id,
+                    sending: board.sending.contains(errand.id), problem: board.problems[errand.id],
                     onOpenBrowser: { browsing = true },
                     onDecide: { allow in Task { await board.decide(errand, allow: allow) } },
                     onAnswer: { answers in Task { await board.answerQuestions(errand, answers) } },

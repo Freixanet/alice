@@ -349,6 +349,54 @@ class EngineTests(Base):
         self.assertEqual(len(gateway.started), errands.MAX_RUNS)
 
 
+
+class AuditFixTests(Base):
+    """What the iPhone purchase of 29-09 got wrong: three copies of one errand, a stalled run."""
+
+    def test_an_errand_never_starts_another_from_inside(self):
+        entry = self.errand()
+        out = errands.start(self.home, {"task": "Compra un iPhone", "title": "iPhone"},
+                            origin_session=entry["session_id"])
+        self.assertFalse(out["ok"])
+        self.assertEqual(len(errands.listing(self.home)), 1)
+
+    def test_the_same_chat_asking_again_gets_the_errand_under_way(self):
+        first = errands.create(self.home, "Compra un iPhone", title="iPhone", origin_session="chat-1", now=NOW)
+        out = errands.start(self.home, {"task": "Compra un iPhone 256 GB", "title": "iPhone"},
+                            origin_session="chat-1", now=NOW + 60)
+        self.assertEqual(out["errand_id"], first["id"])
+        self.assertEqual(len(errands.listing(self.home)), 1)
+
+    def test_only_a_real_domain_is_a_site(self):
+        self.assertEqual(errands.shop("apple store españa (apple.com"), "")
+        self.assertEqual(errands.shop("https://www.apple.com/es/shop"), "apple.com")
+        self.assertEqual(errands.create(self.home, "x", site="apple store españa")["site"], "")
+
+    def test_a_stalled_run_is_stopped_and_retried_once_then_stuck(self):
+        clock = {"t": 0.0}
+        frozen = {"status": "running", "updated_at": 1.0, "last_event": "tool.completed"}
+        gateway = FakeGateway([[frozen], [frozen]])
+        entry = self.errand()
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: clock.__setitem__("t", clock["t"] + 60))
+        real_time = errands.time.time
+        errands.time.time = lambda: clock["t"]
+        try:
+            self.assertEqual(engine.run(), "stuck")
+        finally:
+            errands.time.time = real_time
+        self.assertEqual(gateway.stopped, ["run_1", "run_2"])
+        self.assertIn("colgado", gateway.started[1][1])
+        self.assertIn("dejó de responder", errands.get(self.home, entry["id"])["reason"])
+
+    def test_a_chat_turn_asking_for_a_purchase_is_an_errand_request(self):
+        self.assertTrue(errands.is_errand_request("compra un iphone 18 pro max"))
+        self.assertTrue(errands.is_errand_request("Pídeme el pienso de siempre"))
+        self.assertFalse(errands.is_errand_request("abre news.ycombinator.com y dame 3 titulares"))
+        self.assertFalse(errands.is_errand_request("[respuesta:size] 256 GB"))
+        self.assertIn("errand_start", errands.brief({"request": "x"}))
+        self.assertIn("nunca llames a `errand_start`", errands.brief({"request": "x"}))
+
 class AnswerTests(unittest.TestCase):
     def test_answers_become_the_lines_ask_person_reads(self):
         text = errands.answer_text({"size": "500 g", "flavour": "Sin sabor", "bad id!": "x"})
