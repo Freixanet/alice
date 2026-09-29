@@ -37,7 +37,8 @@ private struct ChatScreenContent: View, Equatable {
     /// Alice's portrait and name, which open her settings.
     private var aliceHeader: some View {
         Button { showingAlice = true } label: {
-            AliceAvatar(zoomSource: ("alice-avatar", avatarZoom))
+            AliceAvatar(working: store.isSending || store.errandBoard.errands.contains { $0.status == .working },
+                        zoomSource: ("alice-avatar", avatarZoom))
         }
         .buttonStyle(.plain)
         .accessibilityHint("Opens Alice’s settings")

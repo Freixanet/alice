@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 
 /// The conversation's face at the top of a chat, as Messages draws a
@@ -66,21 +67,35 @@ struct ChatHeaderAvatar<Face: View>: View {
 /// Alice's face in her own chat, with her name on the glass under it.
 struct AliceAvatar: View {
     var size: CGFloat = 72
+    /// Alice at her laptop while she answers or runs an errand (`AliceWorking.gif`).
+    var working = false
     /// Where her settings page zooms out of, when tapping her opens it.
     var zoomSource: (id: String, namespace: Namespace.ID)? = nil
     /// The god portraits paint a white ring of about 16px on a 384px
     /// square. Alice's cutout fills the disc, so the same fraction is
     /// inset here and the disc behind her shows through.
     private static let halo: CGFloat = 16.0 / 384.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ChatHeaderAvatar(size: size, name: "Alice", zoomSource: zoomSource) {
-            Image("AliceAvatar")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFill()
-                .padding(size * Self.halo)
+            if working, !reduceMotion, let frames = AliceWorkingFrames.shared {
+                // One frame every 350 ms, as the GIF was drawn.
+                TimelineView(.periodic(from: .now, by: frames.delay)) { timeline in
+                    let index = Int(timeline.date.timeIntervalSinceReferenceDate / frames.delay) % frames.images.count
+                    Image(uiImage: frames.images[index]).resizable().scaledToFill()
+                }
+                .transition(.opacity)
+            } else {
+                Image("AliceAvatar")
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFill()
+                    .padding(size * Self.halo)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.3), value: working)
     }
 }
 
@@ -179,4 +194,32 @@ struct PortraitMenuShape: Shape {
         }
         return path
     }
+}
+
+
+/// The frames of `AliceWorking.gif`, decoded once.
+struct AliceWorkingFrames: Sendable {
+    let images: [UIImage]
+    let delay: TimeInterval
+
+    static let shared: AliceWorkingFrames? = {
+        guard let url = Bundle.main.url(forResource: "AliceWorking", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+        else { return nil }
+        let count = CGImageSourceGetCount(source)
+        var images: [UIImage] = []
+        var delay: TimeInterval = 0.35
+        for index in 0..<count {
+            guard let frame = CGImageSourceCreateImageAtIndex(source, index, nil) else { continue }
+            images.append(UIImage(cgImage: frame))
+            if index == 0,
+               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+               let gif = properties[kCGImagePropertyGIFDictionary] as? [CFString: Any],
+               let seconds = (gif[kCGImagePropertyGIFUnclampedDelayTime] ?? gif[kCGImagePropertyGIFDelayTime]) as? Double,
+               seconds > 0.02 {
+                delay = seconds
+            }
+        }
+        return images.isEmpty ? nil : AliceWorkingFrames(images: images, delay: delay)
+    }()
 }

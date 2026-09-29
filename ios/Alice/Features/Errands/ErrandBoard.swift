@@ -162,10 +162,10 @@ struct ErrandStack: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // The browser once it is being used, not before.
-            if (errand.status.isOpen || errand.status == .done) && !errand.steps.isEmpty {
-                ErrandBrowserCard(errand: errand, snapshot: errand.status == .done ? .none : snapshot,
-                                  onOpen: onOpenBrowser)
+            // The browser only while it is being used: not before it starts, and gone once the
+            // errand waits for the person or ends (a still page left there read as broken).
+            if errand.status == .working && !errand.steps.isEmpty {
+                ErrandBrowserCard(errand: errand, snapshot: snapshot, onOpen: onOpenBrowser)
             }
             ErrandProgressCard(errand: errand, logoID: logoID, logo: logo)
             if errand.status == .needsCard, !errand.cardOrigin.isEmpty {
