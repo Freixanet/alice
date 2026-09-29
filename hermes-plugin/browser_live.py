@@ -197,6 +197,17 @@ def _binary() -> Optional[str]:
     return candidates[0] if candidates else None
 
 
+def _detached(binary: str) -> List[str]:
+    """How to start the browser so it outlives whoever started it. A child of the dashboard is
+    in its launchd job, and restarting the dashboard killed it — and every agent's open page with
+    it. On macOS, `open` hands the app to LaunchServices instead (-n a new instance, -g in the
+    background, never taking focus)."""
+    app = binary.split(".app/Contents/MacOS/")[0] + ".app" if ".app/Contents/MacOS/" in binary else ""
+    if platform.system() == "Darwin" and app:
+        return ["/usr/bin/open", "-n", "-g", "-a", app, "--args"]
+    return [binary]
+
+
 def launch(root: Path, *, binary: Optional[str] = None, port: int = PORT, wait: float = 15.0) -> bool:
     """A Chromium on the Hermes debug profile, unless one already answers.
 
@@ -211,12 +222,12 @@ def launch(root: Path, *, binary: Optional[str] = None, port: int = PORT, wait: 
         raise BrowserError("No hay Chrome, Chromium, Edge ni Brave instalado en este ordenador.")
     data = Path(root) / "chrome-debug"
     data.mkdir(parents=True, exist_ok=True)
+    flags = [f"--remote-debugging-port={port}", "--remote-debugging-address=127.0.0.1",
+             f"--user-data-dir={data}", "--no-first-run", "--no-default-browser-check",
+             f"--window-size={WINDOW}", "--window-position=-10000,-10000", "about:blank"]
     log = open(data / "alice-headless.log", "ab")  # noqa: SIM115 — handed to the child
     subprocess.Popen(  # noqa: S603 — a fixed browser binary and fixed flags
-        [binary, f"--remote-debugging-port={port}", "--remote-debugging-address=127.0.0.1",
-         f"--user-data-dir={data}", "--no-first-run", "--no-default-browser-check",
-         f"--window-size={WINDOW}", "--window-position=-10000,-10000", "about:blank"],
-        stdout=subprocess.DEVNULL, stderr=log, start_new_session=True)
+        _detached(binary) + flags, stdout=subprocess.DEVNULL, stderr=log, start_new_session=True)
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
         if reachable(url):

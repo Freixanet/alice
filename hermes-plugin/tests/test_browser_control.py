@@ -98,5 +98,20 @@ class BlankTabsTests(unittest.TestCase):
         self.assertIn(bl.busiest([blank], now=4)["id"], ("b",))
 
 
+
+
+class DetachedLaunchTests(unittest.TestCase):
+    """The shared browser outlives a dashboard restart: on macOS it is started through `open`."""
+
+    def test_a_mac_app_is_started_through_open(self):
+        live = bl
+        binary = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        with mock.patch.object(live.platform, "system", return_value="Darwin"):
+            self.assertEqual(live._detached(binary),
+                             ["/usr/bin/open", "-n", "-g", "-a", "/Applications/Google Chrome.app", "--args"])
+        with mock.patch.object(live.platform, "system", return_value="Linux"):
+            self.assertEqual(live._detached("/usr/bin/chromium"), ["/usr/bin/chromium"])
+
+
 if __name__ == "__main__":
     unittest.main()
