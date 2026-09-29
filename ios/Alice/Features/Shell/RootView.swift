@@ -15,6 +15,9 @@ struct RootView: View {
     @AppStorage(PerformanceHUD.key) private var showsPerformanceHUD = false
     @State private var drawerOpen = false
     @State private var drag: CGFloat = 0
+    /// The feed following the finger, as the drawer does: negative while it is pulled in from
+    /// the right, positive while it is pushed back out.
+    @State private var feedDrag: CGFloat = 0
     /// Where the bots page is while it slides away; see `closeBots`.
     @State private var botsExitOffset: CGFloat = 0
     @State private var closingBots = false
@@ -231,8 +234,8 @@ struct RootView: View {
                     .zIndex(3)
                 }
 
-                // The feed, in off the right from Alice's chat with a leftward swipe.
-                if store.showingFeed {
+                // The feed, pulled in off the right from Alice's chat, following the finger.
+                if store.showingFeed || feedDrag < 0 {
                     NavigationStack {
                         FeedScreen(onOpenedChat: closeFeed)
                             .toolbar {
@@ -249,15 +252,18 @@ struct RootView: View {
                             shouldBegin: { velocity in
                                 velocity.x > 0 && abs(velocity.x) > abs(velocity.y) * 1.5
                             },
-                            onChange: { _ in },
+                            onChange: { translation in feedDrag = max(0, translation) },
                             onEnd: { translation, predicted in
-                                guard translation > drawerWidth * 0.3 || predicted > 120 else { return }
-                                closeFeed()
+                                if translation > drawerWidth * 0.3 || predicted > 120 {
+                                    closeFeed()
+                                } else {
+                                    withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
+                                }
                             }
                         )
                         .allowsHitTesting(false)
                     }
-                    .transition(.move(edge: .trailing))
+                    .offset(x: store.showingFeed ? max(0, feedDrag) : max(0, proxy.size.width + feedDrag))
                     .zIndex(4)
                 }
 
@@ -404,6 +410,11 @@ struct RootView: View {
                         // so nothing follows the finger: the drawer it would
                         // otherwise reveal has nothing to do with this bot.
                         guard !inBotChat || drawerOpen else { return }
+                        // Leftward on Alice's own chat pulls the feed in, under the finger.
+                        if !drawerOpen, translation < 0 {
+                            feedDrag = translation
+                            return
+                        }
                         // A leftward drag is heading for the bots page, which
                         // arrives as a page rather than by being dragged in.
                         guard drawerOpen || translation > 0 else { return }
@@ -422,7 +433,11 @@ struct RootView: View {
                             return
                         }
                         if !drawerOpen, translation < 0 {
-                            if travelled || flicked { openFeed() }
+                            if travelled || flicked {
+                                openFeed()
+                            } else {
+                                withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
+                            }
                             return
                         }
                         if !drawerOpen, travelled || flicked {
@@ -551,12 +566,18 @@ struct RootView: View {
     /// Goals leaves the way it came in, off the right.
     private func openFeed() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = true }
+        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+            store.showingFeed = true
+            feedDrag = 0
+        }
     }
 
     private func closeFeed() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = false }
+        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+            store.showingFeed = false
+            feedDrag = 0
+        }
     }
 
     private func closeGoals() {

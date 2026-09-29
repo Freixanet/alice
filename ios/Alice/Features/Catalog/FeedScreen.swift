@@ -29,13 +29,6 @@ struct FeedScreen: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(16)
-                if feed.archive.interests.isEmpty {
-                    Button { showPreferences = true } label: {
-                        Label("Elige tus intereses para empezar", systemImage: "slider.horizontal.3")
-                            .font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(.horizontal, 20).padding(.bottom, 16)
-                }
                 if feed.storageFailure {
                     Text("No se pudieron leer tus preferencias guardadas. Se han conservado sin sobrescribirlas.")
                         .font(.footnote).foregroundStyle(.secondary).padding()
