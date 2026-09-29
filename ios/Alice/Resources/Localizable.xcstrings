@@ -101,6 +101,16 @@
         }
       }
     },
+    "This run came back empty. The next one will try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta vez la rutina no ha traído nada. Lo intentará en la próxima."
+          }
+        }
+      }
+    },
     "Your events are deleted from your Hermes and your agents stop seeing them.": {
       "localizations": {
         "es": {

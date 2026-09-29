@@ -3,6 +3,11 @@ import TipKit
 import UIKit
 
 struct MessageRow: View {
+    /// Only separators, spaces and punctuation: nothing a person could read.
+    static func saysNothing(_ text: String) -> Bool {
+        !text.contains { $0.isLetter || $0.isNumber }
+    }
+
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let message: Message
@@ -205,6 +210,13 @@ struct MessageRow: View {
                                     deals: deals,
                                     tint: store.mark(for: "chollometro").color
                                 )
+                            }
+                        } else if Self.saysNothing(content) {
+                            // A run whose model answered only "---" (29-09): said, not a blank card.
+                            RoutineReportCard(name: routine) {
+                                Text("This run came back empty. The next one will try again.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
                             }
                         } else {
                             RoutineReportCard(name: routine) {
