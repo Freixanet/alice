@@ -185,8 +185,9 @@ class PromptTests(unittest.TestCase):
         text = cards.prompt("default")
         self.assertIn("alice://connect/card?origin=ORIGEN&profile=default", text)
         self.assertIn("nunca pidas los datos en el chat", text)
-        # Hermes' card confirmation is the one yes; the agent does not ask again in the chat.
-        self.assertIn("es el sí de la compra", text)
+        # The one yes is the checkout the person approved in Alice, not Hermes' card confirmation.
+        self.assertIn("aprobación del checkout en Alice", text)
+        self.assertNotIn("es el sí de la compra", text)
 
 
 if __name__ == "__main__":

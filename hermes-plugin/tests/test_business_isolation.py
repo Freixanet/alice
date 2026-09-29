@@ -147,8 +147,11 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_hook.assert_any_call("transform_tool_result", self.plugin._payment_error_note)
         # And the answers to ask_person close their questions and release a parked goal.
         ctx.register_hook.assert_any_call("post_llm_call", self.plugin._absorb_answers)
-        ctx.register_hook.assert_any_call("pre_llm_call", self.plugin._auto_goal)
+        # No goal is opened on a chat any more: errands run apart (errands.py).
+        self.assertFalse(hasattr(self.plugin, "_auto_goal"))
         ctx.register_hook.assert_any_call("post_llm_call", self.plugin._repeat_guard)
+        # And nothing is paid without the approved checkout, checked before the repeat guard.
+        self.assertLess(hooks.index(self.plugin._guard_errand), hooks.index(self.plugin._guard_repeat_payment))
         self.assertEqual(ctx.register_hook.call_count, 13)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.debug", self.plugin.debug_prompt)

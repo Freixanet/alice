@@ -23,7 +23,7 @@ CONTINUATION_PREFIX = "[Continuing toward your standing goal]"
 
 CONSTRAINTS = (
     "Never press a button that pays, sends, publishes or deletes without the person's explicit yes "
-    "for this task (in the chat, or for a card payment in Hermes' card confirmation). Never ask for or write a password, card number or code in the chat: "
+    "for this task (for a payment: their approval of the checkout sent with checkout_request). Never ask for or write a password, card number or code in the chat: "
     "those go through the secure cards. Anything else the person must choose or give (an option, how to pay, how to sign "
     "in, name, ID/NIF, address, phone, email) is asked with ask_person, never in the text of the reply, and the "
     "work that does not depend on the answer goes on meanwhile. Do not change what the person asked for (product, quantity, "
@@ -36,7 +36,7 @@ CONSTRAINTS = (
 STOP_WHEN = (
     "Stop ONLY when the reply shows one of these, and asks the person one concrete question: "
     "(a) everything is ready and the next click is the irreversible one (pay, send, confirm), waiting "
-    "for their yes — for a card payment, Hermes' card confirmation is that yes; (b) continuing would change what they asked for (another product, a higher price, "
+    "for their yes — for a payment, checkout_request was called and the checkout waits for their approval; (b) continuing would change what they asked for (another product, a higher price, "
     "an extra cost, other dates); (c) something only the person has is needed (a password, a card, a "
     "code) and was asked through the secure card; or (d) a question is open with ask_person and nothing "
     "else can be done until it is answered — that is a wait, not a stop to repeat. A reply that asks "

@@ -35,6 +35,9 @@ KEYCHAIN_RETRY_SECONDS = 60
 # Chats a person is in. `cron` sessions are a routine's own working transcript;
 # its result reaches the person as a delivery row in the bot's chat instead.
 REPLY_SOURCES = {'tui', 'cli', 'desktop', 'api_server'}
+# An errand's own session (the Alice plugin's errands.py): its replies are the agent
+# talking to itself; the person hears about the errand from ERRAND_SENTENCES instead.
+ERRAND_SESSION = 'errand-'
 # How stock Hermes opens a routine's report when it hands it to a bot's chat
 # (cron/scheduler_delivery.py); the bot's answer to it is the routine finishing.
 ROUTINE_REPORT = '[Cronjob "'
@@ -203,6 +206,48 @@ SENTENCES = {
     'routine_failed': 'Su rutina ha fallado',
 }
 
+# What an errand's new state asks of the person. Never what the errand is: a lock
+# screen is a public surface. Approval is time-sensitive; the rest is not.
+ERRAND_SENTENCES = {
+    'needs_approval': ('Un recado necesita tu aprobación', 'timeSensitive'),
+    'needs_input': ('Un recado tiene una pregunta para ti', 'timeSensitive'),
+    'done': ('Un recado ha terminado', 'active'),
+    'stuck': ('Un recado se ha atascado', 'active'),
+}
+
+
+def errands(home):
+    try:
+        data = json.loads((home / '.alice' / 'errands.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    return [e for e in data if isinstance(e, dict) and e.get('id')] if isinstance(data, list) else []
+
+
+def poll_errands(state, home, send, now=None):
+    """Says when an errand needs the person or ends. Returns the notifications sent."""
+    now = time.time() if now is None else now
+    first_look = 'errands' not in state
+    seen = state.setdefault('errands', {})
+    sent = []
+    current = errands(home)
+    for entry in current:
+        errand_id, status = str(entry['id']), str(entry.get('status') or '')
+        before = seen.get(errand_id)
+        seen[errand_id] = status
+        if first_look or before == status or status not in ERRAND_SENTENCES:
+            continue
+        if now - float(entry.get('updated_at') or now) > FRESH_SECONDS:
+            continue
+        body, level = ERRAND_SENTENCES[status]
+        message = ('Alice', body, 'alice://errand?' + urllib.parse.urlencode({'id': errand_id}))
+        send(*message, level=level)
+        sent.append(message)
+    ids = {str(e['id']) for e in current}
+    for gone in [k for k in seen if k not in ids]:
+        seen.pop(gone, None)
+    return sent
+
 
 def poll_once(state, home, send, now=None):
     """One pass over every profile. Returns the notifications sent, as (title, body, url)."""
@@ -230,6 +275,10 @@ def poll_once(state, home, send, now=None):
                     row_id, role, content, display_kind, finish_reason, source, stamp, session, after_report = row
                     key = '%s/%s' % (name, session)
                     if role != 'assistant':
+                        pending.pop(key, None)
+                        advanced_to = row_id
+                        continue
+                    if str(session or '').startswith(ERRAND_SESSION):
                         pending.pop(key, None)
                         advanced_to = row_id
                         continue
@@ -288,9 +337,9 @@ def keychain_key():
 
 
 def bark_sender(key):
-    def send(title, body, url):
+    def send(title, body, url, level='active'):
         payload = json.dumps({'device_key': key, 'title': title, 'body': body, 'url': url,
-                              'group': title, 'level': 'active'}).encode()
+                              'group': title, 'level': level}).encode()
         request = urllib.request.Request(BARK_PUSH, data=payload, method='POST',
                                          headers={'Content-Type': 'application/json; charset=utf-8'})
         with urllib.request.urlopen(request, timeout=10) as response:
@@ -335,17 +384,18 @@ def main():
         if key is not None:
             warned = False
 
-        def send(title, body, url):
+        def send(title, body, url, level='active'):
             if key is None:
                 return
             try:
-                bark_sender(key)(title, body, url)
+                bark_sender(key)(title, body, url, level)
                 log.info('Notified: %s — %s', title, body)
             except Exception as error:  # a failed push must not stop the watcher
                 log.warning('Could not notify %s: %s', title, type(error).__name__)
 
         try:
             poll_once(state, HERMES, send)
+            poll_errands(state, HERMES, send)
             save_state(STATE, state)
         except Exception as error:
             # Database, file and JSON errors name the problem, never chat content.

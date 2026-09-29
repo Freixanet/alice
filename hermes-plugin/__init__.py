@@ -189,6 +189,91 @@ def _guard_repeat_payment(tool_name=None, args=None, session_id="", **_):
         return None
 
 
+def _errands():
+    return _module("errands.py", "alice_errands")
+
+
+def _session_id(session_id: str = "") -> str:
+    """The Hermes session a call belongs to. In a /v1/runs errand the approval key is the run's
+    id, so the session comes from the hook's argument or the gateway's session vars."""
+    if session_id:
+        return str(session_id)
+    try:
+        from gateway.session_context import get_session_env
+
+        return get_session_env("HERMES_SESSION_ID", "") or get_session_env("HERMES_SESSION_CHAT_ID", "")
+    except Exception:
+        return ""
+
+
+def _conversation_key() -> str:
+    """Where ask_person keeps its questions: the errand's session inside one, else the chat's."""
+    session = _session_id()
+    if session.startswith(_errands().SESSION_PREFIX):
+        return session
+    from tools.approval_context import get_current_session_key
+
+    return get_current_session_key(default="")
+
+
+def _vault_meta(tool_name, args):
+    if tool_name != "browser_vault_fill" or not isinstance(args, dict) or not args.get("handle"):
+        return None
+    return _cards_module()._store().get_meta(str(args["handle"]))
+
+
+def _active_url() -> str:
+    """The tab where something last happened: where an agent is acting now."""
+    try:
+        live = _browser()
+        tabs = live.pages(live.configured_url(_hermes_root()))
+        tab = live.busiest(tabs)
+        return str((tab or {}).get("url") or "")
+    except Exception:
+        return ""
+
+
+def _guard_errand(tool_name=None, args=None, session_id="", **_):
+    """Nothing is paid without the person's approved checkout, and a saved login is used without
+    asking unless they asked to be asked (errands.py). If the check itself fails, paying is refused."""
+    name = str(tool_name or "")
+    if name != "browser_vault_fill" and name not in _errands().BROWSER_ACTIONS:
+        return None
+    session = _session_id(session_id)
+    try:
+        errands = _errands()
+        root = _hermes_root()
+        meta = _vault_meta(name, args)
+        if meta is not None and meta.kind != "payment":
+            return errands.login_gate(root, session)
+        if meta is not None:
+            cards = _cards_module()
+            merchant = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
+            return errands.pay_gate(root, session, card_fill_site=meta.origin or "", merchant_site=merchant,
+                                    gateways=cards.PAYMENT_GATEWAYS)
+        return errands.pay_gate(root, session, tool_name=name, args=args, active_url=_active_url())
+    except Exception:
+        if name == "browser_vault_fill":
+            return {"action": "block", "message": "No se pudo comprobar la aprobación del pago; no pagues."}
+        return None
+
+
+_STEP = __import__("re").compile(r"^\s*#\s*(.+)$", __import__("re").M)
+
+
+def _errand_step(tool_name, args, session_id) -> None:
+    """What the errand's agent is doing, for its card: the comment on each browser step."""
+    session = _session_id(session_id)
+    errands = _errands()
+    if not session.startswith(errands.SESSION_PREFIX) or not str(tool_name or "").startswith("browser"):
+        return
+    code = str((args or {}).get("code") or "") if isinstance(args, dict) else ""
+    found = _STEP.search(code)
+    text = found.group(1) if found else ""
+    if text:
+        errands.add_step(_hermes_root(), session[len(errands.SESSION_PREFIX):], text, _active_url())
+
+
 def _record_payment(tool_name, args, result, session_id) -> None:
     """A card Hermes actually wrote into a checkout is a payment attempt until it is settled."""
     try:
@@ -248,9 +333,21 @@ def purchases_prompt(_session_info=None) -> str:
 
 def _register_purchase_tools(ctx) -> None:
     module = _purchases()
+    schema = {**module.SCHEMA, "parameters": {
+        **module.SCHEMA["parameters"],
+        "properties": {**module.SCHEMA["parameters"]["properties"], **_errands().outcome_properties()}}}
+
+    def handler(args, **_):
+        out = module.run_tool(_hermes_root(), args or {})
+        try:
+            if isinstance(out, dict) and out.get("ok"):
+                _errands().record_receipt(_hermes_root(), _session_id(), args or {})
+        except Exception:
+            pass
+        return _agent_json(out)
+
     ctx.register_tool(
-        name="purchase_outcome", toolset="alice_purchases", schema=module.SCHEMA,
-        handler=lambda args, **_: _agent_json(module.run_tool(_hermes_root(), args or {})),
+        name="purchase_outcome", toolset="alice_purchases", schema=schema, handler=handler,
         check_fn=_always, description=module.SCHEMA["description"], emoji="🧾",
     )
     # The same rules as a skill anyone can open and audit (alice:comprar).
@@ -522,6 +619,10 @@ def _post_tool_call(tool_name=None, args=None, result=None, session_id="", statu
     except Exception:
         pass
     _record_payment(tool_name, args, result, session_id)
+    try:
+        _errand_step(tool_name, args, session_id)
+    except Exception:
+        pass
     if tool_name == "skill_manage" and status != "error":
         # A skill written now is kept now, unless it reads like an injection (skill_keeper.py).
         _keep_skills(delay=1.0)
@@ -846,8 +947,8 @@ def resolve_prompt(_session_info=None) -> str:
         "si la tienes, las 2 o 3 cosas que cambian el resultado —fechas, presupuesto, preferencias— con "
         "opciones y tu propuesta por defecto; nada que puedas averiguar tú. Para recados, no preguntes.\n"
         "Solo te paras en tres casos: (a) un paso **irreversible** —pagar, enviar, publicar, borrar—, "
-        "para el que basta **un sí** por tarea que cubre hasta el final (al pagar con tarjeta, ese sí es "
-        "la confirmación de Hermes, sin preguntar también en el chat); (b) algo "
+        "para el que basta **un sí** por tarea que cubre hasta el final (al pagar, ese sí es su "
+        "aprobación del checkout en Alice, nunca la confirmación de Hermes); (b) algo "
         "que **cambia lo que te pidieron** —otro producto, más precio del visto, un coste extra, una "
         "fecha distinta—; (c) algo que **solo la persona tiene** —una contraseña, una tarjeta, un "
         "código— y que se pide con su tarjeta segura, nunca en el chat.\n"
@@ -862,7 +963,7 @@ def resolve_prompt(_session_info=None) -> str:
         "de suponer. Al terminar, da la respuesta y, solo si algo quedó sin comprobar o dependía de "
         "una suposición, añade una línea «Sin comprobar: …». No lo hagas en preguntas sencillas ni "
         "enseñes este proceso: la persona ve el resultado, no el andamiaje.\n"
-        + _task_finish().prompt()
+        + _errands().PROMPT
     )
 
 
@@ -1274,9 +1375,17 @@ def _register_ask_tools(ctx) -> None:
 
     def handler(args, **_):
         from hermes_constants import get_hermes_home
-        from tools.approval_context import get_current_session_key
 
-        return _agent_json(module.run_tool(Path(get_hermes_home()), args or {}, get_current_session_key(default="")))
+        key = _conversation_key()
+        out = module.run_tool(Path(get_hermes_home()), args or {}, key)
+        if key.startswith(_errands().SESSION_PREFIX) and out.get("asked"):
+            wanted = set(out["asked"])
+            questions = [q for q in module._normalized(args or {}) if q["id"] in wanted]
+            _errands().ask(_hermes_root(), key[len(_errands().SESSION_PREFIX):], str((args or {}).get("title") or ""),
+                           questions)
+            out["note"] = ("The person sees the questions in the errand. End your turn now with one line "
+                           "saying what you are waiting for; the errand resumes with their answer.")
+        return _agent_json(out)
 
     ctx.register_tool(
         name="ask_person", toolset="alice_tasks", schema=module.SCHEMA, handler=handler,
@@ -1284,15 +1393,35 @@ def _register_ask_tools(ctx) -> None:
     )
 
 
-def _auto_goal(user_message=None, **_):
-    """An errand the person asks for gets its goal at once, so a judge sends the agent back when it
-    stops at an obstacle instead of solving it or asking about the real alternatives."""
+def _pause_chat_goals() -> None:
+    """Goals the old errand loop opened on chats (its contract) are paused: judged after every
+    later turn of that chat, they resumed purchases nobody had asked about again."""
     try:
-        from tools.approval_context import get_current_session_key
+        import sqlite3
 
-        _task_finish().auto_start(user_message, get_current_session_key(default=""))
+        from hermes_cli.goals import GoalManager
+        from hermes_constants import get_hermes_home
+
+        db = Path(get_hermes_home()) / "state.db"
+        if not db.is_file():
+            return
+        with sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2) as conn:
+            rows = conn.execute("SELECT key, value FROM state_meta WHERE key LIKE 'goal:%'").fetchall()
+        prefix = "goal:" + _errands().SESSION_PREFIX
+        # The loop's contract, in any of its wordings since it was introduced.
+        marker = _task_finish().CONSTRAINTS[:40]
+        for key, value in rows:
+            try:
+                state = json.loads(value)
+            except (TypeError, ValueError):
+                continue
+            contract = state.get("contract") or {}
+            if (key.startswith(prefix) or state.get("status") != "active"
+                    or not str(contract.get("constraints") or "").startswith(marker)):
+                continue
+            GoalManager(session_id=key[len("goal:"):]).pause("recado antiguo: ahora los recados van aparte")
     except Exception:
-        logging.getLogger(__name__).debug("finish_task: could not open the goal", exc_info=True)
+        logging.getLogger(__name__).debug("errands: could not pause old chat goals", exc_info=True)
 
 
 def _repeat_guard(user_message=None, assistant_response=None, **_):
@@ -1309,9 +1438,8 @@ def _absorb_answers(conversation_history=None, **_):
     """The person's answers to ask_person, steered into the turn or sent as the next one."""
     try:
         from hermes_constants import get_hermes_home
-        from tools.approval_context import get_current_session_key
 
-        _ask_person().absorb(Path(get_hermes_home()), get_current_session_key(default=""),
+        _ask_person().absorb(Path(get_hermes_home()), _conversation_key(),
                              # Every user row: after an answer a turn can run a hundred browser
                              # steps, and a window of the last rows missed the answer itself.
                              [m for m in (conversation_history or []) if m.get("role") == "user"])
@@ -1326,12 +1454,35 @@ def ask_prompt(_session_info=None) -> str:
 
 
 def _register_task_tools(ctx) -> None:
-    module = _task_finish()
-    ctx.register_tool(
-        name="finish_task", toolset="alice_tasks", schema=module.SCHEMA,
-        handler=lambda args, **_: _agent_json(module.run_tool(args or {})),
-        check_fn=_always, description=module.SCHEMA["description"], emoji="🏁",
-    )
+    """Errands (errands.py) replace finish_task: a goal on a chat's session was judged after every
+    later turn of that chat, and an old purchase resumed in the middle of an unrelated question."""
+    errands = _errands()
+
+    def start(args, **_):
+        from hermes_constants import get_hermes_home
+
+        try:
+            from tools.approval_context import get_current_session_key
+
+            _root, profile = _root_and_sender(Path(get_hermes_home()))
+            return _agent_json({"ok": True, **errands.start(
+                _hermes_root(), args or {}, origin_session=_session_id() or get_current_session_key(default=""),
+                profile=profile)})
+        except Exception as exc:  # noqa: BLE001
+            return _agent_json({"ok": False, "error": str(exc) or type(exc).__name__})
+
+    def checkout(args, **_):
+        session = _session_id()
+        entry = errands.of_session(_hermes_root(), session)
+        if entry is None:
+            return _agent_json({"ok": False, "error": "Only inside an errand. Purchases are errands: use errand_start."})
+        return _agent_json(errands.request_checkout(_hermes_root(), entry["id"], args or {}))
+
+    ctx.register_tool(name="errand_start", toolset="alice_tasks", schema=errands.START_SCHEMA, handler=start,
+                      check_fn=_always, description=errands.START_SCHEMA["description"], emoji="🛍️")
+    ctx.register_tool(name="checkout_request", toolset="alice_tasks", schema=errands.CHECKOUT_SCHEMA,
+                      handler=checkout, check_fn=_always, description=errands.CHECKOUT_SCHEMA["description"],
+                      emoji="🧾")
 
 
 def _register_goal_tools(ctx) -> None:
@@ -1351,6 +1502,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _guard_egress)
     # A card is filled with the copy for the page open, or bound to the bank's payment page.
     # One payment per order, kept by the plugin rather than the model (purchases.py).
+    # Nothing is paid without the person's approved checkout (errands.py).
+    ctx.register_hook("pre_tool_call", _guard_errand)
     ctx.register_hook("pre_tool_call", _guard_repeat_payment)
     ctx.register_hook("pre_tool_call", _route_card_fill)
     # A payment error on the page reaches the agent, and through it the person (purchases.py).
@@ -1376,8 +1529,8 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.preguntas", ask_prompt)
     # Answers to ask_person close their questions and release a goal parked on them.
     ctx.register_hook("post_llm_call", _absorb_answers)
-    # And an errand the person asks for is kept open by the goal loop from its first turn.
-    ctx.register_hook("pre_llm_call", _auto_goal)
+    # A goal left open on a chat by the old errand loop is paused, once (errands replace it).
+    _pause_chat_goals()
     # And a goal whose agent only repeats itself is paused, not replayed to the person.
     ctx.register_hook("post_llm_call", _repeat_guard)
     ctx.register_system_prompt_section("alice.objetivos", goals_prompt)

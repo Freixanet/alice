@@ -2502,3 +2502,135 @@ async def goals_delete(goal_id: str, profile: str = "default") -> JSONResponse:
     name = await asyncio.to_thread(_known_profile, profile)
     await asyncio.to_thread(lambda: _with_goals(name, lambda g: g.remove(goal_id)))
     return JSONResponse({"profile": name, "removed": goal_id}, headers=_NO_STORE)
+
+
+# ── Errands: tasks that run apart from the chat, and the checkout the person approves ──
+
+
+def _errands_module():
+    return _sibling("errands.py", "alice_errands")
+
+
+def _errand_or_404(errand_id: str) -> Dict[str, Any]:
+    entry = _errands_module().get(_hermes_root(), errand_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="No existe ese recado.")
+    return entry
+
+
+@router.get("/errands")
+async def errands_list() -> JSONResponse:
+    """Every errand, newest first. An errand left working by a restart goes on from here."""
+    def read():
+        module, root = _errands_module(), _hermes_root()
+        module.ensure_running(root)
+        return [module.public(e) for e in module.listing(root)]
+
+    return JSONResponse({"errands": await asyncio.to_thread(read)}, headers=_NO_STORE)
+
+
+@router.get("/errands/{errand_id}")
+async def errands_get(errand_id: str) -> JSONResponse:
+    entry = await asyncio.to_thread(_errand_or_404, errand_id)
+    return JSONResponse({"errand": _errands_module().public(entry)}, headers=_NO_STORE)
+
+
+class _CheckoutDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: str
+    checkout_id: str
+
+
+@router.post("/errands/{errand_id}/checkout")
+async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONResponse:
+    """The person's «Permitir» or «Denegar» on the checkout they saw (Face ID on the phone)."""
+    if body.decision not in ("allow", "deny"):
+        raise HTTPException(status_code=400, detail="decision must be allow or deny")
+
+    def decide():
+        module, root = _errands_module(), _hermes_root()
+        entry = _errand_or_404(errand_id)
+        checkout = entry.get("checkout") or {}
+        # The approval is for the checkout the person saw, never a newer one the agent sent meanwhile.
+        if checkout.get("id") != body.checkout_id or checkout.get("status") != "pending":
+            raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
+        entry = module.decide_checkout(root, errand_id, body.decision == "allow")
+        if entry is None:
+            raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
+        if body.decision == "allow":
+            card = f" ({checkout['card_label']})" if checkout.get("card_label") else ""
+            module.resume(root, errand_id, (
+                f"{module.APPROVED_PREFIX} La persona ha aprobado pagar {checkout.get('total')} en "
+                f"{checkout.get('merchant')}. Paga ahora con la tarjeta guardada{card} y, después, registra "
+                "`purchase_outcome` con el número de pedido, el total, los artículos y la tarjeta."))
+        else:
+            try:
+                from hermes_cli.goals import GoalManager
+
+                GoalManager(session_id=entry["session_id"]).clear()
+            except Exception:  # noqa: BLE001
+                pass
+        return module.public(module.get(root, errand_id) or entry)
+
+    return JSONResponse({"errand": await asyncio.to_thread(decide)}, headers=_NO_STORE)
+
+
+class _ErrandAnswers(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answers: Dict[str, str] = Field(default_factory=dict)
+
+
+@router.post("/errands/{errand_id}/answer")
+async def errands_answer(errand_id: str, body: _ErrandAnswers) -> JSONResponse:
+    """Answers to the questions an errand asked (ask_person inside it)."""
+    def answer():
+        module, root = _errands_module(), _hermes_root()
+        entry = _errand_or_404(errand_id)
+        if entry.get("status") != "needs_input":
+            raise HTTPException(status_code=409, detail="Ese recado no está esperando respuestas.")
+        text = module.answer_text({k: v for k, v in body.answers.items() if str(v).strip()})
+        if not text:
+            raise HTTPException(status_code=400, detail="Faltan las respuestas.")
+        module.resume(root, errand_id, text)
+        return module.public(module.get(root, errand_id) or entry)
+
+    return JSONResponse({"errand": await asyncio.to_thread(answer)}, headers=_NO_STORE)
+
+
+class _ErrandApproval(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    choice: str
+    request_id: str = ""
+
+
+@router.post("/errands/{errand_id}/approval")
+async def errands_approval(errand_id: str, body: _ErrandApproval) -> JSONResponse:
+    """Another confirmation Hermes asked inside the errand (a login the person wanted to approve)."""
+    if body.choice not in ("once", "deny"):
+        raise HTTPException(status_code=400, detail="choice must be once or deny")
+
+    def approve():
+        module, root = _errands_module(), _hermes_root()
+        entry = _errand_or_404(errand_id)
+        pending = entry.get("approval") or {}
+        if not pending or (body.request_id and pending.get("request_id") != body.request_id):
+            raise HTTPException(status_code=409, detail="No hay ninguna confirmación pendiente.")
+        gateway = module.Gateway(root, entry.get("profile") or "")
+        if not gateway.approve(pending.get("run_id") or "", body.choice, pending.get("request_id") or ""):
+            raise HTTPException(status_code=409, detail="Hermes ya no esperaba esa confirmación.")
+        entry = module.update(root, errand_id, approval=None, status="working")
+        return module.public(entry)
+
+    return JSONResponse({"errand": await asyncio.to_thread(approve)}, headers=_NO_STORE)
+
+
+@router.post("/errands/{errand_id}/stop")
+async def errands_stop(errand_id: str) -> JSONResponse:
+    def halt():
+        _errand_or_404(errand_id)
+        return _errands_module().public(_errands_module().stop(_hermes_root(), errand_id))
+
+    return JSONResponse({"errand": await asyncio.to_thread(halt)}, headers=_NO_STORE)

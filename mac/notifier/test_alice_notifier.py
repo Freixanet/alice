@@ -225,5 +225,66 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual(self.sent, [('Radar IA', 'Ha respondido', 'alice://open?bot=radar-ia')])
 
 
+
+class ErrandNotifierTests(unittest.TestCase):
+    """Errands (the Alice plugin's errands.py): what they ask of the person, never what they are."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.hermes = Hermes(self.temp.name)
+        self.home = self.hermes.profile('default')
+        self.state = {}
+        self.sent = []
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def errands(self, *entries):
+        (self.home / '.alice').mkdir(exist_ok=True)
+        (self.home / '.alice' / 'errands.json').write_text(json.dumps(list(entries)))
+
+    def poll(self):
+        return n.poll_errands(self.state, self.hermes.root, lambda *m, **kw: self.sent.append((m, kw)))
+
+    def test_an_errand_waiting_for_approval_rings_at_once_and_says_nothing_of_it(self):
+        self.errands()
+        self.poll()
+        self.errands({'id': 'abc', 'title': 'Comprar Creapure en HSN', 'status': 'working', 'updated_at': time.time()})
+        self.poll()
+        self.assertEqual(self.sent, [])
+        self.errands({'id': 'abc', 'title': 'Comprar Creapure en HSN', 'status': 'needs_approval',
+                      'updated_at': time.time()})
+        self.poll()
+        self.assertEqual(self.sent, [(('Alice', 'Un recado necesita tu aprobación', 'alice://errand?id=abc'),
+                                      {'level': 'timeSensitive'})])
+        self.assertNotIn('Creapure', repr(self.sent))
+        # The same state is not told twice.
+        self.poll()
+        self.assertEqual(len(self.sent), 1)
+
+    def test_done_and_stuck_are_told_but_what_the_person_did_is_not(self):
+        self.errands({'id': 'a', 'status': 'working'}, {'id': 'b', 'status': 'working'}, {'id': 'c', 'status': 'working'})
+        self.poll()
+        now = time.time()
+        self.errands({'id': 'a', 'status': 'done', 'updated_at': now}, {'id': 'b', 'status': 'stuck', 'updated_at': now},
+                     {'id': 'c', 'status': 'stopped', 'updated_at': now})
+        self.poll()
+        self.assertEqual([m[1] for m, _ in self.sent], ['Un recado ha terminado', 'Un recado se ha atascado'])
+
+    def test_nothing_is_announced_when_watching_starts(self):
+        self.errands({'id': 'abc', 'status': 'needs_approval', 'updated_at': time.time()})
+        self.poll()
+        self.assertEqual(self.sent, [])
+
+    def test_an_errands_own_replies_are_not_a_chat_reply(self):
+        with closing(sqlite3.connect(self.home / 'state.db')) as conn, conn:
+            conn.execute("INSERT INTO sessions VALUES ('errand-abc', 'api_server', NULL)")
+        state, sent = {}, []
+        n.poll_once(state, self.hermes.root, lambda *m: sent.append(m))
+        self.hermes.row('default', 'errand-abc', 'checkout listo')
+        n.poll_once(state, self.hermes.root, lambda *m: sent.append(m), now=time.time() + n.SETTLE_SECONDS)
+        self.assertEqual(sent, [])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
