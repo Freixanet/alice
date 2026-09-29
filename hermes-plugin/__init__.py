@@ -1407,7 +1407,15 @@ def _errand_turn(session_id="", user_message=None, **_):
             return None
         if errands.is_errand_request(user_message):
             _ERRAND_TURNS.add(session)
-            return {"context": errands.TURN_NOTE}
+            # Started here, not left to the model: reading an old conversation, it once answered
+            # «ya está en marcha, no lo duplico» about errands that had been stopped.
+            from hermes_constants import get_hermes_home
+
+            _root, profile = _root_and_sender(Path(get_hermes_home()))
+            text = " ".join(str(user_message or "").split())
+            out = errands.start(_hermes_root(), {"task": text, "title": text[:70]},
+                                origin_session=session, profile=profile)
+            return {"context": errands.turn_note(out)}
         _ERRAND_TURNS.discard(session)
     except Exception:
         logging.getLogger(__name__).debug("errands: could not read the turn", exc_info=True)

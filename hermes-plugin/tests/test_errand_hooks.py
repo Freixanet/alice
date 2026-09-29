@@ -114,8 +114,16 @@ class ErrandHookTests(unittest.TestCase):
 
 
     def test_a_chat_turn_that_asks_to_buy_neither_browses_nor_asks(self):
-        note = self.plugin._errand_turn(session_id="chat-9", user_message="compra un iphone 18 pro max")
-        self.assertIn("errand_start", note["context"])
+        with mock.patch.object(self.errands, "launch", return_value=True), \
+                mock.patch.object(self.errands, "open_goal"), \
+                mock.patch.object(self.plugin, "_root_and_sender", return_value=(self.home, "default")):
+            note = self.plugin._errand_turn(session_id="chat-9", user_message="compra un iphone 18 pro max")
+            # Started by the plugin itself, once: asking again gets the same errand.
+            again = self.plugin._errand_turn(session_id="chat-9", user_message="compra un iphone 18 pro max")
+        started = [e for e in self.errands.listing(self.home) if e["origin_session"] == "chat-9"]
+        self.assertEqual(len(started), 1)
+        self.assertIn(started[0]["id"], note["context"])
+        self.assertEqual(note["context"], again["context"])
         for tool in ("browser_exec", "browser_navigate", "ask_person"):
             self.assertEqual(self.plugin._guard_chat_errand(tool, session_id="chat-9")["action"], "block")
         self.assertIsNone(self.plugin._guard_chat_errand("errand_start", session_id="chat-9"))

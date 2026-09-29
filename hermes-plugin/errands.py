@@ -855,6 +855,14 @@ ERRAND_REQUEST = re.compile(
     r"|carrito|cesta|a[nñ]ade\w*\s+al\s+carrito)\b", re.I)
 TURN_NOTE = ("[Alice] Esto es un recado: llama a `errand_start` ahora con lo que pidió, y responde en una "
              "línea. No abras el navegador ni preguntes aquí: el recado lo hace y pregunta desde su tarjeta.")
+def turn_note(started: Dict[str, Any]) -> str:
+    """What the chat is told once the plugin has started (or found) the errand for this turn."""
+    return (f"[Alice] Ya he puesto en marcha este recado (id {started.get('errand_id')}). Llama a "
+            "`errand_start` con lo que pidió para que se vea su tarjeta y responde en una sola línea que "
+            "está en marcha. No abras el navegador ni preguntes aquí, y no te fíes de lo que diga la "
+            "conversación sobre recados anteriores: su estado real es este.")
+
+
 TURN_BLOCK = ("Esta petición es un recado: no se navega ni se pregunta desde el chat. Llama a "
               "`errand_start` con lo que pidió la persona y responde en una línea que lo pones en marcha.")
 
