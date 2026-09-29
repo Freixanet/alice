@@ -132,6 +132,30 @@ struct MessageRow: View {
     }
 
     var body: some View {
+        // Words said just before or after a routine are drawn inside the routine's bubble.
+        if absorbedIntoRoutine { EmptyView() } else { row }
+    }
+
+    /// Alice's plain words next to a routine report, which it takes into its bubble.
+    nonisolated static func joinsRoutine(_ other: Message) -> Bool {
+        other.role == .assistant && other.routineName == nil && other.fromAgent == nil && other.tools.isEmpty
+            && other.approval == nil && !other.pending && other.error == nil && !other.content.isEmpty
+    }
+
+    private var neighbours: (before: Message?, after: Message?) {
+        guard let messages = store.shownConversation?.messages,
+              let index = messages.firstIndex(where: { $0.id == message.id })
+        else { return (nil, nil) }
+        return (index > 0 ? messages[index - 1] : nil, index + 1 < messages.count ? messages[index + 1] : nil)
+    }
+
+    private var absorbedIntoRoutine: Bool {
+        guard Self.joinsRoutine(message) else { return false }
+        let around = neighbours
+        return around.before?.routineName != nil || around.after?.routineName != nil
+    }
+
+    private var row: some View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
             switch message.role {
             case .user:
@@ -232,8 +256,19 @@ struct MessageRow: View {
                     }
 
                     if let routine = message.routineName {
-                        // In the reply's own bubble, like every other reply's words.
-                        inBubble { routineReport(routine) }
+                        // One bubble with what Alice said around it, like every other reply's words.
+                        let around = neighbours
+                        inBubble {
+                            VStack(alignment: .leading, spacing: 10) {
+                                if let before = around.before, Self.joinsRoutine(before) {
+                                    RichMessageView(content: before.content)
+                                }
+                                routineReport(routine)
+                                if let after = around.after, Self.joinsRoutine(after) {
+                                    RichMessageView(content: after.content)
+                                }
+                            }
+                        }
                     } else if let agent = message.fromAgent {
                         AgentMessageCard(handle: agent) {
                             replyBody(message.content)

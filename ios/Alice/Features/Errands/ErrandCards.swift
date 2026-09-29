@@ -400,6 +400,8 @@ struct CheckoutApprovalCard: View {
     var onAddCard: (() -> Void)? = nil
     /// The order went through: the approved line says it was paid, not that it is being paid.
     var paid = false
+    /// Still going after the approval: it is paying now. Stopped before: it never paid.
+    var paying = true
     /// A stale checkout: prepared again, or the purchase given up.
     var onRefresh: () -> Void = {}
     let onAllow: () -> Void
@@ -427,7 +429,8 @@ struct CheckoutApprovalCard: View {
                     .font(.body.weight(.medium))
                 Text(payingWith.isEmpty ? shop
                      : paid ? language.pick("Paid with \(payingWith)", "Pagado con \(payingWith)")
-                     : language.pick("Paying with \(payingWith)", "Pagando con \(payingWith)"))
+                     : paying ? language.pick("Paying with \(payingWith)", "Pagando con \(payingWith)")
+                     : language.pick("Not paid · \(payingWith)", "No se llegó a pagar · \(payingWith)"))
                     .font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)

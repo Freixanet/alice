@@ -195,7 +195,8 @@ struct ErrandStack: View {
                                      onOpenPage: phase == .pending ? onOpenBrowser : nil,
                                      cards: cards, chosenCard: chosen,
                                      onChooseCard: { chosen = $0 }, onAddCard: { addingCard = true },
-                                     paid: errand.status == .done,
+                                     paid: errand.status == .done && errand.receipt?.paid != false,
+                                     paying: errand.status.isOpen,
                                      onRefresh: onRefreshCheckout,
                                      onAllow: { onDecide(true, chosen?.label ?? checkout.cardLabel) },
                                      onDeny: { phase == .expired ? onStop() : onDecide(false, "") })
