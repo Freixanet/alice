@@ -59,26 +59,43 @@ struct PurchaseCapsuleButton: View {
     }
 }
 
-/// "Visa ···4242" as a small brand mark, so the card reads at a glance.
+/// The card's own brand mark, drawn as the networks draw it — Mastercard's two circles, Visa's
+/// blue italic wordmark, Amex's blue box — on a white card-shaped tile.
 struct CardBrandBadge: View {
     let label: String
 
-    private var brand: String {
-        let first = label.split(separator: " ").first.map(String.init) ?? label
-        return first.count > 10 ? String(first.prefix(4)) : first
-    }
+    private var brand: String { label.lowercased() }
 
     var body: some View {
-        Text(brand.uppercased())
-            .font(.system(size: 11, weight: .heavy).italic())
-            .foregroundStyle(Color(red: 0.10, green: 0.12, blue: 0.45))
-            .minimumScaleFactor(0.6)
-            .lineLimit(1)
-            .padding(.horizontal, 4)
-            .frame(width: 46, height: 30)
-            .background(Color.white, in: .rect(cornerRadius: 7))
-            .overlay { RoundedRectangle(cornerRadius: 7).stroke(.black.opacity(0.08), lineWidth: 0.5) }
-            .accessibilityHidden(true)
+        ZStack {
+            RoundedRectangle(cornerRadius: 7).fill(Color.white)
+            mark
+        }
+        .frame(width: 46, height: 30)
+        .overlay { RoundedRectangle(cornerRadius: 7).stroke(.black.opacity(0.08), lineWidth: 0.5) }
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private var mark: some View {
+        if brand.contains("master") {
+            HStack(spacing: -7) {
+                Circle().fill(Color(red: 0.92, green: 0.0, blue: 0.11))
+                Circle().fill(Color(red: 0.97, green: 0.62, blue: 0.11)).opacity(0.9)
+            }
+            .frame(height: 18)
+        } else if brand.contains("visa") {
+            Text("VISA")
+                .font(.system(size: 13, weight: .black).italic())
+                .foregroundStyle(Color(red: 0.08, green: 0.12, blue: 0.47))
+        } else if brand.contains("amex") || brand.contains("american") {
+            Text("AMEX")
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 4).padding(.vertical, 3)
+                .background(Color(red: 0.0, green: 0.44, blue: 0.81), in: .rect(cornerRadius: 3))
+        } else {
+            Image(systemName: "creditcard.fill").foregroundStyle(.gray)
+        }
     }
 }
 
@@ -95,8 +112,10 @@ struct ShopLogo: View {
     var body: some View {
         Group {
             if let errandID, let logo = store.errandBoard.logos[errandID] {
-                Image(uiImage: logo).resizable().scaledToFit().padding(size * 0.14)
-                    .background(Color.white)
+                // Filling the circle, on the logo's own edge colour: a square icon fitted inside
+                // with a margin left white corners around it.
+                Image(uiImage: logo).resizable().scaledToFill()
+                    .background(Color(uiColor: logo.edgeColor))
             } else if let image {
                 CardImage(image: image, page: nil, symbol: "bag", fits: true).padding(size * 0.1)
                     .background(Color.white)
@@ -891,5 +910,23 @@ struct PurchaseProductSheet: View {
         }
         .padding(4)
         .background(Palette.muted(scheme), in: .capsule)
+    }
+}
+
+extension UIImage {
+    /// The colour at the picture's top-left corner: what surrounds a logo drawn on a square.
+    var edgeColor: UIColor {
+        guard let cg = cgImage,
+              let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let corner = cg.cropping(to: CGRect(x: 0, y: 0, width: 2, height: 2))
+        else { return .white }
+        context.draw(corner, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard let data = context.data else { return .white }
+        let pixel = data.bindMemory(to: UInt8.self, capacity: 4)
+        if pixel[3] < 20 { return .white }
+        return UIColor(red: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255,
+                       blue: CGFloat(pixel[2]) / 255, alpha: 1)
     }
 }
