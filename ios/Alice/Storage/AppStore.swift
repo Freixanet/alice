@@ -8971,6 +8971,14 @@ final class AppStore {
            let profile = conversations[chat].routedBotName {
             guard !botRetryInFlight else { return }
             botRetryInFlight = true
+            // Answered at once: the rewind below takes several round trips to Hermes, and
+            // a Retry that showed nothing for ten seconds read as broken. The reply shows
+            // as thinking now; a failure replaces it with its reason.
+            conversations[chat].messages[index].error = nil
+            conversations[chat].messages[index].errorLimit = nil
+            conversations[chat].messages[index].runStatus = nil
+            conversations[chat].messages[index].content = ""
+            conversations[chat].messages[index].pending = true
             let conversationID = conversations[chat].id
             Task { [weak self] in
                 guard let self else { return }
@@ -9011,7 +9019,12 @@ final class AppStore {
                     return
                 }
                 self.botRetryInFlight = false
-                guard self.activeID == conversationID, !self.isSending else { return }
+                guard self.activeID == conversationID, !self.isSending else {
+                    // Left the chat meanwhile: the reply stops showing as thinking.
+                    self.fail(messageID, conversationID: conversationID,
+                              message: "Retry was interrupted. Try again.", limit: nil)
+                    return
+                }
                 self.resend(priorUser, replacing: messageID, in: conversationID, text: text)
             }
             return
