@@ -397,6 +397,22 @@ class AuditFixTests(Base):
         self.assertIn("errand_start", errands.brief({"request": "x"}))
         self.assertIn("nunca llames a `errand_start`", errands.brief({"request": "x"}))
 
+
+class RestartTests(Base):
+    def test_a_restarted_engine_waits_for_the_run_still_going(self):
+        entry = self.errand()
+        errands.update(self.home, entry["id"], run_id="run_old")
+        gateway = FakeGateway([done("Seguimos")])
+        polls = [{"status": "running"}, {"status": "completed", "output": "Hecho"}]
+        original = gateway.status
+        gateway.status = lambda run_id: polls.pop(0) if run_id == "run_old" and polls else original(run_id)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None)
+        self.assertEqual(engine.run("[Continuing toward your standing goal] reinicio"), "done")
+        # Only one new run, after the old one ended, with a plain continuation.
+        self.assertEqual(len(gateway.started), 1)
+        self.assertEqual(gateway.started[0][1], errands.CONTINUATION)
+
 class AnswerTests(unittest.TestCase):
     def test_answers_become_the_lines_ask_person_reads(self):
         text = errands.answer_text({"size": "500 g", "flavour": "Sin sabor", "bad id!": "x"})

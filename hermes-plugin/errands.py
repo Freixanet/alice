@@ -657,6 +657,16 @@ class Engine:
         text = message or brief(entry)
         previous = ""
         stalls = 0
+        # Restarted while its last run still goes on in the gateway: that run finishes first,
+        # never a second one beside it in the same session.
+        if entry.get("run_id") and message:
+            try:
+                still = str(self.gateway.status(entry["run_id"]).get("status") or "")
+            except Exception:  # noqa: BLE001 — gone or unreachable: nothing to wait for
+                still = ""
+            if still in ("running", "waiting_for_approval", "queued"):
+                self._wait_run(entry["run_id"])
+                text = CONTINUATION
         while True:
             entry = self._entry()
             if entry.get("status") != "working":

@@ -97,7 +97,6 @@ POINTER_JS = r"""
 # Frames travel to a phone, often over a slow link: small enough that several arrive a
 # second (the page is 820 CSS pixels wide; a phone shows it at about that).
 SCREENCAST = {"format": "jpeg", "quality": 45, "maxWidth": 700, "maxHeight": 1110, "everyNthFrame": 1}
-SHOT = {"format": "jpeg", "quality": 45, "clip": {"x": 0, "y": 0, "width": 820, "height": 1300, "scale": 0.85}}
 
 # With no new screencast frame for this long, a screenshot is taken instead.
 STALE_SECONDS = 1.5
@@ -387,6 +386,20 @@ class Screencast:
         self._thread = threading.Thread(target=self._run, name="alice-screencast", daemon=True)
         self._thread.start()
 
+    def _shot(self) -> Dict[str, Any]:
+        """A still framed exactly like the screencast: the visible part of the page at the same
+        size. A fixed 820×1300 clip showed more page than the live frames, so the picture shrank
+        and grew back each time a still stood in for a frame."""
+        width = float(self.meta.get("deviceWidth") or 0)
+        height = float(self.meta.get("deviceHeight") or 0)
+        if not width or not height:
+            # No frame yet: the visible page as it is, the same shape the screencast will have.
+            return {"format": "jpeg", "quality": SCREENCAST["quality"]}
+        scale = min(SCREENCAST["maxWidth"] / width, SCREENCAST["maxHeight"] / height, 1.0)
+        return {"format": "jpeg", "quality": SCREENCAST["quality"], "clip": {
+            "x": float(self.meta.get("scrollOffsetX") or 0), "y": float(self.meta.get("scrollOffsetY") or 0),
+            "width": width, "height": height, "scale": scale}}
+
     def _send(self, method: str, params: Dict[str, Any]) -> None:
         with self._send_lock:
             if self._socket is None:
@@ -406,7 +419,7 @@ class Screencast:
                 self._send("Page.addScriptToEvaluateOnNewDocument", {"source": POINTER_JS})
                 self._send("Runtime.evaluate", {"expression": POINTER_JS})
                 self._send("Page.startScreencast", SCREENCAST)
-                self._send("Page.captureScreenshot", SHOT)
+                self._send("Page.captureScreenshot", self._shot())
                 asked = time.monotonic()
                 while not self.closed:
                     now = time.monotonic()
@@ -416,7 +429,7 @@ class Screencast:
                     # that stop repainting: a picture every second and a half anyway.
                     if now - max(getattr(self, "framed", 0.0), asked) > STALE_SECONDS:
                         asked = now
-                        self._send("Page.captureScreenshot", SHOT)
+                        self._send("Page.captureScreenshot", self._shot())
                     try:
                         raw = socket.recv(timeout=0.5)
                     except TimeoutError:
