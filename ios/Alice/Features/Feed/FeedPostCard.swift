@@ -82,12 +82,17 @@ struct FeedPostCard: View {
             Button(action: onLove) {
                 Image(systemName: post.loved ? "heart.fill" : "heart")
                     .foregroundStyle(post.loved ? AnyShapeStyle(.pink) : AnyShapeStyle(.secondary))
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: post.loved)
                     .frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityLabel(post.loved ? "Unlove" : "Love")
-            .sensoryFeedback(.selection, trigger: post.loved)
+            .haptic(.selection, trigger: post.loved)
 
-            Button(action: onDiscuss) {
+            Button {
+                Haptic.tap.play()
+                onDiscuss()
+            } label: {
                 Label("Discuss", systemImage: "bubble.left.and.text.bubble.right")
                     .labelStyle(.iconOnly)
                     .frame(minWidth: 44, minHeight: 44)
@@ -113,7 +118,7 @@ struct FeedPostCard: View {
             }
             .accessibilityLabel("More options")
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.pressable)
         .foregroundStyle(.secondary)
         .font(.system(size: 17, weight: .medium))
     }

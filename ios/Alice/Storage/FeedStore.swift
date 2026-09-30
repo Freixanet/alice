@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Observation
 import os
 
@@ -72,7 +73,8 @@ final class FeedStore {
             let merged = FeedMerge.merge(
                 server: payload.feedPosts, local: cache.posts.filter { !$0.isSeeded }, outbox: cache.outbox
             )
-            cache.posts = merged + seeded
+            // New posts slide in and gone ones fold away, rather than the list jumping.
+            withAnimation(.snappy) { cache.posts = merged + seeded }
             if let text = payload.brief?.text { cache.brief = text }
         }
         cache.generation = payload.feedGeneration
@@ -203,7 +205,7 @@ final class FeedStore {
     /// app's own and never reach the Mac.
     private func record(_ post: FeedPost, kind: FeedEvent.Kind, on: Bool?) async {
         let event = FeedEvent(id: UUID(), postID: post.id, kind: kind, on: on, createdAt: Date())
-        cache.posts = FeedMerge.replay([event], on: cache.posts)
+        withAnimation(.snappy) { cache.posts = FeedMerge.replay([event], on: cache.posts) }
         guard !post.isSeeded else {
             if kind == .delete, on == true { cache.posts.removeAll { $0.id == post.id && $0.deleted } }
             save()

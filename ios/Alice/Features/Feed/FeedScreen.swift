@@ -19,6 +19,7 @@ struct FeedScreen: View {
     var body: some View {
         List {
             generationRow
+                .animation(.snappy(duration: 0.25), value: feed.generation.state)
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
@@ -78,6 +79,7 @@ struct FeedScreen: View {
         .sheet(isPresented: $editingBrief) {
             FeedBriefEditor(initial: feed.brief, running: feed.generation.state == .running) { text in
                 let saved = await feed.saveBrief(text)
+                (saved ? Haptic.success : Haptic.error).play()
                 if saved { feed.watch() }
                 return saved
             }
@@ -109,6 +111,7 @@ struct FeedScreen: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Button("Retry") {
+                    Haptic.tap.play()
                     Task {
                         await feed.requestGeneration()
                         feed.watch()
@@ -132,6 +135,7 @@ struct FeedScreen: View {
                     .font(.subheadline)
                 Spacer(minLength: 0)
                 Button("Undo") {
+                    Haptic.success.play()
                     undoTask?.cancel()
                     undoable = nil
                     Task { await feed.undoDelete(post) }
@@ -149,6 +153,7 @@ struct FeedScreen: View {
     }
 
     private func delete(_ post: FeedPost) {
+        Haptic.warning.play()
         withAnimation(.snappy) { undoable = post }
         Task { await feed.delete(post) }
         undoTask?.cancel()
