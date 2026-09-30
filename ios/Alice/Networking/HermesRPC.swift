@@ -48,6 +48,21 @@ struct HermesRPCEvent: @unchecked Sendable {
     let type: String
     let sessionID: String
     let payload: [String: Any]
+    /// Hermes numbers each session's events (`tui_gateway/event_replay.py`); a missed stretch
+    /// can be asked for again with `session.events.since` (`EventResume`). Absent on
+    /// session-less events.
+    var seq: Int? = nil
+
+    /// One event from its `params`: a live frame's, or one `session.events.since` returns.
+    static func parse(_ params: [String: Any]) -> HermesRPCEvent? {
+        guard let type = params["type"] as? String else { return nil }
+        return HermesRPCEvent(
+            type: type,
+            sessionID: (params["session_id"] as? String) ?? "",
+            payload: (params["payload"] as? [String: Any]) ?? [:],
+            seq: (params["seq"] as? Int) ?? (params["seq"] as? NSNumber)?.intValue
+        )
+    }
 }
 
 private final class HermesWebSocketOpenDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
@@ -155,6 +170,7 @@ actor HermesRPCClient: HermesRPCTransport {
     private var listeners: [UUID: AsyncStream<HermesRPCEvent>.Continuation] = [:]
     private var nextID = 1
     private var pump: Task<Void, Never>?
+    private var heartbeat: Task<Void, Never>?
     private var openingSocket: URLSessionWebSocketTask?
     private var retired = false
     // `actor` methods are re-entrant across `await`: two first calls can both
@@ -198,6 +214,13 @@ actor HermesRPCClient: HermesRPCTransport {
     /// long chat within a few, so a call still unanswered after this long is
     /// a connection that is gone, not a server that is slow.
     static let callDeadline: Duration = .seconds(45)
+
+    /// A socket that died without a close frame (a network change, the Mac asleep) answers
+    /// nothing. While something is listening, a `gateway.ping` — answered by Hermes' socket
+    /// loop itself, never queued behind an agent — goes out this often, and one unanswered
+    /// within `heartbeatDeadline` drops the socket so the watch reconnects and catches up.
+    static let heartbeatInterval: Duration = .seconds(10)
+    static let heartbeatDeadline: Duration = .seconds(5)
 
     func call(_ method: String, _ params: JSONObject) async throws -> JSONObject {
         try await call(method, params, within: Self.callDeadline)
@@ -317,13 +340,9 @@ actor HermesRPCClient: HermesRPCTransport {
         }
         guard frame["method"] as? String == "event",
               let params = frame["params"] as? [String: Any],
-              let type = params["type"] as? String
+              let event = HermesRPCEvent.parse(params)
         else { return .ignored }
-        return .event(HermesRPCEvent(
-            type: type,
-            sessionID: (params["session_id"] as? String) ?? "",
-            payload: (params["payload"] as? [String: Any]) ?? [:]
-        ))
+        return .event(event)
     }
 
     nonisolated func events() -> AsyncStream<HermesRPCEvent> {
@@ -347,6 +366,8 @@ actor HermesRPCClient: HermesRPCTransport {
         )
         pump?.cancel()
         pump = nil
+        heartbeat?.cancel()
+        heartbeat = nil
         openingSocket?.cancel(with: .goingAway, reason: nil)
         openingSocket = nil
         socket?.cancel(with: .goingAway, reason: nil)
@@ -420,6 +441,7 @@ actor HermesRPCClient: HermesRPCTransport {
             }
             socket = task
             pump = Task { [weak self] in await self?.receive(on: task) }
+            heartbeat = Task { [weak self] in await self?.beat(on: task) }
             finishConnection(with: .success(()))
         } catch {
             openingSocket = nil
@@ -454,6 +476,22 @@ actor HermesRPCClient: HermesRPCTransport {
                 // The socket is gone. Everything waiting is told so, and the
                 // next call reconnects — the ticket it used is spent anyway.
                 disconnect(error)
+                return
+            }
+        }
+    }
+
+    /// Pings while this socket is the open one and someone listens; an unanswered ping ends in
+    /// `expire`, which drops the socket (unless a long call is still inside its own time).
+    private func beat(on task: URLSessionWebSocketTask) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Self.heartbeatInterval)
+            guard !Task.isCancelled, socket === task else { return }
+            guard !listeners.isEmpty else { continue }
+            do {
+                _ = try await call("gateway.ping", JSONObject([:]), within: Self.heartbeatDeadline)
+            } catch {
+                DiagnosticsLog.write("rpc.heartbeat missed: \(error.localizedDescription)")
                 return
             }
         }

@@ -7360,7 +7360,10 @@ final class AppStore {
         var ending = BotTurnEnding.stopped
         do {
             var storedSessionID: String
-            let events = source.rpc.events()
+            // Through `EventResume`: what Hermes sent while the socket was down is asked for
+            // again and arrives in order, instead of the reply jumping to its end.
+            let resume = EventResume(rpc: source.rpc)
+            let events = resume.stream(source.rpc.events())
             let submission: BotChatSubmission
             if profile != nil, !mention,
                let task = conversations.first(where: { $0.id == conversationID }), task.isAgentTask {
@@ -7437,6 +7440,7 @@ final class AppStore {
                     + "live=\(submission.liveSessionID) disposition=\(submission.disposition)"
             )
             track(liveSessionID: submission.liveSessionID, for: conversationID)
+            await resume.follow(submission.liveSessionID)
             // Stop may have been tapped while prompt.submit itself was still
             // awaiting its ACK. In that window interrupting first would race
             // the yet-to-arrive prompt and let it run AFTER the stop. The stop
@@ -7631,11 +7635,19 @@ final class AppStore {
                         }
                         state = .failure(error)
                     }
+                    // The check reattached the socket to the same runtime: anything it emitted
+                    // meanwhile (the rest of the answer, its ending) is read before the turn is
+                    // judged from the snapshot.
+                    if case let .success(current) = state, current.liveSessionID == watch.liveSessionID,
+                       await resume.catchUp(current.liveSessionID) > 0 {
+                        continue
+                    }
                     switch watch.checked(state, now: Date()) {
                     case let .keepWaiting(liveSessionIDChanged):
                         DiagnosticsLog.write("watch.keepWaiting reply=\(replyID) changed=\(liveSessionIDChanged)")
                         if liveSessionIDChanged {
                             track(liveSessionID: watch.liveSessionID, for: conversationID)
+                            await resume.follow(watch.liveSessionID)
                         }
                         setDeliveryNote(
                             watch.needsTranscriptCorrelation ? waitingNote : nil,
