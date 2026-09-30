@@ -12,6 +12,7 @@ import TipKit
 /// A page, like Agents, not a sheet: a sheet closes on a stray downward swipe,
 /// which is the gesture of someone scrolling back through what they wrote.
 struct NotesScreen: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The folder shown, opened from the folders page.
     var scope: NotesScope = .quick
 
@@ -261,7 +262,7 @@ struct NotesScreen: View {
     private func pinSelection() {
         let notes = selectedNotes
         let allPinned = notes.allSatisfy { store.pinnedNotes.contains($0.id) }
-        withAnimation(.snappy(duration: 0.3)) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) {
             for note in notes where store.pinnedNotes.contains(note.id) == allPinned {
                 store.togglePinned(note)
             }
@@ -411,7 +412,7 @@ struct NotesScreen: View {
             // The end of a swipe is not a tap on the note.
             guard Date.now.timeIntervalSince(lastSwipe) > 0.35 else { return }
             guard swipedOpen == nil else {
-                withAnimation(.snappy(duration: 0.25)) { swipedOpen = nil }
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { swipedOpen = nil }
                 store.noteRowOpen = false
                 return
             }
@@ -443,7 +444,7 @@ struct NotesScreen: View {
             shareText: hides(note) ? "" : note.text,
             pinned: store.pinnedNotes.contains(note.id),
             onPin: {
-                withAnimation(.snappy(duration: 0.3)) { store.togglePinned(note) }
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) { store.togglePinned(note) }
             },
             lastSwipe: $lastSwipe,
             moving: Binding(
@@ -713,7 +714,7 @@ struct NotesScreen: View {
         .controlGroupStyle(.compactMenu)
         let pinned = store.pinnedNotes.contains(note.id)
         Button(pinned ? "Unpin Note" : "Pin Note", systemImage: pinned ? "pin.slash" : "pin") {
-            withAnimation(.snappy(duration: 0.3)) { store.togglePinned(note) }
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) { store.togglePinned(note) }
             NoteActionsTip().invalidate(reason: .actionPerformed)
         }
         AddToHomeButton(
@@ -749,13 +750,13 @@ struct NotesScreen: View {
 
     private func toggleLock(_ note: Note) {
         guard store.isLocked(note) else {
-            withAnimation { store.setLocked(note, true) }
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { store.setLocked(note, true) }
             return
         }
         // Taking a lock off is only for whoever can open it.
         Task {
             if await Biometrics.authenticate(reason: "Remove the lock from this note.") {
-                withAnimation { store.setLocked(note, false) }
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { store.setLocked(note, false) }
             }
         }
     }
@@ -876,6 +877,7 @@ enum SwipeSide { case leading, trailing }
 /// corner radius, over the page — so it reads as lifted off the list rather
 /// than as its text sliding across a background that stays put.
 struct SwipeToDelete: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var openSide: SwipeSide?
     let shareText: String
     let pinned: Bool
@@ -973,7 +975,7 @@ struct SwipeToDelete: ViewModifier {
         _ title: String, symbol: String, tint: Color, shown: CGFloat, run: @escaping () -> Void
     ) -> some View {
         Button {
-            withAnimation(.snappy(duration: 0.25)) { openSide = nil }
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { openSide = nil }
             run()
         } label: {
             actionFace(title, symbol: symbol, tint: tint)
@@ -992,7 +994,7 @@ struct SwipeToDelete: ViewModifier {
         let width = max(50, offset - inset * 2)
         let title = pinned ? "Unpin" : "Pin"
         return Button {
-            withAnimation(.snappy(duration: 0.25)) { openSide = nil }
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { openSide = nil }
             onPin()
         } label: {
             VStack(spacing: 6) {
@@ -1037,7 +1039,7 @@ struct SwipeToDelete: ViewModifier {
                     }
                     .buttonStyle(.plain)
                     .simultaneousGesture(TapGesture().onEnded {
-                        withAnimation(.snappy(duration: 0.25)) { openSide = nil }
+                        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { openSide = nil }
                     })
                     .scaleEffect(max(0.01, revealed(2)))
                     .opacity(revealed(2))
@@ -1104,7 +1106,7 @@ struct SwipeToDelete: ViewModifier {
                 if fullSwipe {
                     fullSwipe = false
                     passedOpen = nil
-                    withAnimation(.snappy(duration: 0.3)) {
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) {
                         drag = 0
                         openSide = nil
                     } completion: {
@@ -1114,7 +1116,7 @@ struct SwipeToDelete: ViewModifier {
                     return
                 }
                 let landing = side(at: resting + projected)
-                withAnimation(.snappy(duration: 0.3)) {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) {
                     drag = 0
                     openSide = landing
                 } completion: {

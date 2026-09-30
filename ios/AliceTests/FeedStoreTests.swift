@@ -124,4 +124,60 @@ final class FeedStoreTests: XCTestCase {
         let reopened = FeedStore(client: DashboardClient(), file: file)
         XCTAssertEqual(reopened.posts.count, 5)
     }
+
+    @MainActor
+    func testRepeatedGenerationRequestsStartOnlyOneRun() async {
+        StubProtocol.install { _, _ in .init(status: 200) }
+        let client = await makeStubbedDashboard()
+        let store = FeedStore(client: client, file: nil)
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<8 {
+                group.addTask { await store.requestGeneration() }
+            }
+        }
+        XCTAssertEqual(StubProtocol.count("POST", "/api/plugins/alice/feed/generate"), 1)
+        XCTAssertEqual(store.generation.state, .queued)
+        XCTAssertFalse(store.requestingGeneration)
+    }
+
+    @MainActor
+    func testFailedGenerationCanBeRetriedWithoutLosingPosts() async {
+        let fail = Flag(true)
+        StubProtocol.install { _, path in
+            .init(status: path.hasSuffix("/generate") && fail.value ? 503 : 200)
+        }
+        let store = FeedStore(client: await makeStubbedDashboard(), file: nil)
+        let before = store.posts.map(\.id)
+        await store.requestGeneration()
+        XCTAssertNotNil(store.offlineReason)
+        XCTAssertFalse(store.requestingGeneration)
+        XCTAssertEqual(store.posts.map(\.id), before)
+        fail.set(false)
+        await store.requestGeneration()
+        XCTAssertNil(store.offlineReason)
+        XCTAssertEqual(store.generation.state, .queued)
+        XCTAssertEqual(StubProtocol.count("POST", "/api/plugins/alice/feed/generate"), 2)
+    }
+
+    @MainActor
+    func testRestartingFeedWatchKeepsTheReplacementWatcherAlive() async throws {
+        StubProtocol.install { _, path in
+            let body = path.hasSuffix("/status")
+                ? "{\"revision\":1,\"generation\":{\"state\":\"running\"}}"
+                : "{\"revision\":1,\"generation\":{\"state\":\"running\"},\"posts\":[]}"
+            return .init(status: 200, body: Data(body.utf8))
+        }
+        let store = FeedStore(client: await makeStubbedDashboard(), file: nil)
+        await store.sync()
+        store.watch()
+        await Task.yield()
+        store.stopWatching()
+        store.watch()
+        defer { store.stopWatching() }
+        // Let the cancelled task finish. It must not clear the newer watcher.
+        try await Task.sleep(for: .milliseconds(100))
+        store.watch()
+        try await Task.sleep(for: .milliseconds(4300))
+        XCTAssertEqual(StubProtocol.count("GET", "/api/plugins/alice/feed/status"), 1)
+    }
 }

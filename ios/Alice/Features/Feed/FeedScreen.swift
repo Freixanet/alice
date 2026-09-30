@@ -7,6 +7,8 @@ import SwiftUI
 struct FeedScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     var onOpenedChat: () -> Void = {}
 
     @State private var editingBrief = false
@@ -19,10 +21,16 @@ struct FeedScreen: View {
     var body: some View {
         List {
             generationRow
-                .animation(.snappy(duration: 0.25), value: feed.generation.state)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: feed.generation.state)
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+            if feed.posts.isEmpty {
+                emptyState
+                    .listRowInsets(EdgeInsets(top: 28, leading: 24, bottom: 28, trailing: 24))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
             ForEach(feed.posts) { post in
                 FeedPostCard(
                     post: post,
@@ -65,17 +73,22 @@ struct FeedScreen: View {
         .refreshable {
             await feed.requestGeneration()
             await feed.sync()
-            feed.watch()
+            if !Task.isCancelled, scenePhase == .active { feed.watch() }
         }
-        .task {
+        .task(id: scenePhase) {
+            guard scenePhase == .active else {
+                feed.stopWatching()
+                return
+            }
             await feed.sync()
+            guard !Task.isCancelled else { return }
             feed.watch()
         }
         .onDisappear { feed.stopWatching() }
         .onChange(of: feed.generation.isActive) { _, active in
-            if active { feed.watch() }
+            if active, scenePhase == .active { feed.watch() }
         }
-        .overlay(alignment: .bottom) { undoBar }
+        .safeAreaInset(edge: .bottom, spacing: 0) { undoBar }
         .sheet(isPresented: $editingBrief) {
             FeedBriefEditor(initial: feed.brief, running: feed.generation.state == .running) { text in
                 let saved = await feed.saveBrief(text)
@@ -92,6 +105,37 @@ struct FeedScreen: View {
         }
     }
 
+    /// An empty feed still says what is happening and offers one useful next step.
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            if feed.syncing || feed.requestingGeneration || feed.generation.isActive {
+                if !feed.generation.isActive { ProgressView() }
+                Text(feed.generation.isActive ? String(localized: "Your first posts are on their way") : String(localized: "Checking for posts…"))
+                    .font(.headline)
+            } else {
+                Text("No posts yet")
+                    .font(.aliceTitle(.title2))
+                    .accessibilityAddTraits(.isHeader)
+                Text(feed.offlineReason == nil
+                     ? String(localized: "Choose what Alice covers, then ask your Mac for new posts.")
+                     : String(localized: "Your saved posts will appear here when your Mac is reachable."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if feed.offlineReason != nil {
+                    Button("Retry") { Task { await feed.sync(); feed.watch() } }
+                        .buttonStyle(.bordered)
+                        .disabled(feed.syncing)
+                } else if feed.generation.state != .failed {
+                    Button("Coverage brief") { editingBrief = true }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .accessibilityIdentifier("feed.empty")
+    }
+
     /// What the Mac is doing with the feed, in one quiet line; nothing while it rests.
     @ViewBuilder
     private var generationRow: some View {
@@ -106,22 +150,32 @@ struct FeedScreen: View {
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
         case .failed:
-            HStack(spacing: 6) {
+            VStack(spacing: 8) {
                 Text("Couldn’t write new posts")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Button("Retry") {
+                if let error = feed.generation.error, !error.isEmpty {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button {
                     Haptic.tap.play()
                     Task {
                         await feed.requestGeneration()
                         feed.watch()
                     }
+                } label: {
+                    Text("Retry").frame(minHeight: 44)
                 }
                 .font(.footnote.weight(.semibold))
                 .buttonStyle(.borderless)
+                .disabled(feed.requestingGeneration)
                 .accessibilityHint("Asks your Mac to write new posts again")
             }
             .frame(maxWidth: .infinity)
+            .multilineTextAlignment(.center)
         case .idle:
             EmptyView()
         }
@@ -134,11 +188,13 @@ struct FeedScreen: View {
                 Text("Post deleted")
                     .font(.subheadline)
                 Spacer(minLength: 0)
-                Button("Undo") {
-                    Haptic.success.play()
+                Button {
+                    Haptic.tap.play()
                     undoTask?.cancel()
                     undoable = nil
                     Task { await feed.undoDelete(post) }
+                } label: {
+                    Text("Undo").frame(minHeight: 44)
                 }
                 .font(.subheadline.weight(.semibold))
                 .accessibilityHint("Brings the post back")
@@ -148,19 +204,19 @@ struct FeedScreen: View {
             .glassEffect(.regular, in: .capsule)
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
         }
     }
 
     private func delete(_ post: FeedPost) {
         Haptic.warning.play()
-        withAnimation(.snappy) { undoable = post }
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { undoable = post }
         Task { await feed.delete(post) }
         undoTask?.cancel()
         undoTask = Task {
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
-            withAnimation(.snappy) { undoable = nil }
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { undoable = nil }
         }
     }
 
@@ -173,20 +229,24 @@ struct FeedScreen: View {
 /// Why a post is in the feed, as Alice put it.
 private struct FeedWhyThisSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
     let post: FeedPost
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(post.headline)
-                    .font(.headline)
-                Text(post.whyThis ?? "")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(post.headline)
+                        .font(.headline)
+                    Text(post.whyThis ?? "")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollBounceBehavior(.basedOnSize)
+            .background(Palette.background(scheme))
             .navigationTitle("Why this")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

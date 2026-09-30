@@ -9,16 +9,13 @@ struct HomeShortcutsShelf: View {
     @Environment(\.colorScheme) private var scheme
 
     @State private var draggedID: String?
+    @ScaledMetric(relativeTo: .caption) private var tileWidth: CGFloat = 96
 
     var body: some View {
         let items = store.homeShortcuts
-        VStack(spacing: 18) {
-            ForEach(Array(stride(from: 0, to: items.count, by: 3)), id: \.self) { start in
-                HStack(alignment: .top, spacing: 16) {
-                    ForEach(items[start..<min(start + 3, items.count)]) { shortcut in
-                        tile(shortcut)
-                    }
-                }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: tileWidth), spacing: 16, alignment: .top)], spacing: 18) {
+            ForEach(items) { shortcut in
+                tile(shortcut)
             }
         }
         .frame(maxWidth: .infinity)
@@ -34,15 +31,15 @@ struct HomeShortcutsShelf: View {
                 icon(for: shortcut)
                 Text(store.homeShortcutStyledLabel(shortcut))
                     .font(.caption.weight(.medium))
-                    .lineLimit(2, reservesSpace: true)
+                    .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 88, alignment: .top)
+                    .frame(maxWidth: tileWidth, alignment: .top)
             }
-            .frame(width: 96, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .top)
             .contentShape(.rect)
             .contentShape(.contextMenuPreview, PortraitMenuShape(diameter: 52, gap: 6))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityIdentifier("home.shortcut.\(shortcut.id)")
         .accessibilityLabel(store.homeShortcutLabel(shortcut))
         .contextMenu {

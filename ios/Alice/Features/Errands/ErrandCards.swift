@@ -27,6 +27,7 @@ struct DottedDivider: View {
 /// A tall capsule, the grey one for refusing and the accent one for going on.
 struct PurchaseCapsuleButton: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppStore.self) private var store
     let title: String
     var prominent = false
@@ -54,11 +55,12 @@ struct PurchaseCapsuleButton: View {
             .opacity(disabled ? 0.5 : 1)
             .contentShape(.capsule)
             // Label ⇄ spinner as the answer goes out and comes back.
-            .animation(.snappy(duration: 0.2), value: busy)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: busy)
         }
         // Pay, Deny, Cancel: the buttons that matter most give under the finger.
         .buttonStyle(PressableCardStyle())
         .disabled(disabled || busy)
+        .accessibilityLabel(title)
     }
 }
 
@@ -217,7 +219,7 @@ struct ErrandBrowserCard: View {
                     Text("\(errand.status.label(language)) · \(errand.title)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
                 Spacer(minLength: 0)
                 if errand.status == .working { LivePulse(color: Palette.success(scheme)) }
@@ -277,6 +279,7 @@ struct ErrandBrowserCard: View {
 /// The order under way, and then that it went through: what, where, how long, the steps.
 struct ErrandProgressCard: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppStore.self) private var store
     let errand: Errand
     /// nil in the walkthrough, which shows `logo` instead.
@@ -288,7 +291,7 @@ struct ErrandProgressCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button { withAnimation(.snappy) { expanded.toggle() } } label: {
+            Button { withAnimation(reduceMotion ? nil : .snappy) { expanded.toggle() } } label: {
                 HStack(spacing: 12) {
                     ShopLogo(errandID: logoID, image: logo)
                     VStack(alignment: .leading, spacing: 1) {
@@ -346,8 +349,8 @@ struct ErrandProgressCard: View {
                     .contentTransition(.opacity)
             }
             // Working → waiting for you → done reads as one card changing, not a new one.
-            .animation(.snappy(duration: 0.3), value: errand.status)
-            .animation(.snappy(duration: 0.3), value: statusLine)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: errand.status)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: statusLine)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -793,6 +796,7 @@ struct ErrandReceiptCard: View {
 /// tap on a choice moves on, and the last one sends them all.
 struct ErrandQuestionsCard: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let errand: Errand
     var sending = false
     let onAnswer: ([String: String]) -> Void
@@ -835,7 +839,7 @@ struct ErrandQuestionsCard: View {
                     }
                 }
                 if index > 0 {
-                    Button { withAnimation(.snappy) { index -= 1 } } label: {
+                    Button { withAnimation(reduceMotion ? nil : .snappy) { index -= 1 } } label: {
                         Label(language.pick("Back", "Atrás"), systemImage: "chevron.left").font(.subheadline)
                     }
                     .buttonStyle(.plain)
@@ -846,7 +850,7 @@ struct ErrandQuestionsCard: View {
         }
         .padding(16)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
-        .animation(.snappy, value: index)
+        .animation(reduceMotion ? nil : .snappy, value: index)
     }
 
     private func advance() {
@@ -915,6 +919,7 @@ struct ErrandConfirmCard: View {
 /// option to choose, and the two ways on: buy it with Alice, or go to the shop.
 struct PurchaseProductSheet: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
 
     let image: URL?
@@ -977,7 +982,7 @@ struct PurchaseProductSheet: View {
     private var optionPicker: some View {
         HStack(spacing: 0) {
             ForEach(Array(options.enumerated()), id: \.offset) { index, name in
-                Button { withAnimation(.snappy) { chosen = index } } label: {
+                Button { withAnimation(reduceMotion ? nil : .snappy) { chosen = index } } label: {
                     Text(name).font(.body)
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .background {

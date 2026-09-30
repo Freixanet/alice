@@ -13,6 +13,7 @@ struct FeedBriefEditor: View {
     @State private var text = ""
     @State private var saving = false
     @State private var failed = false
+    @State private var confirmingDiscard = false
     @FocusState private var focused: Bool
 
     private var changed: Bool {
@@ -26,6 +27,7 @@ struct FeedBriefEditor: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 TextEditor(text: $text)
+                    .disabled(saving)
                     .focused($focused)
                     .scrollContentBackground(.hidden)
                     .padding(10)
@@ -39,7 +41,7 @@ struct FeedBriefEditor: View {
                 if failed {
                     Text("The brief couldn’t be saved. Check that your Mac is reachable and try again.")
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                 }
             }
             .padding(16)
@@ -48,7 +50,11 @@ struct FeedBriefEditor: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if changed { confirmingDiscard = true }
+                        else { dismiss() }
+                    }
+                    .disabled(saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if saving {
@@ -72,6 +78,11 @@ struct FeedBriefEditor: View {
                 text = initial
                 focused = true
             }
+            .confirmationDialog("Discard changes to the coverage brief?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
+                Button("Discard changes", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
         }
+        .interactiveDismissDisabled(changed || saving)
     }
 }

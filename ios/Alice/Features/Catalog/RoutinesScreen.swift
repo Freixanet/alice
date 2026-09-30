@@ -150,7 +150,8 @@ struct RoutinesScreen: View {
                 }
             }
             if let error = RoutinePresentation.failureText(routine) {
-                Text(error).font(.caption).foregroundStyle(.red).lineLimit(1)
+                Text(error).font(.caption).foregroundStyle(Palette.danger(scheme))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, 4)
@@ -243,6 +244,7 @@ enum RoutinePresentation {
 }
 
 struct RoutineDetailSheet: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
@@ -328,7 +330,7 @@ struct RoutineDetailSheet: View {
                             .listRowBackground(Palette.card(scheme))
                         if promptExpanded || instructionsAreTruncated {
                             Button(promptExpanded ? "Show less" : "Show all") {
-                                withAnimation { promptExpanded.toggle() }
+                                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { promptExpanded.toggle() }
                             }
                             .font(.footnote)
                             .listRowBackground(Palette.card(scheme))
@@ -365,7 +367,7 @@ struct RoutineDetailSheet: View {
                         }
                         if runs.count > 3 {
                             Button(runsExpanded ? "Show less" : "Show all \(runs.count)") {
-                                withAnimation { runsExpanded.toggle() }
+                                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { runsExpanded.toggle() }
                             }
                             .font(.footnote)
                             .listRowBackground(Palette.card(scheme))

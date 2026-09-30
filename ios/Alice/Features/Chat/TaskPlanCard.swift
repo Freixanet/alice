@@ -17,11 +17,12 @@ struct TaskPlanCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                withAnimation(.snappy(duration: 0.25)) { manual = !expanded }
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { manual = !expanded }
             } label: {
                 header
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressableRow)
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             .accessibilityHint(expanded ? "Hides the steps" : "Shows the steps")
 
             if expanded {
@@ -38,7 +39,7 @@ struct TaskPlanCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
         .overlay { RoundedRectangle(cornerRadius: 16).stroke(Palette.border(scheme), lineWidth: 0.5) }
-        .animation(.snappy(duration: 0.25), value: plan)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: expanded)
     }
 
     private var header: some View {
@@ -54,7 +55,8 @@ struct TaskPlanCard: View {
                     Text(current.content)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 0)
@@ -63,7 +65,7 @@ struct TaskPlanCard: View {
                 .foregroundStyle(.tertiary)
                 .rotationEffect(.degrees(expanded ? 180 : 0))
         }
-        .frame(minHeight: 30)
+        .frame(minHeight: 44)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
@@ -118,6 +120,7 @@ struct TaskPlanCard: View {
 
 /// A thin ring that fills with the plan.
 private struct ProgressRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let fraction: Double
     let tint: Color
 
@@ -129,7 +132,7 @@ private struct ProgressRing: View {
                 .stroke(tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
-        .animation(.snappy(duration: 0.35), value: fraction)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: fraction)
         .accessibilityHidden(true)
     }
 }

@@ -23,7 +23,7 @@ struct PressableCardStyle: ButtonStyle {
             let pressed = configuration.isPressed && isEnabled
             configuration.label
                 .scaleEffect(pressed && !reduceMotion ? scale : 1)
-                .opacity(pressed ? (reduceMotion ? 0.6 : 0.85) : 1)
+                .opacity(pressed ? 0.85 : 1)
                 .animation(
                     pressed ? .easeOut(duration: 0.1) : .spring(response: 0.3, dampingFraction: 1),
                     value: pressed
@@ -42,12 +42,13 @@ extension ButtonStyle where Self == PressableCardStyle {
 /// release. No movement, so it reads the same with Reduce Motion on or off. Rounded rows (the
 /// drawer's) give their radius so the wash matches their own shape.
 struct PressableRowStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     var cornerRadius: CGFloat = 0
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                Color.primary.opacity(configuration.isPressed ? 0.09 : 0),
+                Color.primary.opacity(configuration.isPressed && isEnabled ? 0.09 : 0),
                 in: .rect(cornerRadius: cornerRadius)
             )
             .animation(.easeOut(duration: configuration.isPressed ? 0.05 : 0.25),

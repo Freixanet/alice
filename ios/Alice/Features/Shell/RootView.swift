@@ -11,6 +11,7 @@ import UIKit
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @AppStorage(PerformanceHUD.key) private var showsPerformanceHUD = false
     @State private var drawerOpen = false
@@ -257,7 +258,7 @@ struct RootView: View {
                                 if translation > drawerWidth * 0.3 || predicted > 120 {
                                     closeFeed()
                                 } else {
-                                    withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
+                                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
                                 }
                             }
                         )
@@ -360,11 +361,11 @@ struct RootView: View {
                 .presentationBackground(Palette.background(scheme))
                 .preferredColorScheme(store.theme.colorScheme)
             }
-            .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
-            .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingBots)
-            .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingNotes)
-            .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingAgenda)
-            .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingGoals)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02), value: store.showingBots)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02), value: store.showingNotes)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02), value: store.showingAgenda)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02), value: store.showingGoals)
             // Leaving a screen puts its keyboard away. Kept up on a page with
             // no field — Agents, Notes, another chat's header — nothing on it
             // could take the focus back, so there was no way to close it.
@@ -429,7 +430,7 @@ struct RootView: View {
                             if travelled || flicked {
                                 openFeed()
                             } else {
-                                withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
+                                withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
                             }
                             return
                         }
@@ -496,10 +497,10 @@ struct RootView: View {
         botsCloseTask = Task { @MainActor in
             do {
                 if lead > .zero { try await Task.sleep(for: lead) }
-                withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02)) {
                     botsExitOffset = exitLeading ? -width : width
                 }
-                try await Task.sleep(for: .milliseconds(320))
+                if !reduceMotion { try await Task.sleep(for: .milliseconds(320)) }
             } catch {
                 return
             }
@@ -559,7 +560,7 @@ struct RootView: View {
     /// Goals leaves the way it came in, off the right.
     private func openFeed() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingFeed = true
             feedDrag = 0
         }
@@ -567,7 +568,7 @@ struct RootView: View {
 
     private func closeFeed() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingFeed = false
             feedDrag = 0
         }
@@ -575,7 +576,7 @@ struct RootView: View {
 
     private func closeGoals() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingGoals = false
         }
     }
@@ -583,7 +584,7 @@ struct RootView: View {
     /// The agenda leaves the way it came in, off the right.
     private func closeAgenda() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingAgenda = false
         }
     }
@@ -591,7 +592,7 @@ struct RootView: View {
     /// Notes leaves the way it came in, off the right.
     private func closeNotes() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingNotes = false
         }
     }
