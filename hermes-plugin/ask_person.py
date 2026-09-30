@@ -271,7 +271,7 @@ def prompt(home: Optional[Path] = None) -> str:
         "preguntes dos veces lo mismo por caminos distintos. En una compra, lo imprescindible que "
         "solo sabe la persona (talla, modelo, cantidad) se pregunta antes de buscar; lo demás sale "
         "de la tienda: mira qué variantes, tamaños y sabores tiene de verdad y pregunta solo entre "
-        "esas. País (`country`, ISO de dos letras) y moneda (`currency`, ISO) también van con `field`. Esto vale también a mitad de tarea: si surge una duda nueva (otro tamaño, otra "
+        "esas. País y moneda no se preguntan nunca: Alice los deduce. Esto vale también a mitad de tarea: si surge una duda nueva (otro tamaño, otra "
         "tienda, un coste extra), pregúntala con `ask_person`, nunca en el texto. Si preguntaste "
         "antes de conocer las opciones, en cuanto las tengas vuelve a llamar `ask_person` con el "
         "mismo `id` y esas opciones: su tarjeta se sustituye por la nueva. Si lo pedido no existe "

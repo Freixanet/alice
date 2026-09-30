@@ -197,8 +197,27 @@ struct LiveBrowserCard: View {
     private var live: LiveBrowser { store.liveBrowser }
 
     var body: some View {
-        Button { open = true } label: {
-            VStack(alignment: .leading, spacing: 0) {
+        // The same card as an errand's browser (`ErrandBrowserCard`): one browser, one look.
+        let language = ChatLanguage.of(caption ?? live.title)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "globe")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .background(Palette.muted(scheme), in: .rect(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(language.pick("Browser", "Navegador")).font(.body.weight(.medium))
+                    Text(working && browsing
+                         ? (caption ?? language.pick("Browsing now", "Navegando ahora"))
+                         : (live.host.isEmpty ? live.title : live.host))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if working && browsing { LivePulse(color: Palette.success(scheme)) }
+            }
+            Button { open = true } label: {
                 ZStack {
                     Palette.muted(scheme)
                     if let image = live.image {
@@ -213,47 +232,21 @@ struct LiveBrowserCard: View {
                     }
                 }
                 .frame(height: 190)
-                .clipped()
-
-                HStack(spacing: 8) {
-                    if working && browsing {
-                        LivePulse()
-                    } else {
-                        Image(systemName: "globe")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(live.title.isEmpty ? String(localized: "Browser") : live.title)
-                            .font(.subheadline.weight(.medium))
-                            .lineLimit(1)
-                        Text(working && browsing
-                             ? (caption ?? String(localized: "Browsing now · tap to take over"))
-                             : live.host)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .clipShape(.rect(cornerRadius: 18))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18)
+                        .strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .contentShape(.rect(cornerRadius: 18))
             }
-            .background(Palette.card(scheme))
-            .clipShape(.rect(cornerRadius: 16))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5)
-            }
-            .contentShape(.rect(cornerRadius: 16))
+            .buttonStyle(.plain)
+            PurchaseCapsuleButton(title: language.pick("Open browser", "Abrir navegador")) { open = true }
         }
-        .buttonStyle(.plain)
+        .padding(14)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+        .accessibilityElement(children: .contain)
         .matchedTransitionSource(id: "live-browser", in: zoom)
-        .accessibilityLabel(Text("Browser: \(live.title)"))
-        .accessibilityHint("Opens the browser to watch or take over.")
         // Live only while the agent works: once the task is over the card
         // keeps its last frame and stops following the browser, which kept
         // moving under a finished reply. Opening it still shows it live.

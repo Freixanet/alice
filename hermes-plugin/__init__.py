@@ -1429,6 +1429,13 @@ def _register_ask_tools(ctx) -> None:
             refused = _errands().vet_questions(module._normalized(args or {}))
             if refused:
                 return _agent_json({"ok": False, "error": refused})
+        session = _session_id() or key
+        if session in _PURCHASE_OPEN:
+            # A purchase: country and currency are deduced, products are cards, and no choice is
+            # offered before the shop was looked at.
+            refused = _purchase_flow().ask_refusal((args or {}).get("questions") or [], session in _LOOKED)
+            if refused:
+                return _agent_json({"ok": False, "error": refused})
         out = module.run_tool(Path(get_hermes_home()), args or {}, key)
         if key.startswith(_errands().SESSION_PREFIX) and out.get("asked"):
             wanted = set(out["asked"])
@@ -1473,7 +1480,30 @@ def _purchase_context() -> str:
         cards = []
     recent = [e["receipt"] for e in _errands().listing(_hermes_root())
               if isinstance(e.get("receipt"), dict) and e["receipt"].get("outcome") == "paid"]
-    return flow.context_block(details, cards, recent)
+    return flow.context_block(details, cards, recent, timezone=_hermes_timezone())
+
+
+def _hermes_timezone() -> str:
+    """The `timezone:` of the main config.yaml, for deducing the person's country."""
+    try:
+        text = (_hermes_root() / "config.yaml").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    found = __import__("re").search(r"^timezone:\s*['\"]?([^'\"\s#]+)", text, __import__("re").M)
+    return found.group(1) if found else ""
+
+
+def _purchase_locale() -> tuple:
+    """(country, currency) as ISO codes: kept details first, else Hermes' time zone."""
+    from hermes_constants import get_hermes_home
+
+    return _purchase_flow().locale(_ask_person().load_details(Path(get_hermes_home())), _hermes_timezone())
+
+
+# Chats whose last request was a purchase, and those that have looked at a shop or the catalog
+# since: an ask_person with choices before looking offered formats the shop did not sell.
+_PURCHASE_OPEN: set = set()
+_LOOKED: set = set()
 
 
 def _start_purchase(session: str, chosen: dict) -> dict:
@@ -1507,8 +1537,11 @@ def _errand_turn(session_id="", user_message=None, **_):
                 return {"context": "[Alice] " + flow.UNKNOWN_OPTION}
             out = _start_purchase(session, chosen)
             _ERRAND_TURN_IDS[session] = out["errand_id"]
+            _PURCHASE_OPEN.discard(session)
             return {"context": flow.chosen_note(out, chosen)}
         if flow.is_purchase_request(user_message):
+            _PURCHASE_OPEN.add(session)
+            _LOOKED.discard(session)
             return {"context": flow.turn_note(_purchase_context())}
     except Exception:
         logging.getLogger(__name__).debug("purchases: could not read the turn", exc_info=True)
@@ -1521,6 +1554,8 @@ def _guard_chat_errand(tool_name=None, args=None, session_id="", **_):
     session = _session_id(session_id)
     if not session or session.startswith(_errands().SESSION_PREFIX):
         return None
+    if name.startswith(("browser", "catalog_", "web_search", "web_extract")):
+        _LOOKED.add(session)
     if _purchase_flow().is_cart_action(name, args):
         return {"action": "block", "message": _purchase_flow().CART_BLOCK}
     return None
@@ -1664,7 +1699,7 @@ def _register_task_tools(ctx) -> None:
             return _agent_json({"ok": False, "error": "Only in the chat, before the purchase starts."})
         details = _ask_person().load_details(Path(get_hermes_home()))
         return _agent_json(_purchase_flow().present(
-            _hermes_root(), session, args or {}, currency=details.get("currency", ""),
+            _hermes_root(), session, args or {}, currency=_purchase_locale()[1],
             picture=lambda page: errands.page_picture(page)))
 
     def catalog_search(args, **_):
@@ -1673,7 +1708,7 @@ def _register_task_tools(ctx) -> None:
         args = args or {}
         details = _ask_person().load_details(Path(get_hermes_home()))
         return _agent_json(_catalog().search(
-            str(args.get("query") or ""), country=details.get("country", ""), currency=details.get("currency", ""),
+            str(args.get("query") or ""), country=_purchase_locale()[0], currency=_purchase_locale()[1],
             limit=int(args.get("limit") or 6), max_price=args.get("max_price")))
 
     def catalog_product(args, **_):
@@ -1684,7 +1719,7 @@ def _register_task_tools(ctx) -> None:
         selected = args.get("options") if isinstance(args.get("options"), dict) else None
         return _agent_json(_catalog().product(
             str(args.get("product_id") or ""), selected=selected,
-            country=details.get("country", ""), currency=details.get("currency", "")))
+            country=_purchase_locale()[0], currency=_purchase_locale()[1]))
 
     flow, catalog = _purchase_flow(), _catalog()
     ctx.register_tool(name="purchase_options", toolset="alice_tasks", schema=flow.OPTIONS_SCHEMA, handler=options,

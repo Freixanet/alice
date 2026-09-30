@@ -105,20 +105,70 @@ def set_key(options: Iterable[Dict[str, Any]]) -> str:
 
 
 
+# ── Country and currency: deduced, never asked ─────────────────────────────────
+
+COUNTRY_NAMES = {
+    "españa": "ES", "espana": "ES", "spain": "ES", "portugal": "PT", "francia": "FR", "france": "FR",
+    "italia": "IT", "italy": "IT", "alemania": "DE", "germany": "DE", "andorra": "AD",
+    "reino unido": "GB", "united kingdom": "GB", "uk": "GB", "inglaterra": "GB",
+    "estados unidos": "US", "united states": "US", "usa": "US", "eeuu": "US", "méxico": "MX", "mexico": "MX",
+}
+CURRENCY_NAMES = {
+    "euro": "EUR", "euros": "EUR", "€": "EUR", "dólar": "USD", "dolar": "USD", "dólares": "USD", "dollar": "USD",
+    "$": "USD", "us$": "USD", "libra": "GBP", "libras": "GBP", "pound": "GBP", "£": "GBP", "peso": "MXN",
+    "pesos": "MXN", "franco": "CHF", "franco suizo": "CHF",
+}
+ZONE_COUNTRY = {
+    "Europe/Madrid": "ES", "Atlantic/Canary": "ES", "Africa/Ceuta": "ES", "Europe/Lisbon": "PT",
+    "Europe/Paris": "FR", "Europe/Rome": "IT", "Europe/Berlin": "DE", "Europe/Andorra": "AD",
+    "Europe/London": "GB", "America/Mexico_City": "MX",
+}
+EURO = {"ES", "PT", "FR", "IT", "DE", "AD", "IE", "NL", "BE", "AT", "FI", "GR", "LU"}
+COUNTRY_CURRENCY = {"GB": "GBP", "US": "USD", "MX": "MXN", "CH": "CHF"}
+
+
+def iso_country(value: Any) -> str:
+    """«España», «spain» or «es» → «ES»; anything else unknown → ""."""
+    text = " ".join(str(value or "").split()).lower()
+    if not text:
+        return ""
+    if text in COUNTRY_NAMES:
+        return COUNTRY_NAMES[text]
+    return text.upper() if re.fullmatch(r"[a-z]{2}", text) else ""
+
+
+def iso_currency(value: Any) -> str:
+    """«Euro», «€» or «eur» → «EUR»; anything else unknown → ""."""
+    text = " ".join(str(value or "").split()).lower()
+    if not text:
+        return ""
+    if re.fullmatch(r"[a-z]{3}", text):
+        return text.upper()
+    return CURRENCY_NAMES.get(text, "")
+
+
+def locale(details: Dict[str, str], timezone: str = "") -> Tuple[str, str]:
+    """The person's country and currency: what they kept, else Hermes' own time zone. A person in
+    Súria (08260, Barcelona) was asked «País de entrega» and «Moneda» before a creatine search."""
+    country = iso_country(details.get("country")) or ZONE_COUNTRY.get(str(timezone or "").strip(), "")
+    currency = iso_currency(details.get("currency")) or ("EUR" if country in EURO else COUNTRY_CURRENCY.get(country, ""))
+    return country, currency
+
+
 def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]] = None
            ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
     """Step 4: what can be bought, and what was left out and why. An option's id is its set's key
     and its position among those given, so the app and the plugin name it the same way."""
     options = [o for o in (raw if isinstance(raw, list) else []) if isinstance(o, dict)][:MAX_OPTIONS]
     key = set_key(options)
-    expected = str(currency or "").upper()
+    expected = iso_currency(currency)
     kept: List[Dict[str, Any]] = []
     discarded: List[Dict[str, str]] = []
     for index, option in enumerate(options):
         title = _clean(option.get("title"), 160)
         url = str(option.get("url") or "").strip()
         price = _clean(option.get("price"), 40)
-        money = _clean(option.get("currency"), 8).upper()
+        money = iso_currency(option.get("currency")) or _clean(option.get("currency"), 8).upper()
         channel = str(option.get("channel") or "browser").lower()
         problem = ""
         try:
@@ -174,6 +224,13 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
     now = now or time.time()
     kept, discarded = verify((args or {}).get("options"), currency, picture)
     if not kept:
+        # Kept empty for the app: its card draws nothing instead of saying the options are gone.
+        key = set_key([o for o in ((args or {}).get("options") or []) if isinstance(o, dict)][:MAX_OPTIONS])
+        with _locked(home) as path:
+            sets = [x for x in _read(path) if now - float(x.get("at") or 0) < KEEP and x.get("key") != key]
+            sets.append({"key": key, "session": _clean(session, 160), "options": [], "discarded": discarded,
+                         "chosen": None, "at": now})
+            _write(path, sets)
         return {"ok": False, "discarded": discarded, "error": (
             "Ninguna opción se pudo verificar como comprable. No enseñes nada: di en una línea qué ha "
             "fallado (sin stock, sin precio en su moneda…) y propón cómo seguir (otra tienda, otra "
@@ -272,10 +329,10 @@ def title(chosen: Dict[str, Any]) -> str:
 # ── Step 2: the person's context ───────────────────────────────────────────────
 
 
-def context_block(details: Dict[str, str], cards: List[Dict[str, Any]], recent: List[Dict[str, Any]]) -> str:
-    """What the chat knows before searching, and what is still missing. Card labels only, never numbers."""
-    country = details.get("country", "")
-    currency = details.get("currency", "")
+def context_block(details: Dict[str, str], cards: List[Dict[str, Any]], recent: List[Dict[str, Any]],
+                  timezone: str = "") -> str:
+    """What the chat knows before searching. Card labels only, never numbers. Nothing here is asked."""
+    country, currency = locale(details, timezone)
     where = ", ".join(v for v in (details.get("city"), details.get("postcode")) if v)
     shops = []
     for entry in recent:
@@ -285,21 +342,20 @@ def context_block(details: Dict[str, str], cards: List[Dict[str, Any]], recent: 
     last_card = next((e.get("card_label") for e in recent if e.get("card_label")), "")
     labels = [c.get("label") for c in cards if c.get("label")]
     lines = [
-        f"país: {country or 'no lo sé'}", f"moneda: {currency or 'no lo sé'}",
+        f"país: {country or 'el de la tienda'}", f"moneda: {currency or 'la de la tienda'}",
         f"envío a: {where or 'sin dirección guardada'}",
         f"tiendas donde ya compró: {', '.join(shops[:5]) or 'ninguna todavía'}",
         f"tarjetas guardadas: {', '.join(labels) or 'ninguna'}" + (f" (la última usada: {last_card})" if last_card else ""),
     ]
-    missing = [name for name, value in (("country", country), ("currency", currency)) if not value]
-    ask = (f" Si falta {' y '.join(missing)}, pregúntalo una vez con `ask_person` (field: {', '.join(missing)}) "
-           "y se guarda." if missing else "")
-    return "[Alice · compra] Lo que sé de la persona — " + "; ".join(lines) + "." + ask
+    return ("[Alice · compra] Lo que sé de la persona — " + "; ".join(lines)
+            + ". No le preguntes país ni moneda: son estos.")
 
 
 def turn_note(block: str) -> str:
-    return (block + " Sigue los pasos de «Comprar»: aclara lo imprescindible antes de buscar, busca en el "
-            "catálogo (`catalog_search`) y en la tienda real, enseña solo lo comprable con "
-            "`purchase_options` y espera a que elija. En el chat no se llena ningún carrito ni se paga.")
+    return (block + " Sigue «Comprar»: nunca ofrezcas una opción que no hayas visto; si lo que falta depende de lo que "
+            "vende la tienda (formato, talla, sabor), mira primero la tienda y el catálogo (`catalog_search`) y "
+            "enseña lo comprable como tarjetas con `purchase_options`, no como preguntas. En el chat no se llena "
+            "ningún carrito ni se paga.")
 
 
 def chosen_note(started: Dict[str, Any], chosen: Dict[str, Any]) -> str:
@@ -308,6 +364,26 @@ def chosen_note(started: Dict[str, Any], chosen: Dict[str, Any]) -> str:
             f"(id {started.get('errand_id')}). Llama a `errand_start` con `option_id` {chosen['id']} para que se "
             "vea su tarjeta y responde en una sola línea que la preparas y que le enseñarás el total antes de "
             "pagar. No abras el navegador aquí.")
+
+
+PRICED = re.compile(r"\d[\d.,]*\s*(€|eur\b|\$|usd\b|£)|(€|\$|£)\s*\d", re.I)
+
+
+def ask_refusal(questions: Iterable[Dict[str, Any]], looked: bool) -> Optional[str]:
+    """Why an ask_person during a purchase must not reach the person, or None."""
+    questions = [q for q in questions if isinstance(q, dict)]
+    if any(str(q.get("field") or "") in ("country", "currency") for q in questions):
+        return ("No preguntes país ni moneda: Alice ya te los ha dado en el contexto de la compra. Si falta alguno, "
+                "usa el de la tienda.")
+    choices = [str(c) for q in questions for c in (q.get("choices") or [])]
+    if choices and any(PRICED.search(c) for c in choices):
+        return ("Productos con precio no se eligen en una pregunta: enséñalos como tarjetas con `purchase_options` "
+                "(página, stock y precio verificados) y la persona toca uno.")
+    if choices and not looked:
+        return ("Aún no has mirado la tienda ni el catálogo: no ofrezcas opciones que no has visto. Busca primero "
+                "(`catalog_search`, la ficha de la tienda) y pregunta solo entre lo que existe de verdad; lo que "
+                "solo sabe la persona y no depende de la tienda, pregúntalo sin opciones.")
+    return None
 
 
 CART_BLOCK = ("En el chat no se llena un carrito ni se va al checkout. Enseña las opciones verificadas con "

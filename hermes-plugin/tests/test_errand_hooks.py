@@ -37,6 +37,8 @@ class ErrandHookTests(unittest.TestCase):
         self.home = Path(tempfile.mkdtemp())
         self.plugin._ERRAND_TURN_IDS.clear()
         self.plugin._AUTOMATED_TURNS.clear()
+        self.plugin._PURCHASE_OPEN.clear()
+        self.plugin._LOOKED.clear()
         self.metas = {"card": Meta(kind="payment", origin="https://www.hsnstore.com", label="Visa ···4242"),
                       "login": Meta(kind="login", origin="https://www.hsnstore.com", label="HSN")}
         store = types.SimpleNamespace(get_meta=lambda handle: self.metas.get(handle))
@@ -271,6 +273,33 @@ class ErrandHookTests(unittest.TestCase):
         # The person's next turn in that chat can buy again.
         self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] Creatina")
         self.assertEqual(len(self.errands.listing(self.home)), 1)
+
+    def test_during_a_purchase_no_invented_choices_and_no_country_questions(self):
+        registered = {}
+        ctx = types.SimpleNamespace(register_tool=lambda **kw: registered.__setitem__(kw["name"], kw))
+        asker = types.SimpleNamespace(
+            SCHEMA={"description": "ask"}, _normalized=lambda args: args.get("questions") or [],
+            run_tool=lambda home, args, key: {"ok": True, "asked": [q["id"] for q in args["questions"]]})
+        with mock.patch.object(self.plugin, "_ask_person", return_value=asker), \
+                mock.patch.object(self.plugin, "_keep_ask_person_visible"):
+            self.plugin._register_ask_tools(ctx)
+        handler = registered["ask_person"]["handler"]
+        self.plugin._errand_turn(session_id="chat-9", user_message="Compra la creatina creapure de prozis")
+        guessed = {"questions": [{"id": "formato", "question": "¿Qué formato?", "choices": ["500 g", "1 kg"]}]}
+        country = {"questions": [{"id": "c", "question": "País de entrega", "field": "country"}]}
+        hermes = types.SimpleNamespace(get_hermes_home=lambda: self.home)
+        with mock.patch.dict(sys.modules, {"hermes_constants": hermes}), \
+                mock.patch.object(self.plugin, "_conversation_key", return_value="chat-9"):
+            self.assertFalse(self.call(handler, guessed)["ok"])
+            self.assertFalse(self.call(handler, country)["ok"])
+            # Once it has looked at the shop, it may ask among what exists.
+            self.plugin._guard_chat_errand("browser_exec", {"code": "print(page_info())"}, session_id="chat-9")
+            self.assertTrue(self.call(handler, guessed)["ok"])
+            self.assertFalse(self.call(handler, country)["ok"])
+        # Outside a purchase nothing changes.
+        with mock.patch.dict(sys.modules, {"hermes_constants": hermes}), \
+                mock.patch.object(self.plugin, "_conversation_key", return_value="chat-2"):
+            self.assertTrue(self.call(handler, guessed, session="chat-2")["ok"])
 
     def test_the_text_only_repeat_guard_does_not_pause_an_errand(self):
         guard = mock.Mock()

@@ -442,6 +442,22 @@ struct AskPerson: Hashable, Sendable {
         return false
     }
 
+    /// «[respuesta:id] value» lines, by id.
+    static func answersIn(_ text: String) -> [String: String] {
+        var found: [String: String] = [:]
+        for line in text.split(separator: "\n") {
+            guard let match = line.firstMatch(of: /^\[respuesta:([A-Za-z0-9_.-]{1,40})\]\s?(.*)$/) else { continue }
+            found[String(match.1)] = String(match.2)
+        }
+        return found
+    }
+
+    /// A turn that only carries answers to a card: the card shows them, the transcript does not.
+    static func isAnswersOnly(_ text: String) -> Bool {
+        let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return !lines.isEmpty && lines.allSatisfy { $0.hasPrefix("[respuesta:") }
+    }
+
     static func answered(_ questionID: String, in messages: [Message]) -> Bool {
         messages.contains { $0.role == .user && $0.content.contains("[respuesta:\(questionID)]") }
     }
@@ -462,6 +478,17 @@ struct AskPersonCard: View {
 
     private var answered: Bool {
         sent || AskPerson.answered(ask.questions[0].id, in: store.shownConversation?.messages ?? [])
+    }
+
+    /// What was answered, read from the turn that carried it (or what was just sent).
+    private var givenAnswers: [(question: String, answer: String)] {
+        let sentTurn = (store.shownConversation?.messages ?? [])
+            .last { $0.role == .user && $0.content.contains("[respuesta:\(ask.questions[0].id)]") }?.content ?? ""
+        let found = AskPerson.answersIn(sentTurn)
+        return ask.questions.compactMap { question in
+            let answer = found[question.id] ?? (sent ? value(question) : "")
+            return answer.isEmpty ? nil : (question.question, answer)
+        }
     }
 
     private func value(_ question: AskPerson.Question) -> String {
@@ -495,9 +522,19 @@ struct AskPersonCard: View {
                 }
             }
             if answered {
-                Label("Answered", systemImage: "checkmark.circle.fill")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                // The answers stay in the card that asked: the turn that carries them is not drawn as
+                // a message of the person's ("Otro / España / Euro" read like words they had typed).
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(givenAnswers, id: \.question) { given in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(given.question).font(.caption).foregroundStyle(.secondary)
+                            Text(given.answer).font(.subheadline.weight(.medium))
+                        }
+                    }
+                    Label("Answered", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 let question = current
                 VStack(alignment: .leading, spacing: 8) {

@@ -95,6 +95,9 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(out["ok"])
         self.assertIn("propón", out["error"])
         self.assertEqual(out["discarded"][0]["why"], "sin stock comprobado")
+        # The app finds an empty set and draws nothing, instead of «these options are gone».
+        key = flow.set_key([option(in_stock=False)])
+        self.assertEqual(flow.options_set(self.home, key)["options"], [])
 
     def test_old_sets_are_forgotten(self):
         flow.present(self.home, "chat-1", {"options": [option()]}, now=NOW)
@@ -123,15 +126,39 @@ class WordsTests(unittest.TestCase):
         self.assertFalse(flow.is_cart_action("browser_exec", {"code": "print(page_info())"}))
         self.assertFalse(flow.is_cart_action("browser_navigate", {"url": "https://x/cart"}))
 
-    def test_the_context_names_what_is_known_and_asks_for_what_is_missing(self):
-        block = flow.context_block({"city": "Madrid", "postcode": "28013"},
+    def test_the_context_says_what_is_known_and_never_asks_country_or_currency(self):
+        block = flow.context_block({"city": "Súria", "postcode": "08260", "country": "España", "currency": "Euro"},
                                    [{"label": "Visa ···4242"}],
                                    [{"merchant": "HSN", "card_label": "Visa ···4242"}])
-        for part in ("Madrid", "HSN", "Visa ···4242", "la última usada", "country y currency"):
+        for part in ("país: ES", "moneda: EUR", "Súria", "HSN", "Visa ···4242", "la última usada",
+                     "No le preguntes país ni moneda"):
             self.assertIn(part, block)
-        known = flow.context_block({"country": "ES", "currency": "EUR"}, [], [])
-        self.assertIn("país: ES", known)
-        self.assertNotIn("ask_person", known)
+        self.assertNotIn("ask_person", block)
+        # Nothing kept: Hermes' own time zone says where the person is.
+        self.assertIn("país: ES", flow.context_block({}, [], [], timezone="Europe/Madrid"))
+
+    def test_country_and_currency_are_deduced_and_names_are_codes(self):
+        self.assertEqual(flow.locale({"country": "España", "currency": "Euro"}), ("ES", "EUR"))
+        self.assertEqual(flow.locale({}, "Europe/Madrid"), ("ES", "EUR"))
+        self.assertEqual(flow.locale({"country": "uk"}), ("GB", "GBP"))
+        self.assertEqual(flow.locale({}, "Pacific/Nowhere"), ("", ""))
+        self.assertEqual((flow.iso_currency("€"), flow.iso_currency("eur"), flow.iso_currency("xx")), ("EUR", "EUR", ""))
+
+    def test_a_currency_written_as_a_word_is_not_a_reason_to_drop_an_option(self):
+        # «Euro» kept from a card: the 80-capsule Creapure at 20,99 € was dropped as «not in EURO».
+        kept, discarded = flow.verify([option(currency="EUR"), option(url="https://b.example/p", currency="€")],
+                                      currency="Euro")
+        self.assertEqual((len(kept), discarded), (2, []))
+        self.assertEqual({o["currency"] for o in kept}, {"EUR"})
+
+    def test_questions_during_a_purchase(self):
+        self.assertIn("país ni moneda", flow.ask_refusal([{"id": "c", "question": "País", "field": "country"}], True))
+        priced = [{"id": "f", "question": "¿Cuál?", "choices": ["80 cápsulas · 20,99 €", "300 g · 24,49 €"]}]
+        self.assertIn("purchase_options", flow.ask_refusal(priced, True))
+        guessed = [{"id": "f", "question": "¿Qué formato?", "choices": ["500 g", "1 kg"]}]
+        self.assertIn("no has mirado", flow.ask_refusal(guessed, looked=False))
+        self.assertIsNone(flow.ask_refusal(guessed, looked=True))
+        self.assertIsNone(flow.ask_refusal([{"id": "q", "question": "¿Para quién es?"}], looked=False))
 
     def test_the_errand_gets_the_exact_offer(self):
         kept, _ = flow.verify([option(qty=2)])
