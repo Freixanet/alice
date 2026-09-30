@@ -732,7 +732,7 @@ private struct TranscriptView: View {
                             Text("Show \(start - earlier) earlier messages")
                                 .font(.footnote.weight(.medium))
                                 .padding(.horizontal, 14)
-                                .frame(height: 36)
+                                .frame(minHeight: 44)
                         }
                         .buttonStyle(.plain)
                         .glassEffect(.regular.interactive(), in: .capsule)
@@ -912,7 +912,7 @@ private struct TranscriptView: View {
                 // of the near-bottom line — which is the moment a reader starts
                 // scrolling up — animated whatever the transcript's layout was
                 // doing in that instant, and the conversation lurched.
-                .animation(.snappy(duration: 0.2), value: settled && !following)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: settled && !following)
             }
         }
     }
@@ -1033,6 +1033,7 @@ extension ReplySelectionDismiss {
 }
 
 private struct EmptyChatView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @State private var showingConnection = false
@@ -1048,7 +1049,14 @@ private struct EmptyChatView: View {
         // keyboard's — and the block re-centred into the taller box, moving
         // *down* by about a composer's height and sliding the title behind it.
         // Whoever places this view owns both decisions now.
-        centred
+        GeometryReader { area in
+            ScrollView {
+                centred
+                    .frame(minHeight: area.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(.hidden)
+        }
             .sheet(isPresented: $showingConnection) {
                 ConnectView()
                     .preferredColorScheme(store.theme.colorScheme)
@@ -1114,7 +1122,7 @@ private struct EmptyChatView: View {
                 }
                 Spacer()
             }
-            .animation(.snappy(duration: 0.22), value: keyboardShown)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: keyboardShown)
             // No hardcoded composer offset either: the call site already
             // reserves the real height, and 140 on top of it was a second
             // guess at the same gap.
@@ -1151,9 +1159,10 @@ private struct HomeSuggestionStrip: View {
                     } label: {
                         Label(suggestion.title, systemImage: suggestion.symbol)
                             .font(.subheadline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(.rect)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressableRow)
                     .foregroundStyle(.primary)
                 }
             }

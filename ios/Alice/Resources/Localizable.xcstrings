@@ -1,6 +1,107 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "No posts yet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía no hay publicaciones"
+          }
+        }
+      }
+    },
+    "Your first posts are on their way": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus primeras publicaciones están en camino"
+          }
+        }
+      }
+    },
+    "Checking for posts…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscando publicaciones…"
+          }
+        }
+      }
+    },
+    "Choose what Alice covers, then ask your Mac for new posts.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige los temas que seguirá Alice y pide nuevas publicaciones a tu Mac."
+          }
+        }
+      }
+    },
+    "Your saved posts will appear here when your Mac is reachable.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus publicaciones guardadas aparecerán aquí cuando se pueda conectar con tu Mac."
+          }
+        }
+      }
+    },
+    "Expanded": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expandido"
+          }
+        }
+      }
+    },
+    "Collapsed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contraído"
+          }
+        }
+      }
+    },
+    "Discard changes to the coverage brief?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Descartar los cambios en las instrucciones del feed?"
+          }
+        }
+      }
+    },
+    "Discard changes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descartar cambios"
+          }
+        }
+      }
+    },
+    "Keep editing": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seguir editando"
+          }
+        }
+      }
+    },
+
     "Ask Alice to buy, order or book something. She does it in the background and asks you before paying.": {
       "localizations": {
         "es": {

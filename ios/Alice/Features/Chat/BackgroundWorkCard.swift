@@ -60,9 +60,11 @@ struct BackgroundWorkCard: View {
                 Spacer(minLength: 8)
                 // An answer that will never come — refused out of sight, or
                 // lost — must not hold the chat until the wait runs out.
-                Button("Stop", action: stop)
+                Button(action: stop) {
+                    Text("Stop").frame(minHeight: 44)
+                }
                     .font(.footnote.weight(.medium))
-                    .buttonStyle(.bordered)
+                .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
                     .controlSize(.small)
                     .tint(.secondary)

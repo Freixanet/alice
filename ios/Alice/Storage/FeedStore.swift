@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import Observation
 import os
 
@@ -16,10 +17,12 @@ final class FeedStore {
     /// Why the last sync could not reach the Mac; the cached posts stay on screen meanwhile.
     private(set) var offlineReason: String?
     private(set) var syncing = false
+    private(set) var requestingGeneration = false
 
     @ObservationIgnored private let client: DashboardClient
     @ObservationIgnored private let file: URL?
     @ObservationIgnored private var polling: Task<Void, Never>?
+    @ObservationIgnored private var pollingID: UUID?
     @ObservationIgnored private let log = Logger(subsystem: "alice", category: "feed")
 
     init(client: DashboardClient, file: URL? = FeedStore.standardFile) {
@@ -74,7 +77,7 @@ final class FeedStore {
                 server: payload.feedPosts, local: cache.posts.filter { !$0.isSeeded }, outbox: cache.outbox
             )
             // New posts slide in and gone ones fold away, rather than the list jumping.
-            withAnimation(.snappy) { cache.posts = merged + seeded }
+            withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : .snappy) { cache.posts = merged + seeded }
             if let text = payload.brief?.text { cache.brief = text }
         }
         cache.generation = payload.feedGeneration
@@ -112,10 +115,14 @@ final class FeedStore {
     /// Pull-to-refresh: asks the Mac for a run and returns at once; the posts arrive while the
     /// feed is watched (`watch`).
     func requestGeneration() async {
+        guard !requestingGeneration, !cache.generation.isActive else { return }
+        requestingGeneration = true
+        defer { requestingGeneration = false }
         do {
             try await client.generateFeed()
             cache.generation.state = cache.generation.state == .running ? .running : .queued
             cache.generation.error = nil
+            offlineReason = nil
             save()
         } catch {
             offlineReason = PlainWords.describe(error, doing: "ask your Mac for new posts")
@@ -143,29 +150,37 @@ final class FeedStore {
     /// (the small route, never the whole feed); the feed is read once when it ends.
     func watch() {
         guard polling == nil else { return }
+        let id = UUID()
+        pollingID = id
         polling = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self, self.cache.generation.isActive else { break }
                 try? await Task.sleep(for: .seconds(4))
                 guard !Task.isCancelled else { break }
                 guard let status = try? await self.client.feedStatus() else { continue }
+                guard !Task.isCancelled, self.pollingID == id else { break }
                 let next = status.feedGeneration
                 if next.isActive {
                     self.cache.generation = next
                 } else {
                     await self.sync()
+                    guard !Task.isCancelled, self.pollingID == id else { break }
                     self.cache.generation = next
                     self.save()
                     break
                 }
             }
-            self?.polling = nil
+            if self?.pollingID == id {
+                self?.polling = nil
+                self?.pollingID = nil
+            }
         }
     }
 
     func stopWatching() {
         polling?.cancel()
         polling = nil
+        pollingID = nil
     }
 
     // MARK: What the person does
@@ -205,7 +220,7 @@ final class FeedStore {
     /// app's own and never reach the Mac.
     private func record(_ post: FeedPost, kind: FeedEvent.Kind, on: Bool?) async {
         let event = FeedEvent(id: UUID(), postID: post.id, kind: kind, on: on, createdAt: Date())
-        withAnimation(.snappy) { cache.posts = FeedMerge.replay([event], on: cache.posts) }
+        withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : .snappy) { cache.posts = FeedMerge.replay([event], on: cache.posts) }
         guard !post.isSeeded else {
             if kind == .delete, on == true { cache.posts.removeAll { $0.id == post.id && $0.deleted } }
             save()

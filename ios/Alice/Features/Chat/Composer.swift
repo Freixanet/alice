@@ -22,9 +22,8 @@ struct Composer: View {
     /// trims Alice's own composer to a single 44pt-tall capsule, the bot
     /// chat's shape, so the two controls read as one row at the same height.
     var compact = false
-    /// One line of `.body` plus the field's 6pt vertical padding, so the
-    /// compact capsule's buttons centre on its first line at any text size.
-    @ScaledMetric(relativeTo: .body) private var compactRowHeight: CGFloat = 34
+    /// A full touch target, growing with the field at larger text sizes.
+    @ScaledMetric(relativeTo: .body) private var compactRowHeight: CGFloat = 44
     @Namespace private var glass
     @State private var showModels = false
     @State private var dictation = Dictation()
@@ -50,7 +49,7 @@ struct Composer: View {
     /// One height for every control on the bottom row, so the send button and
     /// the model chip line up instead of each taking the size its own padding
     /// happens to produce.
-    private let controlHeight: CGFloat = 34
+    private let controlHeight: CGFloat = 44
 
     private var glassShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: 26, style: .continuous)
@@ -176,8 +175,8 @@ struct Composer: View {
         .onChange(of: store.editingMessageID) { _, editing in
             if editing != nil { focused.wrappedValue = true }
         }
-        .animation(.snappy(duration: 0.2), value: store.editingMessageID)
-        .animation(.snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: store.editingMessageID)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
         .task(id: store.dashboardReady) {
             _ = try? await store.bots()
         }
@@ -557,7 +556,7 @@ struct Composer: View {
                         .focused(focused)
                         .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 3 : 7))
                         .padding(.vertical, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .contentShape(.rect)
                         .onTapGesture { focused.wrappedValue = true }
 
@@ -567,7 +566,6 @@ struct Composer: View {
                         .frame(height: compactRowHeight)
                 }
                 .padding(.horizontal, 5)
-                .padding(.vertical, 5)
                 .frame(minHeight: 44)
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
                 .glassEffectID("composer", in: glass)
@@ -606,7 +604,8 @@ struct Composer: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 32, height: 32)
-                .contentShape(.circle)
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         // Without this, Menu's own automatic style paints a background pill
@@ -656,7 +655,7 @@ struct Composer: View {
                             .focused(focused)
                             .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 3 : 7))
                             .padding(.vertical, 6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                             .contentShape(.rect)
                             .onTapGesture { focused.wrappedValue = true }
 
@@ -665,7 +664,6 @@ struct Composer: View {
                     }
                     .padding(.leading, 14)
                     .padding(.trailing, 5)
-                    .padding(.vertical, 5)
                     .frame(minHeight: 44)
                     // A 22pt radius is the capsule at one line, and stays a
                     // tidy rounded box instead of a stretched pill when taller.
@@ -745,10 +743,12 @@ struct Composer: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(listening ? store.accent.primary(scheme) : Color.secondary)
                 .frame(width: 32, height: 32)
-                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
         .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
         .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
@@ -771,28 +771,32 @@ struct Composer: View {
                 showingVoice = true
             }
         } label: {
-            if sending {
-                Image(systemName: stopping ? "stop.fill" : "arrow.up")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(scheme == .dark ? Color.black : Color.white)
-                    .frame(width: 32, height: 32)
-                    // Send turns into Stop in place, as the main composer's does.
-                    .contentTransition(.symbolEffect(.replace))
-                    .background { Circle().fill(botSendFill) }
-                    .transition(.scale.combined(with: .opacity))
-            } else {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 30))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(voiceAvailable ? store.accent.primary(scheme) : Color.secondary)
-                    .frame(width: 32, height: 32)
-                    .transition(.scale.combined(with: .opacity))
+            Group {
+                if sending {
+                    Image(systemName: stopping ? "stop.fill" : "arrow.up")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(scheme == .dark ? Color.black : Color.white)
+                        .frame(width: 32, height: 32)
+                        // Send turns into Stop in place, as the main composer's does.
+                        .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                        .background { Circle().fill(botSendFill) }
+                        .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                } else {
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.system(size: 30))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(voiceAvailable ? store.accent.primary(scheme) : Color.secondary)
+                        .frame(width: 32, height: 32)
+                        .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                }
             }
+            .frame(width: 44, height: 44)
+            .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         // The transitions above need a change to animate: voice ⇄ send ⇄ stop.
-        .animation(.snappy(duration: 0.2), value: sending)
-        .animation(.snappy(duration: 0.2), value: stopping)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: sending)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: stopping)
         .disabled(!sending && !voiceAvailable)
         .accessibilityLabel(stopping ? "Stop" : (hasDraft ? "Send" : "Voice conversation"))
         .accessibilityIdentifier("composer.action")
@@ -867,13 +871,15 @@ struct Composer: View {
             Text(currentModel)
                 .font(.subheadline)
                 .lineLimit(1)
+                .truncationMode(.middle)
                 .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .frame(minHeight: controlHeight)
             .background(Palette.muted(scheme).opacity(0.7), in: .capsule)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(!store.isConnected)
+        .opacity(store.isConnected ? 1 : 0.45)
         .accessibilityLabel("Model: \(currentModel)")
     }
 
@@ -893,10 +899,10 @@ struct Composer: View {
             Image(systemName: listening ? "waveform" : "mic")
                 .font(.system(size: 16, weight: listening ? .semibold : .medium))
                 .frame(width: controlHeight, height: controlHeight)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .foregroundStyle(listening ? store.accent.primary(scheme) : Color.secondary)
         .glassEffect(.regular.interactive(), in: .circle)
         // Dictation starts listening before there is anything to see; the tap
@@ -927,12 +933,12 @@ struct Composer: View {
             Image(systemName: stopping ? "stop.fill" : (hasDraft ? "arrow.up" : "waveform"))
                 .font(.system(size: 16, weight: .semibold))
                 .frame(width: controlHeight, height: controlHeight)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         }
         // `.glassProminent` sizes itself, adding about 10pt of its own padding
-        // around the label — measured at 44pt tall next to a 34pt chip. Applying
-        // the material to an exact frame instead keeps the row one height.
-        .buttonStyle(.plain)
+        // around the label. Applying the material to the shared 44pt target
+        // keeps the row aligned and leaves the glyph at its original size.
+        .buttonStyle(.pressable)
         // The accent's clearest home: the one control that acts.
         .foregroundStyle(
             (stopping || voiceAvailable)

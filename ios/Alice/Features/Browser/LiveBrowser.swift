@@ -255,6 +255,7 @@ struct LiveBrowserCard: View {
 
 /// A small red dot that breathes: live.
 struct LivePulse: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var color: Color = .red
     @State private var on = false
 
@@ -262,8 +263,8 @@ struct LivePulse: View {
         Circle()
             .fill(color)
             .frame(width: 8, height: 8)
-            .opacity(on ? 1 : 0.35)
-            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
+            .opacity(reduceMotion || on ? 1 : 0.35)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
             .onAppear { on = true }
             .accessibilityHidden(true)
     }

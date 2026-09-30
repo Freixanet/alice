@@ -4,6 +4,8 @@ import SwiftUI
 struct FeedPostCard: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let post: FeedPost
     let onLove: () -> Void
     let onDiscuss: () -> Void
@@ -20,11 +22,11 @@ struct FeedPostCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 Spacer(minLength: 0)
                 Text(post.createdAt, style: .relative)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Text(post.headline)
@@ -34,12 +36,16 @@ struct FeedPostCard: View {
                 .accessibilityAddTraits(.isHeader)
 
             FeedBodyText(post: post, collapsed: !expanded)
-            Button(expanded ? "Less" : "More") {
-                withAnimation(.snappy) { expanded.toggle() }
+            Button {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { expanded.toggle() }
                 if expanded { onExpand() }
+            } label: {
+                Text(expanded ? String(localized: "Less") : String(localized: "More"))
+                    .frame(minHeight: 44)
             }
             .font(.footnote.weight(.semibold))
             .buttonStyle(.borderless)
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             .accessibilityLabel(expanded ? "Show less" : "Show the whole post")
 
             if !post.sourceLinks.isEmpty {
@@ -67,7 +73,7 @@ struct FeedPostCard: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
+                            .frame(minHeight: 44)
                             .background(Palette.muted(scheme), in: .capsule)
                     }
                     .accessibilityLabel("Source \(index + 1): \(source.title.isEmpty ? source.host : source.title)")
@@ -82,8 +88,7 @@ struct FeedPostCard: View {
             Button(action: onLove) {
                 Image(systemName: post.loved ? "heart.fill" : "heart")
                     .foregroundStyle(post.loved ? AnyShapeStyle(.pink) : AnyShapeStyle(.secondary))
-                    .contentTransition(.symbolEffect(.replace))
-                    .symbolEffect(.bounce, value: post.loved)
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                     .frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityLabel(post.loved ? "Unlove" : "Love")
@@ -127,6 +132,7 @@ struct FeedPostCard: View {
 /// A post's body with each `[n]` as a tappable link to its source. Plain inline markdown in a
 /// `Text`, so it folds to a few lines; blocks (lists, headings) are not used in posts.
 struct FeedBodyText: View {
+    @Environment(\.colorScheme) private var scheme
     let post: FeedPost
     var collapsed: Bool
 
@@ -136,7 +142,7 @@ struct FeedBodyText: View {
             .foregroundStyle(.primary)
             .lineLimit(collapsed ? 4 : nil)
             .fixedSize(horizontal: false, vertical: true)
-            .tint(.accentColor)
+            .tint(Palette.link(scheme))
     }
 
     nonisolated static func attributed(_ post: FeedPost) -> AttributedString {

@@ -8,6 +8,7 @@ import UIKit
 /// own standing instructions, model, skills and sessions. What the desktop
 /// client shows under Bot Mode is that, and so is this.
 struct BotsScreen: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// RootView turns this off for the brief tail of a recognised page swipe,
     /// when SwiftUI may still deliver a row Button action on finger-up.
     var canOpenBot: () -> Bool = { true }
@@ -284,7 +285,7 @@ struct BotsScreen: View {
                 if let deletingBot {
                     let name = deletingBot.name
                     Haptic.warning.play()
-                    withAnimation(.snappy) { rows.removeAll { $0.name == name } }
+                    withAnimation(reduceMotion ? nil : .snappy) { rows.removeAll { $0.name == name } }
                     Task {
                         do {
                             try await store.deleteBot(name)
@@ -389,7 +390,7 @@ struct BotsScreen: View {
         HStack(spacing: 10) {
             if showSearch {
                 Button {
-                    withAnimation(.snappy(duration: 0.25)) {
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
                         showSearch = false
                         searchQuery = ""
                         searchFocused = false
@@ -475,7 +476,7 @@ struct BotsScreen: View {
 
                 HStack(spacing: 16) {
                     Button {
-                        withAnimation(.snappy(duration: 0.25)) {
+                        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
                             showSearch = true
                         }
                         searchFocused = true
@@ -955,7 +956,7 @@ struct BotsScreen: View {
             count: unpinnedRows.count, bots: unpinnedRows.map(\.name),
             identifier: "bots.home"
         ) {
-            withAnimation(.snappy(duration: 0.2)) {
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
                 store.homeCollapsed.toggle()
             }
         }
@@ -1046,7 +1047,7 @@ struct BotsScreen: View {
             count: members.count + teams.count, bots: members.map(\.name),
             identifier: "bots.channel.\(channel.name)", reorderID: channel.id
         ) {
-            withAnimation(.snappy(duration: 0.2)) {
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
                 store.toggleChannelCollapsed(channel.id)
             }
         }
@@ -1120,7 +1121,7 @@ struct BotsScreen: View {
         return HStack(spacing: 0) {
             Button {
                 guard canOpenBot() else { return }
-                withAnimation(.snappy(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
                     store.toggleChannelSectionCollapsed(channel.id, section: section)
                 }
             } label: {
@@ -1630,7 +1631,7 @@ struct BotsScreen: View {
         HStack(spacing: 0) {
             Button {
                 guard canOpenBot() else { return }
-                withAnimation(.snappy(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
                     store.toggleSectionCollapsed(title)
                 }
             } label: {
@@ -1701,7 +1702,7 @@ struct BotsScreen: View {
         HStack(spacing: 0) {
             Button {
                 guard canOpenBot() else { return }
-                withAnimation(.snappy(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
                     store.unassignedExpanded.toggle()
                 }
             } label: {
@@ -1866,7 +1867,7 @@ struct BotsScreen: View {
 
     private func moveBot(_ source: String, _ target: String, _ peers: [String]) {
         guard source != target, peers.contains(source), peers.contains(target) else { return }
-        withAnimation(.snappy(duration: 0.22)) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.22)) {
             store.reorderBot(source, relativeTo: target, within: peers)
         }
     }
@@ -3292,19 +3293,8 @@ private func describeBotError(_ error: Error) -> String {
 /// size is a flash — and held, it morphs the effect out past the silhouette.
 /// A tile this large only needs to give a little under the finger to read as
 /// pressed.
-private struct GlassTile: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            // Enough to see. At 0.955 the tile moved two points and the press
-            // read as nothing happening at all; the give has to be visible
-            // from a hand's distance to stand in for the light that was
-            // taken away.
-            .scaleEffect(configuration.isPressed ? 0.90 : 1)
-            .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(.snappy(duration: 0.18, extraBounce: 0.1),
-                       value: configuration.isPressed)
-    }
-}
+// Use the shared touch-down feedback, including Reduce Motion and disabled controls.
+private typealias GlassTile = PressableCardStyle
 
 
 /// Native in-place reordering for bot rows and pinned tiles. Reordering happens

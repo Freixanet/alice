@@ -16,6 +16,7 @@ struct AgendaItemRow: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var tint: Color { AgendaStyle.color(item, fallback: store.accent.primary(scheme)) }
     private var done: Bool { ticked || item.completed }
@@ -37,7 +38,7 @@ struct AgendaItemRow: View {
                 if let line = detailLine {
                     line
                         .font(.subheadline)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 }
             }
             Spacer(minLength: 8)
@@ -55,7 +56,7 @@ struct AgendaItemRow: View {
         let name = Text(item.title).foregroundStyle(done || item.isPast(now) ? .secondary : .primary)
         return Text("\(prefix)\(name)")
             .font(.body)
-            .lineLimit(3)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
     }
 
     @ViewBuilder
@@ -76,9 +77,10 @@ struct AgendaItemRow: View {
                     }
                 }
                 .frame(width: 22, height: 22)
-                .contentShape(.circle)
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
             .accessibilityLabel(done ? "Completed" : "Complete")
             .sensoryFeedback(.success, trigger: done) { _, isDone in isDone }
