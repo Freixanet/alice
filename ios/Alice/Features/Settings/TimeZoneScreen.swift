@@ -56,7 +56,7 @@ struct TimeZoneRow: View {
                     Text(zones.map { TimeZoneScreen.label($0.effective) } ?? "…")
                         .foregroundStyle(.secondary)
                     if let zones, !zones.outOfStep.isEmpty {
-                        Text("\(zones.outOfStep.count) agents on another clock")
+                        Text(zones.outOfStep.count == 1 ? "1 agent on another clock" : "\(zones.outOfStep.count) agents on another clock")
                             .font(.caption2)
                             .foregroundStyle(Palette.warning(scheme))
                     }
@@ -94,7 +94,7 @@ struct TimeZoneScreen: View {
                 Section {
                     LabeledContent("Alice and your agents", value: Self.label(zones.effective))
                     if !zones.outOfStep.isEmpty {
-                        Text("\(zones.outOfStep.count) agents have no zone of their own and use this Mac’s clock (\(Self.label(zones.server))): \(zones.outOfStep.prefix(4).map(\.name).joined(separator: ", "))\(zones.outOfStep.count > 4 ? "…" : ""). Choosing a zone below sets it for all of them.")
+                        Text("\(zones.outOfStep.count == 1 ? "1 agent has" : "\(zones.outOfStep.count) agents have") no zone of their own and use this Mac’s clock (\(Self.label(zones.server))): \(zones.outOfStep.prefix(4).map(\.name).joined(separator: ", "))\(zones.outOfStep.count > 4 ? "…" : ""). Choosing a zone below sets it for all of them.")
                             .font(.footnote)
                             .foregroundStyle(Palette.warning(scheme))
                     }

@@ -290,10 +290,56 @@ class Worker(Base):
         self.assertEqual(gateway.started, [])
 
 
+class FakeJobs:
+    """One profile's cron store."""
+
+    def __init__(self, jobs=None):
+        self.jobs = list(jobs or [])
+
+    def load_jobs(self):
+        return list(self.jobs)
+
+    def remove_job(self, job_id):
+        self.jobs = [j for j in self.jobs if j["id"] != job_id]
+
+    def create_job(self, prompt, expr, **kw):
+        job = {"id": f"job-{len(self.jobs) + 1}", "schedule": {"expr": expr}, **kw}
+        self.jobs.append(job)
+        return job
+
+
 class Schedule(unittest.TestCase):
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp())
+
     def test_cron_expression(self):
         self.assertEqual(feed.cron_expression(["08:00", "19:00"]), "0 8,19 * * *")
         self.assertEqual(feed.cron_expression(["nonsense"]), "0 8,19 * * *")
+
+    def test_the_main_profile_schedules_one_job_whose_script_is_where_cron_looks(self):
+        jobs = FakeJobs()
+        job_id = feed.ensure_schedule(self.home, profile="default", jobs=jobs)
+        self.assertEqual([j["id"] for j in jobs.jobs], [job_id])
+        self.assertEqual(jobs.jobs[0]["script"], feed.JOB_SCRIPT)
+        # The default profile's cron resolves scripts under its own home, which is the root.
+        self.assertTrue((self.home / "scripts" / feed.JOB_SCRIPT).exists())
+        self.assertEqual(feed.ensure_schedule(self.home, profile="default", jobs=jobs), job_id)
+        self.assertEqual(len(jobs.jobs), 1)
+
+    def test_another_profile_schedules_nothing_and_removes_the_copy_left_before(self):
+        other = {"id": "mine", "name": "Otra rutina", "script": "otra.py"}
+        stray = {"id": "stray", "name": feed.JOB_NAME, "script": feed.JOB_SCRIPT,
+                 "schedule": {"expr": "0 8,19 * * *"}}
+        jobs = FakeJobs([other, stray])
+        self.assertIsNone(feed.ensure_schedule(self.home, profile="inbox", jobs=jobs))
+        self.assertEqual(jobs.jobs, [other])
+        self.assertFalse((self.home / "scripts" / feed.JOB_SCRIPT).exists())
+
+    def test_a_job_with_the_same_name_and_another_script_is_not_ours(self):
+        theirs = {"id": "theirs", "name": feed.JOB_NAME, "script": "their-feed.py"}
+        jobs = FakeJobs([theirs])
+        feed.ensure_schedule(self.home, profile="inbox", jobs=jobs)
+        self.assertEqual(jobs.jobs, [theirs])
 
 
 if __name__ == "__main__":

@@ -778,26 +778,36 @@ def cron_expression(times: List[str]) -> str:
     return f"{minute} {hours} * * *"
 
 
-def ensure_schedule(home: Path) -> Optional[str]:
-    """One cron job for the feed, rebuilt when the stored schedule changes. Nothing is delivered."""
-    try:
-        from cron.jobs import create_job, load_jobs, remove_job
-    except Exception:
+def ensure_schedule(home: Path, profile: str = "default", jobs: Any = None) -> Optional[str]:
+    """One cron job for the feed, rebuilt when the stored schedule changes. Nothing is delivered.
+
+    Cron is per profile: a job runs its script from its own profile's ``scripts`` folder. The feed
+    is the person's, so only the main profile schedules it; any other profile's gateway removes the
+    copy an earlier build left in its cron, whose script was never there («Script not found»)."""
+    if jobs is None:
+        try:
+            import cron.jobs as jobs
+        except Exception:
+            return None
+    ours = [j for j in jobs.load_jobs()
+            if j.get("name") == JOB_NAME and str(j.get("script") or JOB_SCRIPT) == JOB_SCRIPT]
+    if profile != "default":
+        for job in ours:
+            jobs.remove_job(job["id"])
         return None
     data = load(home)
     expression = cron_expression(data["schedule"].get("times") or DEFAULT_TIMES)
     scripts = Path(home) / "scripts"
     scripts.mkdir(parents=True, exist_ok=True)
     (scripts / JOB_SCRIPT).write_text(schedule_script(home), encoding="utf-8")
-    ours = [j for j in load_jobs() if j.get("name") == JOB_NAME]
     keep = [j for j in ours if str((j.get("schedule") or {}).get("expr") or j.get("schedule_display") or "")
             .strip() == expression]
     for job in ours:
         if job not in keep[:1]:
-            remove_job(job["id"])
+            jobs.remove_job(job["id"])
     if keep:
         return keep[0]["id"]
-    job = create_job(None, expression, name=JOB_NAME, deliver="local", script=JOB_SCRIPT, no_agent=True)
+    job = jobs.create_job(None, expression, name=JOB_NAME, deliver="local", script=JOB_SCRIPT, no_agent=True)
     return job.get("id")
 
 

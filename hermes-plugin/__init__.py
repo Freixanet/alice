@@ -1637,9 +1637,12 @@ def _register_feed_tools(ctx) -> None:
 def _start_feed() -> None:
     """The schedule, and a run left queued or orphaned by a restart settled or followed again."""
     try:
+        from hermes_constants import get_hermes_home
+
         feed = _feed()
-        feed.ensure_schedule(_hermes_root())
-        feed.kick(_hermes_root())
+        root, profile = _root_and_sender(Path(get_hermes_home()))
+        feed.ensure_schedule(root, profile=profile)
+        feed.kick(root)
     except Exception:
         logging.getLogger(__name__).debug("feed: could not set up the schedule", exc_info=True)
 

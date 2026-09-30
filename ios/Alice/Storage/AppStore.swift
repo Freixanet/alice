@@ -651,34 +651,10 @@ final class AppStore {
         refreshActiveChat()
         loadDrafts()
         restoreDraft()
-        #if DEBUG
-        warnIfPreferencesOverBudget()
-        #endif
+        // Settings storage is rewritten whole on every change: what no build reads leaves it.
+        // Its size is Developer › Storage's to report, off the main thread, not a save failure.
+        if defaults === UserDefaults.standard { RetiredPreferences.moveToFiles(defaults) }
     }
-
-    #if DEBUG
-    /// Settings storage is rewritten whole by iOS on every change. Conversations
-    /// kept there reached 3 MB and had cfprefsd write 4.3 GB in a day; a debug
-    /// build says so in Settings if anything grows it past this again.
-    private static let preferencesBudget = 256 * 1024
-
-    private func warnIfPreferencesOverBudget() {
-        guard defaults === UserDefaults.standard,
-              let domain = Bundle.main.bundleIdentifier.flatMap(defaults.persistentDomain(forName:)),
-              let data = try? PropertyListSerialization.data(fromPropertyList: domain, format: .binary, options: 0),
-              data.count > Self.preferencesBudget
-        else { return }
-        let largest = domain.compactMap { key, value -> (String, Int)? in
-            guard let bytes = try? PropertyListSerialization.data(
-                fromPropertyList: value, format: .binary, options: 0
-            ) else { return nil }
-            return (key, bytes.count)
-        }.max { $0.1 < $1.1 }
-        storageWarning = "Settings storage is \(data.count / 1024) KB, over its \(Self.preferencesBudget / 1024) KB budget"
-            + (largest.map { " (largest: \($0.0), \($0.1 / 1024) KB)" } ?? "")
-            + ". iOS rewrites it whole on every change; large data belongs in files."
-    }
-    #endif
 
     var activeConversation: Conversation? {
         conversations.first { $0.id == activeID }

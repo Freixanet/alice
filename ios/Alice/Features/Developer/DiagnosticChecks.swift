@@ -78,7 +78,7 @@ enum DiagnosticChecks {
         let phone = TimeZone.current.identifier
         if !zones.outOfStep.isEmpty {
             return .warning(
-                "\(zones.outOfStep.count) agents on another clock",
+                zones.outOfStep.count == 1 ? "1 agent on another clock" : "\(zones.outOfStep.count) agents on another clock",
                 "\(zones.outOfStep.map(\.name).joined(separator: ", ")) use \(zones.server.isEmpty ? "the Mac's clock" : zones.server). Set one zone for all in Settings › General › Time zone."
             )
         }
@@ -140,7 +140,11 @@ enum DiagnosticChecks {
                 && !["ok", "success", "succeeded", nil].contains($0.lastStatus?.lowercased())
         }
         if !failed.isEmpty {
-            return .warning("\(failed.count) failed this week", failed.map(\.name).joined(separator: ", ") + ". See Routines.")
+            // One routine per agent fails under one name: said once, with how many.
+            let names = Dictionary(grouping: failed, by: \.name)
+                .sorted { $0.value.count == $1.value.count ? $0.key < $1.key : $0.value.count > $1.value.count }
+                .map { $0.value.count > 1 ? "\($0.key) ×\($0.value.count)" : $0.key }
+            return .warning("\(failed.count) failed this week", names.joined(separator: ", ") + ". See Routines.")
         }
         if !missing.isEmpty {
             return .warning("Missing: \(missing.joined(separator: ", "))", "Run hermes-agents/proactiva/instalar.py on the Mac.")
@@ -151,22 +155,33 @@ enum DiagnosticChecks {
 
     // MARK: - The app itself
 
+    /// Settings storage is rewritten whole by iOS on every change. Conversations kept there once
+    /// reached 3 MB and had cfprefsd write 4.3 GB in a day; over this, the row names what grew it.
+    static let preferencesBudget = 256 * 1024
+
     static let storage = DiagnosticCheck(id: "storage", title: "Storage", symbol: "internaldrive") { store, _ in
         if let warning = store.storageWarning { return .failure("Problem saving", warning) }
-        let settings = preferencesBytes()
-        let conversations = conversationFileBytes()
-        let summary = "Settings \(bytes(settings)) · chats \(bytes(conversations))"
-        return settings > 256 * 1024
-            ? .warning(summary, "Settings storage is rewritten whole on every change; large data belongs in files.")
-            : .ok(summary)
+        // Serializing every setting and listing every chat file froze this screen: done off the main thread.
+        let usage = await Task.detached(priority: .utility) { StorageUsage.measure() }.value
+        let summary = "Settings \(bytes(usage.settings)) · chats \(bytes(usage.conversations))"
+        guard usage.settings > preferencesBudget else { return .ok(summary) }
+        let largest = usage.largestKeys.map { "\($0.key) \(bytes($0.bytes))" }.joined(separator: ", ")
+        return .warning(summary, "Over the \(bytes(preferencesBudget)) budget. Largest: \(largest). Settings storage is rewritten whole on every change; large data belongs in files.")
     }
+
+    /// Only the last few minutes count: a freeze while launching is in the log, but it does not
+    /// mark the app as sluggish for the rest of the session.
+    static let recentStalls: TimeInterval = 10 * 60
 
     static let responsiveness = DiagnosticCheck(id: "responsiveness", title: "Responsiveness", symbol: "gauge.with.needle") { _, _ in
         let monitor = HitchMonitor.shared
         guard monitor.running else { return .idle("Measured while developer mode is on") }
-        let worst = monitor.worst
-        guard !monitor.stalls.isEmpty else { return .ok("No freezes this session") }
-        let summary = "\(monitor.stalls.count) freezes · worst \(Int(worst * 1000)) ms"
+        let since = Date().addingTimeInterval(-recentStalls)
+        let recent = monitor.stalls.filter { $0.at > since }
+        guard let worst = recent.map(\.seconds).max() else {
+            return .ok(monitor.stalls.isEmpty ? "No freezes this session" : "No freezes in the last 10 minutes")
+        }
+        let summary = "\(recent.count) \(recent.count == 1 ? "freeze" : "freezes") in 10 min · worst \(Int(worst * 1000)) ms"
         return worst >= 1
             ? .failure(summary, "The screen stopped answering for over a second. Recent activity names the functions the main thread was in.")
             : .warning(summary, "Short freezes; noticeable when scrolling or opening screens. Recent activity names where the main thread was.")
@@ -184,24 +199,7 @@ enum DiagnosticChecks {
 
     // MARK: - Helpers
 
-    static func preferencesBytes() -> Int {
-        guard let id = Bundle.main.bundleIdentifier,
-              let domain = UserDefaults.standard.persistentDomain(forName: id),
-              let data = try? PropertyListSerialization.data(fromPropertyList: domain, format: .binary, options: 0)
-        else { return 0 }
-        return data.count
-    }
-
-    static func conversationFileBytes() -> Int {
-        guard let directory = FileConversationStorage.standardDirectory,
-              let files = try? FileManager.default.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: [.fileSizeKey]
-              )
-        else { return 0 }
-        return files.reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
-    }
-
-    static func bytes(_ count: Int) -> String {
+    nonisolated static func bytes(_ count: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file)
     }
 }
