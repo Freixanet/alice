@@ -1525,16 +1525,17 @@ def _pause_chat_goals() -> None:
         logging.getLogger(__name__).debug("errands: could not pause old chat goals", exc_info=True)
 
 
-def _repeat_guard(user_message=None, assistant_response=None, **_):
+def _repeat_guard(user_message=None, assistant_response=None, session_id="", **_):
     """The goal stops sending the agent back once it only repeats itself (task_finish.guard_repeat)."""
     try:
         from tools.approval_context import get_current_session_key
 
-        session = _session_id() or get_current_session_key(default="")
+        session_key = get_current_session_key(default="")
+        session = _session_id(session_id) or session_key
         # Errands have their own bounded guard, with the recorded browser steps.
         # The chat-only text guard otherwise pauses a progressing errand first.
         if not str(session).startswith(_errands().SESSION_PREFIX):
-            _task_finish().guard_repeat(user_message, assistant_response, session)
+            _task_finish().guard_repeat(user_message, assistant_response, session_key)
     except Exception:
         logging.getLogger(__name__).debug("finish_task: repeat guard failed", exc_info=True)
 
@@ -1576,7 +1577,8 @@ def _register_task_tools(ctx) -> None:
             # rephrase its arguments or call twice: both references use that ID.
             turn_id = _ERRAND_TURN_IDS.get(session) if session in _ERRAND_TURNS else None
             entry = errands.get(_hermes_root(), turn_id) if turn_id else None
-            if entry is not None and entry.get("origin_session") == session:
+            if (entry is not None and entry.get("origin_session") == session
+                    and (entry.get("profile") or "") == profile):
                 return _agent_json({"ok": True, **errands.started_result(entry)})
             return _agent_json({"ok": True, **errands.start(
                 _hermes_root(), args or {}, origin_session=session,

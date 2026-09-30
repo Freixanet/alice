@@ -190,7 +190,7 @@ class ErrandHookTests(unittest.TestCase):
                 guard.assert_not_called()
             with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):
                 self.plugin._repeat_guard(user_message="continue", assistant_response="same")
-                guard.assert_called_once_with("continue", "same", "chat-1")
+                guard.assert_called_once_with("continue", "same", "run-1")
 
 if __name__ == "__main__":
     unittest.main()
