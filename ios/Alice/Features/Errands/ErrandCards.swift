@@ -53,8 +53,11 @@ struct PurchaseCapsuleButton: View {
             .background(prominent ? (tint ?? store.accent.control(scheme)) : Palette.muted(scheme), in: .capsule)
             .opacity(disabled ? 0.5 : 1)
             .contentShape(.capsule)
+            // Label ⇄ spinner as the answer goes out and comes back.
+            .animation(.snappy(duration: 0.2), value: busy)
         }
-        .buttonStyle(.plain)
+        // Pay, Deny, Cancel: the buttons that matter most give under the finger.
+        .buttonStyle(PressableCardStyle())
         .disabled(disabled || busy)
     }
 }
@@ -336,8 +339,13 @@ struct ErrandProgressCard: View {
 
             HStack(spacing: 10) {
                 statusMark
+                    .transition(.scale(scale: 0.7).combined(with: .opacity))
                 Text(statusLine).font(.body).lineLimit(2)
+                    .contentTransition(.opacity)
             }
+            // Working → waiting for you → done reads as one card changing, not a new one.
+            .animation(.snappy(duration: 0.3), value: errand.status)
+            .animation(.snappy(duration: 0.3), value: statusLine)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)

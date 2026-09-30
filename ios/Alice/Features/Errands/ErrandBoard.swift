@@ -125,8 +125,11 @@ final class ErrandBoard {
         defer { sending.remove(errand.id) }
         do {
             if let updated = try await work() { replace(updated) }
+            // The Mac took the answer: approved, denied, answered, stopped.
+            Haptic.success.play()
             await refresh()
         } catch {
+            Haptic.error.play()
             problems[errand.id] = error.localizedDescription
             await refresh()
         }
@@ -306,6 +309,14 @@ struct ErrandChatBlock: View {
                     onCardReady: { label in Task { await board.cardReady(errand, label: label) } },
                     onRefreshCheckout: { Task { await board.refreshCheckout(errand) } },
                     onStop: { Task { await board.stop(errand) } })
+                // Felt as it turns, and only from the Mac's own word (a saved card changing on
+                // launch is not news): it needs the person now, or the order went through.
+                .haptic(.warning, trigger: errand.status) { old, new in
+                    board.fresh && !old.needsPerson && new.needsPerson
+                }
+                .haptic(.success, trigger: errand.receipt?.paid == true) { old, new in
+                    board.fresh && !old && new
+                }
                 .fullScreenCover(isPresented: $browsing) {
                     LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text)
                 }
