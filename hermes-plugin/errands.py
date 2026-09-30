@@ -56,8 +56,6 @@ STALL_SECONDS = 240
 # the same page over this long, and the errand stops and says so instead of trying forever.
 CIRCLE_STEPS = 12
 CIRCLE_SECONDS = 240
-# The same chat asking again while its errand is starting gets that errand, not a second one.
-DEDUPE_SECONDS = 10 * 60
 
 CONTINUATION = "[Continuing toward your standing goal]"
 APPROVED_PREFIX = "[checkout aprobado]"
@@ -127,14 +125,13 @@ def _clean(value: Any, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
-def create(home: Path, task: str, *, title: str = "", site: str = "", origin_session: str = "",
-           profile: str = "", ask_before_login: bool = False, now: Optional[float] = None) -> Dict[str, Any]:
-    now = now or time.time()
+def _new_entry(task: str, *, title: str = "", site: str = "", origin_session: str = "",
+               profile: str = "", ask_before_login: bool = False, now: float) -> Dict[str, Any]:
     task = _clean(task, 1500)
     if not task:
         raise ValueError("Say what the errand is.")
     errand_id = secrets.token_hex(5)
-    entry = {
+    return {
         "id": errand_id, "title": _clean(title, 80) or task[:80], "request": task, "site": shop(site),
         "status": "working", "session_id": SESSION_PREFIX + errand_id, "run_id": "", "runs": 0,
         "origin_session": _clean(origin_session, 120), "profile": _clean(profile, 64),
@@ -142,6 +139,13 @@ def create(home: Path, task: str, *, title: str = "", site: str = "", origin_ses
         "questions": None, "approval": None, "reason": "", "summary": "",
         "steps": [], "started_at": now, "updated_at": now,
     }
+
+
+def create(home: Path, task: str, *, title: str = "", site: str = "", origin_session: str = "",
+           profile: str = "", ask_before_login: bool = False, now: Optional[float] = None) -> Dict[str, Any]:
+    now = now or time.time()
+    entry = _new_entry(task, title=title, site=site, origin_session=origin_session,
+                       profile=profile, ask_before_login=ask_before_login, now=now)
     with _locked(home) as path:
         entries = [e for e in _read(path) if e.get("status") in ACTIVE or now - float(e.get("updated_at") or 0) < KEEP]
         entries.append(entry)
@@ -922,6 +926,7 @@ class Engine:
             return "missing"
         text = message or brief(entry)
         previous = ""
+        repeat_recoveries = 0
         stalls = 0
         # Restarted while its last run still goes on in the gateway: that run finishes first,
         # never a second one beside it in the same session.
@@ -941,6 +946,7 @@ class Engine:
                 update(self.home, self.errand_id, status="stuck", reason="Ha usado todos sus intentos sin terminar.")
                 return "stuck"
             try:
+                steps_before = entry.get("steps") or []
                 run_id = self.gateway.start(entry["session_id"], text)
             except Exception as exc:  # noqa: BLE001
                 update(self.home, self.errand_id, status="stuck",
@@ -976,9 +982,24 @@ class Engine:
             if receipt.get("outcome") == "paid":
                 update(self.home, self.errand_id, status="done")
                 return "done"
-            if previous and repeats(previous, reply):
-                update(self.home, self.errand_id, status="stuck", reason="Repetía lo mismo sin avanzar.")
-                return "stuck"
+            # Similar summaries are not a loop when the browser has recorded
+            # new steps. Give a real no-progress loop one bounded recovery.
+            if previous and repeats(previous, reply) and (entry.get("steps") or []) == steps_before:
+                if repeat_recoveries >= 1:
+                    last = (entry.get("steps") or [{}])[-1].get("text") or "sin pasos registrados"
+                    update(self.home, self.errand_id, status="stuck", reason=(
+                        "No ha podido avanzar tras un intento de recuperación. Último paso: " + str(last)[:140] + "."))
+                    return "stuck"
+                repeat_recoveries += 1
+                text = (CONTINUATION + " Has repetido la respuesta sin registrar pasos nuevos. "
+                        "Inspecciona el estado actual de la página y lee el error de la tienda antes de "
+                        "actuar; no repitas el mismo intento. Si necesitas un dato de la persona, usa "
+                        "ask_person o la tarjeta segura correspondiente. Si ya existe un pedido, "
+                        "comprueba su confirmación: no vuelvas a pagar. Si nada permite avanzar, "
+                        "di el obstáculo concreto. No reinicies el recado.")
+                continue
+            if (entry.get("steps") or []) != steps_before or not repeats(previous, reply):
+                repeat_recoveries = 0
             previous = reply
             try:
                 decision = self.judge(entry["session_id"], reply)
@@ -1066,18 +1087,35 @@ def start(home: Path, args: Dict[str, Any], *, origin_session: str = "", profile
     if str(origin_session or "").startswith(SESSION_PREFIX):
         return {"ok": False, "errand_id": origin_session[len(SESSION_PREFIX):], "status": "working",
                 "error": "You are already inside this errand: do the task here, do not start another."}
-    for other in listing(home):
-        if (origin_session and other.get("origin_session") == origin_session and other.get("status") in ACTIVE
-                and now - float(other.get("started_at") or 0) < DEDUPE_SECONDS):
-            return {"errand_id": other["id"], "title": other["title"], "status": other["status"],
-                    "next": "This errand is already under way; say so in one line. Do not start another."}
-    entry = create(home, str(args.get("task") or ""), title=str(args.get("title") or ""),
-                   site=str(args.get("site") or ""), origin_session=origin_session, profile=profile,
-                   ask_before_login=bool(args.get("ask_before_login")))
+    task = _clean(args.get("task"), 1500)
+    if not task:
+        raise ValueError("Say what the errand is.")
+    # Lookup and insertion share a process-safe lock. The same request remains
+    # the same errand for its whole active lifetime; another task is independent.
+    with _locked(home) as path:
+        entries = _read(path)
+        for other in reversed(entries):
+            if (origin_session and other.get("origin_session") == origin_session
+                    and (other.get("profile") or "") == profile and other.get("status") in ACTIVE
+                    and _clean(other.get("request"), 1500).casefold() == task.casefold()):
+                return started_result(other)
+        entry = _new_entry(task, title=str(args.get("title") or ""), site=str(args.get("site") or ""),
+                           origin_session=origin_session, profile=profile,
+                           ask_before_login=bool(args.get("ask_before_login")), now=now)
+        entries = [e for e in entries if e.get("status") in ACTIVE
+                   or now - float(e.get("updated_at") or 0) < KEEP]
+        entries.append(entry)
+        _write(path, entries)
     open_goal(entry)
     launch(home, entry["id"])
+    return started_result(entry)
+
+
+def started_result(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """The existing errand's identity and actual state, also used by the chat's tool."""
     return {"errand_id": entry["id"], "title": entry["title"], "status": entry["status"],
-            "next": "Answer in one short line that it is under way; Alice shows its progress. Do not do it here."}
+            "next": "Report this errand's actual status in one short line. Alice shows its progress. "
+                    "Do not start another or do it here."}
 
 
 def resume(home: Path, errand_id: str, message: str) -> bool:

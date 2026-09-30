@@ -3,9 +3,11 @@
     PYTHONPATH=~/.hermes/hermes-agent ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests
 """
 import importlib.util
+import concurrent.futures
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -322,10 +324,40 @@ class EngineTests(Base):
     def test_repeating_the_same_reply_leaves_it_stuck(self):
         same = "No encuentro la creatina en la tienda, sigo buscando variantes del nombre oficial"
         keep = {"status": "active", "should_continue": True, "continuation_prompt": "[Continuing toward your standing goal]"}
-        gateway = FakeGateway([done(same), done(same)])
-        entry, engine, _ = self.engine(gateway, [dict(keep), dict(keep)])
+        gateway = FakeGateway([done(same), done(same), done(same)])
+        entry, engine, _ = self.engine(gateway, [dict(keep), dict(keep), dict(keep)])
         self.assertEqual(engine.run(), "stuck")
-        self.assertIn("Repetía", errands.get(self.home, entry["id"])["reason"])
+        self.assertEqual(len(gateway.started), 3)
+        self.assertIn("Inspecciona el estado actual", gateway.started[2][1])
+        self.assertIn("recuperación", errands.get(self.home, entry["id"])["reason"])
+
+    def test_similar_summaries_do_not_stop_new_browser_steps(self):
+        same = "La compra sigue en marcha mientras completo los datos en la página de la tienda"
+        holder = {}
+
+        def on_start(n):
+            errands.add_step(self.home, holder["id"], f"Paso {n}", f"https://shop.example/step/{n}")
+
+        gateway = FakeGateway([done(same), done(same), done("Pedido confirmado")], on_start=on_start)
+        entry, engine, _ = self.engine(gateway, [
+            {"should_continue": True}, {"should_continue": True}, {"status": "done"}])
+        holder["id"] = entry["id"]
+        self.assertEqual(engine.run(), "done")
+        self.assertEqual(len(gateway.started), 3)
+
+    def test_a_loop_gets_one_recovery_and_can_reach_a_real_wait(self):
+        same = "No puedo continuar con el checkout porque la tienda sigue pidiendo los mismos datos"
+        holder = {}
+
+        def on_start(n):
+            if n == 3:
+                errands.ask(self.home, holder["id"], "Dirección", [{"id": "address", "question": "¿Dirección?"}])
+
+        gateway = FakeGateway([done(same), done(same), done("Espera tu respuesta")], on_start=on_start)
+        entry, engine, _ = self.engine(gateway, [{"should_continue": True}])
+        holder["id"] = entry["id"]
+        self.assertEqual(engine.run(), "needs_input")
+        self.assertEqual(len(gateway.started), 3)
 
     def test_a_judge_that_gives_up_leaves_it_stuck_with_the_reason(self):
         gateway = FakeGateway([done("Sin stock")])
@@ -372,10 +404,48 @@ class AuditFixTests(Base):
 
     def test_the_same_chat_asking_again_gets_the_errand_under_way(self):
         first = errands.create(self.home, "Compra un iPhone", title="iPhone", origin_session="chat-1", now=NOW)
-        out = errands.start(self.home, {"task": "Compra un iPhone 256 GB", "title": "iPhone"},
+        out = errands.start(self.home, {"task": "Compra un iPhone", "title": "iPhone"},
                             origin_session="chat-1", now=NOW + 60)
         self.assertEqual(out["errand_id"], first["id"])
         self.assertEqual(len(errands.listing(self.home)), 1)
+
+    def test_an_active_request_is_reused_after_ten_minutes(self):
+        first = errands.create(self.home, "Compra un iPhone", origin_session="chat-1", now=NOW)
+        out = errands.start(self.home, {"task": "  COMPRA un   iPhone "}, origin_session="chat-1", now=NOW + 900)
+        self.assertEqual(out["errand_id"], first["id"])
+        self.assertEqual(len(errands.listing(self.home)), 1)
+
+    def test_a_different_request_or_profile_does_not_reuse_the_first_purchase(self):
+        first = errands.create(self.home, "Compra un iPhone", origin_session="chat-1", profile="alice", now=NOW)
+        with mock.patch.object(errands, "open_goal"), mock.patch.object(errands, "launch"):
+            different = errands.start(self.home, {"task": "Compra la creatina"},
+                                      origin_session="chat-1", profile="alice", now=NOW + 1)
+            other_profile = errands.start(self.home, {"task": "Compra un iPhone"},
+                                          origin_session="chat-1", profile="other", now=NOW + 2)
+        self.assertEqual(len({first["id"], different["errand_id"], other_profile["errand_id"]}), 3)
+
+    def test_simultaneous_starts_create_and_launch_one_errand(self):
+        barrier = threading.Barrier(12)
+
+        def start_once(_):
+            barrier.wait(timeout=5)
+            return errands.start(self.home, {"task": "Compra la creatina de Prozis"},
+                                 origin_session="chat-1", profile="alice", now=NOW)["errand_id"]
+
+        with mock.patch.object(errands, "open_goal") as goal, mock.patch.object(errands, "launch") as launch:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+                ids = list(pool.map(start_once, range(12)))
+        self.assertEqual(len(set(ids)), 1)
+        self.assertEqual(len(errands.listing(self.home)), 1)
+        goal.assert_called_once()
+        launch.assert_called_once()
+
+    def test_a_finished_request_can_be_started_again(self):
+        first = errands.create(self.home, "Compra un iPhone", origin_session="chat-1", now=NOW)
+        errands.update(self.home, first["id"], status="done")
+        with mock.patch.object(errands, "open_goal"), mock.patch.object(errands, "launch"):
+            out = errands.start(self.home, {"task": "Compra un iPhone"}, origin_session="chat-1", now=NOW + 1)
+        self.assertNotEqual(out["errand_id"], first["id"])
 
     def test_only_a_real_domain_is_a_site(self):
         self.assertEqual(errands.shop("apple store españa (apple.com"), "")

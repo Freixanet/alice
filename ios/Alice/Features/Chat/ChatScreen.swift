@@ -202,7 +202,7 @@ private struct ChatScreenContent: View, Equatable {
             // They are laid out here instead, with the same 44pt disc and
             // the same glass the composer's controls use.
             .toolbar(.hidden, for: .navigationBar)
-            .modifier(ChatTopChrome(scrolling: hasTranscript) {
+            .modifier(ChatTopChrome {
                 VStack(spacing: 8) {
                     topControls
                     // In the page, not floating over it: a popover tip is
@@ -615,7 +615,7 @@ private struct TranscriptView: View {
 
     private func transcriptRow(
         _ message: Message, position: ChatTasks.Position?, latestBusy: Bool,
-        superseded: Bool, reaction: Reaction?
+        superseded: Bool, reaction: Reaction?, errandRefs: [ErrandRef]
     ) -> some View {
         let busy = (position?.isLatest ?? false) && latestBusy
         return MessageRow(
@@ -623,7 +623,8 @@ private struct TranscriptView: View {
             showsActions: (position?.isLast ?? true) && !busy,
             showsTime: (position?.isFirst ?? true) && !busy,
             showsAuthor: position?.isFirst ?? true,
-            actionsContent: position?.text
+            actionsContent: position?.text,
+            errandRefs: errandRefs
         )
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
@@ -708,6 +709,10 @@ private struct TranscriptView: View {
         // Read once per redraw: presenting walks the whole history, and the
         // page, the count above it and the rows each asked for it again.
         let presented = presentedMessages
+        let errands = ErrandTranscript.placements(
+            messages: conversation.messages, errands: store.errandBoard.errands,
+            session: conversation.hermesSessionID
+        )
         let start = firstShownID.flatMap { id in presented.firstIndex { $0.id == id } }
             ?? Self.windowStart(presented, before: presented.count)
         let hiddenCount = start
@@ -752,7 +757,8 @@ private struct TranscriptView: View {
                     ForEach(messages) { message in
                         transcriptRow(
                             message, position: positions[message.id], latestBusy: latestBusy,
-                            superseded: answered.contains(message.id), reaction: given[message.id]
+                            superseded: answered.contains(message.id), reaction: given[message.id],
+                            errandRefs: errands[message.id] ?? []
                         )
                     }
                     if !keyboardShown, conversation.messages.contains(where: { $0.role == .user }) {
@@ -772,10 +778,8 @@ private struct TranscriptView: View {
                 // field it is written in share one column.
                 .padding(.horizontal, store.activeBotProfileForModelSelection != nil ? 20 : 18)
                 // Air under the header, so the first message does not start
-                // against the agent's portrait and name. The header is a bar
-                // laid over the transcript with no spacing of its own; close
-                // to the gap between messages, a little less so the chat still
-                // reads as starting there.
+                // against the agent's portrait and name, in the space below
+                // the header rather than underneath its floating controls.
                 .padding(.top, 28)
                 // Air between the last reply and the composer, so the
                 // conversation ends rather than stopping against the glass.
@@ -789,12 +793,14 @@ private struct TranscriptView: View {
             .scrollIndicators(.hidden)
             .scrollPosition($position)
             .onAppear {
+                store.errandBoard.watch()
                 // Pinned once, so replies arriving later extend the window
                 // at the bottom instead of sliding it.
                 if firstShownID == nil, !presented.isEmpty {
                     firstShownID = presented[Self.windowStart(presented, before: presented.count)].id
                 }
             }
+            .onDisappear { store.errandBoard.unwatch() }
             .onChange(of: store.focusedMessage, initial: true) { _, focus in
                 bringIntoView(focus, in: presented)
             }
@@ -807,8 +813,7 @@ private struct TranscriptView: View {
             // up, so what they are reading does not move.
             .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
-            // The transcript extends under the Dynamic Island. Soft fade
-            // starts there, rather than clipping the reply at the header.
+            // A soft edge below the header as earlier replies leave the viewport.
             .scrollEdgeEffectStyle(.soft, for: .top)
             .scrollEdgeEffectStyle(.soft, for: .bottom)
             .background { ReplySelectionDismiss() }
@@ -913,24 +918,19 @@ private struct TranscriptView: View {
     }
 }
 
-/// A scrolling transcript uses a safe-area *bar* so replies pass under the
-/// Dynamic Island and the system edge effect can start there. An empty home
-/// still uses an inset: without a scroll view the bar would let the title
-/// centre under the discs.
+/// The portrait has its own space. Scrolled text must not remain readable
+/// through the gap around the floating portrait and name.
 private struct ChatTopChrome<Header: View>: ViewModifier {
-    let scrolling: Bool
+    @Environment(\.colorScheme) private var scheme
     var header: Header
 
-    init(scrolling: Bool, @ViewBuilder header: () -> Header) {
-        self.scrolling = scrolling
+    init(@ViewBuilder header: () -> Header) {
         self.header = header()
     }
 
     func body(content: Content) -> some View {
-        if scrolling {
-            content.safeAreaBar(edge: .top, spacing: 0) { header }
-        } else {
-            content.safeAreaInset(edge: .top, spacing: 0) { header }
+        content.safeAreaInset(edge: .top, spacing: 0) {
+            header.background(Palette.background(scheme))
         }
     }
 }

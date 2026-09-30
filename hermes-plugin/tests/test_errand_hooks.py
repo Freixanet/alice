@@ -35,6 +35,8 @@ class ErrandHookTests(unittest.TestCase):
 
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())
+        self.plugin._ERRAND_TURNS.clear()
+        self.plugin._ERRAND_TURN_IDS.clear()
         self.metas = {"card": Meta(kind="payment", origin="https://www.hsnstore.com", label="Visa ···4242"),
                       "login": Meta(kind="login", origin="https://www.hsnstore.com", label="HSN")}
         store = types.SimpleNamespace(get_meta=lambda handle: self.metas.get(handle))
@@ -147,6 +149,48 @@ class ErrandHookTests(unittest.TestCase):
         # The step shown is the agent's comment, not Alice's note in front of it.
         self.plugin._errand_step("browser_exec", out["args"], entry["session_id"])
         self.assertEqual(self.errands.get(self.home, entry["id"])["steps"][-1]["text"], "Abrir HSN")
+
+    def test_rephrased_tool_calls_reference_the_hook_started_errand_even_after_it_stops(self):
+        registered = {}
+        ctx = types.SimpleNamespace(register_tool=lambda **kw: registered.__setitem__(kw["name"], kw))
+        self.plugin._register_task_tools(ctx)
+        approval = types.SimpleNamespace(get_current_session_key=lambda **_: "run-1")
+        with mock.patch.object(self.errands, "launch"), mock.patch.object(self.errands, "open_goal"), \
+                mock.patch.object(self.plugin, "_root_and_sender", return_value=(self.home, "default")), \
+                mock.patch.object(self.plugin, "_session_id", return_value="chat-9"), \
+                mock.patch.dict(sys.modules, {"tools.approval_context": approval}):
+            self.plugin._errand_turn(session_id="chat-9", user_message="compra la creatina de prozis")
+            entry = self.errands.listing(self.home)[0]
+            handler = registered["errand_start"]["handler"]
+            first = json.loads(handler({"task": "Comprar Creapure 300 g", "title": "Creatina"}))
+            self.errands.update(self.home, entry["id"], status="stuck", reason="Falta la dirección")
+            second = json.loads(handler({"task": "Comprar la creatina", "title": "Prozis"}))
+        self.assertEqual(first["errand_id"], entry["id"])
+        self.assertEqual(second["errand_id"], entry["id"])
+        self.assertEqual(second["status"], "stuck")
+        self.assertEqual(len(self.errands.listing(self.home)), 1)
+
+    def test_a_second_distinct_purchase_in_the_same_chat_gets_its_own_errand(self):
+        with mock.patch.object(self.errands, "launch"), mock.patch.object(self.errands, "open_goal"), \
+                mock.patch.object(self.plugin, "_root_and_sender", return_value=(self.home, "default")):
+            self.plugin._errand_turn(session_id="chat-9", user_message="compra un iphone")
+            first = self.plugin._ERRAND_TURN_IDS["chat-9"]
+            self.plugin._errand_turn(session_id="chat-9", user_message="compra la creatina")
+            second = self.plugin._ERRAND_TURN_IDS["chat-9"]
+        self.assertNotEqual(first, second)
+        self.assertEqual(len(self.errands.listing(self.home)), 2)
+
+    def test_the_text_only_repeat_guard_does_not_pause_an_errand(self):
+        guard = mock.Mock()
+        approval = types.SimpleNamespace(get_current_session_key=lambda **_: "run-1")
+        with mock.patch.dict(sys.modules, {"tools.approval_context": approval}), \
+                mock.patch.object(self.plugin, "_task_finish", return_value=types.SimpleNamespace(guard_repeat=guard)):
+            with mock.patch.object(self.plugin, "_session_id", return_value="errand-123"):
+                self.plugin._repeat_guard(user_message="continue", assistant_response="same")
+                guard.assert_not_called()
+            with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):
+                self.plugin._repeat_guard(user_message="continue", assistant_response="same")
+                guard.assert_called_once_with("continue", "same", "chat-1")
 
 if __name__ == "__main__":
     unittest.main()

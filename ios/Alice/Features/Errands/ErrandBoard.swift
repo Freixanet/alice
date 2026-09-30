@@ -233,39 +233,6 @@ struct ErrandStack: View {
     }
 }
 
-/// The errands a turn started when its reply never called `errand_start` (the plugin starts
-/// them itself): those from this chat's session that began after the person asked and before
-/// they wrote again, under the reply.
-struct ErrandTurnBlock: View {
-    let session: String
-    let asked: Date
-    let until: Date?
-
-    @Environment(AppStore.self) private var store
-
-    /// The phone's and the Mac's clocks may differ a little.
-    private static let slack: TimeInterval = 120
-
-    private var found: [Errand] {
-        store.errandBoard.errands.filter { errand in
-            errand.originSession == session
-                && errand.startedAt >= asked.addingTimeInterval(-Self.slack)
-                && until.map { errand.startedAt < $0.addingTimeInterval(Self.slack) } ?? true
-        }
-        .sorted { $0.startedAt < $1.startedAt }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(found) { errand in
-                ErrandChatBlock(ref: ErrandRef(errandID: errand.id, title: errand.title))
-            }
-        }
-        .onAppear { store.errandBoard.watch() }
-        .onDisappear { store.errandBoard.unwatch() }
-    }
-}
-
 extension ErrandStack {
     /// The saved cards; the one the agent named, or the only one, is chosen to start with.
     fileprivate func loadCards(for checkout: Errand.Checkout) async {

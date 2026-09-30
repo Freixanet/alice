@@ -1439,6 +1439,7 @@ def _register_ask_tools(ctx) -> None:
 # Chat turns that asked for an errand, by session: until the turn ends the chat does not browse
 # or ask — it once browsed Apple and asked capacity and colour itself before starting the errand.
 _ERRAND_TURNS: set = set()
+_ERRAND_TURN_IDS: dict = {}
 
 
 def _errand_turn(session_id="", user_message=None, **_):
@@ -1450,6 +1451,7 @@ def _errand_turn(session_id="", user_message=None, **_):
             return None
         if errands.is_errand_request(user_message):
             _ERRAND_TURNS.add(session)
+            _ERRAND_TURN_IDS.pop(session, None)
             # Started here, not left to the model: reading an old conversation, it once answered
             # «ya está en marcha, no lo duplico» about errands that had been stopped.
             from hermes_constants import get_hermes_home
@@ -1458,8 +1460,10 @@ def _errand_turn(session_id="", user_message=None, **_):
             text = " ".join(str(user_message or "").split())
             out = errands.start(_hermes_root(), {"task": text, "title": text[:70]},
                                 origin_session=session, profile=profile)
+            _ERRAND_TURN_IDS[session] = out["errand_id"]
             return {"context": errands.turn_note(out)}
         _ERRAND_TURNS.discard(session)
+        _ERRAND_TURN_IDS.pop(session, None)
     except Exception:
         logging.getLogger(__name__).debug("errands: could not read the turn", exc_info=True)
     return None
@@ -1526,7 +1530,11 @@ def _repeat_guard(user_message=None, assistant_response=None, **_):
     try:
         from tools.approval_context import get_current_session_key
 
-        _task_finish().guard_repeat(user_message, assistant_response, get_current_session_key(default=""))
+        session = _session_id() or get_current_session_key(default="")
+        # Errands have their own bounded guard, with the recorded browser steps.
+        # The chat-only text guard otherwise pauses a progressing errand first.
+        if not str(session).startswith(_errands().SESSION_PREFIX):
+            _task_finish().guard_repeat(user_message, assistant_response, session)
     except Exception:
         logging.getLogger(__name__).debug("finish_task: repeat guard failed", exc_info=True)
 
@@ -1563,8 +1571,15 @@ def _register_task_tools(ctx) -> None:
             from tools.approval_context import get_current_session_key
 
             _root, profile = _root_and_sender(Path(get_hermes_home()))
+            session = _session_id() or get_current_session_key(default="")
+            # The pre-turn hook already created this request. The model can
+            # rephrase its arguments or call twice: both references use that ID.
+            turn_id = _ERRAND_TURN_IDS.get(session) if session in _ERRAND_TURNS else None
+            entry = errands.get(_hermes_root(), turn_id) if turn_id else None
+            if entry is not None and entry.get("origin_session") == session:
+                return _agent_json({"ok": True, **errands.started_result(entry)})
             return _agent_json({"ok": True, **errands.start(
-                _hermes_root(), args or {}, origin_session=_session_id() or get_current_session_key(default=""),
+                _hermes_root(), args or {}, origin_session=session,
                 profile=profile)})
         except Exception as exc:  # noqa: BLE001
             return _agent_json({"ok": False, "error": str(exc) or type(exc).__name__})

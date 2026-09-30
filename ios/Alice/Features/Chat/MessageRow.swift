@@ -22,6 +22,8 @@ struct MessageRow: View {
     var showsAuthor = true
     /// What copying, sharing and reading aloud take: the whole task.
     var actionsContent: String? = nil
+    /// Resolved once for the whole conversation, never independently per reply.
+    var errandRefs: [ErrandRef] = []
     @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @State private var selectingText = false
     @State private var showingModelPicker = false
@@ -311,23 +313,8 @@ struct MessageRow: View {
                                 AskPersonCard(ask: ask)
                             }
                         }
-                        // An errand this reply started: it runs apart, and its cards follow it here —
-                        // under the reply's words, so they wait until there are some.
-                        let replied = !message.pending || !message.content.isEmpty
-                        ForEach(replied ? message.tools.filter { ErrandRef.isTool($0.name) } : []) { call in
-                            if let ref = ErrandRef.parse(call.detail) {
-                                ErrandChatBlock(ref: ref)
-                            }
-                        }
-                        // Or one the plugin started for this turn without the call.
-                        if replied, !message.tools.contains(where: { ErrandRef.isTool($0.name) }),
-                           let conversation = store.shownConversation,
-                           let session = conversation.hermesSessionID,
-                           let at = conversation.messages.firstIndex(where: { $0.id == message.id }),
-                           let asked = conversation.messages[..<at].last(where: { $0.role == .user }) {
-                            ErrandTurnBlock(
-                                session: session, asked: asked.createdAt,
-                                until: conversation.messages[(at + 1)...].first { $0.role == .user }?.createdAt)
+                        ForEach(errandRefs, id: \.self) { ref in
+                            ErrandChatBlock(ref: ref)
                         }
                     }
 

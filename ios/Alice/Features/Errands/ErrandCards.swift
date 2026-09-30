@@ -340,7 +340,9 @@ struct ErrandProgressCard: View {
             HStack(spacing: 10) {
                 statusMark
                     .transition(.scale(scale: 0.7).combined(with: .opacity))
-                Text(statusLine).font(.body).lineLimit(2)
+                Text(statusLine).font(.body)
+                    .lineLimit(errand.status == .stuck ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .contentTransition(.opacity)
             }
             // Working → waiting for you → done reads as one card changing, not a new one.
