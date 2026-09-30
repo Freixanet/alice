@@ -60,7 +60,7 @@ La ampliación de los controles conserva el glifo dentro de su área táctil. En
 - `git diff --check`: correcto.
 - Catálogo de localización: JSON válido; nuevas etiquetas e instrucciones con traducción española.
 - Tres regresiones de FeedStore añadidas: una sola generación ante solicitudes concurrentes, retry después de fallo sin perder posts y reemplazo del watcher cancelado. Definidas; la ejecución se documenta en el PR.
-- Compilación nativa con Xcode 26.5, destino genérico iOS, en una copia aislada: resultado documentado en el PR.
+- Compilación nativa y `build-for-testing` con Xcode 26.5, destino genérico iOS, en una copia aislada: correctos. Compilar las pruebas no equivale a ejecutarlas.
 - No se ejecutan simuladores ni UI tests en el Mac personal, conforme a AGENTS.md. Las suites de simulador quedan para CI.
 - No se instala esta rama en el iPhone ni se envían pruebas al Hermes real.
 
@@ -69,3 +69,5 @@ La ampliación de los controles conserva el glifo dentro de su área táctil. En
 Se corrigió el tamaño táctil del tick de Agenda, se conservó el tamaño visual de los botones compactos al ampliar su alcance y se retiró una atenuación global que podía apagar también los spinners de operaciones en curso. Se corrigieron los textos nuevos para español y se reutilizó el estilo de presión ya existente en Agentes.
 
 La limitación pendiente es material: una compilación no demuestra equilibrio, contraste del glass, timing, gestos o teclado en el iPhone. Para cerrar la auditoría visual se necesitan capturas actuales y un recorrido de los estados de la tabla. Esta rama no se presenta como una revisión visual completa ni como una versión lista para publicar.
+
+La comprobación de seguridad previa a publicar detectó avisos en `brace-expansion`. Se actualizan únicamente las dos entradas de desarrollo del lockfile, de 1.1.18 a 1.1.21 y de 5.0.9 a 5.0.12; no cambia package.json ni el código del producto web.

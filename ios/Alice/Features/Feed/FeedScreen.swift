@@ -73,25 +73,20 @@ struct FeedScreen: View {
         .refreshable {
             await feed.requestGeneration()
             await feed.sync()
-            feed.watch()
+            if !Task.isCancelled, scenePhase == .active { feed.watch() }
         }
-        .task {
+        .task(id: scenePhase) {
+            guard scenePhase == .active else {
+                feed.stopWatching()
+                return
+            }
             await feed.sync()
+            guard !Task.isCancelled else { return }
             feed.watch()
         }
         .onDisappear { feed.stopWatching() }
         .onChange(of: feed.generation.isActive) { _, active in
             if active, scenePhase == .active { feed.watch() }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                Task {
-                    await feed.sync()
-                    feed.watch()
-                }
-            } else {
-                feed.stopWatching()
-            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { undoBar }
         .sheet(isPresented: $editingBrief) {
