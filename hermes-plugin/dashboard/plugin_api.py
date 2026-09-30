@@ -2768,6 +2768,24 @@ async def errands_refresh(errand_id: str) -> JSONResponse:
     return JSONResponse({"errand": await asyncio.to_thread(refresh)}, headers=_NO_STORE)
 
 
+class _ErrandGoOn(BaseModel):
+    accept_price: bool = False
+
+
+@router.post("/errands/{errand_id}/continue")
+async def errands_continue(errand_id: str, body: _ErrandGoOn) -> JSONResponse:
+    """A stopped purchase goes on: the same option at the shop's new price, or tried again."""
+    def go():
+        module, root = _errands_module(), _hermes_root()
+        _errand_or_404(errand_id)
+        entry = module.go_on(root, errand_id, accept_price=body.accept_price)
+        if entry is None:
+            raise HTTPException(status_code=409, detail="Este recado ya no está parado.")
+        return module.public(entry)
+
+    return JSONResponse({"errand": await asyncio.to_thread(go)}, headers=_NO_STORE)
+
+
 @router.post("/errands/{errand_id}/stop")
 async def errands_stop(errand_id: str) -> JSONResponse:
     def halt():

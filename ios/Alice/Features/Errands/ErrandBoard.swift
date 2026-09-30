@@ -113,6 +113,11 @@ final class ErrandBoard {
         await answer(errand) { try await store.refreshCheckout(errand.id) }
     }
 
+    func goOn(_ errand: Errand, acceptPrice: Bool) async {
+        guard let store else { return }
+        await answer(errand) { try await store.continueErrand(errand.id, acceptPrice: acceptPrice) }
+    }
+
     func stop(_ errand: Errand) async {
         guard let store else { return }
         await answer(errand) { try await store.stopErrand(errand.id) }
@@ -165,6 +170,11 @@ struct ErrandStack: View {
     var onCardReady: (String) -> Void = { _ in }
     var onRefreshCheckout: () -> Void = {}
     var onStop: () -> Void = {}
+    /// A stopped purchase: the same option at the shop's price, or tried again.
+    var onAcceptPrice: () -> Void = {}
+    var onRetry: () -> Void = {}
+    /// The chat it belongs to, for offering its other options again.
+    var session: String? = nil
     /// The walkthrough's own cards, instead of the vault's.
     var demoCards: [SavedCard]? = nil
 
@@ -205,8 +215,11 @@ struct ErrandStack: View {
             }
             if let checkout = errand.checkout, let phase = checkoutPhase {
                 if phase == .pending || phase == .sending {
-                    RichMessageView(content: PurchaseSummaryText.summary(checkout, card: chosen?.label ?? checkout.cardLabel,
-                                                                        language: errand.language))
+                    // Alice's words, in a reply's bubble like every other reply.
+                    ReplyBubble {
+                        RichMessageView(content: PurchaseSummaryText.summary(checkout, card: chosen?.label ?? checkout.cardLabel,
+                                                                            language: errand.language), bubbled: true)
+                    }
                 }
                 CheckoutApprovalCard(checkout: checkout, logoID: logoID, logo: logo,
                                      language: errand.language, phase: phase, compact: true, error: problem,
@@ -229,9 +242,12 @@ struct ErrandStack: View {
                     }
             }
             if let receipt = errand.receipt {
-                RichMessageView(content: PurchaseSummaryText.result(receipt, language: errand.language))
-            } else if let stopped = PurchaseSummaryText.stopped(errand, language: errand.language) {
-                RichMessageView(content: stopped)
+                ReplyBubble {
+                    RichMessageView(content: PurchaseSummaryText.result(receipt, language: errand.language), bubbled: true)
+                }
+            } else if [.stuck, .denied, .stopped].contains(errand.status) {
+                ErrandStoppedCard(errand: errand, session: session, sending: sending,
+                                  onAcceptPrice: onAcceptPrice, onRetry: onRetry)
             }
             if let problem, checkoutPhase == nil {
                 Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
@@ -282,7 +298,10 @@ struct ErrandChatBlock: View {
                     onConfirm: { allow in Task { await board.confirm(errand, allow: allow) } },
                     onCardReady: { label in Task { await board.cardReady(errand, label: label) } },
                     onRefreshCheckout: { Task { await board.refreshCheckout(errand) } },
-                    onStop: { Task { await board.stop(errand) } })
+                    onStop: { Task { await board.stop(errand) } },
+                    onAcceptPrice: { Task { await board.goOn(errand, acceptPrice: true) } },
+                    onRetry: { Task { await board.goOn(errand, acceptPrice: false) } },
+                    session: store.shownConversation?.hermesSessionID)
                 // Felt as it turns, and only from the Mac's own word (a saved card changing on
                 // launch is not news): it needs the person now, or the order went through.
                 .haptic(.warning, trigger: errand.status) { old, new in

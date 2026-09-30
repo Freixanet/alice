@@ -41,7 +41,8 @@ enum ErrandTranscript {
                         && abs(messages[$0].createdAt.timeIntervalSince(errand.startedAt)) <= 120
                 }
                 if let owner = choices.last(where: { messages[$0].createdAt <= errand.startedAt }) ?? choices.first {
-                    result[messages[owner].id, default: []].append(ErrandRef(errandID: errand.id, title: errand.title))
+                    let at = latest(from: owner, until: errand.updatedAt, in: messages)
+                    result[messages[at].id, default: []].append(ErrandRef(errandID: errand.id, title: errand.title))
                     continue
                 }
             }
@@ -60,11 +61,24 @@ enum ErrandTranscript {
                 }
             }
             guard let owner = [explicit[errand.id], inferred].compactMap({ $0 }).min() else { continue }
-            result[messages[owner].id, default: []].append(
+            result[messages[latest(from: owner, until: errand.updatedAt, in: messages)].id, default: []].append(
                 ErrandRef(errandID: errand.id, title: errand.title)
             )
         }
         return result
+    }
+
+    /// The chat reads in the order things happened: an errand's block sits after the last turn
+    /// written before its latest change, not under the turn that started it. Anchored there, a
+    /// browser, a summary or a stop showed up above turns written after them.
+    static func latest(from owner: Int, until moment: Date, in messages: [Message]) -> Int {
+        var at = owner
+        var index = owner + 1
+        while index < messages.count, messages[index].createdAt <= moment {
+            if messages[index].role == .user || canHost(messages[index]) { at = index }
+            index += 1
+        }
+        return at
     }
 
     private static func canHost(_ message: Message) -> Bool {

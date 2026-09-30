@@ -140,6 +140,25 @@ final class LiveBrowser {
     }
 }
 
+/// Whether the browser is on a page worth showing: the shop (or site) itself, not a blank tab,
+/// a search engine's results or the way there. Until then its card is only its header.
+enum BrowserDestination {
+    private static let searches = ["google.", "bing.com", "duckduckgo.com", "search.brave.com", "yahoo.", "ecosia.org",
+                                   "startpage.com"]
+
+    static func reached(_ url: String, site: String = "") -> Bool {
+        guard url.hasPrefix("https://") || url.hasPrefix("http://"),
+              let host = URL(string: url)?.host(percentEncoded: false)?.lowercased()
+        else { return false }
+        let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        let wanted = site.lowercased().replacingOccurrences(of: "www.", with: "")
+        if !wanted.isEmpty, let wantedHost = URL(string: wanted.contains("://") ? wanted : "https://" + wanted)?.host() {
+            return bare == wantedHost || bare.hasSuffix("." + wantedHost)
+        }
+        return !searches.contains { bare.contains($0) }
+    }
+}
+
 /// Whether an agent is using the browser in this reply right now.
 enum BrowserActivity {
     static func isBrowserTool(_ name: String) -> Bool {
@@ -217,6 +236,7 @@ struct LiveBrowserCard: View {
                 Spacer(minLength: 0)
                 if working && browsing { LivePulse(color: Palette.success(scheme)) }
             }
+            if BrowserDestination.reached(live.url) {
             Button { open = true } label: {
                 ZStack {
                     Palette.muted(scheme)
@@ -242,6 +262,7 @@ struct LiveBrowserCard: View {
             }
             .buttonStyle(.plain)
             PurchaseCapsuleButton(title: language.pick("Open browser", "Abrir navegador")) { open = true }
+            }
         }
         .padding(14)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))

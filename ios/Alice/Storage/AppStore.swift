@@ -4936,6 +4936,9 @@ final class AppStore {
         try await dashboard.approveInErrand(id, requestID: requestID, allow: allow)
     }
     func stopErrand(_ id: String) async throws -> Errand? { try await dashboard.stopErrand(id) }
+    func continueErrand(_ id: String, acceptPrice: Bool) async throws -> Errand? {
+        try await dashboard.continueErrand(id, acceptPrice: acceptPrice)
+    }
     func errandIcon(_ id: String) async throws -> Data? { try await dashboard.errandIcon(id) }
     func purchaseOptions(_ key: String, session: String) async throws -> PurchaseOptionSet? { try await dashboard.purchaseOptions(key, session: session) }
     func refreshCheckout(_ id: String) async throws -> Errand? { try await dashboard.refreshCheckout(id) }

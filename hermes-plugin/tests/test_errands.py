@@ -526,6 +526,28 @@ class AuditFixTests(Base):
         self.assertEqual(errands.get(self.home, entry["id"])["reason"],
                          "la variante sin sabor ya no está disponible.")
 
+    def test_a_new_price_is_the_persons_to_accept_and_the_errand_goes_on(self):
+        offer = {"option_id": "a1b2c3d4-1", "title": "Creatina 300 g", "merchant": "Prozis", "variant": "Neutro",
+                 "qty": 1, "price": "24,49 €", "currency": "EUR", "url": "https://www.prozis.com/c", "channel": "browser"}
+        entry = errands.create(self.home, "Comprar Creatina", now=NOW, offer=offer)
+        gateway = FakeGateway([done("BLOQUEADO: precio 34,99 € — en la cesta no se aplica el 30 % de la ficha.")])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None)
+        self.assertEqual(engine.run(), "stuck")
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual(saved["blocked"], {"kind": "price", "price": "34,99 €"})
+        with mock.patch.object(errands, "launch") as launched, mock.patch.object(errands, "_goal_manager"):
+            went = errands.go_on(self.home, entry["id"], accept_price=True)
+        self.assertEqual((went["status"], went["offer"]["price"], went["blocked"]), ("working", "34,99 €", None))
+        self.assertIn("34,99 €", launched.call_args[0][2])
+        self.assertIn("checkout_request", launched.call_args[0][2])
+        # Only a stopped errand goes on, and a retry needs no price.
+        self.assertIsNone(errands.go_on(self.home, entry["id"]))
+
+    def test_anything_else_that_stops_it_is_not_a_price(self):
+        self.assertEqual(errands.blocked_by("la variante sin sabor ya no está disponible"), {"kind": "other"})
+        self.assertEqual(errands.blocked_by("precio 1.234,56 € en la cesta")["price"], "1.234,56 €")
+
     def test_a_catalog_option_opens_its_cart_link(self):
         offer = {"option_id": "a1b2c3d4-1", "title": "Camiseta", "merchant": "Minimalism", "variant": "Blanca / S",
                  "qty": 1, "price": "25,00 €", "currency": "EUR", "channel": "catalog",

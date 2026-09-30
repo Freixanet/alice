@@ -246,9 +246,16 @@ struct ErrandBrowserCard: View {
         }
     }
 
+    /// Closed (header only) until the browser is on the shop: the searching and loading before it are
+    /// not the person's to watch.
     private var showsPage: Bool {
-        if case .none = snapshot { return false }
-        return errand.status != .denied && errand.status != .stopped
+        switch snapshot {
+        case .none: return false
+        case .still: return errand.status != .denied && errand.status != .stopped
+        case .live:
+            return errand.status != .denied && errand.status != .stopped
+                && BrowserDestination.reached(live.url, site: errand.site)
+        }
     }
 
     @ViewBuilder private var page: some View {

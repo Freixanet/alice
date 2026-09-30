@@ -90,6 +90,11 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     var steps: [Step]
     var startedAt: Date
     var updatedAt: Date
+    /// Stopped because the shop charges another price for the chosen option: that price, which the
+    /// person may accept (`go_on`). Optional so older cached errands still decode.
+    var blockedPrice: String? = nil
+    /// The price the chosen option was shown at.
+    var offerPrice: String? = nil
 
     var language: ChatLanguage { ChatLanguage.of(request) }
     var lastStep: Step? { steps.last }
@@ -186,7 +191,9 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
             status: Status(rawValue: text(row["status"])) ?? .working, checkout: checkout, receipt: receipt,
             questionsTitle: text(asked?["title"]), questions: questions, approval: approval,
             reason: text(row["reason"]), summary: text(row["summary"]), steps: steps,
-            startedAt: date(row["started_at"]) ?? Date(), updatedAt: date(row["updated_at"]) ?? Date())
+            startedAt: date(row["started_at"]) ?? Date(), updatedAt: date(row["updated_at"]) ?? Date(),
+            blockedPrice: (row["blocked"] as? [String: Any]).flatMap { $0["kind"] as? String == "price" ? $0["price"] as? String : nil },
+            offerPrice: (row["offer"] as? [String: Any])?["price"] as? String)
     }
 }
 
@@ -261,6 +268,12 @@ extension DashboardClient {
     /// A stale checkout, prepared again by the errand for a new approval.
     func refreshCheckout(_ errandID: String) async throws -> Errand? {
         let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/refresh")
+        return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
+    }
+
+    /// A stopped purchase goes on: the same option at the shop's price, or tried again.
+    func continueErrand(_ errandID: String, acceptPrice: Bool) async throws -> Errand? {
+        let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/continue", ["accept_price": acceptPrice])
         return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
     }
 

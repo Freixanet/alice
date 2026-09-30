@@ -359,16 +359,20 @@ enum GallerySample: String, CaseIterable, Identifiable {
                 preview: F.purchaseOptions(language, chosen: self == .purchaseChosen ? "a1b2c3d4-1" : nil),
                 onChoose: { _ in })))
         case .purchaseSummary:
-            return .markdown(PurchaseSummaryText.summary(F.checkout(language), card: "Visa ···4242", language: language))
+            let text = PurchaseSummaryText.summary(F.checkout(language), card: "Visa ···4242", language: language)
+            return .view(AnyView(ReplyBubble { RichMessageView(content: text, bubbled: true) }))
         case .purchaseResult, .purchaseDeclined, .purchaseUnknown:
             var receipt = F.receipt(language)
             if self == .purchaseDeclined { receipt.outcome = "declined" }
             if self == .purchaseUnknown { receipt.outcome = "unknown" }
-            return .markdown(PurchaseSummaryText.result(receipt, language: language))
+            let text = PurchaseSummaryText.result(receipt, language: language)
+            return .view(AnyView(ReplyBubble { RichMessageView(content: text, bubbled: true) }))
         case .purchaseStopped:
-            return .markdown(PurchaseSummaryText.stopped(F.errand(language, status: .stuck,
-                reason: pick("The selected variant is out of stock.", "La variante elegida ya no tiene stock.")),
-                language: language) ?? "")
+            var stopped = F.errand(language, status: .stuck,
+                                   reason: pick("The price in the basket is 34.99 €.", "En la cesta cuesta 34,99 €."))
+            stopped.blockedPrice = "34,99 €"
+            stopped.offerPrice = "24,49 €"
+            return .view(AnyView(ErrandStoppedCard(errand: stopped, onAcceptPrice: {}, onRetry: {})))
         case .productSheet:
             return .view(AnyView(GalleryProductSheetButton(language: language)))
         case .errandWorking:

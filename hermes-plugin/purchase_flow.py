@@ -222,6 +222,13 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
             picture: Optional[Callable[[str], str]] = None) -> Dict[str, Any]:
     """`purchase_options`: keeps the verified options for the app to draw and for the choice to find."""
     now = now or time.time()
+    given = [o for o in ((args or {}).get("options") or []) if isinstance(o, dict)]
+    # One card is a recommendation without the choice: every option found is shown, the best marked.
+    if len(given) == 1 and not _clean((args or {}).get("only_one"), 200):
+        return {"ok": False, "error": (
+            "Enseña todas las opciones comprables que has visto (formatos, tamaños, otras tiendas; hasta 6), "
+            "con tu recomendada marcada: la persona elige entre ellas. Si de verdad solo hay una, vuelve a "
+            "llamar con `only_one` y por qué.")}
     kept, discarded = verify((args or {}).get("options"), currency, picture)
     if not kept:
         # Kept empty for the app: its card draws nothing instead of saying the options are gone.
@@ -410,7 +417,8 @@ OPTIONS_SCHEMA: Dict[str, Any] = {
             "merchant": {"type": "string", "description": "The shop, e.g. 'HSN'"},
             "variant": {"type": "string", "description": "Size, colour, capacity… exactly as it will be bought"},
             "qty": {"type": "integer"},
-            "price": {"type": "string", "description": "As the page shows it, e.g. '27,98 €'"},
+            "price": {"type": "string", "description": "What the shop charges for this exact variant, e.g. "
+                                                     "'27,98 €' — not a conditional discount (code, app, first order)"},
             "currency": {"type": "string", "description": "ISO code, e.g. EUR"},
             "url": {"type": "string", "description": "The product page (https), read from the shop or the catalog"},
             "image": {"type": "string", "description": "The product picture's https address, when known"},
@@ -422,5 +430,6 @@ OPTIONS_SCHEMA: Dict[str, Any] = {
             "recommended": {"type": "boolean", "description": "Your recommendation (one)"},
             "why": {"type": "string", "description": "One line: why this one"},
         }, "required": ["title", "url", "price", "currency", "in_stock", "channel"]}},
+        "only_one": {"type": "string", "description": "Only when a single option exists: why there is no other"},
     }, "required": ["options"]},
 }

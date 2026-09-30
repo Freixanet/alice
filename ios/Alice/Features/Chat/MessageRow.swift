@@ -164,8 +164,9 @@ struct MessageRow: View {
                 }
                 if let turn = ReactionTurn.parse(message.content) {
                     ReactionBubble(turn: turn)
-                } else if AskPerson.isAnswersOnly(message.content) {
-                    // Answers to a question card: shown inside that card, not as the person's words.
+                } else if AskPerson.isAnswersOnly(message.content) || PurchaseChoice.id(in: message.content) != nil {
+                    // Answers to a question card, or an option tapped in the options card: both are
+                    // shown in the card that asked («Elegida»), not as words the person typed.
                     EmptyView()
                 } else if !message.content.isEmpty {
                     // Only a hold opens its actions, as in Messages; a tap does

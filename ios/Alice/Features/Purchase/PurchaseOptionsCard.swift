@@ -16,6 +16,11 @@ struct PurchaseOptionsCard: View {
     var replyProfile: String? = nil
     /// The walkthrough answers here instead of sending a message.
     var onChoose: ((PurchaseOption) -> Void)? = nil
+    /// The set to draw when there is no call to read it from (a stopped purchase's «Ver otras opciones»).
+    var key: String? = nil
+    /// Offered again after the chosen option could not be bought: that one is left out and the
+    /// others can be chosen, whatever was chosen before.
+    var reopenExcluding: String? = nil
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -55,7 +60,7 @@ struct PurchaseOptionsCard: View {
                 }
             }
         }
-        .task(id: (detail ?? "") + (session ?? "")) { if preview == nil { await load() } }
+        .task(id: (detail ?? key ?? "") + (session ?? "")) { if preview == nil { await load() } }
         .sheet(item: $open) { option in
             PurchaseProductSheet(image: option.image, seller: option.merchant, title: option.title,
                                  price: option.price, oldPrice: nil, language: language,
@@ -71,7 +76,7 @@ struct PurchaseOptionsCard: View {
     }
 
     private func load() async {
-        guard let session, !session.isEmpty, let key = PurchaseOptionSet.key(fromDetail: detail) else { state = .gone; return }
+        guard let session, !session.isEmpty, let key = key ?? PurchaseOptionSet.key(fromDetail: detail) else { state = .gone; return }
         do {
             loaded = try await store.purchaseOptions(key, session: session)
             state = loaded == nil ? .gone : .shown
@@ -84,8 +89,8 @@ struct PurchaseOptionsCard: View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 12) {
-                    ForEach(set.options) { option in
-                        card(option, chosen: set.chosen ?? submitted)
+                    ForEach(set.options.filter { $0.id != reopenExcluding }) { option in
+                        card(option, chosen: reopenExcluding == nil ? (set.chosen ?? submitted) : submitted)
                     }
                 }
                 .scrollTargetLayout()

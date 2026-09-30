@@ -659,6 +659,44 @@ START_SCHEMA: Dict[str, Any] = {
 BLOCKED = re.compile(r"^\s*(BLOQUEADO|BLOCKED)\s*:\s*", re.I)
 
 
+PRICE = re.compile(r"(\d[\d.]*,\d{2}\s*€|€\s*\d[\d.,]*|\d[\d,]*\.\d{2}\s*(?:€|EUR|USD|\$)|\$\s*\d[\d.,]*)")
+
+
+def blocked_by(said: str) -> Dict[str, Any]:
+    """What stopped the chosen option: another price (which the person may accept) or anything else."""
+    if re.search(r"\b(precio|price|cuesta|cobra)\b", said, re.I):
+        found = PRICE.search(said)
+        if found:
+            return {"kind": "price", "price": " ".join(found.group(1).split())}
+    return {"kind": "other"}
+
+
+def go_on(home: Path, errand_id: str, accept_price: bool = False) -> Optional[Dict[str, Any]]:
+    """The person's way on from a stopped purchase: the same option at the shop's price, or a retry.
+    Nothing is paid by this: the errand goes back to the checkout and asks for that exact total."""
+    entry = get(home, errand_id)
+    if entry is None or entry.get("status") != "stuck":
+        return None
+    blocked = entry.get("blocked") if isinstance(entry.get("blocked"), dict) else {}
+    offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else None
+    if accept_price:
+        if blocked.get("kind") != "price" or not blocked.get("price"):
+            return None
+        price = blocked["price"]
+        if offer:
+            offer = {**offer, "price": price}
+        update(home, errand_id, offer=offer, blocked=None, reason="")
+        message = (f"[precio aceptado] La persona acepta la misma opción a {price}. Sigue con el carrito hasta "
+                   "el paso de pago y llama a `checkout_request` con el total exacto; ese total es el que aprobará. "
+                   "No pagues antes.")
+    else:
+        update(home, errand_id, blocked=None, reason="")
+        message = ("[reintentar] La persona quiere que lo intentes otra vez con la misma opción. Mira en qué "
+                   "punto está la tienda y sigue; si vuelve a fallar, termina con «BLOQUEADO: …».")
+    resume(home, errand_id, message)
+    return get(home, errand_id)
+
+
 def _offer_lines(offer: Dict[str, Any]) -> str:
     variant = offer.get("variant") or "la que muestra la página"
     start = (f"Abre el carrito del catálogo ({offer['checkout_url']}), que ya lleva esa variante, o si no "
@@ -669,8 +707,9 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
         f"La persona eligió exactamente esto: {offer.get('title')} · variante: {variant} · cantidad: "
         f"{offer.get('qty') or 1} · {offer.get('merchant') or 'la tienda'} · {offer.get('price')} "
         f"({offer.get('currency') or ''}). {start} Compra eso y nada más: no lo cambies por otro producto, "
-        "otra variante u otra tienda. Si ya no está disponible, la variante no existe o el precio ha subido, "
-        "no sigas: termina tu turno con una sola línea que empiece por «BLOQUEADO:» y diga qué ha cambiado."
+        "otra variante u otra tienda. Si ya no está disponible, la variante no existe o el precio es otro, no "
+        "sigas: termina tu turno con una sola línea «BLOQUEADO: precio 34,99 € — por qué» (con el precio que "
+        "cobra la tienda, si ese es el cambio) o «BLOQUEADO: qué ha cambiado». La persona decide si sigue."
     )
 
 
@@ -1064,8 +1103,8 @@ class Engine:
             # The chosen option cannot be bought as chosen (gone, another price): it stops here
             # and says why, instead of buying something else.
             if BLOCKED.match(reply):
-                update(self.home, self.errand_id, status="stuck",
-                       reason=_clean(BLOCKED.sub("", reply, count=1), 300) or "La opción elegida ya no se puede comprar.")
+                said = _clean(BLOCKED.sub("", reply, count=1), 300) or "La opción elegida ya no se puede comprar."
+                update(self.home, self.errand_id, status="stuck", reason=said, blocked=blocked_by(said))
                 return "stuck"
             receipt = entry.get("receipt") or {}
             if receipt.get("outcome") == "paid":
