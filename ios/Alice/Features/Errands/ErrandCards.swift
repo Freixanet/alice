@@ -980,6 +980,8 @@ struct PurchaseProductSheet: View {
     let onBuy: () -> Void
 
     @State private var chosen = 0
+    /// The sheet is as tall as what it holds: at full height, half the screen was empty under the buttons.
+    @State private var contentHeight: CGFloat = 620
 
     var body: some View {
         ScrollView {
@@ -1020,9 +1022,12 @@ struct PurchaseProductSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(16)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
+        .scrollBounceBehavior(.basedOnSize)
         .background(Palette.card(scheme))
-        .presentationDetents([.large])
+        .presentationDetents([.height(contentHeight + 8)])
+        .presentationDragIndicator(.hidden)
         .presentationCornerRadius(32)
     }
 

@@ -544,8 +544,26 @@ class AuditFixTests(Base):
         # Only a stopped errand goes on, and a retry needs no price.
         self.assertIsNone(errands.go_on(self.home, entry["id"]))
 
+    def test_what_the_agent_can_fix_is_not_the_persons_to_hear(self):
+        offer = {"option_id": "a1b2c3d4-2", "title": "Creatina 80 cápsulas", "price": "20,99 €",
+                 "url": "https://www.prozis.com/c", "channel": "browser"}
+        entry = errands.create(self.home, "Comprar Creatina", now=NOW, offer=offer)
+        gateway = FakeGateway([
+            done("BLOQUEADO: el checkout contiene Creatina 300 g, no las 80 cápsulas aceptadas."),
+            done("BLOQUEADO: el checkout sigue con la de 300 g."),
+        ])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None)
+        self.assertEqual(engine.run(), "stuck")
+        self.assertEqual(len(gateway.started), 2, "one go at fixing it before the person hears anything")
+        self.assertIn("quítalos", gateway.started[1][1])
+        self.assertIn("quítalos", errands.brief(entry))
+        # The option gone, or another price, reaches the person at once.
+        self.assertEqual(errands.blocked_by("la variante ya no está disponible"), {"kind": "gone"})
+
     def test_anything_else_that_stops_it_is_not_a_price(self):
-        self.assertEqual(errands.blocked_by("la variante sin sabor ya no está disponible"), {"kind": "other"})
+        self.assertEqual(errands.blocked_by("la variante sin sabor ya no está disponible"), {"kind": "gone"})
+        self.assertEqual(errands.blocked_by("la página da error al pagar"), {"kind": "other"})
         self.assertEqual(errands.blocked_by("precio 1.234,56 € en la cesta")["price"], "1.234,56 €")
 
     def test_a_catalog_option_opens_its_cart_link(self):

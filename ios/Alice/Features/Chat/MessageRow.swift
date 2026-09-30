@@ -262,6 +262,22 @@ struct MessageRow: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
 
+                    // In the order they happened: the model shows the options (or asks) and then writes
+                    // its words about them. Drawn under the words, the text arrived afterwards above a
+                    // card already on screen, and the chat read out of order.
+                    ForEach(message.tools.filter { PurchaseOptionSet.isTool($0.name) && $0.status == .done }) { call in
+                        PurchaseOptionsCard(detail: call.detail, language: ChatLanguage.of(message.content),
+                                            session: message.mentionSessionID ?? store.shownConversation?.hermesSessionID,
+                                            replyProfile: message.mentionProfile)
+                    }
+                    ForEach(message.tools.filter { AskPerson.isTool($0.name) }) { call in
+                        if let ask = AskPerson.parse(call.detail),
+                           !AskPerson.superseded(ask, callID: call.id,
+                                                 in: store.shownConversation?.messages ?? []) {
+                            AskPersonCard(ask: ask)
+                        }
+                    }
+
                     if let routine = message.routineName {
                         // One bubble with what Alice said around it, like every other reply's words.
                         inBubble {
@@ -311,20 +327,8 @@ struct MessageRow: View {
                         SlashChoiceButtons(choices: message.slashChoices)
                     }
 
-                    // What the agent asked while it kept working (`ask_person`).
+                    // The errand this turn started, after everything the turn said.
                     if message.role == .assistant {
-                        ForEach(message.tools.filter { PurchaseOptionSet.isTool($0.name) && $0.status == .done }) { call in
-                            PurchaseOptionsCard(detail: call.detail, language: ChatLanguage.of(message.content),
-                                                session: message.mentionSessionID ?? store.shownConversation?.hermesSessionID,
-                                                replyProfile: message.mentionProfile)
-                        }
-                        ForEach(message.tools.filter { AskPerson.isTool($0.name) }) { call in
-                            if let ask = AskPerson.parse(call.detail),
-                               !AskPerson.superseded(ask, callID: call.id,
-                                                     in: store.shownConversation?.messages ?? []) {
-                                AskPersonCard(ask: ask)
-                            }
-                        }
                         ForEach(errandRefs, id: \.self) { ref in
                             ErrandChatBlock(ref: ref)
                         }

@@ -662,12 +662,19 @@ BLOCKED = re.compile(r"^\s*(BLOQUEADO|BLOCKED)\s*:\s*", re.I)
 PRICE = re.compile(r"(\d[\d.]*,\d{2}\s*€|€\s*\d[\d.,]*|\d[\d,]*\.\d{2}\s*(?:€|EUR|USD|\$)|\$\s*\d[\d.,]*)")
 
 
+GONE = re.compile(r"(agotad|sin stock|no (est[aá] )?disponible|out of stock|unavailable|ya no (se )?vende|no existe"
+                  r"|descatalogad|discontinued)", re.I)
+
+
 def blocked_by(said: str) -> Dict[str, Any]:
-    """What stopped the chosen option: another price (which the person may accept) or anything else."""
+    """What stopped the chosen option: another price (the person may accept it), the option gone, or
+    anything else — which is the agent's to fix, not the person's."""
     if re.search(r"\b(precio|price|cuesta|cobra)\b", said, re.I):
         found = PRICE.search(said)
         if found:
             return {"kind": "price", "price": " ".join(found.group(1).split())}
+    if GONE.search(said):
+        return {"kind": "gone"}
     return {"kind": "other"}
 
 
@@ -707,7 +714,8 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
         f"La persona eligió exactamente esto: {offer.get('title')} · variante: {variant} · cantidad: "
         f"{offer.get('qty') or 1} · {offer.get('merchant') or 'la tienda'} · {offer.get('price')} "
         f"({offer.get('currency') or ''}). {start} Compra eso y nada más: no lo cambies por otro producto, "
-        "otra variante u otra tienda. Si ya no está disponible, la variante no existe o el precio es otro, no "
+        "otra variante u otra tienda. Empieza con la cesta solo con esta opción: si tiene otros artículos de "
+        "intentos anteriores, quítalos sin preguntar. Si ya no está disponible, la variante no existe o el precio es otro, no "
         "sigas: termina tu turno con una sola línea «BLOQUEADO: precio 34,99 € — por qué» (con el precio que "
         "cobra la tienda, si ese es el cambio) o «BLOQUEADO: qué ha cambiado». La persona decide si sigue."
     )
@@ -1049,6 +1057,7 @@ class Engine:
         text = message or brief(entry)
         previous = ""
         repeat_recoveries = 0
+        self_fixed = False
         stalls = 0
         # Restarted while its last run still goes on in the gateway: that run finishes first,
         # never a second one beside it in the same session.
@@ -1104,7 +1113,19 @@ class Engine:
             # and says why, instead of buying something else.
             if BLOCKED.match(reply):
                 said = _clean(BLOCKED.sub("", reply, count=1), 300) or "La opción elegida ya no se puede comprar."
-                update(self.home, self.errand_id, status="stuck", reason=said, blocked=blocked_by(said))
+                blocked = blocked_by(said)
+                # Only what the person must decide stops the errand: another price, or the option gone.
+                # A basket with something else in it, a wrong variant, a page error is the agent's to
+                # fix: one checkout stopped on «contains another product» left over from an earlier try.
+                if blocked["kind"] == "other" and not self_fixed:
+                    self_fixed = True
+                    text = (CONTINUATION + " Eso lo resuelves tú, sin contárselo a la persona: " + said + " "
+                            "Si la cesta tiene artículos que no son la opción elegida (de intentos anteriores), "
+                            "quítalos; corrige variante y cantidad; recarga o vuelve a la ficha si la página falla. "
+                            "Luego sigue hasta el paso de pago y llama a `checkout_request`. Solo si la tienda ya "
+                            "no vende esa opción o cobra otro precio, termina con «BLOQUEADO: …».")
+                    continue
+                update(self.home, self.errand_id, status="stuck", reason=said, blocked=blocked)
                 return "stuck"
             receipt = entry.get("receipt") or {}
             if receipt.get("outcome") == "paid":
