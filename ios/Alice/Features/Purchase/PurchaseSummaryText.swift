@@ -10,13 +10,13 @@ enum PurchaseSummaryText {
         var lines = [language.pick("Ready to pay at **\(shop)**:", "Listo para pagar en **\(shop)**:"), ""]
         for item in checkout.items {
             let parts = [escaped(item.name), item.variant.isEmpty ? nil : escaped(item.variant),
-                         "× \(item.qty)", item.price.isEmpty ? nil : item.price.pricesKeptTogether]
+                         "× \(item.qty)", item.price.isEmpty ? nil : escaped(item.price.pricesKeptTogether)]
             lines.append("- " + parts.compactMap { $0 }.joined(separator: " · "))
         }
         if !checkout.delivery.isEmpty {
             lines.append("- " + language.pick("Delivery: ", "Envío: ") + escaped(checkout.delivery))
         }
-        lines.append("- **" + language.pick("Total: ", "Total: ") + checkout.total.pricesKeptTogether + "**")
+        lines.append("- **" + language.pick("Total: ", "Total: ") + escaped(checkout.total.pricesKeptTogether) + "**")
         if !checkout.address.isEmpty {
             lines.append("- " + language.pick("To: ", "Dirección: ") + escaped(checkout.address))
         }
@@ -33,7 +33,7 @@ enum PurchaseSummaryText {
     /// Step 12: the order, its number, what was paid and what to expect of the delivery.
     static func result(_ receipt: Errand.Receipt, language: ChatLanguage) -> String {
         let shop = escaped(receipt.merchant.nonEmpty(or: receipt.site))
-        let total = receipt.total.pricesKeptTogether
+        let total = escaped(receipt.total.pricesKeptTogether)
         switch receipt.outcome {
         case "paid":
             var text = language.pick("Order placed at **\(shop)**", "Pedido hecho en **\(shop)**")
@@ -46,8 +46,8 @@ enum PurchaseSummaryText {
                 : escaped(receipt.delivery) + ".")
             if let approved = receipt.approvedTotal, !approved.isEmpty, approved != receipt.total {
                 text += "\n\n> [!WARNING]\n> " + language.pick(
-                    "You approved \(approved.pricesKeptTogether); the shop charged \(total). Check the order.",
-                    "Aprobaste \(approved.pricesKeptTogether) y la tienda ha cobrado \(total). Revisa el pedido.")
+                    "You approved \(escaped(approved.pricesKeptTogether)); the shop charged \(total). Check the order.",
+                    "Aprobaste \(escaped(approved.pricesKeptTogether)) y la tienda ha cobrado \(total). Revisa el pedido.")
             }
             return text
         case "declined":
@@ -106,7 +106,7 @@ enum PurchaseSummaryText {
     static func escaped(_ text: String) -> String {
         var out = ""
         for character in text {
-            if "\\*_[]`".contains(character) { out.append("\\") }
+            if "\\*_[]`()".contains(character) { out.append("\\") }
             out.append(character)
         }
         return out

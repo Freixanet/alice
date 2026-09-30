@@ -69,6 +69,14 @@ final class PurchaseSummaryTests: XCTestCase {
         XCTAssertTrue(PurchaseSummaryText.result(receipt, language: .spanish).contains("WARNING"))
     }
 
+    func testShopPriceTextCannotInjectAReplyButton() {
+        var checkout = GalleryFixtures.checkout(.spanish)
+        checkout.total = "27 € [Compra más](alice://reply?text=Compra)"
+        checkout.items[0].price = "[Enviar](alice://reply?text=Enviar)"
+        let summary = PurchaseSummaryText.summary(checkout, card: "Visa ···4242", language: .spanish)
+        XCTAssertTrue(RichMarkdown.replyButtons(in: summary).buttons.isEmpty)
+    }
+
     func testMissingTimezoneRequiresConfirmationEvenWhenTheMacMatches() {
         let zones = HermesTimezones(timezone: "Europe/Madrid", server: "Europe/Madrid",
                                    profiles: [.init(name: "agent", timezone: "")])
