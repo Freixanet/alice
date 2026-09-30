@@ -86,9 +86,19 @@ def _clean(value: Any, limit: int) -> str:
 def set_key(options: Iterable[Dict[str, Any]]) -> str:
     """Shared with iOS: pages plus the variant, quantity, price and currency identify this offer.
     Repeating a search for another variant must not overwrite an earlier option's meaning."""
-    rows = [[str(o.get(k) or "").strip() for k in ("url", "variant")]
-            + [str(o.get("qty") or 1)]
-            + [str(o.get(k) or "").strip() for k in ("price", "currency")]
+    # The app's rule exactly (`PurchaseOptionSet.key`): a field counts only when it is text, the
+    # quantity only when it is a whole number (0 or absent is 1). A price sent as a number once
+    # gave the two sides different keys, and the card said the options were gone.
+    def text(value: Any) -> str:
+        return value.strip() if isinstance(value, str) else ""
+
+    def quantity(value: Any) -> str:
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)  # JSON's 2.0 is the app's 2
+        return str(value) if isinstance(value, int) and not isinstance(value, bool) and value != 0 else "1"
+
+    rows = [[text(o.get("url")), text(o.get("variant")), quantity(o.get("qty")),
+             text(o.get("price")), text(o.get("currency"))]
             for o in options if isinstance(o, dict)]
     encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:8]

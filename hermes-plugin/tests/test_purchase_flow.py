@@ -141,5 +141,17 @@ class WordsTests(unittest.TestCase):
         self.assertEqual(flow.title(kept[0]), "Comprar Creatina Excell 500 g en HSN")
 
 
+class AppKeyTests(unittest.TestCase):
+    def test_the_key_is_the_apps_even_with_a_number_price_or_a_text_quantity(self):
+        # The value PurchaseOptionSet.key gives in the app for these same arguments.
+        options = [
+            {"url": "https://www.hsnstore.com/creatina ", "variant": "Sin sabor / Limón", "qty": 2,
+             "price": "27,98 €", "currency": "EUR"},
+            {"url": "https://b.example/p?x=1&y=ñ", "price": "19.99", "currency": "EUR"},
+            {"url": "https://c.example/p", "price": 27.98, "currency": "EUR", "qty": "3"},
+        ]
+        self.assertEqual(flow.set_key(options), "e0cad1a7")
+
+
 if __name__ == "__main__":
     unittest.main()
