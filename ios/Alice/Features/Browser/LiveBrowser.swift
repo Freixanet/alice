@@ -26,11 +26,25 @@ final class LiveBrowser {
     @ObservationIgnored private var watchers = 0
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var sequence = 0
+    @ObservationIgnored private var previewing = false
 
     func attach(_ store: AppStore) { self.store = store }
 
+    /// Developer › Components: one still page and no Hermes behind it. Nothing is fetched, and
+    /// taking over or using the page does nothing.
+    func showPreview(_ image: UIImage, title: String, url: String) {
+        previewing = true
+        store = nil
+        loop?.cancel()
+        loop = nil
+        self.image = image
+        self.title = title
+        self.url = url
+    }
+
     /// Someone is looking: frames flow while at least one view watches.
     func watch() {
+        guard !previewing else { return }
         watchers += 1
         guard loop == nil else { return }
         loop = Task { [weak self] in await self?.run() }

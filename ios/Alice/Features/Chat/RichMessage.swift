@@ -159,8 +159,13 @@ struct RichLink: Equatable, Hashable {
 
 /// `[Title](alice://reply?text=…)`: a button that sends its text in the chat.
 struct RichReplyButton: Equatable {
+    /// `&style=` on the link. Closed options — a size, a model — are `dotted` (outlined, side by
+    /// side) or `filled` (one per line, full width, centred); a suggestion keeps the soft tint.
+    enum Style: String, Equatable { case soft, dotted, filled }
+
     let title: String
     let reply: String
+    var style: Style = .soft
 }
 
 /// Media attached to a reply: images preview inline, video and audio play
@@ -889,9 +894,9 @@ enum RichMarkdown {
                   let removal = Range(match.range, in: remaining)
             else { continue }
             let title = String(text[titleRange]).trimmingCharacters(in: .whitespaces)
+            let link = String(text[linkRange]).filter { !$0.isWhitespace }
             buttons.insert(
-                RichReplyButton(title: title, reply: reply(from: String(text[linkRange]).filter { !$0.isWhitespace },
-                                                           title: title)),
+                RichReplyButton(title: title, reply: reply(from: link, title: title), style: style(of: link)),
                 at: 0
             )
             remaining.removeSubrange(removal)
@@ -920,6 +925,12 @@ enum RichMarkdown {
             .first { $0.name == "text" }?.value?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return (text?.isEmpty == false ? text : nil) ?? title
+    }
+
+    private static func style(of link: String) -> RichReplyButton.Style {
+        URLComponents(string: link)?.queryItems?
+            .first { $0.name == "style" }?.value
+            .flatMap { RichReplyButton.Style(rawValue: $0.lowercased()) } ?? .soft
     }
 }
 
@@ -1835,34 +1846,69 @@ private struct RichReplyButtonsView: View {
     @Environment(\.colorScheme) private var scheme
     let buttons: [RichReplyButton]
 
+    /// Filled options stack full width, one per line; the others sit side by side when they fit.
+    private var filled: Bool { buttons.contains { $0.style == .filled } }
+
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { items }
-            VStack(alignment: .leading, spacing: 8) { items }
+        if filled {
+            VStack(spacing: 8) { items }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { items }
+                VStack(alignment: .leading, spacing: 8) { items }
+            }
         }
     }
 
     @ViewBuilder
     private var items: some View {
         ForEach(Array(buttons.enumerated()), id: \.offset) { _, button in
-            // Suggestions to tap, not controls to operate: the accent's own
-            // tint, soft, so a row of them reads as the next thing to say.
             Button {
                 store.sendQuickReply(button.reply)
             } label: {
-                Text(button.title)
-                    .font(.subheadline.weight(.medium))
-                    .multilineTextAlignment(.leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .foregroundStyle(store.accent.primary(scheme))
-                    .background(store.accent.primary(scheme).opacity(0.12), in: .capsule)
-                    .contentShape(.capsule)
+                label(button)
             }
             .buttonStyle(PressableCardStyle())
             .opacity(store.isSending ? 0.5 : 1)
             .disabled(store.isSending)
             .accessibilityHint("Sends “\(button.reply)”")
+        }
+    }
+
+    @ViewBuilder
+    private func label(_ button: RichReplyButton) -> some View {
+        let tint = store.accent.primary(scheme)
+        switch button.style {
+        case .soft:
+            // Suggestions to tap, not controls to operate: the accent's own
+            // tint, soft, so a row of them reads as the next thing to say.
+            Text(button.title)
+                .font(.subheadline.weight(.medium))
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .foregroundStyle(tint)
+                .background(tint.opacity(0.12), in: .capsule)
+                .contentShape(.capsule)
+        case .dotted:
+            // One closed option among a few, as the questions cards draw theirs.
+            Text(button.title)
+                .font(.subheadline.weight(.medium))
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .foregroundStyle(tint)
+                .overlay { Capsule().strokeBorder(tint.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
+                .contentShape(.capsule)
+        case .filled:
+            Text(button.title)
+                .font(.body.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .foregroundStyle(.white)
+                .background(tint, in: .capsule)
+                .contentShape(.capsule)
         }
     }
 }

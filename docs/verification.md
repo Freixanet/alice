@@ -119,17 +119,20 @@ Settings › Advanced › Developer mode adds **Settings › Developer**:
 
 - **Checks** (`Features/Developer/DiagnosticChecks.swift`): Hermes reachability
   and latency, the Alice plugin, one time zone for every agent, calendar,
-  notifications and Bark, the proactive routines, storage size, freezes this
-  session (`HitchMonitor`) and Hermes messages Alice does not understand yet.
+  notifications and Bark, the proactive routines, storage size (with the three
+  largest settings when over 256 KB), freezes in the last 10 minutes
+  (`HitchMonitor`) and Hermes messages Alice does not understand yet.
   A feature that can break adds its own `DiagnosticCheck` to `all`.
 - **Performance meter**: frames per second, late frames and freezes, beside
   the home indicator. A debug build writes each freeze to the diagnostics log
   with the functions the main thread was in (`stall.in`, `stall.at`). A stall
   of many seconds whose stack is the resume path is the app having been
   suspended, not a hitch while it was on screen.
-- **Tools**: component gallery (every rich block and card, Spanish and
-  English), share a report, send diagnostics to Hermes, a test notification,
-  and resets.
+- **Tools**: component gallery (`GallerySample`: every rich block, every card
+  and everything a reply carries — questions, approvals, errands, the checkout,
+  the live browser, plan, trace — in Spanish and English, on a sandbox store with
+  no Hermes behind it; `ComponentGalleryTests` checks each one draws), share a
+  report, send diagnostics to Hermes, a test notification, and resets.
 - **Recent activity** from `DiagnosticsLog` — ids, states and timings, never
   message text — and the build.
 
