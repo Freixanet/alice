@@ -1,8 +1,8 @@
 import Foundation
 
 /// Something the agent produced or pointed at during a session.
-struct Artifact: Identifiable, Hashable, Sendable {
-    enum Kind: String, CaseIterable, Sendable {
+struct Artifact: Identifiable, Hashable, Sendable, Codable {
+    enum Kind: String, CaseIterable, Sendable, Codable {
         case image, file, link
 
         var title: String {

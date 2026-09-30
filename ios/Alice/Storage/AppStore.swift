@@ -631,6 +631,8 @@ final class AppStore {
         selectedModel = defaults.string(forKey: Keys.model)
         selectedProvider = defaults.string(forKey: Keys.provider)
         recentModels = defaults.stringArray(forKey: Keys.recentModels) ?? []
+        // The picker opens on the last list Hermes gave, not on a spinner (`LaunchCache`).
+        models = cachedLaunchList(.models, as: [HermesClient.ModelOption].self) ?? []
         loadConversations()
         loadActivity()
         loadQuietRuns()
@@ -860,6 +862,7 @@ final class AppStore {
             let outcome = ModelListPolicy.apply(found, refreshing: refreshing, to: modelList)
             modelList = outcome.state
             models = outcome.state.options
+            if !models.isEmpty { rememberLaunchList(.models, models) }
             modelListIsPartial = outcome.state.source == .fallback
             modelsError = models.isEmpty
                 ? "This Hermes did not return a model list at that address."
@@ -890,6 +893,7 @@ final class AppStore {
     func disconnect() async {
         await client.disconnect()
         KeyStore.clear()
+        LaunchCache.clear()
         isConnected = false
         manifest = nil
         models = []
@@ -1075,6 +1079,7 @@ final class AppStore {
     }
 
     func forgetDashboard() async {
+        LaunchCache.clear()
         await resetDashboardRPC()
         await dashboard.use(nil)
         _ = KeyStore.clear(account: Self.dashboardAccount)
@@ -1105,6 +1110,23 @@ final class AppStore {
     /// Bounded on purpose: whole sessions run to hundreds of kilobytes, and
     /// the desktop client scans thirty. Fifteen is enough to fill a screen
     /// without making the phone read several megabytes to do it.
+    // MARK: Launch cache
+
+    /// Whose lists these are: the Mac's dashboard and the user signed in to it.
+    private var launchScope: String {
+        LaunchCache.scope(dashboard: dashboardURL, user: dashboardUser)
+    }
+
+    /// The last list of this kind seen from this Mac, when it is recent (`LaunchCache`).
+    func cachedLaunchList<Value: Codable>(_ key: LaunchCache.Key, as type: Value.Type) -> Value? {
+        LaunchCache.read(key, as: type, scope: launchScope)
+    }
+
+    /// Keeps a list Hermes just answered with, for the next time its screen opens.
+    func rememberLaunchList<Value: Codable>(_ key: LaunchCache.Key, _ value: Value) {
+        LaunchCache.write(key, value, scope: launchScope)
+    }
+
     func artifacts(limit: Int = 15) async throws -> [Artifact] {
         let recent = try await client.sessions().rows
             .filter { $0.messageCount > 1 }

@@ -19,6 +19,10 @@ struct ArtifactsScreen: View {
     @State private var kind: Shelf = .files
     @State private var failure: String?
     @State private var opened: RemoteFileSelection?
+    /// Reading the last sessions for files and links takes a moment; `found` meanwhile is the
+    /// last list saved on the phone (`LaunchCache`), or nothing yet — never "there is nothing".
+    @State private var loading = false
+    @State private var showingSaved = false
 
     /// Images are files too: one shelf for what was made, one for what was shared.
     enum Shelf: String, CaseIterable, Hashable {
@@ -87,7 +91,16 @@ struct ArtifactsScreen: View {
                     }
                 }
 
-                if let failure, found.isEmpty {
+                if loading && found.isEmpty {
+                    Section {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Looking through your recent chats…")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else if let failure, found.isEmpty {
                     Section {
                         Text(failure)
                             .font(.footnote)
@@ -100,6 +113,17 @@ struct ArtifactsScreen: View {
                             .foregroundStyle(.secondary)
                     }
                 } else {
+                    if showingSaved {
+                        Section {
+                            HStack(spacing: 8) {
+                                if loading { ProgressView().controlSize(.small) }
+                                Text(loading ? "Updating…" : "Showing the last list saved on this iPhone.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
                     Section {
                         Picker("Show", selection: $kind) {
                             ForEach(Shelf.allCases, id: \.self) { shelf in
@@ -213,8 +237,16 @@ struct ArtifactsScreen: View {
     }
 
     private func load() async {
+        if found.isEmpty, let saved = store.cachedLaunchList(.artifacts, as: [Artifact].self), !saved.isEmpty {
+            found = saved
+            showingSaved = true
+        }
+        loading = true
+        defer { loading = false }
         do {
             found = try await store.artifacts()
+            showingSaved = false
+            store.rememberLaunchList(.artifacts, found)
             failure = nil
             // Land on whichever shelf actually has something on it.
             if shelfItems.isEmpty, let other = Shelf.allCases.first(where: { shelf in

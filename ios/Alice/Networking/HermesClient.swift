@@ -31,7 +31,7 @@ actor HermesClient {
         }
     }
 
-    struct ModelOption: Identifiable, Hashable, Sendable {
+    struct ModelOption: Identifiable, Hashable, Sendable, Codable {
         var id: String
         var label: String
         var provider: String?

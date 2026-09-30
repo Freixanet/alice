@@ -8,6 +8,9 @@ import SwiftUI
 final class ErrandBoard {
     private(set) var errands: [Errand] = []
     private(set) var loaded = false
+    /// True once the list came from the Mac in this launch. Before that, what is shown is the last
+    /// list saved on the phone (`LaunchCache`): drawn at once, but nothing is decided from it.
+    private(set) var fresh = false
     private(set) var failure: String?
     /// Errands with an answer on its way, so their buttons wait.
     private(set) var sending: Set<String> = []
@@ -21,7 +24,13 @@ final class ErrandBoard {
     @ObservationIgnored private var watchers = 0
     @ObservationIgnored private var loop: Task<Void, Never>?
 
-    func attach(_ store: AppStore) { self.store = store }
+    func attach(_ store: AppStore) {
+        self.store = store
+        // The chat's cards open on the last errands seen instead of on a spinner each.
+        if errands.isEmpty, let saved = store.cachedLaunchList(.errands, as: [Errand].self) {
+            errands = saved
+        }
+    }
 
     var needingPerson: [Errand] { errands.filter { $0.status.needsPerson } }
 
@@ -61,7 +70,9 @@ final class ErrandBoard {
         guard let store else { return }
         do {
             errands = try await store.listErrands()
+            fresh = true
             failure = nil
+            store.rememberLaunchList(.errands, errands)
         } catch {
             failure = error.localizedDescription
         }
@@ -286,7 +297,8 @@ struct ErrandChatBlock: View {
             if let errand = ref.find(in: board.errands) {
                 ErrandStack(
                     errand: errand, logoID: errand.id,
-                    sending: board.sending.contains(errand.id), problem: board.problems[errand.id],
+                    // A saved errand's buttons wait for the Mac's own word on it.
+                    sending: board.sending.contains(errand.id) || !board.fresh, problem: board.problems[errand.id],
                     onOpenBrowser: { browsing = true },
                     onDecide: { allow, card in Task { await board.decide(errand, allow: allow, card: card) } },
                     onAnswer: { answers in Task { await board.answerQuestions(errand, answers) } },

@@ -14,6 +14,8 @@ struct RoutinesScreen: View {
     @State private var failure: String?
     @State private var partial = false
     @State private var loading = false
+    /// The list on screen is the last one saved on the phone, not yet confirmed by the Mac.
+    @State private var showingSaved = false
     @State private var selected: JobRow?
     @State private var creating = false
 
@@ -26,7 +28,7 @@ struct RoutinesScreen: View {
                         Text("Loading routines…").foregroundStyle(.secondary)
                     }
                     .listRowBackground(Palette.card(scheme))
-                } else if let failure {
+                } else if let failure, routines.isEmpty {
                     stateRow(
                         title: "Routines unavailable", detail: failure,
                         systemImage: "clock.badge.exclamationmark"
@@ -40,6 +42,9 @@ struct RoutinesScreen: View {
                         systemImage: "clock"
                     )
                 } else {
+                    if showingSaved {
+                        savedListNote
+                    }
                     ForEach(sorted, id: \.listIdentity) { routine in
                         Button { selected = routine } label: { routineRow(routine) }
                             .buttonStyle(.plain)
@@ -171,13 +176,32 @@ struct RoutinesScreen: View {
         .listRowBackground(Palette.card(scheme))
     }
 
+    /// Said over a saved list: that it is being updated, or that it could not be.
+    private var savedListNote: some View {
+        HStack(spacing: 8) {
+            if loading { ProgressView().controlSize(.small) }
+            Text(loading ? "Updating…" : "Showing the last list saved on this iPhone.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .listRowBackground(Palette.card(scheme))
+        .accessibilityElement(children: .combine)
+    }
+
     private func load() async {
+        // The last list seen opens at once; the Mac's answer replaces it (`LaunchCache`).
+        if routines.isEmpty, let saved = store.cachedLaunchList(.routines, as: [JobRow].self), !saved.isEmpty {
+            routines = saved
+            showingSaved = true
+        }
         loading = true
         defer { loading = false }
         do {
             let listing = try await store.scheduledRoutines()
             routines = listing.rows
+            showingSaved = false
             partial = listing.scope == .oneGatewayProfile
+            if !partial { store.rememberLaunchList(.routines, listing.rows) }
             failure = nil
             if !partial, let found = try? await store.routineProfiles() { profiles = found }
         } catch {

@@ -4,8 +4,8 @@ import Foundation
 /// own in Hermes, apart from the chat (`hermes-plugin/errands.py`). Alice shows it as
 /// a card and in the list of errands, and nothing is paid until the person approves
 /// its checkout here.
-struct Errand: Identifiable, Hashable, Sendable {
-    enum Status: String, Sendable, CaseIterable {
+struct Errand: Identifiable, Hashable, Sendable, Codable {
+    enum Status: String, Sendable, CaseIterable, Codable {
         case working, needsApproval = "needs_approval", needsInput = "needs_input", needsCard = "needs_card"
         case done, stuck, stopped, denied
 
@@ -14,7 +14,7 @@ struct Errand: Identifiable, Hashable, Sendable {
         var needsPerson: Bool { self == .needsApproval || self == .needsInput || self == .needsCard }
     }
 
-    struct Item: Hashable, Sendable {
+    struct Item: Hashable, Sendable, Codable {
         var name: String
         var variant: String
         var qty: Int
@@ -23,8 +23,8 @@ struct Errand: Identifiable, Hashable, Sendable {
     }
 
     /// The checkout the agent sent before paying, as the shop's page showed it.
-    struct Checkout: Hashable, Sendable {
-        enum Status: String, Sendable { case pending, approved, denied, expired, replaced }
+    struct Checkout: Hashable, Sendable, Codable {
+        enum Status: String, Sendable, Codable { case pending, approved, denied, expired, replaced }
         let id: String
         var status: Status
         var merchant: String
@@ -38,7 +38,7 @@ struct Errand: Identifiable, Hashable, Sendable {
         var currency: String
     }
 
-    struct Receipt: Hashable, Sendable {
+    struct Receipt: Hashable, Sendable, Codable {
         var outcome: String
         var order: String
         var total: String
@@ -50,19 +50,19 @@ struct Errand: Identifiable, Hashable, Sendable {
         var paid: Bool { outcome == "paid" }
     }
 
-    struct Question: Identifiable, Hashable, Sendable {
+    struct Question: Identifiable, Hashable, Sendable, Codable {
         let id: String
         var question: String
         var choices: [String]
     }
 
     /// Another confirmation Hermes asked inside the errand (a login the person wanted to approve).
-    struct Approval: Hashable, Sendable {
+    struct Approval: Hashable, Sendable, Codable {
         var requestID: String
         var title: String
     }
 
-    struct Step: Hashable, Sendable {
+    struct Step: Hashable, Sendable, Codable {
         var text: String
         var url: String
         var at: Date
