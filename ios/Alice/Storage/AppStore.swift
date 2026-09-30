@@ -997,6 +997,51 @@ final class AppStore {
         try await client.sessions()
     }
 
+    /// Where a person talks to Hermes directly: its own app, the terminal, the web client.
+    /// Their conversations can go on here; a routine's run, an errand's or feed's own session,
+    /// a delegated child or a messaging channel belong to their own surfaces.
+    nonisolated static let continuableSources: Set<String> = ["desktop", "cli", "tui", "webui"]
+
+    /// Whether a session in Hermes' list is a conversation the person can take up on this phone.
+    nonisolated static func canContinue(_ row: SessionRow) -> Bool {
+        guard let source = row.source?.lowercased(), continuableSources.contains(source) else { return false }
+        // An agent's forever-chat is opened from that agent, not as a copy of it.
+        return row.messageCount > 0 && row.title != WebSocketBotChatSource.canonicalTitle
+    }
+
+    /// Takes up on this phone a conversation started in Hermes Desktop or the terminal: its
+    /// transcript is read from Hermes and it becomes a session here, sending into the same
+    /// Hermes session, so both places go on with one conversation. One already taken up is
+    /// simply opened again.
+    func continueSession(_ row: SessionRow) async throws {
+        if let existing = conversations.first(where: { $0.hermesSessionID == row.id && $0.routedBotName == nil }) {
+            openChat(existing.id)
+            return
+        }
+        guard let source = await botChatSource() else {
+            throw HermesRPCClient.Failure(reason: "Connect the Hermes dashboard to continue this conversation.")
+        }
+        let resumed = try await source.resume(profile: nil, target: row.id)
+        // After a compression the conversation lives on a newer row; Hermes says which.
+        let storedID = (resumed["session_key"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? WebSocketBotChatSource.durableID(of: resumed) ?? row.id
+        if let existing = conversations.first(where: { $0.hermesSessionID == storedID && $0.routedBotName == nil }) {
+            openChat(existing.id)
+            return
+        }
+        let messages = BotChatSync.merge(WebSocketBotChatSource.turns(from: resumed.rows), into: [])
+        let now = Date()
+        let chat = Conversation(
+            id: UUID().uuidString,
+            title: row.title.isEmpty ? String(localized: "Session") : row.title,
+            createdAt: messages.first?.createdAt ?? now, updatedAt: row.lastActive ?? now, openedAt: now,
+            messages: messages, hermesSessionID: storedID
+        )
+        conversations.insert(chat, at: 0)
+        persistConversations()
+        openChat(chat.id)
+    }
+
     // MARK: - Dashboard
 
     /// Remembers where the dashboard is and how to sign in to it. The password

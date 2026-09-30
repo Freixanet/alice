@@ -125,7 +125,7 @@ struct ActivityScreen: View {
             }
 
             Section("History & usage") {
-                NavigationLink { SessionsScreen() } label: {
+                NavigationLink { SessionsScreen(onOpenedChat: onOpenedChat) } label: {
                     Label("Sessions", systemImage: "clock.arrow.circlepath")
                 }
                 NavigationLink { InsightsScreen() } label: {
