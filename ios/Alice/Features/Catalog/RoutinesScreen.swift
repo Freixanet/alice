@@ -466,10 +466,12 @@ struct RoutineDetailSheet: View {
             defer { busy = false }
             do {
                 try await store.triggerRoutine(routine)
+                Haptic.success.play()
                 actionMessage = "Triggered. Hermes owns the execution; pull to refresh the run history."
                 await loadRuns()
                 await onChanged()
             } catch {
+                Haptic.error.play()
                 actionMessage = PlainWords.describe(error, doing: "run the routine")
             }
         }
@@ -481,9 +483,11 @@ struct RoutineDetailSheet: View {
         Task {
             do {
                 try await action()
+                Haptic.success.play()
                 await onChanged()
                 dismiss()
             } catch {
+                Haptic.error.play()
                 actionMessage = PlainWords.describe(error, doing: "change the routine")
                 busy = false
             }
@@ -852,8 +856,10 @@ struct RoutineEditorSheet: View {
             defer { busy = false }
             do {
                 try await onSave(profile, name, prompt, schedule, deliver)
+                Haptic.success.play()
                 dismiss()
             } catch {
+                Haptic.error.play()
                 failure = PlainWords.describe(error, doing: "save this routine")
             }
         }

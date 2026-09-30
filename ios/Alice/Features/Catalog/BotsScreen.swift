@@ -283,11 +283,13 @@ struct BotsScreen: View {
             Button("Delete", role: .destructive) {
                 if let deletingBot {
                     let name = deletingBot.name
-                    rows.removeAll { $0.name == name }
+                    Haptic.warning.play()
+                    withAnimation(.snappy) { rows.removeAll { $0.name == name } }
                     Task {
                         do {
                             try await store.deleteBot(name)
                         } catch {
+                            Haptic.error.play()
                             failure = describeBotError(error)
                             await load()
                         }
@@ -2382,6 +2384,7 @@ struct BotDetail: View {
                             Divider()
                             Button("Delete Bot", systemImage: "trash", role: .destructive) {
                                 let name = bot.name
+                                Haptic.warning.play()
                                 dismiss()
                                 Task { try? await store.deleteBot(name) }
                             }
@@ -2568,8 +2571,10 @@ struct BotDetail: View {
             defer { clearing = false }
             do {
                 try await store.clearBotChat(bot.name)
+                Haptic.success.play()
                 clearFailure = nil
             } catch {
+                Haptic.error.play()
                 clearFailure = PlainWords.describe(error, doing: "clear the chat")
             }
         }
@@ -3034,6 +3039,7 @@ private struct NewBotSheet: View {
                     }
                 }
                 progress = "Opening chat…"
+                Haptic.success.play()
                 let bot = store.cachedBots.first(where: { $0.name == slug }) ?? BotRow(
                     name: slug, displayName: trimmed, detail: brief,
                     model: selectedModel?.id, provider: selectedModel?.provider,
@@ -3055,6 +3061,7 @@ private struct NewBotSheet: View {
                 dismiss()
                 Task { await onCreated() }
             } catch {
+                Haptic.error.play()
                 busy = false
                 failure = PlainWords.describe(error, doing: "create the agent")
             }
