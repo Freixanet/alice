@@ -63,7 +63,7 @@ class StoreTests(unittest.TestCase):
         self.home = Path(tempfile.mkdtemp())
 
     def test_shown_options_are_chosen_only_in_their_chat(self):
-        out = flow.present(self.home, "chat-1", {"options": [option()], "only_one": "Solo la vende HSN"}, currency="EUR", now=NOW)
+        out = flow.present(self.home, "chat-1", {"options": [option()]}, currency="EUR", now=NOW, exact_item=True)
         chosen_id = out["options"][0]["id"]
         self.assertTrue(flow.open_options(self.home, "chat-1", now=NOW))
         self.assertIsNone(flow.choose(self.home, "chat-2", chosen_id))
@@ -73,9 +73,9 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(flow.open_options(self.home, "chat-1", now=NOW))
 
     def test_same_pages_in_two_chats_keep_independent_choices(self):
-        args = {"options": [option()], "only_one": "Solo la vende HSN"}
-        first = flow.present(self.home, "chat-1", args, now=NOW)
-        flow.present(self.home, "chat-2", args, now=NOW)
+        args = {"options": [option()]}
+        first = flow.present(self.home, "chat-1", args, now=NOW, exact_item=True)
+        flow.present(self.home, "chat-2", args, now=NOW, exact_item=True)
         choice = first["options"][0]["id"]
         self.assertIsNotNone(flow.choose(self.home, "chat-1", choice, now=NOW))
         key = choice.split("-")[0]
@@ -84,14 +84,14 @@ class StoreTests(unittest.TestCase):
         self.assertIsNone(flow.options_set(self.home, key, now=NOW))
 
     def test_expired_options_cannot_be_read_or_chosen(self):
-        first = flow.present(self.home, "chat-1", {"options": [option()], "only_one": "Solo la vende HSN"}, now=NOW)
+        first = flow.present(self.home, "chat-1", {"options": [option()]}, now=NOW, exact_item=True)
         choice = first["options"][0]["id"]
         later = NOW + flow.KEEP + 1
         self.assertIsNone(flow.choose(self.home, "chat-1", choice, now=later))
         self.assertIsNone(flow.options_set(self.home, choice.split("-")[0], "chat-1", now=later))
 
     def test_nothing_verifiable_is_not_shown_and_says_how_to_go_on(self):
-        out = flow.present(self.home, "chat-1", {"options": [option(in_stock=False)], "only_one": "Solo esa"}, now=NOW)
+        out = flow.present(self.home, "chat-1", {"options": [option(in_stock=False)]}, now=NOW, exact_item=True)
         self.assertFalse(out["ok"])
         self.assertIn("propón", out["error"])
         self.assertEqual(out["discarded"][0]["why"], "sin stock comprobado")
@@ -100,8 +100,9 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(flow.options_set(self.home, key)["options"], [])
 
     def test_old_sets_are_forgotten(self):
-        flow.present(self.home, "chat-1", {"options": [option()], "only_one": "Solo la vende HSN"}, now=NOW)
-        flow.present(self.home, "chat-1", {"options": [option(url="https://b.example/p")], "only_one": "Solo esa"}, now=NOW + flow.KEEP + 1)
+        flow.present(self.home, "chat-1", {"options": [option()]}, now=NOW, exact_item=True)
+        flow.present(self.home, "chat-1", {"options": [option(url="https://b.example/p")]}, now=NOW + flow.KEEP + 1,
+                     exact_item=True)
         self.assertEqual(len(flow._read(flow._path(self.home))), 1)
 
 
@@ -173,9 +174,19 @@ class OptionsCountTests(unittest.TestCase):
     def test_a_single_card_needs_a_reason(self):
         home = Path(tempfile.mkdtemp())
         # Prozis had four formats and the catalog more; one card left the person nothing to choose.
-        out = flow.present(home, "chat-1", {"options": [option()]}, now=NOW)
-        self.assertFalse(out["ok"])
-        self.assertIn("todas las opciones", out["error"])
+        out = flow.present(home, "chat-1", {"options": [option()], "only_one": "es el que más sentido tiene"}, now=NOW)
+        self.assertFalse(out["ok"], "a preference is not a reason to hide the other options")
+        self.assertIn("al menos dos", out["error"])
+        # An exact item the person linked may be one card.
+        self.assertTrue(flow.present(home, "chat-1", {"options": [option()]}, now=NOW, exact_item=True)["ok"])
+
+    def test_a_price_the_basket_contradicted_is_not_offered_again(self):
+        home = Path(tempfile.mkdtemp())
+        out = flow.present(home, "chat-1", {"options": [option(price="24,49 €"), option(url="https://b.example/p")]},
+                           now=NOW, known_prices={"https://www.hsnstore.com/creatina": "34,99 €"})
+        self.assertEqual(out["adjusted"], [{"title": "Creatina Excell 500 g", "shown": "24,49 €", "real": "34,99 €"}])
+        self.assertEqual(out["options"][0]["price"], "34,99 €")
+        self.assertIn("34,99 €", out["next"])
         self.assertTrue(flow.present(home, "chat-1", {"options": [option(), option(url="https://b.example/p")]},
                                      now=NOW)["ok"])
 

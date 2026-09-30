@@ -678,6 +678,18 @@ def blocked_by(said: str) -> Dict[str, Any]:
     return {"kind": "other"}
 
 
+def basket_prices(home: Path, now: Optional[float] = None, within: float = 7 * 24 * 3600) -> Dict[str, str]:
+    """The price a basket showed for a product page, from purchases stopped on it lately (newest wins)."""
+    now = now or time.time()
+    prices: Dict[str, str] = {}
+    for entry in sorted(listing(home), key=lambda e: float(e.get("updated_at") or 0)):
+        blocked, offer = entry.get("blocked"), entry.get("offer")
+        if (isinstance(blocked, dict) and blocked.get("kind") == "price" and blocked.get("price")
+                and isinstance(offer, dict) and offer.get("url") and now - float(entry.get("updated_at") or 0) < within):
+            prices[str(offer["url"]).split("?")[0].rstrip("/")] = blocked["price"]
+    return prices
+
+
 def go_on(home: Path, errand_id: str, accept_price: bool = False) -> Optional[Dict[str, Any]]:
     """The person's way on from a stopped purchase: the same option at the shop's price, or a retry.
     Nothing is paid by this: the errand goes back to the checkout and asks for that exact total."""

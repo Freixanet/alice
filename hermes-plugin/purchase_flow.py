@@ -218,18 +218,32 @@ def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]]
     return kept, discarded
 
 
+def _digits(value: Any) -> str:
+    return re.sub(r"\D", "", str(value or ""))
+
+
 def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "", now: Optional[float] = None,
-            picture: Optional[Callable[[str], str]] = None) -> Dict[str, Any]:
+            picture: Optional[Callable[[str], str]] = None, exact_item: bool = False,
+            known_prices: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """`purchase_options`: keeps the verified options for the app to draw and for the choice to find."""
     now = now or time.time()
     given = [o for o in ((args or {}).get("options") or []) if isinstance(o, dict)]
     # One card is a recommendation without the choice: every option found is shown, the best marked.
-    if len(given) == 1 and not _clean((args or {}).get("only_one"), 200):
+    # A single card only for an exact item the person linked; «only_one» with a preference as its
+    # reason («es el que más sentido tiene») hid three other formats.
+    if len(given) == 1 and not exact_item:
         return {"ok": False, "error": (
-            "Enseña todas las opciones comprables que has visto (formatos, tamaños, otras tiendas; hasta 6), "
-            "con tu recomendada marcada: la persona elige entre ellas. Si de verdad solo hay una, vuelve a "
-            "llamar con `only_one` y por qué.")}
+            "Enseña al menos dos opciones comprables, con tu recomendada marcada: otros formatos o tamaños "
+            "de la tienda, o el mismo producto en otra tienda (`catalog_search`). La persona elige; tu "
+            "preferencia va en `recommended` y `why`, no quitando las demás.")}
     kept, discarded = verify((args or {}).get("options"), currency, picture)
+    # A price the basket already contradicted is not offered again: the errand saw the real one.
+    adjusted = []
+    for option in kept:
+        real = (known_prices or {}).get(option["url"].split("?")[0].rstrip("/"))
+        if real and _digits(real) != _digits(option["price"]):
+            adjusted.append({"title": option["title"], "shown": option["price"], "real": real})
+            option["price"] = real
     if not kept:
         # Kept empty for the app: its card draws nothing instead of saying the options are gone.
         key = set_key([o for o in ((args or {}).get("options") or []) if isinstance(o, dict)][:MAX_OPTIONS])
@@ -249,9 +263,12 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
         _write(path, sets)
     return {"ok": True, "set": key, "options": [{"id": o["id"], "title": o["title"], "price": o["price"]}
                                                 for o in kept],
-            "discarded": discarded,
+            "discarded": discarded, "adjusted": adjusted,
             "next": ("La persona ve las tarjetas. Termina tu turno con una o dos líneas: cuál recomiendas y "
-                     "por qué. No preguntes nada más ni prepares la compra hasta que elija.")}
+                     "por qué. No preguntes nada más ni prepares la compra hasta que elija."
+                     + (" Precios corregidos al que la tienda cobra en la cesta (ya lo vio un recado): "
+                        + "; ".join(f"{a['title']} {a['real']}" for a in adjusted) + ". Usa esos."
+                        if adjusted else ""))}
 
 
 def options_set(home: Path, key: str, session: Optional[str] = None,
@@ -430,6 +447,5 @@ OPTIONS_SCHEMA: Dict[str, Any] = {
             "recommended": {"type": "boolean", "description": "Your recommendation (one)"},
             "why": {"type": "string", "description": "One line: why this one"},
         }, "required": ["title", "url", "price", "currency", "in_stock", "channel"]}},
-        "only_one": {"type": "string", "description": "Only when a single option exists: why there is no other"},
     }, "required": ["options"]},
 }

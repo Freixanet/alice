@@ -544,6 +544,13 @@ class AuditFixTests(Base):
         # Only a stopped errand goes on, and a retry needs no price.
         self.assertIsNone(errands.go_on(self.home, entry["id"]))
 
+    def test_the_basket_price_is_remembered_for_that_page(self):
+        offer = {"option_id": "a1b2c3d4-1", "url": "https://www.prozis.com/c?x=1", "price": "24,49 €"}
+        entry = errands.create(self.home, "Comprar", now=NOW, offer=offer)
+        errands.update(self.home, entry["id"], now=NOW, status="stuck", blocked={"kind": "price", "price": "34,99 €"})
+        self.assertEqual(errands.basket_prices(self.home, now=NOW + 60), {"https://www.prozis.com/c": "34,99 €"})
+        self.assertEqual(errands.basket_prices(self.home, now=NOW + 8 * 24 * 3600), {})
+
     def test_what_the_agent_can_fix_is_not_the_persons_to_hear(self):
         offer = {"option_id": "a1b2c3d4-2", "title": "Creatina 80 cápsulas", "price": "20,99 €",
                  "url": "https://www.prozis.com/c", "channel": "browser"}

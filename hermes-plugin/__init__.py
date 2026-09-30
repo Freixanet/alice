@@ -1503,6 +1503,8 @@ def _purchase_locale() -> tuple:
 # Chats whose last request was a purchase, and those that have looked at a shop or the catalog
 # since: an ask_person with choices before looking offered formats the shop did not sell.
 _PURCHASE_OPEN: set = set()
+# What the person asked to buy, by chat: a link in it is an exact item, which may be one card.
+_PURCHASE_REQUESTS: dict = {}
 _LOOKED: set = set()
 
 
@@ -1541,6 +1543,7 @@ def _errand_turn(session_id="", user_message=None, **_):
             return {"context": flow.chosen_note(out, chosen)}
         if flow.is_purchase_request(user_message):
             _PURCHASE_OPEN.add(session)
+            _PURCHASE_REQUESTS[session] = str(user_message or "")
             _LOOKED.discard(session)
             return {"context": flow.turn_note(_purchase_context())}
     except Exception:
@@ -1700,7 +1703,9 @@ def _register_task_tools(ctx) -> None:
         details = _ask_person().load_details(Path(get_hermes_home()))
         return _agent_json(_purchase_flow().present(
             _hermes_root(), session, args or {}, currency=_purchase_locale()[1],
-            picture=lambda page: errands.page_picture(page)))
+            picture=lambda page: errands.page_picture(page),
+            exact_item=_PURCHASE_REQUESTS.get(session, "").find("https://") >= 0,
+            known_prices=errands.basket_prices(_hermes_root())))
 
     def catalog_search(args, **_):
         from hermes_constants import get_hermes_home
