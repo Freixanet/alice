@@ -39,11 +39,17 @@ extension ButtonStyle where Self == PressableCardStyle {
 }
 
 /// A row that answers the finger as a list row does: a faint wash on touch-down, gone on
-/// release. No movement, so it reads the same with Reduce Motion on or off.
+/// release. No movement, so it reads the same with Reduce Motion on or off. Rounded rows (the
+/// drawer's) give their radius so the wash matches their own shape.
 struct PressableRowStyle: ButtonStyle {
+    var cornerRadius: CGFloat = 0
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(Color.primary.opacity(configuration.isPressed ? 0.09 : 0))
+            .background(
+                Color.primary.opacity(configuration.isPressed ? 0.09 : 0),
+                in: .rect(cornerRadius: cornerRadius)
+            )
             .animation(.easeOut(duration: configuration.isPressed ? 0.05 : 0.25),
                        value: configuration.isPressed)
     }
@@ -51,4 +57,5 @@ struct PressableRowStyle: ButtonStyle {
 
 extension ButtonStyle where Self == PressableRowStyle {
     static var pressableRow: PressableRowStyle { PressableRowStyle() }
+    static func pressableRow(cornerRadius: CGFloat) -> PressableRowStyle { PressableRowStyle(cornerRadius: cornerRadius) }
 }

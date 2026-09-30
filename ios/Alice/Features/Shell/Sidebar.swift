@@ -459,6 +459,7 @@ struct Sidebar: View, Equatable {
                 Spacer(minLength: 0)
                 if badge > 0 {
                     Text("\(badge)")
+                        .contentTransition(.numericText(value: Double(badge)))
                         .font(.caption2.weight(.semibold))
                         .monospacedDigit()
                         .foregroundStyle(store.accent.primary(scheme))
@@ -474,7 +475,8 @@ struct Sidebar: View, Equatable {
             .frame(minHeight: 44)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableRow(cornerRadius: 10))
+        .animation(.snappy(duration: 0.25), value: badge)
         .accessibilityIdentifier("sidebar.row.\(title)")
 
         if let destination {
@@ -652,6 +654,7 @@ private struct SidebarList: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if let attention {
                     ChatAttentionMark(attention: attention)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
             .frame(width: width - 48, alignment: .leading)
@@ -667,7 +670,9 @@ private struct SidebarList: View, Equatable {
             .contentShape(.contextMenuPreview, .rect(cornerRadius: 10))
         }
         .accessibilityIdentifier("sidebar.chat.\(conversation.id)")
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableRow(cornerRadius: 10))
+        // A new reply or a question marks the row as it arrives, not in a jump.
+        .animation(.snappy(duration: 0.25), value: attention)
         .contextMenu {
             menu(for: conversation)
         } preview: {
