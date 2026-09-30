@@ -125,14 +125,17 @@ class LedgerTests(unittest.TestCase):
         self.assertIn("shop.es", out)
         self.assertFalse(script.exists(), "the one-off removes itself")
 
-    def test_the_prompt_fits_and_asks_for_the_best_working_code(self):
+    def test_the_prompt_points_to_the_skill_and_fits_hermes_budget(self):
+        # Hermes keeps 8,000 characters for all plugin sections: the rules live in the skill.
         text = purchases.prompt()
-        self.assertLess(len(text), 4000)
-        self.assertIn("Código de descuento", text)
-        self.assertIn("purchase_outcome", text)
-        # One source: the skill file, from its heading on, without the front matter.
         self.assertTrue(text.startswith("## Comprar"))
-        self.assertIn(text, purchases.SKILL.read_text(encoding="utf-8"))
+        self.assertLess(len(text), 600)
+        self.assertIn("skill", text)
+        self.assertIn("purchase_outcome", text)
+        rules = purchases.full_rules()
+        self.assertTrue(rules.startswith("## Comprar"))
+        self.assertIn("Código de descuento", rules)
+        self.assertIn(rules, purchases.SKILL.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

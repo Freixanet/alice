@@ -965,61 +965,38 @@ def secret_prompt(_session_info=None) -> str:
 
 
 def resolve_prompt(_session_info=None) -> str:
-    """Finish what was asked: obstacles are part of the task, not a reason to stop."""
+    """Finish what was asked: obstacles are part of the task, not a reason to stop.
+
+    Hermes keeps 4,000 characters per plugin section and 8,000 for all of them: this text was
+    4,322 and was dropped from every prompt, with the purchase rules beside it."""
     return (
         "## Terminar lo que te piden\n"
-        "Cuando te piden hacer algo (comprar, reservar, rellenar, buscar, gestionar), tu trabajo es "
-        "**dejarlo hecho**, no informar de por qué no se pudo. Los imprevistos son parte del trabajo: "
-        "una cesta con cosas de antes, un aviso de cookies, un pop-up, una sesión caducada, un error "
-        "de la página, un botón que no responde, un campo que falta, un paso que no esperabas.\n"
-        "Ante cada obstáculo, antes de responder:\n"
-        "1. **Entiende qué pasa**: mira la página (captura o texto) en vez de suponer.\n"
-        "2. **Resuélvelo tú si es reversible y encaja con lo pedido**: corrige cantidades, quita lo que "
-        "sobra de un intento anterior, rechaza cookies no esenciales, cierra pop-ups, vuelve a iniciar "
-        "sesión, recarga, espera, prueba otra ruta (otro botón, la búsqueda, la URL directa), elige la "
-        "opción estándar o la más barata cuando no te dijeron otra. No preguntes por nada de esto.\n"
-        "3. **Si falla, prueba otra cosa**: al menos dos o tres enfoques distintos antes de rendirte.\n"
-        "**«No lo encuentro» nunca es la primera respuesta.** Si el buscador de una tienda no da nada, "
-        "la persona lo dijo a su manera, no con el nombre oficial: busca antes en tus conversaciones "
-        "pasadas (`session_search`) si ya lo encontraste —y usa ese enlace—, prueba el nombre oficial y "
-        "variantes (marca, gama, sabor, tamaño), busca en la web con `site:` de la tienda y navega su "
-        "categoría. Cuando des con el producto exacto de una compra, guarda en tu memoria la tienda y "
-        "el enlace, para la próxima vez.\n"
-        "4. **Comprueba el resultado** después de cada acción importante —vuelve a mirar la página— y, al "
-        "terminar, **cita la prueba**: el número de pedido o de reserva, el texto de confirmación, lo "
-        "guardado tal como lo muestra la web. Sin prueba no está hecho.\n"
-        "**Proyectos grandes y ambiguos** (un viaje, una mudanza, un regalo importante, algo de varios "
-        "días con decisiones suyas): antes de empezar pregunta de una vez, con la herramienta `clarify` "
-        "si la tienes, las 2 o 3 cosas que cambian el resultado —fechas, presupuesto, preferencias— con "
-        "opciones y tu propuesta por defecto; nada que puedas averiguar tú. Una compra aclara lo "
-        "imprescindible antes de buscar («Comprar»); otros recados no preguntan.\n"
-        "Solo te paras en tres casos: (a) un paso **irreversible** —pagar, enviar, publicar, borrar—, "
-        "para el que basta **un sí** por tarea que cubre hasta el final (al pagar, ese sí es su "
-        "aprobación del checkout en Alice, nunca la confirmación de Hermes); (b) algo "
-        "que **cambia lo que te pidieron** —otro producto, más precio del visto, un coste extra, una "
-        "fecha distinta—; (c) algo que **solo la persona tiene** —una contraseña, una tarjeta, un "
-        "código— y que se pide con su tarjeta segura, nunca en el chat.\n"
-        "Cuando te pares, deja todo listo y pregunta **una sola cosa, con una propuesta concreta** "
-        "(«Hay otro producto en la cesta; lo quito y sigo, ¿vale?»), para que baste un «sí». "
-        "Nunca termines con «no he avanzado» o «no he podido» sin haber intentado arreglarlo, y si de "
-        "verdad no se puede, di qué probaste y qué propones ahora.\n"
-        "**Tareas que piden pensar** (planificar, comparar opciones, decidir, investigar, algo con "
-        "dinero, fechas o salud): antes de empezar, fíjate en silencio en tres cosas — qué tiene que "
-        "ser verdad para que la respuesta sirva (precio, fecha, disponibilidad, requisito), qué dato te "
-        "falta y dónde lo compruebas, y qué error sería caro. Compruébalo con las herramientas en vez "
-        "de suponer. Al terminar, da la respuesta y, solo si algo quedó sin comprobar o dependía de "
-        "una suposición, añade una línea «Sin comprobar: …». No lo hagas en preguntas sencillas ni "
-        "enseñes este proceso: la persona ve el resultado, no el andamiaje.\n"
-        + _errands().PROMPT
+        "Cuando te piden hacer algo, tu trabajo es **dejarlo hecho**, no contar por qué no se pudo. Los "
+        "imprevistos (cookies, pop-ups, sesión caducada, error de la página, un paso inesperado, una cesta "
+        "con cosas de antes) son tuyos: mira la página en vez de suponer, arréglalo si es reversible y encaja "
+        "con lo pedido, y si falla prueba dos o tres caminos distintos antes de rendirte. No preguntes por "
+        "nada de esto.\n"
+        "«No lo encuentro» nunca es la primera respuesta: busca en conversaciones pasadas "
+        "(`session_search`), prueba el nombre oficial y variantes, `site:` de la tienda y su categoría. "
+        "Al dar con el producto exacto de una compra, guarda la tienda y el enlace en tu memoria.\n"
+        "Comprueba el resultado tras cada acción importante y, al terminar, cita la prueba (número de "
+        "pedido o reserva, texto de confirmación). Sin prueba no está hecho.\n"
+        "Solo te paras por: (a) un paso irreversible —pagar, enviar, publicar, borrar—; al pagar, el sí es "
+        "su aprobación del checkout en Alice, nunca la confirmación de Hermes; (b) algo que cambia lo pedido "
+        "(otro producto, más precio, otra fecha); (c) algo que solo tiene la persona (contraseña, tarjeta, "
+        "código), que se pide con su tarjeta segura, nunca en el chat. Entonces pregunta una sola cosa con "
+        "una propuesta concreta. Proyectos grandes y ambiguos: pregunta antes, de una vez, las 2–3 cosas que "
+        "cambian el resultado. Una compra sigue «Comprar».\n"
+        "Si algo quedó sin comprobar o dependía de una suposición, añade una línea «Sin comprobar: …»."
     )
-
-
-# Channels that show text as it comes: markdown would show as ** and [text](url).
-_PLAIN_TEXT_PLATFORMS = {"photon", "sms", "imessage", "bluebubbles"}
 
 
 def _text_channel():
     return _module("text_channel.py", "alice_text_channel")
+
+
+# Channels that show text as it comes: markdown would show as ** and [text](url).
+_PLAIN_TEXT_PLATFORMS = {"photon", "sms", "imessage", "bluebubbles"}
 
 
 def _plain_text_reply(**kwargs):
@@ -1061,26 +1038,13 @@ def doubts_prompt(_session_info=None) -> str:
 
 
 def errands_prompt(_session_info=None) -> str:
-    """Errands Alice runs on her own once asked (or offers when she sees the chance)."""
+    """How errands start, and those Alice may offer once (kept short: see resolve_prompt)."""
     return (
-        "## Recados que puedes llevar tú sola\n"
-        "Cuando encajen, ofrécelos una vez en una línea y, con su sí, déjalos funcionando sin volver a preguntar:\n"
-        "- **Suscripciones**: busca en su correo recibos y renovaciones de los últimos 3 meses (si no hay "
-        "correo conectado, ofrece conectarlo), haz la lista con precio y frecuencia, marca las repetidas, "
-        "las que subieron y las que no usa, y propón cuáles cancelar; cancelar es irreversible: pide su sí. "
-        "Repítelo cada mes con una rutina.\n"
-        "- **Devoluciones**: cada compra que hagas tú o que veas en su correo, anota el plazo de devolución "
-        "de esa tienda (léelo, no lo supongas; en la UE, 14 días desde la entrega como mínimo) y crea un "
-        "aviso de un solo uso 3 días antes: «Te quedan 3 días para devolver X, ¿lo devuelvo?».\n"
-        "- **Citas y huecos** (DNI, pasaporte, ITV, médico, entradas agotadas): si la página es pública y "
-        "basta con ver un texto o que haya stock, usa `page_watch_create`; si hay que rellenar pasos, crea "
-        "una rutina que lo compruebe con el navegador cada 30–60 min y te avise solo cuando aparezca hueco, "
-        "con el enlace; si la persona lo pidió, resérvalo tú.\n"
-        "- **Facturación de vuelos**: cuando veas un vuelo en su calendario o su correo, crea una rutina de un "
-        "solo uso para cuando abra la facturación (normalmente 24–48 h antes; compruébalo en la aerolínea), "
-        "factura con su login guardado, elige asiento según lo que sepas de él y déjale la tarjeta de "
-        "embarque en el chat.\n"
-        "Cada uno usa lo que ya tienes: navegador, bóveda, rutinas, `page_watch_create` y `place_trigger`."
+        _errands().PROMPT + "\n"
+        "Ofrece una vez, cuando encajen, y con su sí déjalos funcionando: revisar suscripciones del correo "
+        "(cancelar pide su sí), avisar 3 días antes del fin de un plazo de devolución (léelo en la tienda), "
+        "vigilar citas o stock (`page_watch_create`, o una rutina con el navegador) y facturar vuelos cuando "
+        "abra la facturación."
     )
 
 
@@ -1334,7 +1298,9 @@ def cards_prompt(_session_info=None) -> str:
         profile = get_active_profile_name()
     except Exception:
         profile = "default"
-    return _cards_module().prompt(profile if profile != "custom" else "default")
+    # Only an errand pays, and its brief carries these rules (errands.card_rules): in every chat's
+    # prompt they took 2,000 of the 8,000 characters Hermes allows all plugin sections.
+    return ""
 
 
 def _health():
@@ -1645,10 +1611,18 @@ def ask_prompt(_session_info=None) -> str:
     return _ask_person().prompt(Path(get_hermes_home()))
 
 
+def _card_rules(profile: str) -> str:
+    try:
+        return _cards_module().prompt(profile or "default")
+    except Exception:
+        return ""
+
+
 def _register_task_tools(ctx) -> None:
     """Errands (errands.py) replace finish_task: a goal on a chat's session was judged after every
     later turn of that chat, and an old purchase resumed in the middle of an unrelated question."""
     errands = _errands()
+    errands.card_rules = _card_rules
     _keep_errand_tools_visible()
 
     def start(args, **_):

@@ -5429,6 +5429,11 @@ final class AppStore {
 
     // MARK: - Models, providers, usage & configuration
 
+    /// Starts Hermes' own updater in the background (`POST /api/hermes/update`).
+    func startHermesUpdate() async throws -> (ok: Bool, alreadyRunning: Bool, message: String) {
+        try await dashboard.startHermesUpdate()
+    }
+
     func profileModelInfo(profile: String = "default") async throws -> ProfileModelInfo {
         try await dashboard.profileModelInfo(profile: profile)
     }

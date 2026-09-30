@@ -274,11 +274,20 @@ SKILL = Path(__file__).resolve().parent / "skills" / "comprar" / "SKILL.md"
 
 
 def prompt() -> str:
-    """The shopping rules, read from ``skills/comprar/SKILL.md`` — the one place to audit and edit
-    them — from its "## Comprar" heading on. If the file is missing, the payment rule still holds."""
+    """What every chat is told about buying: open the skill. The full rules live in
+    ``skills/comprar/SKILL.md`` (``full_rules``); 3,800 characters of them in every prompt pushed
+    Alice's sections past Hermes' 8,000-character budget, and whole sections were dropped."""
+    return ("## Comprar\n"
+            "Antes de cualquier compra, abre la skill `comprar` (`skill_view`) y sigue sus 12 pasos: aclarar "
+            "sin inventar opciones, buscar en el catálogo y la tienda, enseñar al menos dos opciones con "
+            "`purchase_options`, y la compra la hace un recado con la aprobación del total en Alice. Después "
+            "de pagar, `purchase_outcome` siempre; nunca pagues dos veces.")
+
+
+def full_rules() -> str:
+    """The shopping rules, from ``skills/comprar/SKILL.md``'s "## Comprar" heading on."""
     try:
         text = SKILL.read_text(encoding="utf-8")
         return text[text.index("## Comprar"):].strip()
     except (OSError, ValueError):
-        return ("## Comprar\nDespués de pagar llama siempre a `purchase_outcome`; nunca pagues otra vez "
-                "mientras no se sepa si el primer pago se cobró.")
+        return prompt()

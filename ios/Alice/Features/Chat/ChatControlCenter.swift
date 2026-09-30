@@ -29,6 +29,8 @@ enum ChatControlRequest: Equatable {
     case providerDisconnect(identifier: String, profile: String?, confirm: Bool)
     case configSet(key: String, value: String, profile: String?)
     case debug
+    /// Hermes' own updater, in the background (the dashboard's Update button).
+    case update
 }
 
 enum ChatControlCenter {
@@ -46,6 +48,9 @@ enum ChatControlCenter {
         switch command {
         case "/control": return tokens.isEmpty ? .help : nil
         case "/debug": return tokens.isEmpty ? .debug : nil
+        // Not Hermes' `/update` slash: its worker gives up long before an update (dependencies, the
+        // TUI, the web UI and the desktop app are rebuilt) finishes — «slash worker timed out».
+        case "/update": return tokens.isEmpty ? .update : nil
         // `/bots` is the command's old name, kept so habit still works.
         case "/agents", "/bots": return tokens.isEmpty ? .bots : nil
         case "/bot":
@@ -586,6 +591,14 @@ extension AppStore {
                 sections.append("**\(target.label)** — \(target.used)/\(target.limit) chars\n\(entries)")
             }
             return ControlResult(text: "**Memory — \(label)**\n\n" + sections.joined(separator: "\n\n") + "\n\nAdd with `/memory add user <text>` or `/memory add memory <text>`.")
+        case .update:
+            let started = try await startHermesUpdate()
+            if started.ok {
+                return ControlResult(text: started.alreadyRunning
+                    ? "Hermes is already updating. It restarts on its own when it is done; Alice reconnects then."
+                    : "Hermes is updating in the background. It usually takes 10–15 minutes and restarts on its own; Alice reconnects when it is back.")
+            }
+            return ControlResult(text: "Hermes could not start its update: \(started.message.isEmpty ? "it refused." : started.message)")
         case let .model(candidate):
             // Alice's own chat sends the model chosen here with every message, not the profile's
             // default: /model said «Grok» right after the person had switched to another model.

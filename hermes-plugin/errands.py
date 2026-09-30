@@ -733,6 +733,11 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
     )
 
 
+# How a saved card is filled, given by the plugin (vault_cards.prompt) so it reaches the errand,
+# the only place that pays, instead of every chat's prompt.
+card_rules: Callable[[str], str] = lambda profile: ""
+
+
 def brief(entry: Dict[str, Any]) -> str:
     """The first message of an errand's session."""
     login = ("Antes de iniciar sesión, la persona quiere que se le pregunte: Hermes se lo pedirá."
@@ -761,6 +766,7 @@ def brief(entry: Dict[str, Any]) -> str:
         f"El recado seguirá con «{APPROVED_PREFIX}» si lo aprueba. Después de pagar, registra "
         "`purchase_outcome` con el número de pedido, el total, los artículos, la tarjeta y la entrega "
         "prevista. Termina cada turno con una sola línea que diga en qué punto estás."
+        + (("\n\n" + card_rules(str(entry.get("profile") or "default"))) if card_rules(str(entry.get("profile") or "default")) else "")
     )
 
 

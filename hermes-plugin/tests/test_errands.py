@@ -508,6 +508,14 @@ class AuditFixTests(Base):
         self.assertIn("colgado", gateway.started[1][1])
         self.assertIn("dejó de responder", errands.get(self.home, entry["id"])["reason"])
 
+    def test_the_card_rules_travel_with_the_errand(self):
+        original = errands.card_rules
+        errands.card_rules = lambda profile: f"## Pagar con tarjeta ({profile})"
+        try:
+            self.assertIn("## Pagar con tarjeta (default)", errands.brief({"request": "x", "profile": "default"}))
+        finally:
+            errands.card_rules = original
+
     def test_the_brief_never_starts_another_errand(self):
         self.assertIn("nunca llames a `errand_start`", errands.brief({"request": "x"}))
 
