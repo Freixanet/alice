@@ -731,6 +731,7 @@ struct Composer: View {
             pendingListen = nil
         }
         store.send()
+        Haptic.tap.play()
     }
 
     /// Dictation, always left of the trailing control: it only fills the
@@ -762,6 +763,7 @@ struct Composer: View {
 
         Button {
             if stopping {
+                Haptic.heavy.play()
                 store.stop()
             } else if hasDraft {
                 sendDraft()
@@ -774,6 +776,8 @@ struct Composer: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(scheme == .dark ? Color.black : Color.white)
                     .frame(width: 32, height: 32)
+                    // Send turns into Stop in place, as the main composer's does.
+                    .contentTransition(.symbolEffect(.replace))
                     .background { Circle().fill(botSendFill) }
                     .transition(.scale.combined(with: .opacity))
             } else {
@@ -786,6 +790,9 @@ struct Composer: View {
             }
         }
         .buttonStyle(.plain)
+        // The transitions above need a change to animate: voice ⇄ send ⇄ stop.
+        .animation(.snappy(duration: 0.2), value: sending)
+        .animation(.snappy(duration: 0.2), value: stopping)
         .disabled(!sending && !voiceAvailable)
         .accessibilityLabel(stopping ? "Stop" : (hasDraft ? "Send" : "Voice conversation"))
         .accessibilityIdentifier("composer.action")
@@ -909,6 +916,7 @@ struct Composer: View {
 
         return Button {
             if stopping {
+                Haptic.heavy.play()
                 store.stop()
             } else if hasDraft {
                 sendDraft()

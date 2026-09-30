@@ -600,10 +600,11 @@ private struct MessageActions: View {
 
             Button {
                 UIPasteboard.general.string = message.content
-                copied = true
+                Haptic.success.play()
+                withAnimation(.snappy(duration: 0.2)) { copied = true }
                 Task {
                     try? await Task.sleep(for: .seconds(1.5))
-                    copied = false
+                    withAnimation(.snappy(duration: 0.2)) { copied = false }
                 }
             } label: {
                 ActionIcon(copied ? "checkmark" : "square.on.square", slot: 16.67)
@@ -631,6 +632,7 @@ private struct MessageActions: View {
             // said, so there is nothing to ask again.
             if message.routineName == nil {
                 Button {
+                    Haptic.tap.play()
                     store.retry(message.id)
                 } label: {
                     ActionIcon("arrow.triangle.2.circlepath", slot: 19.33)
@@ -645,7 +647,8 @@ private struct MessageActions: View {
         // copy square lines up with the letters instead of overhanging them.
         .padding(.leading, -ActionIcon.gap / 2 + 0.67)
         .foregroundStyle(.secondary)
-        .buttonStyle(.plain)
+        // Each icon gives a little under the finger, as the chat's cards do.
+        .buttonStyle(.pressable)
         .padding(.top, 2)
     }
 }
@@ -774,6 +777,7 @@ private struct SentMessageMenu: View {
     var body: some View {
         Button("Copy", systemImage: "doc.on.doc") {
             UIPasteboard.general.string = message.content
+            Haptic.success.play()
             MessageActionsTip().invalidate(reason: .actionPerformed)
         }
         // Only the latest message: Hermes can replace the last exchange and
@@ -1478,7 +1482,7 @@ struct AgentRoutineRunCard: View {
                     .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
                     .contentShape(.rect(cornerRadius: 18))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableCardStyle())
                 .disabled(opening)
                 .accessibilityHint("Opens the routine")
             }
@@ -1498,6 +1502,7 @@ struct AgentRoutineRunCard: View {
 
     private func open(_ event: AliceEvent) async {
         guard let key = event.reference.routineKey, let slash = key.lastIndex(of: "/") else { return }
+        Haptic.tap.play()
         let profile = String(key[..<slash])
         let id = String(key[key.index(after: slash)...])
         opening = true
@@ -1506,9 +1511,11 @@ struct AgentRoutineRunCard: View {
             if let routine = try await store.routines(for: profile).first(where: { $0.id == id }) {
                 opened = routine
             } else {
+                Haptic.error.play()
                 notice = String(localized: "That routine no longer exists.")
             }
         } catch {
+            Haptic.error.play()
             notice = PlainWords.describe(error, doing: "open the routine")
         }
     }

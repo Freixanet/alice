@@ -574,6 +574,7 @@ private struct DrawerGlyph: Shape {
 private struct TranscriptView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let conversation: Conversation
     /// This bot's routine runs that found nothing, shown as cards.
     var quietRuns: [QuietRoutineRun] = []
@@ -878,7 +879,12 @@ private struct TranscriptView: View {
                 ZStack {
                     if settled && !following {
                         Button {
-                            position.scrollTo(edge: .bottom)
+                            // Tapped, the way back down is shown rather than cut to. Following a
+                            // reply as it grows stays unanimated (see above).
+                            Haptic.tap.play()
+                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.35)) {
+                                position.scrollTo(edge: .bottom)
+                            }
                         } label: {
                             // A 44pt disc with 12pt of reach around it. On a
                             // phone, presses a few points off the disc landed
