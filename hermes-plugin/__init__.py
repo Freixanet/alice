@@ -1449,6 +1449,16 @@ def _register_ask_tools(ctx) -> None:
 # model words its arguments (reading an old conversation, it once answered «ya está en marcha» about
 # errands that had been stopped).
 _ERRAND_TURN_IDS: dict = {}
+# Turns no person wrote — a routine running (cron_ sessions) or its output handed to a chat for
+# review. They never start an errand: a routine's prompt and the "Cierre del día" summary once
+# started purchases (a Prozis checkout at 34,99 €) that nobody had asked for that day.
+_AUTOMATED_TURNS: set = set()
+AUTOMATED_MARKERS = ("[IMPORTANT: You are running as a scheduled cron job", "[Cronjob ",
+                     "[IMPORTANT: The user has invoked the")
+
+
+def _automated(session: str, text) -> bool:
+    return str(session or "").startswith("cron_") or " ".join(str(text or "").split()).startswith(AUTOMATED_MARKERS)
 
 
 def _purchase_context() -> str:
@@ -1486,6 +1496,10 @@ def _errand_turn(session_id="", user_message=None, **_):
         if not session or session.startswith(errands.SESSION_PREFIX):
             return None
         _ERRAND_TURN_IDS.pop(session, None)
+        if _automated(session, user_message):
+            _AUTOMATED_TURNS.add(session)
+            return None
+        _AUTOMATED_TURNS.discard(session)
         option_id = flow.chosen_id(user_message)
         if option_id:
             chosen = flow.choose(_hermes_root(), session, option_id)
@@ -1611,6 +1625,10 @@ def _register_task_tools(ctx) -> None:
             session = _session_id() or get_current_session_key(default="")
             # A choice tapped this turn already started its errand (_errand_turn): the model's call,
             # however worded, gets that one.
+            if _automated(session, "") or session in _AUTOMATED_TURNS:
+                return _agent_json({"ok": False, "error": (
+                    "Un recado lo pide la persona, no una rutina. No lo inicies: si algo está pendiente de "
+                    "comprar o reservar, dilo en tu resumen y que ella decida.")})
             turn_id = _ERRAND_TURN_IDS.get(session)
             entry = errands.get(_hermes_root(), turn_id) if turn_id else None
             if (entry is not None and entry.get("origin_session") == session

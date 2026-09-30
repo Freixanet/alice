@@ -349,18 +349,11 @@ enum GallerySample: String, CaseIterable, Identifiable {
                                                                             "Entrar en HSN con la cuenta guardada")),
                 language: language, onAllow: {}, onDeny: {})))
         case .checkoutPending:
-            return .view(AnyView(CheckoutApprovalCard(
-                checkout: F.checkout(language), language: language, compact: true, onOpenPage: {},
-                cards: [SavedCard.demo(origin: nil)], chosenCard: SavedCard.demo(origin: nil),
-                onAllow: {}, onDeny: {})))
+            return .view(AnyView(GalleryCheckout(language: language, start: .pending)))
         case .checkoutApproved:
-            return .view(AnyView(CheckoutApprovalCard(
-                checkout: F.checkout(language, status: .approved), language: language, phase: .approved,
-                paid: true, onAllow: {}, onDeny: {})))
+            return .view(AnyView(GalleryCheckout(language: language, start: .approved)))
         case .checkoutExpired:
-            return .view(AnyView(CheckoutApprovalCard(
-                checkout: F.checkout(language, status: .expired), language: language, phase: .expired,
-                onAllow: {}, onDeny: {})))
+            return .view(AnyView(GalleryCheckout(language: language, start: .expired)))
         case .purchaseOptions, .purchaseChosen:
             return .view(AnyView(PurchaseOptionsCard(detail: nil, language: language,
                 preview: F.purchaseOptions(language, chosen: self == .purchaseChosen ? "a1b2c3d4-1" : nil),
@@ -514,6 +507,31 @@ private struct GalleryProductSheetButton: View {
                                  price: "27,98 €", oldPrice: "34,90 €", language: language,
                                  options: [language.pick("Unflavoured", "Sin sabor"), language.pick("Lemon", "Limón")]) {
                 open = false
+            }
+        }
+    }
+}
+
+/// The checkout card answering in place: «Pagar» approves, «Cancelar» cancels and «Prepararlo de
+/// nuevo» brings back a checkout to approve — nothing leaves the phone. A button that did nothing
+/// here read as broken.
+private struct GalleryCheckout: View {
+    let language: ChatLanguage
+    let start: CheckoutApprovalCard.Phase
+    @State private var phase: CheckoutApprovalCard.Phase?
+
+    var body: some View {
+        let now = phase ?? start
+        VStack(alignment: .leading, spacing: 8) {
+            CheckoutApprovalCard(
+                checkout: GalleryFixtures.checkout(language), language: language, phase: now, compact: true,
+                onOpenPage: {}, cards: [SavedCard.demo(origin: nil)], chosenCard: SavedCard.demo(origin: nil),
+                paid: true, onRefresh: { withAnimation(.snappy) { phase = .pending } },
+                onAllow: { withAnimation(.snappy) { phase = .approved } },
+                onDeny: { withAnimation(.snappy) { phase = .denied } })
+            if now != start {
+                Button(language.pick("Reset", "Restablecer")) { withAnimation(.snappy) { phase = nil } }
+                    .font(.footnote)
             }
         }
     }

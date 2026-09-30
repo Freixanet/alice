@@ -36,6 +36,7 @@ class ErrandHookTests(unittest.TestCase):
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())
         self.plugin._ERRAND_TURN_IDS.clear()
+        self.plugin._AUTOMATED_TURNS.clear()
         self.metas = {"card": Meta(kind="payment", origin="https://www.hsnstore.com", label="Visa ···4242"),
                       "login": Meta(kind="login", origin="https://www.hsnstore.com", label="HSN")}
         store = types.SimpleNamespace(get_meta=lambda handle: self.metas.get(handle))
@@ -254,6 +255,22 @@ class ErrandHookTests(unittest.TestCase):
         two = self.plugin._ERRAND_TURN_IDS["chat-9"]
         self.assertNotEqual(one, two)
         self.assertEqual(len(self.errands.listing(self.home)), 2)
+
+    def test_a_routine_never_starts_an_errand(self):
+        handler = self.tools()["errand_start"]["handler"]
+        first, _ = self.shown()
+        cron = self.call(handler, {"task": "Reservar la ITV", "title": "ITV"}, session="cron_abc_20260930_213015")
+        self.assertFalse(cron["ok"])
+        # A routine's output reviewed in a chat is not the person either, even with a choice token in it.
+        review = "[Cronjob \"Cierre del día\" output — scheduled job, not the user.] Queda pendiente la creatina."
+        self.assertIsNone(self.plugin._errand_turn(session_id="chat-9", user_message=review))
+        self.assertFalse(self.call(handler, {"option_id": first})["ok"])
+        self.assertIsNone(self.plugin._errand_turn(
+            session_id="chat-9", user_message=f"[IMPORTANT: You are running as a scheduled cron job.] [elección:{first}]"))
+        self.assertEqual(self.errands.listing(self.home), [])
+        # The person's next turn in that chat can buy again.
+        self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] Creatina")
+        self.assertEqual(len(self.errands.listing(self.home)), 1)
 
     def test_the_text_only_repeat_guard_does_not_pause_an_errand(self):
         guard = mock.Mock()

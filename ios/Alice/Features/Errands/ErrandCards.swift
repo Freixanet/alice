@@ -419,6 +419,8 @@ struct CheckoutApprovalCard: View {
     var paid = false
     /// Still going after the approval: it is paying now. Stopped before: it never paid.
     var paying = true
+    /// An answer to this errand is on its way to the Mac (preparing it again, cancelling).
+    var busy = false
     /// A stale checkout: prepared again, or the purchase given up.
     var onRefresh: () -> Void = {}
     let onAllow: () -> Void
@@ -506,9 +508,14 @@ struct CheckoutApprovalCard: View {
                                "Alice puede prepararlo de nuevo y preguntarte con el precio de ahora."))
                 .font(.subheadline).foregroundStyle(.secondary)
             HStack(spacing: 10) {
-                PurchaseCapsuleButton(title: language.pick("Cancel purchase", "Cancelar compra"), action: onDeny)
+                PurchaseCapsuleButton(title: language.pick("Cancel purchase", "Cancelar compra"), disabled: busy,
+                                      action: onDeny)
                 PurchaseCapsuleButton(title: language.pick("Prepare it again", "Prepararlo de nuevo"), prominent: true,
-                                      tint: .approve, action: onRefresh)
+                                      disabled: busy, busy: busy, tint: .approve, action: onRefresh)
+            }
+            // A refusal from the Mac is said here: before, a failed «Prepararlo de nuevo» did nothing visible.
+            if let error {
+                Text(error).font(.footnote).foregroundStyle(Palette.danger(scheme))
             }
         }
         .padding(16)

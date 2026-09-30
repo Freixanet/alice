@@ -215,6 +215,7 @@ struct ErrandStack: View {
                                      onChooseCard: { chosen = $0 }, onAddCard: { addingCard = true },
                                      paid: errand.status == .done && errand.receipt?.paid != false,
                                      paying: errand.status.isOpen,
+                                     busy: sending,
                                      onRefresh: onRefreshCheckout,
                                      onAllow: { onDecide(true, chosen?.label ?? checkout.cardLabel) },
                                      onDeny: { phase == .expired ? onStop() : onDecide(false, "") })
