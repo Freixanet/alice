@@ -587,6 +587,15 @@ extension AppStore {
             }
             return ControlResult(text: "**Memory — \(label)**\n\n" + sections.joined(separator: "\n\n") + "\n\nAdd with `/memory add user <text>` or `/memory add memory <text>`.")
         case let .model(candidate):
+            // Alice's own chat sends the model chosen here with every message, not the profile's
+            // default: /model said «Grok» right after the person had switched to another model.
+            if candidate == nil, activeBotProfileForModelSelection == nil, let chosen = currentChatModelOption {
+                var text = "**\(chosen.label)** is answering"
+                if let provider = chosen.providerName ?? chosen.provider.map(HermesClient.prettify), !provider.isEmpty {
+                    text += ", from \(provider)"
+                }
+                return ControlResult(text: text + ".", offersModelChoice: true)
+            }
             let profile = try await controlProfile(candidate, conversationID: conversationID)
             let info = try await profileModelInfo(profile: profile)
             let providers = try await inferenceProviders(profile: profile)
