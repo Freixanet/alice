@@ -10078,6 +10078,8 @@ final class AppStore {
         if conversations[chat].messages[index].content.isEmpty {
             conversations[chat].messages[index].content = message
         }
+        // Felt only in the chat on screen: a reply failing elsewhere is marked on its row.
+        if conversations[chat].id == activeID { Haptic.error.play() }
     }
 
     private func finish(_ id: String, conversationID: String) {

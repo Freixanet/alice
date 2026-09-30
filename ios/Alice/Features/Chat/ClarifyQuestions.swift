@@ -316,9 +316,11 @@ struct ClarifyQuestionsView: View {
     ) async {
         sending = true
         defer { sending = false }
-        if await store.answerClarification(
+        let delivered = await store.answerClarification(
             event, questionID: question.id, answer: answer, skip: skip
-        ) {
+        )
+        (delivered ? Haptic.success : Haptic.error).play()
+        if delivered {
             typed[key] = nil
             selected[key] = nil
             fieldFocused = false

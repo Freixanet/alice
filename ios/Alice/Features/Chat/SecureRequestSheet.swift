@@ -260,6 +260,7 @@ struct SecureRequestSheet: View {
                 usingKey = false
                 await send(code)
             } catch {
+                Haptic.error.play()
                 working = false
                 keyProblem = PlainWords.describe(error, doing: "save the key")
             }
@@ -274,6 +275,8 @@ struct SecureRequestSheet: View {
         identifier = ""
         working = false
         if !delivered && !value.isEmpty { failed = true }
+        // Declining (an empty answer) is not an outcome worth a touch.
+        if !value.isEmpty { (delivered ? Haptic.success : Haptic.error).play() }
         // The vault answer is the same for both; only this says it is a new
         // account. No secret in it: the site, and what to do.
         if delivered, !value.isEmpty, newAccount, case .saveLogin = request.kind {
