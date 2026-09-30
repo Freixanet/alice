@@ -9,7 +9,6 @@ struct HomeShortcutsShelf: View {
     @Environment(\.colorScheme) private var scheme
 
     @State private var draggedID: String?
-    @State private var haptic = UIImpactFeedbackGenerator(style: .light)
 
     var body: some View {
         let items = store.homeShortcuts
@@ -64,7 +63,7 @@ struct HomeShortcutsShelf: View {
                 peers: store.homeShortcuts.map(\.id),
                 draggedID: $draggedID,
                 move: { source, dest in
-                    haptic.impactOccurred()
+                    Haptic.tap.play()
                     store.moveHomeShortcut(source, to: dest)
                 }
             )

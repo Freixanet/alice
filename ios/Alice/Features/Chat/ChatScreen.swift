@@ -465,7 +465,7 @@ private struct ChatScreenContent: View, Equatable {
                 // The feed, the same page the leftward swipe pulls in (RootView). Starting the
                 // chat again is `/new`, which keeps what was said under Sessions.
                 Button {
-                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    Haptic.soft.play()
                     withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = true }
                 } label: {
                     Image(systemName: "rectangle.stack")

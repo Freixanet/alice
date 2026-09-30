@@ -125,13 +125,12 @@ private struct ZoomableImage: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, UIScrollViewDelegate {
         weak var imageView: UIImageView?
-        private let feedback = UIImpactFeedbackGenerator(style: .light)
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
 
         @objc func doubleTapped(_ recognizer: UITapGestureRecognizer) {
             guard let scroll = recognizer.view as? UIScrollView else { return }
-            feedback.impactOccurred()
+            Haptic.tap.play()
             if scroll.zoomScale > scroll.minimumZoomScale {
                 scroll.setZoomScale(scroll.minimumZoomScale, animated: true)
             } else {
@@ -152,7 +151,7 @@ extension View {
     /// the spinner at that moment, so the screen alone does not say it took.
     func refreshableWithFeedback(_ action: @escaping @MainActor @Sendable () async -> Void) -> some View {
         refreshable {
-            await MainActor.run { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+            await MainActor.run { Haptic.heavy.play() }
             await action()
         }
     }

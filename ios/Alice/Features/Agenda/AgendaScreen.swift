@@ -305,7 +305,7 @@ struct AgendaScreen: View {
         do {
             try AgendaSource.save(draft)
             problem = nil
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptic.success.play()
             Task { await model.reload() }
             return true
         } catch {

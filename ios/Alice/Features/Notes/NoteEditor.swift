@@ -673,7 +673,6 @@ private struct RichTextEditor: UIViewRepresentable {
         enum Format: Hashable { case bold, italic, underline, strikethrough, bulleted, numbered, checklist }
 
         private var formatButtons: [Format: UIButton] = [:]
-        private let feedback = UISelectionFeedbackGenerator()
 
         /// Lights each button whose formatting applies at the caret, or at the
         /// start of the selection: the only way to see that a tap took effect
@@ -741,7 +740,7 @@ private struct RichTextEditor: UIViewRepresentable {
                 if let run {
                     control.addAction(UIAction { [weak self] _ in
                         run()
-                        self?.feedback.selectionChanged()
+                        Haptic.selection.play()
                         self?.refreshStates()
                     }, for: .touchUpInside)
                 }

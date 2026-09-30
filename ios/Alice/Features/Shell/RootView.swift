@@ -479,7 +479,7 @@ struct RootView: View {
     private func closeBots(exitLeading: Bool, _ settle: () -> Void) {
         guard !closingBots else { return }
         closingBots = true
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptic.soft.play()
         store.botsExitLeading = exitLeading
         let before = store.activeID
         settle()
@@ -523,7 +523,7 @@ struct RootView: View {
         botsCloseTask = nil
         closingBots = false
         botsRowSwipeRecognized = fromSwipe
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptic.soft.play()
         botsExitOffset = 0
         store.botsFromLeading = false
         store.showingBots = true
@@ -538,7 +538,7 @@ struct RootView: View {
         botsRowSwipeRecognized = fromSwipe
         store.markActiveBotRead()
         store.markNoticesSeen(.agents)
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptic.soft.play()
         botsExitOffset = 0
         store.botsFromLeading = true
         store.showingBots = true
@@ -558,7 +558,7 @@ struct RootView: View {
 
     /// Goals leaves the way it came in, off the right.
     private func openFeed() {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptic.soft.play()
         withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingFeed = true
             feedDrag = 0
@@ -566,7 +566,7 @@ struct RootView: View {
     }
 
     private func closeFeed() {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptic.soft.play()
         withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingFeed = false
             feedDrag = 0
@@ -574,7 +574,7 @@ struct RootView: View {
     }
 
     private func closeGoals() {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptic.soft.play()
         withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingGoals = false
         }
@@ -582,7 +582,7 @@ struct RootView: View {
 
     /// The agenda leaves the way it came in, off the right.
     private func closeAgenda() {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptic.soft.play()
         withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingAgenda = false
         }
@@ -590,7 +590,7 @@ struct RootView: View {
 
     /// Notes leaves the way it came in, off the right.
     private func closeNotes() {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptic.soft.play()
         withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingNotes = false
         }
@@ -624,7 +624,7 @@ struct RootView: View {
     private func setDrawer(_ open: Bool) {
         let wasOpen = drawerOpen
         if drawerOpen != open {
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            Haptic.soft.play()
         }
         if open {
             // The keyboard would otherwise stay up behind the drawer, with

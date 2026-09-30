@@ -332,6 +332,8 @@ struct AnimatedBotMarkView: View {
     private var lifted: Bool { floats && floating }
 
     private func bounce() {
+        // `Haptic.heavy`, spelled out: this file is also built into the Live Activity extension,
+        // which does not carry the app's haptic vocabulary.
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         guard !reduceMotion else { return }
         Task { @MainActor in

@@ -543,7 +543,7 @@ private struct ConnectorSignInSheet: View {
                 switch current.status {
                 case "approved":
                     done = true
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    Haptic.success.play()
                     return
                 case "error":
                     failure = current.error ?? String(localized: "The sign-in did not finish.")

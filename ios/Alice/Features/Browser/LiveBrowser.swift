@@ -540,7 +540,7 @@ struct LiveBrowserScreen: View {
                 let x = Double(value.startLocation.x / size.width)
                 let y = Double(value.startLocation.y / size.height)
                 if abs(moved.height) < 8 && abs(moved.width) < 8 {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Haptic.tap.play()
                     live.send(.tap(x: x, y: y))
                     // A tap on a field is usually followed by typing.
                     return

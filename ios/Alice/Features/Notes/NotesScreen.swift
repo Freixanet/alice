@@ -390,7 +390,7 @@ struct NotesScreen: View {
             .padding(.vertical, 11)
             .contentShape(.rect)
         }
-        .buttonStyle(NoteRowPressStyle())
+        .buttonStyle(.pressableRow)
         .listRowSeparator(.hidden)
         .overlay(alignment: .bottom) {
             if below != nil {
@@ -423,7 +423,7 @@ struct NotesScreen: View {
                 .padding(.vertical, 11)
                 .contentShape(.rect)
         }
-        .buttonStyle(NoteRowPressStyle())
+        .buttonStyle(.pressableRow)
         .disabled(note.sending)
         .contextMenu { menu(note) } preview: { NotePreview(note: note, locked: hides(note)) }
         // The quick way; the same Delete is in the note's menu and its page.
@@ -497,7 +497,7 @@ struct NotesScreen: View {
             .frame(height: 50)
             .contentShape(.rect)
         }
-        .buttonStyle(NoteRowPressStyle())
+        .buttonStyle(.pressableRow)
         .listRowInsets(EdgeInsets())
     }
 
@@ -865,14 +865,6 @@ private struct NoteCardPressStyle: ButtonStyle {
     }
 }
 
-struct NoteRowPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(Color.primary.opacity(configuration.isPressed ? 0.09 : 0))
-            .animation(.easeOut(duration: configuration.isPressed ? 0.05 : 0.25),
-                       value: configuration.isPressed)
-    }
-}
 
 enum SwipeSide { case leading, trailing }
 
@@ -1097,14 +1089,14 @@ struct SwipeToDelete: ViewModifier {
                     // Felt only on the way to Pin; opening onto Share, Move
                     // and Delete is silent.
                     if past == .leading || passedOpen == .leading {
-                        UISelectionFeedbackGenerator().selectionChanged()
+                        Haptic.selection.play()
                     }
                     passedOpen = past
                 }
                 let full = offset > rowWidth / 2
                 if full != fullSwipe {
                     fullSwipe = full
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Haptic.tap.play()
                 }
             },
             onEnd: { _, projected in

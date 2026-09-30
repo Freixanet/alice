@@ -32,7 +32,6 @@ struct NotesFoldersScreen: View {
     @State private var moving: NoteMove?
     /// Reorder handles on the person's own folders, as in Notes.
     @State private var editingFolders = false
-    @State private var reorderHaptic = UIImpactFeedbackGenerator(style: .light)
     /// True while a folder is being dragged by its handle. GestureState
     /// clears itself when the finger lifts or the gesture is cancelled.
     @GestureState private var slidingFolder = false
@@ -209,7 +208,6 @@ struct NotesFoldersScreen: View {
                         if editingFolders {
                             swipedFolder = nil
                             store.noteRowOpen = false
-                            reorderHaptic.prepare()
                         }
                     } label: {
                         if editingFolders {
@@ -367,8 +365,7 @@ struct NotesFoldersScreen: View {
         guard store.reorderVisibleNoteFolders(
             from: source, to: destination, displayed: displayed
         ) else { return }
-        reorderHaptic.impactOccurred()
-        reorderHaptic.prepare()
+        Haptic.tap.play()
     }
 
     /// A folder the person made: opened by a tap, and swiped or held for Share,
@@ -521,7 +518,7 @@ struct NotesFoldersScreen: View {
                 } label: {
                     content
                 }
-                .buttonStyle(NoteRowPressStyle())
+                .buttonStyle(.pressableRow)
             }
         }
         .overlay(alignment: .trailing) {
