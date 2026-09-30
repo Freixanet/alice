@@ -48,6 +48,7 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
         var cardLabel: String
         var delivery: String
         var paid: Bool { outcome == "paid" }
+        var approvedTotal: String? = nil
     }
 
     struct Question: Identifiable, Hashable, Sendable, Codable {
@@ -73,6 +74,8 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     var request: String
     /// The Hermes session of the chat that asked for it.
     var originSession: String = ""
+    /// Optional so the cached errands from older builds still decode.
+    var optionID: String? = nil
     /// The payment page's origin a card is wanted for (`needs_card`).
     var cardOrigin: String = ""
     var site: String
@@ -160,7 +163,8 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
         let receipt = (row["receipt"] as? [String: Any]).map { raw in
             Receipt(outcome: text(raw["outcome"]), order: text(raw["order"]), total: text(raw["total"]),
                     merchant: text(raw["merchant"]), site: text(raw["site"]), items: items(raw["items"]),
-                    cardLabel: text(raw["card_label"]), delivery: text(raw["delivery"]))
+                    cardLabel: text(raw["card_label"]), delivery: text(raw["delivery"]),
+                    approvedTotal: raw["approved_total"] as? String)
         }
         let asked = row["questions"] as? [String: Any]
         let questions = (asked?["items"] as? [[String: Any]] ?? []).compactMap { raw -> Question? in
@@ -176,7 +180,8 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
             return Step(text: words, url: text(raw["url"]), at: date(raw["at"]) ?? Date())
         }
         return Errand(
-            id: id, title: title, request: text(row["request"]), originSession: text(row["origin_session"]), cardOrigin: text(row["card_origin"]),
+            id: id, title: title, request: text(row["request"]), originSession: text(row["origin_session"]),
+            optionID: (row["offer"] as? [String: Any])?["option_id"] as? String, cardOrigin: text(row["card_origin"]),
             site: text(row["site"]),
             status: Status(rawValue: text(row["status"])) ?? .working, checkout: checkout, receipt: receipt,
             questionsTitle: text(asked?["title"]), questions: questions, approval: approval,

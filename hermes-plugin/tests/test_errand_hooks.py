@@ -35,24 +35,53 @@ class ErrandHookTests(unittest.TestCase):
 
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())
-        self.plugin._ERRAND_TURNS.clear()
         self.plugin._ERRAND_TURN_IDS.clear()
         self.metas = {"card": Meta(kind="payment", origin="https://www.hsnstore.com", label="Visa ···4242"),
                       "login": Meta(kind="login", origin="https://www.hsnstore.com", label="HSN")}
         store = types.SimpleNamespace(get_meta=lambda handle: self.metas.get(handle))
-        cards = types.SimpleNamespace(_store=lambda: store, PAYMENT_GATEWAYS={"sis.redsys.es"})
+        cards = types.SimpleNamespace(_store=lambda: store, PAYMENT_GATEWAYS={"sis.redsys.es"},
+                                      cards=lambda: [{"label": "Visa ···4242"}])
+        self.flow = self.plugin._purchase_flow()
         for patch in (
             mock.patch.object(self.plugin, "_hermes_root", return_value=self.home),
             mock.patch.object(self.errands, "_fetch", side_effect=OSError("offline")),
             mock.patch.object(self.plugin, "_cards_module", return_value=cards),
             mock.patch.object(self.plugin, "_open_tabs", return_value=["https://www.hsnstore.com/checkout"]),
             mock.patch.object(self.plugin, "_active_url", return_value="https://www.hsnstore.com/checkout/step/payment/"),
+            mock.patch.object(self.plugin, "_purchase_context", return_value="[Alice · compra] Lo que sé — país: ES."),
+            mock.patch.object(self.plugin, "_root_and_sender", return_value=(self.home, "default")),
+            mock.patch.object(self.errands, "launch", return_value=True),
+            mock.patch.object(self.errands, "open_goal"),
         ):
             patch.start()
             self.addCleanup(patch.stop)
 
     def errand(self, **kwargs):
         return self.errands.create(self.home, "Compra la creatina", title="Comprar Creapure", **kwargs)
+
+    def tools(self):
+        registered = {}
+        ctx = types.SimpleNamespace(register_tool=lambda **kw: registered.__setitem__(kw["name"], kw))
+        self.plugin._register_task_tools(ctx)
+        return registered
+
+    def shown(self, session="chat-9"):
+        """Two verified options shown in `session`; their ids."""
+        out = self.flow.present(self.home, session, {"options": [
+            {"title": "Creatina Excell 500 g", "merchant": "HSN", "variant": "Sin sabor", "price": "27,98 €",
+             "currency": "EUR", "url": "https://www.hsnstore.com/creatina", "in_stock": True, "channel": "browser",
+             "image": "https://www.hsnstore.com/c.jpg", "recommended": True},
+            {"title": "Creatina Creapure 300 g", "merchant": "Prozis", "price": "19,99 €", "currency": "EUR",
+             "url": "https://www.prozis.com/creatina", "in_stock": True, "channel": "browser",
+             "image": "https://www.prozis.com/c.jpg"},
+        ]})
+        return [o["id"] for o in out["options"]]
+
+    def call(self, handler, args, session="chat-9"):
+        approval = types.SimpleNamespace(get_current_session_key=lambda **_: "run-1")
+        with mock.patch.object(self.plugin, "_session_id", return_value=session), \
+                mock.patch.dict(sys.modules, {"tools.approval_context": approval}):
+            return json.loads(handler(args))
 
     def test_a_card_fill_needs_the_approved_checkout(self):
         entry = self.errand()
@@ -101,10 +130,9 @@ class ErrandHookTests(unittest.TestCase):
         self.assertEqual([s["text"] for s in steps], ["Abrir la ficha de la creatina"])
 
     def test_the_checkout_tool_only_works_inside_an_errand(self):
-        registered = {}
-        ctx = types.SimpleNamespace(register_tool=lambda **kw: registered.__setitem__(kw["name"], kw))
-        self.plugin._register_task_tools(ctx)
-        self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request"})
+        registered = self.tools()
+        self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options",
+                                           "catalog_search", "catalog_product"})
         handler = registered["checkout_request"]["handler"]
         with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):
             self.assertFalse(json.loads(handler({"merchant": "HSN"}))["ok"])
@@ -116,26 +144,81 @@ class ErrandHookTests(unittest.TestCase):
         self.assertEqual(self.errands.get(self.home, entry["id"])["status"], "needs_approval")
 
 
-    def test_a_chat_turn_that_asks_to_buy_neither_browses_nor_asks(self):
-        with mock.patch.object(self.errands, "launch", return_value=True), \
-                mock.patch.object(self.errands, "open_goal"), \
-                mock.patch.object(self.plugin, "_root_and_sender", return_value=(self.home, "default")):
-            note = self.plugin._errand_turn(session_id="chat-9", user_message="compra un iphone 18 pro max")
-            # Started by the plugin itself, once: asking again gets the same errand.
-            again = self.plugin._errand_turn(session_id="chat-9", user_message="compra un iphone 18 pro max")
-        started = [e for e in self.errands.listing(self.home) if e["origin_session"] == "chat-9"]
-        self.assertEqual(len(started), 1)
-        self.assertIn(started[0]["id"], note["context"])
-        self.assertEqual(note["context"], again["context"])
-        for tool in ("browser_exec", "browser_navigate", "ask_person"):
-            self.assertEqual(self.plugin._guard_chat_errand(tool, session_id="chat-9")["action"], "block")
-        self.assertIsNone(self.plugin._guard_chat_errand("errand_start", session_id="chat-9"))
-        # The next turn about something else browses again.
-        self.assertIsNone(self.plugin._errand_turn(session_id="chat-9", user_message="dame los titulares de HN"))
-        self.assertIsNone(self.plugin._guard_chat_errand("browser_exec", session_id="chat-9"))
-        # Inside an errand nothing changes.
+    def test_a_purchase_request_starts_nothing_and_brings_the_persons_context(self):
+        note = self.plugin._errand_turn(session_id="chat-9", user_message="compra un iphone 18 pro max")
+        self.assertEqual(self.errands.listing(self.home), [], "nothing starts before the person chooses")
+        self.assertIn("Lo que sé", note["context"])
+        self.assertIn("purchase_options", note["context"])
+        # The chat searches, reads pages and asks...
+        for tool, args in (("browser_navigate", {"url": "https://www.apple.com/es/shop"}),
+                           ("browser_exec", {"code": "print(page_info())"}), ("ask_person", {"questions": []})):
+            self.assertIsNone(self.plugin._guard_chat_errand(tool, args, session_id="chat-9"))
+        # ...but never fills a cart: that is the chosen option's errand.
+        for tool, args in (("browser_click", {"text": "Añadir a la cesta"}),
+                           ("browser_exec", {"code": "# Añadir al carrito\nclick('Add to bag')"})):
+            self.assertEqual(self.plugin._guard_chat_errand(tool, args, session_id="chat-9")["action"], "block")
+        # Inside an errand the chat's rules do not apply.
         entry = self.errand()
         self.assertIsNone(self.plugin._errand_turn(session_id=entry["session_id"], user_message="compra"))
+        self.assertIsNone(self.plugin._guard_chat_errand("browser_click", {"text": "Añadir a la cesta"},
+                                                         session_id=entry["session_id"]))
+        # Something else is just a turn.
+        self.assertIsNone(self.plugin._errand_turn(session_id="chat-9", user_message="dame los titulares de HN"))
+
+    def test_a_purchase_starts_only_from_an_option_shown_in_that_chat(self):
+        handler = self.tools()["errand_start"]["handler"]
+        self.assertIn("purchase_options", self.call(handler, {"task": "Comprar un iPhone", "title": "iPhone"})["error"])
+        first, second = self.shown()
+        # Shown but not chosen: words alone still do not start it.
+        self.assertFalse(self.call(handler, {"task": "La creatina de HSN", "title": "Creatina"})["ok"])
+        self.assertFalse(self.call(handler, {"option_id": first}, session="chat-other")["ok"])
+        out = self.call(handler, {"option_id": second})
+        self.assertTrue(out["ok"])
+        entry = self.errands.get(self.home, out["errand_id"])
+        self.assertEqual(entry["offer"]["url"], "https://www.prozis.com/creatina")
+        self.assertEqual(entry["offer"]["price"], "19,99 €")
+        self.assertEqual(entry["origin_session"], "chat-9")
+        # The same option again is the same errand.
+        self.assertEqual(self.call(handler, {"option_id": second})["errand_id"], out["errand_id"])
+
+    def test_a_booking_is_not_a_purchase(self):
+        handler = self.tools()["errand_start"]["handler"]
+        out = self.call(handler, {"task": "Resérvame la ITV el jueves", "title": "Reservar la ITV"}, session="chat-2")
+        self.assertTrue(out["ok"])
+        self.assertIsNone(self.errands.get(self.home, out["errand_id"])["offer"])
+
+    def test_a_tapped_option_starts_its_errand_before_the_model_runs(self):
+        first, _second = self.shown()
+        note = self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] Creatina Excell 500 g")
+        started = self.errands.listing(self.home)
+        self.assertEqual(len(started), 1)
+        self.assertEqual(started[0]["offer"]["option_id"], first)
+        self.assertIn(started[0]["id"], note["context"])
+        self.assertIn(first, note["context"])
+        # The model's errand_start that turn, however worded, is that errand.
+        handler = self.tools()["errand_start"]["handler"]
+        self.assertEqual(self.call(handler, {"task": "Comprar creatina", "title": "HSN"})["errand_id"], started[0]["id"])
+        # An option from another chat is not this chat's to buy.
+        other = self.plugin._errand_turn(session_id="chat-2", user_message=f"[elección:{first}] Creatina")
+        self.assertIn("purchase_options", other["context"])
+        self.assertEqual(len(self.errands.listing(self.home)), 1)
+
+    def test_the_options_tool_is_the_chats_and_keeps_only_what_can_be_bought(self):
+        handler = self.tools()["purchase_options"]["handler"]
+        details = types.SimpleNamespace(load_details=lambda home: {"currency": "EUR"})
+        options = {"options": [
+            {"title": "A", "price": "10 €", "currency": "EUR", "url": "https://a.example/p", "in_stock": True,
+             "channel": "browser", "image": "https://a.example/p.jpg"},
+            {"title": "B", "price": "$12", "currency": "USD", "url": "https://b.example/p", "in_stock": True,
+             "channel": "browser"},
+        ]}
+        with mock.patch.object(self.plugin, "_ask_person", return_value=details), \
+                mock.patch.dict(sys.modules, {"hermes_constants": types.SimpleNamespace(get_hermes_home=lambda: self.home)}):
+            out = self.call(handler, options)
+            inside = self.call(handler, options, session="errand-1")
+        self.assertEqual([o["title"] for o in out["options"]], ["A"])
+        self.assertIn("EUR", out["discarded"][0]["why"])
+        self.assertFalse(inside["ok"])
 
     def test_only_an_errands_browser_code_is_put_in_its_own_context(self):
         entry = self.errand()
@@ -150,34 +233,26 @@ class ErrandHookTests(unittest.TestCase):
         self.plugin._errand_step("browser_exec", out["args"], entry["session_id"])
         self.assertEqual(self.errands.get(self.home, entry["id"])["steps"][-1]["text"], "Abrir HSN")
 
-    def test_rephrased_tool_calls_reference_the_hook_started_errand_even_after_it_stops(self):
-        registered = {}
-        ctx = types.SimpleNamespace(register_tool=lambda **kw: registered.__setitem__(kw["name"], kw))
-        self.plugin._register_task_tools(ctx)
-        approval = types.SimpleNamespace(get_current_session_key=lambda **_: "run-1")
-        with mock.patch.object(self.errands, "launch"), mock.patch.object(self.errands, "open_goal"), \
-                mock.patch.object(self.plugin, "_root_and_sender", return_value=(self.home, "default")), \
-                mock.patch.object(self.plugin, "_session_id", return_value="chat-9"), \
-                mock.patch.dict(sys.modules, {"tools.approval_context": approval}):
-            self.plugin._errand_turn(session_id="chat-9", user_message="compra la creatina de prozis")
-            entry = self.errands.listing(self.home)[0]
-            handler = registered["errand_start"]["handler"]
-            first = json.loads(handler({"task": "Comprar Creapure 300 g", "title": "Creatina"}))
-            self.errands.update(self.home, entry["id"], status="stuck", reason="Falta la dirección")
-            second = json.loads(handler({"task": "Comprar la creatina", "title": "Prozis"}))
+    def test_rephrased_tool_calls_reference_the_tapped_errand_even_after_it_stops(self):
+        handler = self.tools()["errand_start"]["handler"]
+        first_id, _ = self.shown()
+        self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first_id}] Creatina")
+        entry = self.errands.listing(self.home)[0]
+        first = self.call(handler, {"task": "Comprar Creapure 300 g", "title": "Creatina"})
+        self.errands.update(self.home, entry["id"], status="stuck", reason="Falta la dirección")
+        second = self.call(handler, {"option_id": first_id})
         self.assertEqual(first["errand_id"], entry["id"])
         self.assertEqual(second["errand_id"], entry["id"])
         self.assertEqual(second["status"], "stuck")
         self.assertEqual(len(self.errands.listing(self.home)), 1)
 
-    def test_a_second_distinct_purchase_in_the_same_chat_gets_its_own_errand(self):
-        with mock.patch.object(self.errands, "launch"), mock.patch.object(self.errands, "open_goal"), \
-                mock.patch.object(self.plugin, "_root_and_sender", return_value=(self.home, "default")):
-            self.plugin._errand_turn(session_id="chat-9", user_message="compra un iphone")
-            first = self.plugin._ERRAND_TURN_IDS["chat-9"]
-            self.plugin._errand_turn(session_id="chat-9", user_message="compra la creatina")
-            second = self.plugin._ERRAND_TURN_IDS["chat-9"]
-        self.assertNotEqual(first, second)
+    def test_a_second_distinct_choice_in_the_same_chat_gets_its_own_errand(self):
+        first, second = self.shown()
+        self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] A")
+        one = self.plugin._ERRAND_TURN_IDS["chat-9"]
+        self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{second}] B")
+        two = self.plugin._ERRAND_TURN_IDS["chat-9"]
+        self.assertNotEqual(one, two)
         self.assertEqual(len(self.errands.listing(self.home)), 2)
 
     def test_the_text_only_repeat_guard_does_not_pause_an_errand(self):

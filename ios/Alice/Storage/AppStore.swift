@@ -4937,6 +4937,7 @@ final class AppStore {
     }
     func stopErrand(_ id: String) async throws -> Errand? { try await dashboard.stopErrand(id) }
     func errandIcon(_ id: String) async throws -> Data? { try await dashboard.errandIcon(id) }
+    func purchaseOptions(_ key: String, session: String) async throws -> PurchaseOptionSet? { try await dashboard.purchaseOptions(key, session: session) }
     func refreshCheckout(_ id: String) async throws -> Errand? { try await dashboard.refreshCheckout(id) }
     func errandCardReady(_ id: String, label: String) async throws -> Errand? {
         try await dashboard.errandCardReady(id, label: label)
@@ -8367,8 +8368,8 @@ final class AppStore {
             guard !call.isEmpty, let data = try? JSONSerialization.data(withJSONObject: call) else { return nil }
             return String(data: data, encoding: .utf8)
         }
-        // A question for the person: its whole call, to draw the card from.
-        if let name = payload["name"] as? String, AskPerson.isTool(name) {
+        // A question for the person, or purchase options: the whole call, to draw the card from.
+        if let name = payload["name"] as? String, AskPerson.isTool(name) || PurchaseOptionSet.isTool(name) {
             guard let args = dictionary(payload["args"]),
                   let data = try? JSONSerialization.data(withJSONObject: args)
             else { return nil }
@@ -8483,7 +8484,7 @@ final class AppStore {
         sendQuickReply(AppNote.text(note))
     }
 
-    func sendQuickReply(_ text: String) {
+    func sendQuickReply(_ text: String, replyProfile: String? = nil, followsLatestAgent: Bool = true) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reply.isEmpty else { return }
         let savedDraft = draft
@@ -8498,7 +8499,7 @@ final class AppStore {
         // answers that agent, not Alice: approving Inbox's folder went to her.
         var addressed = reply
         if let chat = activeConversation, chat.routedBotName == nil,
-           let agent = chat.messages.last(where: { $0.role == .assistant })?.mentionProfile,
+           let agent = replyProfile ?? (followsLatestAgent ? chat.messages.last(where: { $0.role == .assistant })?.mentionProfile : nil),
            mentions(in: reply).isEmpty {
             addressed = "@\(agent) " + reply
         }

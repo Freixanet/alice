@@ -161,6 +161,14 @@ def _purchases():
     return _module("purchases.py", "alice_purchases")
 
 
+def _purchase_flow():
+    return _module("purchase_flow.py", "alice_purchase_flow")
+
+
+def _catalog():
+    return _module("catalog.py", "alice_catalog")
+
+
 def _open_tabs() -> list:
     live = _browser()
     return [str(tab.get("url") or "") for tab in live.pages(live.configured_url(_hermes_root()))]
@@ -983,7 +991,8 @@ def resolve_prompt(_session_info=None) -> str:
         "**Proyectos grandes y ambiguos** (un viaje, una mudanza, un regalo importante, algo de varios "
         "días con decisiones suyas): antes de empezar pregunta de una vez, con la herramienta `clarify` "
         "si la tienes, las 2 o 3 cosas que cambian el resultado —fechas, presupuesto, preferencias— con "
-        "opciones y tu propuesta por defecto; nada que puedas averiguar tú. Para recados, no preguntes.\n"
+        "opciones y tu propuesta por defecto; nada que puedas averiguar tú. Una compra aclara lo "
+        "imprescindible antes de buscar («Comprar»); otros recados no preguntan.\n"
         "Solo te paras en tres casos: (a) un paso **irreversible** —pagar, enviar, publicar, borrar—, "
         "para el que basta **un sí** por tarea que cubre hasta el final (al pagar, ese sí es su "
         "aprobación del checkout en Alice, nunca la confirmación de Hermes); (b) algo "
@@ -1436,46 +1445,70 @@ def _register_ask_tools(ctx) -> None:
     )
 
 
-# Chat turns that asked for an errand, by session: until the turn ends the chat does not browse
-# or ask — it once browsed Apple and asked capacity and colour itself before starting the errand.
-_ERRAND_TURNS: set = set()
+# The errand a chat turn's choice started, by session: errand_start in that turn gets it, however the
+# model words its arguments (reading an old conversation, it once answered «ya está en marcha» about
+# errands that had been stopped).
 _ERRAND_TURN_IDS: dict = {}
 
 
+def _purchase_context() -> str:
+    """Step 2 of buying: country, currency, where it goes, shops and cards used before (labels only)."""
+    from hermes_constants import get_hermes_home
+
+    flow = _purchase_flow()
+    details = _ask_person().load_details(Path(get_hermes_home()))
+    try:
+        cards = _cards_module().cards()
+    except Exception:
+        cards = []
+    recent = [e["receipt"] for e in _errands().listing(_hermes_root())
+              if isinstance(e.get("receipt"), dict) and e["receipt"].get("outcome") == "paid"]
+    return flow.context_block(details, cards, recent)
+
+
+def _start_purchase(session: str, chosen: dict) -> dict:
+    """Step 7 starts from the chosen option: its page, variant, quantity and price go to the errand."""
+    from hermes_constants import get_hermes_home
+
+    flow = _purchase_flow()
+    _root, profile = _root_and_sender(Path(get_hermes_home()))
+    return _errands().start(_hermes_root(), {"task": flow.task(chosen), "title": flow.title(chosen)},
+                            origin_session=session, profile=profile, offer=flow.offer(chosen))
+
+
 def _errand_turn(session_id="", user_message=None, **_):
-    """A chat turn that asks for an errand is told to start it at once (errands.TURN_NOTE)."""
+    """Before a chat turn. A purchase request gets the person's context and the steps (1–6); nothing
+    starts on its own. A tapped option («[elección:<id>]») starts that option's errand here, not at
+    the model's discretion."""
     try:
         session = _session_id(session_id)
-        errands = _errands()
+        errands, flow = _errands(), _purchase_flow()
         if not session or session.startswith(errands.SESSION_PREFIX):
             return None
-        if errands.is_errand_request(user_message):
-            _ERRAND_TURNS.add(session)
-            _ERRAND_TURN_IDS.pop(session, None)
-            # Started here, not left to the model: reading an old conversation, it once answered
-            # «ya está en marcha, no lo duplico» about errands that had been stopped.
-            from hermes_constants import get_hermes_home
-
-            _root, profile = _root_and_sender(Path(get_hermes_home()))
-            text = " ".join(str(user_message or "").split())
-            out = errands.start(_hermes_root(), {"task": text, "title": text[:70]},
-                                origin_session=session, profile=profile)
-            _ERRAND_TURN_IDS[session] = out["errand_id"]
-            return {"context": errands.turn_note(out)}
-        _ERRAND_TURNS.discard(session)
         _ERRAND_TURN_IDS.pop(session, None)
+        option_id = flow.chosen_id(user_message)
+        if option_id:
+            chosen = flow.choose(_hermes_root(), session, option_id)
+            if chosen is None:
+                return {"context": "[Alice] " + flow.UNKNOWN_OPTION}
+            out = _start_purchase(session, chosen)
+            _ERRAND_TURN_IDS[session] = out["errand_id"]
+            return {"context": flow.chosen_note(out, chosen)}
+        if flow.is_purchase_request(user_message):
+            return {"context": flow.turn_note(_purchase_context())}
     except Exception:
-        logging.getLogger(__name__).debug("errands: could not read the turn", exc_info=True)
+        logging.getLogger(__name__).debug("purchases: could not read the turn", exc_info=True)
     return None
 
 
-def _guard_chat_errand(tool_name=None, session_id="", **_):
-    """In a chat turn that asked for an errand, the browser and questions are the errand's."""
+def _guard_chat_errand(tool_name=None, args=None, session_id="", **_):
+    """A chat may search and read shops, but a cart is filled only by the errand of a chosen option."""
     name = str(tool_name or "")
-    if not (name.startswith("browser") or name == "ask_person"):
+    session = _session_id(session_id)
+    if not session or session.startswith(_errands().SESSION_PREFIX):
         return None
-    if _session_id(session_id) in _ERRAND_TURNS:
-        return {"action": "block", "message": _errands().TURN_BLOCK}
+    if _purchase_flow().is_cart_action(name, args):
+        return {"action": "block", "message": _purchase_flow().CART_BLOCK}
     return None
 
 
@@ -1487,7 +1520,8 @@ def _keep_errand_tools_visible() -> None:
 
         core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
         if isinstance(core, list):
-            for name in ("errand_start", "checkout_request", "card_request"):
+            for name in ("errand_start", "checkout_request", "card_request", "purchase_options",
+                         "catalog_search", "catalog_product"):
                 if name not in core:
                     core.append(name)
     except Exception:
@@ -1571,18 +1605,28 @@ def _register_task_tools(ctx) -> None:
         try:
             from tools.approval_context import get_current_session_key
 
+            flow = _purchase_flow()
+            args = args or {}
             _root, profile = _root_and_sender(Path(get_hermes_home()))
             session = _session_id() or get_current_session_key(default="")
-            # The pre-turn hook already created this request. The model can
-            # rephrase its arguments or call twice: both references use that ID.
-            turn_id = _ERRAND_TURN_IDS.get(session) if session in _ERRAND_TURNS else None
+            # A choice tapped this turn already started its errand (_errand_turn): the model's call,
+            # however worded, gets that one.
+            turn_id = _ERRAND_TURN_IDS.get(session)
             entry = errands.get(_hermes_root(), turn_id) if turn_id else None
             if (entry is not None and entry.get("origin_session") == session
                     and (entry.get("profile") or "") == profile):
                 return _agent_json({"ok": True, **errands.started_result(entry)})
+            option_id = str(args.get("option_id") or "").strip()
+            if option_id:
+                chosen = flow.choose(_hermes_root(), session, option_id)
+                if chosen is None:
+                    return _agent_json({"ok": False, "error": flow.UNKNOWN_OPTION})
+                return _agent_json({"ok": True, **_start_purchase(session, chosen)})
+            # A purchase never starts from words alone: the person chooses among verified options first.
+            if flow.is_purchase_request(args.get("task")) or flow.open_options(_hermes_root(), session):
+                return _agent_json({"ok": False, "error": flow.NEEDS_CHOICE})
             return _agent_json({"ok": True, **errands.start(
-                _hermes_root(), args or {}, origin_session=session,
-                profile=profile)})
+                _hermes_root(), args, origin_session=session, profile=profile)})
         except Exception as exc:  # noqa: BLE001
             return _agent_json({"ok": False, "error": str(exc) or type(exc).__name__})
 
@@ -1591,7 +1635,48 @@ def _register_task_tools(ctx) -> None:
         entry = errands.of_session(_hermes_root(), session)
         if entry is None:
             return _agent_json({"ok": False, "error": "Only inside an errand. Purchases are errands: use errand_start."})
-        return _agent_json(errands.request_checkout(_hermes_root(), entry["id"], args or {}))
+        return _agent_json(errands.request_checkout(_hermes_root(), entry["id"], args or {},
+                                                    saved_cards=_cards_module().cards))
+
+    def options(args, **_):
+        from hermes_constants import get_hermes_home
+
+        session = _session_id()
+        if not session or session.startswith(errands.SESSION_PREFIX):
+            return _agent_json({"ok": False, "error": "Only in the chat, before the purchase starts."})
+        details = _ask_person().load_details(Path(get_hermes_home()))
+        return _agent_json(_purchase_flow().present(
+            _hermes_root(), session, args or {}, currency=details.get("currency", ""),
+            picture=lambda page: errands.page_picture(page)))
+
+    def catalog_search(args, **_):
+        from hermes_constants import get_hermes_home
+
+        args = args or {}
+        details = _ask_person().load_details(Path(get_hermes_home()))
+        return _agent_json(_catalog().search(
+            str(args.get("query") or ""), country=details.get("country", ""), currency=details.get("currency", ""),
+            limit=int(args.get("limit") or 6), max_price=args.get("max_price")))
+
+    def catalog_product(args, **_):
+        from hermes_constants import get_hermes_home
+
+        args = args or {}
+        details = _ask_person().load_details(Path(get_hermes_home()))
+        selected = args.get("options") if isinstance(args.get("options"), dict) else None
+        return _agent_json(_catalog().product(
+            str(args.get("product_id") or ""), selected=selected,
+            country=details.get("country", ""), currency=details.get("currency", "")))
+
+    flow, catalog = _purchase_flow(), _catalog()
+    ctx.register_tool(name="purchase_options", toolset="alice_tasks", schema=flow.OPTIONS_SCHEMA, handler=options,
+                      check_fn=_always, description=flow.OPTIONS_SCHEMA["description"], emoji="🛒")
+    ctx.register_tool(name="catalog_search", toolset="alice_tasks", schema=catalog.SEARCH_SCHEMA,
+                      handler=catalog_search, check_fn=_always, description=catalog.SEARCH_SCHEMA["description"],
+                      emoji="🔎")
+    ctx.register_tool(name="catalog_product", toolset="alice_tasks", schema=catalog.PRODUCT_SCHEMA,
+                      handler=catalog_product, check_fn=_always, description=catalog.PRODUCT_SCHEMA["description"],
+                      emoji="🔎")
 
     ctx.register_tool(name="errand_start", toolset="alice_tasks", schema=errands.START_SCHEMA, handler=start,
                       check_fn=_always, description=errands.START_SCHEMA["description"], emoji="🛍️")

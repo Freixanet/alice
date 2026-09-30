@@ -21,6 +21,12 @@ boundaries; it is not a promise that every deployment has passed live testing.
 | Encrypted conversation sync | Not a shared native sync implementation                                                                                                                                                                                                  | Account-scoped E2EE              | Do not claim iOS/web cloud-sync parity                                                                |
 | Account sign-in             | Direct Hermes credentials                                                                                                                                                                                                                | Alice accounts                   | Separate identity and recovery responsibilities                                                       |
 
+Purchases use the Alice plugin's `purchase_options`, catalog tools and errand
+checkout endpoints. The iPhone fetches accepted options by key and session, hides
+the choice token, and displays checkout facts with approval of the exact total.
+The companion web client has no equivalent product-choice card. Stock/page checks
+and real payment outcomes still require live validation; see [purchases](purchases.md).
+
 ## Verified contract versions
 
 The web API fixtures cover Hermes **0.21.3**, **0.21.2**, **0.21.0** and **0.20.6**.

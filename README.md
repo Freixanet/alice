@@ -61,7 +61,11 @@ side of that work:
 
 ### Built, still being proven in daily use
 
-- **Buying online up to the payment.** Alice fills the basket, address and delivery, stops
+- **Buying online up to the payment.** Alice first clarifies the product, searches
+  the Shop catalog and the shop, and shows verified product options. Your choice
+  starts an errand; the chat itself does not prepare a basket. A checkout summary
+  and compact approval name the exact total, and payment outcomes distinguish a
+  confirmed order from a declined or unconfirmed payment. See [the twelve steps](docs/purchases.md). Alice fills the basket, address and delivery, stops
   at your one "Pay" (a card that reads "Alice will pay on this site with your Visa ···4242"), pays on the bank's page (for example Redsys) with the card saved for it, then
   tells you whether the payment went through, was declined or failed. An approval sent
   while the phone was locked comes back into the chat when you open it. Before paying she

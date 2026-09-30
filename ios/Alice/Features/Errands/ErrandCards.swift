@@ -406,6 +406,8 @@ struct CheckoutApprovalCard: View {
     var logo: URL? = nil
     var language: ChatLanguage = .spanish
     var phase: Phase = .pending
+    /// The order details are already written just above in the chat.
+    var compact = false
     var error: String? = nil
     var onOpenPage: (() -> Void)? = nil
     /// The person's saved cards, the one chosen to pay, and how to add another.
@@ -430,8 +432,45 @@ struct CheckoutApprovalCard: View {
         switch phase {
         case .approved: approvedLine
         case .expired: expiredCard
-        default: fullCard
+        default:
+            if compact { compactCard } else { fullCard }
         }
+    }
+
+    private var compactCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(language.pick("Approve \(checkout.total.pricesKeptTogether) at \(shop)",
+                               "Aprobar \(checkout.total.pricesKeptTogether) en \(shop)"))
+                .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            if phase == .denied {
+                Text(language.pick("Cancelled", "Cancelado")).font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                paymentRow
+                if let onOpenPage {
+                    Button(language.pick("Review in the browser", "Revisar en el navegador"), action: onOpenPage)
+                        .font(.subheadline)
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { compactButtons }
+                    VStack(spacing: 8) { compactButtons }
+                }
+                if let error { Text(error).font(.footnote).foregroundStyle(Palette.danger(scheme)) }
+                Text(language.pick("Approve this exact total with Face ID or your passcode. Check the shop's terms before paying.",
+                                   "Aprueba este importe exacto con Face ID o tu código. Revisa las condiciones de la tienda antes de pagar."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 20))
+    }
+
+    @ViewBuilder private var compactButtons: some View {
+        ApprovalChoiceButton(title: language.pick("Cancel", "Cancelar"), deny: true,
+                             disabled: phase == .sending, tint: .approve, action: onDeny)
+        ApprovalChoiceButton(title: language.pick("Pay \(checkout.total.pricesKeptTogether)",
+                                                 "Pagar \(checkout.total.pricesKeptTogether)"),
+                             disabled: phase == .sending || payingWith.isEmpty, tint: .approve, action: onAllow)
     }
 
     /// Approved: one line, so the checkout no longer reads as something still to answer.

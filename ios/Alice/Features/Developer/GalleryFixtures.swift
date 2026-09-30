@@ -93,6 +93,18 @@ enum GalleryFixtures {
 
     static let shopLogo: URL? = nil
 
+    static func purchaseOptions(_ language: ChatLanguage, chosen: String? = nil) -> PurchaseOptionSet {
+        PurchaseOptionSet(key: "a1b2c3d4", options: [
+            PurchaseOption(id: "a1b2c3d4-1", title: "Creatina Excell 500 g (Creapure®)", merchant: "HSN",
+                           variant: language.pick("Unflavoured", "Sin sabor"), qty: 1, price: "27,98 €",
+                           image: pageURL, url: nil, recommended: true,
+                           why: language.pick("Your usual one, with free delivery.", "La de siempre, con envío gratis.")),
+            PurchaseOption(id: "a1b2c3d4-2", title: "Creapure 500 g", merchant: "Otra tienda",
+                           variant: language.pick("Unflavoured", "Sin sabor"), qty: 1, price: "31,90 €",
+                           image: pageURL, url: nil, recommended: false, why: ""),
+        ], chosen: chosen)
+    }
+
     static func item(_ language: ChatLanguage) -> Errand.Item {
         Errand.Item(name: "Creatina Excell 500 g (Creapure®)", variant: language.pick("Unflavoured", "Sin sabor"),
                     qty: 1, price: "27,98 €", image: pageURL)

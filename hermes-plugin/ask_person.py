@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # The details Alice keeps and the form in Settings shows, in that order.
-FIELDS = ("name", "surname", "id", "address", "postcode", "city", "province", "phone", "email")
+FIELDS = ("name", "surname", "id", "address", "postcode", "city", "province", "phone", "email", "country", "currency")
 MAX_QUESTIONS = 10
 MAX_CHOICES = 6
 WAIT_SECONDS = 3600
@@ -268,9 +268,10 @@ def prompt(home: Optional[Path] = None) -> str:
         "preguntes si tiene cuenta: abre directamente la tarjeta de acceso "
         "(`browser_vault_save_login`), que ya le deja entrar, crear cuenta o decir que no tiene. "
         "No hagas nada que dependa de una pregunta abierta hasta tener su respuesta, y no le "
-        "preguntes dos veces lo mismo por caminos distintos. Las opciones salen de la tienda: "
-        "mira primero qué variantes, tamaños y sabores tiene de verdad, y pregunta solo entre "
-        "esas. Esto vale también a mitad de tarea: si surge una duda nueva (otro tamaño, otra "
+        "preguntes dos veces lo mismo por caminos distintos. En una compra, lo imprescindible que "
+        "solo sabe la persona (talla, modelo, cantidad) se pregunta antes de buscar; lo demás sale "
+        "de la tienda: mira qué variantes, tamaños y sabores tiene de verdad y pregunta solo entre "
+        "esas. País (`country`, ISO de dos letras) y moneda (`currency`, ISO) también van con `field`. Esto vale también a mitad de tarea: si surge una duda nueva (otro tamaño, otra "
         "tienda, un coste extra), pregúntala con `ask_person`, nunca en el texto. Si preguntaste "
         "antes de conocer las opciones, en cuanto las tengas vuelve a llamar `ask_person` con el "
         "mismo `id` y esas opciones: su tarjeta se sustituye por la nueva. Si lo pedido no existe "

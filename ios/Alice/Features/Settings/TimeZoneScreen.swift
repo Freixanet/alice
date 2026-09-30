@@ -35,6 +35,9 @@ struct HermesTimezones: Equatable, Sendable {
         profiles.filter { ($0.timezone.isEmpty ? server : $0.timezone) != effective }
     }
 
+    /// An absent zone must be confirmed even when the Mac happens to use the same clock today.
+    var needsConfirmation: Bool { timezone.isEmpty || profiles.contains { $0.timezone.isEmpty } }
+
     /// What Alice actually runs on.
     var effective: String { timezone.isEmpty ? server : timezone }
 }
@@ -53,7 +56,7 @@ struct TimeZoneRow: View {
                 Label("Time zone", systemImage: "clock")
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(zones.map { TimeZoneScreen.label($0.effective) } ?? "…")
+                    Text(zones.map { $0.needsConfirmation ? String(localized: "Choose your time zone") : TimeZoneScreen.label($0.effective) } ?? "…")
                         .foregroundStyle(.secondary)
                     if let zones, !zones.outOfStep.isEmpty {
                         Text(zones.outOfStep.count == 1 ? "1 agent on another clock" : "\(zones.outOfStep.count) agents on another clock")
@@ -104,7 +107,9 @@ struct TimeZoneScreen: View {
             }
 
             if query.isEmpty {
-                Section("This iPhone") {
+                Section(zones?.needsConfirmation == true ? "Confirm your time zone" : "This iPhone") {
+                    Text("Detected on this iPhone: \(Self.label(phone)). Choose this zone or search your city below. Your choice sets the clock for Alice and your agents.")
+                        .font(.footnote).foregroundStyle(.secondary)
                     zoneButton(phone)
                 }
             }
@@ -157,7 +162,7 @@ struct TimeZoneScreen: View {
     /// "Madrid (GMT+2)" rather than "Europe/Madrid".
     static func label(_ identifier: String) -> String {
         guard !identifier.isEmpty, let zone = TimeZone(identifier: identifier) else { return identifier }
-        let city = identifier.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") }
+        let city = identifier == "Europe/Madrid" ? "Madrid · Barcelona" : identifier.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") }
             ?? identifier
         let offset = zone.secondsFromGMT() / 3600
         let minutes = abs(zone.secondsFromGMT() % 3600) / 60

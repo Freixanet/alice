@@ -113,6 +113,45 @@ class CheckoutTests(Base):
         # A decision is taken once.
         self.assertIsNone(errands.decide_checkout(self.home, entry["id"], False, now=NOW + 10))
 
+    def test_without_a_saved_card_the_person_is_asked_for_one_before_the_total(self):
+        entry = self.errand()
+        out = errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW, saved_cards=lambda: [])
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual((out["status"], saved["status"], saved["card_origin"]),
+                         ("needs_card", "needs_card", "https://hsnstore.com"))
+        self.assertIsNone(saved["checkout"], "no total is shown before there is a way to pay")
+
+    def test_the_card_is_the_one_read_else_the_only_one_else_the_last_used(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "card_label": ""}, now=NOW,
+                                 saved_cards=lambda: [{"label": "Visa ···4242"}])
+        self.assertEqual(errands.get(self.home, entry["id"])["checkout"]["card_label"], "Visa ···4242")
+        paid = self.errand()
+        errands.update(self.home, paid["id"], receipt={"outcome": "paid", "site": "hsnstore.com",
+                                                       "card_label": "Mastercard ···5100"})
+        other = self.errand()
+        errands.request_checkout(self.home, other["id"], {**CHECKOUT, "card_label": ""}, now=NOW,
+                                 saved_cards=lambda: [{"label": "Visa ···4242"}, {"label": "Mastercard ···5100"}])
+        self.assertEqual(errands.get(self.home, other["id"])["checkout"]["card_label"], "Mastercard ···5100")
+
+    def test_the_yes_is_to_that_total(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
+        decided = errands.decide_checkout(self.home, entry["id"], True, now=NOW + 5, card_label="Visa ···4242")
+        self.assertEqual(decided["checkout"]["approved_total"], "27,98 €")
+        message = errands.approved_message(decided["checkout"])
+        self.assertTrue(message.startswith(errands.APPROVED_PREFIX))
+        self.assertIn("exactamente 27,98 €", message)
+        self.assertIn("NO pagues", message)
+        # Paid another amount: the receipt says so.
+        errands.record_receipt(self.home, entry["session_id"], {"outcome": "paid", "order": "1", "total": "29,98 €"})
+        self.assertEqual(errands.get(self.home, entry["id"])["receipt"]["approved_total"], "27,98 €")
+
+    def test_the_same_amount_written_differently_is_not_a_difference(self):
+        self.assertTrue(errands.same_amount("27,98 €", "EUR 27.98"))
+        self.assertFalse(errands.same_amount("27,98 €", "29,98 €"))
+        self.assertFalse(errands.same_amount("", ""))
+
     def test_deny_ends_the_errand(self):
         entry = self.errand()
         errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
@@ -469,13 +508,42 @@ class AuditFixTests(Base):
         self.assertIn("colgado", gateway.started[1][1])
         self.assertIn("dejó de responder", errands.get(self.home, entry["id"])["reason"])
 
-    def test_a_chat_turn_asking_for_a_purchase_is_an_errand_request(self):
-        self.assertTrue(errands.is_errand_request("compra un iphone 18 pro max"))
-        self.assertTrue(errands.is_errand_request("Pídeme el pienso de siempre"))
-        self.assertFalse(errands.is_errand_request("abre news.ycombinator.com y dame 3 titulares"))
-        self.assertFalse(errands.is_errand_request("[respuesta:size] 256 GB"))
-        self.assertIn("errand_start", errands.brief({"request": "x"}))
+    def test_the_brief_never_starts_another_errand(self):
         self.assertIn("nunca llames a `errand_start`", errands.brief({"request": "x"}))
+
+    def test_a_chosen_option_is_bought_as_chosen_or_the_errand_stops_and_says_why(self):
+        offer = {"option_id": "a1b2c3d4-2", "title": "Creatina Excell 500 g", "merchant": "HSN",
+                 "variant": "Sin sabor", "qty": 1, "price": "27,98 €", "currency": "EUR",
+                 "url": "https://www.hsnstore.com/creatina", "checkout_url": "", "channel": "browser"}
+        entry = errands.create(self.home, "Comprar Creatina", title="Comprar Creatina en HSN", now=NOW, offer=offer)
+        brief = errands.brief(entry)
+        for part in ("https://www.hsnstore.com/creatina", "Sin sabor", "27,98 €", "BLOQUEADO:", "nada más"):
+            self.assertIn(part, brief)
+        gateway = FakeGateway([done("BLOQUEADO: la variante sin sabor ya no está disponible.")])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway,
+                                judge=lambda s, r: self.fail("the judge is not asked"), sleep=lambda s: None)
+        self.assertEqual(engine.run(), "stuck")
+        self.assertEqual(errands.get(self.home, entry["id"])["reason"],
+                         "la variante sin sabor ya no está disponible.")
+
+    def test_a_catalog_option_opens_its_cart_link(self):
+        offer = {"option_id": "a1b2c3d4-1", "title": "Camiseta", "merchant": "Minimalism", "variant": "Blanca / S",
+                 "qty": 1, "price": "25,00 €", "currency": "EUR", "channel": "catalog",
+                 "url": "https://minimalismbrand.com/products/camiseta", "checkout_url": "https://minimalismbrand.com/cart/1:1"}
+        entry = errands.create(self.home, "Comprar Camiseta", now=NOW, offer=offer)
+        self.assertIn("https://minimalismbrand.com/cart/1:1", errands.brief(entry))
+
+    def test_the_same_option_is_one_errand_while_it_is_active(self):
+        offer = {"option_id": "a1b2c3d4-1", "url": "https://shop.example/p", "title": "P", "price": "1 €"}
+        with mock.patch.object(errands, "launch"), mock.patch.object(errands, "open_goal"):
+            first = errands.start(self.home, {"task": "Comprar P", "title": "P"}, origin_session="chat-1", offer=offer)
+            again = errands.start(self.home, {"task": "Comprar P otra vez", "title": "P"}, origin_session="chat-1",
+                                  offer=offer)
+            other = errands.start(self.home, {"task": "Comprar P", "title": "P"}, origin_session="chat-1",
+                                  offer={**offer, "option_id": "a1b2c3d4-2"})
+        self.assertEqual(first["errand_id"], again["errand_id"])
+        self.assertNotEqual(first["errand_id"], other["errand_id"])
+        self.assertEqual(errands.get(self.home, first["errand_id"])["offer"]["option_id"], "a1b2c3d4-1")
 
 
 class RestartTests(Base):

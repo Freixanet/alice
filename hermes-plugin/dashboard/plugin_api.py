@@ -2596,6 +2596,21 @@ def _errands_module():
     return _sibling("errands.py", "alice_errands")
 
 
+@router.get("/purchase/options/{key}")
+async def purchase_options(key: str, session: str = "") -> JSONResponse:
+    """The options a chat showed (purchase_options), as the plugin verified them, and which was chosen."""
+    if not re.fullmatch(r"[0-9a-f]{8}", key or ""):
+        raise HTTPException(status_code=400, detail="bad key")
+
+    def read():
+        found = _sibling("purchase_flow.py", "alice_purchase_flow").options_set(_hermes_root(), key, session=session or None)
+        if found is None:
+            raise HTTPException(status_code=404, detail="Esas opciones ya no están.")
+        return {"key": found["key"], "options": found.get("options") or [], "chosen": found.get("chosen")}
+
+    return JSONResponse(await asyncio.to_thread(read), headers=_NO_STORE)
+
+
 def _errand_or_404(errand_id: str) -> Dict[str, Any]:
     entry = _errands_module().get(_hermes_root(), errand_id)
     if entry is None:
@@ -2649,12 +2664,7 @@ async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONRespo
         if entry is None:
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
         if body.decision == "allow":
-            chosen = (entry.get("checkout") or {}).get("card_label") or ""
-            card = f" ({chosen})" if chosen else ""
-            module.resume(root, errand_id, (
-                f"{module.APPROVED_PREFIX} La persona ha aprobado pagar {checkout.get('total')} en "
-                f"{checkout.get('merchant')}. Paga ahora con la tarjeta guardada{card} y, después, registra "
-                "`purchase_outcome` con el número de pedido, el total, los artículos y la tarjeta."))
+            module.resume(root, errand_id, module.approved_message(entry.get("checkout") or checkout))
         else:
             try:
                 from hermes_cli.goals import GoalManager

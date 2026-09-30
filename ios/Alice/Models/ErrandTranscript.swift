@@ -32,6 +32,19 @@ enum ErrandTranscript {
             $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt < $1.startedAt
         }
         for errand in ordered where seen.insert(errand.id).inserted {
+            // A tapped purchase belongs immediately under that choice, even before a reply arrives.
+            // Match the session and option, then time, so a repeated purchase keeps its own turn.
+            if let option = errand.optionID {
+                let choices = messages.indices.filter {
+                    messages[$0].role == .user && PurchaseChoice.id(in: messages[$0].content) == option
+                        && (messages[$0].mentionSessionID ?? session) == errand.originSession
+                        && abs(messages[$0].createdAt.timeIntervalSince(errand.startedAt)) <= 120
+                }
+                if let owner = choices.last(where: { messages[$0].createdAt <= errand.startedAt }) ?? choices.first {
+                    result[messages[owner].id, default: []].append(ErrandRef(errandID: errand.id, title: errand.title))
+                    continue
+                }
+            }
             // The plugin can start an errand before the model calls its tool.
             // Time is corroboration only: the actual request and session must
             // match. A two-minute clock allowance alone linked old messages.

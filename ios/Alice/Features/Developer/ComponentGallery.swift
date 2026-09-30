@@ -103,6 +103,7 @@ enum GallerySample: String, CaseIterable, Identifiable {
     // Approvals
     case runApproval, paymentApproval, errandConfirm, checkoutPending, checkoutApproved, checkoutExpired
     // Purchase
+    case purchaseOptions, purchaseChosen, purchaseSummary, purchaseResult, purchaseDeclined, purchaseUnknown, purchaseStopped
     case productSheet, errandWorking, errandStuck, receipt, errandList, cardBadges
     // Browser
     case liveBrowser, errandBrowser
@@ -121,7 +122,8 @@ enum GallerySample: String, CaseIterable, Identifiable {
         case .replyButtons, .dottedButtons, .filledButtons, .slashChoices, .askPerson, .errandQuestions, .capsuleButtons: .choices
         case .runApproval, .paymentApproval, .errandConfirm, .checkoutPending, .checkoutApproved, .checkoutExpired:
             .approvals
-        case .productSheet, .errandWorking, .errandStuck, .receipt, .errandList, .cardBadges: .purchase
+        case .purchaseOptions, .purchaseChosen, .purchaseSummary, .purchaseResult, .purchaseDeclined, .purchaseUnknown, .purchaseStopped,
+             .productSheet, .errandWorking, .errandStuck, .receipt, .errandList, .cardBadges: .purchase
         case .liveBrowser, .errandBrowser: .browser
         case .trace, .plan, .routine, .agentMessage, .feedContext, .modelLimit: .agents
         case .userMessage, .reaction, .attachment, .streaming, .failed: .chrome
@@ -168,6 +170,13 @@ enum GallerySample: String, CaseIterable, Identifiable {
         case .checkoutPending: "Checkout · waiting"
         case .checkoutApproved: "Checkout · approved"
         case .checkoutExpired: "Checkout · expired"
+        case .purchaseOptions: "Verified purchase options"
+        case .purchaseChosen: "Chosen purchase option"
+        case .purchaseSummary: "Purchase summary"
+        case .purchaseResult: "Purchase result in chat"
+        case .purchaseDeclined: "Declined payment in chat"
+        case .purchaseUnknown: "Unconfirmed payment in chat"
+        case .purchaseStopped: "Stopped purchase in chat"
         case .productSheet: "Product sheet"
         case .errandWorking: "Errand at work"
         case .errandStuck: "Errand stuck"
@@ -341,7 +350,7 @@ enum GallerySample: String, CaseIterable, Identifiable {
                 language: language, onAllow: {}, onDeny: {})))
         case .checkoutPending:
             return .view(AnyView(CheckoutApprovalCard(
-                checkout: F.checkout(language), language: language, onOpenPage: {},
+                checkout: F.checkout(language), language: language, compact: true, onOpenPage: {},
                 cards: [SavedCard.demo(origin: nil)], chosenCard: SavedCard.demo(origin: nil),
                 onAllow: {}, onDeny: {})))
         case .checkoutApproved:
@@ -352,6 +361,21 @@ enum GallerySample: String, CaseIterable, Identifiable {
             return .view(AnyView(CheckoutApprovalCard(
                 checkout: F.checkout(language, status: .expired), language: language, phase: .expired,
                 onAllow: {}, onDeny: {})))
+        case .purchaseOptions, .purchaseChosen:
+            return .view(AnyView(PurchaseOptionsCard(detail: nil, language: language,
+                preview: F.purchaseOptions(language, chosen: self == .purchaseChosen ? "a1b2c3d4-1" : nil),
+                onChoose: { _ in })))
+        case .purchaseSummary:
+            return .markdown(PurchaseSummaryText.summary(F.checkout(language), card: "Visa ···4242", language: language))
+        case .purchaseResult, .purchaseDeclined, .purchaseUnknown:
+            var receipt = F.receipt(language)
+            if self == .purchaseDeclined { receipt.outcome = "declined" }
+            if self == .purchaseUnknown { receipt.outcome = "unknown" }
+            return .markdown(PurchaseSummaryText.result(receipt, language: language))
+        case .purchaseStopped:
+            return .markdown(PurchaseSummaryText.stopped(F.errand(language, status: .stuck,
+                reason: pick("The selected variant is out of stock.", "La variante elegida ya no tiene stock.")),
+                language: language) ?? "")
         case .productSheet:
             return .view(AnyView(GalleryProductSheetButton(language: language)))
         case .errandWorking:

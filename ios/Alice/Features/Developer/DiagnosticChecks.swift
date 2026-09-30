@@ -76,6 +76,10 @@ enum DiagnosticChecks {
     static let timeZone = DiagnosticCheck(id: "timezone", title: "Time zone", symbol: "clock") { store, _ in
         guard store.dashboardReady, let zones = try? await store.hermesTimezones() else { return .idle("Needs the dashboard") }
         let phone = TimeZone.current.identifier
+        if zones.needsConfirmation {
+            return .warning("Confirm your time zone",
+                            "An agent has no explicit time zone. Alice detects this iPhone's zone (\(phone)); confirm it or choose your city in Settings › General › Time zone.")
+        }
         if !zones.outOfStep.isEmpty {
             return .warning(
                 zones.outOfStep.count == 1 ? "1 agent on another clock" : "\(zones.outOfStep.count) agents on another clock",

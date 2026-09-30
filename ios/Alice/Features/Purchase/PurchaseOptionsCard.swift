@@ -1,0 +1,151 @@
+import SwiftUI
+
+/// Step 5 of buying: the options Alice found and verified, as product cards of their own in the
+/// chat — picture, name, shop, price — with her recommendation marked. Step 6: a tap opens the
+/// product and «Comprar con Alice» sends the choice; the plugin starts that option's errand. Up to
+/// here nothing about paying has been touched.
+///
+/// Drawn from the plugin's verified list (`PurchaseOptionSet`), fetched by the key of the call's
+/// arguments; `preview` is the gallery's and the walkthrough's own list.
+struct PurchaseOptionsCard: View {
+    /// The `purchase_options` call's detail (its arguments as JSON).
+    let detail: String?
+    var language: ChatLanguage = .spanish
+    var preview: PurchaseOptionSet? = nil
+    var session: String? = nil
+    var replyProfile: String? = nil
+    /// The walkthrough answers here instead of sending a message.
+    var onChoose: ((PurchaseOption) -> Void)? = nil
+
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @State private var loaded: PurchaseOptionSet?
+    @State private var state = LoadState.loading
+    @State private var open: PurchaseOption?
+    @State private var submitted: String?
+
+    private enum LoadState: Equatable { case loading, shown, gone, failed(String) }
+
+    private var set: PurchaseOptionSet? { preview ?? loaded }
+
+    var body: some View {
+        Group {
+            if let set, !set.options.isEmpty {
+                cards(set)
+            } else {
+                switch state {
+                case .loading:
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text(language.pick("Checking the options…", "Comprobando las opciones…"))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                case .gone:
+                    Text(language.pick("These options are no longer available. Ask Alice to look again.",
+                                       "Estas opciones ya no están disponibles. Pídele a Alice que vuelva a buscar."))
+                        .font(.subheadline).foregroundStyle(.secondary)
+                case let .failed(reason):
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(reason).font(.subheadline).foregroundStyle(.secondary)
+                        Button(language.pick("Try again", "Reintentar")) { Task { await load() } }
+                            .font(.subheadline.weight(.medium))
+                    }
+                case .shown:
+                    EmptyView()
+                }
+            }
+        }
+        .task(id: (detail ?? "") + (session ?? "")) { if preview == nil { await load() } }
+        .sheet(item: $open) { option in
+            PurchaseProductSheet(image: option.image, seller: option.merchant, title: option.title,
+                                 price: option.price, oldPrice: nil, language: language,
+                                 options: option.variant.isEmpty ? [] : [option.variant]) {
+                open = nil
+                if let onChoose { onChoose(option) } else {
+                    guard store.isConnected, !store.isSending, submitted == nil else { return }
+                    submitted = option.id
+                    store.sendQuickReply(option.choice, replyProfile: replyProfile, followsLatestAgent: false)
+                }
+            }
+        }
+    }
+
+    private func load() async {
+        guard let session, !session.isEmpty, let key = PurchaseOptionSet.key(fromDetail: detail) else { state = .gone; return }
+        do {
+            loaded = try await store.purchaseOptions(key, session: session)
+            state = loaded == nil ? .gone : .shown
+        } catch {
+            state = .failed(PlainWords.describe(error, doing: language.pick("load the options", "cargar las opciones")))
+        }
+    }
+
+    private func cards(_ set: PurchaseOptionSet) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(set.options) { option in
+                        card(option, chosen: set.chosen ?? submitted)
+                    }
+                }
+                .scrollTargetLayout()
+                .padding(.vertical, 2)
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollIndicators(.hidden)
+            if set.chosen == nil, submitted == nil, let best = set.options.first(where: \.recommended), !best.why.isEmpty {
+                Label(best.why, systemImage: "star.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(language.pick("Options to buy", "Opciones para comprar")))
+    }
+
+    private func card(_ option: PurchaseOption, chosen: String?) -> some View {
+        let picked = chosen == option.id
+        let decided = chosen != nil
+        return Button { open = option } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    CardImage(image: option.image, page: option.url, symbol: "bag", fits: true)
+                        .background(Color.white)
+                        .frame(width: 176, height: 150)
+                        .clipped()
+                    if picked {
+                        ComponentPill(text: language.pick("Chosen", "Elegida"), tint: Palette.success(scheme)).padding(8)
+                    } else if option.recommended, !decided {
+                        ComponentPill(text: language.pick("Recommended", "Recomendada"), tint: store.accent.primary(scheme))
+                            .padding(8)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(option.title).font(.subheadline.weight(.medium)).lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Text([option.merchant, option.variant, option.qty > 1 ? "× \(option.qty)" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(option.price.pricesKeptTogether).font(.subheadline.weight(.semibold).monospacedDigit())
+                        .padding(.top, 2)
+                }
+                .padding(12)
+                .frame(width: 176, alignment: .leading)
+            }
+            .background(Palette.card(scheme))
+            .clipShape(.rect(cornerRadius: 20))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20)
+                    .strokeBorder(picked ? Palette.success(scheme) : Palette.border(scheme).opacity(0.5),
+                                  lineWidth: picked ? 1.5 : 0.5)
+            }
+            .contentShape(.rect(cornerRadius: 20))
+            .opacity(decided && !picked ? 0.5 : 1)
+        }
+        .buttonStyle(PressableCardStyle())
+        .disabled(decided || (onChoose == nil && (!store.isConnected || store.isSending)))
+        .accessibilityLabel(Text("\(option.title), \(option.merchant), \(option.price)"))
+        .accessibilityHint(decided ? "" : language.pick("Opens the product to buy it with Alice.",
+                                                         "Abre el producto para comprarlo con Alice."))
+    }
+}

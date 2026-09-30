@@ -171,7 +171,7 @@ struct MessageRow: View {
                     // message on a tap was not wanted either.)
                     // Only the named agent is emphasized; the bubble keeps one text colour.
                     Text(store.mentionStyled(
-                        AskPerson.display(message.content),
+                        PurchaseChoice.display(AskPerson.display(message.content)),
                         bareSlugs: message.mentionProfile.map { [$0] } ?? [],
                         selectedRanges: message.selectedMentionRanges
                     ))
@@ -184,6 +184,9 @@ struct MessageRow: View {
                         .contextMenu { SentMessageMenu(message: message, selecting: $selectingText) }
                         .accessibilityHint("Hold for actions.")
                         .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                ForEach(errandRefs, id: \.self) { ref in
+                    ErrandChatBlock(ref: ref).frame(maxWidth: .infinity, alignment: .leading)
                 }
             case .assistant:
                 // Ordinary turns are a conversation, not a log. A routine
@@ -306,6 +309,11 @@ struct MessageRow: View {
 
                     // What the agent asked while it kept working (`ask_person`).
                     if message.role == .assistant {
+                        ForEach(message.tools.filter { PurchaseOptionSet.isTool($0.name) && $0.status == .done }) { call in
+                            PurchaseOptionsCard(detail: call.detail, language: ChatLanguage.of(message.content),
+                                                session: message.mentionSessionID ?? store.shownConversation?.hermesSessionID,
+                                                replyProfile: message.mentionProfile)
+                        }
                         ForEach(message.tools.filter { AskPerson.isTool($0.name) }) { call in
                             if let ask = AskPerson.parse(call.detail),
                                !AskPerson.superseded(ask, callID: call.id,
@@ -374,7 +382,7 @@ struct MessageRow: View {
         }
         .sheet(isPresented: $showingModelPicker) { ModelPicker() }
         .sheet(isPresented: $selectingText) {
-            SelectableTextSheet(text: message.content)
+            SelectableTextSheet(text: message.role == .user ? PurchaseChoice.display(message.content) : message.content)
         }
     }
 
@@ -763,7 +771,7 @@ private struct SentMessageMenu: View {
 
     var body: some View {
         Button("Copy", systemImage: "doc.on.doc") {
-            UIPasteboard.general.string = message.content
+            UIPasteboard.general.string = PurchaseChoice.display(message.content)
             Haptic.success.play()
             MessageActionsTip().invalidate(reason: .actionPerformed)
         }
@@ -780,7 +788,7 @@ private struct SentMessageMenu: View {
             MessageActionsTip().invalidate(reason: .actionPerformed)
         }
         ShareLink(
-            item: message.content,
+            item: PurchaseChoice.display(message.content),
             preview: SharePreview("Prompt")
         ) {
             Label("Share Prompt", systemImage: "square.and.arrow.up")
@@ -890,7 +898,7 @@ enum ToolCaption {
     /// Listing it as a step would leave "Asking a question" standing in the
     /// trace under an answer they have already given.
     static func steps(in tools: [Message.ToolCall]) -> [Message.ToolCall] {
-        tools.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) && !ErrandRef.isTool($0.name) }
+        tools.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) && !ErrandRef.isTool($0.name) && !PurchaseOptionSet.isTool($0.name) }
     }
 
     /// The line above the reply: what it is doing, or what it took.

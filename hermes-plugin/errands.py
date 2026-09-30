@@ -126,7 +126,8 @@ def _clean(value: Any, limit: int) -> str:
 
 
 def _new_entry(task: str, *, title: str = "", site: str = "", origin_session: str = "",
-               profile: str = "", ask_before_login: bool = False, now: float) -> Dict[str, Any]:
+               profile: str = "", ask_before_login: bool = False, now: float,
+               offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     task = _clean(task, 1500)
     if not task:
         raise ValueError("Say what the errand is.")
@@ -138,14 +139,17 @@ def _new_entry(task: str, *, title: str = "", site: str = "", origin_session: st
         "ask_before_login": bool(ask_before_login), "checkout": None, "receipt": None,
         "questions": None, "approval": None, "reason": "", "summary": "",
         "steps": [], "started_at": now, "updated_at": now,
+        # The option the person chose in the chat (purchase_flow.offer): what exactly to buy.
+        "offer": offer or None,
     }
 
 
 def create(home: Path, task: str, *, title: str = "", site: str = "", origin_session: str = "",
-           profile: str = "", ask_before_login: bool = False, now: Optional[float] = None) -> Dict[str, Any]:
+           profile: str = "", ask_before_login: bool = False, now: Optional[float] = None,
+           offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     now = now or time.time()
     entry = _new_entry(task, title=title, site=site, origin_session=origin_session,
-                       profile=profile, ask_before_login=ask_before_login, now=now)
+                       profile=profile, ask_before_login=ask_before_login, now=now, offer=offer)
     with _locked(home) as path:
         entries = [e for e in _read(path) if e.get("status") in ACTIVE or now - float(e.get("updated_at") or 0) < KEEP]
         entries.append(entry)
@@ -325,8 +329,24 @@ def real_pictures(entry: Dict[str, Any], items: List[Dict[str, Any]],
     return items
 
 
+def paying_card(home: Path, site: str, labels: List[str], asked: str = "") -> str:
+    """The card the checkout starts with: the one the agent read, else the only saved one, else the one
+    the person paid with last (at this shop first). Empty when that is not clear: the person picks."""
+    labels = [label for label in labels if label]
+    if asked and (not labels or asked in labels):
+        return asked
+    if len(labels) == 1:
+        return labels[0]
+    paid = [e for e in listing(home) if isinstance(e.get("receipt"), dict) and e["receipt"].get("card_label")]
+    for entry in sorted(paid, key=lambda e: (e["receipt"].get("site") != site, -float(e.get("updated_at") or 0))):
+        if entry["receipt"]["card_label"] in labels:
+            return entry["receipt"]["card_label"]
+    return ""
+
+
 def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Optional[float] = None,
-                     fetch: Optional[Callable[..., Tuple[bytes, str]]] = None) -> Dict[str, Any]:
+                     fetch: Optional[Callable[..., Tuple[bytes, str]]] = None,
+                     saved_cards: Optional[Callable[[], List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
     now = now or time.time()
     entry = get(home, errand_id)
     if entry is None:
@@ -336,13 +356,27 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
     items = _items(args.get("items"))
     if not site or not total or not items:
         return {"ok": False, "error": "site, items and total are required, read from the checkout page."}
+    # Step 8: a way to pay before the person sees the total. With no saved card the person is asked
+    # for one first; the errand resumes with «[tarjeta lista]» and calls checkout_request again.
+    labels: List[str] = []
+    if saved_cards is not None:
+        try:
+            labels = [str(c.get("label") or "") for c in saved_cards()]
+        except Exception:  # noqa: BLE001 — the vault unreadable is not "no card": the person chooses
+            labels = ["?"]
+        if not [label for label in labels if label]:
+            update(home, errand_id, now=now, status="needs_card", card_origin=f"https://{site}")
+            return {"ok": True, "status": "needs_card",
+                    "next": ("There is no saved card to pay with: the person is asked to add one first. Do not "
+                             "pay. End your turn with one line saying you wait for the card.")}
     items = real_pictures(entry, items, fetch or _fetch)
     checkout = {
         "id": secrets.token_hex(4), "status": "pending", "merchant": _clean(args.get("merchant"), 60) or site,
         "site": site, "items": items, "delivery": _clean(args.get("delivery"), 120),
         "address": _clean(args.get("address"), 160), "email": _clean(args.get("email"), 120),
-        "card_label": _clean(args.get("card_label"), 60), "total": total,
-        "currency": _clean(args.get("currency"), 8).upper(), "requested_at": now,
+        "card_label": paying_card(home, site, [label for label in labels if label != "?"],
+                                  _clean(args.get("card_label"), 60)),
+        "total": total, "currency": _clean(args.get("currency"), 8).upper(), "requested_at": now,
     }
     update(home, errand_id, now=now, status="needs_approval", checkout=checkout, site=entry.get("site") or site)
     return {"ok": True, "status": "needs_approval",
@@ -379,11 +413,32 @@ def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float
     if entry is None or not isinstance(checkout, dict) or checkout.get("status") != "pending":
         return None
     checkout = {**checkout, "status": "approved" if allow else "denied", "decided_at": now}
+    if allow:
+        # The yes is to this total: the errand pays only if the page still shows it (approved_message).
+        checkout["approved_total"] = checkout.get("total", "")
     if allow and _clean(card_label, 60):
         checkout["card_label"] = _clean(card_label, 60)
     status = "working" if allow else "denied"
     return update(home, errand_id, now=now, checkout=checkout, status=status,
                   reason="" if allow else "Has denegado la compra.")
+
+
+def approved_message(checkout: Dict[str, Any]) -> str:
+    """How the errand goes on after «Permitir»: pay that total, with that card, and nothing else."""
+    total = checkout.get("approved_total") or checkout.get("total") or ""
+    card = f" ({checkout['card_label']})" if checkout.get("card_label") else ""
+    return (
+        f"{APPROVED_PREFIX} La persona ha aprobado pagar {total} en {checkout.get('merchant') or checkout.get('site')}. "
+        f"Justo antes de pulsar pagar, mira el total de la página: si es exactamente {total}, paga con la "
+        f"tarjeta guardada{card}; si es otro, NO pagues y vuelve a llamar a `checkout_request` con lo que "
+        "muestra ahora. Después de pagar, registra `purchase_outcome` con el número de pedido, el total, "
+        "los artículos, la tarjeta y la entrega prevista.")
+
+
+def same_amount(a: Any, b: Any) -> bool:
+    """«27,98 €» and «EUR 27.98» are the same amount: only the digits are compared."""
+    digits = lambda value: re.sub(r"\D", "", str(value or ""))  # noqa: E731
+    return bool(digits(a)) and digits(a) == digits(b)
 
 
 def approved_checkout(entry: Optional[Dict[str, Any]], site: str = "", now: Optional[float] = None) -> Optional[Dict[str, Any]]:
@@ -556,8 +611,12 @@ def record_receipt(home: Path, session_id: str, args: Dict[str, Any], now: Optio
         "site": shop(args.get("site") or "") or checkout.get("site", ""),
         "items": _items(args.get("items")) or checkout.get("items") or [],
         "card_label": _clean(args.get("card_label"), 60) or checkout.get("card_label", ""),
-        "delivery": checkout.get("delivery", ""), "at": now or time.time(),
+        "delivery": _clean(args.get("delivery"), 160) or checkout.get("delivery", ""), "at": now or time.time(),
     }
+    # Paid something other than the total the person approved: said on the result, never smoothed over.
+    approved = checkout.get("approved_total")
+    if approved and receipt["total"] and not same_amount(approved, receipt["total"]):
+        receipt["approved_total"] = approved
     update(home, entry["id"], now=now, receipt=receipt)
 
 
@@ -566,6 +625,7 @@ def outcome_properties() -> Dict[str, Any]:
     return {
         "items": CHECKOUT_SCHEMA["parameters"]["properties"]["items"],
         "card_label": {"type": "string", "description": "The card that paid, e.g. 'Visa ···4242'"},
+        "delivery": {"type": "string", "description": "When it arrives, as the confirmation says"},
     }
 
 
@@ -574,24 +634,44 @@ def outcome_properties() -> Dict[str, Any]:
 START_SCHEMA: Dict[str, Any] = {
     "name": "errand_start",
     "description": (
-        "Start an errand the person asked for — a purchase, an order, a booking, filling a basket or a "
-        "form on a website. It runs on its own in the background, apart from this chat; Alice shows it "
-        "as a card, asks the person to approve before anything is paid and tells them when it is done. "
-        "Call it once, then answer in one short line that it is under way. Do not do the errand here."
+        "Start an errand in the background, apart from this chat; Alice shows it as a card, asks the "
+        "person to approve before anything is paid and tells them how it ended. A PURCHASE starts only "
+        "from the option the person chose among those shown with `purchase_options`: pass its "
+        "`option_id` (the plugin carries its page, variant, quantity and price). Anything else — a "
+        "booking, a form on a website — passes `task` and `title`. Call it once, then answer in one "
+        "short line. Do not do the errand here."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "task": {"type": "string", "description": "What the person asked, in their words, with every detail that "
-                                                      "matters (what, how many, size, where, when, price limit)."},
-            "title": {"type": "string", "description": "A short title, e.g. 'Comprar Creapure 500 g en HSN'"},
-            "site": {"type": "string", "description": "The shop or website, when known"},
+            "option_id": {"type": "string", "description": "A purchase: the chosen option's id, e.g. 'a1b2c3d4-2'"},
+            "task": {"type": "string", "description": "Not a purchase: what the person asked, in their words, with "
+                                                      "every detail that matters (what, where, when, limit)."},
+            "title": {"type": "string", "description": "A short title, e.g. 'Reservar la ITV'"},
+            "site": {"type": "string", "description": "The website, when known"},
             "ask_before_login": {"type": "boolean", "description": "Only when the person asked to be asked "
                                                                    "before signing in with their saved account."},
         },
-        "required": ["task", "title"],
     },
 }
+
+# The errand's reply when the chosen option cannot be bought as chosen: it stops there.
+BLOCKED = re.compile(r"^\s*(BLOQUEADO|BLOCKED)\s*:\s*", re.I)
+
+
+def _offer_lines(offer: Dict[str, Any]) -> str:
+    variant = offer.get("variant") or "la que muestra la página"
+    start = (f"Abre el carrito del catálogo ({offer['checkout_url']}), que ya lleva esa variante, o si no "
+             f"carga, la página del producto ({offer['url']})."
+             if offer.get("channel") == "catalog" and offer.get("checkout_url")
+             else f"Abre la página del producto: {offer['url']}.")
+    return (
+        f"La persona eligió exactamente esto: {offer.get('title')} · variante: {variant} · cantidad: "
+        f"{offer.get('qty') or 1} · {offer.get('merchant') or 'la tienda'} · {offer.get('price')} "
+        f"({offer.get('currency') or ''}). {start} Compra eso y nada más: no lo cambies por otro producto, "
+        "otra variante u otra tienda. Si ya no está disponible, la variante no existe o el precio ha subido, "
+        "no sigas: termina tu turno con una sola línea que empiece por «BLOQUEADO:» y diga qué ha cambiado."
+    )
 
 
 def brief(entry: Dict[str, Any]) -> str:
@@ -600,6 +680,10 @@ def brief(entry: Dict[str, Any]) -> str:
              if entry.get("ask_before_login") else
              "Si la web pide iniciar sesión y hay un login guardado en el vault para ella, entra con "
              "`browser_vault_fill` sin preguntar.")
+    offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else None
+    what = (_offer_lines(offer) + " " if offer else
+            "Pregunta con `ask_person` solo lo que cambia qué se hace o cuánto cuesta, todo en una sola vez "
+            "y al principio. ")
     return (
         f"[Recado de Alice] {entry['request']}\n\n"
         "Trabajas en segundo plano, fuera de cualquier chat: la persona no lee tus respuestas, ve la "
@@ -607,18 +691,17 @@ def brief(entry: Dict[str, Any]) -> str:
         "entrar, usa el login del vault. Hazlo de principio a fin tú: nunca llames a `errand_start` (ya estás en el "
         "recado). El comentario `#` con que empieza cada paso del navegador es lo que la persona ve: "
         "escríbelo en su idioma y en pocas palabras («Añadir al carrito», «Elegir envío»). "
-        f"{login} "
-        "Sé rápido: la persona quiere el recado hecho, no responder preguntas. Decide tú todo lo que "
-        "tenga una opción razonable (tratamiento, envío estándar, sin extras, sin cuenta nueva si se "
-        "puede comprar como invitado) y usa los datos de envío guardados. Pregunta con `ask_person` solo "
-        "lo que cambia qué se compra o cuánto cuesta (talla, color, capacidad, una alternativa), todo en "
-        "una sola vez y al principio. Nunca preguntes por tarjetas: si la página de pago pide una y "
-        "`browser_vault_list` no tiene ninguna para ella, llama a `card_request`. Cuando el pedido esté listo en el paso de pago, NO rellenes la tarjeta ni pulses pagar: "
+        f"{login} {what}"
+        "Decide tú lo que tenga una opción razonable (tratamiento, envío estándar, sin extras, sin cuenta "
+        "nueva si se puede comprar como invitado) y usa los datos de envío guardados. Nunca preguntes por "
+        "tarjetas: si una página de pago pide una y `browser_vault_list` no tiene ninguna para ella, llama "
+        "a `card_request`. Cuando el pedido esté listo en el paso de pago, NO rellenes la tarjeta ni pulses pagar: "
         "llama a `checkout_request` con lo que muestra la página (tienda, artículos con variante, "
-        "cantidad, precio e imagen, entrega, dirección, email, tarjeta y total) y termina tu turno. "
+        "cantidad, precio e imagen, entrega, dirección, email, tarjeta y total exacto) y termina tu turno; "
+        "si no hay tarjeta con la que pagar, Alice se la pide a la persona antes de enseñarle el total. "
         f"El recado seguirá con «{APPROVED_PREFIX}» si lo aprueba. Después de pagar, registra "
-        "`purchase_outcome` con el número de pedido, el total, los artículos y la tarjeta. Termina "
-        "cada turno con una sola línea que diga en qué punto estás."
+        "`purchase_outcome` con el número de pedido, el total, los artículos, la tarjeta y la entrega "
+        "prevista. Termina cada turno con una sola línea que diga en qué punto estás."
     )
 
 
@@ -978,6 +1061,12 @@ class Engine:
                 update(self.home, self.errand_id, status="stuck",
                        reason=_clean(state.get("error") or "El agente falló.", 200))
                 return "stuck"
+            # The chosen option cannot be bought as chosen (gone, another price): it stops here
+            # and says why, instead of buying something else.
+            if BLOCKED.match(reply):
+                update(self.home, self.errand_id, status="stuck",
+                       reason=_clean(BLOCKED.sub("", reply, count=1), 300) or "La opción elegida ya no se puede comprar.")
+                return "stuck"
             receipt = entry.get("receipt") or {}
             if receipt.get("outcome") == "paid":
                 update(self.home, self.errand_id, status="done")
@@ -1078,11 +1167,12 @@ def ensure_running(home: Path) -> List[str]:
 
 
 def start(home: Path, args: Dict[str, Any], *, origin_session: str = "", profile: str = "",
-          now: Optional[float] = None) -> Dict[str, Any]:
+          now: Optional[float] = None, offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """``errand_start``: records the errand, opens its goal and starts it.
 
     Never from inside an errand (one started three copies of itself, all driving the same
-    browser), and a chat that asks again while its errand is under way gets that one."""
+    browser), and a chat that asks again while its errand is under way gets that one. A purchase
+    carries ``offer``, the option the person chose; the same option is one errand while active."""
     now = now or time.time()
     if str(origin_session or "").startswith(SESSION_PREFIX):
         return {"ok": False, "errand_id": origin_session[len(SESSION_PREFIX):], "status": "working",
@@ -1090,18 +1180,21 @@ def start(home: Path, args: Dict[str, Any], *, origin_session: str = "", profile
     task = _clean(args.get("task"), 1500)
     if not task:
         raise ValueError("Say what the errand is.")
+    option_id = (offer or {}).get("option_id")
     # Lookup and insertion share a process-safe lock. The same request remains
     # the same errand for its whole active lifetime; another task is independent.
     with _locked(home) as path:
         entries = _read(path)
         for other in reversed(entries):
+            same = (((other.get("offer") or {}).get("option_id") == option_id) if option_id else
+                    _clean(other.get("request"), 1500).casefold() == task.casefold())
             if (origin_session and other.get("origin_session") == origin_session
-                    and (other.get("profile") or "") == profile and other.get("status") in ACTIVE
-                    and _clean(other.get("request"), 1500).casefold() == task.casefold()):
+                    and (other.get("profile") or "") == profile and other.get("status") in ACTIVE and same):
                 return started_result(other)
-        entry = _new_entry(task, title=str(args.get("title") or ""), site=str(args.get("site") or ""),
+        site = str(args.get("site") or "") or str((offer or {}).get("url") or "")
+        entry = _new_entry(task, title=str(args.get("title") or ""), site=site,
                            origin_session=origin_session, profile=profile,
-                           ask_before_login=bool(args.get("ask_before_login")), now=now)
+                           ask_before_login=bool(args.get("ask_before_login")), now=now, offer=offer)
         entries = [e for e in entries if e.get("status") in ACTIVE
                    or now - float(e.get("updated_at") or 0) < KEEP]
         entries.append(entry)
@@ -1164,33 +1257,12 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 PROMPT = (
     "## Recados\n"
-    "Una compra, un pedido, una reserva o llenar una cesta en una web es un recado: llama a "
-    "`errand_start` **enseguida**, con lo que pidió la persona tal cual, y responde en una línea que lo "
-    "pones en marcha. No abras el navegador ni hagas preguntas antes: el recado busca, pregunta lo que "
-    "falte (talla, color, capacidad) y pide su aprobación antes de pagar, todo desde su tarjeta. Solo si "
-    "la persona pide expresamente que se le pregunte antes de iniciar sesión, pasa "
-    "`ask_before_login: true`. Cada recado vive en su tarjeta y en «Recados»: no hables de otros "
-    "recados ni de compras anteriores salvo que te pregunte por ellos."
+    "Lo que se hace en una web por la persona —una compra, una reserva, un formulario— es un recado: "
+    "corre aparte, con su tarjeta en el chat y en «Recados», y nada se paga sin su aprobación. Una "
+    "**compra** sigue «Comprar»: aquí aclaras, buscas y enseñas opciones; el recado empieza solo con "
+    "la opción que ella elige (`errand_start` con su `option_id`). Otro recado (una reserva, un "
+    "trámite) empieza con `errand_start` y lo que pidió, en una línea. Solo si la persona pide que se le "
+    "pregunte antes de iniciar sesión, pasa `ask_before_login: true`. No hables de otros recados ni de "
+    "compras anteriores salvo que te pregunte por ellos, y su estado real es el de su tarjeta, no el que "
+    "diga la conversación."
 )
-
-# A chat turn that asks for an errand: the chat may not browse or ask meanwhile (errand_turn).
-ERRAND_REQUEST = re.compile(
-    r"\b(c[oó]mpra(me|lo|la|los|las)?|comprar|p[ií]de(me|lo|la)?|pedir|res[eé]rva(me|lo|la)?|reservar"
-    r"|carrito|cesta|a[nñ]ade\w*\s+al\s+carrito)\b", re.I)
-TURN_NOTE = ("[Alice] Esto es un recado: llama a `errand_start` ahora con lo que pidió, y responde en una "
-             "línea. No abras el navegador ni preguntes aquí: el recado lo hace y pregunta desde su tarjeta.")
-def turn_note(started: Dict[str, Any]) -> str:
-    """What the chat is told once the plugin has started (or found) the errand for this turn."""
-    return (f"[Alice] Ya he puesto en marcha este recado (id {started.get('errand_id')}). Llama a "
-            "`errand_start` con lo que pidió para que se vea su tarjeta y responde en una sola línea que "
-            "está en marcha. No abras el navegador ni preguntes aquí, y no te fíes de lo que diga la "
-            "conversación sobre recados anteriores: su estado real es este.")
-
-
-TURN_BLOCK = ("Esta petición es un recado: no se navega ni se pregunta desde el chat. Llama a "
-              "`errand_start` con lo que pidió la persona y responde en una línea que lo pones en marcha.")
-
-
-def is_errand_request(text: Any) -> bool:
-    text = " ".join(str(text or "").split())
-    return bool(text) and not text.startswith(("[respuesta:", CONTINUATION)) and bool(ERRAND_REQUEST.search(text))

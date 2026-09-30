@@ -204,8 +204,12 @@ struct ErrandStack: View {
                                   onAllow: { onConfirm(true) }, onDeny: { onConfirm(false) })
             }
             if let checkout = errand.checkout, let phase = checkoutPhase {
+                if phase == .pending || phase == .sending {
+                    RichMessageView(content: PurchaseSummaryText.summary(checkout, card: chosen?.label ?? checkout.cardLabel,
+                                                                        language: errand.language))
+                }
                 CheckoutApprovalCard(checkout: checkout, logoID: logoID, logo: logo,
-                                     language: errand.language, phase: phase, error: problem,
+                                     language: errand.language, phase: phase, compact: true, error: problem,
                                      onOpenPage: phase == .pending ? onOpenBrowser : nil,
                                      cards: cards, chosenCard: chosen,
                                      onChooseCard: { chosen = $0 }, onAddCard: { addingCard = true },
@@ -224,7 +228,9 @@ struct ErrandStack: View {
                     }
             }
             if let receipt = errand.receipt {
-                ErrandReceiptCard(receipt: receipt, logoID: logoID, logo: logo, language: errand.language)
+                RichMessageView(content: PurchaseSummaryText.result(receipt, language: errand.language))
+            } else if let stopped = PurchaseSummaryText.stopped(errand, language: errand.language) {
+                RichMessageView(content: stopped)
             }
             if let problem, checkoutPhase == nil {
                 Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
