@@ -24,9 +24,13 @@ struct MessageRow: View {
     var actionsContent: String? = nil
     /// Resolved once for the whole conversation, never independently per reply.
     var errandRefs: [ErrandRef] = []
+    /// This reply was written by another model than the reply before it (`ModelChange`).
+    var modelChange: ModelChange? = nil
     @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @State private var selectingText = false
     @State private var showingModelPicker = false
+    /// The model chosen from this reply's «Choose a model», kept so the button does not come back.
+    @AppStorage("alice.modelChoices") private var modelChoices: String = "{}"
     /// Copy, share, speak, retry and developer usage stay off until the reply is tapped.
     @State private var showingExtras = false
 
@@ -193,6 +197,16 @@ struct MessageRow: View {
                     ErrandChatBlock(ref: ref).frame(maxWidth: .infinity, alignment: .leading)
                 }
             case .assistant:
+                // Said where it happened: the model changed (chosen, or Hermes fell back because the
+                // usual one failed), with nothing else in the chat to show it.
+                if let modelChange {
+                    Label(modelChange.said(in: ChatLanguage.of(message.content)), systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 4)
+                        .accessibilityElement(children: .combine)
+                }
                 // Ordinary turns are a conversation, not a log. A routine
                 // delivery is dated because it arrived on its own, later.
                 // Once, above the whole delivery: the agent's opening words,
@@ -319,10 +333,18 @@ struct MessageRow: View {
                     )
 
                     if message.role == .assistant, message.choosesModelInAPicker {
-                        Button("Choose a model") { showingModelPicker = true }
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
-                            .controlSize(.regular)
+                        if let chosen = chosenModel {
+                            // Done: the picker changed it (or it already was that one).
+                            Label(ChatLanguage.of(message.content).pick("Model changed to \(chosen)", "Modelo cambiado a \(chosen)"),
+                                  systemImage: "checkmark.circle.fill")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(Palette.success(scheme))
+                        } else {
+                            Button("Choose a model") { showingModelPicker = true }
+                                .buttonStyle(.bordered)
+                                .buttonBorderShape(.capsule)
+                                .controlSize(.regular)
+                        }
                     } else if message.role == .assistant, !message.slashChoices.isEmpty {
                         SlashChoiceButtons(choices: message.slashChoices)
                     }
@@ -388,7 +410,9 @@ struct MessageRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .sheet(isPresented: $showingModelPicker) { ModelPicker() }
+        .sheet(isPresented: $showingModelPicker) {
+            ModelPicker(onChanged: { label in rememberModelChoice(label) })
+        }
         .sheet(isPresented: $selectingText) {
             SelectableTextSheet(text: message.role == .user ? PurchaseChoice.display(message.content) : message.content)
         }
@@ -406,6 +430,17 @@ struct MessageRow: View {
 
     private var canShowActions: Bool {
         showsActions && !message.pending && !message.content.isEmpty
+    }
+
+    private var chosenModel: String? {
+        (try? JSONDecoder().decode([String: String].self, from: Data(modelChoices.utf8)))?[message.id]
+    }
+
+    private func rememberModelChoice(_ label: String) {
+        var all = (try? JSONDecoder().decode([String: String].self, from: Data(modelChoices.utf8))) ?? [:]
+        all[message.id] = label
+        if all.count > 50 { all = Dictionary(uniqueKeysWithValues: all.suffix(50).map { ($0.key, $0.value) }) }
+        modelChoices = (try? String(data: JSONEncoder().encode(all), encoding: .utf8)) ?? "{}"
     }
 
     private var canRevealExtras: Bool { canShowActions || developerLine != nil }

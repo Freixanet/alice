@@ -29,13 +29,17 @@ struct ModelPicker: View {
     var onChoose: ((HermesClient.ModelOption) -> Void)?
     /// Create-agent fallback: "None" is a real choice, not a missing pick.
     var onClear: (() -> Void)?
+    /// The model is in use now (changed, or it already was): the chat that opened the picker says so.
+    var onChanged: ((String) -> Void)?
 
     init(
         bot: BotRow? = nil, chosen: HermesClient.ModelOption? = nil,
         selectsFallback: Bool = false,
         onChoose: ((HermesClient.ModelOption) -> Void)? = nil,
-        onClear: (() -> Void)? = nil
+        onClear: (() -> Void)? = nil,
+        onChanged: ((String) -> Void)? = nil
     ) {
+        self.onChanged = onChanged
         self.bot = bot
         self.chosen = chosen
         self.selectsFallback = selectsFallback
@@ -430,6 +434,7 @@ struct ModelPicker: View {
         }
         guard let profile = targetProfile else {
             store.chooseModel(model.id, provider: model.provider)
+            onChanged?(model.label)
             dismiss()
             return
         }
@@ -447,6 +452,7 @@ struct ModelPicker: View {
         guard !uses(model)
                 || store.botModelSyncPending(profile)
         else {
+            onChanged?(model.label)
             dismiss()
             return
         }
@@ -523,6 +529,7 @@ struct ModelPicker: View {
                     failure = warning
                     if bot.isDefault { await store.mainProfileBot() }
                     if warning == nil {
+                        onChanged?(model.label)
                         // Said, not assumed: the change is confirmed before the sheet closes.
                         withAnimation(.snappy) { confirmed = model.label }
                         try? await Task.sleep(for: .milliseconds(900))

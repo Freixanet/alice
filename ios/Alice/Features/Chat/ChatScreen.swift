@@ -615,7 +615,7 @@ private struct TranscriptView: View {
 
     private func transcriptRow(
         _ message: Message, position: ChatTasks.Position?, latestBusy: Bool,
-        superseded: Bool, reaction: Reaction?, errandRefs: [ErrandRef]
+        superseded: Bool, reaction: Reaction?, errandRefs: [ErrandRef], modelChange: ModelChange? = nil
     ) -> some View {
         let busy = (position?.isLatest ?? false) && latestBusy
         return MessageRow(
@@ -624,7 +624,8 @@ private struct TranscriptView: View {
             showsTime: (position?.isFirst ?? true) && !busy,
             showsAuthor: position?.isFirst ?? true,
             actionsContent: position?.text,
-            errandRefs: errandRefs
+            errandRefs: errandRefs,
+            modelChange: modelChange
         )
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
@@ -713,6 +714,7 @@ private struct TranscriptView: View {
             messages: conversation.messages, errands: store.errandBoard.errands,
             session: conversation.hermesSessionID
         )
+        let modelChanges = ModelChange.changes(in: conversation.messages)
         let start = firstShownID.flatMap { id in presented.firstIndex { $0.id == id } }
             ?? Self.windowStart(presented, before: presented.count)
         let hiddenCount = start
@@ -758,7 +760,8 @@ private struct TranscriptView: View {
                         transcriptRow(
                             message, position: positions[message.id], latestBusy: latestBusy,
                             superseded: answered.contains(message.id), reaction: given[message.id],
-                            errandRefs: errands[message.id] ?? []
+                            errandRefs: errands[message.id] ?? [],
+                            modelChange: modelChanges[message.id]
                         )
                     }
                     if !keyboardShown, conversation.messages.contains(where: { $0.role == .user }) {
