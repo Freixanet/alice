@@ -70,7 +70,7 @@ class ProzisTests(unittest.TestCase):
         recipe = {'price_basis':'line_total'}
         self.assertEqual(prices.cart_amount('69,98 €','EUR',2,recipe),(3499,'EUR'))
         self.assertEqual(prices.cart_amount('34,99 €','EUR',2,{}),(3499,'EUR'))
-        with self.assertRaises(ValueError): prices.cart_amount('69,99 €','EUR',2,recipe)
+        self.assertEqual(prices.cart_amount('69,99 €','EUR',2,recipe),(3500,'EUR'))  # Display-only rounded unit; line amount stays exact.
 
     def test_certification_is_preserved_even_when_the_brand_matches(self):
         flow = prices.module('purchase_flow')

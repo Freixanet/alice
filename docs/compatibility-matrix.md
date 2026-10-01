@@ -73,3 +73,12 @@ Native dictation and read-aloud use the iOS speech interfaces. They do not imply
 support for a Hermes realtime-voice service: the checked static manifest marks
 `audio_api` and `realtime_voice` false. Review new advertised features individually
 instead of treating a fixture version as a universal compatibility certificate.
+
+## Purchase controller draft
+
+The native/plugin purchase boundary now uses durable intent, a pinned browser,
+page-derived checkout approval and a journaled submission. See
+[purchase controller](purchase-controller.md) for the supported path and unresolved
+limits. This draft has no claim of universal shop or model compatibility; real
+phone UI and live purchases remain pending. The companion web was not changed
+and has not received equivalent checkout UI verification for the new card handle.

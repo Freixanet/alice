@@ -28,22 +28,22 @@ final class ErrandTranscriptTests: XCTestCase {
                         message("a1", .assistant, "En marcha", ref: "e1"),
                         message("a2", .assistant, "Sigue en marcha", ref: "e1")]
         let placements = ErrandTranscript.placements(messages: messages, errands: [errand()], session: "chat-1")
-        // One card, after the last turn written before the errand's latest change.
-        XCTAssertEqual(placements.keys.sorted(), ["a2"])
-        XCTAssertEqual(placements["a2"]?.map(\.errandID), ["e1"])
+        // One card, anchored to the first reply about this task.
+        XCTAssertEqual(placements.keys.sorted(), ["a1"])
+        XCTAssertEqual(placements["a1"]?.map(\.errandID), ["e1"])
     }
 
-    func testTheCardFollowsTheErrandDownTheChatAndStopsWhereItLastChanged() {
+    func testTheCardStaysWithItsStartingReplyAcrossLaterTurnsAndStateChanges() {
         var moving = errand()
         moving.updatedAt = start.addingTimeInterval(100)
         let messages = [message("u", .user, request), message("a1", .assistant, "En marcha", ref: "e1"),
                         message("u2", .user, "¿Y el envío?", offset: 50), message("a2", .assistant, "Gratis", offset: 51),
                         message("u3", .user, "Otra cosa", offset: 200)]
-        // Running, it is the live thing in the chat: last, whatever the turns' clocks say.
-        XCTAssertEqual(ErrandTranscript.placements(messages: messages, errands: [moving], session: "chat-1").keys.sorted(), ["u3"])
+        // Later turns never move the browser or the purchase block.
+        XCTAssertEqual(ErrandTranscript.placements(messages: messages, errands: [moving], session: "chat-1").keys.sorted(), ["a1"])
         moving.status = .stuck
         let placements = ErrandTranscript.placements(messages: messages, errands: [moving], session: "chat-1")
-        XCTAssertEqual(placements.keys.sorted(), ["a2"], "below what was said while it worked, above what came after")
+        XCTAssertEqual(placements.keys.sorted(), ["a1"], "state changes retain the original transcript anchor")
     }
 
     func testClockAllowanceNeverAttachesToAnUnrelatedEarlierTurn() {
@@ -53,7 +53,7 @@ final class ErrandTranscriptTests: XCTestCase {
                         message("a1", .assistant, "En marcha"),
                         message("a2", .assistant, "Sigue en marcha")]
         let placements = ErrandTranscript.placements(messages: messages, errands: [errand()], session: "chat-1")
-        XCTAssertEqual(placements.keys.sorted(), ["a2"])
+        XCTAssertEqual(placements.keys.sorted(), ["a1"])
     }
 
     func testAutomaticStartIsFoundWithWhitespaceAndCaseDifferences() {

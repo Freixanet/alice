@@ -197,7 +197,7 @@ struct ErrandBrowserCard: View {
     @State private var still: UIImage?
 
     private var language: ChatLanguage { errand.language }
-    private var live: LiveBrowser { store.liveBrowser }
+    private var live: LiveBrowser { store.errandBrowser(errand) }
     /// Live only while the agent is at work: waiting for the person, the page stays as it was
     /// instead of following whatever the browser shows next.
     private var following: Bool {
@@ -436,7 +436,7 @@ struct CheckoutApprovalCard: View {
     let onDeny: () -> Void
 
     private var shop: String { checkout.merchant.nonEmpty(or: checkout.site) }
-    private var payingWith: String { chosenCard?.label ?? checkout.cardLabel }
+    private var payingWith: String { checkout.requiresCard == false ? checkout.cardLabel : chosenCard?.label ?? checkout.cardLabel }
     private var deciding: Bool { phase == .pending || phase == .sending }
 
     var body: some View {
@@ -621,44 +621,48 @@ struct CheckoutApprovalCard: View {
 
     /// With which card: the one chosen, and a menu of the others and «Añadir tarjeta» while deciding.
     @ViewBuilder private var paymentRow: some View {
-        let row = HStack(spacing: 12) {
-            if payingWith.isEmpty {
-                Image(systemName: "creditcard").font(.title3).frame(width: 46, height: 30)
-            } else {
-                CardBrandBadge(label: payingWith)
+        if checkout.requiresCard == false {
+            Label(checkout.cardLabel, systemImage: "banknote").font(.body)
+        } else {
+            let row = HStack(spacing: 12) {
+                if payingWith.isEmpty {
+                    Image(systemName: "creditcard").font(.title3).frame(width: 46, height: 30)
+                } else {
+                    CardBrandBadge(label: payingWith)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(payingWith.nonEmpty(or: language.pick("Choose a card", "Elegir tarjeta"))).font(.body)
+                    Text(language.pick("Saved in Alice · she fills it in", "Guardada en Alice · la rellena ella"))
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                if deciding {
+                    Image(systemName: "chevron.up.chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                }
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(payingWith.nonEmpty(or: language.pick("Choose a card", "Elegir tarjeta"))).font(.body)
-                Text(language.pick("Saved in Alice · she fills it in", "Guardada en Alice · la rellena ella"))
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            if deciding {
-                Image(systemName: "chevron.up.chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-            }
-        }
-        .padding(14)
-        .background(Palette.background(scheme), in: .rect(cornerRadius: 22))
-        .contentShape(.rect(cornerRadius: 22))
+            .padding(14)
+            .background(Palette.background(scheme), in: .rect(cornerRadius: 22))
+            .contentShape(.rect(cornerRadius: 22))
 
-        if deciding {
-            Menu {
-                ForEach(cards) { card in
-                    Button {
-                        onChooseCard(card)
-                    } label: {
-                        if card.id == chosenCard?.id { Label(card.label, systemImage: "checkmark") } else { Text(card.label) }
+            if deciding {
+                Menu {
+                    ForEach(cards) { card in
+                        Button {
+                            onChooseCard(card)
+                        } label: {
+                            if card.id == chosenCard?.id { Label(card.label, systemImage: "checkmark") } else { Text(card.label) }
+                        }
                     }
-                }
-                if let onAddCard {
-                    Button(action: onAddCard) {
-                        Label(language.pick("Add a card…", "Añadir tarjeta…"), systemImage: "plus")
+                    if let onAddCard {
+                        Button(action: onAddCard) {
+                            Label(language.pick("Add a card…", "Añadir tarjeta…"), systemImage: "plus")
+                        }
                     }
-                }
-            } label: { row }
-            .buttonStyle(.plain)
-        } else if !payingWith.isEmpty {
-            row
+                } label: { row }
+                .buttonStyle(.plain)
+            } else if !payingWith.isEmpty {
+                row
+            }
         }
     }
 
@@ -983,6 +987,9 @@ struct PurchaseProductSheet: View {
     var onBuyQuantity: ((Int) -> Void)? = nil
     var shipping: String = ""
     var condition: String = ""
+    var initialQuantity: Int = 1
+    var productURL: URL? = nil
+    @Environment(\.openURL) private var openURL
 
     @State private var quantity = 1
     @State private var chosen = 0
@@ -1023,7 +1030,7 @@ struct PurchaseProductSheet: View {
                     if !condition.isEmpty { Text(condition).font(.footnote).foregroundStyle(.secondary) }
                     if !options.isEmpty { optionPicker.padding(.top, 10) }
                     if onBuyQuantity != nil {
-                        Stepper(language.pick("Units: \(quantity)", "Unidades: \(quantity)"), value: $quantity, in: 1...20)
+                        Stepper(language.pick("Units: \(quantity)", "Unidades: \(quantity)"), value: $quantity, in: 1...999)
                             .accessibilityIdentifier("purchase.quantity")
                             .padding(.top, 12)
                     }
@@ -1032,7 +1039,9 @@ struct PurchaseProductSheet: View {
                         if let onBuyQuantity { onBuyQuantity(quantity) } else { onBuy() }
                     }
                     .padding(.top, 10)
-                    PurchaseCapsuleButton(title: language.pick("Visit website", "Visitar la web")) { dismiss() }
+                    if let productURL {
+                        PurchaseCapsuleButton(title: language.pick("Visit website", "Visitar la web")) { openURL(productURL) }
+                    }
                 }
                 .padding(.top, 18)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1042,6 +1051,7 @@ struct PurchaseProductSheet: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .background(Palette.card(scheme))
+        .onAppear { quantity = max(1, min(initialQuantity, 999)) }
         .presentationDetents([.height(contentHeight + 8)])
         .presentationDragIndicator(.hidden)
         .presentationCornerRadius(32)

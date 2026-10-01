@@ -27,7 +27,7 @@ struct ErrandStoppedCard: View {
                 Spacer(minLength: 0)
             }
             Text(headline).font(.body).fixedSize(horizontal: false, vertical: true)
-            Text(language.pick("Nothing was paid.", "No se ha pagado nada."))
+            Text(errand.paymentWarning)
                 .font(.subheadline).foregroundStyle(.secondary)
 
             if errand.status == .stuck, let price = errand.blockedPrice {

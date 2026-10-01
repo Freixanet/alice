@@ -67,7 +67,7 @@ enum PurchaseSummaryText {
 
     /// Stopped before paying: what happened, and the ways on.
     static func stopped(_ errand: Errand, language: ChatLanguage) -> String? {
-        if errand.checkout?.status == .approved {
+        if errand.paymentAttemptID != nil || errand.checkout?.status == .approved {
             guard errand.status == .stuck || errand.status == .stopped else { return nil }
             return language.pick(
                 "The purchase stopped after approval. The payment outcome has not been confirmed; check the order before trying again.",

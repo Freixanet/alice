@@ -1,19 +1,8 @@
-"""One payment per order: a ledger the plugin keeps, so paying twice never depends on the model.
+"""Durable payment attempts, reserved before submitting an approved checkout.
 
-Every card Hermes fills after the person's «Pagar» is written down here (the shop, when, the
-session). Before another card fill on the same shop:
-
-* the earlier payment is still **unsettled** (nobody read how it ended) → the fill is blocked
-  until the agent finds out and records it with ``purchase_outcome``. A timeout or a closed page
-  after paying means "unknown", never "failed";
-* it was **paid**, or its outcome stayed **unknown** → the fill goes through Hermes' approval
-  card, which says so, and only the person's yes pays again;
-* it was **declined** or **not charged** → nothing stands in the way.
-
-Only facts about the purchase are kept: shop, time, outcome, order number and total as the
-page showed them. Never card data. Entries older than a week are dropped.
-
-The shopping rules themselves live in ``skills/comprar/SKILL.md``.
+Filling a card is preparatory. A pending or unknown submission never expires
+into permission to pay again. Settlement binds merchant, session and attempt;
+corrupt files are retained and block spending until recovery.
 """
 from __future__ import annotations
 
@@ -72,20 +61,23 @@ def _locked(home: Path):
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def _read(path: Path) -> List[Dict[str, Any]]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
+def _storage():
+    import importlib.util
+    import sys
+    key = "alice_purchase_storage"
+    if key not in sys.modules:
+        spec = importlib.util.spec_from_file_location(key, Path(__file__).with_name("purchase_storage.py"))
+        sys.modules[key] = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sys.modules[key])
+    return sys.modules[key]
 
 
-def _write(path: Path, entries: List[Dict[str, Any]]) -> None:
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".purchases.")
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+def _read(path):
+    return _storage().read(path)
+
+
+def _write(path, data):
+    _storage().write(path, data)
 
 
 def shop(value: str) -> str:
@@ -105,43 +97,54 @@ def merchant(open_urls: Iterable[str], fill_origin: str, gateways: Iterable[str]
     return shop(fill_origin)
 
 
-def record(home: Path, site: str, session: str = "", now: Optional[float] = None) -> Dict[str, Any]:
+def record(home: Path, site: str, session: str = "", now: Optional[float] = None,
+           *, checkout_id: str = "", card_handle: str = "", snapshot_digest: str = "") -> Dict[str, Any]:
     now = now or time.time()
-    entry = {"id": secrets.token_hex(6), "shop": shop(site), "at": now, "session": session,
-             "status": "pending"}
+    entry = {"id": secrets.token_hex(12), "shop": shop(site), "at": now, "session": session,
+             "checkout_id":checkout_id, "card_handle":card_handle, "snapshot_digest":snapshot_digest,
+             "status":"pending"}
     with _locked(home) as path:
-        entries = [e for e in _read(path) if now - float(e.get("at") or 0) < KEEP]
-        again = next((e for e in reversed(entries) if e.get("shop") == entry["shop"] and session
-                      and e.get("session") == session and e.get("status") in ("pending", "unknown")
-                      and now - float(e.get("at") or 0) < REFILL), None)
-        if again is not None:
-            # A refill of the same payment: one entry, still waiting for its outcome.
-            again.update({"at": now, "status": "pending"})
-            _write(path, entries)
-            return again
+        entries = _read(path)
+        if checkout_id:
+            same = next((e for e in entries if e.get('session') == session and e.get('checkout_id') == checkout_id), None)
+            if same:
+                if same.get('status') not in ('pending','unknown'):
+                    raise ValueError('Este checkout ya tiene un resultado; no puede enviarse otra vez.')
+                return same
+        pending = [e for e in entries if e.get('shop') == entry['shop'] and e.get('status') in ('pending','unknown')]
+        if pending:
+            raise ValueError('Hay un pago pendiente de confirmar en esta tienda; reconcilia su resultado.')
         entries.append(entry)
-        _write(path, entries)
+        _write(path,entries)
     return entry
 
 
 def settle(home: Path, site: str, outcome: str, order: str = "", total: str = "",
-           now: Optional[float] = None) -> Dict[str, Any]:
+           now: Optional[float] = None, *, session: str = "", attempt_id: str = "") -> Dict[str, Any]:
     now = now or time.time()
     name = shop(site)
-    if outcome not in OUTCOMES:
-        return {"ok": False, "error": f"outcome must be one of {', '.join(OUTCOMES)}"}
-    if not name:
-        return {"ok": False, "error": "site is required"}
+    if outcome not in OUTCOMES or not name:
+        return {"ok":False,"error":"Indica una tienda y un resultado válido."}
+    if outcome == 'paid' and not str(order or '').strip():
+        return {"ok":False,"error":"Un pago confirmado requiere el número de pedido observado."}
     with _locked(home) as path:
         entries = _read(path)
-        recent = [e for e in entries if e.get("shop") == name and now - float(e.get("at") or 0) < WINDOW]
-        if not recent:
-            return {"ok": False, "error": f"no card payment recorded on {name} in the last 24 hours"}
-        target = next((e for e in reversed(recent) if e.get("status") == "pending"), recent[-1])
-        target.update({"status": outcome, "settled_at": now,
-                       "order": str(order or "")[:120], "total": str(total or "")[:40]})
-        _write(path, entries)
-    return {"ok": True, "shop": name, "outcome": outcome}
+        matches = [e for e in entries if e.get('shop') == name
+                   and (not session or e.get('session') == session)
+                   and (not attempt_id or e.get('id') == attempt_id)]
+        # Legacy caller may reconcile one unambiguous attempt, never rewrite a paid order.
+        if not attempt_id:
+            matches = [e for e in matches if e.get('status') in ('pending','unknown')]
+        if len(matches) != 1:
+            return {"ok":False,"error":"Identifica el intento exacto de este recado; no se cambia otro pago."}
+        target = matches[0]
+        if target.get('status') in ('paid','declined','not_charged'):
+            if target['status'] == outcome and target.get('order','') == str(order or '')[:120]:
+                return {"ok":True,"shop":name,"outcome":outcome,"attempt_id":target['id']}
+            return {"ok":False,"error":"El resultado confirmado no puede sustituirse por otro."}
+        target.update(status=outcome,settled_at=now,order=str(order or '')[:120],total=str(total or '')[:40])
+        _write(path,entries)
+    return {"ok":True,"shop":name,"outcome":outcome,"attempt_id":target['id']}
 
 
 def _ago(seconds: float) -> str:
@@ -155,17 +158,11 @@ def guard(home: Path, site: str, session: str = "", now: Optional[float] = None)
     name = shop(site)
     if not name:
         return None
-    entries = [e for e in _read(_ledger(home))
-               if e.get("shop") == name and now - float(e.get("at") or 0) < WINDOW]
+    entries = [e for e in _read(_ledger(home)) if e.get('shop') == name
+               and (e.get('status') in ('pending','unknown') or now-float(e.get('at') or 0) < WINDOW)]
     if not entries:
         return None
-    open_ones = [e for e in entries if e.get("status") in ("pending", "unknown")]
-    if (session and not any(e.get("status") == "paid" for e in entries) and open_ones
-            and all(e.get("session") == session and now - float(e.get("at") or 0) < REFILL
-                    for e in open_ones)):
-        # The same payment, filled again before it was sent: Hermes' own «Pagar» still asks.
-        return None
-    pending = [e for e in entries if e.get("status") == "pending"]
+    pending = [e for e in entries if e.get("status") in ("pending", "unknown")]
     if pending:
         ago = _ago(now - float(pending[-1]["at"]))
         return {"action": "block", "message": (
@@ -210,7 +207,7 @@ def open_payment(home: Path, session: str, now: Optional[float] = None) -> Optio
     now = now or time.time()
     for entry in reversed(_read(_ledger(home))):
         if (session and entry.get("session") == session and entry.get("status") in ("pending", "unknown")
-                and now - float(entry.get("at") or 0) < 3600):
+                ):
             return entry
     return None
 

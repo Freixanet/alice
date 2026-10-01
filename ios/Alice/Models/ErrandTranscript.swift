@@ -43,9 +43,9 @@ enum ErrandTranscript {
                 if let owner = choices.last(where: { messages[$0].createdAt <= errand.startedAt }) ?? choices.first {
                     // The reply to the choice («La estoy preparando…») reads first, then the errand:
                     // shown before it, the reply landed above a card already on screen.
-                    let replied = messages[(owner + 1)...].contains { canHost($0) }
-                    if !replied, now.timeIntervalSince(errand.startedAt) < replyWait { continue }
-                    let at = latest(from: owner, until: until(errand), in: messages)
+                    let reply = messages.indices.dropFirst(owner + 1).prefix(while: { messages[$0].role != .user }).first { canHost(messages[$0]) }
+                    guard let reply else { continue }
+                    let at = reply
                     result[messages[at].id, default: []].append(ErrandRef(errandID: errand.id, title: errand.title))
                     continue
                 }
@@ -65,35 +65,11 @@ enum ErrandTranscript {
                 }
             }
             guard let owner = [explicit[errand.id], inferred].compactMap({ $0 }).min() else { continue }
-            result[messages[latest(from: owner, until: until(errand), in: messages)].id, default: []].append(
+            result[messages[owner].id, default: []].append(
                 ErrandRef(errandID: errand.id, title: errand.title)
             )
         }
         return result
-    }
-
-    /// How long a chosen purchase's card waits for the reply to the choice before showing anyway.
-    static let replyWait: TimeInterval = 15
-
-    /// A running errand is the live thing in the chat and stays last, its browser and cards where
-    /// the person is reading; a finished one stays after the last turn before it ended. A message's
-    /// time is when its turn began, not when it appeared, so ordering a running errand by time put
-    /// its browser above replies already on screen.
-    private static func until(_ errand: Errand) -> Date {
-        errand.status.isOpen ? .distantFuture : errand.updatedAt
-    }
-
-    /// The chat reads in the order things happened: an errand's block sits after the last turn
-    /// written before its latest change, not under the turn that started it. Anchored there, a
-    /// browser, a summary or a stop showed up above turns written after them.
-    static func latest(from owner: Int, until moment: Date, in messages: [Message]) -> Int {
-        var at = owner
-        var index = owner + 1
-        while index < messages.count, messages[index].createdAt <= moment {
-            if messages[index].role == .user || canHost(messages[index]) { at = index }
-            index += 1
-        }
-        return at
     }
 
     private static func canHost(_ message: Message) -> Bool {

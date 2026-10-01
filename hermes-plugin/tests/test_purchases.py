@@ -50,16 +50,16 @@ class LedgerTests(unittest.TestCase):
 
         purchases.record(self.home, "b.es", now=NOW)
         purchases.settle(self.home, "b.es", "unknown", now=NOW + 60)
-        self.assertEqual(purchases.guard(self.home, "b.es", now=NOW + 120)["action"], "approve")
+        self.assertEqual(purchases.guard(self.home, "b.es", now=NOW + 120)["action"], "block")
 
     def test_declined_or_not_charged_lets_it_try_again(self):
         purchases.record(self.home, "shop.es", now=NOW)
         purchases.settle(self.home, "shop.es", "declined", now=NOW + 60)
         self.assertIsNone(purchases.guard(self.home, "shop.es", now=NOW + 120))
 
-    def test_a_day_later_nothing_stands_in_the_way(self):
+    def test_an_unsettled_payment_still_blocks_after_a_day(self):
         purchases.record(self.home, "shop.es", now=NOW)
-        self.assertIsNone(purchases.guard(self.home, "shop.es", now=NOW + purchases.WINDOW + 1))
+        self.assertEqual(purchases.guard(self.home, "shop.es", now=NOW + purchases.WINDOW + 1)["action"],"block")
 
     def test_settling_needs_a_real_outcome_and_a_recorded_payment(self):
         self.assertFalse(purchases.settle(self.home, "shop.es", "paid", now=NOW)["ok"])
@@ -71,28 +71,25 @@ class LedgerTests(unittest.TestCase):
         purchases.record(self.home, "shop.es", now=NOW)
         path = self.home / ".alice" / "purchases.json"
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(set(json.loads(path.read_text())[0]), {"id", "shop", "at", "session", "status"})
+        self.assertEqual(set(json.loads(path.read_text())[0]), {"id", "shop", "at", "session", "status", "checkout_id", "card_handle", "snapshot_digest"})
 
-    def test_a_broken_ledger_does_not_break_a_payment(self):
+    def test_a_broken_ledger_blocks_and_preserves_evidence(self):
         path = self.home / ".alice" / "purchases.json"
         path.parent.mkdir(parents=True)
         path.write_text("{not json")
-        self.assertIsNone(purchases.guard(self.home, "shop.es", now=NOW))
-        purchases.record(self.home, "shop.es", now=NOW)
-        self.assertEqual(purchases.guard(self.home, "shop.es", now=NOW + 1)["action"], "block")
+        for operation in (lambda:purchases.guard(self.home,"shop.es",now=NOW),
+                          lambda:purchases.record(self.home,"shop.es",now=NOW)):
+            with self.assertRaises(ValueError):operation()
+        self.assertEqual(path.read_text(),"{not json")
 
-    def test_filling_the_same_form_again_is_the_same_payment(self):
-        first = purchases.record(self.home, "shop.es", session="s1", now=NOW)
-        self.assertIsNone(purchases.guard(self.home, "shop.es", "s1", now=NOW + 90))
-        again = purchases.record(self.home, "shop.es", session="s1", now=NOW + 100)
-        self.assertEqual(again["id"], first["id"], "one payment, one entry")
-        # Another conversation, or much later, is a second payment.
-        self.assertEqual(purchases.guard(self.home, "shop.es", "s2", now=NOW + 120)["action"], "block")
-        self.assertEqual(purchases.guard(self.home, "shop.es", "s1", now=NOW + purchases.REFILL + 200)["action"],
-                         "block")
-        # Once paid, even the same conversation asks the person.
-        purchases.settle(self.home, "shop.es", "paid", now=NOW + 150)
-        self.assertEqual(purchases.guard(self.home, "shop.es", "s1", now=NOW + 160)["action"], "approve")
+    def test_an_exact_checkout_replay_returns_the_same_attempt_but_never_refills(self):
+        first = purchases.record(self.home,"shop.es",session="s1",checkout_id="checkout-1",now=NOW)
+        again = purchases.record(self.home,"shop.es",session="s1",checkout_id="checkout-1",now=NOW+100)
+        self.assertEqual(first['id'],again['id'])
+        self.assertEqual(purchases.guard(self.home,"shop.es","s1",now=NOW+90)['action'],'block')
+        with self.assertRaises(ValueError):purchases.record(self.home,"shop.es",session="s1",checkout_id="checkout-2",now=NOW+200)
+        purchases.settle(self.home,"shop.es","paid",order="A-123",session="s1",attempt_id=first['id'],now=NOW+150)
+        self.assertEqual(purchases.guard(self.home,"shop.es","s1",now=NOW+160)['action'],'approve')
 
     def test_a_payment_error_on_the_page_is_flagged_once(self):
         self.assertIsNone(purchases.error_note(self.home, "s1", "Operación denegada"), "no payment, no note")
@@ -113,7 +110,7 @@ class LedgerTests(unittest.TestCase):
         self.assertIn("shop.es", line)
         self.assertEqual(purchases.follow_up(self.home, entry["id"], now=NOW + 700), "")
         settled = purchases.record(self.home, "b.es", session="s1", now=NOW)
-        purchases.settle(self.home, "b.es", "paid", now=NOW + 60)
+        purchases.settle(self.home, "b.es", "paid", order="B-123", now=NOW + 60)
         self.assertEqual(purchases.follow_up(self.home, settled["id"], now=NOW + 600), "", "settled: silent")
 
     def test_the_follow_up_script_runs_on_its_own(self):

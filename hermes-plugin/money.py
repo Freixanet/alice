@@ -13,7 +13,13 @@ from decimal import Decimal
 from typing import Any, Optional, Tuple
 
 SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP", "¥": "JPY"}
-CODES = re.compile(r"\b(EUR|USD|GBP|CHF|MXN|JPY|CAD|AUD|SEK|NOK|DKK|PLN)\b", re.I)
+ZERO = {'JPY','KRW','VND','CLP','ISK','PYG','XOF','XAF','RWF','UGX','GNF','BIF','DJF','KMF','VUV','XPF'}
+THREE = {'BHD','KWD','JOD','OMR','TND','IQD','LYD'}
+CODES = re.compile(r"\b(EUR|USD|GBP|CHF|MXN|JPY|CAD|AUD|NZD|CNY|HKD|SGD|SEK|NOK|DKK|PLN|BRL|INR|KRW|VND|CLP|ISK|PYG|XOF|XAF|RWF|UGX|GNF|BIF|DJF|KMF|VUV|XPF|BHD|KWD|JOD|OMR|TND|IQD|LYD)\b", re.I)
+
+
+def exponent(code):
+    return 0 if code in ZERO else 3 if code in THREE else 2
 NUMBER = re.compile(r"\d[\d.,\s  ']*")
 
 
@@ -31,7 +37,7 @@ def parse(value: Any, currency: str = "") -> Optional[Tuple[int, str]]:
         amount = Decimal(str(value))
         if not amount.is_finite() or amount < 0:
             return None
-        amount *= 100
+        amount *= 10 ** exponent(hint)
         return (int(amount), hint) if amount == amount.to_integral_value() else None
     text = str(value).strip()
     if not text:
@@ -40,6 +46,10 @@ def parse(value: Any, currency: str = "") -> Optional[Tuple[int, str]]:
     if not found:
         return None
     explicit = {SYMBOLS[s] for s in SYMBOLS if s in text}
+    if '$' in text and hint in ('USD','CAD','AUD','NZD','MXN','HKD','SGD'):
+        explicit.discard('USD');explicit.add(hint)
+    if '¥' in text and hint=='CNY':
+        explicit.discard('JPY');explicit.add(hint)
     explicit.update(code.upper() for code in CODES.findall(text))
     if len(explicit) > 1 or (explicit and hint and hint not in explicit):
         return None
@@ -50,19 +60,21 @@ def parse(value: Any, currency: str = "") -> Optional[Tuple[int, str]]:
     if remainder.strip():
         return None
     raw = found.group(0).strip()
-    decimal = re.search(r"[.,](\d{1,2})$", raw)
+    code = next(iter(explicit),hint)
+    places = exponent(code)
+    decimal = re.search(r"[.,](\d{1,"+str(places)+r"})$",raw) if places else None
     if decimal:
         whole = raw[: decimal.start()]
-        fraction = decimal.group(1).ljust(2, "0")
+        fraction = decimal.group(1).ljust(places, "0")
     else:
-        whole, fraction = raw, "00"
+        whole, fraction = raw, "0"
     if not re.fullmatch(r"\d+|\d{1,3}(?P<sep>[.,\s  '])\d{3}(?:(?P=sep)\d{3})*", whole):
         return None
     whole = re.sub(r"[.,\s  ']", "", whole)
     if not whole.isdigit():
         return None
     code = next(iter(explicit), hint)
-    return int(whole) * 100 + int(fraction), code
+    return int(whole) * (10 ** places) + int(fraction), code
 
 
 def cents(value: Any, currency: str = "") -> Optional[int]:
@@ -82,11 +94,12 @@ def same(a: Any, b: Any, currency: str = "") -> bool:
 
 def text(amount: int, currency: str) -> str:
     """Cents as a person reads them: 2798 EUR → «27,98 €», 2798 USD → «$27.98»."""
-    whole, fraction = divmod(amount, 100)
     currency = str(currency or "").upper()
+    places=exponent(currency)
+    whole, fraction = divmod(amount,10 ** places)
     if currency == "EUR" or not currency:
         grouped = f"{whole:,}".replace(",", ".") + f",{fraction:02d}"
         return grouped + (" €" if currency == "EUR" else "")
     symbol = {"USD": "$", "GBP": "£"}.get(currency)
-    value = f"{whole:,}.{fraction:02d}"
+    value = f"{whole:,}" + (f".{fraction:0{places}d}" if places else "")
     return f"{symbol}{value}" if symbol else f"{value} {currency}"
