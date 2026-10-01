@@ -936,6 +936,25 @@ def new_tab(url="about:blank"):
     if url != "about:blank":
         goto_url(url)
     return _tid
+# alice: a page alert (alert, confirm, leave-page) freezes the page until it is answered.
+# alice: an alert is acknowledged; a confirm is accepted only when asked, never when it orders.
+def close_dialog(accept=False):
+    import re as _re
+    _info = page_info()
+    _d = _info.get("dialog") if isinstance(_info, dict) else None
+    if not _d:
+        return None
+    _kind = _d.get("type") or "alert"
+    _pays = _re.search({PAY_WORDS.pattern!r}, str(_d.get("message") or ""), _re.I)
+    _yes = _kind in ("alert", "beforeunload") or (bool(accept) and _kind == "confirm" and not _pays)
+    cdp("Page.handleJavaScriptDialog", accept=_yes)
+    return {{"closed": _kind, "accepted": _yes, "message": str(_d.get("message") or "")[:200]}}
+try:
+    _alice_closed = close_dialog()
+    if _alice_closed:
+        print("[alice] Alerta de la página cerrada:", _alice_closed)
+except Exception:
+    pass
 """
 
 

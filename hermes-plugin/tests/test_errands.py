@@ -869,3 +869,24 @@ class CartStepTests(unittest.TestCase):
         self.assertFalse(errands.is_pay_action("browser_exec", click, payment_step=False))
         self.assertTrue(errands.is_pay_action("browser_exec", {"code": "click Pagar"}, payment_step=False))
         self.assertTrue(errands.is_pay_action("browser_exec", click, "https://s.test/checkout/payment", False))
+
+
+class DialogTests(unittest.TestCase):
+    def run_preamble(self, dialog, call=""):
+        code = errands.context_preamble("e-test")
+        start = code.index("# alice: a page alert")
+        handled = []
+        env = {"page_info": lambda: {"dialog": dialog} if dialog else {"url": "x"},
+               "cdp": lambda method, **kw: handled.append(kw.get("accept"))}
+        exec(code[start:] + call, env)  # noqa: S102 — the preamble's own text
+        return handled
+
+    def test_an_alert_is_closed_before_the_step(self):
+        self.assertEqual(self.run_preamble({"type": "alert", "message": "Obligatorio"}), [True])
+        self.assertEqual(self.run_preamble(None), [])
+
+    def test_a_confirm_that_orders_is_never_accepted(self):
+        order = {"type": "confirm", "message": "¿Realizar pedido ahora?"}
+        self.assertEqual(self.run_preamble(order, "\nclose_dialog(accept=True)"), [False, False])
+        removal = {"type": "confirm", "message": "¿Eliminar este producto?"}
+        self.assertEqual(self.run_preamble(removal, "\nclose_dialog(accept=True)"), [False, True])
