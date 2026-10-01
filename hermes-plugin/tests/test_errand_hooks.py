@@ -147,11 +147,20 @@ class ErrandHookTests(unittest.TestCase):
         self.errands.decide_checkout(self.home,entry['id'],True)
         self.errands.update(self.home,entry['id'],offer={'quote_ref':'pq-test'})
         prices=self.plugin._module('purchase_prices.py','alice_purchase_prices')
-        with mock.patch.object(prices,'payment_ready',return_value=False):
+        access=self.plugin._module('errand_access.py','alice_errand_access')
+        with mock.patch.object(access,'target',return_value=('https://www.hsnstore.com',{'url':'https://www.hsnstore.com/checkout/step/payment/'},None)), mock.patch.object(prices,'payment_ready',return_value=False):
             verdict=self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id'])
         self.assertEqual(verdict['action'],'block')
-        with mock.patch.object(prices,'payment_ready',return_value=True):
+        with mock.patch.object(access,'target',return_value=('https://www.hsnstore.com',{'url':'https://www.hsnstore.com/checkout/step/payment/'},None)), mock.patch.object(prices,'payment_ready',return_value=True):
             self.assertIsNone(self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id']))
+
+    def test_coordinate_payment_uses_this_errands_page_not_another_tab(self):
+        entry=self.errand()
+        self.errands.update(self.home,entry['id'],offer={'quote_ref':'pq-test'})
+        access=self.plugin._module('errand_access.py','alice_errand_access')
+        with mock.patch.object(self.plugin,'_active_url',return_value='https://other.example/home'), mock.patch.object(access,'target',return_value=('https://www.hsnstore.com',{'url':'https://www.hsnstore.com/checkout/step/payment/'},None)):
+            verdict=self.plugin._guard_errand('browser_exec',{'code':'click_at_xy(30,50)'},session_id=entry['session_id'])
+        self.assertEqual(verdict['action'],'block')
 
     def test_an_errand_step_is_the_comment_on_the_browser_code(self):
         entry = self.errand()

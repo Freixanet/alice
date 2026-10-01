@@ -340,6 +340,15 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
     try:
         errands = _errands()
         root = _hermes_root()
+        entry = errands.of_session(root,session)
+        active_url = _active_url()
+        presses = name in ('browser_click','browser_press') or bool(errands.CLICKS.search(errands._text_of(args)))
+        if presses and (entry or {}).get('offer'):
+            try:
+                page_origin, context, _ = _module("errand_access.py", "alice_errand_access").target(entry)
+                active_url = context.get('url') or page_origin
+            except Exception:
+                return {"action":"block","message":"No se pudo verificar la página de este recado antes de pulsar un control. Abre su propia página y reintenta."}
         meta = _vault_meta(name, args)
         if meta is not None and meta.kind != "payment":
             return errands.login_gate(root, session)
@@ -349,10 +358,10 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
             verdict = errands.pay_gate(root, session, card_fill_site=meta.origin or "", merchant_site=merchant,
                                        gateways=cards.PAYMENT_GATEWAYS)
         else:
-            verdict = errands.pay_gate(root, session, tool_name=name, args=args, active_url=_active_url())
+            verdict = errands.pay_gate(root, session, tool_name=name, args=args, active_url=active_url)
         if verdict:
             return verdict
-        paying = meta is not None or errands.is_pay_action(name,args,_active_url())
+        paying = meta is not None or errands.is_pay_action(name,args,active_url)
         entry = errands.of_session(root,session)
         if paying and (entry or {}).get('offer'):
             if not _module("purchase_prices.py", "alice_purchase_prices").payment_ready(root,entry):

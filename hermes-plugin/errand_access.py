@@ -51,6 +51,7 @@ def target(entry):
     info = command('Target.getTargetInfo', {'targetId': state['target']})['targetInfo']
     if info.get('browserContextId') != state['context']:
         raise ValueError('La página no pertenece a este recado.')
+    state['url'] = info['url']
     return origin(info['url']), state, command
 
 
