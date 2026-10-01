@@ -104,6 +104,33 @@ A snapshot sent to Hermes via `POST api/plugins/alice/app/diagnostics`:
 - Unknown events
 - Recent diagnostics log lines
 
+### Mac/backend diagnostics
+
+The Hermes gateway and dashboard write logs to `~/.hermes/logs/`. The
+Alice plugin writes to its own state files in
+`~/.hermes/profiles/<profile>/.alice/memory/`. The Mac notifier
+(`mac/notifier/`) is an optional Python service that forwards Hermes
+activity as local macOS notifications.
+
+To collect Mac diagnostics:
+
+```bash
+# Gateway and dashboard logs
+tail -n 200 ~/.hermes/logs/gateway.log
+tail -n 200 ~/.hermes/logs/dashboard.log
+
+# Plugin state (non-content)
+cat ~/.hermes/profiles/<profile>/.alice/memory/settings.json
+ls -la ~/.hermes/plugins/alice/
+
+# Notifier status
+python -m unittest discover -s mac/notifier
+```
+
+The Mac logs do not include message content, API keys or Hermes
+addresses. They contain request categories, response codes and
+timings.
+
 ### Web operational telemetry (`operational-telemetry.md`)
 
 Two machine-readable record types in Vercel runtime logs:
@@ -132,6 +159,8 @@ identifier or secret.
 | Streaming | Stream start, stream end, stream disconnect | DiagnosticsLog | No per-token timing |
 | Mac/backend connectivity | Reachability check, latency | DiagnosticChecks | No connection history |
 | Hermes | Wellbeing, unknown events, manifest | AppDiagnostics, DiagnosticChecks | No RPC call tracing |
+| Mac backend | Gateway/dashboard logs, plugin state | `~/.hermes/logs/` | No structured log aggregation |
+| Mac notifier | Delivery, relay health | `~/.hermes/logs/` | No delivery success/failure rate |
 | Agent execution | Run start, run end, approval, cancellation | DiagnosticsLog | No agent decision tracing |
 | Background work | Background refresh, notification delivery | DiagnosticsLog | No delivery success/failure rate |
 | Scheduled work | Routine run start/end, quiet runs | DiagnosticsLog | No schedule drift detection |
