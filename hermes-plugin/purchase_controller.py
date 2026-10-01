@@ -208,11 +208,13 @@ def reserve(home, errand_id, stage, *, inspect=None, evaluate=None):
         raise ValueError('Falta la aprobación vigente del pedido comprobado y su tarjeta exacta.')
     if stage == 'merchant' and not ready(home,entry,inspect=inspect,evaluate=evaluate):
         raise ValueError('El pedido cambió desde la aprobación; prepara un nuevo resumen.')
+    bank_amounts = []
     if stage == 'bank':
         if origin == module('errand_access').origin(entry['offer']['url']):
             raise ValueError('El envío bancario debe ocurrir en la pasarela de este intento.')
         actual = ev(context, r'''(()=>{const values=Array.from(document.querySelectorAll('[data-total],.total,.amount,[class*=total],[id*=amount]')).filter(e=>e.getClientRects().length>0).map(e=>e.innerText.trim());return values})()''')
-        if not any(module('money').parse(t,checkout['currency']) == (checkout['approved_cents'],checkout['currency']) for t in actual or []):
+        bank_amounts = [t for t in actual or [] if module('money').parse(t,checkout['currency']) == (checkout['approved_cents'],checkout['currency'])]
+        if not bank_amounts:
             raise ValueError('La pasarela no confirma el importe aprobado; revisa el pago en el navegador.')
     def commit(current):
         if current['status'] != 'working' or (current.get('checkout') or {}).get('id') != checkout['id']:
@@ -225,7 +227,7 @@ def reserve(home, errand_id, stage, *, inspect=None, evaluate=None):
         attempt = module('purchases').record(home,current['site'],current['session_id'],checkout_id=checkout['id'],
                  card_handle=checkout.get('card_handle',''),snapshot_digest=checkout.get('snapshot',{}).get('digest',''))
         phase(current,'submitting',attempt_id=attempt['id'],submitted_stages=state.get('submitted_stages',[])+[stage],
-              payment_origin=origin,context=context['context'],target=context['target'])
+              payment_origin=origin,context=context['context'],target=context['target'],bank_amounts=bank_amounts)
         return attempt
     return mutate(home,errand_id,commit)
 
@@ -308,6 +310,7 @@ def act(home, errand_id, args, *, inspect=None, evaluate=None):
             if not entry.get('offer'):raise ValueError('Este recado necesita un pedido comprobado antes de pagar.')
             stage = 'merchant' if origin == module('errand_access').origin(entry['offer']['url']) else 'bank'
             reserve(home,errand_id,stage,inspect=inspect,evaluate=evaluate)
+            entry = module('errands').get(home,errand_id)
         elif (entry.get('purchase') or {}).get('attempt_id'):
             # After submission only an observed OTP verification control is allowed.
             if not re.search(r'\b(verify|verificar|autenticar|authenticate)\b',desc['text'],re.I):
@@ -323,7 +326,7 @@ def act(home, errand_id, args, *, inspect=None, evaluate=None):
     script = r'''(()=>{const es=Array.from(document.querySelectorAll('''+json.dumps(selector)+r''')).filter(e=>e.getClientRects().length>0);if(es.length!==1)return {changed:true};const e=es[0];const d={tag:e.tagName,type:e.type||'',text:[e.innerText,e.getAttribute('aria-label'),e.value].join(' ').trim(),name:[e.name,e.id,e.autocomplete].join(' '),href:e.tagName==='A'?e.href:null,form:e.form?.getAttribute('action')||'',submit:e.type==='submit'||e.tagName==='BUTTON'&&e.type!=='button'};if(JSON.stringify(d)!==JSON.stringify('''+json.dumps(expected)+r'''))return {changed:true};'''
     script += 'if(location.origin!==' + json.dumps(origin) + ')return {changed:true};'
     if paying and stage=='bank':
-        script += 'const amounts=Array.from(document.querySelectorAll("[data-total],.total,.amount,[class*=total],[id*=amount]")).filter(n=>n.getClientRects().length>0).map(n=>n.innerText.trim());if(!amounts.includes('+json.dumps(module('money').text(entry['checkout']['approved_cents'],entry['checkout']['currency']))+'))return {changed:true};'
+        script += 'const amounts=Array.from(document.querySelectorAll("[data-total],.total,.amount,[class*=total],[id*=amount]")).filter(n=>n.getClientRects().length>0).map(n=>n.innerText.trim());if(!'+json.dumps(entry['purchase']['bank_amounts'])+'.some(a=>amounts.includes(a)))return {changed:true};'
     if paying and stage=='merchant':
         snap = entry['checkout']['snapshot']
         script += 'const observed='+snap['script']+';if(JSON.stringify(observed)!==JSON.stringify('+json.dumps(snap['observed'])+'))return {changed:true};'
@@ -370,6 +373,39 @@ def reconcile(home, errand_id, args, *, inspect=None, evaluate=None):
         current['reason'] = '' if outcome=='paid' else 'El pago fue rechazado.' if outcome=='declined' else 'El resultado del pago sigue sin confirmar. Comprueba el pedido antes de repetirlo.'
     mutate(home,errand_id,finish)
     return result
+
+
+def retry_after_no_charge(home, errand_id):
+    """Retire only an exact, definitively unpaid attempt; never reuse its consent."""
+    def reset(entry):
+        state = entry.get('purchase') or {}
+        if entry['status'] != 'stuck' or state.get('phase') != 'declined':
+            raise ValueError('Primero confirma el resultado del intento existente.')
+        if entry.get('run_submission'):
+            raise ValueError('Conserva el envío de Hermes sin confirmar antes de preparar otro pedido.')
+        purchases = module('purchases')
+        with purchases._locked(home) as path:
+            attempt = next((row for row in purchases._read(path)
+                            if row.get('id') == state.get('attempt_id')
+                            and row.get('session') == entry['session_id']
+                            and row.get('shop') == purchases.shop(entry['site'])
+                            and row.get('checkout_id') == (entry.get('checkout') or {}).get('id')), None)
+        if not attempt or attempt.get('status') not in ('declined', 'not_charged'):
+            raise ValueError('No está confirmado que este intento terminara sin cobrar.')
+        errands = module('errands')
+        context = errands.context_file(errand_id)
+        if context.exists():
+            saved = json.loads(context.read_text(encoding='utf-8'))
+            # Never dispose the person's shared fallback browser.
+            if not saved.get('cdp') or not errands.release_context(errand_id):
+                raise ValueError('No se pudo cerrar el navegador del intento rechazado. Conserva su estado.')
+        previous = list(state.get('previous_attempts') or [])
+        previous.append({'id':attempt['id'], 'outcome':attempt['status'], 'checkout_id':attempt['checkout_id']})
+        phase(entry, 'preparing', attempt_id=None, submitted_stages=[], prepared=False,
+              previous_attempts=previous[-32:], payment_origin=None, bank_amounts=[], context=None, target=None)
+        entry.update(checkout=None, cart_evidence=None, checkout_evidence=None, receipt=None,
+                     browser_target=None, run_id='', run_submission=None, runs=0, reason='', blocked=None)
+    return mutate(home, errand_id, reset)
 
 
 def next_step(entry):

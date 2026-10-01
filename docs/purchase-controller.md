@@ -19,7 +19,13 @@ reference and approved amount. Stopping after submission preserves reconciliatio
 
 Atomic private state files preserve malformed archives instead of discarding
 purchase evidence. Gateway retries reuse a durable idempotency key only when
-Hermes advertises support. Missing support stops an uncertain submission.
+Hermes advertises support. Missing support stops an uncertain submission. Replays additionally require a
+persisted submission time and a live, finite retention window; expired or legacy
+keys remain blocked. A definitive unpaid attempt can be retried by the person,
+but its checkout approval is retired and a new isolated browser/order requires
+fresh consent. Unknown payment or gateway submissions are never cleared by this
+retry. Bank submission verifies the observed approved amount independently of
+its decimal formatting and rechecks that visible value in the click expression.
 
 ## Boundaries still requiring work
 
@@ -28,10 +34,9 @@ and arbitrary page navigation still depend on the model and shop adapters. Compl
 constraints, arbitrary variants, multi-item baskets, frames, stored merchant payment
 methods and unrecognized payment providers are incomplete or refused. Selectors
 are model-proposed: SKU identity, complete basket enumeration and total semantics
-need stronger adapters before a release. Durable run retries also need the upstream
-idempotency retention window enforced. Credential replacement after a failed login,
-startup recovery without opening the errands API, declined-payment retries and
-notification delivery need additional work. Generic non-purchase errand workflows
+need stronger adapters before a release. Credential replacement after a failed login, startup recovery without opening
+the errands API and notification delivery need additional work. Rejection evidence
+and browser cleanup still need real gateway integration validation. Generic non-purchase errand workflows
 must be reviewed against the more restrictive execution boundary.
 
 The iOS browser is scoped to the errand target and profile. Transcript anchoring
@@ -46,3 +51,13 @@ The fixture proves the controller path from a prepared basket through exact cons
 to one synthetic submission and receipt, with zero model calls in that segment.
 It does not prove autonomous discovery or checkout across arbitrary real shops.
 No live Hermes prompts, simulator, real purchases or payments are part of this check.
+
+## Retention contract inspected
+
+Inspected the installed Hermes distribution's `gateway/platforms/api_server_runs.py`
+(`runs_idempotency.retention_seconds`) and `api_server_run_idempotency.py` (24-hour
+terminal replay retention). This was a read-only source check, not a live API test.
+For reproducibility, their SHA-256 values were respectively
+`67315fb146f3f5d124675c4dd0e2c5fbe233618c94af2799c438175592dfba97` and
+`c3f25711695a5aad97b207581e0c532d1291bb9f12ca3c1e32add19e5f0f153a`.
+The client uses the advertised window, never a hard-coded 24-hour assumption.

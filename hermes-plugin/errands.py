@@ -828,7 +828,15 @@ def go_on(home: Path, errand_id: str, accept_price: bool = False) -> Optional[Di
     if entry is None or entry.get("status") != "stuck":
         return None
     if (entry.get('purchase') or {}).get('attempt_id'):
-        resume(home,errand_id,'Comprueba el resultado del mismo intento de pago. No recargues ni vuelvas a pagar.')
+        if (entry.get('purchase') or {}).get('phase') == 'declined':
+            try:
+                _purchase_controller().retry_after_no_charge(home, errand_id)
+            except (ValueError, OSError) as exc:
+                update(home, errand_id, reason=str(exc))
+                return get(home, errand_id)
+            resume(home, errand_id, 'El intento anterior terminó sin cobrar, comprobado en su registro. Prepara un pedido nuevo y solicita una nueva aprobación exacta antes de pagar.')
+        else:
+            resume(home,errand_id,'Comprueba el resultado del mismo intento de pago. No recargues ni vuelvas a pagar.')
         return get(home,errand_id)
     blocked = entry.get("blocked") if isinstance(entry.get("blocked"), dict) else {}
     offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else None
@@ -1058,6 +1066,18 @@ def _env_value(path: Path, name: str) -> str:
     return ""
 
 
+def replay_window_valid(submission, retention_seconds, now=None):
+    """A key with no proven live retention window must never create another run."""
+    try:
+        started = float(submission['submitted_at'])
+        window = min(float(submission['retention_seconds']), float(retention_seconds))
+        age = (time.time() if now is None else now) - started
+        # Leave room for transit to Hermes, including short retention contracts.
+        return 0 <= age < window - min(5, window * 0.1) and 0 < window < float('inf')
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 class Gateway:
     """The runs API of this Mac's Hermes gateway (loopback only; the key is never logged)."""
 
@@ -1094,8 +1114,19 @@ class Gateway:
                 if exc.code not in (404,405):raise
                 caps={}
             found = (caps.get('features') or {}).get('runs_idempotency') or {}
-            self._durable_runs = found.get('supported') is True and found.get('durable') is True
+            try:
+                window = float(found.get('retention_seconds') or 0)
+            except (TypeError, ValueError):
+                window = 0
+            self.idempotency_retention_seconds = window if 0 < window < float('inf') else 0
+            self._durable_runs = (found.get('supported') is True and found.get('durable') is True
+                                  and self.idempotency_retention_seconds > 0)
         return self._durable_runs
+
+    def can_replay(self, submission, now=None):
+        if not self.supports_idempotency():
+            return False
+        return replay_window_valid(submission, self.idempotency_retention_seconds, now)
 
     def start(self, session_id: str, text: str, *, model: str, provider: str, idempotency_key: str = "") -> str:
         out = self._call("POST", "/v1/runs", {"input": text, "session_id": session_id,
@@ -1350,9 +1381,11 @@ class Engine:
                 text = entry.get("resume_message") or text
                 pending_submit = entry.get('run_submission')
                 durable = self.gateway.supports_idempotency()
-                if pending_submit and not durable:
-                    raise ValueError('No se conoce el resultado del envío anterior y Hermes no ofrece idempotencia durable. Conserva ese intento.')
-                submission = pending_submit or {'key':secrets.token_hex(24),'text':text,'model':entry['model'],'provider':entry['provider']}
+                if pending_submit and (not durable or not self.gateway.can_replay(pending_submit)):
+                    update(self.home, self.errand_id, status='stuck', reason='El envío anterior sigue sin confirmar y su protección contra duplicados no está vigente. Conserva ese intento; no se ha enviado otro.')
+                    return 'stuck'
+                submission = pending_submit or {'key':secrets.token_hex(24),'text':text,'model':entry['model'],'provider':entry['provider'],
+                                               'submitted_at':time.time(),'retention_seconds':getattr(self.gateway,'idempotency_retention_seconds',0)}
                 update(self.home,self.errand_id,run_submission=submission)
                 run_id = self.gateway.start(entry["session_id"], submission['text'],
                                             model=submission['model'], provider=submission['provider'],

@@ -3,6 +3,8 @@ import concurrent.futures
 import copy
 import importlib.util
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -127,6 +129,73 @@ class AuthorityTests(unittest.TestCase):
     def test_an_explicit_bank_rejection_can_close_the_exact_attempt(self):
         self.approve();self.act();self.page['text']='Your card was declined. No payment was taken.'
         self.assertTrue(controller.reconcile(self.home,self.id,{'outcome':'declined'},inspect=self.inspect,evaluate=self.evaluate)['ok'])
+    def test_retry_after_verified_rejection_requires_a_new_order_approval(self):
+        old=self.approve()['checkout']['id'];self.act()
+        self.page['text']='Your card was declined. No payment was taken.'
+        controller.reconcile(self.home,self.id,{'outcome':'declined'},inspect=self.inspect,evaluate=self.evaluate)
+        with mock.patch.object(errands,'context_file',return_value=self.home/'missing-context'),mock.patch.object(errands,'launch'),mock.patch.object(errands,'_goal_manager'):
+            resumed=errands.go_on(self.home,self.id)
+        self.assertEqual(resumed['status'],'working')
+        self.assertIsNone(resumed['checkout']);self.assertIsNone(resumed['purchase']['attempt_id'])
+        with self.assertRaises(ValueError):self.act()
+        errands.update(self.home,self.id,cart_evidence={'recipe':{'line':'#line','all_lines':'.cart-line','price':'#price','cart_quantity':'#qty'}})
+        new=self.approve()['checkout']['id']
+        self.assertNotEqual(old,new);self.act()
+        ledger=purchases._read(purchases._ledger(self.home))
+        self.assertEqual([row['status'] for row in ledger],['declined','pending'])
+        self.assertNotEqual(ledger[0]['id'],ledger[1]['id'])
+
+    def test_a_claimed_decline_cannot_clear_an_uncertain_ledger(self):
+        self.approve();self.act()
+        old=errands.get(self.home,self.id)
+        errands.update(self.home,self.id,status='stuck',purchase={**old['purchase'],'phase':'declined'})
+        with mock.patch.object(errands,'release_context') as release:
+            with self.assertRaises(ValueError):controller.retry_after_no_charge(self.home,self.id)
+        release.assert_not_called()
+        self.assertEqual(errands.get(self.home,self.id)['checkout']['id'],old['checkout']['id'])
+
+    def test_retry_never_discards_an_unknown_gateway_submission(self):
+        self.approve();self.act();self.page['text']='No payment was taken.'
+        controller.reconcile(self.home,self.id,{'outcome':'not_charged'},inspect=self.inspect,evaluate=self.evaluate)
+        submission={'key':'uncertain-run','text':'Compra original'}
+        errands.update(self.home,self.id,run_submission=submission)
+        with mock.patch.object(errands,'release_context') as release:
+            with self.assertRaises(ValueError):controller.retry_after_no_charge(self.home,self.id)
+        release.assert_not_called()
+        self.assertEqual(errands.get(self.home,self.id)['run_submission'],submission)
+
+    def test_failed_browser_cleanup_preserves_the_rejected_attempt(self):
+        self.approve();self.act();self.page['text']='No payment was taken.'
+        controller.reconcile(self.home,self.id,{'outcome':'not_charged'},inspect=self.inspect,evaluate=self.evaluate)
+        old=errands.get(self.home,self.id);path=self.home/'context.json'
+        path.write_text(json.dumps({'cdp':'http://127.0.0.1:12345','context':'ctx-1'}))
+        with mock.patch.object(errands,'context_file',return_value=path),mock.patch.object(errands,'release_context',return_value=False):
+            with self.assertRaises(ValueError):controller.retry_after_no_charge(self.home,self.id)
+        self.assertEqual(errands.get(self.home,self.id)['purchase']['attempt_id'],old['purchase']['attempt_id'])
+
+    @unittest.skipUnless(shutil.which('node'), 'Node is required for the bank DOM regression')
+    def test_bank_submit_accepts_the_same_amount_in_another_decimal_format(self):
+        self.approve();self.act();self.origin='https://sis.redsys.es'
+        original=self.evaluate
+        def evaluate(context, script):
+            if 'const values=' in script:return ['23.99 EUR']
+            if script.startswith('(()=>{const es='):
+                # Execute the real action expression against a minimal visible DOM.
+                setup = '''let clicked=0;
+const button={tagName:'BUTTON',type:'button',innerText:'Pagar ahora',getAttribute:()=>null,getClientRects:()=>[1],click:()=>clicked++};
+const document={querySelectorAll:s=>s==='#pay'?[button]:[{innerText:'23.99 EUR',getClientRects:()=>[1]}]};
+const location={origin:'https://sis.redsys.es'};
+'''
+                program=setup+'const result='+script+';console.log(JSON.stringify({result,clicked}));'
+                result=json.loads(subprocess.run(['node','-e',program],capture_output=True,text=True,check=True).stdout)
+                self.executed+=result['clicked']
+                return result['result']
+            return original(context,script)
+        self.assertTrue(controller.act(self.home,self.id,{'action':'click','selector':'#pay'},inspect=self.inspect,evaluate=evaluate)['ok'])
+        self.assertEqual(self.executed,2)  # One merchant handoff, one bank submit.
+        self.assertEqual(len(purchases._read(purchases._ledger(self.home))),1)
+        with self.assertRaises(ValueError):controller.act(self.home,self.id,{'action':'click','selector':'#pay'},inspect=self.inspect,evaluate=evaluate)
+
     def test_before_submission_stop_revokes_approval(self):
         self.approve()
         with mock.patch.object(errands,'_goal_manager'),mock.patch.object(errands,'release_context'):

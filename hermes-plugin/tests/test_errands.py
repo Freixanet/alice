@@ -282,7 +282,12 @@ class FakeGateway:
         self.models = []
         self.current = []
 
+    idempotency_retention_seconds = 86400
+
     def supports_idempotency(self):return True
+
+    def can_replay(self, submission):
+        return self.supports_idempotency() and errands.replay_window_valid(submission, self.idempotency_retention_seconds)
 
     def start(self, session_id, text, *, model, provider, idempotency_key=""):
         if self.fail:
@@ -961,3 +966,33 @@ class DurableRunTests(Base):
         gateway=TransientGateway();entry=self.errand()
         engine=errands.Engine(self.home,entry['id'],gateway=gateway,judge=lambda *a:{'status':'done'},sleep=lambda *a:None)
         self.assertEqual(engine.run(),'done');self.assertEqual(len(gateway.started),1)
+
+class RunRetentionTests(Base):
+    def test_unknown_expired_or_clock_shifted_keys_cannot_be_replayed(self):
+        valid = {'submitted_at':1000, 'retention_seconds':60}
+        self.assertTrue(errands.replay_window_valid(valid,60,1020))
+        for payload, window, now in (({},60,1000), (valid,60,1060), (valid,20,1020),
+                                     (valid,0,1000), (valid,60,999),
+                                     ({'submitted_at':float('nan'),'retention_seconds':60},60,1000)):
+            self.assertFalse(errands.replay_window_valid(payload,window,now))
+
+    def test_missing_or_invalid_retention_is_not_durable_support(self):
+        for window in (None, 0, -1, 'invalid', float('inf'), float('nan')):
+            gateway=errands.Gateway.__new__(errands.Gateway)
+            gateway._call=lambda *args: {'features':{'runs_idempotency':{'supported':True,'durable':True,'retention_seconds':window}}}
+            self.assertFalse(gateway.supports_idempotency())
+        gateway=errands.Gateway.__new__(errands.Gateway)
+        gateway._call=lambda *args: {'features':{'runs_idempotency':{'supported':True,'durable':True,'retention_seconds':60}}}
+        self.assertTrue(gateway.supports_idempotency())
+
+    def test_expired_submission_preserves_evidence_without_another_post(self):
+        gateway=FakeGateway([]);entry=self.errand()
+        for submission in ({'key':'old-key','text':'Pedido','model':entry['model'],'provider':entry['provider']},
+                           {'key':'old-key','text':'Pedido','model':entry['model'],'provider':entry['provider'],'submitted_at':1,'retention_seconds':60}):
+            errands.update(self.home,entry['id'],status='working',run_submission=submission)
+            engine=errands.Engine(self.home,entry['id'],gateway=gateway,sleep=lambda *a:None)
+            self.assertEqual(engine.run(),'stuck')
+            current=errands.get(self.home,entry['id'])
+            self.assertEqual(current['run_submission'],submission)
+            self.assertIn('protección contra duplicados',current['reason'])
+        self.assertEqual(gateway.started,[])
