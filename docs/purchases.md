@@ -97,3 +97,21 @@ The person chooses a format in its detail and edits units there, initially one. 
 After login, `purchase_check_cart` reads the errand's real units and current price and binds them to its store session. `checkout_request` refuses absent/stale evidence and reads the final amount using `total_selector`; checkout items come from the chosen offer. Approval and the existing payment gates remain mandatory. The fixture script `scripts/verify-purchase-complete.py --agent` exercises GPT-6 Luna with a synthetic intercepted shop on an isolated Chrome port, fictional accounts and no payment operation. Native visual fixtures are behind the debug-only `-purchaseReview` argument and run in the Purchase review CI workflow.
 
 Antes de rellenar una tarjeta o ejecutar una acción de pago, el servidor vuelve a leer el total visible del resumen vinculado a la aprobación. Un cambio de importe, sesión o contexto bloquea el pago hasta una nueva comprobación y aprobación; un fallo al comprobarlo también bloquea el pago.
+
+# Correcciones de búsqueda y comprobación en Prozis
+
+Para una petición de Creapure de Prozis, la búsqueda parte de la categoría completa,
+no de un producto destacado en la portada. El servicio registra todos los formatos
+Creapure, conserva la certificación pedida y rechaza preguntas de sustitución o formato
+que intenten reemplazar las tarjetas comprobadas.
+
+El adaptador de Prozis lee los controles actuales de la ficha y su cesta desechable:
+selecciona el envase que corresponde a la ficha (80 cápsulas no se convierte en 320),
+declara el sabor comprobado, usa el contador real y espera la confirmación del añadido.
+Comprueba los cupones públicos observados; si requieren login, el descuento sigue siendo
+una condición pendiente. El importe mostrado procede de la cesta, con envío separado.
+Los totales de línea se convierten en importes por unidad usando la cantidad comprobada.
+
+Regresión aislada, con Chrome y todas las peticiones de tienda interceptadas:
+`python scripts/verify-prozis-purchase.py`; `--luna` ejecuta además GPT-6 Luna contra
+esa tienda ficticia. No usa el gateway, el vault ni el navegador personal y no puede pagar.

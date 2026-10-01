@@ -295,7 +295,8 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
     """`purchase_options`: keeps the verified options for the app to draw and for the choice to find."""
     now = now or time.time()
     given = [o for o in ((args or {}).get("options") or []) if isinstance(o, dict)]
-    identity, store_only = requested_identity(request or saved_request(home, session, now))
+    requested = request or saved_request(home, session, now)
+    identity, store_only = requested_identity(requested)
     # Generic searches offer a choice. A named brand/store or exact link may have only one match.
     if len(given) == 1 and not exact_item and not identity:
         return {"ok": False, "error": (
@@ -303,6 +304,16 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
             "de la tienda, o el mismo producto en otra tienda (`catalog_search`). La persona elige; tu "
             "preferencia va en `recommended` y `why`, no quitando las demás.")}
     kept, discarded = verify((args or {}).get("options"), currency, picture)
+    # Creapure is the specified ingredient certification, not a synonym for
+    # creatine. MicronPure from the same brand is still a substitution.
+    if re.search(r'\bcreapure\b', requested, re.I) and not re.search(r'alternativas?|otras? marcas?', requested, re.I):
+        matching = []
+        for option in kept:
+            if re.search(r'\bcreapure\b', option['title'], re.I):
+                matching.append(option)
+            else:
+                discarded.append({'title': option['title'], 'why': 'no es Creapure, que pidió la persona'})
+        kept = matching
     if identity:
         accepted = []
         for option in kept:
@@ -468,7 +479,10 @@ def turn_note(block: str) -> str:
     return (block + " Sigue «Comprar»: nunca ofrezcas una opción que no hayas visto; si lo que falta depende de lo que "
             "vende la tienda (formato, talla, sabor), mira primero la tienda y el catálogo (`catalog_search`) y "
             "enseña lo comprable como tarjetas con `purchase_options`, no como preguntas. En el chat no se llena "
-            "ningún carrito ni se paga.")
+            "ningún carrito ni se paga. Una portada o una ficha de otro producto no demuestra que el solicitado no exista. "
+            "No declares falta de disponibilidad ni propongas sustituciones desde una búsqueda parcial: revisa la "
+            "categoría y registra todos los formatos con purchase_discover. Una comprobación fallida es un problema "
+            "de verificación, no falta de stock.")
 
 
 def chosen_note(started: Dict[str, Any], chosen: Dict[str, Any]) -> str:
@@ -498,6 +512,10 @@ def ask_refusal(questions: Iterable[Dict[str, Any]], looked: bool) -> Optional[s
         return ("Aún no has mirado la tienda ni el catálogo: no ofrezcas opciones que no has visto. Busca primero "
                 "(`catalog_search`, la ficha de la tienda) y pregunta solo entre lo que existe de verdad; lo que "
                 "solo sabe la persona y no depende de la tienda, pregúntalo sin opciones.")
+    if choices and any(re.search(r'formato|talla|sabor|marca|producto|alternativa|sustitu|te vale|solo encuentro|sólo encuentro|no (?:hay|encuentro)', str(q.get('question') or ''), re.I) for q in questions):
+        return ('Los productos y formatos se presentan con purchase_discover, purchase_verify y purchase_options, '
+                'no mediante preguntas de sustitución o formato. Mantén la marca y el producto pedidos; una ficha '
+                'o portada parcial no demuestra que no existan. Revisa la categoría completa.')
     return None
 
 

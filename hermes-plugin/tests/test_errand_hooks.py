@@ -375,9 +375,9 @@ class ErrandHookTests(unittest.TestCase):
                 mock.patch.object(self.plugin, "_conversation_key", return_value="chat-9"):
             self.assertFalse(self.call(handler, guessed)["ok"])
             self.assertFalse(self.call(handler, country)["ok"])
-            # Once it has looked at the shop, it may ask among what exists.
+            # A page read still cannot replace verified product cards with a question.
             self.plugin._guard_chat_errand("browser_exec", {"code": "print(page_info())"}, session_id="chat-9")
-            self.assertTrue(self.call(handler, guessed)["ok"])
+            self.assertFalse(self.call(handler, guessed)["ok"])
             self.assertFalse(self.call(handler, country)["ok"])
         # Outside a purchase nothing changes.
         with mock.patch.dict(sys.modules, {"hermes_constants": hermes}), \

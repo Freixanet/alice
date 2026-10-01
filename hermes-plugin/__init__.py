@@ -1635,7 +1635,16 @@ def _errand_turn(session_id="", user_message=None, **_):
             _PURCHASE_REQUESTS[session] = str(user_message or "")
             flow.remember_request(_hermes_root(), session, str(user_message or ""))
             _LOOKED.discard(session)
-            return {"context": flow.turn_note(_purchase_context())}
+            note = flow.turn_note(_purchase_context())
+            search = _module('purchase_prozis.py', 'alice_purchase_prozis').search_request(
+                str(user_message or ''), _purchase_locale()[0])
+            if search:
+                note += (' [Contrato de búsqueda Prozis] Empieza por purchase_discover con ' + json.dumps(search)
+                         + '. Es la categoría, no la portada. purchase_verify admite omitir recipe: el servicio '
+                         'reconoce sus controles reales, espera la carga, selecciona y comprueba la variante y '
+                         'prueba los cupones públicos observados. Incluye todos los other_formats comprobados. '
+                         'Si falla la comprobación, no cambies de producto ni afirmes que no existe.')
+            return {"context": note}
     except Exception as exc:  # noqa: BLE001
         # Never silent: a purchase that could not start is said as such, or the model improvises
         # one (each model differently). Anything else in this hook is not worth a word.
@@ -1903,8 +1912,8 @@ def _register_task_tools(ctx) -> None:
         ('purchase_discover','discover', {'url':{'type':'string'},'selector':{'type':'string','description':'CSS selector for ALL matching product/format links on the shop page'}}, ['url','selector']),
         ('purchase_verify','verify', {'search_id':{'type':'string'},'candidate_id':{'type':'string'},'currency':{'type':'string'},'qty':{'type':'integer','minimum':1,'maximum':20},'reject_reason':{'type':'string'},'coupons':{'type':'array','maxItems':5,'items':{'type':'string'}},
          'recipe':{'type':'object','properties':{name:{'type':'string','description':('Optional observed cart URL; leave empty if add opens the cart on this page. Never guess a /cart URL.' if name=='cart_url' else 'CSS selector for '+name+' in the shop DOM. Never literal product text, amount or number; omit optional selectors that were not observed.')} for name in ('title','variant','quantity','add','cart_url','line','price','cart_quantity','shipping','condition','coupon','apply','unavailable')},'required':['title','add','line','price','cart_quantity']}},['search_id','candidate_id','currency'])):
-        description = ('Register every discovered format from the shop DOM before recommending.' if method=='discover' else
-                       'Verify a format price in a disposable isolated cart without login or payment. Provide DOM locators for product and cart. After one successful recipe the service checks the remaining formats too; include all other_formats quote ids in purchase_options. Discard only with an unavailable DOM selector proving no stock. Returns trusted quote_ref.')
+        description = ('Register every discovered format from the shop DOM before recommending. Search the category, not just the homepage or a different product page.' if method=='discover' else
+                       'Verify a format price in a disposable isolated cart without login or payment. For Prozis omit recipe: its observed DOM adapter handles variant selection, counters and public coupons. For other shops provide observed DOM locators for product and cart. After one successful recipe the service checks the remaining formats too; include all other_formats quote ids in purchase_options. Discard only with an unavailable DOM selector proving no stock. Returns trusted quote_ref.')
         ctx.register_tool(name=tool_name, toolset='alice_tasks', handler=lambda args,_method=method,**_:price_tool(_method,args),
             schema={'name':tool_name,'description':description,'parameters':{'type':'object','properties':properties,'required':required}},
             check_fn=_always, description=description, emoji='🛒')

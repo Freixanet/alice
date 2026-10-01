@@ -8120,10 +8120,11 @@ final class AppStore {
             DiagnosticsLog.write("settle.readFailed reply=\(reply.id) error=\(error.localizedDescription)")
             return false
         }
-        let asking = reply.replyToMessageID.flatMap { origin in
+        let originMessage = reply.replyToMessageID.flatMap { origin in
             conversations.first(where: { $0.id == conversationID })?
                 .messages.first(where: { $0.id == origin })
-        }.map { $0.remoteMatchContent ?? $0.content }
+        }
+        let asking = originMessage.map { $0.remoteMatchContent ?? $0.content }
         DiagnosticsLog.write(
             "settle.read reply=\(reply.id) profile=\(profile ?? "alice") running=\(state.running) "
                 + "turns=\(state.turns.count) last=\(state.turns.last?.role.rawValue ?? "none") "
@@ -8133,7 +8134,9 @@ final class AppStore {
         setStillWorking(state.running && !followed, replyID: reply.id)
         guard !state.running,
               let answer = WebSocketBotChatSource.finishedReply(
-                  in: state.turns, sentAt: reply.createdAt, asking: asking
+                  in: state.turns, sentAt: reply.createdAt, asking: asking,
+                  imageCount: originMessage?.attachments.filter { $0.kind == .image }.count ?? 0,
+                  askingID: originMessage?.remoteID
               ),
               let location = messageLocation(reply.id, conversationID: conversationID)
         else {
