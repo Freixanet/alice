@@ -49,6 +49,9 @@ class Probe:
     """Own context, disposed even after failures. No personal cookies are copied."""
     def __init__(self, home, endpoint=None):
         from websockets.sync.client import connect
+        # The browser Alice keeps may be closed (a restart, a crash): bring it up, as browsing does.
+        if not endpoint and not module('browser_live').ensure(home):
+            raise ValueError('El navegador de Alice no pudo arrancar; vuelve a intentarlo en un momento.')
         endpoint = endpoint or module('browser_live').configured_url(home)
         with urllib.request.urlopen(endpoint.rstrip('/') + '/json/version', timeout=3) as response:
             ws = json.load(response)['webSocketDebuggerUrl']
