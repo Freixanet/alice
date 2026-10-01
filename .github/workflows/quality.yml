@@ -2,6 +2,11 @@ name: Quality
 
 on:
   workflow_dispatch:
+    inputs:
+      backend_only:
+        description: Verify backend changes after unchanged native and browser files were checked
+        type: boolean
+        default: false
   pull_request:
   push:
     branches: [main]
@@ -10,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: quality-${{ github.ref }}
+  group: quality-${{ github.ref }}-${{ inputs.backend_only && 'backend' || 'all' }}
   # A pull request's newer push replaces its older run. On main every push is
   # checked: a cancelled run there showed as a failing badge.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -69,6 +74,7 @@ jobs:
           python -m unittest discover -s mac/notifier
 
   browser:
+    if: ${{ !inputs.backend_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -88,6 +94,7 @@ jobs:
           retention-days: 14
 
   ios:
+    if: ${{ !inputs.backend_only }}
     # A GitHub-hosted Mac with Xcode 26 and its own simulators.
     runs-on: macos-26
     # A cold simulator plus the full UI suite exceeds the old build-only budget.
