@@ -14,11 +14,29 @@ def supports(url):
     return parsed.scheme == 'https' and parsed.netloc == 'www.prozis.com'
 
 
+# Words of a request that do not name the product.
+FILLER = re.compile(r"^(compra(r|me)?|pide|pedir|quiero|necesito|busca(r|me)?|encarga(r)?|me|mi|un|una|unos|unas|el|la|"
+                    r"los|las|de|del|en|y|o|con|para|por|que|prozis|tienda|web|online|porfa|favor)$", re.I)
+
+
+def keywords(request):
+    """The product words, as six-letter stems: «creatina» and the English slug «creatine» both match."""
+    words = re.findall(r"[^\W\d_]+", request.casefold())
+    return list(dict.fromkeys(w[:6] for w in words if len(w) > 2 and not FILLER.match(w)))[:4]
+
+
 def search_request(request, country):
-    if country != 'ES' or not re.search(r'\bprozis\b', request, re.I) or not re.search(r'\bcreapure\b', request, re.I):
+    """Prozis' own search for what was asked; every listed format that names those words is a candidate."""
+    if country != 'ES' or not re.search(r'\bprozis\b', request, re.I):
         return None
-    return {'url': 'https://www.prozis.com/es/es/nutricion-deportiva/desarrollo-muscular/creatina',
-            'selector': 'a[href*="creapure"]'}
+    words = keywords(request)
+    if not words:
+        return None
+    query = ' '.join(re.sub(r'(?i)^(compra(r|me)?|quiero|necesito)\s+', '', request).split())
+    query = ' '.join(w for w in re.findall(r"[^\W_]+", query) if not FILLER.match(w)) or ' '.join(words)
+    from urllib.parse import quote
+    return {'url': 'https://www.prozis.com/es/es/search?text=' + quote(query),
+            'selector': 'a[href*="/prozis/"]', 'keywords': words}
 
 
 def wait_read(browser, selector):

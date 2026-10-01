@@ -96,9 +96,12 @@ def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluat
         new_passwords = [LoginControl.from_dict(r) for r in (raw or []) if isinstance(r,dict) and r.get('type') == 'password' and 'new-password' in str(r.get('autocomplete',''))]
         if new_passwords:
             fills = [{'index':c.index, 'token':'new-password','value':password} for c in new_passwords]
-    if not fills:
-        raise ValueError('No hay un campo de contraseña verificable.')
     identifiers = [c for c in controls if c.token in ('email','username')]
+    if not fills and not (identifiers and meta.identifier):
+        password = ''
+        raise ValueError('No hay un campo de acceso visible. Abre el formulario de iniciar sesión de la tienda y vuelve a llamar login_fill.')
+    # Two-step logins (Prozis, Google, Amazon) show the email first and the password after it.
+    first_step = not fills
     if identifiers and meta.identifier:
         c = sorted(identifiers, key=lambda c:-c.score)[0]
         fills.append({'index':c.control.index, 'token':c.token, 'value':meta.identifier})
@@ -109,6 +112,9 @@ def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluat
         result = json.loads(result)
     if not isinstance(result,dict) or not result.get('filled'):
         raise ValueError('La página cambió durante el acceso seguro.')
+    if first_step:
+        return {'ok':True, 'origin':page_origin, 'filled':int(result['filled']), 'step':'identifier',
+                'next':'Solo se ha rellenado el email: la tienda pide la contraseña en un segundo paso. Pulsa su botón de continuar (o «iniciar sesión con contraseña») y vuelve a llamar login_fill con el mismo acceso.'}
     return {'ok':True, 'origin':page_origin, 'filled':int(result['filled']),
             'next':'Solo se han rellenado los campos: todavía no has iniciado sesión. Envía el formulario de acceso, comprueba el resultado y solicita el código seguro si la tienda lo pide.'}
 

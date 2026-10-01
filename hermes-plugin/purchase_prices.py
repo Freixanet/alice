@@ -26,6 +26,8 @@ def module(name):
     return sys.modules[key]
 
 TTL = 15 * 60
+# More formats than this on one search page is a broad search, not one product's formats.
+BROAD = 8
 
 def fingerprint(cookies, origin):
     host = urlsplit(origin).hostname
@@ -182,10 +184,17 @@ def discover(home, session, args, *, factory=Probe, now=None):
         rows = browser.evaluate('''Array.from(document.querySelectorAll(%s)).map(e=>{const a=e.matches('a')?e:e.querySelector('a[href]');return {url:a?.href||(e.matches('h1')?location.href:null),title:e.innerText.trim()}}).filter(r=>r.url&&r.title)''' % json.dumps(selector))
     candidates = []
     seen = set()
+    stems = [str(w).casefold()[:6] for w in args.get('keywords') or [] if str(w).strip()]
+    named = lambda row: all(s in (row['url'] + ' ' + row['title']).casefold() for s in stems)
+    if stems and not any(named(row) for row in rows or []):
+        stems = []  # titles in another language («Peanut Butter»): the shop's search already chose
     for row in rows or []:
         lines = [line.strip() for line in row['title'].splitlines() if line.strip()]
         row['title'] = ' '.join(line for line in lines if not re.fullmatch(r'[€$£\d.,\s%]+',line))
-        key = (row['url'], row['title'])
+        # A search page also lists bars, shakes and bundles: keep the rows that name every asked word.
+        if stems and not named(row):
+            continue
+        key = row['url']
         if key in seen:
             continue
         https(row['url'])
@@ -203,6 +212,30 @@ def discover(home, session, args, *, factory=Probe, now=None):
 
 
 def verify(home, session, args, *, factory=Probe, now=None):
+    try:
+        return _verify(home, session, args, factory=factory, now=now)
+    except ValueError as exc:
+        if _note_failure(home, session, args, str(exc)):
+            raise ValueError(str(exc) + ' Queda anotado como no comprobable: no lo reintentes más de una vez; '
+                             'sigue con los demás formatos y di en una línea cuál no se pudo comprobar.') from exc
+        raise
+
+
+def _note_failure(home, session, args, why):
+    """A format the service could not check is said as such, not a lock on every other option."""
+    if args.get('reject_reason') or not args.get('search_id') or args.get('quote_ref') or args.get('id', '').startswith('pq-'):
+        return False
+    with module('purchase_flow')._locked(home):
+        data = _load(home)
+        search = data['searches'].get(args['search_id'])
+        if search and search['session'] == session and any(r['id'] == args.get('candidate_id') for r in search['candidates']):
+            search.setdefault('failed', {})[args['candidate_id']] = why[:300]
+            _save(home, data)
+            return True
+    return False
+
+
+def _verify(home, session, args, *, factory=Probe, now=None):
     data = _load(home)
     search = data['searches'].get(args['search_id'])
     if not search or search['session'] != session:
@@ -333,7 +366,10 @@ def coverage(home, session, search_id, refs):
     if not search or search['session'] != session:
         raise ValueError('Falta el registro de formatos encontrados.')
     shown = {data['quotes'][ref]['candidate_id'] for ref in refs if ref in data['quotes'] and data['quotes'][ref]['search_id'] == search_id}
-    omitted = [r for r in search['candidates'] if r['id'] not in shown and r['id'] not in search['rejected']]
+    if len(search['candidates']) > BROAD:
+        return search  # a broad search: the agent narrows it or shows the best, not every listing
+    omitted = [r for r in search['candidates'] if r['id'] not in shown and r['id'] not in search['rejected']
+               and r['id'] not in search.get('failed', {})]
     if omitted:
         raise ValueError('Presenta o descarta con motivo estos formatos: ' + '; '.join(r['title'] for r in omitted))
     return search

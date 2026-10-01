@@ -62,9 +62,19 @@ APPROVED_PREFIX = "[checkout aprobado]"
 
 # What a button that pays says, in the code or arguments of a browser action.
 PAY_WORDS = re.compile(
-    r"\b(pagar|pago ahora|realizar (el )?pedido|finalizar (la )?compra|confirmar (el )?pedido|confirmar y pagar"
-    r"|comprar (ya|ahora)|tramitar pedido|place (your )?order|pay now|buy now|complete (purchase|order)"
+    r"\b(pagar|pago ahora|realizar (el )?pedido|confirmar (el )?pedido|confirmar y pagar"
+    r"|comprar (ya|ahora)|place (your )?order|pay now|buy now|complete (purchase|order)"
     r"|confirm (and pay|purchase|order)|submit order)\b", re.I)
+# Words a cart's "go on" button also says («Finalizar compra» opens login and delivery). They
+# count as paying unless the errand's page was read and shows no payment step.
+STEP_WORDS = re.compile(r"\b(finalizar (la )?compra|tramitar (el )?pedido)\b", re.I)
+# Whether a page shows a payment step: card fields, a payment provider's frame, or a choice of
+# payment method. A cart lists logos and totals, never these controls.
+PAYMENT_STEP_JS = r"""(()=>{const seen=e=>e.getClientRects().length>0&&getComputedStyle(e).visibility!=="hidden";
+const card=/cc-|card|tarjeta|cvc|cvv|expir|caducidad/i;
+if(Array.from(document.querySelectorAll('input,select')).some(e=>seen(e)&&card.test([e.autocomplete,e.name,e.id,e.placeholder].join(' '))))return true;
+if(Array.from(document.querySelectorAll('iframe')).some(f=>seen(f)&&/stripe|adyen|braintree|checkout\.com|redsys|paypal|klarna|worldpay|mollie|square/i.test(f.src+' '+f.name)))return true;
+return Array.from(document.querySelectorAll('input[type=radio]')).some(e=>{const l=e.closest('label')||document.querySelector('label[for="'+e.id+'"]')||e.parentElement;return seen(l||e)&&/tarjeta|card|paypal|bizum|klarna|apple pay|google pay|transferencia|contra ?reembolso|cash on delivery/i.test(l?l.innerText:'')});})()"""
 # A page where the next click can pay: the payment or review step of a checkout.
 PAY_PAGE = re.compile(
     r"(/step/payment|/payment\b|/pago\b|/pay\b|/checkout/(review|confirm|payment|pago)|/confirmacion|/confirm\b"
@@ -513,25 +523,33 @@ def _text_of(args: Any) -> str:
     return str(args or "")
 
 
-def is_pay_action(tool_name: str, args: Any, active_url: str = "") -> bool:
-    """A browser action that can pay: it names the pay button, or it presses something on a pay page."""
+def is_pay_action(tool_name: str, args: Any, active_url: str = "", payment_step: Optional[bool] = None) -> bool:
+    """A browser action that can pay: it names the pay button, or it presses something on a pay page.
+
+    ``payment_step`` is what the errand's own page shows (None when unread): a cart's «Finalizar
+    compra» is let through only when the page was read and has no payment step."""
     if tool_name not in BROWSER_ACTIONS:
         return False
     text = _text_of(args)
     presses = tool_name in ("browser_click", "browser_press") or bool(CLICKS.search(text))
-    # Reading a page or searching for pay controls does not submit an order.
-    return presses and (bool(PAY_WORDS.search(text)) or bool(PAY_PAGE.search(str(active_url or ""))))
+    if not presses:
+        # Reading a page or searching for pay controls does not submit an order.
+        return False
+    if PAY_WORDS.search(text) or PAY_PAGE.search(str(active_url or "")) or payment_step:
+        return True
+    return bool(STEP_WORDS.search(text)) and payment_step is None
 
 
 def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = None, tool_name: str = "",
              args: Any = None, active_url: str = "", gateways: Iterable[str] = (),
-             merchant_site: str = "", now: Optional[float] = None) -> Optional[Dict[str, str]]:
+             merchant_site: str = "", now: Optional[float] = None,
+             payment_step: Optional[bool] = None) -> Optional[Dict[str, str]]:
     """A pre_tool_call directive that refuses paying without the person's approved checkout, or None.
 
     ``card_fill_site`` is the page a saved payment card is about to be written into (None when
     the call is not a card fill); otherwise the call is checked as a browser action."""
     filling = card_fill_site is not None
-    if not filling and not is_pay_action(tool_name, args, active_url):
+    if not filling and not is_pay_action(tool_name, args, active_url, payment_step):
         return None
     entry = of_session(home, session_id)
     if entry is None:

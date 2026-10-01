@@ -859,3 +859,13 @@ class AnswerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CartStepTests(unittest.TestCase):
+    def test_finalizar_compra_passes_only_on_a_page_read_without_payment(self):
+        click = {"code": "click button «Finalizar compra»"}
+        self.assertTrue(errands.is_pay_action("browser_exec", click))                      # unread: blocked
+        self.assertTrue(errands.is_pay_action("browser_exec", click, payment_step=True))  # payment shown
+        self.assertFalse(errands.is_pay_action("browser_exec", click, payment_step=False))
+        self.assertTrue(errands.is_pay_action("browser_exec", {"code": "click Pagar"}, payment_step=False))
+        self.assertTrue(errands.is_pay_action("browser_exec", click, "https://s.test/checkout/payment", False))

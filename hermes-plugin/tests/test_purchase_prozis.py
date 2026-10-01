@@ -32,12 +32,13 @@ class ProductPage:
 
 
 class ProzisTests(unittest.TestCase):
-    def test_search_category_only_for_the_requested_shop_and_certification(self):
+    def test_search_uses_the_shops_own_search_for_any_product(self):
         args = prozis.search_request('Compra la creatina creapure de prozis', 'ES')
-        self.assertIn('/creatina', args['url'])
-        self.assertEqual(args['selector'], 'a[href*="creapure"]')
+        self.assertEqual(args['url'], 'https://www.prozis.com/es/es/search?text=creatina%20creapure')
+        self.assertEqual(args['keywords'], ['creati', 'creapu'])
+        shirt = prozis.search_request('Compra una camiseta de prozis', 'ES')
+        self.assertIn('search?text=camiseta', shirt['url'])
         self.assertIsNone(prozis.search_request('Compra creatina de otra marca', 'ES'))
-        self.assertIsNone(prozis.search_request('Compra una camiseta de prozis', 'ES'))
         self.assertIsNone(prozis.search_request('Compra creapure de prozis', 'US'))
 
     def test_adapter_does_not_attach_to_a_similar_or_different_origin(self):

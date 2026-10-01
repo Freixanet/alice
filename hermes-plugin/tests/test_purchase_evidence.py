@@ -73,6 +73,21 @@ class EvidenceTests(unittest.TestCase):
             prices.verify(self.home,'chat',{'search_id':self.search['id'],'candidate_id':candidate['id'],'reject_reason':'Sin stock','recipe':{'unavailable':'#unavailable'}},factory=Shop)
         result = prices.present(self.home,'chat',self.options([self.quote()]),factory=Shop)
         self.assertTrue(result['ok'])
+    def test_a_format_the_service_could_not_check_does_not_lock_the_others(self):
+        original = Shop.read
+        def flaky(shop, selector):
+            return None if shop.url.endswith('80 cápsulas') and selector == 'h1' else original(shop, selector)
+        with mock.patch.object(Shop,'read',flaky):
+            with self.assertRaisesRegex(ValueError,'no comprobable'):
+                self.quote(1)
+        third = self.quote(2)
+        result = prices.present(self.home,'chat',self.options([self.quote(),third]),factory=Shop)
+        self.assertTrue(result['ok'], result)
+    def test_discover_keeps_only_rows_naming_the_asked_words(self):
+        search = prices.discover(self.home,'chat',{'url':'https://example.com/search','selector':'a','keywords':['80']},factory=Shop,now=self.now)
+        self.assertEqual([c['title'] for c in search['candidates']],['Prozis Creapure 80 cápsulas'])
+        other_language = prices.discover(self.home,'chat',{'url':'https://example.com/search','selector':'a','keywords':['mantequilla']},factory=Shop,now=self.now)
+        self.assertEqual(len(other_language['candidates']),3)
     def test_unattempted_formats_cannot_be_discarded_as_unverifiable(self):
         with self.assertRaises(ValueError):
             prices.verify(self.home,'chat',{'search_id':self.search['id'],
@@ -229,6 +244,27 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(pending['kind'],'vault.save_login')
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'needs_login')
         self.assertFalse(self.saved)
+
+    def test_two_step_login_fills_the_email_first(self):
+        try:
+            import agent.vault_login_classifier  # noqa: F401
+        except ImportError:
+            self.skipTest('Hermes is not importable here')
+        backend = mock.Mock()
+        backend.get_meta.return_value = types.SimpleNamespace(kind='login',origin='https://example.com',identifier='fixture@example.com')
+        backend.resolve_password.return_value = 'FAKE-test-password'
+        written = []
+        def evaluate(ctx, script):
+            if 'flatMap' in script:  # the inspection: a two-step login shows only the email
+                return json.dumps([{'index':0,'name':'email','type':'email','autocomplete':'username','label':'Email'}])
+            written.append(script)
+            return {'filled':1}
+        with mock.patch('agent.redact.register_vault_redaction_value'):
+            out = access.fill_login(self.home,self.entry['id'],'vault-fixture',inspect=self.inspect,evaluate=evaluate,backend=backend)
+        self.assertEqual(out['step'],'identifier')
+        self.assertIn('segundo paso',out['next'])
+        self.assertIn('fixture@example.com',written[0])
+        self.assertNotIn('FAKE-test-password',written[0])
 
     def test_other_origin_credentials_are_rejected_before_secret_resolution(self):
         backend = mock.Mock();backend.get_meta.return_value=types.SimpleNamespace(kind='login',origin='https://other.example')
