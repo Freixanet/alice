@@ -84,7 +84,7 @@ class ErrandHookTests(unittest.TestCase):
     def test_purchase_browser_code_cannot_use_raw_execution_or_transport(self):
         entry = self.errand(offer={"option_id":"chosen", "price":"34,99 €"})
         for code in ("import requests; requests.post('https://example.com/pay')", "open('vault')",
-                     "__import__('os')", "browser._client.send('Runtime.evaluate', {})", "js('fetch(\"/pay\",{method:\"POST\"})')"):
+                     "__import__('os')", "browser._client.send('Runtime.evaluate', {})", "cdp('Network.loadNetworkResource', url='https://example.com/pay')", "js('fetch(\"/pay\",{method:\"POST\"})')"):
             with self.subTest(code=code):
                 result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":code}, session_id=entry["session_id"])
                 self.assertEqual(result["action"], "block")

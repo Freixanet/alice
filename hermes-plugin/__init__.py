@@ -287,7 +287,7 @@ def _isolate_errand_browser(tool_name=None, args=None, session_id="", **_):
         try:
             nodes = list(ast.walk(ast.parse(args["code"])))
             denied = {"open", "exec", "eval", "compile", "getattr", "setattr", "globals", "locals", "vars",
-                      "os", "sys", "requests", "urllib", "httpx", "aiohttp", "socket", "websockets", "subprocess", "pathlib", "builtins"}
+                      "os", "sys", "requests", "urllib", "httpx", "aiohttp", "socket", "websockets", "subprocess", "pathlib", "builtins", "cdp"}
             bypass = any(isinstance(n, (ast.Import, ast.ImportFrom)) or
                          (isinstance(n, ast.Name) and (n.id in denied or n.id.startswith("_"))) or
                          (isinstance(n, ast.Attribute) and (n.attr.startswith("_") or n.attr in {"send_cdp", "execute_cdp", "request"}))
