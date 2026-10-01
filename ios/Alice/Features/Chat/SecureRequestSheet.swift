@@ -11,6 +11,7 @@ struct SecureRequestSheet: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var textSize
     @State private var identifier = ""
     @State private var secret = ""
     @State private var working = false
@@ -46,6 +47,12 @@ struct SecureRequestSheet: View {
                 }
                 .listRowBackground(Color.clear)
 
+                if needsIdentifier {
+                    Section {
+                        accountChoice
+                    }
+                }
+
                 Section {
                     fields
                 } footer: {
@@ -76,7 +83,9 @@ struct SecureRequestSheet: View {
                     }
                 }
             }
-            .onAppear { focus = needsIdentifier ? .identifier : .secret }
+            // Let the person see the account choice before the keyboard takes
+            // space away from it. Codes and single secrets can focus directly.
+            .onAppear { if !needsIdentifier { focus = .secret } }
             .onDisappear {
                 // Swiped away: "not now", so Hermes is not left waiting on it.
                 guard !answered else { return }
@@ -84,13 +93,21 @@ struct SecureRequestSheet: View {
             }
             .interactiveDismissDisabled(working)
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(textSize.isAccessibilitySize ? [.large] : [.medium, .large])
     }
 
     @ViewBuilder
-    private var fields: some View {
-        switch request.kind {
-        case .saveLogin:
+    private var accountChoice: some View {
+        if textSize.isAccessibilitySize {
+            Button { newAccount = false } label: {
+                Label("I have an account", systemImage: newAccount ? "circle" : "checkmark.circle.fill")
+            }
+            .accessibilityAddTraits(newAccount ? [] : .isSelected)
+            Button { newAccount = true } label: {
+                Label("Create one", systemImage: newAccount ? "checkmark.circle.fill" : "circle")
+            }
+            .accessibilityAddTraits(newAccount ? .isSelected : [])
+        } else {
             Picker("Account", selection: $newAccount) {
                 Text("I have an account").tag(false)
                 Text("Create one").tag(true)
@@ -98,6 +115,13 @@ struct SecureRequestSheet: View {
             .pickerStyle(.segmented)
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
+        }
+    }
+
+    @ViewBuilder
+    private var fields: some View {
+        switch request.kind {
+        case .saveLogin:
             TextField(newAccount ? LocalizedStringKey("Email for the new account") : LocalizedStringKey("Email or username"), text: $identifier)
                 .textContentType(.username)
                 .keyboardType(.emailAddress)
