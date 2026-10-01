@@ -173,6 +173,7 @@ struct ErrandStack: View {
     /// A stopped purchase: the same option at the shop's price, or tried again.
     var onAcceptPrice: () -> Void = {}
     var onRetry: () -> Void = {}
+    var onCancel: () -> Void = {}
     /// The chat it belongs to, for offering its other options again.
     var session: String? = nil
     /// The walkthrough's own cards, instead of the vault's.
@@ -267,7 +268,7 @@ struct ErrandStack: View {
                 }
             } else if [.stuck, .denied, .stopped].contains(errand.status) {
                 ErrandStoppedCard(errand: errand, session: session, sending: sending,
-                                  onAcceptPrice: onAcceptPrice, onRetry: onRetry)
+                                  onAcceptPrice: onAcceptPrice, onRetry: onRetry, onCancel: onCancel)
             }
             if let problem, checkoutPhase == nil {
                 Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
@@ -321,6 +322,7 @@ struct ErrandChatBlock: View {
                     onStop: { Task { await board.stop(errand) } },
                     onAcceptPrice: { Task { await board.goOn(errand, acceptPrice: true) } },
                     onRetry: { Task { await board.goOn(errand, acceptPrice: false) } },
+                    onCancel: { Task { await board.stop(errand) } },
                     session: store.shownConversation?.hermesSessionID)
                 // Felt as it turns, and only from the Mac's own word (a saved card changing on
                 // launch is not news): it needs the person now, or the order went through.

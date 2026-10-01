@@ -4,13 +4,15 @@ import SwiftUI
 ///
 /// The shop charging another price is the person's call: «Comprar a 34,99 €» takes the same option
 /// on to the checkout, where that exact total is approved as always; «Ver otras opciones» opens the
-/// options that were shown, without the one that failed. Anything else can be tried again.
+/// options that were shown, without the one that failed. «Cancelar» ends it. A stop that was not
+/// about the price can be tried again from where the shop is.
 struct ErrandStoppedCard: View {
     let errand: Errand
     var session: String? = nil
     var sending = false
     let onAcceptPrice: () -> Void
     let onRetry: () -> Void
+    var onCancel: () -> Void = {}
 
     @Environment(\.colorScheme) private var scheme
     @State private var showingOptions = false
@@ -34,7 +36,7 @@ struct ErrandStoppedCard: View {
                                       prominent: true, disabled: sending, busy: sending, tint: .approve,
                                       action: onAcceptPrice)
             } else if errand.status == .stuck {
-                PurchaseCapsuleButton(title: language.pick("Try again", "Reintentar"), prominent: true,
+                PurchaseCapsuleButton(title: language.pick("Carry on from here", "Seguir desde aquí"), prominent: true,
                                       disabled: sending, busy: sending, tint: .approve, action: onRetry)
             }
             if setKey != nil, errand.status != .stopped {
@@ -43,6 +45,9 @@ struct ErrandStoppedCard: View {
                                       disabled: sending) {
                     withAnimation(.snappy) { showingOptions.toggle() }
                 }
+            }
+            if errand.status == .stuck {
+                PurchaseCapsuleButton(title: language.pick("Cancel", "Cancelar"), disabled: sending, action: onCancel)
             }
             if showingOptions, let setKey {
                 PurchaseOptionsCard(detail: nil, language: language, session: session ?? errand.originSession,

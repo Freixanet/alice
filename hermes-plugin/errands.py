@@ -1480,7 +1480,7 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
     entry = get(home, errand_id)
     if entry is None:
         return None
-    if entry.get("status") not in ACTIVE:
+    if entry.get("status") not in ACTIVE + ("stuck",):
         return entry
     entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.", secure_request=None, resume_message=None)
     try:

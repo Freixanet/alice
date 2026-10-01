@@ -311,6 +311,15 @@ class CartRevalidationTests(unittest.TestCase):
         changed=self.check()
         self.assertEqual((changed['old'],changed['price']),('34,99 €','39,99 €'))
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'stuck')
+    def test_a_lower_basket_price_goes_on_without_asking(self):
+        self.amount='24,49 €'
+        out=self.check()
+        self.assertTrue(out['ok']); self.assertIn('menos',out['next'])
+        entry=errands.get(self.home,self.entry['id'])
+        self.assertEqual(entry['status'],'working'); self.assertEqual(entry['offer']['price'],'24,49 €')
+    def test_a_stuck_purchase_can_be_cancelled(self):
+        self.amount='39,99 €'; self.check()
+        self.assertEqual(errands.stop(self.home,self.entry['id'])['status'],'stopped')
     def test_wrong_units_cannot_reach_approval(self):
         self.qty='1'
         with self.assertRaises(ValueError):self.check()

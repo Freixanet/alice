@@ -33,9 +33,14 @@ final class PurchaseFlowTests: XCTestCase {
             "id": "e1", "title": "Compra", "request": "Comprar Creatina × 1", "origin_session": "chat1",
             "offer": ["option_id": "a1b2c3d4-1"], "started_at": date.timeIntervalSince1970 + 1,
         ]))
+        // The reply to the choice reads first, then the errand.
         let placed = ErrandTranscript.placements(messages: [choice, reply], errands: [errand], session: "chat1")
-        XCTAssertEqual(placed.keys.sorted(), ["choice"])
-        let foreign = ErrandTranscript.placements(messages: [choice], errands: [errand], session: "other")
+        XCTAssertEqual(placed.keys.sorted(), ["reply"])
+        // Before that reply the card waits a moment, then shows under the choice anyway.
+        let soon = date.addingTimeInterval(5), late = date.addingTimeInterval(30)
+        XCTAssertTrue(ErrandTranscript.placements(messages: [choice], errands: [errand], session: "chat1", now: soon).isEmpty)
+        XCTAssertEqual(ErrandTranscript.placements(messages: [choice], errands: [errand], session: "chat1", now: late).keys.sorted(), ["choice"])
+        let foreign = ErrandTranscript.placements(messages: [choice], errands: [errand], session: "other", now: late)
         XCTAssertTrue(foreign.isEmpty)
     }
 

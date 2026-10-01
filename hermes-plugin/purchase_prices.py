@@ -448,7 +448,15 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     if not amount:
         raise ValueError('La cesta no tiene un precio verificable.')
     real = module('money').text(*amount)
-    if not module('money').same(real,offer['price'],offer['currency']):
+    note = 'El precio sigue coincidiendo. Prepara el envío y el resumen final sin volver a pedir aceptar el mismo precio.'
+    old_price = module('money').parse(offer['price'], offer['currency'])
+    if old_price and amount[0] < old_price[0]:
+        # Cheaper in the basket (a member discount after login): the person's choice only got
+        # better, and the final total is approved before paying anyway.
+        errands.update(home, errand_id, offer={**offer, 'price': real})
+        note = ('La cesta cobra ' + real + ', menos que los ' + offer['price'] + ' elegidos: sigue con ese precio '
+                'sin preguntar y menciónalo en el resumen final.')
+    elif not module('money').same(real,offer['price'],offer['currency']):
         errands.update(home,errand_id,status='stuck',blocked={'kind':'price','price':real},
                        reason='La cesta cobra ' + real + ' por el formato elegido, frente a ' + offer['price'] + '.')
         return {'ok':False,'price_changed':True,'old':offer['price'],'price':real,'next':'Termina el turno. La persona puede aceptar el cambio real desde su tarjeta.'}
@@ -456,7 +464,7 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     session_hash = fingerprint(cookies,page_origin)
     errands.update(home,errand_id,cart_evidence={'origin':page_origin,'context':context['context'],'recipe':recipe,
         'qty':offer.get('qty',1),'price_cents':amount[0],'currency':amount[1], 'at':now or time.time(),'session':session_hash})
-    return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':'El precio sigue coincidiendo. Prepara el envío y el resumen final sin volver a pedir aceptar el mismo precio.'}
+    return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':note}
 
 
 def fresh_cart(home, entry, *, inspect=None, now=None):
