@@ -27,6 +27,9 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         capture(app, "experimental-today-keyboard")
 
         app.terminate()
+        // The fixture flag forces visual-home on every launch. Switching the
+        // interface opened Alice's main chat; reopen that saved chat normally.
+        app.launchArguments = ["-alice.developerMode", "YES"]
         app.launch()
         XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20), "The interface choice must survive relaunch")
         XCTAssertTrue((field.value as? String)?.contains(draft) == true)
