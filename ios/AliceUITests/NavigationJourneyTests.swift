@@ -26,9 +26,10 @@ final class NavigationJourneyTests: XCTestCase {
     /// screen this app supports, which is where a list of destinations stops
     /// fitting and starts hiding things.
     private func relaunchWithLargestText() {
+        let savedArguments = app.launchArguments
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments += [
+        app.launchArguments = savedArguments + [
             "-UIPreferredContentSizeCategoryName",
             "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
         ]
@@ -128,8 +129,10 @@ final class NavigationJourneyTests: XCTestCase {
     /// with nothing of the session left in memory. It is not evidence of
     /// remote push, which Alice does not have.
     func testTapOnANotificationLandsSomewhereActionableFromCold() throws {
+        let savedArguments = app.launchArguments
         app.terminate()
         app = XCUIApplication()
+        app.launchArguments = savedArguments
         let route = """
         {"event":"approval:req-cold","conversation":"missing-conv",        "profile":"radar-ia","session":"sess-1","request":"req-cold"}
         """
