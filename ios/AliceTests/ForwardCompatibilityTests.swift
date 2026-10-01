@@ -65,28 +65,27 @@ final class ForwardCompatibilityTests: XCTestCase {
         XCTAssertEqual(conversation.messages.first?.content, "hola")
     }
 
-    func testReEncodingStripsUnknownFields() throws {
-        // This test documents the known limitation: a load → save cycle
-        // through an older build strips unknown fields. It is a guard
-        // against making this worse (e.g., by adding a non-optional field
-        // that would cause decoding to throw instead of silently ignoring).
+    func testKnownFieldsSurviveReEncoding() throws {
+        // A load → save cycle through this build must preserve every field
+        // the build knows. This is the invariant that matters: if a future
+        // build adds a field and this build loads and re-saves, the known
+        // fields survive. Unknown fields (fields this build does not
+        // recognize) are silently dropped by JSONEncoder — that is a
+        // known limitation documented in docs/MIGRATIONS.md, not a
+        // behavior to assert here.
         let original = Data(Self.futureMessage.utf8)
         let message = try JSONDecoder().decode(Message.self, from: original)
         let reEncoded = try JSONEncoder().encode(message)
         let reDecoded = try JSONDecoder().decode(Message.self, from: reEncoded)
 
-        // The known fields survive the round trip.
+        // Every field this build knows must survive the round trip.
         XCTAssertEqual(message.id, reDecoded.id)
         XCTAssertEqual(message.content, reDecoded.content)
-
-        // Unknown fields are gone after re-encoding. This is the
-        // documented risk: downgrade past a field addition loses that
-        // field's data. The mitigation is to keep the last known-good
-        // build and not downgrade past migration boundaries.
-        let originalJSON = try JSONSerialization.jsonObject(with: original) as? [String: Any]
-        let reEncodedJSON = try JSONSerialization.jsonObject(with: reEncoded) as? [String: Any]
-        XCTAssertNotNil(originalJSON?["futureField"])
-        XCTAssertNil(reEncodedJSON?["futureField"],
-                     "re-encoding through an older build strips unknown fields — see docs/MIGRATIONS.md")
+        XCTAssertEqual(message.role, reDecoded.role)
+        XCTAssertEqual(message.createdAt, reDecoded.createdAt)
+        XCTAssertEqual(message.pending, reDecoded.pending)
+        XCTAssertEqual(message.tools, reDecoded.tools)
+        XCTAssertEqual(message.incomplete, reDecoded.incomplete)
+        XCTAssertEqual(message.attachments, reDecoded.attachments)
     }
 }
