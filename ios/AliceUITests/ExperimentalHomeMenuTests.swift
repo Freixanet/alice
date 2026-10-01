@@ -121,9 +121,10 @@ final class ExperimentalHomeMenuTests: XCTestCase {
     /// The round button itself, wherever it sits — beside the composer or
     /// alone above a destination page.
     private func menuButton(in app: XCUIApplication) -> XCUIElement {
-        // SwiftUI's Menu exposes a host and its button under the same ID.
-        // Both invoke the same menu; select its first accessibility match.
-        app.buttons.matching(identifier: "home.experimentalMenu").firstMatch
+        // The live chat stays mounted under a destination. Its invisible
+        // composer can remain in XCTest's snapshot; operate the visible menu.
+        let matches = app.buttons.matching(identifier: "home.experimentalMenu")
+        return matches.allElementsBoundByIndex.first(where: { $0.isHittable }) ?? matches.firstMatch
     }
 
     /// Opens the button's menu and taps a section by its title.
