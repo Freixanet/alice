@@ -739,14 +739,33 @@ GONE = re.compile(r"(agotad|sin stock|no (est[aá] )?disponible|out of stock|una
                   r"|descatalogad|discontinued)", re.I)
 
 
+UNITS = re.compile(r"\b(\d+\s+unidades|unidades|cantidad|units|quantity|\d+\s*x\b|x\s*\d+)\b", re.I)
+
+
+def _multiple(price: str, offer: Dict[str, Any]) -> bool:
+    """A basket total that is the chosen price times the units in it, not another price."""
+    currency = offer.get("currency") or ""
+    found, chosen = _money().parse(price, currency), _money().parse(str(offer.get("price") or ""), currency)
+    if not found or not chosen or not chosen[0]:
+        return False
+    times = found[0] / chosen[0]
+    return times >= 2 and abs(times - round(times)) < 1e-9
+
+
 def blocked_by(said: str, offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """What stopped the chosen option: another price (the person may accept it), the option gone, or
     anything else — which is the agent's to fix, not the person's."""
+    if UNITS.search(said):
+        # Extra units in the basket (left from another try, a double click) are the agent's to
+        # remove, never a price for the person to accept.
+        return {"kind": "other"}
     if re.search(r"\b(precio|price|cuesta|cobra)\b", said, re.I):
         found = PRICE.search(said)
         if found:
             price = " ".join(found.group(1).split())
             if offer and _money().same(price, offer.get("price"), offer.get("currency") or ""):
+                return {"kind": "other"}
+            if offer and _multiple(price, offer):
                 return {"kind": "other"}
             return {"kind": "price", "price": price}
     if re.search(r"navegador|browser|controles|controls", said, re.I):
@@ -805,7 +824,8 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
         f"{offer.get('qty') or 1} · {offer.get('merchant') or 'la tienda'} · {offer.get('price')} "
         f"({offer.get('currency') or ''}). {start} Compra eso y nada más: no lo cambies por otro producto, "
         "otra variante u otra tienda. Empieza con la cesta solo con esta opción: si tiene otros artículos de "
-        "intentos anteriores, quítalos sin preguntar. Si ya no está disponible, la variante no existe o el precio es otro, no "
+        "intentos anteriores, quítalos sin preguntar, y si tiene más unidades de las elegidas, déjala en "
+        f"{offer.get('qty') or 1} sin preguntar: eso no es un cambio de precio. Si ya no está disponible, la variante no existe o el precio es otro, no "
         "sigas: termina tu turno con una sola línea «BLOQUEADO: precio 34,99 € — por qué» (con el precio que "
         "cobra la cesta, solo si difiere del elegido) o «BLOQUEADO: qué ha cambiado». Un precio anterior "
         "tachado no es un cambio: selecciona la variante, añade el producto y verifica el precio en la cesta. "

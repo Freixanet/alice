@@ -890,3 +890,13 @@ class DialogTests(unittest.TestCase):
         self.assertEqual(self.run_preamble(order, "\nclose_dialog(accept=True)"), [False, False])
         removal = {"type": "confirm", "message": "¿Eliminar este producto?"}
         self.assertEqual(self.run_preamble(removal, "\nclose_dialog(accept=True)"), [False, True])
+
+
+class BasketUnitsTests(unittest.TestCase):
+    def test_extra_units_are_the_agents_to_fix_not_a_price(self):
+        offer = {"price": "29,99 €", "currency": "EUR"}
+        said = "la cesta tiene 2 unidades por 59,98 €; el precio y la cantidad no coinciden"
+        self.assertEqual(errands.blocked_by(said, offer)["kind"], "other")
+        self.assertEqual(errands.blocked_by("precio 59,98 €", offer)["kind"], "other")
+        self.assertEqual(errands.blocked_by("precio 34,99 € — subió", offer),
+                         {"kind": "price", "price": "34,99 €"})

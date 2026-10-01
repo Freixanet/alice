@@ -63,6 +63,16 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual([o["recommended"] for o in kept], [True, False])
         self.assertEqual(kept[0]["image"], "https://b.example/og.jpg")
 
+    def test_the_reply_is_told_which_card_is_recommended(self):
+        import tempfile
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup); self.home = Path(tmp.name)
+        cheap = option(title="Creatina 80 cápsulas", url="https://a.example/80")
+        powder = option(title="Creatina 300 g", url="https://a.example/300", recommended=True)
+        out = flow.present(self.home, "chat-1", {"options": [cheap, powder]}, now=NOW)
+        self.assertIn("«Creatina 300 g", out["next"])
+        plain = option(title="Creatina 300 g", url="https://a.example/300")
+        unmarked = flow.present(self.home, "chat-2", {"options": [cheap, plain]}, now=NOW)
+        self.assertIn("«Creatina 80 cápsulas", unmarked["next"])
 
 class StoreTests(unittest.TestCase):
     def test_requested_brand_is_kept_without_padding_with_another_brand(self):
