@@ -25,6 +25,7 @@ struct PurchaseOptionsCard: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var loaded: PurchaseOptionSet?
     @State private var state = LoadState.loading
     @State private var open: PurchaseOption?
@@ -34,6 +35,7 @@ struct PurchaseOptionsCard: View {
     private enum LoadState: Equatable { case loading, shown, gone, failed(String) }
 
     private var set: PurchaseOptionSet? { preview ?? loaded }
+    private var cardWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 320 : 176 }
 
     var body: some View {
         Group {
@@ -101,12 +103,19 @@ struct PurchaseOptionsCard: View {
             .scrollTargetBehavior(.viewAligned)
             .scrollIndicators(.hidden)
             if set.options.count > 6 {
-                HStack {
-                    Button(language.pick("Previous", "Anterior")) { page -= 1 }.disabled(page == 0)
-                    Spacer()
-                    Text("\(page + 1) / \((set.options.count + 5) / 6)").font(.caption)
-                    Spacer()
-                    Button(language.pick("Next", "Siguiente")) { page += 1 }.disabled((page + 1) * 6 >= set.options.count)
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        previousPage
+                        Spacer()
+                        pageNumber(set)
+                        Spacer()
+                        nextPage(set)
+                    }
+                    VStack(spacing: 8) {
+                        pageNumber(set)
+                        previousPage
+                        nextPage(set)
+                    }
                 }
             }
             if set.chosen == nil, submitted == nil, let best = set.options.first(where: \.recommended), !best.why.isEmpty {
@@ -120,6 +129,21 @@ struct PurchaseOptionsCard: View {
         .accessibilityLabel(Text(language.pick("Options to buy", "Opciones para comprar")))
     }
 
+    private var previousPage: some View {
+        Button(language.pick("Previous", "Anterior")) { page -= 1 }.disabled(page == 0)
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
+    private func nextPage(_ set: PurchaseOptionSet) -> some View {
+        Button(language.pick("Next", "Siguiente")) { page += 1 }.disabled((page + 1) * 6 >= set.options.count)
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
+    private func pageNumber(_ set: PurchaseOptionSet) -> some View {
+        Text("\(page + 1) / \((set.options.count + 5) / 6)").font(.caption)
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
     private func card(_ option: PurchaseOption, chosen: String?) -> some View {
         let picked = chosen == option.id
         let decided = chosen != nil
@@ -128,7 +152,7 @@ struct PurchaseOptionsCard: View {
                 ZStack(alignment: .topLeading) {
                     CardImage(image: option.image, page: option.url, symbol: "bag", fits: true)
                         .background(Color.white)
-                        .frame(width: 176, height: 150)
+                        .frame(width: cardWidth, height: 150)
                         .clipped()
                     if picked {
                         ComponentPill(text: language.pick("Chosen", "Elegida"), tint: Palette.success(scheme)).padding(8)
@@ -138,15 +162,17 @@ struct PurchaseOptionsCard: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(option.title).font(.subheadline.weight(.medium)).lineLimit(2)
+                    Text(option.title).font(.subheadline.weight(.medium)).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
                     Text([option.merchant, option.variant, option.qty > 1 ? "× \(option.qty)" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(option.price.pricesKeptTogether).font(.subheadline.weight(.semibold).monospacedDigit())
                         .padding(.top, 2)
                 }
                 .padding(12)
-                .frame(width: 176, alignment: .leading)
+                .frame(width: cardWidth, alignment: .leading)
             }
             .background(Palette.card(scheme))
             .clipShape(.rect(cornerRadius: 20))
