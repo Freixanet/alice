@@ -41,7 +41,7 @@ scale.
 | iOS tests | ~200 (in AliceTests/) |
 | Plugin tests | ~35 (in hermes-plugin/tests/) |
 | TODO/FIXME/HACK markers | 0 (clean) |
-| CI workflows | 3 (quality, browser, ios) |
+| CI workflows | 2 (quality, ios-performance) |
 
 The 132 fix commits represent real-world failures that were found and
 addressed. The commit messages are descriptive (e.g., "fix: the chat reads
