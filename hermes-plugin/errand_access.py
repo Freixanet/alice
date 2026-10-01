@@ -256,18 +256,26 @@ def protect_browser_secrets(entry, *, inspect=target, evaluate=page_evaluate):
         raw = json.loads(raw)
     controls = [LoginControl.from_dict(r) for r in (raw or []) if isinstance(r, dict)]
     otp = classify_otp_controls(controls)
-    passwords = [c for c in controls if c.type == 'password']
-    slots = [nonce + ':' + str(c.index) for c in passwords]
     otp_slots = [nonce + ':' + str(c.control.index) for c in otp]
-    values = evaluate(context, "Array.from(document.querySelectorAll('input, select')).filter(e=>e.type==='password'||" +
-                      json.dumps(slots + otp_slots) + ".includes(e.getAttribute('data-hermes-vault-slot'))).map(e=>{"
-                      "if(" + json.dumps(otp_slots) + ".includes(e.getAttribute('data-hermes-vault-slot')))"
-                      "e.style.setProperty('-webkit-text-security','disc','important');return String(e.value||'')})")
-    if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+    values = evaluate(context, "(()=>{const inputs=Array.from(document.querySelectorAll('input, select'));"
+                      "const otp=inputs.filter(e=>" + json.dumps(otp_slots) +
+                      ".includes(e.getAttribute('data-hermes-vault-slot')));"
+                      "otp.forEach(e=>e.style.setProperty('-webkit-text-security','disc','important'));"
+                      "return {passwords:inputs.filter(e=>e.type==='password').map(e=>String(e.value||'')),"
+                      "otp:otp.map(e=>String(e.value||''))}})()")
+    if not isinstance(values, dict) or any(not isinstance(values.get(k), list) or
+            any(not isinstance(v, str) for v in values[k]) for k in ('passwords','otp')):
         raise ValueError('No se pudo proteger el formulario seguro.')
-    for value in values:
+    for value in values['passwords']:
         register_vault_redaction_value(value)
-    register_vault_redaction_value(''.join(values))
+    digits = values['otp']
+    if digits and all(digits):
+        # A split OTP is one secret, not six one-character passwords: masking
+        # each digit would erase unrelated amounts and browser control indices.
+        for representation in (''.join(digits), ' '.join(digits), '-'.join(digits),
+                               str(digits), str(tuple(digits)), json.dumps(digits),
+                               json.dumps(digits,separators=(',',':'))):
+            register_vault_redaction_value(representation)
     values.clear()
     return None
 

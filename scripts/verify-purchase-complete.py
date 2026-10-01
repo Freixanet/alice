@@ -162,6 +162,18 @@ def main(agent_test=False):
             assert '123456' not in json.dumps(result)
             assert browser.evaluate("document.querySelector('input[name=otp]').style.getPropertyValue('-webkit-text-security')") == 'disc'
             print('PASS: OTP explicit field read and screenshot protected after process restart',flush=True)
+            # Exercise a six-slot OTP with the official control classifier.
+            browser.evaluate("""(()=>{const f=document.querySelector('#otp');f.innerHTML=Array.from({length:6},(_,i)=>'<input name="otp'+i+'" autocomplete="one-time-code" maxlength="1">').join('')+'<button>Verificar</button>';f.onsubmit=e=>{e.preventDefault();if(Array.from(f.querySelectorAll('input')).map(x=>x.value).join('').length===6){document.querySelector('#summary').hidden=false;f.hidden=true}}})()""")
+            split_pending=access.request(home,entry['id'],'vault.code',inspect=inspect)
+            access.answer(home,entry['id'],split_pending['request_id'],'123456',inspect=inspect,resume=lambda *a:resume.append(a))
+            clear_vault_redaction_values()
+            access.protect_browser_secrets(errands.get(home,entry['id']),inspect=inspect,evaluate=evaluate)
+            result=browser_exec(errands.context_preamble(entry['id']) + "print(js(\"Array.from(document.querySelectorAll('#otp input')).map(e=>e.value)\"));print(js(\"document.querySelector('#price').textContent\"))",session=entry['session_id'],timeout_s=45,task_id='fixture-redaction')
+            if isinstance(result,str):result=json.loads(result)
+            assert str(list('123456')) not in json.dumps(result) and '123456' not in json.dumps(result)
+            assert '34,99' in json.dumps(result)
+            assert browser.evaluate("Array.from(document.querySelectorAll('#otp input')).every(e=>e.style.getPropertyValue('-webkit-text-security')==='disc')")
+            print('PASS: real split OTP is filled, redacted and masked while unrelated prices remain readable',flush=True)
             browser.evaluate("document.querySelector('#otp').requestSubmit()")
             assert not browser.evaluate('window.fixturePaid')
             total=browser.read('#total');assert total=='73,97 €'

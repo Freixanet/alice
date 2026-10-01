@@ -180,7 +180,7 @@ class AccessTests(unittest.TestCase):
         scripts = []
         def evaluate(context,script):
             scripts.append(script)
-            return descriptors if 'flatMap' in script else ['654321']
+            return descriptors if 'flatMap' in script else {'passwords':[], 'otp':['654321']}
         before = list(self.home.rglob('*.json'))
         snapshots = [p.read_bytes() for p in before]
         self.assertIsNone(access.protect_browser_secrets(self.entry,inspect=self.inspect,evaluate=evaluate))
@@ -188,6 +188,19 @@ class AccessTests(unittest.TestCase):
         self.assertIn('-webkit-text-security',scripts[-1])
         self.assertNotIn('654321',str(scripts))
         self.assertEqual([p.read_bytes() for p in before],snapshots)
+
+    def test_split_otp_is_redacted_without_erasing_prices_or_control_indices(self):
+        from agent.redact import clear_vault_redaction_values, redact_sensitive_text
+        clear_vault_redaction_values()
+        self.addCleanup(clear_vault_redaction_values)
+        rows = [{'index':i,'name':'otp'+str(i),'type':'text','autocomplete':'one-time-code',
+                 'maxLength':1,'formIndex':0} for i in range(6)]
+        digits = ['1','2','3','4','5','6']
+        evaluate = lambda ctx,script: rows if 'flatMap' in script else {'passwords':['FAKE-hidden-password'], 'otp':digits.copy()}
+        access.protect_browser_secrets(self.entry,inspect=self.inspect,evaluate=evaluate)
+        for value in ('123456','1 2 3 4 5 6','1-2-3-4-5-6',str(digits),json.dumps(digits),json.dumps(digits,separators=(',',':')),'FAKE-hidden-password'):
+            self.assertNotIn(value,redact_sensitive_text(value,force=True))
+        self.assertEqual(redact_sensitive_text('Control 3: 34,99 € × 2',force=True),'Control 3: 34,99 € × 2')
 
     def test_secret_shield_never_reads_a_different_origin(self):
         evaluate = mock.Mock()
