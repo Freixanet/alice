@@ -41,8 +41,9 @@ def page(url):
 <form id="login" hidden onsubmit="event.preventDefault();if(this.querySelector('input[type=email]').value && this.querySelector('input[type=password]').value){{document.querySelector('#otp').hidden=false;this.hidden=true}}">
 <label>Email<input type="email" name="email" autocomplete="username"></label><label>Password<input type="password" name="password" autocomplete="current-password"></label><button>Iniciar sesión</button></form>
 <form id="otp" hidden onsubmit="event.preventDefault();if(this.querySelector('input').value.length===6){{document.querySelector('#summary').hidden=false;this.hidden=true}}"><label>Verification code<input autocomplete="one-time-code" name="otp"></label><button>Verificar</button></form>
-<section id="summary" hidden><h2>Resumen final</h2><span id="total"></span><button id="pay" onclick="window.fixturePaid=true">Pagar ahora</button></section>
+<section id="summary" hidden><h2>Resumen final</h2><span data-payment-method="bank-card" data-payment-label="Tarjeta">Tarjeta</span><span id="total" data-order-total></span><span id="delivery">Envío 3,99 € · viernes</span><span id="address">Calle ficticia 1 · 08001 Barcelona</span><span id="email">fictional@example.com</span><button id="pay" onclick="payFixture()">Pagar ahora</button></section>
 <script>window.fixturePaid=false;const base={float(base.replace(',','.'))};let units=1;
+function payFixture(){{window.fixturePaid=true;window.fixtureSubmits=(window.fixtureSubmits||0)+1;const t=document.querySelector('#total').textContent;document.querySelector('#summary').hidden=true;document.querySelector('#cart').hidden=true;const d=document.createElement('div');d.innerText='Gracias. Pedido confirmado FIX-987654. Total '+t;document.body.appendChild(d);}}
 function add(){{units=Number(document.querySelector('#qty').value);document.querySelector('#cart-qty').value=units;document.querySelector('#cart').hidden=false;total();}}
 function apply(){{document.querySelector('#price').textContent=(document.querySelector('#coupon').value==='PUBLIC10'?base*.9:base).toFixed(2).replace('.',',')+' €';total();}}
 function total(){{document.querySelector('#total').textContent=(Number(document.querySelector('#price').textContent.replace(',','.').replace(' €',''))*units+3.99).toFixed(2).replace('.',',')+' €';}}
@@ -126,7 +127,7 @@ def main(agent_test=False):
             inspect=lambda e:('https://example.com',context,lambda method,params:browser.call(method,params))
             evaluate=lambda ctx,script:browser.evaluate(script)
             checked=prices.check_cart(home,entry['id'],{'line':'#line','price':'#price','cart_quantity':'#cart-qty'},inspect=inspect,evaluate=evaluate)
-            assert checked['ok'] and prices.fresh_cart(home,errands.get(home,entry['id']),inspect=inspect)
+            assert checked['ok'] and prices.fresh_cart(home,errands.get(home,entry['id']),inspect=inspect,evaluate=evaluate)
             try:
                 prices.checkout_amount(errands.get(home,entry['id']),'#total',inspect=inspect,evaluate=evaluate)
                 raise AssertionError('A hidden total must never become final approval')
@@ -177,21 +178,42 @@ def main(agent_test=False):
             browser.evaluate("document.querySelector('#otp').requestSubmit()")
             assert not browser.evaluate('window.fixturePaid')
             total=browser.read('#total');assert total=='73,97 €'
-            cart={'merchant':'Prozis','site':'example.com','currency':'EUR','total':total,
-                  'items':[{'name':chosen['title'],'variant':chosen['variant'],'qty':2,'price':'34,99 €'}], 'delivery':'Envío 3,99 €'}
-            result=errands.request_checkout(home,entry['id'],cart,fetch=lambda *a:(_ for _ in ()).throw(OSError('offline')))
-            assert result['ok'] and errands.pay_gate(home,entry['session_id'],tool_name='browser_click',args={'text':'Pagar ahora'})['action']=='block'
-            # The payment capability re-reads the same approved visible total.
-            # No payment button is ever operated, even in this synthetic test.
             prices.check_cart(home,entry['id'],{'line':'#line','price':'#price','cart_quantity':'#cart-qty'},inspect=inspect,evaluate=evaluate)
+            controller=prices.module('purchase_controller')
+            selectors={'total_selector':'#total','delivery_selector':'#delivery','address_selector':'#address','email_selector':'#email'}
+            fake_cards=lambda:[{'handle':'fixture-card','label':'Visa ···4242','card':'Visa ···4242','origin':''}]
+            # The production controller, not model-provided facts, creates the approval.
+            assert controller.advance(home,entry['id'],inspect=inspect,evaluate=evaluate,saved_cards=fake_cards)
             approved=errands.get(home,entry['id'])['checkout']
-            approved.update(status='approved',decided_at=time.time())
-            errands.update(home,entry['id'],checkout=approved,checkout_evidence={'checkout_id':approved['id'],'selector':'#total'})
-            assert prices.payment_ready(home,errands.get(home,entry['id']),inspect=inspect,evaluate=evaluate)
-            browser.evaluate("document.querySelector('#total').textContent='79,97 €'")
-            assert not prices.payment_ready(home,errands.get(home,entry['id']),inspect=inspect,evaluate=evaluate)
+            assert approved['total']=='73,97 €'
             assert not browser.evaluate('window.fixturePaid')
-            print('PASS: real isolated Chrome, all formats, conditional/rejected/public coupons, units, login vault, OTP, duplicate answers, exact total and unapproved pay blocked',flush=True)
+            try:
+                controller.act(home,entry['id'],{'action':'click','selector':'#pay'},inspect=inspect,evaluate=evaluate)
+                raise AssertionError('Unapproved payment was submitted')
+            except ValueError:pass
+            assert errands.decide_checkout(home,entry['id'],True,checkout_id=approved['id'],card_handle='fixture-card')
+            assert controller.ready(home,errands.get(home,entry['id']),inspect=inspect,evaluate=evaluate)
+            for selector,value in [('#total','79,97 €'),('#address','Otro destino'),('#cart-qty','3')]:
+                previous=browser.read(selector)
+                browser.evaluate("(()=>{const e=document.querySelector("+json.dumps(selector)+");if(e.tagName==='INPUT')e.value="+json.dumps(value)+";else e.textContent="+json.dumps(value)+";})()")
+                try:
+                    assert not controller.ready(home,errands.get(home,entry['id']),inspect=inspect,evaluate=evaluate)
+                except ValueError:pass
+                browser.evaluate("(()=>{const e=document.querySelector("+json.dumps(selector)+");if(e.tagName==='INPUT')e.value="+json.dumps(previous)+";else e.textContent="+json.dumps(previous)+";})()")
+            # This click only operates the intercepted fixture; it cannot send a bank request.
+            assert controller.advance(home,entry['id'],inspect=inspect,evaluate=evaluate)
+            assert browser.evaluate('window.fixtureSubmits')==1
+            try:
+                controller.act(home,entry['id'],{'action':'click','selector':'#pay'},inspect=inspect,evaluate=evaluate)
+                raise AssertionError('A consumed submission was repeated')
+            except ValueError:pass
+            assert controller.advance(home,entry['id'],inspect=inspect,evaluate=evaluate)
+            final=errands.get(home,entry['id'])
+            if final['status']!='done':
+                print('Controller reconciliation diagnostic:',json.dumps({'status':final['status'],'phase':final.get('purchase',{}).get('phase'),'receipt':final.get('receipt'),'ledger':prices.module('purchases')._read(prices.module('purchases')._ledger(home))}),flush=True)
+            assert final['status']=='done'
+            assert errands.get(home,entry['id'])['receipt']['order']=='FIX-987654'
+            print('PASS: production checkout controller; full order approval; changed total/address/quantity refused; exactly one synthetic payment and confirmed order; zero model calls',flush=True)
             for path in (home/'.alice').rglob('*.json'):
                 assert 'FAKE-ONLY-shop-test' not in path.read_text() and '123456' not in path.read_text()
             if agent_test:
@@ -216,7 +238,7 @@ def run_agent(home,token,prices,access,errands,flow,Probe,recipe):
     plugin=load('alice_fixture_plugin',ROOT/'hermes-plugin/__init__.py')
     plugin._hermes_root=lambda:home
     import types
-    plugin._cards_module=lambda:types.SimpleNamespace(cards=lambda:[{'label':'Visa ficticia ···4242'}])
+    plugin._cards_module=lambda:types.SimpleNamespace(cards=lambda:[{'handle':'fixture-card','label':'Visa ficticia ···4242','origin':''}])
     current={'session':'agent-fixture-chat'}
     plugin._session_id=lambda *a:current['session']
     registered={}
@@ -278,7 +300,7 @@ def run_agent(home,token,prices,access,errands,flow,Probe,recipe):
         if name in ('purchase_check_cart','purchase_verify'):
             print('Luna request:',name,json.dumps(args),flush=True)
     agent.tool_start_callback=record
-    system=(ROOT/'hermes-plugin/skills/comprar/SKILL.md').read_text()+'\nTEST ISOLATED SHOP ONLY. Merchant is Prozis; search https://example.com/search selector a.product. Currency EUR. No secrets in chat. Recipe DOM selectors: '+json.dumps(recipe)
+    system=(ROOT/'hermes-plugin/skills/comprar/SKILL.md').read_text()+'\nTEST ISOLATED SHOP ONLY. Merchant is Prozis; search https://example.com/search selector a.product. Currency EUR. checkout_request requires total_selector=#total, delivery_selector=#delivery, address_selector=#address, email_selector=#email. No secrets in chat. Recipe DOM selectors: '+json.dumps(recipe)
     first=agent.run_conversation('Compra la creatina Creapure de Prozis',system_message=system)
     sets=flow._read(flow._path(home));found=next((s for s in reversed(sets) if s['session']==current['session']),None)
     if not found or len(found['options']) != 3:

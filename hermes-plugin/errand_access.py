@@ -63,7 +63,7 @@ def page_evaluate(context, expression):
     page = next(p for p in pages if p['id'] == context['target'])
     with connect(page['webSocketDebuggerUrl'], open_timeout=3) as sock:
         sock.send(json.dumps({'id': 1, 'method': 'Runtime.evaluate', 'params': {
-            'expression': expression, 'returnByValue': True}}))
+            'expression': expression, 'returnByValue': True, 'awaitPromise':True}}))
         while True:
             result = json.loads(sock.recv(timeout=5))
             if result.get('id') == 1:
@@ -74,7 +74,13 @@ def page_evaluate(context, expression):
 
 def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluate, backend=None):
     entry = module('errands').get(home, errand_id)
+    if not entry or entry['status'] in ('done','denied','stopped'):
+        raise ValueError('El recado ya no está activo.')
     page_origin, context, _ = inspect(entry)
+    if entry.get('ask_before_login') and backend is None:
+        from tools.approval_prompt import request_elicitation_consent
+        if request_elicitation_consent('Iniciar sesión en '+page_origin,'Usar el acceso guardado de esta tienda.',surface='vault-login',title='¿Iniciar sesión?') != 'accept':
+            raise ValueError('La persona no autorizó iniciar sesión.')
     if backend is None:
         from agent.vault_backends import backend_for_handle
         backend = backend_for_handle(handle)
@@ -135,7 +141,7 @@ def _request(home, errand_id, kind='vault.save_login', *, inspect=target):
         raise ValueError('El recado no está preparando el pedido.')
     page_origin, context, _ = inspect(entry)
     offer_url = (entry.get('offer') or {}).get('url')
-    if offer_url and origin(offer_url) != page_origin:
+    if offer_url and origin(offer_url) != page_origin and not (kind == 'vault.code' and (entry.get('purchase') or {}).get('attempt_id') and module('errands').shop(page_origin) in module('vault_cards').PAYMENT_GATEWAYS):
         raise ValueError('La página no pertenece a la tienda elegida.')
     if kind not in ('vault.save_login', 'vault.code'):
         raise ValueError('Solicitud de acceso desconocida.')
@@ -239,7 +245,7 @@ def detect_pending(home, errand_id, *, inspect=target, evaluate=page_evaluate):
     if not entry or entry['status'] != 'working':
         return None
     page_origin, context, _ = inspect(entry)
-    if (entry.get('offer') or {}).get('url') and origin(entry['offer']['url']) != page_origin:
+    if (entry.get('offer') or {}).get('url') and origin(entry['offer']['url']) != page_origin and not ((entry.get('purchase') or {}).get('attempt_id') and module('errands').shop(page_origin) in module('vault_cards').PAYMENT_GATEWAYS):
         return None
     from agent.vault_login_classifier import LoginControl, build_inspection_js, classify_login_control, classify_otp_controls
     nonce = secrets.token_hex(8)
@@ -263,7 +269,7 @@ def protect_browser_secrets(entry, *, inspect=target, evaluate=page_evaluate):
     neither metadata nor tool results receive them. Also mask OTP screenshots.
     """
     page_origin, context, _ = inspect(entry)
-    if origin(entry['offer']['url']) != page_origin:
+    if origin(entry['offer']['url']) != page_origin and not ((entry.get('purchase') or {}).get('attempt_id') and module('errands').shop(page_origin) in module('vault_cards').PAYMENT_GATEWAYS):
         return None
     from agent.vault_login_classifier import LoginControl, build_inspection_js, classify_otp_controls
     from agent.redact import register_vault_redaction_value

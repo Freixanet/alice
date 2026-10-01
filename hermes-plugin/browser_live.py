@@ -593,6 +593,8 @@ def _cast(root: Path, target: Optional[str] = None) -> Screencast:
     if not tabs:
         raise BrowserError("No hay ninguna página abierta.")
     chosen = next((t for t in tabs if t["id"] == target), None) if target else None
+    if target and chosen is None:
+        raise BrowserError("La página de este recado ya no está disponible.")
     # Unless the phone asked for a tab, follow the one where the agent is working.
     page = chosen or busiest(tabs) or tabs[0]
     with _casts_lock:

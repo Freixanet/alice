@@ -32,7 +32,7 @@ BROAD = 8
 def fingerprint(cookies, origin):
     host = urlsplit(origin).hostname
     cookies = [c for c in cookies if host == c.get('domain','').lstrip('.') or host.endswith('.' + c.get('domain','').lstrip('.'))]
-    return hashlib.sha256(json.dumps(cookies,sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(sorted([(c.get('name'),c.get('value'),c.get('domain'),c.get('path')) for c in cookies if re.search(r'sess|auth|cart|basket|token',c.get('name',''),re.I)]),sort_keys=True).encode()).hexdigest()
 
 
 def https(url):
@@ -163,17 +163,19 @@ def _path(home):
 
 
 def _load(home):
-    path = _path(home)
-    return json.loads(path.read_text()) if path.exists() else {'searches': {}, 'quotes': {}}
+    data = module('purchase_storage').read(_path(home), dict)
+    data.setdefault('searches', {})
+    data.setdefault('quotes', {})
+    return data
 
 
 def _save(home, data):
-    path = _path(home)
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    temporary = path.with_suffix('.tmp')
-    temporary.write_text(json.dumps(data, ensure_ascii=False))
-    temporary.chmod(0o600)
-    temporary.replace(path)
+    at = time.time()
+    active_refs = {e.get('offer', {}).get('quote_ref') for e in module('errands').listing(home) if e.get('offer') and e.get('status') in module('errands').ACTIVE + ('stuck',)}
+    data['quotes'] = {k:v for k,v in data['quotes'].items() if k in active_refs or at-v.get('at',at) < 3*86400}
+    referenced = {q.get('search_id') for q in data['quotes'].values()}
+    data['searches'] = {k:v for k,v in data['searches'].items() if k in referenced or at-v.get('at',at) < 3*86400}
+    module('purchase_storage').write(_path(home), data)
 
 
 def discover(home, session, args, *, factory=Probe, now=None):
@@ -185,12 +187,14 @@ def discover(home, session, args, *, factory=Probe, now=None):
     with probe(home, factory) as browser:
         browser.goto(args['url'])
         rows = browser.evaluate('''Array.from(document.querySelectorAll(%s)).map(e=>{const a=e.matches('a')?e:e.querySelector('a[href]');return {url:a?.href||(e.matches('h1')?location.href:null),title:e.innerText.trim()}}).filter(r=>r.url&&r.title)''' % json.dumps(selector))
+    if len(rows or []) > 100:
+        raise ValueError('Acota la búsqueda o pagina los resultados: hay más de 100 candidatos en esta página.')
     candidates = []
     seen = set()
     stems = [str(w).casefold()[:6] for w in args.get('keywords') or [] if str(w).strip()]
     named = lambda row: all(s in (row['url'] + ' ' + row['title']).casefold() for s in stems)
     if stems and not any(named(row) for row in rows or []):
-        stems = []  # titles in another language («Peanut Butter»): the shop's search already chose
+        raise ValueError('La búsqueda no contiene coincidencias comprobadas; reformula la consulta sin sustituir el producto.')
     for row in rows or []:
         lines = [line.strip() for line in row['title'].splitlines() if line.strip()]
         row['title'] = ' '.join(line for line in lines if not re.fullmatch(r'[€$£\d.,\s%]+',line))
@@ -247,8 +251,8 @@ def _verify(home, session, args, *, factory=Probe, now=None):
     if not candidate:
         raise ValueError('Ese formato no se encontró en la tienda.')
     qty = args.get('qty', 1)
-    if not isinstance(qty, int) or isinstance(qty, bool) or not 1 <= qty <= 20:
-        raise ValueError('La cantidad debe estar entre 1 y 20.')
+    if not isinstance(qty, int) or isinstance(qty, bool) or not 1 <= qty <= 999:
+        raise ValueError('La cantidad debe estar entre 1 y 999.')
     if args.get('reject_reason'):
         recipe = args.get('recipe') or {}
         with probe(home,factory) as browser:
@@ -269,7 +273,8 @@ def _verify(home, session, args, *, factory=Probe, now=None):
         if adapted:
             recipe = prozis.product_recipe(browser, recipe)
         else:
-            recipe.pop('price_basis', None)
+            if recipe.get('price_basis', 'unit') not in ('unit', 'line_total'):
+                raise ValueError('Indica la base del precio: unit o line_total.')
         if not recipe.get('cart_quantity'):
             raise ValueError('Falta el selector de unidades comprobadas en la cesta.')
         title = browser.read(recipe['title'])
@@ -309,6 +314,9 @@ def _verify(home, session, args, *, factory=Probe, now=None):
             raise ValueError('La cesta no muestra un precio verificable en su moneda.')
         coupon_results = []
         best = parsed
+        base_line = module('money').parse(amount,args['currency'])[0]
+        best_line = base_line
+        best_code = ''
         codes = list(dict.fromkeys((args.get('coupons') or []) + recipe.get('public_codes', [])))[:5]
         for code in codes:
             browser.coupon(recipe['coupon'], str(code))
@@ -318,16 +326,22 @@ def _verify(home, session, args, *, factory=Probe, now=None):
             current = cart_amount(browser.read(recipe['price']), args['currency'], qty, recipe)
             if not current:
                 raise ValueError('El cupón dejó el precio sin comprobar.')
-            coupon_results.append({'code':str(code), 'applied':current[0] < parsed[0], 'price':module('money').text(*current)})
-            if current[0] < best[0]:
+            current_line=module('money').parse(browser.read(recipe['price']),args['currency'])[0]
+            coupon_results.append({'code':str(code), 'applied':current_line < base_line, 'price':module('money').text(*current)})
+            if current_line < best_line:
+                best_line = current_line
                 best = current
-        if coupon_results and current != best:
-            best_code = next(r['code'] for r in coupon_results if module('money').parse(r['price'],args['currency']) == best)
+                best_code = str(code)
+        if coupon_results and current_line != best_line:
+            # Empty code restores the undiscounted cart if no coupon improves it.
             browser.coupon(recipe['coupon'], best_code)
             browser.click(recipe['apply'], action='coupon')
-            if cart_amount(browser.read(recipe['price']),args['currency'],qty,recipe) != best:
+            if module('money').parse(browser.read(recipe['price']),args['currency'])[0] != best_line:
                 raise ValueError('El descuento público ya no se aplica.')
         parsed = best
+        line_cents = module('money').parse(browser.read(recipe['price']), args['currency'])[0]
+        if recipe.get('price_basis') != 'line_total':
+            line_cents *= qty
         shipping = browser.read(recipe['shipping']) if recipe.get('shipping') else None
         condition = browser.read(recipe['condition']) if recipe.get('condition') else None
         if adapted and browser.evaluate('Array.from(document.querySelectorAll("input[type=email]")).some(e=>e.getClientRects().length>0)'):
@@ -336,7 +350,8 @@ def _verify(home, session, args, *, factory=Probe, now=None):
                  'session': session, 'url': candidate['url'], 'title': title, 'variant': variant,
                  'qty': qty, 'price_cents': parsed[0], 'currency': parsed[1],
                  'price': module('money').text(*parsed), 'shipping': shipping, 'condition': condition,
-                 'coupons':codes, 'coupon_results':coupon_results,
+                 'coupons':codes, 'coupon_results':coupon_results, 'coupon_code':best_code,
+                 'line_cents':line_cents, 'product_identity': {'url':candidate['url'], 'variant':variant},
                  'origin': module('errand_access').origin(candidate['url']), 'at': now or time.time(), 'recipe': recipe}
     with module('purchase_flow')._locked(home):
         data = _load(home)
@@ -348,9 +363,7 @@ def _verify(home, session, args, *, factory=Probe, now=None):
 def cart_amount(text, currency, qty, recipe):
     amount = module('money').parse(text, currency)
     if amount and recipe.get('price_basis') == 'line_total':
-        if amount[0] % qty:
-            raise ValueError('El total de la línea no permite comprobar el precio por unidad en céntimos.')
-        amount = (amount[0] // qty, amount[1])
+        amount = ((amount[0] + qty // 2) // qty, amount[1])
     return amount
 
 
@@ -369,8 +382,6 @@ def coverage(home, session, search_id, refs):
     if not search or search['session'] != session:
         raise ValueError('Falta el registro de formatos encontrados.')
     shown = {data['quotes'][ref]['candidate_id'] for ref in refs if ref in data['quotes'] and data['quotes'][ref]['search_id'] == search_id}
-    if len(search['candidates']) > BROAD:
-        return search  # a broad search: the agent narrows it or shows the best, not every listing
     omitted = [r for r in search['candidates'] if r['id'] not in shown and r['id'] not in search['rejected']
                and r['id'] not in search.get('failed', {})]
     if omitted:
@@ -383,18 +394,27 @@ def present(home, session, args, *, currency="", picture=None, request="", now=N
     if not raw:
         return {'ok': False, 'error': 'Busca y comprueba los formatos antes de mostrarlos.'}
     try:
-        search = coverage(home, session, args.get('search_id'), [o.get('quote_ref') for o in raw])
+        search_ids = args.get('search_ids') or [args.get('search_id')]
+        searches = [coverage(home,session,sid,[o.get('quote_ref') for o in raw]) for sid in search_ids]
+        search = searches[0]
         options = []
         candidates = set()
         for row in raw:
             quote = resolve(home, session, row.get('quote_ref'), now=now, factory=factory)
+            if quote['search_id'] not in {s['id'] for s in searches}:
+                raise ValueError('La oferta pertenece a otra búsqueda; presenta cada inventario con su propia cobertura.')
             if quote['candidate_id'] in candidates:
                 raise ValueError('No repitas el mismo formato para completar las tarjetas.')
             candidates.add(quote['candidate_id'])
             options.append({**row, **{k: quote[k] for k in ('title','variant','qty','url','price','currency')},
                             'in_stock': True, 'channel':'browser', 'quote_ref': quote['id'],
-                            'verified_at': quote['at'], 'shipping': quote['shipping'], 'condition': quote['condition']})
-        result = module('purchase_flow').present(home, session, {'options':options}, currency=currency,
+                            'verified_at': quote['at'], 'shipping': quote['shipping'], 'condition': quote['condition'],
+                            **{k:quote.get(k) for k in ('line_cents','recipe','coupon_code','product_identity')}})
+        intent = module('purchase_intent').current(home,session)
+        rejected = [o for o in options if not module('purchase_intent').accepts(intent,o)]
+        if rejected:
+            raise ValueError('Estas ofertas incumplen la petición vigente: '+ '; '.join(o['title'] for o in rejected))
+        result = module('purchase_flow').present(home, session, {'options':options, 'set_key':module('purchase_flow').set_key(raw[:module('purchase_flow').MAX_OPTIONS])}, currency=currency,
                                                picture=picture, request=request, now=now, exact_item=True)
         if result.get('ok'):
             # The quote, rather than any model-supplied price, remains the offer's authority.
@@ -404,14 +424,10 @@ def present(home, session, args, *, currency="", picture=None, request="", now=N
                 found = next(s for s in sets if s['key']==result['set'] and s['session']==session)
                 for option in found['options']:
                     source = options[int(option['id'].rsplit('-',1)[1])-1]
-                    option.update({k:source[k] for k in ('quote_ref','verified_at','shipping','condition')})
-                original_key = flow.set_key(raw[:flow.MAX_OPTIONS])
-                for option in found['options']:
-                    option['id'] = original_key + '-' + option['id'].rsplit('-',1)[1]
-                found['key'] = original_key
-                result['set'] = original_key
-                result['options'] = [{'id':o['id'],'title':o['title'],'price':o['price']} for o in found['options']]
+                    option.update({k:source[k] for k in ('quote_ref','verified_at','shipping','condition','line_cents','recipe','coupon_code','product_identity')})
                 found['search_id'] = search['id']
+                found['search_ids'] = [s['id'] for s in searches]
+                found['request_revision'] = (intent or {}).get('revision')
                 found['phase'] = 'verified_options'
                 flow._write(path, sets)
             result['key'] = result['set']
@@ -434,29 +450,37 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     if module('purchase_prozis').supports(offer['url']):
         recipe = module('purchase_prozis').cart_recipe(lambda code: ev(context, code))
     else:
-        recipe = {k:v for k,v in recipe.items() if k != 'price_basis'}
+        recipe = dict(recipe)
     def read(selector):
         result = ev(context,'(()=>{let e;try{e=document.querySelector(' + json.dumps(selector) + ')}catch{return {invalid_selector:true}};return e ? String(e.matches("input,select,textarea") ? e.value : e.innerText).trim() : null})()')
         if isinstance(result,dict) and result.get('invalid_selector'):
             raise ValueError('Usa selectores CSS de la página para line, price y cart_quantity, no nombres de producto, importes o cantidades. Lee los controles y vuelve a comprobar la cesta.')
         return result
+    inventory = ev(context,'Array.from(document.querySelectorAll(' + json.dumps(recipe.get('all_lines') or recipe['line']) + ')).filter(e=>e.getClientRects().length>0).length')
+    if inventory != 1:
+        raise ValueError('La cesta contiene artículos adicionales; retira los sobrantes y vuelve a comprobarla.')
     line = read(recipe['line'])
     if not line or offer['title'].casefold() not in line.casefold() or str(offer.get('variant') or '').casefold() not in line.casefold():
         raise ValueError('La cesta no contiene el formato elegido.')
     if read(recipe['cart_quantity']) != str(offer.get('qty',1)):
-        raise ValueError('La cesta tiene otra cantidad. Corrígela antes de pedir aprobación.')
+        browser = module('purchase_controller').PinnedCart(home,entry,inspect=inspect,evaluate=evaluate)
+        browser.units(recipe['cart_quantity'],offer.get('qty',1))
+        if read(recipe['cart_quantity']) != str(offer.get('qty',1)):
+            raise ValueError('No se pudo corregir la cantidad mediante el control de la cesta.')
     if not ev(context,'(()=>{const line=document.querySelector(' + json.dumps(recipe['line']) + ');const e=document.querySelector(' + json.dumps(recipe['price']) + ');return !!line && !!e && line.contains(e) && e.getClientRects().length>0 && getComputedStyle(e).visibility!=="hidden" && !e.closest("del,s,strike") && getComputedStyle(e).textDecorationLine!=="line-through"})()'):
         raise ValueError('No hay un precio actual verificable de ese artículo en la cesta.')
+    line_amount = module('money').parse(read(recipe['price']),offer['currency'])
     amount = cart_amount(read(recipe['price']),offer['currency'],offer.get('qty',1),recipe)
     if not amount:
         raise ValueError('La cesta no tiene un precio verificable.')
+    line_cents = line_amount[0] if recipe.get('price_basis') == 'line_total' else line_amount[0]*offer.get('qty',1)
     real = module('money').text(*amount)
     note = 'El precio sigue coincidiendo. Prepara el envío y el resumen final sin volver a pedir aceptar el mismo precio.'
     old_price = module('money').parse(offer['price'], offer['currency'])
     if old_price and amount[0] < old_price[0]:
         # Cheaper in the basket (a member discount after login): the person's choice only got
         # better, and the final total is approved before paying anyway.
-        errands.update(home, errand_id, offer={**offer, 'price': real})
+        errands.update(home, errand_id, offer={**offer, 'price': real, 'line_cents':line_cents})
         note = ('La cesta cobra ' + real + ', menos que los ' + offer['price'] + ' elegidos: sigue con ese precio '
                 'sin preguntar y menciónalo en el resumen final.')
     elif not module('money').same(real,offer['price'],offer['currency']):
@@ -466,11 +490,11 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     cookies = command('Storage.getCookies',{'browserContextId':context['context']}).get('cookies',[])
     session_hash = fingerprint(cookies,page_origin)
     errands.update(home,errand_id,cart_evidence={'origin':page_origin,'context':context['context'],'recipe':recipe,
-        'qty':offer.get('qty',1),'price_cents':amount[0],'currency':amount[1], 'at':now or time.time(),'session':session_hash})
+        'qty':offer.get('qty',1),'line_cents':line_cents,'price_cents':amount[0],'currency':amount[1], 'at':now or time.time(),'session':session_hash})
     return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':note}
 
 
-def fresh_cart(home, entry, *, inspect=None, now=None):
+def fresh_cart(home, entry, *, inspect=None, evaluate=None, now=None):
     evidence = entry.get('cart_evidence') or {}
     if not evidence or (now or time.time())-evidence.get('at',0) > TTL:
         return False
@@ -478,6 +502,15 @@ def fresh_cart(home, entry, *, inspect=None, now=None):
     page_origin, context, command = (inspect or access.target)(entry)
     cookies = command('Storage.getCookies',{'browserContextId':context['context']}).get('cookies',[])
     session_hash = fingerprint(cookies,page_origin)
+    ev = evaluate or access.page_evaluate
+    recipe = evidence.get('recipe') or {}
+    current = ev(context,'(()=>{const s=' + json.dumps(recipe) + ';const all=Array.from(document.querySelectorAll(s.all_lines||s.line));const e=document.querySelector(s.cart_quantity),p=document.querySelector(s.price),line=document.querySelector(s.line);return {count:all.length,qty:e?String(e.matches("input,select")?e.value:e.innerText).trim():null,price:p?.innerText.trim(),line:line?.innerText.trim()}})()')
+    offer = entry.get('offer') or {}
+    if (not isinstance(current,dict) or current.get('count')!=1 or current.get('qty')!=str(evidence['qty'])
+        or offer.get('title','').casefold() not in str(current.get('line') or '').casefold()
+        or str(offer.get('variant') or '').casefold() not in str(current.get('line') or '').casefold()
+        or cart_amount(current.get('price'),evidence['currency'],evidence['qty'],recipe)!=(evidence['price_cents'],evidence['currency'])):
+        return False
     return (context['context']==evidence['context'] and page_origin==evidence['origin'] and session_hash==evidence['session']
             and evidence['qty']==(entry.get('offer') or {}).get('qty',1)
             and module('money').parse((entry.get('offer') or {}).get('price'),evidence['currency']) == (evidence['price_cents'],evidence['currency']))
@@ -497,14 +530,7 @@ def checkout_amount(entry, selector, *, inspect=None, evaluate=None):
 
 
 def payment_ready(home, entry, *, inspect=None, evaluate=None):
-    approved = module('errands').approved_checkout(entry)
-    evidence = entry.get('checkout_evidence') or {}
-    if not approved or evidence.get('checkout_id') != approved['id'] or not evidence.get('selector'):
-        return False
-    if not fresh_cart(home,entry,inspect=inspect):
-        return False
-    actual = checkout_amount(entry,evidence['selector'],inspect=inspect,evaluate=evaluate)
-    return module('money').same(actual,approved['total'],approved['currency'])
+    return module('purchase_controller').ready(home,entry,inspect=inspect,evaluate=evaluate)
 
 
 def verify_remaining(home, session, args, *, factory=Probe):
@@ -512,12 +538,18 @@ def verify_remaining(home, session, args, *, factory=Probe):
     search = data['searches'][args['search_id']]
     done = {q['candidate_id'] for q in data['quotes'].values() if q['search_id']==search['id']}
     done.update(search['rejected'])
+    done.update(search.get('failed', {}))
     quotes, failures = [], []
+    deadline = time.monotonic() + 45
     for candidate in search['candidates']:
         if candidate['id'] in done:
             continue
+        if time.monotonic() >= deadline or len(quotes) + len(failures) >= 8:
+            break  # Checkpoint: a subsequent tool call resumes remaining candidates.
+        if urlsplit(candidate['url']).netloc != urlsplit(args.get('url') or search['source']).netloc:
+            continue
         try:
-            quote = verify(home,session,{**args,'candidate_id':candidate['id'],'qty':1},factory=factory)
+            quote = verify(home,session,{**args,'candidate_id':candidate['id'],'qty':args.get('qty',1)},factory=factory)
             quotes.append(quote)
         except Exception as exc:
             failures.append({'candidate_id':candidate['id'],'title':candidate['title'],

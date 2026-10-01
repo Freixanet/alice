@@ -180,3 +180,16 @@ class ErrandRoutesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class SensitiveCardRoutesTests(unittest.TestCase):
+    def test_invalid_card_models_do_not_echo_pan_or_cvc(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        api=load_plugin();app=FastAPI();app.include_router(api.router,prefix=api.PLUGIN_PREFIX)
+        with TestClient(app) as client:
+            pan='4242424242424242';code='543'
+            for body in ({'card_number':pan,'cvc':code,'unexpected':pan},
+                         {'card_number':[pan],'cvc':code}, {'card_number':pan,'cvc':{'secret':code}}):
+                response=client.post(api.PLUGIN_PREFIX+'/vault/cards',json=body)
+                self.assertEqual(response.status_code,400)
+                self.assertNotIn(pan,response.text);self.assertNotIn(code,response.text)

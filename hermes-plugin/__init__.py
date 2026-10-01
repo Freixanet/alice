@@ -149,15 +149,7 @@ def _route_card_fill(tool_name=None, args=None, **_):
     """A card fill uses the saved card for the page actually open: the shop's www twin, or the
     bank's payment page the shop sent the person to. Otherwise Hermes asks the person to pay and
     then refuses the page (the Piensos Raposo purchase failed twice that way)."""
-    if tool_name != "browser_vault_fill" or not isinstance(args, dict) or not args.get("handle"):
-        return None
-    try:
-        live = _browser()
-        urls = [str(tab.get("url") or "") for tab in live.pages(live.configured_url(_hermes_root()))]
-        handle = _cards_module().route_fill(str(args["handle"]), urls)
-    except Exception:
-        return None
-    return {"action": "modify", "args": {"handle": handle}} if handle else None
+    return None  # purchase_action fills the exact approved handle in the pinned target.
 
 
 def _purchases():
@@ -197,7 +189,7 @@ def _guard_repeat_payment(tool_name=None, args=None, session_id="", **_):
         site = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
         return _purchases().guard(_hermes_root(), site, session_id or "")
     except Exception:
-        return None
+        return {"action":"block","message":"No se pudo leer el estado de pagos; conserva los datos y recupera el intento antes de pagar."}
 
 
 def _errands():
@@ -358,62 +350,18 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
     """Nothing is paid without the person's approved checkout, and a saved login is used without
     asking unless they asked to be asked (errands.py). If the check itself fails, paying is refused."""
     name = str(tool_name or "")
-    if name in ("terminal", "execute_code", "browser_eval", "browser_evaluate") or (name == "browser_get_state" and (args or {}).get("expression")):
-        session = _session_id(session_id)
-        if not session.startswith(_errands().SESSION_PREFIX):
-            return None
-        try:
-            entry = _errands().of_session(_hermes_root(), session)
-            if not (entry or {}).get("offer"):
-                return None
-        except Exception:
-            pass
-        return {"action": "block", "message": "Este recado de compra usa únicamente el navegador y las herramientas de compra comprobadas. No ejecutes pagos ni solicitudes por terminal, código o evaluación directa."}
-    if name != "browser_vault_fill" and name not in _errands().BROWSER_ACTIONS:
-        return None
     session = _session_id(session_id)
-    try:
-        errands = _errands()
-        root = _hermes_root()
-        entry = errands.of_session(root,session)
-        active_url = _active_url()
-        presses = name in ('browser_click','browser_press') or bool(errands.CLICKS.search(errands._text_of(args)))
-        payment_step = None
-        if presses and (entry or {}).get('offer'):
-            access = _module("errand_access.py", "alice_errand_access")
-            try:
-                page_origin, context, _ = access.target(entry)
-                active_url = context.get('url') or page_origin
-            except Exception:
-                return {"action":"block","message":"No se pudo verificar la página de este recado antes de pulsar un control. Abre su propia página y reintenta."}
-            if errands.STEP_WORDS.search(errands._text_of(args)):
-                try:
-                    payment_step = bool(access.page_evaluate(context, errands.PAYMENT_STEP_JS))
-                except Exception:
-                    payment_step = None  # unread: «Finalizar compra» stays treated as paying
-        meta = _vault_meta(name, args)
-        if meta is not None and meta.kind != "payment":
-            return errands.login_gate(root, session)
-        if meta is not None:
-            cards = _cards_module()
-            merchant = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
-            verdict = errands.pay_gate(root, session, card_fill_site=meta.origin or "", merchant_site=merchant,
-                                       gateways=cards.PAYMENT_GATEWAYS)
-        else:
-            verdict = errands.pay_gate(root, session, tool_name=name, args=args, active_url=active_url,
-                                       payment_step=payment_step)
-        if verdict:
-            return verdict
-        paying = meta is not None or errands.is_pay_action(name,args,active_url,payment_step)
-        entry = errands.of_session(root,session)
-        if paying and (entry or {}).get('offer'):
-            if not _module("purchase_prices.py", "alice_purchase_prices").payment_ready(root,entry):
-                return {"action":"block", "message":"El total o la sesión cambiaron, o falta evidencia del resumen aprobado. Comprueba la cesta y llama a checkout_request para mostrar el total actual antes de pagar."}
+    if not session.startswith(_errands().SESSION_PREFIX):
+        if name == 'browser_vault_fill' and _card_fill(name,args):
+            return {"action":"block","message":"Un pago empieza con errand_start y se autoriza en un recado, con purchase_action."}
         return None
-    except Exception:
-        if name == "browser_vault_fill" or _errands().is_pay_action(name,args,_active_url()):
-            return {"action": "block", "message": "No se pudo comprobar la aprobación del pago; no pagues."}
-        return None
+    # Tools which execute arbitrary code or choose a global tab cannot enter the
+    # purchase capability. Apply to all errands: classification isn't a boundary.
+    if name in ('terminal','execute_code','browser_eval','browser_evaluate','browser_exec',
+                'browser_click','browser_press','browser_type','browser_navigate','browser_cdp',
+                'browser_vault_fill','browser_get_state'):
+        return {"action":"block","message":"Usa purchase_action read/navigate/click/input/select/fill_card sobre la página propia del recado. No se permite código arbitrario ni el navegador global."}
+    return None
 
 
 _STEP = __import__("re").compile(r"^\s*#\s*(.+)$", __import__("re").M)
@@ -434,18 +382,7 @@ def _errand_step(tool_name, args, session_id) -> None:
 
 def _record_payment(tool_name, args, result, session_id) -> None:
     """A card Hermes actually wrote into a checkout is a payment attempt until it is settled."""
-    try:
-        if tool_name != "browser_vault_fill":
-            return
-        out = json.loads(result) if isinstance(result, str) else (result or {})
-        if not (isinstance(out, dict) and out.get("success") and out.get("kind") == "payment"):
-            return
-        site = _purchases().merchant(_open_tabs(), str(out.get("origin") or ""),
-                                     _cards_module().PAYMENT_GATEWAYS)
-        entry = _purchases().record(_hermes_root(), site, session_id or "")
-        _schedule_payment_check(entry)
-    except Exception:
-        pass
+    return  # Filling fields is not sending an order. Controller reserves before submission.
 
 
 def _schedule_payment_check(entry) -> None:
@@ -496,12 +433,13 @@ def _register_purchase_tools(ctx) -> None:
         "properties": {**module.SCHEMA["parameters"]["properties"], **_errands().outcome_properties()}}}
 
     def handler(args, **_):
-        out = module.run_tool(_hermes_root(), args or {})
         try:
-            if isinstance(out, dict) and out.get("ok"):
-                _errands().record_receipt(_hermes_root(), _session_id(), args or {})
-        except Exception:
-            pass
+            entry = _errands().of_session(_hermes_root(), _session_id())
+            if not entry:
+                return _agent_json({"ok":False,"error":"Registra el resultado dentro del recado que envió este pago."})
+            out = _module('purchase_controller.py','alice_purchase_controller').reconcile(_hermes_root(),entry['id'],args or {})
+        except Exception as exc:
+            out = {"ok":False,"error":str(exc) if isinstance(exc,ValueError) else "No se pudo comprobar el resultado del pago."}
         return _agent_json(out)
 
     ctx.register_tool(
@@ -1112,6 +1050,21 @@ _PLAIN_TEXT_PLATFORMS = {"photon", "sms", "imessage", "bluebubbles"}
 
 
 def _plain_text_reply(**kwargs):
+    session=_session_id(kwargs.get('session_id',''))
+    key=_PURCHASE_PRESENTED.get(session)
+    if key:
+        shown=_purchase_flow().options_set(_hermes_root(),key,session=session)
+        best=next((o for o in (shown or {}).get('options',[]) if o.get('recommended')),None)
+        if best:
+            # The prose and the badge now share the same stored object.
+            words='Recomendada: '+best['title']+(' · '+best['variant'] if best.get('variant') else '')+' · '+best['price']+'.'
+            if best.get('why'):words+=' '+best['why']
+            return _text_channel().transform(response_text=words,platform=kwargs.get('platform')) or words
+    errand_id=_ERRAND_TURN_IDS.get(session)
+    if errand_id:
+        entry=_errands().get(_hermes_root(),errand_id)
+        if entry:
+            return 'La compra está en preparación.' if entry['status']=='working' else 'Puedes ver el estado de la compra en su tarjeta.'
     return _text_channel().transform(**kwargs)
 
 
@@ -1513,7 +1466,7 @@ def _register_ask_tools(ctx) -> None:
         if session in _PURCHASE_OPEN:
             # A purchase: country and currency are deduced, products are cards, and no choice is
             # offered before the shop was looked at.
-            refused = _purchase_flow().ask_refusal((args or {}).get("questions") or [], session in _LOOKED)
+            refused = _purchase_flow().ask_refusal((args or {}).get("questions") or [], session in _LOOKED or bool(_purchase_flow().open_options(_hermes_root(),session)))
             if refused:
                 return _agent_json({"ok": False, "error": refused})
         out = module.run_tool(Path(get_hermes_home()), args or {}, key)
@@ -1585,6 +1538,7 @@ def _purchase_locale() -> tuple:
 _PURCHASE_OPEN: set = set()
 # What the person asked to buy, by chat: a link in it is an exact item, which may be one card.
 _PURCHASE_REQUESTS: dict = {}
+_PURCHASE_PRESENTED: dict = {}
 _LOOKED: set = set()
 
 
@@ -1597,12 +1551,15 @@ def _start_purchase(session: str, chosen: dict) -> dict:
     prices = _module("purchase_prices.py", "alice_purchase_prices")
     quote = prices.resolve(_hermes_root(), session, chosen.get("quote_ref"), qty=chosen.get("qty",1))
     previous_price = chosen.get('price')
-    price_changed = not _module('money.py','alice_money').same(previous_price,quote['price'],quote['currency'])
+    old = _module('money.py','alice_money').parse(previous_price,quote['currency'])
+    new = _module('money.py','alice_money').parse(quote['price'],quote['currency'])
+    price_changed = not old or not new or new[0] > old[0]
     chosen.update({k:quote[k] for k in ('title','variant','qty','currency','url')})
     if not price_changed:
         chosen['price'] = quote['price']
     chosen['quote_ref'] = quote['id']
     chosen['verified_at'] = quote['at']
+    chosen.update({k:quote.get(k) for k in ('line_cents','recipe','coupon_code','product_identity')})
     if price_changed:
         errands = _errands()
         entry = errands.create(_hermes_root(),flow.task(chosen),title=flow.title(chosen),site=chosen['url'],origin_session=session,profile=profile,offer=flow.offer(chosen))
@@ -1623,25 +1580,36 @@ def _errand_turn(session_id="", user_message=None, **_):
         if not session or session.startswith(errands.SESSION_PREFIX):
             return None
         _ERRAND_TURN_IDS.pop(session, None)
+        _PURCHASE_PRESENTED.pop(session,None)
         if _automated(session, user_message):
             _AUTOMATED_TURNS.add(session)
             return None
         _AUTOMATED_TURNS.discard(session)
-        option_id = flow.chosen_id(user_message)
+        option_id = flow.chosen_id(user_message) or flow.verbal_choice(_hermes_root(),session,user_message)
         if option_id:
             quantity = __import__("re").search(r"\[cantidad:([0-9]+)\]", str(user_message))
-            chosen = flow.choose(_hermes_root(), session, option_id, qty=int(quantity.group(1)) if quantity else 1, commit=False)
+            chosen = flow.choose(_hermes_root(), session, option_id, qty=int(quantity.group(1)) if quantity else None, commit=False)
             if chosen is None:
                 return {"context": "[Alice] " + flow.UNKNOWN_OPTION}
             out = _start_purchase(session, chosen)
             flow.choose(_hermes_root(), session, option_id, qty=chosen.get("qty",1))
             _ERRAND_TURN_IDS[session] = out["errand_id"]
             _PURCHASE_OPEN.discard(session)
+            _module("purchase_intent.py","alice_purchase_intent").close(_hermes_root(),session)
             return {"context": flow.chosen_note(out, chosen)}
+        intent_service = _module('purchase_intent.py','alice_purchase_intent')
+        active_intent = intent_service.current(_hermes_root(),session)
+        if active_intent and intent_service.correction(str(user_message or '')):
+            updated = intent_service.remember(_hermes_root(),session,str(user_message),correction=True)
+            flow.remember_request(_hermes_root(),session,updated['request'])
+            _PURCHASE_REQUESTS[session]=updated['request']
+            _PURCHASE_OPEN.add(session)
+            return {'context':flow.turn_note(_purchase_context())+' Aplica la corrección a la petición guardada; descarta las ofertas anteriores y vuelve a verificar.'}
         if flow.is_purchase_request(user_message):
             _PURCHASE_OPEN.add(session)
             _PURCHASE_REQUESTS[session] = str(user_message or "")
             flow.remember_request(_hermes_root(), session, str(user_message or ""))
+            _module("purchase_intent.py","alice_purchase_intent").remember(_hermes_root(),session,str(user_message or ""))
             _LOOKED.discard(session)
             note = flow.turn_note(_purchase_context())
             search = _module('purchase_prozis.py', 'alice_purchase_prozis').search_request(
@@ -1684,6 +1652,9 @@ def _guard_chat_errand(tool_name=None, args=None, session_id="", **_):
     session = _session_id(session_id)
     if not session or session.startswith(_errands().SESSION_PREFIX):
         return None
+    intent=_module('purchase_intent.py','alice_purchase_intent').current(_hermes_root(),session)
+    if intent and name in ('terminal','execute_code','browser_exec','browser_eval','browser_evaluate','browser_click','browser_type','browser_press','browser_cdp'):
+        return {'action':'block','message':'Esta compra usa purchase_discover/purchase_verify y sus cestas temporales. El navegador personal no puede modificarse desde la búsqueda.'}
     if name.startswith(("browser", "catalog_", "web_search", "web_extract")):
         _LOOKED.add(session)
     if _purchase_flow().is_cart_action(name, args):
@@ -1700,7 +1671,7 @@ def _keep_errand_tools_visible() -> None:
         core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
         if isinstance(core, list):
             for name in ("errand_start", "checkout_request", "card_request", "purchase_options",
-                         "catalog_search", "catalog_product", "purchase_discover", "purchase_verify", "login_request", "login_fill", "purchase_check_cart"):
+                         "purchase_action", "catalog_search", "catalog_product", "purchase_discover", "purchase_verify", "login_request", "login_fill", "purchase_check_cart"):
                 if name not in core:
                     core.append(name)
     except Exception:
@@ -1829,25 +1800,22 @@ def _register_task_tools(ctx) -> None:
         entry = errands.of_session(_hermes_root(), session)
         if entry is None:
             return _agent_json({"ok": False, "error": "Only inside an errand. Purchases are errands: use errand_start."})
-        if entry.get('offer'):
-            try:
-                prices = _module("purchase_prices.py", "alice_purchase_prices")
-                if not prices.fresh_cart(_hermes_root(),entry):
-                    return _agent_json({"ok":False,"error":"Comprueba primero la cesta de este recado con purchase_check_cart. Cambió la sesión o la oferta carece de evidencia vigente."})
-                selector = (args or {}).get('total_selector')
-                if not selector:
-                    return _agent_json({"ok":False,"error":"Incluye total_selector, el selector del importe final visible del checkout. No basta un total declarado por el modelo."})
-                total = prices.checkout_amount(entry,selector)
-                offer = entry['offer']
-                args = {**(args or {}), 'total':total, 'currency':offer['currency'],
-                        'items':[{'name':offer['title'],'variant':offer.get('variant',''),'qty':offer.get('qty',1),'price':offer['price']}]}
-            except Exception:
-                return _agent_json({"ok":False,"error":"No se pudo verificar la cesta y el total de este recado. Comprueba el resumen final antes de pedir aprobación."})
-        result = errands.request_checkout(_hermes_root(), entry["id"], args or {}, saved_cards=_cards_module().cards)
-        if entry.get('offer') and result.get('ok') and result.get('status') == 'needs_approval':
-            pending = errands.get(_hermes_root(),entry['id'])['checkout']
-            errands.update(_hermes_root(),entry['id'],checkout_evidence={'checkout_id':pending['id'],'selector':selector})
-        return _agent_json(result)
+        try:
+            return _agent_json(_module('purchase_controller.py','alice_purchase_controller').review(
+                _hermes_root(),entry['id'],args or {},saved_cards=_cards_module().cards))
+        except Exception as exc:
+            return _agent_json({"ok":False,"error":str(exc) if isinstance(exc,ValueError) else "No se pudo verificar el resumen completo del pedido."})
+
+    def purchase_action(args, **_):
+        entry = errands.of_session(_hermes_root(),_session_id())
+        if not entry:return _agent_json({"ok":False,"error":"Solo dentro de un recado."})
+        try:
+            return _agent_json(_module('purchase_controller.py','alice_purchase_controller').act(_hermes_root(),entry['id'],args or {}))
+        except Exception as exc:
+            return _agent_json({"ok":False,"error":str(exc) if isinstance(exc,ValueError) else "No se pudo ejecutar el paso; observa la página antes de repetirlo."})
+    ctx.register_tool(name='purchase_action',toolset='alice_tasks',handler=purchase_action,
+        schema={'name':'purchase_action','description':'Operate this errand pinned browser with observed controls. read returns page text and CSS control locators. No arbitrary code. Payment is submitted once after the exact checkout approval.',
+        'parameters':{'type':'object','properties':{'action':{'type':'string','enum':['read','navigate','click','input','select','quantity','fill_card']},'selector':{'type':'string'},'value':{'type':'string'},'url':{'type':'string'},'handle':{'type':'string'}},'required':['action']}},check_fn=_always,description='This purchase browser',emoji='🛒')
 
     def check_cart(args, **_):
         entry = errands.of_session(_hermes_root(), _session_id())
@@ -1859,16 +1827,13 @@ def _register_task_tools(ctx) -> None:
             return _agent_json({"ok":False,"error":str(exc) if isinstance(exc,ValueError) else "No se pudo leer la cesta del recado."})
     ctx.register_tool(name="purchase_check_cart", toolset="alice_tasks", handler=check_cart,
         schema={"name":"purchase_check_cart","description":"Read and revalidate the chosen format, units and current price in this errand's cart, after login or a shop session change. No cart mutation or payment.",
-                "parameters":{"type":"object","properties":{name:{'type':'string','description':desc} for name,desc in (('line','CSS selector for the cart product line/container, e.g. #line. Never product text.'),('price','CSS selector for the current unit price inside that line, e.g. #price. Never an amount.'),('cart_quantity','CSS selector for the cart quantity input/text, e.g. #cart-qty. Never a number.'))},"required":['line','price','cart_quantity']}},
+                "parameters":{"type":"object","properties":{name:{'type':'string','description':desc} for name,desc in (('all_lines','CSS selector matching every visible product line in the basket, never just one selected product.'),('price_basis','unit or line_total; preserve the verified quote basis.'),('line','CSS selector for the cart product line/container, e.g. #line. Never product text.'),('price','CSS selector for the current unit price inside that line, e.g. #price. Never an amount.'),('cart_quantity','CSS selector for the cart quantity input/text, e.g. #cart-qty. Never a number.'))},"required":['line','price','cart_quantity']}},
         check_fn=_always, description="Revalidate this errand's cart after login", emoji="🛒")
 
     def login_fill(args, **_):
         entry = errands.of_session(_hermes_root(), _session_id())
         if not entry:
             return _agent_json({"ok":False,"error":"Solo dentro de un recado."})
-        gate = errands.login_gate(_hermes_root(), entry['session_id'])
-        if gate:
-            return _agent_json({"ok":False,"error":gate.get('message','Espera la aprobación de acceso.')})
         try:
             return _agent_json(_module("errand_access.py", "alice_errand_access").fill_login(_hermes_root(),entry['id'],str((args or {}).get('handle',''))))
         except ValueError as exc:
@@ -1906,10 +1871,12 @@ def _register_task_tools(ctx) -> None:
         if not session or session.startswith(errands.SESSION_PREFIX):
             return _agent_json({"ok": False, "error": "Only in the chat, before the purchase starts."})
         details = _ask_person().load_details(Path(get_hermes_home()))
-        return _agent_json(_module("purchase_prices.py", "alice_purchase_prices").present(
+        result=_module("purchase_prices.py", "alice_purchase_prices").present(
             _hermes_root(), session, args or {}, currency=_purchase_locale()[1],
             picture=lambda page: errands.page_picture(page),
-            request=_PURCHASE_REQUESTS.get(session, "")))
+            request=_purchase_flow().saved_request(_hermes_root(),session))
+        if result.get('ok'):_PURCHASE_PRESENTED[session]=result['set']
+        return _agent_json(result)
 
     def price_tool(method, args):
         session = _session_id()
@@ -1919,7 +1886,7 @@ def _register_task_tools(ctx) -> None:
             prices = _module("purchase_prices.py", "alice_purchase_prices")
             args = dict(args or {})
             if method == 'verify':
-                args['qty'] = 1
+                args['qty'] = _purchase_flow().requested_quantity(_purchase_flow().saved_request(_hermes_root(),session))
             result = getattr(prices, method)(_hermes_root(), session, args)
             if method == 'verify' and result.get('id'):
                 result.update(prices.verify_remaining(_hermes_root(),session,args))
@@ -1930,7 +1897,7 @@ def _register_task_tools(ctx) -> None:
     for tool_name, method, properties, required in (
         ('purchase_discover','discover', {'url':{'type':'string','description':"The shop's own search results or category page for what was asked, never a guessed product URL"},'selector':{'type':'string','description':'CSS selector for ALL matching product/format links on the shop page'},'keywords':{'type':'array','items':{'type':'string'},'description':'Product words every candidate must name (url or title), e.g. ["creapure"]'}}, ['url','selector']),
         ('purchase_verify','verify', {'search_id':{'type':'string'},'candidate_id':{'type':'string'},'currency':{'type':'string'},'qty':{'type':'integer','minimum':1,'maximum':20},'reject_reason':{'type':'string'},'coupons':{'type':'array','maxItems':5,'items':{'type':'string'}},
-         'recipe':{'type':'object','properties':{name:{'type':'string','description':('Optional observed cart URL; leave empty if add opens the cart on this page. Never guess a /cart URL.' if name=='cart_url' else 'CSS selector for '+name+' in the shop DOM. Never literal product text, amount or number; omit optional selectors that were not observed.')} for name in ('title','variant','quantity','add','cart_url','line','price','cart_quantity','shipping','condition','coupon','apply','unavailable')},'required':['title','add','line','price','cart_quantity']}},['search_id','candidate_id','currency'])):
+         'recipe':{'type':'object','properties':{name:{'type':'string','description':('Optional observed cart URL; leave empty if add opens the cart on this page. Never guess a /cart URL.' if name=='cart_url' else 'CSS selector for '+name+' in the shop DOM. Never literal product text, amount or number; omit optional selectors that were not observed.')} for name in ('title','variant','quantity','add','cart_url','line','price','cart_quantity','shipping','condition','coupon','apply','unavailable','all_lines','price_basis')},'required':['title','add','line','price','cart_quantity']}},['search_id','candidate_id','currency'])):
         description = ('Register every discovered format from the shop DOM before recommending. Search the category, not just the homepage or a different product page.' if method=='discover' else
                        'Verify a format price in a disposable isolated cart without login or payment. For Prozis omit recipe: its observed DOM adapter handles variant selection, counters and public coupons. For other shops provide observed DOM locators for product and cart. After one successful recipe the service checks the remaining formats too; include all other_formats quote ids in purchase_options. Discard only with an unavailable DOM selector proving no stock. Returns trusted quote_ref.')
         ctx.register_tool(name=tool_name, toolset='alice_tasks', handler=lambda args,_method=method,**_:price_tool(_method,args),
@@ -1976,7 +1943,7 @@ def _register_task_tools(ctx) -> None:
 
     ctx.register_tool(name="card_request", toolset="alice_tasks", schema=errands.CARD_SCHEMA, handler=card,
                       check_fn=_always, description=errands.CARD_SCHEMA["description"], emoji="💳")
-    ctx.register_tool(name="checkout_request", toolset="alice_tasks", schema={**errands.CHECKOUT_SCHEMA, "parameters": {**errands.CHECKOUT_SCHEMA["parameters"], "properties": {**errands.CHECKOUT_SCHEMA["parameters"]["properties"], "total_selector": {"type":"string","description":"CSS selector of the final total visible in the chosen shop checkout; server reads the amount directly."}}}},
+    ctx.register_tool(name="checkout_request", toolset="alice_tasks", schema={**errands.CHECKOUT_SCHEMA, "parameters": {"type": "object", "properties": {k: {"type": "string", "description": "Observed visible CSS selector for " + k} for k in ("total_selector", "delivery_selector", "address_selector", "email_selector")}, "required": ["total_selector", "delivery_selector", "address_selector", "email_selector"], "additionalProperties": False}},
                       handler=checkout, check_fn=_always, description=errands.CHECKOUT_SCHEMA["description"],
                       emoji="🧾")
 

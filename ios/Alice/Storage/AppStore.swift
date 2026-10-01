@@ -6194,6 +6194,14 @@ final class AppStore {
         live.attach(self)
         return live
     }()
+    @ObservationIgnored private var purchaseBrowsers: [String: LiveBrowser] = [:]
+    func errandBrowser(_ errand: Errand) -> LiveBrowser {
+        let browser = purchaseBrowsers[errand.id] ?? LiveBrowser()
+        browser.attach(self)
+        browser.pin(errand.browserTarget)
+        purchaseBrowsers[errand.id] = browser
+        return browser
+    }
     /// "Tomorrow 11:30 · Hairdresser": the next commitment within a day and a
     /// half, read on this phone, for the home's suggestions.
     private(set) var nextCommitment: String?

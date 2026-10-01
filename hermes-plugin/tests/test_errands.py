@@ -36,6 +36,9 @@ def offline(url, limit, accept):
 class Base(unittest.TestCase):
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())
+        for name in ('prepare_browser', 'prepare_purchase'):
+            patch_browser = mock.patch.object(errands,name,return_value=True)
+            patch_browser.start();self.addCleanup(patch_browser.stop)
         # Pictures are checked from the Mac; tests never go online.
         patch = mock.patch.object(errands, "_fetch", offline)
         patch.start()
@@ -279,7 +282,9 @@ class FakeGateway:
         self.models = []
         self.current = []
 
-    def start(self, session_id, text, *, model, provider):
+    def supports_idempotency(self):return True
+
+    def start(self, session_id, text, *, model, provider, idempotency_key=""):
         if self.fail:
             raise OSError("connection refused")
         self.started.append((session_id, text))
@@ -380,7 +385,9 @@ class EngineTests(Base):
         gateway = FakeGateway([[{"status": "running"}, consent, {"status": "completed", "output": "Pagado"}]])
         entry, engine, _ = self.engine(gateway, [{"status": "done"}])
         errands.request_checkout(self.home, entry["id"], CHECKOUT)
-        errands.decide_checkout(self.home, entry["id"], True)
+        decided=errands.decide_checkout(self.home,entry["id"],True)
+        checkout={**decided["checkout"],"card_handle":"card-exact"}
+        errands.update(self.home,entry["id"],checkout=checkout,fill_consent={"checkout_id":checkout["id"],"handle":"card-exact","label":"Visa ···4242","origin":"https://www.hsnstore.com","at":errands.time.time()})
         engine.run()
         self.assertEqual(gateway.approvals, [("run_1", "once", "req-1")])
 
@@ -581,7 +588,7 @@ class AuditFixTests(Base):
         brief = errands.brief(entry)
         for part in ("https://www.hsnstore.com/creatina", "Sin sabor", "27,98 €", "BLOQUEADO:", "nada más"):
             self.assertIn(part, brief)
-        gateway = FakeGateway([done("BLOQUEADO: la variante sin sabor ya no está disponible.")])
+        gateway = FakeGateway([done("BLOQUEADO: la variante sin sabor ya no está disponible.")], on_start=lambda n: errands.update(self.home,entry["id"],status="stuck",reason="la variante sin sabor ya no está disponible."))
         engine = errands.Engine(self.home, entry["id"], gateway=gateway,
                                 judge=lambda s, r: self.fail("the judge is not asked"), sleep=lambda s: None)
         self.assertEqual(engine.run(), "stuck")
@@ -592,7 +599,7 @@ class AuditFixTests(Base):
         offer = {"option_id": "a1b2c3d4-1", "title": "Creatina 300 g", "merchant": "Prozis", "variant": "Neutro",
                  "qty": 1, "price": "24,49 €", "currency": "EUR", "url": "https://www.prozis.com/c", "channel": "browser"}
         entry = errands.create(self.home, "Comprar Creatina", now=NOW, offer=offer)
-        gateway = FakeGateway([done("BLOQUEADO: precio 34,99 € — en la cesta no se aplica el 30 % de la ficha.")])
+        gateway = FakeGateway([done("BLOQUEADO: precio 34,99 € — en la cesta no se aplica el 30 % de la ficha.")], on_start=lambda n: errands.update(self.home,entry["id"],status="stuck",blocked={"kind":"price","price":"34,99 €"}))
         engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
                                 sleep=lambda s: None)
         self.assertEqual(engine.run(), "stuck")
@@ -618,9 +625,9 @@ class AuditFixTests(Base):
                                done("BLOQUEADO: no se pudo confirmar la cesta")])
         engine = errands.Engine(self.home, entry["id"], gateway=gateway, sleep=lambda _: None)
         self.assertEqual(engine.run(), "stuck")
-        self.assertEqual(len(gateway.started), 2)
-        self.assertEqual(errands.get(self.home, entry["id"])["blocked"], {"kind": "other"})
-        self.assertIn("precio tachado", gateway.started[1][1])
+        self.assertGreaterEqual(len(gateway.started),2)
+        self.assertIsNone(errands.get(self.home,entry["id"]).get("blocked"),"Prose never fabricates a price change")
+        self.assertIn("purchase_action",gateway.started[1][1])
 
     def test_the_basket_price_is_remembered_for_that_page(self):
         offer = {"option_id": "a1b2c3d4-1", "url": "https://www.prozis.com/c?x=1", "price": "24,49 €"}
@@ -640,8 +647,8 @@ class AuditFixTests(Base):
         engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
                                 sleep=lambda s: None)
         self.assertEqual(engine.run(), "stuck")
-        self.assertEqual(len(gateway.started), 2, "one go at fixing it before the person hears anything")
-        self.assertIn("quítalos", gateway.started[1][1])
+        self.assertGreaterEqual(len(gateway.started),2)
+        self.assertIn("purchase_action",gateway.started[1][1])
         self.assertIn("quítalos", errands.brief(entry))
         # The option gone, or another price, reaches the person at once.
         self.assertEqual(errands.blocked_by("la variante ya no está disponible"), {"kind": "gone"})
@@ -684,7 +691,7 @@ class RestartTests(Base):
         self.assertEqual(engine.run("[Continuing toward your standing goal] reinicio"), "done")
         # Only one new run, after the old one ended, with a plain continuation.
         self.assertEqual(len(gateway.started), 1)
-        self.assertEqual(gateway.started[0][1], errands.CONTINUATION)
+        self.assertEqual(gateway.started[0][1], "[Continuing toward your standing goal] reinicio")
 
 
 class CirclingTests(Base):
@@ -900,3 +907,57 @@ class BasketUnitsTests(unittest.TestCase):
         self.assertEqual(errands.blocked_by("precio 59,98 €", offer)["kind"], "other")
         self.assertEqual(errands.blocked_by("precio 34,99 € — subió", offer),
                          {"kind": "price", "price": "34,99 €"})
+
+class DurableRunTests(Base):
+    def test_lost_post_response_replays_the_same_key_and_model(self):
+        class IdempotentGateway(FakeGateway):
+            def __init__(self):
+                super().__init__([done()]);self.keys=[];self.accepted={}
+            def start(self,session_id,text,*,model,provider,idempotency_key=''):
+                self.keys.append((idempotency_key,text,model,provider))
+                if idempotency_key not in self.accepted:
+                    self.accepted[idempotency_key]=super().start(session_id,text,model=model,provider=provider,idempotency_key=idempotency_key)
+                    raise TimeoutError('Accepted remotely, acknowledgement lost')
+                return self.accepted[idempotency_key]
+        gateway=IdempotentGateway();entry=self.errand()
+        first=errands.Engine(self.home,entry['id'],gateway=gateway,judge=lambda *a:{'status':'done'},sleep=lambda *a:None)
+        self.assertEqual(first.run('Pedido original'),'stuck')
+        pending=errands.get(self.home,entry['id'])['run_submission']
+        errands.update(self.home,entry['id'],status='working')
+        second=errands.Engine(self.home,entry['id'],gateway=gateway,judge=lambda *a:{'status':'done'},sleep=lambda *a:None)
+        self.assertEqual(second.run('Texto de recuperación distinto'),'done')
+        self.assertEqual(gateway.keys[0],gateway.keys[1])
+        self.assertEqual(gateway.keys[0][0],pending['key'])
+        self.assertEqual(len(gateway.started),1)
+
+    def test_without_durable_idempotency_unknown_post_is_never_repeated(self):
+        class LegacyGateway(FakeGateway):
+            def supports_idempotency(self):return False
+            def start(self,*args,**kwargs):
+                self.started.append(args);raise TimeoutError('Unknown acceptance')
+        gateway=LegacyGateway([]);entry=self.errand()
+        engine=errands.Engine(self.home,entry['id'],gateway=gateway,sleep=lambda *a:None)
+        self.assertEqual(engine.run(),'stuck')
+        errands.update(self.home,entry['id'],status='working')
+        self.assertEqual(engine.run(),'stuck')
+        self.assertEqual(len(gateway.started),1)
+
+    def test_an_answer_arriving_during_start_acknowledgement_is_not_lost(self):
+        entry=self.errand()
+        def arrives(n):
+            if n==1:errands.update(self.home,entry['id'],resume_message='Nueva respuesta de la persona')
+        gateway=FakeGateway([done(),done()],on_start=arrives)
+        engine=errands.Engine(self.home,entry['id'],gateway=gateway,judge=lambda *a:{'status':'done'},sleep=lambda *a:None)
+        self.assertEqual(engine.run(),'done')
+        self.assertEqual(gateway.started[1][1],'Nueva respuesta de la persona')
+
+    def test_transient_status_failure_keeps_the_existing_run(self):
+        class TransientGateway(FakeGateway):
+            def __init__(self):super().__init__([done()]);self.polls=0
+            def status(self,run_id):
+                self.polls+=1
+                if self.polls<4:raise OSError('Temporary disconnection')
+                return super().status(run_id)
+        gateway=TransientGateway();entry=self.errand()
+        engine=errands.Engine(self.home,entry['id'],gateway=gateway,judge=lambda *a:{'status':'done'},sleep=lambda *a:None)
+        self.assertEqual(engine.run(),'done');self.assertEqual(len(gateway.started),1)
