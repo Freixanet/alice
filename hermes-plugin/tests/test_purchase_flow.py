@@ -204,7 +204,10 @@ class WordsTests(unittest.TestCase):
         self.assertIn("purchase_options", flow.ask_refusal(priced, True))
         guessed = [{"id": "f", "question": "¿Qué formato?", "choices": ["500 g", "1 kg"]}]
         self.assertIn("no has mirado", flow.ask_refusal(guessed, looked=False))
-        self.assertIsNone(flow.ask_refusal(guessed, looked=True))
+        self.assertIn("purchase_options", flow.ask_refusal(guessed, looked=True))
+        substitution = [{'question': 'En la tienda oficial solo encuentro MicronPure, no Creapure. ¿Te vale esa?',
+                         'choices': ['Me vale MicronPure de Prozis', 'Busca Creapure de otra marca']}]
+        self.assertIn('categoría completa', flow.ask_refusal(substitution, looked=True))
         self.assertIsNone(flow.ask_refusal([{"id": "q", "question": "¿Para quién es?"}], looked=False))
 
     def test_the_errand_gets_the_exact_offer(self):

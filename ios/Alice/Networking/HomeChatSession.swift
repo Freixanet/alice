@@ -172,19 +172,41 @@ extension WebSocketBotChatSource {
     /// must follow that exact message, so a reply to the message before —
     /// sent under a minute earlier — is never taken for this one.
     static func finishedReply(
-        in turns: [BotChatTurn], sentAt: Date, asking: String? = nil
+        in turns: [BotChatTurn], sentAt: Date, asking: String? = nil,
+        imageCount: Int = 0, askingID: String? = nil
     ) -> String? {
         guard let last = turns.last, last.role == .assistant,
               let asked = turns.dropLast().last(where: { $0.role == .user }),
               asked.createdAt >= sentAt.addingTimeInterval(-BotChatSync.copyClockSlack)
         else { return nil }
+        if let askingID, asked.id != askingID { return nil }
         if let asking,
            asked.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            != asking.trimmingCharacters(in: .whitespacesAndNewlines),
+           replyMatchText(asked.content, imageCount: imageCount)
             != asking.trimmingCharacters(in: .whitespacesAndNewlines) {
             return nil
         }
         return last.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? nil : last.content
+    }
+
+    /// Hermes persists staged images as a trailing @image path, followed by
+    /// [screenshot]. The phone keeps image chips separately. Strip only that
+    /// exact suffix when this local send actually contained the same number
+    /// of images; ordinary messages containing these strings remain exact.
+    static func replyMatchText(_ text: String, imageCount: Int) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard imageCount > 0 else { return trimmed }
+        var lines = trimmed.components(separatedBy: "\n")
+        if lines.last == "[screenshot]" { lines.removeLast() }
+        var found = 0
+        while let last = lines.last, last.hasPrefix("@image:/"), last.count > 8 {
+            found += 1
+            lines.removeLast()
+        }
+        guard found == imageCount else { return trimmed }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func text(_ value: Any?) -> String? {

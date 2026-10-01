@@ -254,6 +254,28 @@ final class HomeChatSessionTests: XCTestCase {
         )
     }
 
+    func testFinishedImageReplyRecoversAfterTheSocketDrops() {
+        let sent = Date(timeIntervalSince1970: 10_000)
+        let text = "como es posible? yo encuentro muchas creapure"
+        let persisted = text + "\n@image:/fixture/upload.jpg\n[screenshot]"
+        let turns = [
+            BotChatTurn(id: "u", role: .user, content: persisted, createdAt: sent),
+            BotChatTurn(id: "a", role: .assistant, content: "Hay cinco formatos.", createdAt: sent),
+        ]
+        XCTAssertEqual(WebSocketBotChatSource.finishedReply(
+            in: turns, sentAt: sent, asking: text, imageCount: 1), "Hay cinco formatos.")
+        XCTAssertEqual(WebSocketBotChatSource.finishedReply(
+            in: turns, sentAt: sent, asking: persisted, imageCount: 1), "Hay cinco formatos.")
+        XCTAssertNil(WebSocketBotChatSource.finishedReply(
+            in: turns, sentAt: sent, asking: text, imageCount: 0))
+        XCTAssertNil(WebSocketBotChatSource.finishedReply(
+            in: turns, sentAt: sent, asking: text, imageCount: 2))
+        XCTAssertNil(WebSocketBotChatSource.finishedReply(
+            in: turns, sentAt: sent, asking: "otra petición", imageCount: 1))
+        XCTAssertNil(WebSocketBotChatSource.finishedReply(
+            in: turns, sentAt: sent, asking: text, imageCount: 1, askingID: "different-send"))
+    }
+
     func testAMentionedAgentIsSentTheMessageWithoutItsName() {
         let names = ["inbox", "Inbox", "Mi Inbox"]
         XCTAssertEqual(AppStore.withoutMention("@inbox apunta esto", of: "inbox", names: names), "apunta esto")

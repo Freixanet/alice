@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import json
 import secrets
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -87,9 +88,28 @@ class Probe:
         raise ValueError('La tienda no terminó de cargar.')
 
     def read(self, selector):
-        return self.evaluate('(()=>{const e=document.querySelector(' + json.dumps(selector) + ');return e ? String(e.value ?? e.innerText).trim() : null})()')
+        return self.evaluate('(()=>{const e=document.querySelector(' + json.dumps(selector) + ');return e ? String(e.matches("input,select,textarea") ? e.value : e.innerText).trim() : null})()')
 
     def units(self, selector, qty):
+        # Vue quantity counters are real controls, not editable inputs. Click
+        # their observed +/- controls and read back every change; never set a
+        # display node's value and mistake it for application state.
+        counter = self.evaluate('(()=>{const e=document.querySelector(' + json.dumps(selector) + ');return e?.matches(".item-qty") && !!e.closest(".quantity-picker-wrapper")})()')
+        if counter:
+            for _ in range(20):
+                current = self.read(selector)
+                if current == str(qty):
+                    return
+                if not current or not current.isdigit():
+                    break
+                direction = '.prz-plus' if int(current) < qty else '.prz-minus'
+                clicked = self.evaluate('(()=>{const e=document.querySelector(' + json.dumps(selector) + ');const b=e?.closest(".quantity-picker-wrapper")?.querySelector(' + json.dumps(direction) + ');if(!b || b.classList.contains("at-limit"))return false;b.click();return true})()')
+                if not clicked:
+                    break
+                time.sleep(.15)
+                if self.read(selector) == current:
+                    break
+            raise ValueError('No se pudo comprobar esa cantidad con los controles de la ficha.')
         result = self.evaluate('''(()=>{const e=document.querySelector(%s);if(!e || !['INPUT','SELECT'].includes(e.tagName) || /password|email|tel/i.test(e.type)) return false;
 const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
 if(e.tagName==='INPUT' && setter) setter.call(e,%s);else e.value=%s;
@@ -102,6 +122,12 @@ e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('ch
             raise ValueError('No hay un campo de descuento público verificable.')
 
     def click(self, selector, action='add'):
+        if action == 'variant':
+            selected = self.evaluate('(()=>{const e=document.querySelector(' + json.dumps(selector) + ');if(!e?.matches(".snap-slider-item") || !e.closest("#addToCartSection .option-slide-container") || !e.getClientRects().length)return false;e.click();return true})()')
+            if not selected:
+                raise ValueError('La variante no es un control observado de la ficha.')
+            time.sleep(.2)
+            return
         # Inspect the actual control, including ancestors. Merely labelling a payment locator as add cannot bypass this.
         result = self.evaluate('''(()=>{const e=document.querySelector(%s);if(!e)return false;
 const text=[e.innerText,e.value,e.getAttribute('aria-label')].join(' ');
@@ -146,13 +172,19 @@ def _save(home, data):
 
 
 def discover(home, session, args, *, factory=Probe, now=None):
+    prozis = module('purchase_prozis')
+    selector = args['selector']
+    if prozis.supports(args['url']) and 'creapure' in selector.lower():
+        # A narrower second query must not silently drop the 320-caps format.
+        selector = 'a[href*="creapure"]'
     with probe(home, factory) as browser:
         browser.goto(args['url'])
-        selector = args['selector']
         rows = browser.evaluate('''Array.from(document.querySelectorAll(%s)).map(e=>{const a=e.matches('a')?e:e.querySelector('a[href]');return {url:a?.href||(e.matches('h1')?location.href:null),title:e.innerText.trim()}}).filter(r=>r.url&&r.title)''' % json.dumps(selector))
     candidates = []
     seen = set()
     for row in rows or []:
+        lines = [line.strip() for line in row['title'].splitlines() if line.strip()]
+        row['title'] = ' '.join(line for line in lines if not re.fullmatch(r'[€$£\d.,\s%]+',line))
         key = (row['url'], row['title'])
         if key in seen:
             continue
@@ -186,7 +218,6 @@ def verify(home, session, args, *, factory=Probe, now=None):
         with probe(home,factory) as browser:
             browser.goto(candidate['url'])
             evidence = browser.read(recipe['unavailable']) if recipe.get('unavailable') else None
-        import re
         if not evidence or not re.search(r'no disponible|sin stock|agotad|out of stock|sold out|unavailable|discontinued',evidence,re.I):
             raise ValueError('No descartes un formato sin una falta de disponibilidad comprobada en su ficha. Verifícalo antes de presentar opciones.')
         with module('purchase_flow')._locked(home):
@@ -194,13 +225,21 @@ def verify(home, session, args, *, factory=Probe, now=None):
             data['searches'][search['id']]['rejected'][candidate['id']] = str(evidence)[:300]
             _save(home, data)
         return {'discarded': candidate['id'], 'why': args['reject_reason']}
-    recipe = args['recipe']
-    if not recipe.get('cart_quantity'):
-        raise ValueError('Falta el selector de unidades comprobadas en la cesta.')
+    recipe = dict(args.get('recipe') or {})
+    prozis = module('purchase_prozis')
+    adapted = prozis.supports(candidate['url'])
     with probe(home, factory) as browser:
         browser.goto(candidate['url'])
+        if adapted:
+            recipe = prozis.product_recipe(browser, recipe)
+        else:
+            recipe.pop('price_basis', None)
+        if not recipe.get('cart_quantity'):
+            raise ValueError('Falta el selector de unidades comprobadas en la cesta.')
         title = browser.read(recipe['title'])
         variant = browser.read(recipe['variant']) if recipe.get('variant') else candidate['title']
+        if adapted and recipe.get('package_variant') and variant:
+            variant = re.sub(r'^.*?(?=\d)', '', variant)
         if not title or not variant:
             raise ValueError('El producto y la variante no son verificables.')
         if recipe.get('quantity'):
@@ -208,32 +247,39 @@ def verify(home, session, args, *, factory=Probe, now=None):
         elif qty != 1:
             raise ValueError('Falta el selector de cantidad para revalidar.')
         browser.click(recipe['add'])
+        if adapted:
+            prozis.wait_added(browser, title, variant, qty)
         inline_line = browser.read(recipe['line'])
         inline_cart = (inline_line and title.casefold() in inline_line.casefold() and variant.casefold() in inline_line.casefold()
             and browser.read(recipe['cart_quantity']) == str(qty)
             and browser.evaluate('(()=>{const e=document.querySelector(' + json.dumps(recipe['price']) + ');return !!e && e.getClientRects().length>0 && getComputedStyle(e).visibility!=="hidden"})()'))
-        if recipe.get('cart_url') and not inline_cart:
+        if recipe.get('cart_url') and (adapted or not inline_cart):
             if urlsplit(recipe['cart_url']).netloc != urlsplit(candidate['url']).netloc:
                 raise ValueError('La cesta no pertenece a esta tienda.')
             browser.goto(recipe['cart_url'])
+        if adapted:
+            prozis.wait_read(browser, recipe['line'])
         line = browser.read(recipe['line'])
         if not line or title.casefold() not in line.casefold() or variant.casefold() not in line.casefold():
-            raise ValueError('El producto no aparece en la cesta temporal.')
+            raise ValueError('El producto no aparece en la cesta temporal: ' + title + ' / ' + variant + '. Línea observada: ' + str(line or '')[:300])
         if not browser.evaluate('(()=>{const line=document.querySelector(' + json.dumps(recipe['line']) + ');const e=document.querySelector(' + json.dumps(recipe['price']) + ');return !!e && !!line && line.contains(e) && e.getClientRects().length>0 && getComputedStyle(e).visibility!=="hidden" && !e.closest("del,s,strike") && getComputedStyle(e).textDecorationLine!=="line-through"})()'):
             raise ValueError('El precio de la línea de cesta debe ser actual y visible; no sirve un importe oculto o tachado.')
         actual_qty = browser.read(recipe['cart_quantity'])
         if actual_qty != str(qty):
             raise ValueError('La cesta no confirmó la cantidad del formato.')
         amount = browser.read(recipe['price'])
-        parsed = module('money').parse(amount, args['currency'])
+        parsed = cart_amount(amount, args['currency'], qty, recipe)
         if not parsed:
             raise ValueError('La cesta no muestra un precio verificable en su moneda.')
         coupon_results = []
         best = parsed
-        for code in args.get('coupons', [])[:5]:
+        codes = list(dict.fromkeys((args.get('coupons') or []) + recipe.get('public_codes', [])))[:5]
+        for code in codes:
             browser.coupon(recipe['coupon'], str(code))
             browser.click(recipe['apply'], action='coupon')
-            current = module('money').parse(browser.read(recipe['price']), args['currency'])
+            if adapted:
+                time.sleep(1.5)
+            current = cart_amount(browser.read(recipe['price']), args['currency'], qty, recipe)
             if not current:
                 raise ValueError('El cupón dejó el precio sin comprobar.')
             coupon_results.append({'code':str(code), 'applied':current[0] < parsed[0], 'price':module('money').text(*current)})
@@ -243,22 +289,33 @@ def verify(home, session, args, *, factory=Probe, now=None):
             best_code = next(r['code'] for r in coupon_results if module('money').parse(r['price'],args['currency']) == best)
             browser.coupon(recipe['coupon'], best_code)
             browser.click(recipe['apply'], action='coupon')
-            if module('money').parse(browser.read(recipe['price']),args['currency']) != best:
+            if cart_amount(browser.read(recipe['price']),args['currency'],qty,recipe) != best:
                 raise ValueError('El descuento público ya no se aplica.')
         parsed = best
         shipping = browser.read(recipe['shipping']) if recipe.get('shipping') else None
         condition = browser.read(recipe['condition']) if recipe.get('condition') else None
+        if adapted and browser.evaluate('Array.from(document.querySelectorAll("input[type=email]")).some(e=>e.getClientRects().length>0)'):
+            condition = 'El descuento anunciado requiere iniciar sesión; no se ha aplicado a esta cesta. El precio mostrado es el comprobado sin ese descuento.'
         quote = {'id': 'pq-' + secrets.token_hex(16), 'search_id': search['id'], 'candidate_id': candidate['id'],
                  'session': session, 'url': candidate['url'], 'title': title, 'variant': variant,
                  'qty': qty, 'price_cents': parsed[0], 'currency': parsed[1],
                  'price': module('money').text(*parsed), 'shipping': shipping, 'condition': condition,
-                 'coupons':args.get('coupons',[])[:5], 'coupon_results':coupon_results,
+                 'coupons':codes, 'coupon_results':coupon_results,
                  'origin': module('errand_access').origin(candidate['url']), 'at': now or time.time(), 'recipe': recipe}
     with module('purchase_flow')._locked(home):
         data = _load(home)
         data['quotes'][quote['id']] = quote
         _save(home, data)
     return {k:v for k,v in quote.items() if k != 'recipe'}
+
+
+def cart_amount(text, currency, qty, recipe):
+    amount = module('money').parse(text, currency)
+    if amount and recipe.get('price_basis') == 'line_total':
+        if amount[0] % qty:
+            raise ValueError('El total de la línea no permite comprobar el precio por unidad en céntimos.')
+        amount = (amount[0] // qty, amount[1])
+    return amount
 
 
 def resolve(home, session, ref, *, qty=1, now=None, revalidate=False, factory=Probe):
@@ -335,8 +392,12 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     if page_origin != access.origin(offer['url']):
         raise ValueError('La cesta no pertenece al origen de la opción elegida.')
     ev = evaluate or access.page_evaluate
+    if module('purchase_prozis').supports(offer['url']):
+        recipe = module('purchase_prozis').cart_recipe(lambda code: ev(context, code))
+    else:
+        recipe = {k:v for k,v in recipe.items() if k != 'price_basis'}
     def read(selector):
-        result = ev(context,'(()=>{let e;try{e=document.querySelector(' + json.dumps(selector) + ')}catch{return {invalid_selector:true}};return e ? String(e.value ?? e.innerText).trim() : null})()')
+        result = ev(context,'(()=>{let e;try{e=document.querySelector(' + json.dumps(selector) + ')}catch{return {invalid_selector:true}};return e ? String(e.matches("input,select,textarea") ? e.value : e.innerText).trim() : null})()')
         if isinstance(result,dict) and result.get('invalid_selector'):
             raise ValueError('Usa selectores CSS de la página para line, price y cart_quantity, no nombres de producto, importes o cantidades. Lee los controles y vuelve a comprobar la cesta.')
         return result
@@ -347,7 +408,7 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
         raise ValueError('La cesta tiene otra cantidad. Corrígela antes de pedir aprobación.')
     if not ev(context,'(()=>{const line=document.querySelector(' + json.dumps(recipe['line']) + ');const e=document.querySelector(' + json.dumps(recipe['price']) + ');return !!line && !!e && line.contains(e) && e.getClientRects().length>0 && getComputedStyle(e).visibility!=="hidden" && !e.closest("del,s,strike") && getComputedStyle(e).textDecorationLine!=="line-through"})()'):
         raise ValueError('No hay un precio actual verificable de ese artículo en la cesta.')
-    amount = module('money').parse(read(recipe['price']),offer['currency'])
+    amount = cart_amount(read(recipe['price']),offer['currency'],offer.get('qty',1),recipe)
     if not amount:
         raise ValueError('La cesta no tiene un precio verificable.')
     real = module('money').text(*amount)
