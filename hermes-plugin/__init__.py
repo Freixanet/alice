@@ -1889,6 +1889,8 @@ def _register_task_tools(ctx) -> None:
             access = _module("errand_access.py", "alice_errand_access")
             result = access.request(_hermes_root(), entry['id'], (args or {}).get('kind', 'vault.save_login'))
             return _agent_json({"ok": True, "request": access.public(result), "next": "Termina el turno. Espera el acceso seguro del iPhone; el mismo recado continúa."})
+        except ValueError as exc:
+            return _agent_json({"ok": False, "error": str(exc)})
         except Exception:
             return _agent_json({"ok": False, "error": "Abre la página HTTPS de acceso dentro del recado antes de solicitarlo."})
 

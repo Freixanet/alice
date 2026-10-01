@@ -245,6 +245,12 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'needs_login')
         self.assertFalse(self.saved)
 
+    def test_a_login_already_given_is_not_asked_again(self):
+        p = self.pending(); self.respond(p, account_action='create')
+        with self.assertRaisesRegex(ValueError, 'no se lo pidas otra vez'):
+            self.pending()
+        self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
+        self.assertEqual(self.pending('vault.code')['kind'],'vault.code')
     def test_two_step_login_fills_the_email_first(self):
         try:
             import agent.vault_login_classifier  # noqa: F401

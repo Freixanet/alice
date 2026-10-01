@@ -97,6 +97,10 @@ def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluat
         if new_passwords:
             fills = [{'index':c.index, 'token':'new-password','value':password} for c in new_passwords]
     identifiers = [c for c in controls if c.token in ('email','username')]
+    if entry.get('account_action') == 'create' and not fills:
+        password = ''
+        raise ValueError('La persona eligió crear cuenta: abre el formulario de registro de la tienda («Crear cuenta», '
+                         '«Regístrate») hasta ver su campo de contraseña nueva y vuelve a llamar login_fill.')
     if not fills and not (identifiers and meta.identifier):
         password = ''
         raise ValueError('No hay un campo de acceso visible. Abre el formulario de iniciar sesión de la tienda y vuelve a llamar login_fill.')
@@ -135,6 +139,11 @@ def _request(home, errand_id, kind='vault.save_login', *, inspect=target):
         raise ValueError('La página no pertenece a la tienda elegida.')
     if kind not in ('vault.save_login', 'vault.code'):
         raise ValueError('Solicitud de acceso desconocida.')
+    saved = entry.get('saved_login') or {}
+    if kind == 'vault.save_login' and saved.get('origin') == page_origin:
+        raise ValueError(f"La persona ya dio el acceso de esta tienda ({saved['handle']}); no se lo pidas otra vez. "
+                         "Usa login_fill con ese acceso: abre antes el formulario de iniciar sesión, o el de crear "
+                         "cuenta si eligió crearla, y si la tienda pide la contraseña en un segundo paso, vuelve a llamarlo.")
     old = entry.get('secure_request') or {}
     if (old.get('origin') == page_origin and old.get('kind') == kind and entry['status'] == 'needs_login'
             and old.get('context') == context['context'] and old.get('target') == context['target']):
@@ -185,6 +194,7 @@ def answer(home, errand_id, request_id, value, *, account_action='login', inspec
             meta = save({'identifier_type': 'email' if '@' in identifier else 'username',
                          'identifier': identifier, 'password': password}, page_origin)
             handle = meta if isinstance(meta, str) else meta.id
+            saved_login = {'handle': handle, 'origin': page_origin}
             message = f'[acceso listo] La persona eligió {account_action}. Usa login_fill con el acceso {handle} de esta tienda. No uses accesos de otros sitios.'
             data.clear()
             password = ''
@@ -213,7 +223,8 @@ def answer(home, errand_id, request_id, value, *, account_action='login', inspec
                 fill_code(entry, value)
             message = '[código listo] El código se ha introducido directamente en esta página. Envía el formulario de verificación y comprueba que la tienda haya iniciado la sesión. No pidas ni repitas el código.'
         result = errands.update(home, errand_id, secure_request=None, secure_answered=request_id,
-                                account_action=account_action, status='working', resume_message=message, cart_evidence=None)
+                                account_action=account_action, status='working', resume_message=message, cart_evidence=None,
+                                **({'saved_login': saved_login} if pending['kind'] == 'vault.save_login' else {}))
     (resume or errands.resume)(home, errand_id, message)
     return result
 
