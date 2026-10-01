@@ -155,6 +155,16 @@ def main(agent_test=False):
                   'items':[{'name':chosen['title'],'variant':chosen['variant'],'qty':2,'price':'34,99 €'}], 'delivery':'Envío 3,99 €'}
             result=errands.request_checkout(home,entry['id'],cart,fetch=lambda *a:(_ for _ in ()).throw(OSError('offline')))
             assert result['ok'] and errands.pay_gate(home,entry['session_id'],tool_name='browser_click',args={'text':'Pagar ahora'})['action']=='block'
+            # The payment capability re-reads the same approved visible total.
+            # No payment button is ever operated, even in this synthetic test.
+            prices.check_cart(home,entry['id'],{'line':'#line','price':'#price','cart_quantity':'#cart-qty'},inspect=inspect,evaluate=evaluate)
+            approved=errands.get(home,entry['id'])['checkout']
+            approved.update(status='approved',decided_at=time.time())
+            errands.update(home,entry['id'],checkout=approved,checkout_evidence={'checkout_id':approved['id'],'selector':'#total'})
+            assert prices.payment_ready(home,errands.get(home,entry['id']),inspect=inspect,evaluate=evaluate)
+            browser.evaluate("document.querySelector('#total').textContent='79,97 €'")
+            assert not prices.payment_ready(home,errands.get(home,entry['id']),inspect=inspect,evaluate=evaluate)
+            assert not browser.evaluate('window.fixturePaid')
             print('PASS: real isolated Chrome, all formats, conditional/rejected/public coupons, units, login vault, OTP, duplicate answers, exact total and unapproved pay blocked',flush=True)
             for path in (home/'.alice').rglob('*.json'):
                 assert 'FAKE-ONLY-shop-test' not in path.read_text() and '123456' not in path.read_text()

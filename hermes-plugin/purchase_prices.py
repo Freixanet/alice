@@ -388,6 +388,17 @@ def checkout_amount(entry, selector, *, inspect=None, evaluate=None):
     return module('money').text(*amount)
 
 
+def payment_ready(home, entry, *, inspect=None, evaluate=None):
+    approved = module('errands').approved_checkout(entry)
+    evidence = entry.get('checkout_evidence') or {}
+    if not approved or evidence.get('checkout_id') != approved['id'] or not evidence.get('selector'):
+        return False
+    if not fresh_cart(home,entry,inspect=inspect):
+        return False
+    actual = checkout_amount(entry,evidence['selector'],inspect=inspect,evaluate=evaluate)
+    return module('money').same(actual,approved['total'],approved['currency'])
+
+
 def verify_remaining(home, session, args, *, factory=Probe):
     data = _load(home)
     search = data['searches'][args['search_id']]

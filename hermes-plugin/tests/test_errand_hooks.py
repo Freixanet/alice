@@ -135,6 +135,24 @@ class ErrandHookTests(unittest.TestCase):
             verdict = self.plugin._guard_errand("browser_vault_fill", {"handle": "card"}, session_id=entry["session_id"])
         self.assertEqual(verdict["action"], "block")
 
+    def test_payment_guard_fails_closed_when_checking_approval_raises(self):
+        entry=self.errand()
+        with mock.patch.object(self.errands,'pay_gate',side_effect=RuntimeError('unavailable')):
+            verdict=self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id'])
+        self.assertEqual(verdict['action'],'block')
+
+    def test_an_approved_purchase_still_requires_matching_live_total(self):
+        entry=self.errand()
+        self.errands.request_checkout(self.home,entry['id'],{'merchant':'HSN','site':'hsnstore.com','items':[{'name':'Creatina'}],'total':'27,98 €'})
+        self.errands.decide_checkout(self.home,entry['id'],True)
+        self.errands.update(self.home,entry['id'],offer={'quote_ref':'pq-test'})
+        prices=self.plugin._module('purchase_prices.py','alice_purchase_prices')
+        with mock.patch.object(prices,'payment_ready',return_value=False):
+            verdict=self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id'])
+        self.assertEqual(verdict['action'],'block')
+        with mock.patch.object(prices,'payment_ready',return_value=True):
+            self.assertIsNone(self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id']))
+
     def test_an_errand_step_is_the_comment_on_the_browser_code(self):
         entry = self.errand()
         self.plugin._errand_step("browser_exec", {"code": "# Abrir la ficha de la creatina\ngoto_url('x')"},

@@ -346,11 +346,20 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
         if meta is not None:
             cards = _cards_module()
             merchant = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
-            return errands.pay_gate(root, session, card_fill_site=meta.origin or "", merchant_site=merchant,
-                                    gateways=cards.PAYMENT_GATEWAYS)
-        return errands.pay_gate(root, session, tool_name=name, args=args, active_url=_active_url())
+            verdict = errands.pay_gate(root, session, card_fill_site=meta.origin or "", merchant_site=merchant,
+                                       gateways=cards.PAYMENT_GATEWAYS)
+        else:
+            verdict = errands.pay_gate(root, session, tool_name=name, args=args, active_url=_active_url())
+        if verdict:
+            return verdict
+        paying = meta is not None or errands.is_pay_action(name,args,_active_url())
+        entry = errands.of_session(root,session)
+        if paying and (entry or {}).get('offer'):
+            if not _module("purchase_prices.py", "alice_purchase_prices").payment_ready(root,entry):
+                return {"action":"block", "message":"El total o la sesión cambiaron, o falta evidencia del resumen aprobado. Comprueba la cesta y llama a checkout_request para mostrar el total actual antes de pagar."}
+        return None
     except Exception:
-        if name == "browser_vault_fill":
+        if name == "browser_vault_fill" or _errands().is_pay_action(name,args,_active_url()):
             return {"action": "block", "message": "No se pudo comprobar la aprobación del pago; no pagues."}
         return None
 
@@ -1766,8 +1775,11 @@ def _register_task_tools(ctx) -> None:
                         'items':[{'name':offer['title'],'variant':offer.get('variant',''),'qty':offer.get('qty',1),'price':offer['price']}]}
             except Exception:
                 return _agent_json({"ok":False,"error":"No se pudo verificar la cesta y el total de este recado. Comprueba el resumen final antes de pedir aprobación."})
-        return _agent_json(errands.request_checkout(_hermes_root(), entry["id"], args or {},
-                                                    saved_cards=_cards_module().cards))
+        result = errands.request_checkout(_hermes_root(), entry["id"], args or {}, saved_cards=_cards_module().cards)
+        if entry.get('offer') and result.get('ok') and result.get('status') == 'needs_approval':
+            pending = errands.get(_hermes_root(),entry['id'])['checkout']
+            errands.update(_hermes_root(),entry['id'],checkout_evidence={'checkout_id':pending['id'],'selector':selector})
+        return _agent_json(result)
 
     def check_cart(args, **_):
         entry = errands.of_session(_hermes_root(), _session_id())

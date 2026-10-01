@@ -1479,7 +1479,7 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
     """What Alice shows: everything but the internal session wiring."""
     # The chat it came from stays: Alice finds an errand's cards by it when the chat's reply
     # never called errand_start (the plugin starts it anyway).
-    hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence"}
+    hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence", "checkout_evidence"}
     out = {k: v for k, v in entry.items() if k not in hidden}
     if isinstance(out.get("approval"), dict):
         out["approval"] = {k: v for k, v in out["approval"].items() if k != "run_id"}

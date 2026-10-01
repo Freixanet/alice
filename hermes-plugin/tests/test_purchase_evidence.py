@@ -240,3 +240,14 @@ class CartRevalidationTests(unittest.TestCase):
     def test_checkout_total_read_from_final_page(self):
         total=prices.checkout_amount(errands.get(self.home,self.entry['id']),'#total',inspect=self.inspect,evaluate=self.evaluate)
         self.assertEqual(total,'73,97 €')
+
+    def test_payment_requires_the_exact_approved_visible_total(self):
+        self.check()
+        now=time.time()
+        checkout={'id':'ck-test','status':'approved','total':'73,97 €','currency':'EUR','decided_at':now,'site':'example.com'}
+        errands.update(self.home,self.entry['id'],checkout=checkout,checkout_evidence={'checkout_id':'ck-test','selector':'#total'})
+        entry=errands.get(self.home,self.entry['id'])
+        self.assertTrue(prices.payment_ready(self.home,entry,inspect=self.inspect,evaluate=self.evaluate))
+        changed=lambda ctx,script:'79,97 €'
+        self.assertFalse(prices.payment_ready(self.home,entry,inspect=self.inspect,evaluate=changed))
+        self.assertFalse(prices.payment_ready(self.home,{**entry,'checkout_evidence':None},inspect=self.inspect,evaluate=self.evaluate))
