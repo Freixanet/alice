@@ -376,7 +376,12 @@ This creates a timestamped tarball of:
 - `~/.hermes/plugins/alice/` (plugin code)
 - Alice repo working directory (git-tracked changes)
 
-Backups are stored in `~/.hermes/backups/`.
+Backups are stored in `~/.hermes/backups/` with permissions `0600` (owner-only).
+
+**Security note:** The backup tarball contains Hermes secrets, vault material,
+API keys, and credentials. It must not be shared, uploaded, or transmitted
+without encryption. The backup script sets `umask 077` and `chmod 600` on
+all output files. Delete securely when no longer needed (`rm -P` on macOS).
 
 ### What to back up
 
