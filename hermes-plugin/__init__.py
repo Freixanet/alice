@@ -278,6 +278,25 @@ def _isolate_errand_browser(tool_name=None, args=None, session_id="", **_):
     errands = _errands()
     if not session.startswith(errands.SESSION_PREFIX):
         return None
+    entry = errands.of_session(_hermes_root(), session)
+    if (entry or {}).get("offer"):
+        # Check the model's code before attaching our trusted CDP preamble.
+        # HTTP, filesystem and interpreter access would bypass checkout guards.
+        import ast
+        import re
+        try:
+            nodes = list(ast.walk(ast.parse(args["code"])))
+            denied = {"open", "exec", "eval", "compile", "getattr", "setattr", "globals", "locals", "vars",
+                      "os", "sys", "requests", "urllib", "httpx", "aiohttp", "socket", "websockets", "subprocess", "pathlib", "builtins"}
+            bypass = any(isinstance(n, (ast.Import, ast.ImportFrom)) or
+                         (isinstance(n, ast.Name) and (n.id in denied or n.id.startswith("_"))) or
+                         (isinstance(n, ast.Attribute) and (n.attr.startswith("_") or n.attr in {"send_cdp", "execute_cdp", "request"}))
+                         for n in nodes)
+            bypass = bypass or bool(re.search(r"\b(fetch|XMLHttpRequest|WebSocket|sendBeacon)\b", args["code"]))
+        except SyntaxError:
+            bypass = True
+        if bypass:
+            return {"action":"block", "message":"Usa los helpers de navegador ya importados para leer y operar la página. Este recado no permite imports, archivos, intérpretes ni transporte HTTP/CDP directo que evite comprobar el total."}
     return {"action": "modify",
             "args": {**args, "session": session,
                      "code": errands.context_preamble(session[len(errands.SESSION_PREFIX):]) + args["code"]}}
@@ -334,6 +353,17 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
     """Nothing is paid without the person's approved checkout, and a saved login is used without
     asking unless they asked to be asked (errands.py). If the check itself fails, paying is refused."""
     name = str(tool_name or "")
+    if name in ("terminal", "execute_code", "browser_eval", "browser_evaluate") or (name == "browser_get_state" and (args or {}).get("expression")):
+        session = _session_id(session_id)
+        if not session.startswith(_errands().SESSION_PREFIX):
+            return None
+        try:
+            entry = _errands().of_session(_hermes_root(), session)
+            if not (entry or {}).get("offer"):
+                return None
+        except Exception:
+            pass
+        return {"action": "block", "message": "Este recado de compra usa únicamente el navegador y las herramientas de compra comprobadas. No ejecutes pagos ni solicitudes por terminal, código o evaluación directa."}
     if name != "browser_vault_fill" and name not in _errands().BROWSER_ACTIONS:
         return None
     session = _session_id(session_id)

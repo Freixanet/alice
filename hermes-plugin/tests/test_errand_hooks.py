@@ -69,6 +69,29 @@ class ErrandHookTests(unittest.TestCase):
         self.plugin._register_task_tools(ctx)
         return registered
 
+    def test_purchase_cannot_bypass_approval_with_execution_tools(self):
+        entry = self.errand(offer={"option_id":"chosen", "price":"34,99 €"})
+        for tool in ("terminal", "execute_code", "browser_eval", "browser_evaluate"):
+            with self.subTest(tool=tool):
+                result = self.plugin._guard_errand(tool_name=tool, args={"command":"submit order"}, session_id=entry["session_id"])
+                self.assertEqual(result["action"], "block")
+
+    def test_execution_guard_preserves_non_purchase_sessions(self):
+        entry = self.errand()
+        self.assertIsNone(self.plugin._guard_errand(tool_name="terminal", args={}, session_id=entry["session_id"]))
+        self.assertIsNone(self.plugin._guard_errand(tool_name="terminal", args={}, session_id="ordinary-chat"))
+
+    def test_purchase_browser_code_cannot_use_raw_execution_or_transport(self):
+        entry = self.errand(offer={"option_id":"chosen", "price":"34,99 €"})
+        for code in ("import requests; requests.post('https://example.com/pay')", "open('vault')",
+                     "__import__('os')", "browser._client.send('Runtime.evaluate', {})", "js('fetch(\"/pay\",{method:\"POST\"})')"):
+            with self.subTest(code=code):
+                result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":code}, session_id=entry["session_id"])
+                self.assertEqual(result["action"], "block")
+        self.assertEqual(self.plugin._guard_errand(tool_name="browser_get_state", args={"expression":"submit()"}, session_id=entry["session_id"])["action"], "block")
+        result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":"print(page_info()); click(3)"}, session_id=entry["session_id"])
+        self.assertEqual(result["action"], "modify")
+
     def shown(self, session="chat-9"):
         """Two verified options shown in `session`; their ids."""
         out = self.flow.present(self.home, session, {"options": [
