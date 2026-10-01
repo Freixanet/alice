@@ -97,6 +97,7 @@ The person chooses a format in its detail and edits units there, initially one. 
 After login, `purchase_check_cart` reads the errand's real units and current price and binds them to its store session. `checkout_request` refuses absent/stale evidence and reads the final amount using `total_selector`; checkout items come from the chosen offer. Approval and the existing payment gates remain mandatory. The fixture script `scripts/verify-purchase-complete.py --agent` exercises GPT-6 Luna with a synthetic intercepted shop on an isolated Chrome port, fictional accounts and no payment operation. Native visual fixtures are behind the debug-only `-purchaseReview` argument and run in the Purchase review CI workflow.
 
 Antes de rellenar una tarjeta o ejecutar una acción de pago, el servidor vuelve a leer el total visible del resumen vinculado a la aprobación. Un cambio de importe, sesión o contexto bloquea el pago hasta una nueva comprobación y aprobación; un fallo al comprobarlo también bloquea el pago.
+
 # Correcciones de búsqueda y comprobación en Prozis
 
 Para una petición de Creapure de Prozis, la búsqueda parte de la categoría completa,
