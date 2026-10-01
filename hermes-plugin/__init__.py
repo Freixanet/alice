@@ -378,12 +378,19 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
         entry = errands.of_session(root,session)
         active_url = _active_url()
         presses = name in ('browser_click','browser_press') or bool(errands.CLICKS.search(errands._text_of(args)))
+        payment_step = None
         if presses and (entry or {}).get('offer'):
+            access = _module("errand_access.py", "alice_errand_access")
             try:
-                page_origin, context, _ = _module("errand_access.py", "alice_errand_access").target(entry)
+                page_origin, context, _ = access.target(entry)
                 active_url = context.get('url') or page_origin
             except Exception:
                 return {"action":"block","message":"No se pudo verificar la página de este recado antes de pulsar un control. Abre su propia página y reintenta."}
+            if errands.STEP_WORDS.search(errands._text_of(args)):
+                try:
+                    payment_step = bool(access.page_evaluate(context, errands.PAYMENT_STEP_JS))
+                except Exception:
+                    payment_step = None  # unread: «Finalizar compra» stays treated as paying
         meta = _vault_meta(name, args)
         if meta is not None and meta.kind != "payment":
             return errands.login_gate(root, session)
@@ -393,10 +400,11 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
             verdict = errands.pay_gate(root, session, card_fill_site=meta.origin or "", merchant_site=merchant,
                                        gateways=cards.PAYMENT_GATEWAYS)
         else:
-            verdict = errands.pay_gate(root, session, tool_name=name, args=args, active_url=active_url)
+            verdict = errands.pay_gate(root, session, tool_name=name, args=args, active_url=active_url,
+                                       payment_step=payment_step)
         if verdict:
             return verdict
-        paying = meta is not None or errands.is_pay_action(name,args,active_url)
+        paying = meta is not None or errands.is_pay_action(name,args,active_url,payment_step)
         entry = errands.of_session(root,session)
         if paying and (entry or {}).get('offer'):
             if not _module("purchase_prices.py", "alice_purchase_prices").payment_ready(root,entry):
@@ -1638,9 +1646,16 @@ def _errand_turn(session_id="", user_message=None, **_):
             note = flow.turn_note(_purchase_context())
             search = _module('purchase_prozis.py', 'alice_purchase_prozis').search_request(
                 str(user_message or ''), _purchase_locale()[0])
+            words = _module('purchase_prozis.py', 'alice_purchase_prozis').keywords(str(user_message or ''))
+            if not search and words:
+                # Any shop: its own search, every format that names the asked words, nothing guessed.
+                note += (' [Búsqueda] Busca en el buscador o la categoría de la tienda pedida (o en varias si no '
+                         'nombra ninguna), nunca en una URL de ficha adivinada, y registra los formatos con '
+                         'purchase_discover y keywords=' + json.dumps(words, ensure_ascii=False) + '. No digas que '
+                         'algo no existe sin haber buscado ahí.')
             if search:
-                note += (' [Contrato de búsqueda Prozis] Empieza por purchase_discover con ' + json.dumps(search)
-                         + '. Es la categoría, no la portada. purchase_verify admite omitir recipe: el servicio '
+                note += (' [Contrato de búsqueda Prozis] Empieza por purchase_discover con ' + json.dumps(search, ensure_ascii=False)
+                         + '. Es el buscador de la tienda, no la portada ni una URL adivinada. purchase_verify admite omitir recipe: el servicio '
                          'reconoce sus controles reales, espera la carga, selecciona y comprueba la variante y '
                          'prueba los cupones públicos observados. Incluye todos los other_formats comprobados. '
                          'Si falla la comprobación, no cambies de producto ni afirmes que no existe.')
@@ -1856,6 +1871,8 @@ def _register_task_tools(ctx) -> None:
             return _agent_json({"ok":False,"error":gate.get('message','Espera la aprobación de acceso.')})
         try:
             return _agent_json(_module("errand_access.py", "alice_errand_access").fill_login(_hermes_root(),entry['id'],str((args or {}).get('handle',''))))
+        except ValueError as exc:
+            return _agent_json({"ok":False,"error":str(exc)})
         except Exception:
             return _agent_json({"ok":False,"error":"No se pudo rellenar el acceso en la página de este recado. Comprueba el origen o solicita login_request."})
 
@@ -1872,6 +1889,8 @@ def _register_task_tools(ctx) -> None:
             access = _module("errand_access.py", "alice_errand_access")
             result = access.request(_hermes_root(), entry['id'], (args or {}).get('kind', 'vault.save_login'))
             return _agent_json({"ok": True, "request": access.public(result), "next": "Termina el turno. Espera el acceso seguro del iPhone; el mismo recado continúa."})
+        except ValueError as exc:
+            return _agent_json({"ok": False, "error": str(exc)})
         except Exception:
             return _agent_json({"ok": False, "error": "Abre la página HTTPS de acceso dentro del recado antes de solicitarlo."})
 
@@ -1909,7 +1928,7 @@ def _register_task_tools(ctx) -> None:
             return _agent_json({"ok": False, "error": str(exc) if isinstance(exc, ValueError) else "La comprobación de la cesta temporal no está disponible."})
 
     for tool_name, method, properties, required in (
-        ('purchase_discover','discover', {'url':{'type':'string'},'selector':{'type':'string','description':'CSS selector for ALL matching product/format links on the shop page'}}, ['url','selector']),
+        ('purchase_discover','discover', {'url':{'type':'string','description':"The shop's own search results or category page for what was asked, never a guessed product URL"},'selector':{'type':'string','description':'CSS selector for ALL matching product/format links on the shop page'},'keywords':{'type':'array','items':{'type':'string'},'description':'Product words every candidate must name (url or title), e.g. ["creapure"]'}}, ['url','selector']),
         ('purchase_verify','verify', {'search_id':{'type':'string'},'candidate_id':{'type':'string'},'currency':{'type':'string'},'qty':{'type':'integer','minimum':1,'maximum':20},'reject_reason':{'type':'string'},'coupons':{'type':'array','maxItems':5,'items':{'type':'string'}},
          'recipe':{'type':'object','properties':{name:{'type':'string','description':('Optional observed cart URL; leave empty if add opens the cart on this page. Never guess a /cart URL.' if name=='cart_url' else 'CSS selector for '+name+' in the shop DOM. Never literal product text, amount or number; omit optional selectors that were not observed.')} for name in ('title','variant','quantity','add','cart_url','line','price','cart_quantity','shipping','condition','coupon','apply','unavailable')},'required':['title','add','line','price','cart_quantity']}},['search_id','candidate_id','currency'])):
         description = ('Register every discovered format from the shop DOM before recommending. Search the category, not just the homepage or a different product page.' if method=='discover' else

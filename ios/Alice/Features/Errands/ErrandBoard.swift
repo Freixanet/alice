@@ -173,6 +173,7 @@ struct ErrandStack: View {
     /// A stopped purchase: the same option at the shop's price, or tried again.
     var onAcceptPrice: () -> Void = {}
     var onRetry: () -> Void = {}
+    var onCancel: () -> Void = {}
     /// The chat it belongs to, for offering its other options again.
     var session: String? = nil
     /// The walkthrough's own cards, instead of the vault's.
@@ -195,12 +196,13 @@ struct ErrandStack: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            ErrandProgressCard(errand: errand, logoID: logoID, logo: logo)
             // The browser only while it is being used: not before it starts, and gone once the
-            // errand waits for the person or ends (a still page left there read as broken).
+            // errand waits for the person or ends (a still page left there read as broken). Under
+            // the errand's card, which is on screen first: above it, it pushed that card down.
             if errand.status == .working && !errand.steps.isEmpty {
                 ErrandBrowserCard(errand: errand, snapshot: snapshot, onOpen: onOpenBrowser)
             }
-            ErrandProgressCard(errand: errand, logoID: logoID, logo: logo)
             if errand.status == .needsLogin, let request = errand.accessRequest {
                 VStack(alignment: .leading, spacing: 12) {
                     Label(errand.language.pick("Shop access", "Acceso a la tienda"), systemImage: "lock.shield")
@@ -267,7 +269,7 @@ struct ErrandStack: View {
                 }
             } else if [.stuck, .denied, .stopped].contains(errand.status) {
                 ErrandStoppedCard(errand: errand, session: session, sending: sending,
-                                  onAcceptPrice: onAcceptPrice, onRetry: onRetry)
+                                  onAcceptPrice: onAcceptPrice, onRetry: onRetry, onCancel: onCancel)
             }
             if let problem, checkoutPhase == nil {
                 Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
@@ -321,6 +323,7 @@ struct ErrandChatBlock: View {
                     onStop: { Task { await board.stop(errand) } },
                     onAcceptPrice: { Task { await board.goOn(errand, acceptPrice: true) } },
                     onRetry: { Task { await board.goOn(errand, acceptPrice: false) } },
+                    onCancel: { Task { await board.stop(errand) } },
                     session: store.shownConversation?.hermesSessionID)
                 // Felt as it turns, and only from the Mac's own word (a saved card changing on
                 // launch is not news): it needs the person now, or the order went through.

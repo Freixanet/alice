@@ -62,9 +62,19 @@ APPROVED_PREFIX = "[checkout aprobado]"
 
 # What a button that pays says, in the code or arguments of a browser action.
 PAY_WORDS = re.compile(
-    r"\b(pagar|pago ahora|realizar (el )?pedido|finalizar (la )?compra|confirmar (el )?pedido|confirmar y pagar"
-    r"|comprar (ya|ahora)|tramitar pedido|place (your )?order|pay now|buy now|complete (purchase|order)"
+    r"\b(pagar|pago ahora|realizar (el )?pedido|confirmar (el )?pedido|confirmar y pagar"
+    r"|comprar (ya|ahora)|place (your )?order|pay now|buy now|complete (purchase|order)"
     r"|confirm (and pay|purchase|order)|submit order)\b", re.I)
+# Words a cart's "go on" button also says («Finalizar compra» opens login and delivery). They
+# count as paying unless the errand's page was read and shows no payment step.
+STEP_WORDS = re.compile(r"\b(finalizar (la )?compra|tramitar (el )?pedido)\b", re.I)
+# Whether a page shows a payment step: card fields, a payment provider's frame, or a choice of
+# payment method. A cart lists logos and totals, never these controls.
+PAYMENT_STEP_JS = r"""(()=>{const seen=e=>e.getClientRects().length>0&&getComputedStyle(e).visibility!=="hidden";
+const card=/cc-|card|tarjeta|cvc|cvv|expir|caducidad/i;
+if(Array.from(document.querySelectorAll('input,select')).some(e=>seen(e)&&card.test([e.autocomplete,e.name,e.id,e.placeholder].join(' '))))return true;
+if(Array.from(document.querySelectorAll('iframe')).some(f=>seen(f)&&/stripe|adyen|braintree|checkout\.com|redsys|paypal|klarna|worldpay|mollie|square/i.test(f.src+' '+f.name)))return true;
+return Array.from(document.querySelectorAll('input[type=radio]')).some(e=>{const l=e.closest('label')||document.querySelector('label[for="'+e.id+'"]')||e.parentElement;return seen(l||e)&&/tarjeta|card|paypal|bizum|klarna|apple pay|google pay|transferencia|contra ?reembolso|cash on delivery/i.test(l?l.innerText:'')});})()"""
 # A page where the next click can pay: the payment or review step of a checkout.
 PAY_PAGE = re.compile(
     r"(/step/payment|/payment\b|/pago\b|/pay\b|/checkout/(review|confirm|payment|pago)|/confirmacion|/confirm\b"
@@ -513,25 +523,33 @@ def _text_of(args: Any) -> str:
     return str(args or "")
 
 
-def is_pay_action(tool_name: str, args: Any, active_url: str = "") -> bool:
-    """A browser action that can pay: it names the pay button, or it presses something on a pay page."""
+def is_pay_action(tool_name: str, args: Any, active_url: str = "", payment_step: Optional[bool] = None) -> bool:
+    """A browser action that can pay: it names the pay button, or it presses something on a pay page.
+
+    ``payment_step`` is what the errand's own page shows (None when unread): a cart's «Finalizar
+    compra» is let through only when the page was read and has no payment step."""
     if tool_name not in BROWSER_ACTIONS:
         return False
     text = _text_of(args)
     presses = tool_name in ("browser_click", "browser_press") or bool(CLICKS.search(text))
-    # Reading a page or searching for pay controls does not submit an order.
-    return presses and (bool(PAY_WORDS.search(text)) or bool(PAY_PAGE.search(str(active_url or ""))))
+    if not presses:
+        # Reading a page or searching for pay controls does not submit an order.
+        return False
+    if PAY_WORDS.search(text) or PAY_PAGE.search(str(active_url or "")) or payment_step:
+        return True
+    return bool(STEP_WORDS.search(text)) and payment_step is None
 
 
 def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = None, tool_name: str = "",
              args: Any = None, active_url: str = "", gateways: Iterable[str] = (),
-             merchant_site: str = "", now: Optional[float] = None) -> Optional[Dict[str, str]]:
+             merchant_site: str = "", now: Optional[float] = None,
+             payment_step: Optional[bool] = None) -> Optional[Dict[str, str]]:
     """A pre_tool_call directive that refuses paying without the person's approved checkout, or None.
 
     ``card_fill_site`` is the page a saved payment card is about to be written into (None when
     the call is not a card fill); otherwise the call is checked as a browser action."""
     filling = card_fill_site is not None
-    if not filling and not is_pay_action(tool_name, args, active_url):
+    if not filling and not is_pay_action(tool_name, args, active_url, payment_step):
         return None
     entry = of_session(home, session_id)
     if entry is None:
@@ -721,14 +739,33 @@ GONE = re.compile(r"(agotad|sin stock|no (est[aá] )?disponible|out of stock|una
                   r"|descatalogad|discontinued)", re.I)
 
 
+UNITS = re.compile(r"\b(\d+\s+unidades|unidades|cantidad|units|quantity|\d+\s*x\b|x\s*\d+)\b", re.I)
+
+
+def _multiple(price: str, offer: Dict[str, Any]) -> bool:
+    """A basket total that is the chosen price times the units in it, not another price."""
+    currency = offer.get("currency") or ""
+    found, chosen = _money().parse(price, currency), _money().parse(str(offer.get("price") or ""), currency)
+    if not found or not chosen or not chosen[0]:
+        return False
+    times = found[0] / chosen[0]
+    return times >= 2 and abs(times - round(times)) < 1e-9
+
+
 def blocked_by(said: str, offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """What stopped the chosen option: another price (the person may accept it), the option gone, or
     anything else — which is the agent's to fix, not the person's."""
+    if UNITS.search(said):
+        # Extra units in the basket (left from another try, a double click) are the agent's to
+        # remove, never a price for the person to accept.
+        return {"kind": "other"}
     if re.search(r"\b(precio|price|cuesta|cobra)\b", said, re.I):
         found = PRICE.search(said)
         if found:
             price = " ".join(found.group(1).split())
             if offer and _money().same(price, offer.get("price"), offer.get("currency") or ""):
+                return {"kind": "other"}
+            if offer and _multiple(price, offer):
                 return {"kind": "other"}
             return {"kind": "price", "price": price}
     if re.search(r"navegador|browser|controles|controls", said, re.I):
@@ -787,7 +824,8 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
         f"{offer.get('qty') or 1} · {offer.get('merchant') or 'la tienda'} · {offer.get('price')} "
         f"({offer.get('currency') or ''}). {start} Compra eso y nada más: no lo cambies por otro producto, "
         "otra variante u otra tienda. Empieza con la cesta solo con esta opción: si tiene otros artículos de "
-        "intentos anteriores, quítalos sin preguntar. Si ya no está disponible, la variante no existe o el precio es otro, no "
+        "intentos anteriores, quítalos sin preguntar, y si tiene más unidades de las elegidas, déjala en "
+        f"{offer.get('qty') or 1} sin preguntar: eso no es un cambio de precio. Si ya no está disponible, la variante no existe o el precio es otro, no "
         "sigas: termina tu turno con una sola línea «BLOQUEADO: precio 34,99 € — por qué» (con el precio que "
         "cobra la cesta, solo si difiere del elegido) o «BLOQUEADO: qué ha cambiado». Un precio anterior "
         "tachado no es un cambio: selecciona la variante, añade el producto y verifica el precio en la cesta. "
@@ -918,6 +956,25 @@ def new_tab(url="about:blank"):
     if url != "about:blank":
         goto_url(url)
     return _tid
+# alice: a page alert (alert, confirm, leave-page) freezes the page until it is answered.
+# alice: an alert is acknowledged; a confirm is accepted only when asked, never when it orders.
+def close_dialog(accept=False):
+    import re as _re
+    _info = page_info()
+    _d = _info.get("dialog") if isinstance(_info, dict) else None
+    if not _d:
+        return None
+    _kind = _d.get("type") or "alert"
+    _pays = _re.search({PAY_WORDS.pattern!r}, str(_d.get("message") or ""), _re.I)
+    _yes = _kind in ("alert", "beforeunload") or (bool(accept) and _kind == "confirm" and not _pays)
+    cdp("Page.handleJavaScriptDialog", accept=_yes)
+    return {{"closed": _kind, "accepted": _yes, "message": str(_d.get("message") or "")[:200]}}
+try:
+    _alice_closed = close_dialog()
+    if _alice_closed:
+        print("[alice] Alerta de la página cerrada:", _alice_closed)
+except Exception:
+    pass
 """
 
 
@@ -1462,7 +1519,7 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
     entry = get(home, errand_id)
     if entry is None:
         return None
-    if entry.get("status") not in ACTIVE:
+    if entry.get("status") not in ACTIVE + ("stuck",):
         return entry
     entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.", secure_request=None, resume_message=None)
     try:

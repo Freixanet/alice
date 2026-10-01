@@ -277,11 +277,13 @@ def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]]
             "checkout_url": checkout_url if checkout_url.startswith("https://") else "",
             "recommended": bool(option.get("recommended")), "why": _clean(option.get("why"), 200),
         })
-    # One recommendation at most: the first the model marked.
+    # One recommendation exactly: the first the model marked, or the first card.
     marked = False
     for option in kept:
         option["recommended"] = option["recommended"] and not marked
         marked = marked or option["recommended"]
+    if kept and not marked:
+        kept[0]["recommended"] = True
     return kept, discarded
 
 
@@ -358,8 +360,10 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
                                                 for o in kept],
             "discarded": discarded, "adjusted": adjusted,
             "next": ((f"Respeta {identity}: las opciones de otras marcas/tiendas se han descartado; no las ofrezcas en tu respuesta. " if identity else "")
-                     + "La persona ve las tarjetas. Termina tu turno con una o dos líneas: cuál recomiendas y "
-                     "por qué. No preguntes nada más ni prepares la compra hasta que elija."
+                     + "La persona ve las tarjetas. Termina tu turno con una o dos líneas: la tarjeta marcada "
+                     "«Recomendada» es «" + next(f"{o['title']} · {o['variant']} · {o['price']}".replace(" ·  · ", " · ")
+                                                 for o in kept if o["recommended"]) + "»; recomienda esa y ninguna otra, "
+                     "y di por qué. No preguntes nada más ni prepares la compra hasta que elija."
                      + (" Precios corregidos al que la tienda cobra en la cesta (ya lo vio un recado): "
                         + "; ".join(f"{a['title']} {a['real']}" for a in adjusted) + ". Usa esos."
                         if adjusted else ""))}

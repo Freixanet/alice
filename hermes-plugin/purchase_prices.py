@@ -26,6 +26,8 @@ def module(name):
     return sys.modules[key]
 
 TTL = 15 * 60
+# More formats than this on one search page is a broad search, not one product's formats.
+BROAD = 8
 
 def fingerprint(cookies, origin):
     host = urlsplit(origin).hostname
@@ -47,6 +49,9 @@ class Probe:
     """Own context, disposed even after failures. No personal cookies are copied."""
     def __init__(self, home, endpoint=None):
         from websockets.sync.client import connect
+        # The browser Alice keeps may be closed (a restart, a crash): bring it up, as browsing does.
+        if not endpoint and not module('browser_live').ensure(home):
+            raise ValueError('El navegador de Alice no pudo arrancar; vuelve a intentarlo en un momento.')
         endpoint = endpoint or module('browser_live').configured_url(home)
         with urllib.request.urlopen(endpoint.rstrip('/') + '/json/version', timeout=3) as response:
             ws = json.load(response)['webSocketDebuggerUrl']
@@ -182,10 +187,17 @@ def discover(home, session, args, *, factory=Probe, now=None):
         rows = browser.evaluate('''Array.from(document.querySelectorAll(%s)).map(e=>{const a=e.matches('a')?e:e.querySelector('a[href]');return {url:a?.href||(e.matches('h1')?location.href:null),title:e.innerText.trim()}}).filter(r=>r.url&&r.title)''' % json.dumps(selector))
     candidates = []
     seen = set()
+    stems = [str(w).casefold()[:6] for w in args.get('keywords') or [] if str(w).strip()]
+    named = lambda row: all(s in (row['url'] + ' ' + row['title']).casefold() for s in stems)
+    if stems and not any(named(row) for row in rows or []):
+        stems = []  # titles in another language («Peanut Butter»): the shop's search already chose
     for row in rows or []:
         lines = [line.strip() for line in row['title'].splitlines() if line.strip()]
         row['title'] = ' '.join(line for line in lines if not re.fullmatch(r'[€$£\d.,\s%]+',line))
-        key = (row['url'], row['title'])
+        # A search page also lists bars, shakes and bundles: keep the rows that name every asked word.
+        if stems and not named(row):
+            continue
+        key = row['url']
         if key in seen:
             continue
         https(row['url'])
@@ -203,6 +215,30 @@ def discover(home, session, args, *, factory=Probe, now=None):
 
 
 def verify(home, session, args, *, factory=Probe, now=None):
+    try:
+        return _verify(home, session, args, factory=factory, now=now)
+    except ValueError as exc:
+        if _note_failure(home, session, args, str(exc)):
+            raise ValueError(str(exc) + ' Queda anotado como no comprobable: no lo reintentes más de una vez; '
+                             'sigue con los demás formatos y di en una línea cuál no se pudo comprobar.') from exc
+        raise
+
+
+def _note_failure(home, session, args, why):
+    """A format the service could not check is said as such, not a lock on every other option."""
+    if args.get('reject_reason') or not args.get('search_id') or args.get('quote_ref') or args.get('id', '').startswith('pq-'):
+        return False
+    with module('purchase_flow')._locked(home):
+        data = _load(home)
+        search = data['searches'].get(args['search_id'])
+        if search and search['session'] == session and any(r['id'] == args.get('candidate_id') for r in search['candidates']):
+            search.setdefault('failed', {})[args['candidate_id']] = why[:300]
+            _save(home, data)
+            return True
+    return False
+
+
+def _verify(home, session, args, *, factory=Probe, now=None):
     data = _load(home)
     search = data['searches'].get(args['search_id'])
     if not search or search['session'] != session:
@@ -333,7 +369,10 @@ def coverage(home, session, search_id, refs):
     if not search or search['session'] != session:
         raise ValueError('Falta el registro de formatos encontrados.')
     shown = {data['quotes'][ref]['candidate_id'] for ref in refs if ref in data['quotes'] and data['quotes'][ref]['search_id'] == search_id}
-    omitted = [r for r in search['candidates'] if r['id'] not in shown and r['id'] not in search['rejected']]
+    if len(search['candidates']) > BROAD:
+        return search  # a broad search: the agent narrows it or shows the best, not every listing
+    omitted = [r for r in search['candidates'] if r['id'] not in shown and r['id'] not in search['rejected']
+               and r['id'] not in search.get('failed', {})]
     if omitted:
         raise ValueError('Presenta o descarta con motivo estos formatos: ' + '; '.join(r['title'] for r in omitted))
     return search
@@ -412,7 +451,15 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     if not amount:
         raise ValueError('La cesta no tiene un precio verificable.')
     real = module('money').text(*amount)
-    if not module('money').same(real,offer['price'],offer['currency']):
+    note = 'El precio sigue coincidiendo. Prepara el envío y el resumen final sin volver a pedir aceptar el mismo precio.'
+    old_price = module('money').parse(offer['price'], offer['currency'])
+    if old_price and amount[0] < old_price[0]:
+        # Cheaper in the basket (a member discount after login): the person's choice only got
+        # better, and the final total is approved before paying anyway.
+        errands.update(home, errand_id, offer={**offer, 'price': real})
+        note = ('La cesta cobra ' + real + ', menos que los ' + offer['price'] + ' elegidos: sigue con ese precio '
+                'sin preguntar y menciónalo en el resumen final.')
+    elif not module('money').same(real,offer['price'],offer['currency']):
         errands.update(home,errand_id,status='stuck',blocked={'kind':'price','price':real},
                        reason='La cesta cobra ' + real + ' por el formato elegido, frente a ' + offer['price'] + '.')
         return {'ok':False,'price_changed':True,'old':offer['price'],'price':real,'next':'Termina el turno. La persona puede aceptar el cambio real desde su tarjeta.'}
@@ -420,7 +467,7 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     session_hash = fingerprint(cookies,page_origin)
     errands.update(home,errand_id,cart_evidence={'origin':page_origin,'context':context['context'],'recipe':recipe,
         'qty':offer.get('qty',1),'price_cents':amount[0],'currency':amount[1], 'at':now or time.time(),'session':session_hash})
-    return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':'El precio sigue coincidiendo. Prepara el envío y el resumen final sin volver a pedir aceptar el mismo precio.'}
+    return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':note}
 
 
 def fresh_cart(home, entry, *, inspect=None, now=None):

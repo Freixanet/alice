@@ -53,9 +53,13 @@ elif ! print -r -- "$current" | grep -qF "plugins/alice/skills"; then
   print -u2 "Add $skills_dir to skills.external_dirs in Hermes' config to see Alice's skills in the list."
 fi
 
-service=gui/$(id -u)/ai.hermes.dashboard
-if launchctl print "$service" >/dev/null 2>&1; then
-  launchctl kickstart -k "$service"
-fi
+# The gateway runs the agents and keeps the plugin's modules loaded: without a restart it goes on
+# with the old code.
+for name in ai.hermes.dashboard ai.hermes.gateway; do
+  service=gui/$(id -u)/$name
+  if launchctl print "$service" >/dev/null 2>&1; then
+    launchctl kickstart -k "$service"
+  fi
+done
 
 print "Alice plugin installed. Open the Hermes dashboard → Alice tab for a pairing QR, or connect from Alice with the address and key."

@@ -39,6 +39,9 @@ final class ErrandTranscriptTests: XCTestCase {
         let messages = [message("u", .user, request), message("a1", .assistant, "En marcha", ref: "e1"),
                         message("u2", .user, "¿Y el envío?", offset: 50), message("a2", .assistant, "Gratis", offset: 51),
                         message("u3", .user, "Otra cosa", offset: 200)]
+        // Running, it is the live thing in the chat: last, whatever the turns' clocks say.
+        XCTAssertEqual(ErrandTranscript.placements(messages: messages, errands: [moving], session: "chat-1").keys.sorted(), ["u3"])
+        moving.status = .stuck
         let placements = ErrandTranscript.placements(messages: messages, errands: [moving], session: "chat-1")
         XCTAssertEqual(placements.keys.sorted(), ["a2"], "below what was said while it worked, above what came after")
     }
@@ -74,8 +77,10 @@ final class ErrandTranscriptTests: XCTestCase {
         let messages = [message("u1", .user, request), message("a1", .assistant, "En marcha"),
                         message("u2", .user, request, offset: 86_400),
                         message("a2", .assistant, "En marcha", offset: 86_400)]
+        var first = errand()
+        first.status = .done
         let placements = ErrandTranscript.placements(
-            messages: messages, errands: [errand(), errand("e2", offset: 86_401)], session: "chat-1")
+            messages: messages, errands: [first, errand("e2", offset: 86_401)], session: "chat-1")
         XCTAssertEqual(placements["a1"]?.map(\.errandID), ["e1"])
         XCTAssertEqual(placements["a2"]?.map(\.errandID), ["e2"])
     }

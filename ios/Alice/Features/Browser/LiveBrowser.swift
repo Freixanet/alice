@@ -163,7 +163,9 @@ enum BrowserDestination {
 enum BrowserActivity {
     static func isBrowserTool(_ name: String) -> Bool {
         let lower = name.lowercased()
+        // The price service browses the shop in its own tab while it finds and checks the formats.
         return lower.contains("browser") || lower.hasPrefix("page_watch")
+            || lower == "purchase_discover" || lower == "purchase_verify"
     }
 
     static func used(_ tools: [Message.ToolCall]) -> Bool {
