@@ -56,8 +56,8 @@ Exit code: `0` if all checks pass or are degraded, `1` if any check fails.
 | `npm`            | npm 11+ installed                         | Yes      |
 | `xcodegen`       | XcodeGen installed (iOS builds)            | No       |
 | `hermes`         | Hermes CLI available                      | Yes      |
-| `gateway`        | Gateway port listening                    | Yes      |
-| `dashboard`      | Dashboard port responding                 | Yes      |
+| `gateway`        | Gateway port listening (not API probe — requires auth) | Yes      |
+| `dashboard`      | Dashboard port listening (not API probe – requires session) | Yes      |
 | `plugin`         | Alice plugin installed and enabled        | Yes      |
 | `plugin-tests`   | Plugin test suite passes                  | No       |
 | `notifier`       | Notifier LaunchAgent loaded               | No       |
