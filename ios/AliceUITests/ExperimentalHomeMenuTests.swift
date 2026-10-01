@@ -9,7 +9,7 @@ final class ExperimentalHomeMenuTests: XCTestCase {
 
     func testAvatarSwitchPreservesDraftAndSurvivesRelaunch() {
         let app = XCUIApplication()
-        app.launchArguments = ["-visualReview", "-alice.developerMode", "YES"]
+        app.launchArguments = ["-alice.developerMode", "YES"]
         app.launch()
         chooseInterface("Current", in: app)
         XCTAssertFalse(menuButton(in: app).exists)
@@ -27,8 +27,8 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         capture(app, "experimental-today-keyboard")
 
         app.terminate()
-        // The fixture flag forces visual-home on every launch. Switching the
-        // interface opened Alice's main chat; reopen that saved chat normally.
+        // Use Alice's real local main chat on both launches. The visual-review
+        // fixture is seeded after launch and can replace the selected chat.
         app.launchArguments = ["-alice.developerMode", "YES"]
         app.launch()
         XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20), "The interface choice must survive relaunch")
@@ -121,7 +121,9 @@ final class ExperimentalHomeMenuTests: XCTestCase {
     /// The round button itself, wherever it sits — beside the composer or
     /// alone above a destination page.
     private func menuButton(in app: XCUIApplication) -> XCUIElement {
-        app.buttons["home.experimentalMenu"]
+        // SwiftUI's Menu exposes a host and its button under the same ID.
+        // Both invoke the same menu; select its first accessibility match.
+        app.buttons.matching(identifier: "home.experimentalMenu").firstMatch
     }
 
     /// Opens the button's menu and taps a section by its title.

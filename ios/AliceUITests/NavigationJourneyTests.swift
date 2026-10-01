@@ -16,6 +16,9 @@ final class NavigationJourneyTests: XCTestCase {
         try await super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
+        // Other suites persist the experimental interface. This journey tests
+        // the current drawer, whose destinations move into Sections otherwise.
+        app.launchArguments = ["-alice.developerMode", "NO", "-alice.developer.homeInterface", "current"]
         app.launch()
     }
 
