@@ -8,6 +8,10 @@
 #
 # Safe to share: never prints keys, tokens, credentials, or private content.
 # Exit code: 0 = healthy or degraded, 1 = broken (at least one critical check failed).
+#
+# This script checks infrastructure availability (ports listening, services
+# loaded, files present). It does NOT authenticate to the gateway or dashboard
+# because those require credentials that must not be printed or probed.
 
 set -uo pipefail
 
@@ -69,41 +73,61 @@ else
 fi
 
 # --- Gateway port ---
-# Check common gateway ports. The main profile uses 8643+; bot gateways use 8642.
+# The gateway requires Bearer auth, so we check if the port is listening
+# rather than probing an API endpoint. Main profile uses ports 8643+;
+# bot gateways use 8642.
 GATEWAY_PORT=""
-for port in $(seq 8642 8670); do
-  if curl -sf "http://127.0.0.1:$port/v1/capabilities" >/dev/null 2>&1; then
-    GATEWAY_PORT=$port
-    break
-  fi
-done
-if [ -n "$GATEWAY_PORT" ]; then
-  ok "gateway" "responding on port $GATEWAY_PORT"
-else
-  # Check if any process is listening on common ports
-  if command -v lsof >/dev/null 2>&1; then
-    LISTENING=$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | grep -E '864[2-9]|9119' || true)
-    if [ -n "$LISTENING" ]; then
-      degraded "gateway" "port in use but not responding to capabilities probe"
-    else
-      fail "gateway" "no gateway port listening (checked 8642-8670)"
+if command -v lsof >/dev/null 2>&1; then
+  for port in $(seq 8642 8670); do
+    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      GATEWAY_PORT=$port
+      break
     fi
+  done
+  if [ -n "$GATEWAY_PORT" ]; then
+    ok "gateway" "port $GATEWAY_PORT is listening"
   else
-    fail "gateway" "cannot check ports (lsof not available)"
+    fail "gateway" "no gateway port listening (checked 8642-8670)"
   fi
+elif command -v nc >/dev/null 2>&1; then
+  for port in $(seq 8642 8670); do
+    if nc -z 127.0.0.1 "$port" 2>/dev/null; then
+      GATEWAY_PORT=$port
+      break
+    fi
+  done
+  if [ -n "$GATEWAY_PORT" ]; then
+    ok "gateway" "port $GATEWAY_PORT is listening"
+  else
+    fail "gateway" "no gateway port listening (checked 8642-8670)"
+  fi
+else
+  skip "gateway" "cannot check ports (lsof and nc not available)"
 fi
 
 # --- Dashboard ---
+# The dashboard requires username+password session auth, so we check if
+# port 9119 is listening rather than probing an API endpoint.
 DASHBOARD_PORT=9119
-if curl -sf "http://127.0.0.1:$DASHBOARD_PORT/api/status" >/dev/null 2>&1; then
-  ok "dashboard" "responding on port $DASHBOARD_PORT"
+DASHBOARD_LISTENING=""
+if command -v lsof >/dev/null 2>&1; then
+  if lsof -nP -iTCP:"$DASHBOARD_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    DASHBOARD_LISTENING=1
+  fi
+elif command -v nc >/dev/null 2>&1; then
+  if nc -z 127.0.0.1 "$DASHBOARD_PORT" 2>/dev/null; then
+    DASHBOARD_LISTENING=1
+  fi
+fi
+if [ -n "$DASHBOARD_LISTENING" ]; then
+  ok "dashboard" "port $DASHBOARD_PORT is listening"
 else
   # Check launchd service
   SERVICE="gui/$(id -u)/ai.hermes.dashboard"
   if launchctl print "$SERVICE" >/dev/null 2>&1; then
-    degraded "dashboard" "service loaded but not responding on port $DASHBOARD_PORT"
+    degraded "dashboard" "service loaded but port $DASHBOARD_PORT not listening"
   else
-    fail "dashboard" "not running (launchd service not found)"
+    fail "dashboard" "not running (launchd service not found, port $DASHBOARD_PORT not listening)"
   fi
 fi
 
