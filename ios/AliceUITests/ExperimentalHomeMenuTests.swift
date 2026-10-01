@@ -65,14 +65,15 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
         XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
 
-        XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
-        for name in ["Today", "Goals", "Feed", "Library", "Chat"] {
+        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 10))
+        // These are the destinations the menu currently offers; Feed is a swipe away.
+        for name in ["Notes", "Routines", "Library", "Chat"] {
             selectSection(name, in: app)
             switch name {
-            case "Goals": XCTAssertTrue(app.buttons["goals.add"].waitForExistence(timeout: 5))
-            case "Feed": XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 5))
+            case "Notes": XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 5))
+            case "Routines": XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 5))
             case "Library": XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
-            default: XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 5))
+            default: XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 5))
             }
             capture(app, "experimental-section-\(name.lowercased())")
         }

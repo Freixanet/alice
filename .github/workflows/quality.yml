@@ -7,6 +7,11 @@ on:
         description: Verify backend changes after unchanged native and browser files were checked
         type: boolean
         default: false
+      ios_mode:
+        description: Native checks (UI only after unit tests passed for unchanged app sources)
+        type: choice
+        options: [all, ui]
+        default: all
   pull_request:
   push:
     branches: [main]
@@ -106,7 +111,7 @@ jobs:
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
       - name: Build and test native app
-        run: bash scripts/verify-ios.sh all
+        run: bash scripts/verify-ios.sh "${{ inputs.ios_mode || 'all' }}"
       - uses: actions/upload-artifact@v5
         if: always()
         with:
