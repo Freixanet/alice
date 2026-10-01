@@ -346,6 +346,11 @@ def _guard_errand_access(tool_name=None, args=None, session_id="", **_):
                     return {"action": "block", "message": "Ese acceso pertenece a otra tienda. Usa solo uno del origen actual o llama a login_request."}
         except Exception:
             return {"action": "block", "message": "No se pudo comprobar el origen del acceso. No lo rellenes."}
+    if str(tool_name or "").startswith("browser_") and (entry or {}).get("offer") and (entry or {}).get("secure_answered"):
+        try:
+            _module("errand_access.py", "alice_errand_access").protect_browser_secrets(entry)
+        except Exception:
+            return {"action":"block", "message":"No se pudo proteger el formulario seguro de este recado. Solicita de nuevo el acceso de esta tienda antes de leer la página."}
     return None
 
 

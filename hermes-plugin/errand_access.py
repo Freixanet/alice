@@ -239,5 +239,38 @@ def detect_pending(home, errand_id, *, inspect=target, evaluate=page_evaluate):
     return request(home,errand_id,'vault.code' if otp else 'vault.save_login',inspect=inspect)
 
 
+def protect_browser_secrets(entry, *, inspect=target, evaluate=page_evaluate):
+    """Restore process-local redaction after the dashboard filled an OTP.
+
+    Values travel only from this pinned page to Hermes' in-memory redactor;
+    neither metadata nor tool results receive them. Also mask OTP screenshots.
+    """
+    page_origin, context, _ = inspect(entry)
+    if origin(entry['offer']['url']) != page_origin:
+        return None
+    from agent.vault_login_classifier import LoginControl, build_inspection_js, classify_otp_controls
+    from agent.redact import register_vault_redaction_value
+    nonce = secrets.token_hex(8)
+    raw = evaluate(context, build_inspection_js(nonce))
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    controls = [LoginControl.from_dict(r) for r in (raw or []) if isinstance(r, dict)]
+    otp = classify_otp_controls(controls)
+    passwords = [c for c in controls if c.type == 'password']
+    slots = [nonce + ':' + str(c.index) for c in passwords]
+    otp_slots = [nonce + ':' + str(c.control.index) for c in otp]
+    values = evaluate(context, "Array.from(document.querySelectorAll('input, select')).filter(e=>e.type==='password'||" +
+                      json.dumps(slots + otp_slots) + ".includes(e.getAttribute('data-hermes-vault-slot'))).map(e=>{"
+                      "if(" + json.dumps(otp_slots) + ".includes(e.getAttribute('data-hermes-vault-slot')))"
+                      "e.style.setProperty('-webkit-text-security','disc','important');return String(e.value||'')})")
+    if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+        raise ValueError('No se pudo proteger el formulario seguro.')
+    for value in values:
+        register_vault_redaction_value(value)
+    register_vault_redaction_value(''.join(values))
+    values.clear()
+    return None
+
+
 def public(value):
     return {k: v for k, v in value.items() if k not in ('context', 'target')}

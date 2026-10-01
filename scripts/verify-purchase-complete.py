@@ -148,6 +148,20 @@ def main(agent_test=False):
             pending=access.request(home,entry['id'],'vault.code',inspect=inspect)
             access.answer(home,entry['id'],pending['request_id'],'123456',inspect=inspect,
                           resume=lambda *a:resume.append(a))
+            from agent.redact import clear_vault_redaction_values
+            clear_vault_redaction_values()
+            access.protect_browser_secrets(errands.get(home,entry['id']),inspect=inspect,evaluate=evaluate)
+            from tools.browser_use_cli import browser_exec
+            errands.context_file(entry['id']).write_text(json.dumps({'context':browser.context,'target':browser.target,'daemon':'0'}))
+            result=browser_exec(errands.context_preamble(entry['id']) + "print(page_info())", session=entry['session_id'],timeout_s=45,task_id='fixture-redaction')
+            if isinstance(result,str):result=json.loads(result)
+            assert '123456' not in json.dumps(result)
+            print('PASS: OTP stays redacted in ordinary browser output after process restart',flush=True)
+            result=browser_exec(errands.context_preamble(entry['id']) + "print(js(\"document.querySelector('input[name=otp]').value\"))",session=entry['session_id'],timeout_s=45,task_id='fixture-redaction')
+            if isinstance(result,str):result=json.loads(result)
+            assert '123456' not in json.dumps(result)
+            assert browser.evaluate("document.querySelector('input[name=otp]').style.getPropertyValue('-webkit-text-security')") == 'disc'
+            print('PASS: OTP explicit field read and screenshot protected after process restart',flush=True)
             browser.evaluate("document.querySelector('#otp').requestSubmit()")
             assert not browser.evaluate('window.fixturePaid')
             total=browser.read('#total');assert total=='73,97 €'

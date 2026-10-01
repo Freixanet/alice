@@ -92,6 +92,19 @@ class ErrandHookTests(unittest.TestCase):
         result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":"print(page_info()); click(3)"}, session_id=entry["session_id"])
         self.assertEqual(result["action"], "modify")
 
+    def test_resumed_purchase_protects_all_browser_outputs_and_fails_closed(self):
+        entry = self.errand(offer={'url':'https://example.com/product'})
+        self.errands.update(self.home,entry['id'],secure_answered='request-done')
+        access = self.plugin._module('errand_access.py','alice_errand_access')
+        with mock.patch.object(access,'protect_browser_secrets') as protect:
+            for name in ('browser_exec','browser_get_state','browser_screenshot'):
+                self.assertIsNone(self.plugin._guard_errand_access(name,{},session_id=entry['session_id']))
+            self.assertEqual(protect.call_count,3)
+        with mock.patch.object(access,'protect_browser_secrets',side_effect=ValueError('private failure')):
+            result = self.plugin._guard_errand_access('browser_get_state',{},session_id=entry['session_id'])
+            self.assertEqual(result['action'],'block')
+            self.assertNotIn('private failure',result['message'])
+
     def shown(self, session="chat-9"):
         """Two verified options shown in `session`; their ids."""
         out = self.flow.present(self.home, session, {"options": [

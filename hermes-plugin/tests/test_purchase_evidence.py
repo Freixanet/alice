@@ -172,6 +172,28 @@ class AccessTests(unittest.TestCase):
             fill_code=lambda e,code:codes.append(code),resume=self.resume)
         self.assertEqual(codes,['987654']); self.assertNotIn('987654',str(self.resumed))
         self.assertNotIn('987654',str(errands.public(errands.get(self.home,self.entry['id']))))
+    def test_otp_redaction_restored_in_another_process_without_persistence(self):
+        from agent.redact import clear_vault_redaction_values, redact_sensitive_text
+        clear_vault_redaction_values()
+        self.addCleanup(clear_vault_redaction_values)
+        descriptors = [{'index':0,'name':'otp','type':'text','autocomplete':'one-time-code'}]
+        scripts = []
+        def evaluate(context,script):
+            scripts.append(script)
+            return descriptors if 'flatMap' in script else ['654321']
+        before = list(self.home.rglob('*.json'))
+        snapshots = [p.read_bytes() for p in before]
+        self.assertIsNone(access.protect_browser_secrets(self.entry,inspect=self.inspect,evaluate=evaluate))
+        self.assertNotIn('654321',redact_sensitive_text('value: 654321',force=True))
+        self.assertIn('-webkit-text-security',scripts[-1])
+        self.assertNotIn('654321',str(scripts))
+        self.assertEqual([p.read_bytes() for p in before],snapshots)
+
+    def test_secret_shield_never_reads_a_different_origin(self):
+        evaluate = mock.Mock()
+        access.protect_browser_secrets(self.entry,inspect=lambda e:('https://payment.example',self.context,None),evaluate=evaluate)
+        evaluate.assert_not_called()
+
     def test_otp_preserves_explicit_account_creation_choice(self):
         p = self.pending();self.respond(p,account_action='create')
         p = self.pending('vault.code')
