@@ -6,6 +6,42 @@ This document captures operational knowledge that was previously implicit or
 existed only in developers' memory. A competent new engineer should not need
 to ask anyone how Alice works operationally after reading this.
 
+## Hidden knowledge classification
+
+Every item of hidden operational knowledge found in the audit was classified
+into one of four categories. The least-complex durable solution was chosen for
+each.
+
+| Item                              | Classification | Solution                                        |
+| --------------------------------- | -------------- | ----------------------------------------------- |
+| Starting Hermes (launchd cmds)    | DOCUMENT       | This document + alice-doctor.sh checks services  |
+| Mac requirements (versions)       | DOCUMENT       | This document consolidates from README, CI, etc. |
+| iPhone ↔ Mac pairing procedure   | DOCUMENT       | This document + existing pairing.md              |
+| QR pairing format                | DOCUMENT       | This document + PROTOCOL.md                       |
+| Gateway port numbers             | ASSERT/CHECK   | alice-doctor.sh checks ports 8642-8670            |
+| Dashboard port (9119)            | ASSERT/CHECK   | alice-doctor.sh checks port 9119                  |
+| Plugin install path              | DOCUMENT       | This document + install.sh already documents it   |
+| Plugin enabled state             | ASSERT/CHECK   | alice-doctor.sh checks `hermes plugins list`     |
+| Environment variables            | DOCUMENT       | This document + .env.example already lists them   |
+| Production env requirements      | ASSERT/CHECK   | deployment-config.ts asserts at runtime           |
+| Build commands (xcodebuild)      | DOCUMENT       | This document + AGENTS.md                         |
+| Build/release order              | DOCUMENT       | This document                                     |
+| Machine assumptions (Intel, no sim) | DOCUMENT     | This document + AGENTS.md                         |
+| Device UDID                      | DOCUMENT       | This document (from project.yml/AGENTS.md)       |
+| Notifier Bark key location       | DOCUMENT       | This document + install.sh comments               |
+| Log file locations               | DOCUMENT       | This document                                     |
+| Dependency update procedure      | DOCUMENT       | This document                                     |
+| Migration procedure              | DOCUMENT       | This document + MIGRATIONS.md                     |
+| Recovery procedures               | DOCUMENT       | This document + DISASTER_RECOVERY.md              |
+| Cleanup procedures                | DOCUMENT       | This document                                     |
+| Hermes restart order (gateway first) | DOCUMENT    | This document                                     |
+| CDP port 9222 (do not test)      | ASSERT/CHECK   | alice-doctor.sh checks if 9222 is in use          |
+| Backup before plugin deploy       | AUTOMATE       | backup-alice.sh + AGENTS.md checklist             |
+
+Preference applied: automation > executable check > clear documentation >
+tribal knowledge. Sensitive operations (credential rotation, Hermes restart)
+were NOT automated because automating them could weaken security.
+
 ## Quick reference
 
 | What                    | Command / Location                                    |
