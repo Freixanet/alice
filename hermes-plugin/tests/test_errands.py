@@ -79,6 +79,22 @@ class StoreTests(Base):
 
 
 class CheckoutTests(Base):
+    def test_checkout_and_approval_keep_cents_and_currency(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry['id'], {**CHECKOUT, 'currency': ''}, now=NOW)
+        checkout = errands.get(self.home, entry['id'])['checkout']
+        self.assertEqual((checkout['total_cents'], checkout['currency']), (2798, 'EUR'))
+        decided = errands.decide_checkout(self.home, entry['id'], True, now=NOW + 1)
+        self.assertEqual((decided['checkout']['approved_cents'], decided['checkout']['approved_currency']), (2798, 'EUR'))
+
+    def test_invalid_checkout_total_never_waits_for_approval(self):
+        for total in ('consultar', '-27,98 €', '$27.98'):
+            with self.subTest(total=total):
+                entry = self.errand()
+                result = errands.request_checkout(self.home, entry['id'], {**CHECKOUT, 'total': total}, now=NOW)
+                self.assertFalse(result['ok'])
+                self.assertEqual(errands.get(self.home, entry['id'])['status'], 'working')
+
     def test_a_checkout_needs_the_shop_the_items_and_the_total(self):
         entry = self.errand()
         out = errands.request_checkout(self.home, entry["id"], {"merchant": "HSN", "items": [], "total": ""})
@@ -222,6 +238,16 @@ class GateTests(Base):
                                            args={"code": "print(page_info())"}, active_url=pay_page))
         self.assertIsNone(errands.pay_gate(self.home, session, tool_name="web_search", args=named))
 
+    def test_reading_controls_that_mention_payment_does_not_need_payment_approval(self):
+        entry = self.errand()
+        code = "# Revisar la cesta antes de continuar\nprint(js('Array.from(document.querySelectorAll(\"button,a\")).map(e=>e.innerText).filter(t=>/cesta|carrito|añadir|checkout|pagar/i.test(t))'))\ncapture_screenshot()"
+        for page in ("https://www.prozis.com/product", "https://www.prozis.com/checkout/payment"):
+            self.assertIsNone(errands.pay_gate(self.home, entry["session_id"], tool_name="browser_exec",
+                                              args={"code": code}, active_url=page))
+        for code in ("click_text('Pagar')", "js(\"document.querySelector('button').click()\")"):
+            self.assertIsNotNone(errands.pay_gate(self.home, entry["session_id"], tool_name="browser_exec",
+                                                 args={"code": code}, active_url="https://www.prozis.com/checkout/payment"))
+
     def test_an_approved_checkout_lets_the_pay_click_through(self):
         entry = self.approved(at=NOW)
         self.assertIsNone(errands.pay_gate(self.home, entry["session_id"], tool_name="browser_exec",
@@ -250,12 +276,14 @@ class FakeGateway:
         self.on_start = on_start or (lambda n: None)
         self.fail = fail
         self.started, self.approvals, self.stopped = [], [], []
+        self.models = []
         self.current = []
 
-    def start(self, session_id, text):
+    def start(self, session_id, text, *, model, provider):
         if self.fail:
             raise OSError("connection refused")
         self.started.append((session_id, text))
+        self.models.append({"model": model, "provider": provider})
         self.on_start(len(self.started))
         self.current = list(self.runs.pop(0)) if self.runs else [{"status": "completed", "output": ""}]
         return f"run_{len(self.started)}"
@@ -301,6 +329,32 @@ class EngineTests(Base):
         self.assertEqual([s for s, _ in seen], [entry["session_id"]] * 2)
         saved = errands.get(self.home, entry["id"])
         self.assertEqual((saved["status"], saved["runs"], saved["summary"]), ("done", 2, "Checkout abierto"))
+        self.assertEqual(gateway.models, [{"model": "gpt-6-luna", "provider": "openai-codex"}] * 2)
+
+    def test_a_resumed_errand_keeps_its_saved_model_when_the_default_changes(self):
+        entry = self.errand()
+        config = self.home / ".alice" / "errand-model.json"
+        config.write_text(json.dumps({"model": "different-model", "provider": "openai-codex"}))
+        gateway = FakeGateway([done()])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway,
+                                judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+        self.assertEqual(engine.run("La persona respondió"), "done")
+        self.assertEqual(gateway.models, [{"model": "gpt-6-luna", "provider": "openai-codex"}])
+        self.assertEqual(self.errand()["model"], "different-model")
+
+    def test_an_older_errand_saves_the_fixed_route_before_resuming(self):
+        entry = self.errand()
+        records = errands._read(errands._path(self.home))
+        records[0].pop("model")
+        records[0].pop("provider")
+        errands._write(errands._path(self.home), records)
+        gateway = FakeGateway([done()])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway,
+                                judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual((saved["model"], saved["provider"]), ("gpt-6-luna", "openai-codex"))
+        self.assertEqual(engine.run(), "done")
+        self.assertEqual(gateway.models, [{"model": "gpt-6-luna", "provider": "openai-codex"}])
 
     def test_a_checkout_request_parks_the_errand_without_asking_the_judge(self):
         holder = {}
@@ -552,6 +606,22 @@ class AuditFixTests(Base):
         # Only a stopped errand goes on, and a retry needs no price.
         self.assertIsNone(errands.go_on(self.home, entry["id"]))
 
+    def test_same_price_and_crossed_out_price_are_not_a_price_change(self):
+        offer = {"price": "24,49 €", "currency": "EUR", "url": "https://www.prozis.com/fixture", "title": "Creapure"}
+        for said in ("precio 24,49 € en la ficha frente a 34,99 € tachados; no puedo confirmar el total del carrito.",
+                     "la tienda muestra €24,49 en la ficha, pero no pude avanzar al carrito"):
+            self.assertEqual(errands.blocked_by(said, offer), {"kind": "other"})
+        self.assertEqual(errands.blocked_by("precio 34,99 € en la cesta", offer), {"kind": "price", "price": "34,99 €"})
+        self.assertEqual(errands.blocked_by("el navegador no está disponible", offer), {"kind": "other"})
+        entry = errands.create(self.home, "Comprar", offer=offer)
+        gateway = FakeGateway([done("BLOQUEADO: precio 24,49 € en la ficha frente a 34,99 € tachados"),
+                               done("BLOQUEADO: no se pudo confirmar la cesta")])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, sleep=lambda _: None)
+        self.assertEqual(engine.run(), "stuck")
+        self.assertEqual(len(gateway.started), 2)
+        self.assertEqual(errands.get(self.home, entry["id"])["blocked"], {"kind": "other"})
+        self.assertIn("precio tachado", gateway.started[1][1])
+
     def test_the_basket_price_is_remembered_for_that_page(self):
         offer = {"option_id": "a1b2c3d4-1", "url": "https://www.prozis.com/c?x=1", "price": "24,49 €"}
         entry = errands.create(self.home, "Comprar", now=NOW, offer=offer)
@@ -746,17 +816,21 @@ class ContextTests(Base):
         errand_id = "a1b2c3d4e5"
         self.addCleanup(lambda: errands.context_file(errand_id).unlink(missing_ok=True))
         code = errands.context_preamble(errand_id)
-        exec(code, {"cdp": cdp, "switch_tab": switched.append})
-        exec(code, {"cdp": cdp, "switch_tab": switched.append})
-        self.assertEqual(switched, ["tab1"])
+        exec(code, {"cdp": cdp, "switch_tab": switched.append, "capture_screenshot": lambda: "fixture.png"})
+        exec(code, {"cdp": cdp, "switch_tab": switched.append, "capture_screenshot": lambda: "fixture.png"})
+        self.assertEqual(switched, ["tab1", "tab1"], "Every call must restore the errand's own tab")
         self.assertEqual(calls.count("Target.createBrowserContext"), 1)
 
-    def test_a_failure_to_isolate_never_stops_the_errand(self):
+    def test_a_failure_to_isolate_never_runs_in_someone_elses_context(self):
         def broken(method, **params):
             raise RuntimeError("no CDP")
 
         self.addCleanup(lambda: errands.context_file("ffff000011").unlink(missing_ok=True))
-        exec(errands.context_preamble("ffff000011"), {"cdp": broken, "switch_tab": lambda t: None})
+        visited = []
+        with self.assertRaisesRegex(RuntimeError, "No se pudo aislar"):
+            exec(errands.context_preamble("ffff000011") + "\nvisited.append('wrong basket')",
+                 {"cdp": broken, "switch_tab": lambda t: None, "visited": visited})
+        self.assertEqual(visited, [])
 
     def test_releasing_disposes_the_context_and_forgets_it(self):
         path = errands.context_file("0a0b0c0d0e")

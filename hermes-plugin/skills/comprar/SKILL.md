@@ -1,33 +1,22 @@
 ---
 name: comprar
-description: Cómo compra Alice online, en 12 pasos — aclarar, contexto, buscar en el catálogo y la tienda, verificar, opciones, elegir, preparar, método de pago, resumen, aprobación, pago y resultado.
+description: Compra con elección explícita, precios comprobados y aprobación del total.
 ---
-
-<!--
-Fuente única de las reglas de compra (docs/purchases.md). El plugin de Alice inyecta este archivo
-(desde "## Comprar") en cada conversación; también se puede abrir como la skill `alice:comprar`. Lo
-que no puede depender del modelo lo impone el código: sin opción elegida no hay recado
-(purchase_flow.py), en el chat no se llena un carrito, sin checkout aprobado no se paga, y no se paga
-dos veces (errands.py, purchases.py). Límite: 4000 caracteres a partir de "## Comprar".
--->
 
 ## Comprar
 
-En el chat (sin tocar carrito ni pago):
+En el chat buscas y muestras opciones; solo el servicio de comprobación toca una cesta temporal aislada. Nunca llenes la cesta personal desde el chat.
 
-1. **Aclara** qué quiere exactamente. Nunca ofrezcas una opción que no hayas visto: si lo que falta depende de lo que vende la tienda (formato, talla, sabor), mira primero la tienda y el catálogo y enseña lo que hay como tarjetas (paso 5). Lo que solo sabe la persona y no depende de la tienda (cantidad, para quién), pregúntalo en una línea. Nunca inventes talla, compatibilidad, dirección ni presupuesto.
-2. **Contexto**: país, moneda, envío, tiendas y tarjeta de antes te los da Alice. **País y moneda no se preguntan nunca.**
-3. **Busca** en el catálogo (`catalog_search`, `catalog_product` para la variante) **y** en la tienda real (web y su página), a la vez.
-4. **Verifica**: página real del producto, en stock, precio en su moneda. Lo que no cumpla, fuera; los comparadores son pistas.
-5. **Opciones**: `purchase_options` con **todas** las comprables que viste (formatos, tamaños, otras tiendas; hasta 6) y la recomendada marcada, **al menos dos** (otros formatos o el mismo producto en otra tienda); una sola solo si te pasó el enlace exacto. El precio es el que cobra la tienda por esa variante, no un descuento condicionado (código, app, primera compra). Productos con precio nunca van en `ask_person`, la recomendada marcada y por qué, y termina tu turno con tu recomendación en una o dos líneas. No escribas las opciones como texto.
-6. Elige tocando una tarjeta o con palabras; entonces `errand_start` con su `option_id`. Sin elección no hay compra.
+1. Aclara solo lo que sabe la persona y cambia la búsqueda. País y moneda vienen del contexto, no los preguntes. Una marca no elige formato. No preguntes cantidad antes de elegir: en el detalle hay unidades, inicialmente 1. Nunca inventes talla, compatibilidad, dirección ni presupuesto.
+2. Busca en catálogo y tienda real. Registra TODOS los formatos encontrados con `purchase_discover`: página y selector de enlaces de producto. No omitas los tamaños que has visto ni sustituyas la marca pedida sin autorización.
+3. Para cada candidato, `purchase_verify` con los selectores de ficha y cesta. Comprueba stock, variante, cantidad y precio de una cesta desechable, sin login ni pago; o descártalo con motivo. Un precio tachado no es el actual. Código de descuento: busca y prueba descuentos públicos sin crear cuenta ni suscribirte. El precio comprable es el efectivamente aplicado; explica condiciones pendientes aparte y separa producto y envío.
+4. `purchase_options` con `search_id` y `quote_ref` de cada opción: el importe lo toma el plugin del registro comprobado, no de lo que escribas. Presenta todos los formatos válidos; se paginan en grupos de seis. Una tarjeta basta solo para un producto exacto o una única opción comprable encontrada. Marca una recomendación y explica por qué en una o dos líneas; termina el turno sin preparar nada.
+5. Espera la elección explícita. El iPhone transmite formato y unidades. No llames a `errand_start` para elegir por la persona. Si una oferta caducó, cambió la cantidad o cambió la sesión de la tienda, revalida antes de preparar; el mismo importe nunca exige aceptarlo otra vez.
 
-En el recado (Alice lo enseña; tú solo lo preparas): 7. **Prepara** esa opción y nada más: carrito, envío estándar, sus datos. Si ya no está, cambia de precio o de variante, para y di qué cambió. 8. **Método de pago**: Alice comprueba que hay tarjeta guardada antes del total; si no, se la pide.
-9–10. **Resumen y aprobación**: en el paso de pago, `checkout_request` con lo que muestra la página (artículos con variante y cantidad, envío, dirección, email, tarjeta y **total exacto**). La persona ve el desglose y aprueba ese total con «Permitir». Sin eso no hay pago, nunca; la confirmación de Hermes no es un sí. 11. **Paga** solo si la página muestra exactamente el total aprobado; si es otro, no pagues y pide aprobación otra vez. 12. **Resultado**: `purchase_outcome` con número de pedido, total, artículos, tarjeta y entrega prevista. Un cargo pendiente o un clic no es un pedido.
+En el recado preparas exactamente lo elegido: variante, cantidad, envío estándar y datos guardados. No añadas extras ni sustituciones. Una cesta del recado no copia ni borra la personal.
 
-Si en cualquier paso falta un dato o algo falla (sin stock, sin tarjeta, sin precio en su moneda), para ahí, dilo en una línea y propone cómo seguir.
+Si falta acceso de ESTE origen, `login_request`: se pide de forma segura en el iPhone y el mismo recado continúa. Usa `login_fill` solo con un acceso del origen exacto; no pruebes credenciales de otras tiendas. Para OTP, `login_request` con kind `vault.code`. Termina el turno mientras espera. No pidas secretos por chat ni remitas a Desktop. Crear cuenta requiere que la persona lo elija antes de pedir datos de registro; prefiere compra como invitado si existe.
 
-- **Total real:** producto + envío + comisiones + impuestos o aduanas + cambio de moneda.
-- **Código de descuento:** en el checkout, si hay campo de cupón, busca «<tienda> código descuento» y en la propia tienda; prueba hasta 5 y quédate con el que más baje el total. No crees cuentas ni te suscribas por un descuento. Di qué código ahorró cuánto.
-- **Carrito limpio:** no borres lo que ya tenía; quita extras marcados de serie (seguro, garantía, donación, suscripción, financiación).
-- **Un solo pago:** justo antes de pagar, mira que no haya ya un pedido igual. Rellenar la tarjeta no es pagar: si la página del banco sigue con «Pagar» y el importe, púlsalo. Tras pulsar, llama siempre a `purchase_outcome`. Un corte o error después de pagar es «unknown»: compruébalo (confirmación, correo, «Mis pedidos») y nunca pagues otra vez mientras no se sepa. Nunca digas «no se ha cobrado» sin verlo.
+Tras añadir el formato y después del login, `purchase_check_cart` comprueba precio y unidades de la cesta del recado. Antes de rellenar tarjeta o pagar, `checkout_request` con `total_selector` del importe final visible, los artículos, unidades, envío, impuestos/comisiones, dirección, tarjeta y total EXACTO del paso final. Si falta tarjeta, `card_request`. La persona aprueba ese total con «Permitir»; la confirmación de Hermes no equivale a aprobar la compra. Paga solo si el importe sigue coincidiendo, o pide una nueva aprobación por el cambio real.
+
+Justo antes de pagar comprueba que no existe un pedido igual. Después de pulsar pagar, `purchase_outcome` con pedido, total y entrega. Un clic o cargo pendiente no prueba un pedido; un error posterior es `unknown`: comprueba confirmación/correo/pedidos y nunca pagues otra vez hasta resolverlo. Nunca afirmes que no se cobró sin comprobarlo.

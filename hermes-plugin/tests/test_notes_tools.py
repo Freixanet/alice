@@ -215,7 +215,10 @@ class NotesToolsTests(unittest.TestCase):
                 self.assertIs(tool["check_fn"], self.plugin._always)
 
     def test_the_manifest_declares_the_tools_it_provides(self):
-        import yaml
+        try:
+            import hermes_yaml as yaml
+        except ImportError:  # Hermes versions before the YAML facade
+            import yaml
 
         manifest = yaml.safe_load((PLUGIN_INIT.parent / "plugin.yaml").read_text(encoding="utf-8"))
         self.assertEqual(
@@ -227,6 +230,7 @@ class NotesToolsTests(unittest.TestCase):
                 + [t[0] for t in self.plugin.CALENDAR_TOOLS]
                 + [t[0] for t in self.plugin.WATCH_TOOLS]
                 + [t[0] for t in self.plugin.DOCUMENT_TOOLS]
+                + ["errand_start", "checkout_request", "card_request", "purchase_discover", "purchase_verify", "purchase_check_cart", "login_request", "login_fill", "purchase_options"]
             ),
         )
 

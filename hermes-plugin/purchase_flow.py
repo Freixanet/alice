@@ -1,13 +1,13 @@
 """A purchase in the chat, before anything is bought: steps 1–6 of Alice's way of buying.
 
-    1 clarify what exactly (size, model, quantity, variant) before searching
+    1 search formats without assuming a variant or asking quantity
     2 the person's context: country, currency, shops and cards used before (`context_block`)
     3 search the Shop catalog (catalog.py) and the real shop, in parallel
     4 keep only what can be bought: a real https page, in stock, priced in their currency (`verify`)
     5 show the options as product cards, with a recommendation (`purchase_options`)
     6 the person taps one («[elección:<id>]») or says which in words
 
-Up to here no cart and no payment is touched: the chat may search and read pages, but a browser
+The price service may use isolated temporary carts; no personal cart or payment is touched. A browser
 action that adds to a cart or pays is refused (`is_cart_action`), and `errand_start` for a purchase
 needs a chosen option. The errand (errands.py) then prepares that exact option — its page, variant,
 quantity and price, carried by the plugin, not retyped by the model — and nothing is paid without
@@ -22,16 +22,17 @@ import json
 import os
 import re
 import time
+import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 KEEP = 3 * 24 * 3600
-MAX_OPTIONS = 6
+MAX_OPTIONS = 1000
 CHANNELS = ("catalog", "browser")
 CURRENCY = re.compile(r"^[A-Z]{3}$")
-CHOICE = re.compile(r"^\s*(?:@[\w-]+\s+)?\[elecci[oó]n:([0-9a-f]{8}-[1-9])\]")
+CHOICE = re.compile(r"^\s*(?:@[\w-]+\s+)?\[elecci[oó]n:([0-9a-f]{8}-[1-9][0-9]*)\]")
 # A request to buy: the chat clarifies and shows options first; nothing starts on its own.
 PURCHASE_REQUEST = re.compile(
     r"\b(c[oó]mpra(me|lo|la|los|las)?|comprar|p[ií]de(me|lo|la)?|pedir|carrito|cesta|a[nñ]ade\w*\s+al\s+carrito"
@@ -41,6 +42,20 @@ CART_WORDS = re.compile(
     r"(a[nñ]adir (a la cesta|al carrito)|add to (cart|bag|basket)|agregar al carrito|a la cesta|al carrito"
     r"|comprar ahora|buy now|checkout|tramitar|finalizar (la )?compra|proceed to|ir a (la )?caja|/cart/add)", re.I)
 BROWSER_PRESSES = ("browser_exec", "browser_click", "browser_press", "browser_type")
+
+
+def _money():
+    """money.py beside this file (plugins load modules by path, not as a package)."""
+    import importlib.util
+    import sys as _sys
+
+    name = "alice_money"
+    if name not in _sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "money.py")
+        module = importlib.util.module_from_spec(spec)
+        _sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return _sys.modules[name]
 
 
 # ── Store: the options shown in each chat, and which one was chosen ────────────
@@ -81,6 +96,53 @@ def _write(path: Path, sets: List[Dict[str, Any]]) -> None:
 
 def _clean(value: Any, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
+
+
+def remember_request(home: Path, session: str, request: str, now: Optional[float] = None) -> None:
+    """Keep the person's purchase request across a gateway restart, scoped to its chat."""
+    with _locked(home) as path:
+        requests_path = path.with_name("purchase-requests.json")
+        at = now or time.time()
+        requests = [r for r in _read(requests_path)
+                    if r.get("session") != session and at - float(r.get("at") or 0) < KEEP]
+        requests.append({"session": session, "request": _clean(request, 1500), "at": at})
+        _write(requests_path, requests)
+
+
+def saved_request(home: Path, session: str, now: Optional[float] = None) -> str:
+    at = now or time.time()
+    for row in reversed(_read(_path(home).with_name("purchase-requests.json"))):
+        if row.get("session") == session and at - float(row.get("at") or 0) < KEEP:
+            return str(row.get("request") or "")
+    return ""
+
+
+def _normalized(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or "").casefold())
+    return " ".join(re.sub(r"[^\w]+", " ", "".join(c for c in text if not unicodedata.combining(c))).split())
+
+
+def requested_identity(request: str) -> Tuple[str, bool]:
+    """Named brands/stores constrain options; explicitly requested alternatives relax it.
+
+    Recognize 'marca/brand' and terminal 'de/en/from/by <name>' without a brand catalogue.
+    More complex product requirements still need the agent's page verification.
+    """
+    request = re.sub(r"[,;]?\s+(?:no|sin|not|without)\s+(?:quiero\s+)?(?:otras?\s+marcas?|alternativas?|other brands?|alternatives?)\b.*$", "", request, flags=re.I)
+    if re.search(r"otras? marcas?|alternativas?|other brands?|alternatives?", request, re.I):
+        return "", False
+    found = re.search(r'\b(marca|brand|de|en|from|by)\s+[«"\']?([\w&+.-]+(?:\s+[\w&+.-]+){0,2})[»"\']?[.!?]*\s*$', request, re.I)
+    if not found:
+        return "", False
+    return _normalized(found.group(2).rstrip(".")), found.group(1).casefold() == "en"
+
+
+def matches_identity(option: Dict[str, Any], identity: str, store_only: bool) -> bool:
+    hostname = urlsplit(str(option.get("url") or "")).hostname or ""
+    values = [option.get("merchant"), hostname.replace(".", " ")]
+    if not store_only:
+        values += [option.get("brand"), option.get("title")]
+    return any(re.search(r"(?<!\w)" + re.escape(identity) + r"(?!\w)", _normalized(v)) for v in values)
 
 
 def set_key(options: Iterable[Dict[str, Any]]) -> str:
@@ -169,6 +231,7 @@ def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]]
         url = str(option.get("url") or "").strip()
         price = _clean(option.get("price"), 40)
         money = iso_currency(option.get("currency")) or _clean(option.get("currency"), 8).upper()
+        amount = _money().parse(option.get("price"), money)
         channel = str(option.get("channel") or "browser").lower()
         problem = ""
         try:
@@ -182,7 +245,7 @@ def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]]
             problem = "sin nombre"
         elif not valid_page:
             problem = "sin página https del producto"
-        elif not any(ch.isdigit() for ch in price):
+        elif amount is None:
             problem = "sin precio"
         elif not CURRENCY.match(money):
             problem = "sin moneda (código ISO, p. ej. EUR)"
@@ -201,11 +264,15 @@ def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]]
                 image = picture(url) or ""
             except Exception:  # noqa: BLE001 — a picture is a nicety, never a reason to fail
                 image = ""
+        # The price is read once, in cents, and written back the same way for every model.
+        price_cents, read_currency = amount
+        money = money or read_currency
+        price = _money().text(price_cents, money)
         checkout_url = str(option.get("checkout_url") or "").strip()
         kept.append({
             "id": f"{key}-{index + 1}", "title": title, "merchant": _clean(option.get("merchant"), 80),
             "variant": _clean(option.get("variant"), 120), "qty": max(1, min(qty, 20)),
-            "price": price, "currency": money, "url": url, "image": image if image.startswith("https://") else "",
+            "price": price, "price_cents": price_cents, "currency": money, "url": url, "image": image if image.startswith("https://") else "",
             "channel": channel, "catalog_id": _clean(option.get("catalog_id"), 120),
             "checkout_url": checkout_url if checkout_url.startswith("https://") else "",
             "recommended": bool(option.get("recommended")), "why": _clean(option.get("why"), 200),
@@ -224,26 +291,40 @@ def _digits(value: Any) -> str:
 
 def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "", now: Optional[float] = None,
             picture: Optional[Callable[[str], str]] = None, exact_item: bool = False,
-            known_prices: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+            known_prices: Optional[Dict[str, str]] = None, request: str = "") -> Dict[str, Any]:
     """`purchase_options`: keeps the verified options for the app to draw and for the choice to find."""
     now = now or time.time()
     given = [o for o in ((args or {}).get("options") or []) if isinstance(o, dict)]
-    # One card is a recommendation without the choice: every option found is shown, the best marked.
-    # A single card only for an exact item the person linked; «only_one» with a preference as its
-    # reason («es el que más sentido tiene») hid three other formats.
-    if len(given) == 1 and not exact_item:
+    identity, store_only = requested_identity(request or saved_request(home, session, now))
+    # Generic searches offer a choice. A named brand/store or exact link may have only one match.
+    if len(given) == 1 and not exact_item and not identity:
         return {"ok": False, "error": (
             "Enseña al menos dos opciones comprables, con tu recomendada marcada: otros formatos o tamaños "
             "de la tienda, o el mismo producto en otra tienda (`catalog_search`). La persona elige; tu "
             "preferencia va en `recommended` y `why`, no quitando las demás.")}
     kept, discarded = verify((args or {}).get("options"), currency, picture)
+    if identity:
+        accepted = []
+        for option in kept:
+            index = int(option["id"].rsplit("-", 1)[1]) - 1
+            if matches_identity(given[index], identity, store_only):
+                accepted.append(option)
+            else:
+                discarded.append({"title": option["title"], "why": f"no corresponde a {identity}, que pidió la persona"})
+        kept = accepted
     # A price the basket already contradicted is not offered again: the errand saw the real one.
     adjusted = []
-    for option in kept:
+    for option in list(kept):
         real = (known_prices or {}).get(option["url"].split("?")[0].rstrip("/"))
-        if real and _digits(real) != _digits(option["price"]):
+        if real and not _money().same(real, option["price"], option["currency"]):
+            amount = _money().parse(real, option["currency"])
+            if amount is None:
+                discarded.append({"title": option["title"], "why": "el precio de la cesta no se pudo verificar en su moneda"})
+                kept.remove(option)
+                continue
             adjusted.append({"title": option["title"], "shown": option["price"], "real": real})
-            option["price"] = real
+            option["price_cents"] = amount[0]
+            option["price"] = _money().text(option["price_cents"], option["currency"])
     if not kept:
         # Kept empty for the app: its card draws nothing instead of saying the options are gone.
         key = set_key([o for o in ((args or {}).get("options") or []) if isinstance(o, dict)][:MAX_OPTIONS])
@@ -253,7 +334,8 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
                          "chosen": None, "at": now})
             _write(path, sets)
         return {"ok": False, "discarded": discarded, "error": (
-            "Ninguna opción se pudo verificar como comprable. No enseñes nada: di en una línea qué ha "
+            (f"No hay opciones válidas de {identity}; no ofrezcas otra marca o tienda sin que la persona lo pida. " if identity else "")
+            + "Ninguna opción se pudo verificar como comprable. No enseñes nada: di en una línea qué ha "
             "fallado (sin stock, sin precio en su moneda…) y propón cómo seguir (otra tienda, otra "
             "variante, otro presupuesto).")}
     key = kept[0]["id"].split("-")[0]
@@ -264,7 +346,8 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
     return {"ok": True, "set": key, "options": [{"id": o["id"], "title": o["title"], "price": o["price"]}
                                                 for o in kept],
             "discarded": discarded, "adjusted": adjusted,
-            "next": ("La persona ve las tarjetas. Termina tu turno con una o dos líneas: cuál recomiendas y "
+            "next": ((f"Respeta {identity}: las opciones de otras marcas/tiendas se han descartado; no las ofrezcas en tu respuesta. " if identity else "")
+                     + "La persona ve las tarjetas. Termina tu turno con una o dos líneas: cuál recomiendas y "
                      "por qué. No preguntes nada más ni prepares la compra hasta que elija."
                      + (" Precios corregidos al que la tienda cobra en la cesta (ya lo vio un recado): "
                         + "; ".join(f"{a['title']} {a['real']}" for a in adjusted) + ". Usa esos."
@@ -294,7 +377,7 @@ def open_options(home: Path, session: str, now: Optional[float] = None) -> bool:
                for s in _read(_path(home)))
 
 
-def choose(home: Path, session: str, option_id: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+def choose(home: Path, session: str, option_id: str, now: Optional[float] = None, qty: int = 1, commit: bool = True) -> Optional[Dict[str, Any]]:
     """Step 6: the option, when it was shown in this chat; marked as the one chosen."""
     now = now or time.time()
     key = str(option_id or "").split("-")[0]
@@ -305,8 +388,14 @@ def choose(home: Path, session: str, option_id: str, now: Optional[float] = None
         picked = next((o for o in (found or {}).get("options") or [] if o.get("id") == option_id), None)
         if picked is None:
             return None
-        found["chosen"] = option_id
-        _write(path, sets)
+        if not isinstance(qty, int) or isinstance(qty, bool) or not 1 <= qty <= 20:
+            raise ValueError("La cantidad debe estar entre 1 y 20.")
+        picked = {**picked, "qty": qty}
+        if commit:
+            found["chosen"] = option_id
+            found["phase"] = "chosen"
+            found["chosen_qty"] = qty
+            _write(path, sets)
     return picked
 
 
@@ -334,7 +423,7 @@ def is_cart_action(tool_name: str, args: Any) -> bool:
 
 def offer(chosen: Dict[str, Any]) -> Dict[str, Any]:
     """The chosen option as the errand keeps it: exactly what to buy, where and for how much."""
-    keys = ("title", "merchant", "variant", "qty", "price", "currency", "url", "checkout_url", "channel", "catalog_id")
+    keys = ("title", "merchant", "variant", "qty", "price", "currency", "url", "checkout_url", "channel", "catalog_id", "quote_ref", "verified_at", "shipping", "condition")
     return {"option_id": chosen["id"], **{k: chosen.get(k) for k in keys}}
 
 
@@ -399,6 +488,8 @@ def ask_refusal(questions: Iterable[Dict[str, Any]], looked: bool) -> Optional[s
     if any(str(q.get("field") or "") in ("country", "currency") for q in questions):
         return ("No preguntes país ni moneda: Alice ya te los ha dado en el contexto de la compra. Si falta alguno, "
                 "usa el de la tienda.")
+    if any(re.search(r"cuánt[oa]s?|cantidad|unidades|botes|how many|quantity|units", str(q.get("question") or "") + " " + str(q.get("field") or ""), re.I) for q in questions):
+        return "La cantidad se elige en el detalle del formato, inicialmente 1. No la preguntes antes de que la persona elija el producto."
     choices = [str(c) for q in questions for c in (q.get("choices") or [])]
     if choices and any(PRICED.search(c) for c in choices):
         return ("Productos con precio no se eligen en una pregunta: enséñalos como tarjetas con `purchase_options` "
@@ -429,7 +520,9 @@ OPTIONS_SCHEMA: Dict[str, Any] = {
         "starts with `errand_start` and that `option_id`."
     ),
     "parameters": {"type": "object", "properties": {
+        "search_id": {"type": "string", "description": "Inventory returned by purchase_discover; all formats must be quoted or discarded"},
         "options": {"type": "array", "maxItems": MAX_OPTIONS, "items": {"type": "object", "properties": {
+            "quote_ref": {"type": "string", "description": "Trusted purchase_verify quote id. Required; a model-written amount is not evidence."},
             "title": {"type": "string", "description": "The product's name as the shop gives it"},
             "merchant": {"type": "string", "description": "The shop, e.g. 'HSN'"},
             "variant": {"type": "string", "description": "Size, colour, capacity… exactly as it will be bought"},
@@ -446,6 +539,6 @@ OPTIONS_SCHEMA: Dict[str, Any] = {
             "checkout_url": {"type": "string", "description": "The catalog's cart link for that variant"},
             "recommended": {"type": "boolean", "description": "Your recommendation (one)"},
             "why": {"type": "string", "description": "One line: why this one"},
-        }, "required": ["title", "url", "price", "currency", "in_stock", "channel"]}},
-    }, "required": ["options"]},
+        }, "required": ["quote_ref", "title", "url", "price", "currency", "in_stock", "channel"]}},
+    }, "required": ["search_id", "options"]},
 }

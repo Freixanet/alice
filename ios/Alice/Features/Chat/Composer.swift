@@ -573,6 +573,9 @@ struct Composer: View {
                 .glassEffectID("composer", in: glass)
                 .contentShape(.rect(cornerRadius: 22))
                 .onTapGesture {}
+                // What the section button is bottom-aligned with (the field sits 11pt inside it).
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("composer.capsule")
             }
         }
     }

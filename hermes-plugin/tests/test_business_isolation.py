@@ -10,7 +10,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import yaml
+try:
+    import hermes_yaml as yaml
+except ImportError:  # Hermes versions before the YAML facade
+    import yaml
 
 sys.dont_write_bytecode = True
 PLUGIN_INIT = Path(__file__).resolve().parents[1] / "__init__.py"
@@ -154,7 +157,7 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_hook.assert_any_call("post_llm_call", self.plugin._repeat_guard)
         # And nothing is paid without the approved checkout, checked before the repeat guard.
         self.assertLess(hooks.index(self.plugin._guard_errand), hooks.index(self.plugin._guard_repeat_payment))
-        self.assertEqual(ctx.register_hook.call_count, 18)
+        self.assertEqual(ctx.register_hook.call_count, 20)
         ctx.register_hook.assert_any_call("pre_llm_call", self.plugin._errand_turn)
         ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._guard_chat_errand)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)

@@ -320,10 +320,19 @@ PROMPT = (
 )
 
 
+# The open goals' share of Hermes' 8,000 characters for every plugin section (test_prompt_budget).
+MAX_OPEN_GOALS_CHARS = 900
+
+
 def prompt_section(goals: List[Dict[str, Any]], measured: Optional[Callable] = None) -> str:
     open_goals = summary(goals, measured=measured)
     if not open_goals:
         return PROMPT
+    if len(open_goals) > MAX_OPEN_GOALS_CHARS:
+        # Past its share the whole section would be dropped with Alice's others; the rest is one
+        # `goals list` away.
+        cut = open_goals[:MAX_OPEN_GOALS_CHARS].rsplit("\n", 1)[0]
+        open_goals = cut + "\n… y más: `goals list` los da todos."
     return PROMPT + "\nObjetivos abiertos ahora:\n" + open_goals + "\n"
 
 

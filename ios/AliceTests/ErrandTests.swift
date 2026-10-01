@@ -89,6 +89,19 @@ final class ErrandTests: XCTestCase {
         XCTAssertEqual(errand.milestones, ["Abrir la ficha", "Cesta", "Datos de envío", "Pago"])
     }
 
+    func testPendingShopAccessSurvivesOldAndNewCachedArchives() throws {
+        var pending = row
+        pending["status"] = "needs_login"
+        pending["secure_request"] = ["request_id": "srq-e", "kind": "vault.save_login", "origin": "https://example.com", "site": "Tienda"]
+        let errand = try XCTUnwrap(Errand.parse(pending))
+        XCTAssertTrue(errand.status.needsPerson)
+        XCTAssertEqual(errand.accessRequest?.errandID, errand.id)
+        XCTAssertEqual(try JSONDecoder().decode(Errand.self, from: JSONEncoder().encode(errand)).access?.requestID, "srq-e")
+        var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(errand)) as! [String: Any]
+        legacy.removeValue(forKey: "access")
+        XCTAssertNil(try JSONDecoder().decode(Errand.self, from: JSONSerialization.data(withJSONObject: legacy)).access)
+    }
+
     func testElapsedReadsShort() {
         XCTAssertEqual(TimeInterval(42).errandElapsed, "42 s")
         XCTAssertEqual(TimeInterval(180).errandElapsed, "3 min")

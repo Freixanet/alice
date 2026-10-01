@@ -38,6 +38,7 @@ class ErrandHookTests(unittest.TestCase):
         self.plugin._ERRAND_TURN_IDS.clear()
         self.plugin._AUTOMATED_TURNS.clear()
         self.plugin._PURCHASE_OPEN.clear()
+        self.plugin._PURCHASE_REQUESTS.clear()
         self.plugin._LOOKED.clear()
         self.metas = {"card": Meta(kind="payment", origin="https://www.hsnstore.com", label="Visa ···4242"),
                       "login": Meta(kind="login", origin="https://www.hsnstore.com", label="HSN")}
@@ -78,6 +79,17 @@ class ErrandHookTests(unittest.TestCase):
              "url": "https://www.prozis.com/creatina", "in_stock": True, "channel": "browser",
              "image": "https://www.prozis.com/c.jpg"},
         ]})
+        prices = self.plugin._module("purchase_prices.py", "alice_purchase_prices")
+        with self.flow._locked(self.home) as path:
+            sets = self.flow._read(path)
+            quotes = {}
+            for found in sets:
+                for option in found['options']:
+                    ref = 'pq-fixture-' + option['id']
+                    option['quote_ref'] = ref
+                    quotes[ref] = {**option, 'id':ref, 'session':session, 'at':__import__('time').time()}
+            self.flow._write(path,sets)
+            prices._save(self.home,{'searches':{},'quotes':quotes})
         return [o["id"] for o in out["options"]]
 
     def call(self, handler, args, session="chat-9"):
@@ -135,7 +147,7 @@ class ErrandHookTests(unittest.TestCase):
     def test_the_checkout_tool_only_works_inside_an_errand(self):
         registered = self.tools()
         self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options",
-                                           "catalog_search", "catalog_product"})
+                                           "catalog_search", "catalog_product", "login_request", "login_fill", "purchase_check_cart", "purchase_discover", "purchase_verify"})
         handler = registered["checkout_request"]["handler"]
         with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):
             self.assertFalse(json.loads(handler({"merchant": "HSN"}))["ok"])
@@ -175,6 +187,8 @@ class ErrandHookTests(unittest.TestCase):
         # Shown but not chosen: words alone still do not start it.
         self.assertFalse(self.call(handler, {"task": "La creatina de HSN", "title": "Creatina"})["ok"])
         self.assertFalse(self.call(handler, {"option_id": first}, session="chat-other")["ok"])
+        self.assertFalse(self.call(handler, {"option_id": second})["ok"], "The model cannot choose a format")
+        self.flow.choose(self.home, "chat-9", second)
         out = self.call(handler, {"option_id": second})
         self.assertTrue(out["ok"])
         entry = self.errands.get(self.home, out["errand_id"])
@@ -219,8 +233,8 @@ class ErrandHookTests(unittest.TestCase):
                 mock.patch.dict(sys.modules, {"hermes_constants": types.SimpleNamespace(get_hermes_home=lambda: self.home)}):
             out = self.call(handler, options)
             inside = self.call(handler, options, session="errand-1")
-        self.assertEqual([o["title"] for o in out["options"]], ["A"])
-        self.assertIn("EUR", out["discarded"][0]["why"])
+        self.assertFalse(out["ok"], "Unverified model prices must not become product cards")
+        self.assertIn("formatos", out["error"])
         self.assertFalse(inside["ok"])
 
     def test_only_an_errands_browser_code_is_put_in_its_own_context(self):
@@ -229,6 +243,12 @@ class ErrandHookTests(unittest.TestCase):
                                                   session_id=entry["session_id"])
         self.assertEqual(out["action"], "modify")
         self.assertTrue(out["args"]["code"].endswith("# Abrir HSN\ngoto_url('x')"))
+        self.assertEqual(out["args"]["session"], entry["session_id"])
+        preserved = self.plugin._isolate_errand_browser(
+            "browser_exec", {"code": "# Abrir HSN", "timeout_s": 45, "session": "wrong"},
+            session_id=entry["session_id"])
+        self.assertEqual(preserved["args"]["timeout_s"], 45)
+        self.assertEqual(preserved["args"]["session"], entry["session_id"])
         self.assertIsNone(self.plugin._isolate_errand_browser("browser_exec", {"code": "x"}, session_id="chat-1"))
         self.assertIsNone(self.plugin._isolate_errand_browser("web_search", {"query": "x"},
                                                               session_id=entry["session_id"]))
@@ -300,6 +320,14 @@ class ErrandHookTests(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"hermes_constants": hermes}), \
                 mock.patch.object(self.plugin, "_conversation_key", return_value="chat-2"):
             self.assertTrue(self.call(handler, guessed, session="chat-2")["ok"])
+
+    def test_a_purchase_that_cannot_start_says_so(self):
+        first, _ = self.shown()
+        with mock.patch.object(self.plugin, "_start_purchase", side_effect=RuntimeError("gateway down")):
+            note = self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] Creatina")
+        self.assertIn("No he podido iniciar la compra", note["context"])
+        self.assertIn("sin decir que está en marcha", note["context"])
+        self.assertEqual(self.errands.listing(self.home), [])
 
     def test_the_text_only_repeat_guard_does_not_pause_an_errand(self):
         guard = mock.Mock()

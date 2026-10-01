@@ -37,8 +37,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 SESSION_PREFIX = "errand-"
-STATUSES = ("working", "needs_approval", "needs_input", "needs_card", "done", "stuck", "stopped", "denied")
-ACTIVE = ("working", "needs_approval", "needs_input", "needs_card")
+STATUSES = ("working", "needs_approval", "needs_input", "needs_card", "needs_login", "done", "stuck", "stopped", "denied")
+ACTIVE = ("working", "needs_approval", "needs_input", "needs_card", "needs_login")
 # An approved checkout pays within this window; later, the agent asks again.
 APPROVAL_TTL = 10 * 60
 # A checkout waiting longer than this is stale (shops close their checkout sessions; prices
@@ -72,6 +72,20 @@ PAY_PAGE = re.compile(
 # Browser actions that can press something on the page (Browser Use code or built-in tools).
 CLICKS = re.compile(r"(click|submit|press|dispatchMouseEvent|dispatchKeyEvent|Enter|\.requestSubmit)", re.I)
 BROWSER_ACTIONS = ("browser_exec", "browser_click", "browser_press", "browser_type")
+
+
+def _money():
+    """money.py beside this file (plugins load modules by path, not as a package)."""
+    import importlib.util
+    import sys as _sys
+
+    name = "alice_money"
+    if name not in _sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "money.py")
+        module = importlib.util.module_from_spec(spec)
+        _sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return _sys.modules[name]
 
 
 # ── Store ───────────────────────────────────────────────────────────────────────
@@ -125,9 +139,33 @@ def _clean(value: Any, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
+def model_selection(home: Path) -> Dict[str, str]:
+    """The person's fixed errand model, independent of any chat's current model.
+
+    A local override survives plugin updates. An invalid file fails visibly instead of
+    falling back to Hermes' current model. Each errand saves this selection once.
+    """
+    path = Path(home) / ".alice" / "errand-model.json"
+    if not path.exists():
+        path = Path(__file__).with_name("errand-model.json")
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError("No se pudo leer el modelo fijo de los recados.") from exc
+    if not isinstance(config, dict):
+        raise ValueError("El modelo de los recados requiere model y provider.")
+    model, provider = config.get("model"), config.get("provider")
+    if (not isinstance(model, str) or not isinstance(provider, str)
+            or not model.strip() or len(model) > 160 or re.search(r"\s", model.strip())
+            or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", provider)):
+        raise ValueError("El modelo de los recados requiere model y provider válidos.")
+    return {"model": model.strip(), "provider": provider}
+
+
 def _new_entry(task: str, *, title: str = "", site: str = "", origin_session: str = "",
                profile: str = "", ask_before_login: bool = False, now: float,
-               offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+               offer: Optional[Dict[str, Any]] = None,
+               model_route: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     task = _clean(task, 1500)
     if not task:
         raise ValueError("Say what the errand is.")
@@ -136,6 +174,7 @@ def _new_entry(task: str, *, title: str = "", site: str = "", origin_session: st
         "id": errand_id, "title": _clean(title, 80) or task[:80], "request": task, "site": shop(site),
         "status": "working", "session_id": SESSION_PREFIX + errand_id, "run_id": "", "runs": 0,
         "origin_session": _clean(origin_session, 120), "profile": _clean(profile, 64),
+        **(model_route or {}),
         "ask_before_login": bool(ask_before_login), "checkout": None, "receipt": None,
         "questions": None, "approval": None, "reason": "", "summary": "",
         "steps": [], "started_at": now, "updated_at": now,
@@ -149,7 +188,8 @@ def create(home: Path, task: str, *, title: str = "", site: str = "", origin_ses
            offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     now = now or time.time()
     entry = _new_entry(task, title=title, site=site, origin_session=origin_session,
-                       profile=profile, ask_before_login=ask_before_login, now=now, offer=offer)
+                       profile=profile, ask_before_login=ask_before_login, now=now, offer=offer,
+                       model_route=model_selection(home))
     with _locked(home) as path:
         entries = [e for e in _read(path) if e.get("status") in ACTIVE or now - float(e.get("updated_at") or 0) < KEEP]
         entries.append(entry)
@@ -356,6 +396,11 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
     items = _items(args.get("items"))
     if not site or not total or not items:
         return {"ok": False, "error": "site, items and total are required, read from the checkout page."}
+    amount = _money().parse(args.get("total"), _clean(args.get("currency"), 8))
+    if not amount or not amount[1]:
+        return {"ok": False, "error": "Read one valid total and its currency from the checkout page."}
+    total_cents, currency = amount
+    total = _money().text(total_cents, currency)
     # Step 8: a way to pay before the person sees the total. With no saved card the person is asked
     # for one first; the errand resumes with «[tarjeta lista]» and calls checkout_request again.
     labels: List[str] = []
@@ -376,7 +421,7 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
         "address": _clean(args.get("address"), 160), "email": _clean(args.get("email"), 120),
         "card_label": paying_card(home, site, [label for label in labels if label != "?"],
                                   _clean(args.get("card_label"), 60)),
-        "total": total, "currency": _clean(args.get("currency"), 8).upper(), "requested_at": now,
+        "total": total, "total_cents": total_cents, "currency": currency, "requested_at": now,
     }
     update(home, errand_id, now=now, status="needs_approval", checkout=checkout, site=entry.get("site") or site)
     return {"ok": True, "status": "needs_approval",
@@ -412,10 +457,16 @@ def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float
     checkout = (entry or {}).get("checkout")
     if entry is None or not isinstance(checkout, dict) or checkout.get("status") != "pending":
         return None
+    # Existing archives may predate cents. Validate them before granting payment approval.
+    amount = _money().parse(checkout.get("total"), checkout.get("currency") or "") if allow else None
+    if allow and (not amount or not amount[1]):
+        return None
     checkout = {**checkout, "status": "approved" if allow else "denied", "decided_at": now}
     if allow:
-        # The yes is to this total: the errand pays only if the page still shows it (approved_message).
+        # The yes is to this total, kept in cents for the code that checks the payment page.
         checkout["approved_total"] = checkout.get("total", "")
+        checkout["total_cents"], checkout["currency"] = amount
+        checkout["approved_cents"], checkout["approved_currency"] = amount
     if allow and _clean(card_label, 60):
         checkout["card_label"] = _clean(card_label, 60)
     status = "working" if allow else "denied"
@@ -436,9 +487,8 @@ def approved_message(checkout: Dict[str, Any]) -> str:
 
 
 def same_amount(a: Any, b: Any) -> bool:
-    """«27,98 €» and «EUR 27.98» are the same amount: only the digits are compared."""
-    digits = lambda value: re.sub(r"\D", "", str(value or ""))  # noqa: E731
-    return bool(digits(a)) and digits(a) == digits(b)
+    """«27,98 €» and «EUR 27.98» are the same amount; «2798 €» is not (money.same, in cents)."""
+    return _money().same(a, b)
 
 
 def approved_checkout(entry: Optional[Dict[str, Any]], site: str = "", now: Optional[float] = None) -> Optional[Dict[str, Any]]:
@@ -468,10 +518,9 @@ def is_pay_action(tool_name: str, args: Any, active_url: str = "") -> bool:
     if tool_name not in BROWSER_ACTIONS:
         return False
     text = _text_of(args)
-    if PAY_WORDS.search(text):
-        return True
     presses = tool_name in ("browser_click", "browser_press") or bool(CLICKS.search(text))
-    return presses and bool(PAY_PAGE.search(str(active_url or "")))
+    # Reading a page or searching for pay controls does not submit an order.
+    return presses and (bool(PAY_WORDS.search(text)) or bool(PAY_PAGE.search(str(active_url or ""))))
 
 
 def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = None, tool_name: str = "",
@@ -615,7 +664,13 @@ def record_receipt(home: Path, session_id: str, args: Dict[str, Any], now: Optio
     }
     # Paid something other than the total the person approved: said on the result, never smoothed over.
     approved = checkout.get("approved_total")
-    if approved and receipt["total"] and not same_amount(approved, receipt["total"]):
+    amount = _money().parse(receipt["total"], checkout.get("approved_currency") or checkout.get("currency") or "")
+    if amount:
+        receipt["total_cents"], receipt["currency"] = amount
+    expected = (checkout.get("approved_cents"), checkout.get("approved_currency"))
+    if expected[0] is None:
+        expected = _money().parse(approved, checkout.get("currency") or "")
+    if approved and receipt["total"] and (not amount or amount != expected):
         receipt["approved_total"] = approved
     update(home, entry["id"], now=now, receipt=receipt)
 
@@ -666,13 +721,18 @@ GONE = re.compile(r"(agotad|sin stock|no (est[aá] )?disponible|out of stock|una
                   r"|descatalogad|discontinued)", re.I)
 
 
-def blocked_by(said: str) -> Dict[str, Any]:
+def blocked_by(said: str, offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """What stopped the chosen option: another price (the person may accept it), the option gone, or
     anything else — which is the agent's to fix, not the person's."""
     if re.search(r"\b(precio|price|cuesta|cobra)\b", said, re.I):
         found = PRICE.search(said)
         if found:
-            return {"kind": "price", "price": " ".join(found.group(1).split())}
+            price = " ".join(found.group(1).split())
+            if offer and _money().same(price, offer.get("price"), offer.get("currency") or ""):
+                return {"kind": "other"}
+            return {"kind": "price", "price": price}
+    if re.search(r"navegador|browser|controles|controls", said, re.I):
+        return {"kind": "other"}
     if GONE.search(said):
         return {"kind": "gone"}
     return {"kind": "other"}
@@ -729,7 +789,10 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
         "otra variante u otra tienda. Empieza con la cesta solo con esta opción: si tiene otros artículos de "
         "intentos anteriores, quítalos sin preguntar. Si ya no está disponible, la variante no existe o el precio es otro, no "
         "sigas: termina tu turno con una sola línea «BLOQUEADO: precio 34,99 € — por qué» (con el precio que "
-        "cobra la tienda, si ese es el cambio) o «BLOQUEADO: qué ha cambiado». La persona decide si sigue."
+        "cobra la cesta, solo si difiere del elegido) o «BLOQUEADO: qué ha cambiado». Un precio anterior "
+        "tachado no es un cambio: selecciona la variante, añade el producto y verifica el precio en la cesta. "
+        "Si hay un error de código o una página vacía, corrígelo y vuelve a inspeccionar; no concluyas que faltan "
+        "controles a partir de una consulta fallida. La persona decide si sigue."
     )
 
 
@@ -743,7 +806,7 @@ def brief(entry: Dict[str, Any]) -> str:
     login = ("Antes de iniciar sesión, la persona quiere que se le pregunte: Hermes se lo pedirá."
              if entry.get("ask_before_login") else
              "Si la web pide iniciar sesión y hay un login guardado en el vault para ella, entra con "
-             "`browser_vault_fill` sin preguntar.")
+             "`login_fill` sin preguntar. Si no hay un acceso de ESTE origen, llama a `login_request` y termina el turno. Nunca uses accesos de otras tiendas. Para un código de verificación usa `login_request` con kind vault.code; se pide en el iPhone y el mismo recado continúa.")
     offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else None
     what = (_offer_lines(offer) + " " if offer else
             "Pregunta con `ask_person` solo lo que cambia qué se hace o cuánto cuesta, todo en una sola vez "
@@ -759,7 +822,7 @@ def brief(entry: Dict[str, Any]) -> str:
         "Decide tú lo que tenga una opción razonable (tratamiento, envío estándar, sin extras, sin cuenta "
         "nueva si se puede comprar como invitado) y usa los datos de envío guardados. Nunca preguntes por "
         "tarjetas: si una página de pago pide una y `browser_vault_list` no tiene ninguna para ella, llama "
-        "a `card_request`. Cuando el pedido esté listo en el paso de pago, NO rellenes la tarjeta ni pulses pagar: "
+        "a `card_request`. Tras añadir el formato y después de iniciar sesión, llama a `purchase_check_cart` para comprobar el precio real y las unidades de esta cesta antes de `checkout_request`. Cuando el pedido esté listo en el paso de pago, NO rellenes la tarjeta ni pulses pagar: "
         "llama a `checkout_request` con lo que muestra la página (tienda, artículos con variante, "
         "cantidad, precio e imagen, entrega, dirección, email, tarjeta y total exacto) y termina tu turno; "
         "si no hay tarjeta con la que pagar, Alice se la pide a la persona antes de enseñarle el total. "
@@ -788,7 +851,7 @@ def context_file(errand_id: str) -> Path:
 
 def context_preamble(errand_id: str) -> str:
     """Code run before the errand's own: it switches the harness to the errand's tab in the
-    errand's context, making both when missing. Never stops the errand: on failure it says so."""
+    errand's context, making both when missing. Stops the step if isolation fails."""
     path = str(context_file(errand_id))
     return f"""\
 # alice: this errand browses in its own browser context (its own cookies and basket)
@@ -801,13 +864,15 @@ def _alice_own_context():
     except Exception:
         _dpid = "0"
     try:
-        _saved = _j.load(open(_path))
+        with open(_path) as _file:
+            _saved = _j.load(_file)
     except Exception:
         _saved = {{}}
     try:
         _targets = {{t.get("targetId") for t in cdp("Target.getTargets").get("targetInfos", [])}}
         if _saved.get("daemon") == _dpid and _saved.get("target") in _targets:
-            return
+            switch_tab(_saved["target"])
+            return _saved
         _contexts = set(cdp("Target.getBrowserContexts").get("browserContextIds", []))
         _ctx = _saved.get("context") if _saved.get("context") in _contexts else None
         if _ctx is None:
@@ -816,11 +881,43 @@ def _alice_own_context():
         if _tid is None:
             _tid = cdp("Target.createTarget", url="about:blank", browserContextId=_ctx).get("targetId")
         switch_tab(_tid)
-        _j.dump({{"context": _ctx, "target": _tid, "daemon": _dpid}}, open(_path, "w"))
+        _saved = {{"context": _ctx, "target": _tid, "daemon": _dpid}}
+        with open(_path, "w") as _file:
+            _j.dump(_saved, _file)
+        return _saved
     except Exception as _e:
-        print("[alice] no se pudo aislar el navegador de este recado:", type(_e).__name__)
-_alice_own_context()
+        raise RuntimeError("No se pudo aislar el navegador del recado; no se ejecutó el paso.") from _e
+_alice_context = _alice_own_context()
 del _alice_own_context
+# alice: keep new pages and bank popups inside this errand's cookie context.
+_alice_original_switch_tab = switch_tab
+def switch_tab(target, activate=False):
+    import json as _j
+    _tid = (target.get("targetId") or target.get("target_id")) if isinstance(target, dict) else target
+    _info = cdp("Target.getTargetInfo", targetId=_tid).get("targetInfo") or {{}}
+    if _info.get("browserContextId") != _alice_context["context"]:
+        raise RuntimeError("Esa pestaña no pertenece a este recado.")
+    _result = _alice_original_switch_tab(_tid, activate=activate)
+    _alice_context["target"] = _tid
+    with open({path!r}, "w") as _file:
+        _j.dump(_alice_context, _file)
+    return _result
+def ensure_real_tab():
+    # alice: the shared helper can otherwise jump to another agent's real tab.
+    switch_tab(_alice_context["target"])
+    return current_tab()
+_alice_original_capture_screenshot = capture_screenshot
+def capture_screenshot(*args, **kwargs):
+    _path = _alice_original_capture_screenshot(*args, **kwargs)
+    print(_path)
+    return _path
+def new_tab(url="about:blank"):
+    _tid = cdp("Target.createTarget", url="about:blank",
+               browserContextId=_alice_context["context"], background=True).get("targetId")
+    switch_tab(_tid)
+    if url != "about:blank":
+        goto_url(url)
+    return _tid
 """
 
 
@@ -892,8 +989,9 @@ class Gateway:
             raw = response.read().decode("utf-8")
         return json.loads(raw) if raw else {}
 
-    def start(self, session_id: str, text: str) -> str:
-        out = self._call("POST", "/v1/runs", {"input": text, "session_id": session_id})
+    def start(self, session_id: str, text: str, *, model: str, provider: str) -> str:
+        out = self._call("POST", "/v1/runs", {"input": text, "session_id": session_id,
+                                               "model": model, "provider": provider})
         run_id = str(out.get("run_id") or out.get("id") or "")
         if not run_id:
             raise RuntimeError("the gateway did not return a run id")
@@ -1001,6 +1099,12 @@ class Engine:
         self.home = Path(home)
         self.errand_id = errand_id
         entry = get(self.home, errand_id) or {}
+        # Older errands predate the fixed model. Save the selected route before their next
+        # run, so answers, approvals and service restarts keep using that same selection.
+        if entry and not entry.get("model") and not entry.get("provider"):
+            entry = update(self.home, errand_id, **model_selection(self.home)) or entry
+        if entry and (not entry.get("model") or not entry.get("provider")):
+            raise ValueError("El recado no tiene un modelo y proveedor válidos.")
         self.gateway = gateway or Gateway(self.home, entry.get("profile") or "")
         self.judge = judge or self._judge
         self.sleep = sleep
@@ -1095,8 +1199,16 @@ class Engine:
                 update(self.home, self.errand_id, status="stuck", reason="Ha usado todos sus intentos sin terminar.")
                 return "stuck"
             try:
+                if not prepare_browser(self.home):
+                    raise RuntimeError("Browser not ready")
+            except Exception:
+                update(self.home, self.errand_id, status="stuck",
+                       reason="El navegador de Alice no pudo arrancar; no se ha ejecutado el recado. Puedes reintentarlo.")
+                return "stuck"
+            try:
                 steps_before = entry.get("steps") or []
-                run_id = self.gateway.start(entry["session_id"], text)
+                run_id = self.gateway.start(entry["session_id"], text,
+                                            model=entry["model"], provider=entry["provider"])
             except Exception as exc:  # noqa: BLE001
                 update(self.home, self.errand_id, status="stuck",
                        reason=f"No se pudo hablar con Hermes: {type(exc).__name__}.")
@@ -1109,6 +1221,22 @@ class Engine:
                 update(self.home, self.errand_id, summary=reply[:300])
             if entry.get("status") != "working":
                 return entry.get("status", "missing")
+            if entry.get("resume_message"):
+                text = entry["resume_message"]
+                update(self.home, self.errand_id, resume_message=None)
+                continue
+            try:
+                from importlib.util import spec_from_file_location, module_from_spec
+                import sys
+                name = "alice_errand_access"
+                if name not in sys.modules:
+                    spec = spec_from_file_location(name, Path(__file__).with_name("errand_access.py"))
+                    sys.modules[name] = module_from_spec(spec)
+                    spec.loader.exec_module(sys.modules[name])
+                if sys.modules[name].detect_pending(self.home,self.errand_id):
+                    return "needs_login"
+            except Exception:
+                pass  # Unreadable DOM is handled by the ordinary recovery/judge path.
             if state.get("status") == "circling":
                 update(self.home, self.errand_id, status="stuck", reason=(
                     "Lleva varios minutos en la misma página sin poder avanzar (" + str(state.get("page"))[:80]
@@ -1131,7 +1259,7 @@ class Engine:
             # and says why, instead of buying something else.
             if BLOCKED.match(reply):
                 said = _clean(BLOCKED.sub("", reply, count=1), 300) or "La opción elegida ya no se puede comprar."
-                blocked = blocked_by(said)
+                blocked = blocked_by(said, entry.get("offer"))
                 # Only what the person must decide stops the errand: another price, or the option gone.
                 # A basket with something else in it, a wrong variant, a page error is the agent's to
                 # fix: one checkout stopped on «contains another product» left over from an earlier try.
@@ -1140,7 +1268,9 @@ class Engine:
                     text = (CONTINUATION + " Eso lo resuelves tú, sin contárselo a la persona: " + said + " "
                             "Si la cesta tiene artículos que no son la opción elegida (de intentos anteriores), "
                             "quítalos; corrige variante y cantidad; recarga o vuelve a la ficha si la página falla. "
-                            "Luego sigue hasta el paso de pago y llama a `checkout_request`. Solo si la tienda ya "
+                            "El precio tachado es el precio anterior, no un cambio del precio elegido. Si el precio actual "
+                            "coincide con el elegido, añade el producto y comprueba el total en la cesta; no pidas aceptar "
+                            "el mismo precio. Luego sigue hasta el paso de pago y llama a `checkout_request`. Solo si la tienda ya "
                             "no vende esa opción o cobra otro precio, termina con «BLOQUEADO: …».")
                     continue
                 update(self.home, self.errand_id, status="stuck", reason=said, blocked=blocked)
@@ -1194,6 +1324,20 @@ _threads: Dict[str, threading.Thread] = {}
 _threads_lock = threading.Lock()
 
 
+def prepare_browser(home: Path) -> bool:
+    """Bring the managed browser up before spending a model run, also after a restart."""
+    import importlib.util
+    import sys
+
+    name = "alice_browser_live"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("browser_live.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name].ensure(home)
+
+
 def _engine_lock(home: Path, errand_id: str):
     folder = Path(home) / ".alice" / "errands"
     folder.mkdir(parents=True, exist_ok=True)
@@ -1215,7 +1359,10 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
 
     def body():
         try:
-            final = (engine_factory or Engine)(home, errand_id).run(message)
+            pending = (get(home, errand_id) or {}).get("resume_message")
+            if pending:
+                update(home, errand_id, resume_message=None)
+            final = (engine_factory or Engine)(home, errand_id).run(pending or message)
             if final in ("done", "stuck", "denied", "stopped", "missing"):
                 release_context(errand_id)
         except Exception as exc:  # noqa: BLE001 — never raised in a thread; the errand says what happened
@@ -1272,13 +1419,19 @@ def start(home: Path, args: Dict[str, Any], *, origin_session: str = "", profile
         site = str(args.get("site") or "") or str((offer or {}).get("url") or "")
         entry = _new_entry(task, title=str(args.get("title") or ""), site=site,
                            origin_session=origin_session, profile=profile,
-                           ask_before_login=bool(args.get("ask_before_login")), now=now, offer=offer)
+                           ask_before_login=bool(args.get("ask_before_login")), now=now, offer=offer,
+                           model_route=model_selection(home))
         entries = [e for e in entries if e.get("status") in ACTIVE
                    or now - float(e.get("updated_at") or 0) < KEEP]
         entries.append(entry)
         _write(path, entries)
-    open_goal(entry)
-    launch(home, entry["id"])
+    try:
+        open_goal(entry)
+        launch(home, entry["id"])
+    except Exception as exc:
+        # A retry must not rediscover a supposedly working errand that never started.
+        update(home, entry["id"], status="stuck", reason=f"No pudo iniciarse: {type(exc).__name__}.")
+        raise
     return started_result(entry)
 
 
@@ -1311,7 +1464,7 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
         return None
     if entry.get("status") not in ACTIVE:
         return entry
-    entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.")
+    entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.", secure_request=None, resume_message=None)
     try:
         _goal_manager(entry["session_id"]).clear()
     except Exception:
@@ -1326,10 +1479,12 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
     """What Alice shows: everything but the internal session wiring."""
     # The chat it came from stays: Alice finds an errand's cards by it when the chat's reply
     # never called errand_start (the plugin starts it anyway).
-    hidden = {"run_id"}
+    hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence"}
     out = {k: v for k, v in entry.items() if k not in hidden}
     if isinstance(out.get("approval"), dict):
         out["approval"] = {k: v for k, v in out["approval"].items() if k != "run_id"}
+    if isinstance(out.get("secure_request"), dict):
+        out["secure_request"] = {k: v for k, v in out["secure_request"].items() if k not in ("context", "target")}
     return out
 
 

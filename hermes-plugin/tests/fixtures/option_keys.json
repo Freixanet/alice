@@ -1,0 +1,76 @@
+{
+  "about": "Option set keys both sides must compute alike: purchase_flow.set_key (plugin) and PurchaseOptionSet.key (iOS). A change to either breaks a test here, not the chat's cards.",
+  "vectors": [
+    {
+      "name": "text price and integer quantity",
+      "options": [
+        {
+          "url": "https://www.hsnstore.com/creatina",
+          "variant": "Sin sabor",
+          "qty": 1,
+          "price": "27,98 €",
+          "currency": "EUR"
+        }
+      ],
+      "key": "debfde14"
+    },
+    {
+      "name": "number price and text quantity",
+      "options": [
+        {
+          "url": "https://c.example/p",
+          "price": 27.98,
+          "currency": "EUR",
+          "qty": "3"
+        }
+      ],
+      "key": "2c109bd1"
+    },
+    {
+      "name": "quantity 2.0 and quantity 0",
+      "options": [
+        {
+          "url": "https://a.example/p",
+          "qty": 2.0,
+          "price": "1 €",
+          "currency": "EUR"
+        },
+        {
+          "url": "https://b.example/p",
+          "qty": 0,
+          "price": "2 €",
+          "currency": "EUR"
+        }
+      ],
+      "key": "0be1b54c"
+    },
+    {
+      "name": "non-ASCII, spaces and query strings",
+      "options": [
+        {
+          "url": "https://www.hsnstore.com/creatina ",
+          "variant": "Sin sabor / Limón",
+          "qty": 2,
+          "price": "27,98 €",
+          "currency": "EUR"
+        },
+        {
+          "url": "https://b.example/p?x=1&y=ñ",
+          "price": "19.99",
+          "currency": "EUR"
+        }
+      ],
+      "key": "974d2151"
+    },
+    {
+      "name": "missing fields and a boolean quantity",
+      "options": [
+        {
+          "url": "https://d.example/p",
+          "qty": true
+        }
+      ],
+      "key": "67062568"
+    }
+  ]
+}

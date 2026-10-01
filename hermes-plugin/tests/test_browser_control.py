@@ -19,6 +19,18 @@ spec.loader.exec_module(bl)
 
 
 class BrowserControlTests(unittest.TestCase):
+    def test_browser_start_failure_blocks_instead_of_being_ignored(self):
+        plugin_spec = importlib.util.spec_from_file_location("alice_browser_failure_test", HERE / "__init__.py")
+        plugin = importlib.util.module_from_spec(plugin_spec)
+        plugin_spec.loader.exec_module(plugin)
+        fake = mock.Mock(managed=lambda root: True, control=lambda root: {"holder": "agent"})
+        with mock.patch.object(plugin, "_browser", return_value=fake), \
+                mock.patch.object(plugin, "_hermes_root", return_value=self.root):
+            fake.ensure.return_value = False
+            self.assertEqual(plugin._browser_ready(tool_name="browser_exec")["action"], "block")
+            fake.ensure.side_effect = RuntimeError("offline")
+            self.assertEqual(plugin._browser_ready(tool_name="browser_exec")["action"], "block")
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)

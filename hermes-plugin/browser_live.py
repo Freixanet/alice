@@ -3,8 +3,8 @@
 Hermes can drive any Chromium that has a DevTools (CDP) port: ``browser.cdp_url`` in a
 profile's config makes its browser tools use that browser instead of a private one (the
 same thing ``/browser connect`` does for a session). Alice turns that on for every profile
-with one switch, and keeps a Chromium running for it in the background — headless, so
-nothing opens on the Mac, with its own profile in ``<hermes home>/chrome-debug`` so what
+with one switch, and keeps Chromium running with a background window off screen,
+with its own profile in ``<hermes home>/chrome-debug`` so what
 someone signs into there stays there for the agents.
 
 The iPhone then watches that browser through the Chrome screencast (JPEG frames pushed by
@@ -127,7 +127,10 @@ def _profile_homes(root: Path) -> List[Path]:
 
 def _read_yaml(path: Path) -> Dict[str, Any]:
     try:
-        import yaml
+        try:
+            import hermes_yaml as yaml
+        except ImportError:  # Hermes versions before the YAML facade
+            import yaml
 
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except Exception:
@@ -225,9 +228,9 @@ def launch(root: Path, *, binary: Optional[str] = None, port: int = PORT, wait: 
     flags = [f"--remote-debugging-port={port}", "--remote-debugging-address=127.0.0.1",
              f"--user-data-dir={data}", "--no-first-run", "--no-default-browser-check",
              f"--window-size={WINDOW}", "--window-position=-10000,-10000", "about:blank"]
-    log = open(data / "alice-headless.log", "ab")  # noqa: SIM115 — handed to the child
-    subprocess.Popen(  # noqa: S603 — a fixed browser binary and fixed flags
-        _detached(binary) + flags, stdout=subprocess.DEVNULL, stderr=log, start_new_session=True)
+    with open(data / "alice-headless.log", "ab") as log:
+        subprocess.Popen(  # noqa: S603 — a fixed browser binary and fixed flags
+            _detached(binary) + flags, stdout=subprocess.DEVNULL, stderr=log, start_new_session=True)
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
         if reachable(url):

@@ -136,6 +136,27 @@ message is read once. At most five facts per look.
 
 ## Install
 
+### Fixed model for errands
+
+Errands use `gpt-6-luna` with Hermes' `openai-codex` provider, independently of
+the chat's selected model. The provider needs a working Codex login in Hermes.
+Each errand saves its model and provider before its first run and sends both to
+`POST /v1/runs`, including after an answer, approval or service restart. Existing
+errands without a saved selection acquire it on their next execution.
+
+The bundled default is `errand-model.json`. To change future errands without
+losing the setting during plugin updates, put the same JSON shape in
+`~/.hermes/.alice/errand-model.json`:
+
+```json
+{ "model": "gpt-6-luna", "provider": "openai-codex" }
+```
+
+An invalid setting stops startup visibly; it never falls back to the chat's
+model. An errand already created keeps its saved selection. This routing was
+checked against Hermes source commit `6b2fe92af66a95ea6a5caa309e05c5643cdd79de`;
+fixture tests do not establish current provider quota or model behavior.
+
 From a checkout of this repository, one command:
 
 ```bash

@@ -56,6 +56,29 @@ class ErrandRoutesTests(unittest.TestCase):
         self.errands.request_checkout(self.home, entry["id"], CHECKOUT)
         return self.errands.get(self.home, entry["id"])
 
+    def test_secure_request_is_recovered_with_only_public_metadata(self):
+        entry = self.errands.create(self.home, "Compra creatina")
+        pending = {"request_id":"srq-test", "kind":"vault.save_login", "origin":"https://example.com",
+                   "site":"example.com", "errand_id":entry["id"], "profile":"default",
+                   "context":"private-context", "target":"private-target"}
+        self.errands.update(self.home,entry["id"],status="needs_login",secure_request=pending)
+        # A new HTTP request after reconnect/restart reads the persisted request.
+        response = self.client.get(self.url(f"/{entry['id']}/access"))
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json()["request"]["request_id"],"srq-test")
+        self.assertNotIn("private-context",response.text)
+        self.assertNotIn("private-target",response.text)
+        self.assertIn("no-store",response.headers["cache-control"])
+
+    def test_malformed_secure_answers_never_echo_input(self):
+        secret = "FAKE-only-sensitive-input"
+        for body in ({"request_id":"x", "value":secret, "unexpected":secret},
+                     {"request_id":"x", "value":secret * 1000},
+                     {"request_id":"x", "value":secret, "account_action":secret}):
+            response = self.client.post(self.url("/fictional/access"),json=body)
+            self.assertEqual(response.status_code,400)
+            self.assertNotIn(secret,response.text)
+
     def test_the_list_hides_the_session_wiring(self):
         entry = self.errands.create(self.home, "Compra la creatina", title="Comprar Creapure",
                                     origin_session="chat-1")

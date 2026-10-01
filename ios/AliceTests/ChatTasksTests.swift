@@ -31,6 +31,17 @@ final class ChatTasksTests: XCTestCase {
         XCTAssertEqual(positions["a3"], .init(isFirst: true, isLast: true, isLatest: true, text: "De nada."))
     }
 
+    func testHiddenPurchaseChoiceHasNoRowAndStillStartsANewTask() {
+        let messages = [message("a1", .assistant, "Recomiendo Prozis"),
+                        message("choice", .user, "[elección:702bca12-1] Comprar"),
+                        message("a2", .assistant, "Preparando")]
+        XCTAssertEqual(ChatTasks.visibleMessages(messages).map(\.id), ["a1", "a2"])
+        XCTAssertEqual(ChatTasks.positions(messages)["a1"]?.isLast, true)
+        XCTAssertEqual(ChatTasks.positions(messages)["a2"]?.isFirst, true)
+        XCTAssertEqual(ChatTasks.visibleMessages(messages, hostingErrands: ["choice"]).map(\.id),
+                       ["a1", "choice", "a2"])
+    }
+
     func testARoutineReportIsAMessageOfItsOwn() {
         let messages = [
             message("a1", .assistant, "Hecho."),

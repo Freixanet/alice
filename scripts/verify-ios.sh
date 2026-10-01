@@ -57,7 +57,7 @@ xcrun simctl boot "$SIMULATOR" 2>/dev/null || true
 xcrun simctl bootstatus "$SIMULATOR" -b
 case "$MODE" in
   unit) ARGS+=(-only-testing:AliceTests) ;;
-  ui) ARGS+=(-only-testing:AliceUITests) ;;
+  ui) ARGS+=(-only-testing:"${ALICE_UI_TEST_TARGET:-AliceUITests}") ;;
 esac
 xcodebuild "${ARGS[@]}" -destination "platform=iOS Simulator,id=$SIMULATOR" \
   -destination-timeout 180 \

@@ -201,6 +201,26 @@ struct ErrandStack: View {
                 ErrandBrowserCard(errand: errand, snapshot: snapshot, onOpen: onOpenBrowser)
             }
             ErrandProgressCard(errand: errand, logoID: logoID, logo: logo)
+            if errand.status == .needsLogin, let request = errand.accessRequest {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label(errand.language.pick("Shop access", "Acceso a la tienda"), systemImage: "lock.shield")
+                        .font(.headline)
+                    Text(errand.language.pick("Sign in securely to continue this order. Nothing has been paid.",
+                                              "Inicia sesión de forma segura para continuar este pedido. No se ha pagado nada."))
+                    Button(errand.language.pick("Continue securely", "Continuar de forma segura")) {
+                        store.secureRequest = request
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(sending)
+                    Button(errand.language.pick("Later", "Ahora no")) {
+                        Task { _ = await store.answerSecureRequest(request, value: "") }
+                    }
+                    .disabled(sending)
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.card(scheme), in: .rect(cornerRadius: 24))
+            }
             if errand.status == .needsCard, !errand.cardOrigin.isEmpty {
                 PaymentCardOfferCard(offer: PaymentCardOffer(origin: errand.cardOrigin, profile: "default"),
                                      language: errand.language,

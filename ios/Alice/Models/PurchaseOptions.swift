@@ -19,6 +19,8 @@ struct PurchaseOption: Identifiable, Hashable, Sendable {
     let url: URL?
     let recommended: Bool
     let why: String
+    var shipping: String = ""
+    var condition: String = ""
 
     /// What the person's tap sends: the plugin starts this option's errand from the id.
     var choice: String {
@@ -37,7 +39,7 @@ struct PurchaseOption: Identifiable, Hashable, Sendable {
         return PurchaseOption(
             id: id, title: title, merchant: text("merchant"), variant: text("variant"),
             qty: (row["qty"] as? Int) ?? 1, price: text("price"), image: https("image"), url: https("url"),
-            recommended: (row["recommended"] as? Bool) == true, why: text("why"))
+            recommended: (row["recommended"] as? Bool) == true, why: text("why"), shipping: text("shipping"), condition: text("condition"))
     }
 }
 
@@ -62,9 +64,10 @@ struct PurchaseOptionSet: Hashable, Sendable {
         guard let data = detail?.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
+        if let result = object["result"] as? [String: Any], let key = result["set"] as? String { return key }
         let args = object["args"] as? [String: Any] ?? object
         guard let raw = args["options"] as? [Any] else { return nil }
-        let options = raw.compactMap { $0 as? [String: Any] }.prefix(6)
+        let options = raw.compactMap { $0 as? [String: Any] }.prefix(1000)
         guard !options.isEmpty else { return nil }
         return key(options: Array(options))
     }

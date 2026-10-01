@@ -6,12 +6,12 @@ import Foundation
 /// its checkout here.
 struct Errand: Identifiable, Hashable, Sendable, Codable {
     enum Status: String, Sendable, CaseIterable, Codable {
-        case working, needsApproval = "needs_approval", needsInput = "needs_input", needsCard = "needs_card"
+        case working, needsApproval = "needs_approval", needsInput = "needs_input", needsCard = "needs_card", needsLogin = "needs_login"
         case done, stuck, stopped, denied
 
         /// Still going, or waiting for the person.
         var isOpen: Bool { self == .working || needsPerson }
-        var needsPerson: Bool { self == .needsApproval || self == .needsInput || self == .needsCard }
+        var needsPerson: Bool { self == .needsApproval || self == .needsInput || self == .needsCard || self == .needsLogin }
     }
 
     struct Item: Hashable, Sendable, Codable {
@@ -69,6 +69,16 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
         var at: Date
     }
 
+    struct Access: Hashable, Sendable, Codable {
+        let requestID: String
+        let kind: String
+        let origin: String
+        let site: String
+        var request: SecureRequest? {
+            SecureRequest.parse(["request_id": requestID, "kind": kind, "origin": origin, "site": site])
+        }
+    }
+
     let id: String
     var title: String
     var request: String
@@ -95,6 +105,13 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     var blockedPrice: String? = nil
     /// The price the chosen option was shown at.
     var offerPrice: String? = nil
+    var access: Access? = nil
+
+    var accessRequest: SecureRequest? {
+        guard var request = access?.request else { return nil }
+        request.errandID = id
+        return request
+    }
 
     var language: ChatLanguage { ChatLanguage.of(request) }
     var lastStep: Step? { steps.last }
@@ -193,7 +210,11 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
             reason: text(row["reason"]), summary: text(row["summary"]), steps: steps,
             startedAt: date(row["started_at"]) ?? Date(), updatedAt: date(row["updated_at"]) ?? Date(),
             blockedPrice: (row["blocked"] as? [String: Any]).flatMap { $0["kind"] as? String == "price" ? $0["price"] as? String : nil },
-            offerPrice: (row["offer"] as? [String: Any])?["price"] as? String)
+            offerPrice: (row["offer"] as? [String: Any])?["price"] as? String,
+            access: (row["secure_request"] as? [String: Any]).flatMap { raw in
+                guard let requestID = raw["request_id"] as? String else { return nil }
+                return Access(requestID: requestID, kind: text(raw["kind"]), origin: text(raw["origin"]), site: text(raw["site"]))
+            })
     }
 }
 
@@ -274,6 +295,12 @@ extension DashboardClient {
     /// A stopped purchase goes on: the same option at the shop's price, or tried again.
     func continueErrand(_ errandID: String, acceptPrice: Bool) async throws -> Errand? {
         let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/continue", ["accept_price": acceptPrice])
+        return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
+    }
+
+    func answerErrandAccess(_ errandID: String, requestID: String, value: String, accountAction: String) async throws -> Errand? {
+        let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/access",
+                                    ["request_id": requestID, "value": value, "account_action": accountAction])
         return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
     }
 

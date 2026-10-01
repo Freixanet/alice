@@ -35,7 +35,11 @@ hermes plugins enable alice --no-allow-tool-override
 chmod -R a-w "$dest/skills"/*/SKILL.md
 skills_dir="$dest/skills"
 current=$("$python" - "$hermes_home/config.yaml" <<'PY' 2>/dev/null || true
-import sys, yaml
+import sys
+try:
+    import hermes_yaml as yaml
+except ImportError:
+    import yaml
 try:
     cfg = yaml.safe_load(open(sys.argv[1])) or {}
 except OSError:

@@ -15,7 +15,8 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         XCTAssertFalse(menuButton(in: app).exists)
 
         chooseInterface("Experimental", in: app)
-        XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
+        // «Today options» left the experimental home; its section button is what it shows now.
+        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 10))
         let draft = "Keep this draft while switching"
         let field = app.descendants(matching: .any)["composer.text"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -46,7 +47,10 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         XCTAssertEqual(button.frame.width, button.frame.height, accuracy: 1)
         XCTAssertGreaterThanOrEqual(button.frame.height, 44)
         let field = app.descendants(matching: .any)["composer.text"]
-        XCTAssertEqual(button.frame.minY, field.frame.maxY - button.frame.height, accuracy: 6)
+        // Bottom-aligned with the composer's capsule, not with the text field inside it.
+        let capsule = app.descendants(matching: .any)["composer.capsule"]
+        XCTAssertTrue(capsule.waitForExistence(timeout: 5))
+        XCTAssertEqual(button.frame.maxY, capsule.frame.maxY, accuracy: 2)
 
         field.tap()
         field.typeText(" Menu route draft")
@@ -99,8 +103,9 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
-        selectSection("Feed", in: app)
-        XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 10))
+        // The feed left the menu for a swipe from the chat (f0a915b); a section still in it opens.
+        selectSection("Notes", in: app)
+        XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 10))
         app.terminate()
 
         app.launchArguments = ["-seedLongBotChat", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental"]

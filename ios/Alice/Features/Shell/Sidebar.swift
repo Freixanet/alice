@@ -200,7 +200,7 @@ struct Sidebar: View, Equatable {
                 .accessibilityIdentifier("sidebar.agent.\(bot.name)")
             }
             row("All Agents", systemImage: "square.grid.2x2", weight: .medium, iconWidth: 30,
-                badge: store.unreadNotices(in: .agents), destination: .bots) {
+                badge: store.unreadNotices(in: .agents), destination: .bots, identifier: "Agents") {
                 store.markNoticesSeen(.agents)
                 onDismiss()
                 store.botsFromLeading = false
@@ -447,7 +447,7 @@ struct Sidebar: View, Equatable {
     private func row(
         _ title: String, systemImage: String, weight: Font.Weight = .regular,
         iconWidth: CGFloat = 22, badge: Int = 0, destination: AliceDestination.Target? = nil,
-        action: @escaping () -> Void
+        identifier: String? = nil, action: @escaping () -> Void
     ) -> some View {
         let button = Button(action: action) {
             HStack(spacing: 10) {
@@ -477,7 +477,9 @@ struct Sidebar: View, Equatable {
         }
         .buttonStyle(.pressableRow(cornerRadius: 10))
         .animation(.snappy(duration: 0.25), value: badge)
-        .accessibilityIdentifier("sidebar.row.\(title)")
+        // A stable name for tests and automation: the title can change («Agents» became «All
+        // Agents» and every navigation test lost the row).
+        .accessibilityIdentifier("sidebar.row.\(identifier ?? title)")
 
         if let destination {
             button.contextMenu {

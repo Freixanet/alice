@@ -3,6 +3,7 @@
     PYTHONPATH=~/.hermes/hermes-agent ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests
 """
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -25,6 +26,11 @@ def option(**kw):
 
 
 class VerifyTests(unittest.TestCase):
+    def test_price_currency_cannot_contradict_the_option_currency(self):
+        kept, discarded = flow.verify([option(price='$27.98', currency='EUR')])
+        self.assertFalse(kept)
+        self.assertEqual(len(discarded), 1)
+
     def test_only_what_can_be_bought_is_kept_and_the_rest_says_why(self):
         kept, discarded = flow.verify([
             option(),
@@ -59,6 +65,46 @@ class VerifyTests(unittest.TestCase):
 
 
 class StoreTests(unittest.TestCase):
+    def test_requested_brand_is_kept_without_padding_with_another_brand(self):
+        prozis = option(merchant="Prozis", title="Creatina Creapure 300 g", url="https://www.prozis.com/p")
+        other = option(merchant="Body&Fit", title="Creapure Creatine 500 g", url="https://www.bodyandfit.com/p")
+        out = flow.present(self.home, "chat-1", {"options": [prozis, other]},
+                           request="Compra la creatina creapure de prozis", now=NOW)
+        self.assertTrue(out["ok"])
+        self.assertEqual([o["title"] for o in out["options"]], ["Creatina Creapure 300 g"])
+        self.assertIn("prozis", out["discarded"][0]["why"])
+        self.assertTrue(flow.present(self.home, "chat-1", {"options": [prozis]},
+                                     request="Compra la creatina de Prozis", now=NOW)["ok"])
+        self.assertFalse(flow.present(self.home, "chat-1", {"options": [other]},
+                                      request="Compra la creatina de Prozis", now=NOW)["ok"])
+
+    def test_brand_request_survives_restart_and_is_scoped_to_the_chat(self):
+        flow.remember_request(self.home, "chat-1", "Compra zapatillas marca New Balance", now=NOW)
+        self.assertEqual(flow.saved_request(self.home, "chat-1", now=NOW+1), "Compra zapatillas marca New Balance")
+        self.assertEqual(flow.saved_request(self.home, "chat-2", now=NOW+1), "")
+        self.assertEqual(flow.saved_request(self.home, "chat-1", now=NOW+flow.KEEP+1), "")
+        nb = option(merchant="New Balance", title="Zapatillas", url="https://www.newbalance.com/p")
+        other = option(merchant="Adidas", title="Zapatillas", url="https://www.adidas.com/p")
+        out = flow.present(self.home, "chat-1", {"options": [nb, other]}, now=NOW+1)
+        self.assertEqual(len(out["options"]), 1)
+
+    def test_other_brands_are_allowed_only_when_the_request_asks_for_alternatives(self):
+        values = [option(merchant="Prozis"), option(merchant="Body&Fit", url="https://b.example/p")]
+        out = flow.present(self.home, "chat-1", {"options": values},
+                           request="Compra creatina de Prozis o alternativas de otras marcas", now=NOW)
+        self.assertEqual(len(out["options"]), 2)
+        out = flow.present(self.home, "chat-1", {"options": values},
+                           request="Compra creatina de Prozis, no otras marcas", now=NOW)
+        self.assertEqual(len(out["options"]), 1)
+
+    def test_invalid_remembered_basket_price_is_not_shown_or_allowed_to_crash(self):
+        for price in ('consultar', '$27.98'):
+            with self.subTest(price=price):
+                out = flow.present(self.home, 'chat-1', {'options': [option()]}, now=NOW,
+                                   exact_item=True, known_prices={'https://www.hsnstore.com/creatina': price})
+                self.assertFalse(out['ok'])
+                self.assertTrue(out['discarded'])
+
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())
 
@@ -201,6 +247,15 @@ class AppKeyTests(unittest.TestCase):
         ]
         self.assertEqual(flow.set_key(options), "e0cad1a7")
 
+
+class SharedKeyVectorTests(unittest.TestCase):
+    """The same fixture the iOS suite reads (PurchaseOptionsKeyTests): drift fails a test, not the cards."""
+
+    def test_every_shared_vector(self):
+        fixture = json.loads((Path(__file__).resolve().parent / "fixtures" / "option_keys.json").read_text("utf-8"))
+        self.assertGreaterEqual(len(fixture["vectors"]), 5)
+        for vector in fixture["vectors"]:
+            self.assertEqual(flow.set_key(vector["options"]), vector["key"], vector["name"])
 
 if __name__ == "__main__":
     unittest.main()

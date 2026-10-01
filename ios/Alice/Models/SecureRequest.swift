@@ -17,6 +17,7 @@ struct SecureRequest: Identifiable, Equatable, Sendable {
     /// The request's own id (`srq-…`): the answer is addressed to it.
     let id: String
     let kind: Kind
+    var errandID: String? = nil
 
     static func parse(_ payload: [String: Any]) -> SecureRequest? {
         guard let id = payload["request_id"] as? String, !id.isEmpty else { return nil }
@@ -26,9 +27,9 @@ struct SecureRequest: Identifiable, Equatable, Sendable {
         switch payload["kind"] as? String {
         case "vault.save_login":
             guard let origin = text("origin") else { return nil }
-            return SecureRequest(id: id, kind: .saveLogin(origin: origin, site: text("site") ?? origin))
+            return SecureRequest(id: id, kind: .saveLogin(origin: origin, site: text("site") ?? origin), errandID: text("errand_id"))
         case "vault.code":
-            return SecureRequest(id: id, kind: .code(site: text("site"), hint: text("hint")))
+            return SecureRequest(id: id, kind: .code(site: text("site"), hint: text("hint")), errandID: text("errand_id"))
         case "vault.unlock_prompt":
             return SecureRequest(id: id, kind: .unlock(manager: text("display_name") ?? text("backend") ?? ""))
         case "secret":

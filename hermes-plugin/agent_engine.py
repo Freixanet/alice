@@ -185,7 +185,10 @@ def _read_mapping(path: Path) -> dict:
         return {}
     text = path.read_text(encoding="utf-8")
     try:
-        import yaml
+        try:
+            import hermes_yaml as yaml
+        except ImportError:  # Hermes versions before the YAML facade
+            import yaml
         data = yaml.safe_load(text)
         return data if isinstance(data, dict) else {}
     except Exception:
@@ -213,7 +216,10 @@ def _write_mapping(path: Path, data: dict) -> None:
     except Exception:
         pass
     try:
-        import yaml
+        try:
+            import hermes_yaml as yaml
+        except ImportError:  # Hermes versions before the YAML facade
+            import yaml
         _atomic_write(path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
         return
     except Exception:

@@ -14,6 +14,14 @@ final class SecureRequestTests: XCTestCase {
                        "secure.request")
     }
 
+    func testErrandRequestHasItsOwnReplyDestination() {
+        let request = SecureRequest.parse(["request_id": "srq-e", "kind": "vault.save_login",
+                                           "origin": "https://example.com", "errand_id": "errand-e"])
+        XCTAssertEqual(request?.errandID, "errand-e")
+        let chat = SecureRequest.parse(["request_id": "srq-c", "kind": "vault.code"])
+        XCTAssertNil(chat?.errandID)
+    }
+
     func testTheLoginAnswerIsTheJSONHermesReads() throws {
         let text = SecureRequest.loginAnswer(identifier: "a@b.com", password: "p\"w")
         let object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: String]

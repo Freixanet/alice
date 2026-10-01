@@ -58,7 +58,7 @@ struct SecureRequestSheet: View {
                         .foregroundStyle(Palette.danger(scheme))
                 }
                 if failed {
-                    Text("Hermes is no longer waiting for this. Ask Alice to try again.")
+                    Text("Could not deliver the secure answer. Check the connection and try again.")
                         .font(.footnote)
                         .foregroundStyle(Palette.danger(scheme))
                 }
@@ -128,7 +128,7 @@ struct SecureRequestSheet: View {
                     .font(.title2.monospacedDigit())
                     .focused($focus, equals: .secret)
             }
-            if site != nil {
+            if site != nil && request.errandID == nil {
                 Button(usingKey ? String(localized: "Type a code instead") : String(localized: "Never ask me for codes here")) {
                     withAnimation { usingKey.toggle() }
                     focus = .secret
@@ -268,18 +268,22 @@ struct SecureRequestSheet: View {
         }
         guard !answered else { return }
         answered = true
+        failed = false
         working = true
-        let delivered = await store.answerSecureRequest(request, value: value)
+        let delivered = await store.answerSecureRequest(request, value: value, accountAction: newAccount ? "create" : "login")
         // Nothing typed stays in memory longer than it must.
         secret = ""
         identifier = ""
         working = false
-        if !delivered && !value.isEmpty { failed = true }
+        if !delivered {
+            answered = false
+            if !value.isEmpty { failed = true }
+        }
         // Declining (an empty answer) is not an outcome worth a touch.
         if !value.isEmpty { (delivered ? Haptic.success : Haptic.error).play() }
         // The vault answer is the same for both; only this says it is a new
         // account. No secret in it: the site, and what to do.
-        if delivered, !value.isEmpty, newAccount, case .saveLogin = request.kind {
+        if delivered, !value.isEmpty, newAccount, request.errandID == nil, case .saveLogin = request.kind {
             store.sendAppNote("The person has no account on \(host): create it with the email and password they just gave. Ask only for what the form needs and they have not given.")
         }
     }

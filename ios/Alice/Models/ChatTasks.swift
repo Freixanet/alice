@@ -20,6 +20,17 @@ enum ChatTasks {
         var text: String
     }
 
+    /// Card selections are saved as user turns but have no transcript row. Keep
+    /// turns that carry attachments or an errand, and keep the original turns for
+    /// task grouping so a hidden choice still separates two assistant replies.
+    static func visibleMessages(_ messages: [Message], hostingErrands: Set<String> = []) -> [Message] {
+        messages.filter { message in
+            guard message.role == .user, message.attachments.isEmpty,
+                  !hostingErrands.contains(message.id) else { return true }
+            return !AskPerson.isAnswersOnly(message.content) && PurchaseChoice.id(in: message.content) == nil
+        }
+    }
+
     static func positions(_ messages: [Message]) -> [String: Position] {
         var positions: [String: Position] = [:]
         var start = 0
