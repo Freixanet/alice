@@ -12,6 +12,11 @@ on:
         type: choice
         options: [all, ui]
         default: all
+      ios_ui_scope:
+        description: UI-only rerun scope after unchanged tests passed in the full suite
+        type: choice
+        options: [all, purchase, navigation]
+        default: all
   pull_request:
   push:
     branches: [main]
@@ -111,6 +116,8 @@ jobs:
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
       - name: Build and test native app
+        env:
+          ALICE_UI_TEST_TARGET: ${{ inputs.ios_ui_scope == 'purchase' && 'AliceUITests/PurchaseReviewTests' || inputs.ios_ui_scope == 'navigation' && 'AliceUITests/NavigationJourneyTests,AliceUITests/ExperimentalHomeMenuTests' || 'AliceUITests' }}
         run: bash scripts/verify-ios.sh "${{ inputs.ios_mode || 'all' }}"
       - uses: actions/upload-artifact@v5
         if: always()
