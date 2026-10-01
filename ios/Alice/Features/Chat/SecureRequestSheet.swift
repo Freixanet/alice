@@ -32,18 +32,22 @@ struct SecureRequestSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    HStack(spacing: 14) {
-                        Image(systemName: symbol)
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(store.accent.primary(scheme))
-                            .frame(width: 44, height: 44)
-                            .background(store.accent.primary(scheme).opacity(0.12), in: .circle)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(title).font(.headline)
-                            Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                    if textSize.isAccessibilitySize {
+                        Text(title).font(.headline)
+                    } else {
+                        HStack(spacing: 14) {
+                            Image(systemName: symbol)
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(store.accent.primary(scheme))
+                                .frame(width: 44, height: 44)
+                                .background(store.accent.primary(scheme).opacity(0.12), in: .circle)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(title).font(.headline)
+                                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
                 .listRowBackground(Color.clear)
 
@@ -56,7 +60,10 @@ struct SecureRequestSheet: View {
                 Section {
                     fields
                 } footer: {
-                    Text(footer)
+                    VStack(alignment: .leading, spacing: 8) {
+                        if textSize.isAccessibilitySize { Text(subtitle) }
+                        Text(footer)
+                    }
                 }
 
                 if let keyProblem {
