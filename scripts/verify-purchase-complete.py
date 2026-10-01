@@ -35,8 +35,8 @@ def page(url):
     return f'''<h1>Creatina Creapure</h1><span id="variant">{variant}</span>
 <div>Oferta <s>34,99 €</s> 24,49 €</div><p id="condition">24,49 € requiere suscripción, no aplicada.</p>
 <input id="qty" type="number" value="1" min="1"><button id="add" onclick="add()">Añadir al carrito</button>
-<section id="cart" hidden><div id="line">Creatina Creapure {variant} · Unidades <input id="cart-qty" readonly value="1"><b id="price">{base} €</b></div>
-<p id="shipping">Envío 3,99 €</p><input id="coupon" name="coupon"><button id="apply" onclick="apply()">Aplicar cupón</button>
+<section id="cart" hidden><div data-order-items><div id="line" data-product-url="https://example.com{path}" data-variant="{variant}">Creatina Creapure {variant} · Unidades <input id="cart-qty" readonly value="1"><b id="price">{base} €</b></div>
+</div><p id="shipping" data-order-shipping>Envío 3,99 €</p><input id="coupon" name="coupon"><button id="apply" onclick="apply()">Aplicar cupón</button>
 <button id="checkout" onclick="document.querySelector('#login').hidden=false">Continuar con el pedido</button></section>
 <form id="login" hidden onsubmit="event.preventDefault();if(this.querySelector('input[type=email]').value && this.querySelector('input[type=password]').value){{document.querySelector('#otp').hidden=false;this.hidden=true}}">
 <label>Email<input type="email" name="email" autocomplete="username"></label><label>Password<input type="password" name="password" autocomplete="current-password"></label><button>Iniciar sesión</button></form>
@@ -184,6 +184,33 @@ def main(agent_test=False):
             fake_cards=lambda:[{'handle':'fixture-card','label':'Visa ···4242','card':'Visa ···4242','origin':''}]
             # The production controller, not model-provided facts, creates the approval.
             assert controller.advance(home,entry['id'],inspect=inspect,evaluate=evaluate,saved_cards=fake_cards)
+            # Adversarial DOM changes exercise the production extraction, not mocked facts.
+            entry_now=errands.get(home,entry['id'])
+            narrow={**entry_now['cart_evidence']['recipe'],'all_lines':'#line'}
+            errands.update(home,entry['id'],cart_evidence={**entry_now['cart_evidence'],'recipe':narrow})
+            attacks=[
+                ("document.querySelector('[data-order-items]').insertAdjacentHTML('beforeend','<div id=extra>Producto extra</div>')", "document.querySelector('#extra').remove()"),
+                ("document.querySelector('[data-order-items]').insertAdjacentHTML('beforeend','<div id=extra hidden>Producto extra</div>')", "document.querySelector('#extra').remove()"),
+                ("document.querySelector('#line').dataset.productUrl+='?variant=incorrecta'", "document.querySelector('#line').dataset.productUrl=document.querySelector('#line').dataset.productUrl.split('?')[0]"),
+                ("document.querySelector('#line').dataset.variant='1300 g'", "document.querySelector('#line').dataset.variant='300 g'"),
+                ("document.querySelector('#price').style.textDecoration='line-through'", "document.querySelector('#price').style.textDecoration=''"),
+                ("document.querySelector('#shipping').removeAttribute('data-order-shipping')", "document.querySelector('#shipping').setAttribute('data-order-shipping','')"),
+                ("document.querySelector('#summary').insertAdjacentHTML('beforeend','<span id=extra data-order-total>99,99 €</span>')", "document.querySelector('#extra').remove()"),
+            ]
+            for attack,restore in attacks:
+                browser.evaluate(attack)
+                try:
+                    try:controller.review(home,entry['id'],selectors,inspect=inspect,evaluate=evaluate,saved_cards=fake_cards)
+                    except ValueError:pass
+                    else:raise AssertionError('Unsafe DOM accepted: '+attack)
+                    assert not browser.evaluate('window.fixturePaid')
+                finally:browser.evaluate(restore)
+            bad_total={**selectors,'total_selector':'#price'}
+            try:controller.review(home,entry['id'],bad_total,inspect=inspect,evaluate=evaluate,saved_cards=fake_cards)
+            except ValueError:pass
+            else:raise AssertionError('A line price became an order total')
+            controller.review(home,entry['id'],selectors,inspect=inspect,evaluate=evaluate,saved_cards=fake_cards)
+            print('PASS: complete server-owned cart inventory, exact variant URL, hidden extra rows, struck prices, shipping breakdown and conflicting totals protected',flush=True)
             approved=errands.get(home,entry['id'])['checkout']
             assert approved['total']=='73,97 €'
             assert not browser.evaluate('window.fixturePaid')

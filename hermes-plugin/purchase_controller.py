@@ -109,58 +109,24 @@ def snapshot(home, errand_id, selectors, *, inspect=None, evaluate=None):
         raise ValueError('Lee total, entrega, destino y email mediante sus controles del resumen; no valores inventados.')
     locators = {k:selectors[k] for k in required}
     locators.update({k:recipe[k] for k in ('line','price','cart_quantity')})
-    locators['all_lines'] = recipe.get('all_lines') or recipe['line']
-    script = r'''(()=>{const s=''' + json.dumps(locators) + r''';const visible=e=>e&&e.getClientRects().length>0&&getComputedStyle(e).visibility!=='hidden';
-    const text=e=>e&&String(e.matches('input,select,textarea')?e.value:e.innerText).trim();
-    const read=k=>{const e=document.querySelector(s[k]);return visible(e)?text(e):null};
-    const lines=Array.from(document.querySelectorAll(s.all_lines)).filter(visible);
-    const te=document.querySelector(s.total_selector);const label=[te?.id,te?.className,te?.getAttribute('aria-label'),te?.parentElement?.innerText?.slice(0,200)].join(' ');
-    const total_verified=!!te&&(te.matches('[data-order-total],[data-grand-total]')||!/(?:subtotal|sub-total|line-total)/i.test([te.id,te.className].join(' '))&&/(?:grand.?total|order.?total|total.{0,12}(?:pedido|order|pagar)|(?:importe|amount).{0,8}total|^total$|\btotal\b)/i.test(label));
-    const cc=Array.from(document.querySelectorAll('input[autocomplete=cc-number],input[name*=card_number],input[name*=cardNumber]')).some(visible);
-    const method=document.querySelector('[data-payment-method],input[name*=payment]:checked,input[name*=Payment]:checked');
-    const method_value=method?.getAttribute('data-payment-method')||method?.value||'';
-    const method_label=method?.getAttribute('data-payment-label')||method?.labels?.[0]?.innerText||method_value;
-    const method_kind=cc?'card':/^(?:card|credit.?card|debit.?card|bank.?card|redsys)$/i.test(method_value)?'bank_card':/^(?:cod|cash.?on.?delivery|contra.?reembolso)$/i.test(method_value)?'cod':/^(?:invoice|factura|bank.?transfer)$/i.test(method_value)?'invoice':'unknown';
-    const payment_method={kind:method_kind,label:method_label||'Tarjeta',requires_card:['card','bank_card','unknown'].includes(method_kind)};
-    return {payment_method,total_verified,total:read('total_selector'),delivery:read('delivery_selector'),address:read('address_selector'),email:read('email_selector'),
-    lines:lines.map(e=>({text:text(e),links:Array.from(e.querySelectorAll('a[href]')).map(a=>a.href)})),
-    qty:read('cart_quantity'),price:read('price'),url:location.href,
-    recurring:Array.from(document.querySelectorAll('input:checked,select option:checked')).some(e=>/suscri|subscription|recurr|mensual|monthly/i.test([e.innerText,e.name,e.id,e.value].join(' ')))};})()'''
+    order = module('purchase_order')
+    script = order.script(locators, module('purchase_prozis').supports(offer.get('url','')))
     raw = ev(context,script)
-    if not isinstance(raw, dict) or not raw.get('total_verified') or any(not raw.get(k) for k in ('total','delivery','address','email')):
+    if not isinstance(raw, dict) or any(not raw.get(k) for k in ('total','delivery','address','email')):
         raise ValueError('El resumen todavía no muestra todos los datos del pedido.')
-    if len(raw.get('lines') or []) != 1:
-        raise ValueError('Corrige los artículos sobrantes de la cesta antes de pedir aprobación.')
+    amount, line_cents, breakdown = order.validate(raw, offer, recipe, module('money'))
     line = raw['lines'][0]
-    if offer:
-        if raw.get('qty') != str(offer.get('qty',1)):
-            raise ValueError('Corrige las unidades de la cesta antes de pedir aprobación.')
-        if offer['title'].casefold() not in line['text'].casefold() or str(offer.get('variant') or '').casefold() not in line['text'].casefold():
-            raise ValueError('El resumen contiene otro producto o variante.')
-        links = line.get('links') or []
-        expected = offer['url'].split('?')[0].rstrip('/')
-        if links and expected not in {u.split('?')[0].rstrip('/') for u in links}:
-            raise ValueError('La ficha enlazada en la cesta no es el producto elegido.')
     method=raw.get('payment_method') or {}
     if method.get('kind') not in ('card','bank_card','cod','invoice'):
         raise ValueError('El resumen no identifica un método de pago compatible. Selecciónalo en la tienda antes de aprobar.')
     if raw.get('recurring'):
         raise ValueError('El pedido incluye una suscripción; requiere una oferta y aprobación específicas.')
-    amount = module('money').parse(raw['total'],offer.get('currency') or '')
-    if not amount or not amount[1]:
-        raise ValueError('El total no se puede verificar en su moneda.')
-    line_amount = module('money').parse(raw['price'], amount[1])
-    if not line_amount:
-        raise ValueError('Falta el subtotal del artículo.')
-    line_cents = line_amount[0] if recipe.get('price_basis') == 'line_total' else line_amount[0]*int(raw['qty'])
-    if amount[0] < line_cents:
-        raise ValueError('El total es inferior al subtotal comprobado.')
     facts = {'site':entry['site'], 'origin':origin, 'context':context['context'], 'target':context['target'],
              'total':module('money').text(*amount), 'total_cents':amount[0], 'currency':amount[1],
              'delivery':raw['delivery'], 'address':raw['address'], 'email':raw['email'],
              'items':[{'name':offer.get('title') or line['text'], 'variant':offer.get('variant',''),
                        'qty':int(raw['qty']), 'price':module('money').text(line_cents, amount[1])}],
-             'line_cents':line_cents, 'payment_method':method, 'requires_card':method['requires_card'], 'recurring':False}
+             'line_cents':line_cents, 'breakdown':breakdown, 'product_identity':{'url':order.product_url(offer['url']), 'variant':line['variant'], 'sku':line.get('sku','')}, 'payment_method':method, 'requires_card':method['requires_card'], 'recurring':False}
     return {'facts':facts, 'digest':digest(facts), 'selectors':dict(selectors), 'observed':raw, 'script':script}
 
 
@@ -181,7 +147,7 @@ def review(home, errand_id, args, *, inspect=None, evaluate=None, saved_cards=No
                     'snapshot':value,'requested_at':time.time()}
         old = entry.get('checkout') or {}
         if old.get('status')=='pending' and old.get('snapshot',{}).get('digest')==value['digest']:
-            checkout=old
+            checkout={**old, 'snapshot':value}
         entry.update(checkout=checkout,status='needs_approval')
         phase(entry,'review')
         return {'ok':True,'status':'needs_approval','next':'El pedido completo está esperando una única aprobación de la persona.'}

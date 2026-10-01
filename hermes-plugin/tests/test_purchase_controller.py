@@ -32,9 +32,9 @@ class AuthorityTests(unittest.TestCase):
         self.context={'context':'ctx-1','target':'tab-1','url':'https://example.com/checkout'}
         self.origin='https://example.com'
         self.inspect=lambda e:(self.origin,self.context,lambda *args:{'cookies':[]})
-        self.raw={'payment_method':{'kind':'bank_card','label':'Tarjeta','requires_card':True},'total_verified':True,'total':'23,99 €','delivery':'Envío 3,99 € · viernes',
+        self.raw={'payment_method':{'kind':'bank_card','label':'Tarjeta','requires_card':True},'inventory_verified':True,'totals':['23,99 €'],'charges':[{'kinds':['shipping'],'amount':'3,99 €'}],'total_verified':True,'total':'23,99 €','delivery':'Envío 3,99 € · viernes',
                   'address':'Calle Ejemplo 1, 08001 Barcelona','email':'fixture@example.com',
-                  'lines':[{'text':'Creatina 300 g','links':['https://example.com/p']}],
+                  'lines':[{'text':'Creatina 300 g','variant':'300 g','links':['https://example.com/p']}],
                   'qty':'2','price':'10,00 €','url':'https://example.com/checkout','recurring':False}
         self.page={'url':'https://example.com/checkout','title':'Resumen','text':'Resumen final 23,99 €','controls':[]}
         self.descriptor={'tag':'BUTTON','type':'button','text':'Pagar ahora','name':'  ','href':None,'form':'','submit':False}
@@ -91,6 +91,50 @@ class AuthorityTests(unittest.TestCase):
                 self.raw=copy.deepcopy(original);self.raw[key]=value
                 with self.assertRaises(ValueError):self.act()
                 self.assertEqual(self.executed,0)
+    def test_exact_product_reference_variant_and_explained_total_are_required(self):
+        original=copy.deepcopy(self.raw)
+        changes=[{'inventory_verified':False},
+                 {'lines':[{'text':'Creatina 300 g','variant':'1300 g','links':['https://example.com/p']}]},
+                 {'lines':[{'text':'Creatina 300 g','variant':'300 g','links':[]}]},
+                 {'lines':[{'text':'Creatina 300 g','variant':'300 g','links':['https://example.com/p?variant=other']}]},
+                 {'totals':['23,99 €','24,99 €']}, {'charges':[]},
+                 {'charges':[{'kinds':['shipping'],'amount':'5,99 €'}]}]
+        for change in changes:
+            self.raw={**copy.deepcopy(original),**change}
+            with self.subTest(change=change),self.assertRaises(ValueError):self.review()
+        self.assertEqual(self.executed,0)
+
+    def test_shipping_tax_and_discount_must_explain_the_exact_total(self):
+        self.raw.update(total='24,99 €',totals=['24,99 €'],charges=[
+            {'kinds':['shipping'],'amount':'Envío 3,99 €'},
+            {'kinds':['tax'],'amount':'IVA 2,00 €'},
+            {'kinds':['discount'],'amount':'Descuento -1,00 €'}])
+        self.review();checkout=errands.get(self.home,self.id)['checkout']
+        self.assertEqual(checkout['total_cents'],2499)
+        self.assertEqual(checkout['snapshot']['facts']['breakdown'],[
+            {'kind':'shipping','cents':399},{'kind':'tax','cents':200},{'kind':'discount','cents':100}])
+        self.raw['charges'][1]['amount']='IVA 3,00 €'
+        with self.assertRaises(ValueError):self.review()
+
+    def test_verified_sku_cannot_be_replaced_by_an_identical_label(self):
+        offer={**self.offer,'product_identity':{'url':self.offer['url'],'variant':'300 g','sku':'sku-green'}}
+        errands.update(self.home,self.id,offer=offer)
+        self.raw['lines'][0]['sku']='sku-blue'
+        with self.assertRaises(ValueError):self.review()
+        self.raw['lines'][0]['sku']='sku-green';self.review()
+
+    def test_product_url_keeps_variant_parameters_but_ignores_tracking(self):
+        order=controller.module('purchase_order')
+        self.assertEqual(order.product_url('https://example.com/p?variant=green&utm_source=chat'),order.product_url('https://example.com/p?variant=green'))
+        self.assertNotEqual(order.product_url('https://example.com/p?variant=green'),order.product_url('https://example.com/p?variant=blue'))
+
+    def test_same_order_refreshes_proof_without_changing_pending_consent_id(self):
+        self.review();old=errands.get(self.home,self.id)['checkout']
+        self.raw['lines'][0]['links']=['https://example.com/p?utm_source=new']
+        self.review();new=errands.get(self.home,self.id)['checkout']
+        self.assertEqual(old['id'],new['id'])
+        self.assertEqual(new['snapshot']['observed'],self.raw)
+
     def test_identical_order_reuses_the_pending_approval(self):
         self.review();first=errands.get(self.home,self.id)['checkout']['id']
         self.review();self.assertEqual(errands.get(self.home,self.id)['checkout']['id'],first)
