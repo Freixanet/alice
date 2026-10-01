@@ -23,8 +23,13 @@ boundaries; it is not a promise that every deployment has passed live testing.
 
 Purchases use the Alice plugin's `purchase_options`, catalog tools and errand
 checkout endpoints. The iPhone fetches accepted options by key and session, hides
-the choice token, and displays checkout facts with approval of the exact total.
-The companion web client has no equivalent product-choice card. Stock/page checks
+the choice token, and displays checkout facts with approval of the exact total
+in cents and currency. Errands persist `gpt-6-luna` / `openai-codex` independently
+of the chat model and pass both on every run; Hermes needs that provider's login.
+Managed-browser startup precedes each errand run; the YAML reader supports
+Hermes' YAML facade and older PyYAML installs. Errand tabs keep their own cookie
+context, including new tabs. Explicitly recognized brand/store requests constrain
+product options and survive gateway restarts. The companion web client has no equivalent product-choice card. Stock/page checks
 and real payment outcomes still require live validation; see [purchases](purchases.md).
 
 ## Verified contract versions

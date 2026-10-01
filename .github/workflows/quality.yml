@@ -1,6 +1,22 @@
 name: Quality
 
 on:
+  workflow_dispatch:
+    inputs:
+      backend_only:
+        description: Verify backend changes after unchanged native and browser files were checked
+        type: boolean
+        default: false
+      ios_mode:
+        description: Native checks (UI only after unit tests passed for unchanged app sources)
+        type: choice
+        options: [all, ui]
+        default: all
+      ios_ui_scope:
+        description: UI-only rerun scope after unchanged tests passed in the full suite
+        type: choice
+        options: [all, purchase, navigation]
+        default: all
   pull_request:
   push:
     branches: [main]
@@ -9,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: quality-${{ github.ref }}
+  group: quality-${{ github.ref }}-${{ inputs.backend_only && 'backend' || 'all' }}
   # A pull request's newer push replaces its older run. On main every push is
   # checked: a cancelled run there showed as a failing badge.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -68,6 +84,7 @@ jobs:
           python -m unittest discover -s mac/notifier
 
   browser:
+    if: ${{ !inputs.backend_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -87,6 +104,7 @@ jobs:
           retention-days: 14
 
   ios:
+    if: ${{ !inputs.backend_only }}
     # A GitHub-hosted Mac with Xcode 26 and its own simulators.
     runs-on: macos-26
     # A cold simulator plus the full UI suite exceeds the old build-only budget.
@@ -98,7 +116,9 @@ jobs:
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
       - name: Build and test native app
-        run: bash scripts/verify-ios.sh all
+        env:
+          ALICE_UI_TEST_TARGET: ${{ inputs.ios_ui_scope == 'purchase' && 'AliceUITests/PurchaseReviewTests' || inputs.ios_ui_scope == 'navigation' && 'AliceUITests/NavigationJourneyTests,AliceUITests/ExperimentalHomeMenuTests' || 'AliceUITests' }}
+        run: bash scripts/verify-ios.sh "${{ inputs.ios_mode || 'all' }}"
       - uses: actions/upload-artifact@v5
         if: always()
         with:

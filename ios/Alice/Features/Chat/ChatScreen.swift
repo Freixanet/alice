@@ -756,7 +756,7 @@ private struct TranscriptView: View {
                     let lastAsked = messages.lastIndex { $0.role == .user && !Reactions.isReaction($0) }
                     let answered = Set(lastAsked.map { messages[..<$0].map(\.id) } ?? [])
                         .union(given.filter { $0.value == .no }.keys)
-                    ForEach(messages) { message in
+                    ForEach(ChatTasks.visibleMessages(messages, hostingErrands: Set(errands.keys))) { message in
                         transcriptRow(
                             message, position: positions[message.id], latestBusy: latestBusy,
                             superseded: answered.contains(message.id), reaction: given[message.id],

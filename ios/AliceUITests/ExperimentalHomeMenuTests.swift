@@ -9,13 +9,14 @@ final class ExperimentalHomeMenuTests: XCTestCase {
 
     func testAvatarSwitchPreservesDraftAndSurvivesRelaunch() {
         let app = XCUIApplication()
-        app.launchArguments = ["-visualReview", "-alice.developerMode", "YES"]
+        app.launchArguments = ["-alice.developerMode", "YES"]
         app.launch()
         chooseInterface("Current", in: app)
         XCTAssertFalse(menuButton(in: app).exists)
 
         chooseInterface("Experimental", in: app)
-        XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
+        // «Today options» left the experimental home; its section button is what it shows now.
+        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 10))
         let draft = "Keep this draft while switching"
         let field = app.descendants(matching: .any)["composer.text"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -26,6 +27,9 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         capture(app, "experimental-today-keyboard")
 
         app.terminate()
+        // Use Alice's real local main chat on both launches. The visual-review
+        // fixture is seeded after launch and can replace the selected chat.
+        app.launchArguments = ["-alice.developerMode", "YES"]
         app.launch()
         XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20), "The interface choice must survive relaunch")
         XCTAssertTrue((field.value as? String)?.contains(draft) == true)
@@ -46,7 +50,10 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         XCTAssertEqual(button.frame.width, button.frame.height, accuracy: 1)
         XCTAssertGreaterThanOrEqual(button.frame.height, 44)
         let field = app.descendants(matching: .any)["composer.text"]
-        XCTAssertEqual(button.frame.minY, field.frame.maxY - button.frame.height, accuracy: 6)
+        // Bottom-aligned with the composer's capsule, not with the text field inside it.
+        let capsule = app.descendants(matching: .any)["composer.capsule"]
+        XCTAssertTrue(capsule.waitForExistence(timeout: 5))
+        XCTAssertEqual(button.frame.maxY, capsule.frame.maxY, accuracy: 2)
 
         field.tap()
         field.typeText(" Menu route draft")
@@ -61,14 +68,15 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
         XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
 
-        XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 10))
-        for name in ["Today", "Goals", "Feed", "Library", "Chat"] {
+        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 10))
+        // These are the destinations the menu currently offers; Feed is a swipe away.
+        for name in ["Notes", "Routines", "Library", "Chat"] {
             selectSection(name, in: app)
             switch name {
-            case "Goals": XCTAssertTrue(app.buttons["goals.add"].waitForExistence(timeout: 5))
-            case "Feed": XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 5))
+            case "Notes": XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 5))
+            case "Routines": XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 5))
             case "Library": XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
-            default: XCTAssertTrue(app.buttons["Today options"].waitForExistence(timeout: 5))
+            default: XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 5))
             }
             capture(app, "experimental-section-\(name.lowercased())")
         }
@@ -99,8 +107,9 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
-        selectSection("Feed", in: app)
-        XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 10))
+        // The feed left the menu for a swipe from the chat (f0a915b); a section still in it opens.
+        selectSection("Notes", in: app)
+        XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 10))
         app.terminate()
 
         app.launchArguments = ["-seedLongBotChat", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental"]
@@ -112,7 +121,10 @@ final class ExperimentalHomeMenuTests: XCTestCase {
     /// The round button itself, wherever it sits — beside the composer or
     /// alone above a destination page.
     private func menuButton(in app: XCUIApplication) -> XCUIElement {
-        app.buttons["home.experimentalMenu"]
+        // The live chat stays mounted under a destination. Its invisible
+        // composer can remain in XCTest's snapshot; operate the visible menu.
+        let matches = app.buttons.matching(identifier: "home.experimentalMenu")
+        return matches.allElementsBoundByIndex.first(where: { $0.isHittable }) ?? matches.firstMatch
     }
 
     /// Opens the button's menu and taps a section by its title.

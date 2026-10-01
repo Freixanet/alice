@@ -180,3 +180,27 @@ swiftc -swift-version 6 -parse-as-library -target x86_64-apple-macosx14.0 \
 Checks RSS parsing, dates, unsafe links, malformed feeds, interest/feedback
 ranking, source exclusion, deduplication, persistence and unreadable archive
 preservation with isolated defaults. Does not verify the rendered iPhone UI.
+
+### Purchase browser integration
+
+Run `scripts/verify-purchase-browser.py` explicitly with the installed Hermes
+Python containing `browser-harness` and Hermes' source on `PYTHONPATH`:
+
+```bash
+PYTHONPATH="$hermes_source" "$hermes_python" scripts/verify-purchase-browser.py
+```
+
+Supply the actual managed runtime paths, rather than assuming an older checkout's
+virtualenv is still used by the gateway. The check launches and closes temporary
+Chrome on an ephemeral loopback port, never 9222. It uses synthetic product pages,
+separate cookie contexts, a temporary Hermes home and the real browser tool.
+Choice, checkout, exact-total approval and receipt storage use fixtures. There
+are no model calls, vault access, real shop visits or payments. Local Chrome
+and permission to launch it are required; this is not a routine unit test.
+
+### Full purchase flow verification
+
+- Plugin: run its unittest suite in the active managed Hermes runtime. `test_purchase_evidence.py` covers inventory coverage, trusted amounts, coupon application, expiry/units/session changes, secure request replay, origin checks, OTP and cancellation.
+- Browser: `python scripts/verify-purchase-complete.py` uses an intercepted fictional shop in a temporary Chrome context on a random port; it refuses port 9222. `--agent` adds the actual GPT-6 Luna provider. Only the inference access token is read, without refreshing/writing it; the agent has no personal gateway, terminal, messaging, vault or shop tools. Test credentials remain in its temporary vault.
+- Native: generic-device build-for-testing locally; run the iOS Performance workflow with `purchase_review=true` for unit tests and light/dark/large-text simulator screenshots. Review the resulting screenshots, rather than treating compilation as visual approval.
+- Delivery: back up the installed plugin, restart gateway then dashboard, verify health, and install a higher device build. A successful fixture never proves a real order or charge.

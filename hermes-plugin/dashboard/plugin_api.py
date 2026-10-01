@@ -2677,6 +2677,48 @@ async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONRespo
     return JSONResponse({"errand": await asyncio.to_thread(decide)}, headers=_NO_STORE)
 
 
+class _SecureAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: str = Field(min_length=1, max_length=80)
+    value: str = Field(default="", max_length=8192)
+    account_action: str = Field(default="login", pattern="^(login|create)$")
+
+
+@router.get("/errands/{errand_id}/access")
+async def errand_access_get(errand_id: str) -> JSONResponse:
+    entry = await asyncio.to_thread(_errand_or_404, errand_id)
+    pending = entry.get("secure_request") if entry.get("status") == "needs_login" else None
+    access = _sibling("errand_access.py", "alice_errand_access")
+    return JSONResponse({"request": access.public(pending) if pending else None}, headers=_NO_STORE)
+
+
+@router.post("/errands/{errand_id}/access")
+async def errand_access_answer(errand_id: str, request: Request) -> JSONResponse:
+    # FastAPI's default validation error echoes invalid inputs. Validate here so
+    # even an oversized/malformed password can never enter a response or log.
+    raw = await request.body()
+    if len(raw) > 16384:
+        raise HTTPException(status_code=400, detail="Respuesta segura demasiado larga.")
+    try:
+        body = _SecureAnswer.model_validate(json.loads(raw))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Respuesta segura inválida.") from None
+    del raw
+    def answer():
+        _errand_or_404(errand_id)
+        access = _sibling("errand_access.py", "alice_errand_access")
+        try:
+            result = access.answer(_hermes_root(), errand_id, body.request_id, body.value,
+                                   account_action=body.account_action)
+        except (ValueError, KeyError):
+            # Never echo an exception from a vault/DOM operation containing submitted secrets.
+            raise HTTPException(status_code=409, detail="No se pudo guardar el acceso. Comprueba la solicitud y reintenta.") from None
+        except Exception:
+            raise HTTPException(status_code=503, detail="El acceso seguro no está disponible. Reintenta.") from None
+        return _errands_module().public(result)
+    return JSONResponse({"errand": await asyncio.to_thread(answer)}, headers=_NO_STORE)
+
+
 class _ErrandAnswers(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -2777,7 +2819,10 @@ async def errands_continue(errand_id: str, body: _ErrandGoOn) -> JSONResponse:
     """A stopped purchase goes on: the same option at the shop's new price, or tried again."""
     def go():
         module, root = _errands_module(), _hermes_root()
-        _errand_or_404(errand_id)
+        before = _errand_or_404(errand_id)
+        offer = before.get('offer') or {}
+        if offer and not offer.get('quote_ref'):
+            raise HTTPException(status_code=409, detail="Esta oferta antigua no tiene un precio comprobado. Pide a Alice que vuelva a comprobar los formatos antes de iniciar otra compra.")
         entry = module.go_on(root, errand_id, accept_price=body.accept_price)
         if entry is None:
             raise HTTPException(status_code=409, detail="Este recado ya no está parado.")

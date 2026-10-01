@@ -16,6 +16,9 @@ final class NavigationJourneyTests: XCTestCase {
         try await super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
+        // Other suites persist the experimental interface. This journey tests
+        // the current drawer, whose destinations move into Sections otherwise.
+        app.launchArguments = ["-alice.developerMode", "NO", "-alice.developer.homeInterface", "current"]
         app.launch()
     }
 
@@ -23,9 +26,10 @@ final class NavigationJourneyTests: XCTestCase {
     /// screen this app supports, which is where a list of destinations stops
     /// fitting and starts hiding things.
     private func relaunchWithLargestText() {
+        let savedArguments = app.launchArguments
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments += [
+        app.launchArguments = savedArguments + [
             "-UIPreferredContentSizeCategoryName",
             "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
         ]
@@ -61,11 +65,11 @@ final class NavigationJourneyTests: XCTestCase {
     /// from search without competing with chats for vertical space.
     func testDrawerKeepsOnlyEverydayDestinations() {
         openDrawer()
-        for title in ["Agents", "Notes", "Routines", "Projects", "Library"] {
+        for title in ["Agents", "Notes", "Routines", "Library"] {
             assertDrawerRow(title)
         }
         for title in [
-            "Files", "Channels", "Integrations (MCP)", "Skills", "Tools",
+            "Projects", "Files", "Channels", "Integrations (MCP)", "Skills", "Tools",
             "Webhooks", "Git", "System",
         ] {
             XCTAssertFalse(
@@ -101,13 +105,14 @@ final class NavigationJourneyTests: XCTestCase {
         XCTAssertTrue(leading.waitForExistence(timeout: 25))
         leading.tap()
 
-        for title in ["Agents", "Notes", "Routines", "Projects", "Library"] {
+        for title in ["Agents", "Notes", "Routines", "Library"] {
             let row = app.buttons["sidebar.row.\(title)"]
             XCTAssertTrue(
                 row.waitForExistence(timeout: 10),
                 "“\(title)” is unreachable at accessibility text sizes"
             )
         }
+        XCTAssertFalse(app.buttons["sidebar.row.Projects"].exists, "Projects was set aside from the drawer")
         // And the controls stay hittable rather than being squeezed out.
         for identifier in ["sidebar.search", "sidebar.settings", "sidebar.newChat"] {
             let control = app.buttons[identifier]
@@ -125,8 +130,10 @@ final class NavigationJourneyTests: XCTestCase {
     /// with nothing of the session left in memory. It is not evidence of
     /// remote push, which Alice does not have.
     func testTapOnANotificationLandsSomewhereActionableFromCold() throws {
+        let savedArguments = app.launchArguments
         app.terminate()
         app = XCUIApplication()
+        app.launchArguments = savedArguments
         let route = """
         {"event":"approval:req-cold","conversation":"missing-conv",        "profile":"radar-ia","session":"sess-1","request":"req-cold"}
         """

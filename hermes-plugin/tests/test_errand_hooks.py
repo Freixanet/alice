@@ -38,6 +38,7 @@ class ErrandHookTests(unittest.TestCase):
         self.plugin._ERRAND_TURN_IDS.clear()
         self.plugin._AUTOMATED_TURNS.clear()
         self.plugin._PURCHASE_OPEN.clear()
+        self.plugin._PURCHASE_REQUESTS.clear()
         self.plugin._LOOKED.clear()
         self.metas = {"card": Meta(kind="payment", origin="https://www.hsnstore.com", label="Visa ···4242"),
                       "login": Meta(kind="login", origin="https://www.hsnstore.com", label="HSN")}
@@ -68,6 +69,42 @@ class ErrandHookTests(unittest.TestCase):
         self.plugin._register_task_tools(ctx)
         return registered
 
+    def test_purchase_cannot_bypass_approval_with_execution_tools(self):
+        entry = self.errand(offer={"option_id":"chosen", "price":"34,99 €"})
+        for tool in ("terminal", "execute_code", "browser_eval", "browser_evaluate"):
+            with self.subTest(tool=tool):
+                result = self.plugin._guard_errand(tool_name=tool, args={"command":"submit order"}, session_id=entry["session_id"])
+                self.assertEqual(result["action"], "block")
+
+    def test_execution_guard_preserves_non_purchase_sessions(self):
+        entry = self.errand()
+        self.assertIsNone(self.plugin._guard_errand(tool_name="terminal", args={}, session_id=entry["session_id"]))
+        self.assertIsNone(self.plugin._guard_errand(tool_name="terminal", args={}, session_id="ordinary-chat"))
+
+    def test_purchase_browser_code_cannot_use_raw_execution_or_transport(self):
+        entry = self.errand(offer={"option_id":"chosen", "price":"34,99 €"})
+        for code in ("import requests; requests.post('https://example.com/pay')", "open('vault')",
+                     "__import__('os')", "browser._client.send('Runtime.evaluate', {})", "cdp('Network.loadNetworkResource', url='https://example.com/pay')", "js('fetch(\"/pay\",{method:\"POST\"})')"):
+            with self.subTest(code=code):
+                result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":code}, session_id=entry["session_id"])
+                self.assertEqual(result["action"], "block")
+        self.assertEqual(self.plugin._guard_errand(tool_name="browser_get_state", args={"expression":"submit()"}, session_id=entry["session_id"])["action"], "block")
+        result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":"print(page_info()); click(3)"}, session_id=entry["session_id"])
+        self.assertEqual(result["action"], "modify")
+
+    def test_resumed_purchase_protects_all_browser_outputs_and_fails_closed(self):
+        entry = self.errand(offer={'url':'https://example.com/product'})
+        self.errands.update(self.home,entry['id'],secure_answered='request-done')
+        access = self.plugin._module('errand_access.py','alice_errand_access')
+        with mock.patch.object(access,'protect_browser_secrets') as protect:
+            for name in ('browser_exec','browser_get_state','browser_screenshot'):
+                self.assertIsNone(self.plugin._guard_errand_access(name,{},session_id=entry['session_id']))
+            self.assertEqual(protect.call_count,3)
+        with mock.patch.object(access,'protect_browser_secrets',side_effect=ValueError('private failure')):
+            result = self.plugin._guard_errand_access('browser_get_state',{},session_id=entry['session_id'])
+            self.assertEqual(result['action'],'block')
+            self.assertNotIn('private failure',result['message'])
+
     def shown(self, session="chat-9"):
         """Two verified options shown in `session`; their ids."""
         out = self.flow.present(self.home, session, {"options": [
@@ -78,6 +115,17 @@ class ErrandHookTests(unittest.TestCase):
              "url": "https://www.prozis.com/creatina", "in_stock": True, "channel": "browser",
              "image": "https://www.prozis.com/c.jpg"},
         ]})
+        prices = self.plugin._module("purchase_prices.py", "alice_purchase_prices")
+        with self.flow._locked(self.home) as path:
+            sets = self.flow._read(path)
+            quotes = {}
+            for found in sets:
+                for option in found['options']:
+                    ref = 'pq-fixture-' + option['id']
+                    option['quote_ref'] = ref
+                    quotes[ref] = {**option, 'id':ref, 'session':session, 'at':__import__('time').time()}
+            self.flow._write(path,sets)
+            prices._save(self.home,{'searches':{},'quotes':quotes})
         return [o["id"] for o in out["options"]]
 
     def call(self, handler, args, session="chat-9"):
@@ -123,6 +171,33 @@ class ErrandHookTests(unittest.TestCase):
             verdict = self.plugin._guard_errand("browser_vault_fill", {"handle": "card"}, session_id=entry["session_id"])
         self.assertEqual(verdict["action"], "block")
 
+    def test_payment_guard_fails_closed_when_checking_approval_raises(self):
+        entry=self.errand()
+        with mock.patch.object(self.errands,'pay_gate',side_effect=RuntimeError('unavailable')):
+            verdict=self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id'])
+        self.assertEqual(verdict['action'],'block')
+
+    def test_an_approved_purchase_still_requires_matching_live_total(self):
+        entry=self.errand()
+        self.errands.request_checkout(self.home,entry['id'],{'merchant':'HSN','site':'hsnstore.com','items':[{'name':'Creatina'}],'total':'27,98 €'})
+        self.errands.decide_checkout(self.home,entry['id'],True)
+        self.errands.update(self.home,entry['id'],offer={'quote_ref':'pq-test'})
+        prices=self.plugin._module('purchase_prices.py','alice_purchase_prices')
+        access=self.plugin._module('errand_access.py','alice_errand_access')
+        with mock.patch.object(access,'target',return_value=('https://www.hsnstore.com',{'url':'https://www.hsnstore.com/checkout/step/payment/'},None)), mock.patch.object(prices,'payment_ready',return_value=False):
+            verdict=self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id'])
+        self.assertEqual(verdict['action'],'block')
+        with mock.patch.object(access,'target',return_value=('https://www.hsnstore.com',{'url':'https://www.hsnstore.com/checkout/step/payment/'},None)), mock.patch.object(prices,'payment_ready',return_value=True):
+            self.assertIsNone(self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id']))
+
+    def test_coordinate_payment_uses_this_errands_page_not_another_tab(self):
+        entry=self.errand()
+        self.errands.update(self.home,entry['id'],offer={'quote_ref':'pq-test'})
+        access=self.plugin._module('errand_access.py','alice_errand_access')
+        with mock.patch.object(self.plugin,'_active_url',return_value='https://other.example/home'), mock.patch.object(access,'target',return_value=('https://www.hsnstore.com',{'url':'https://www.hsnstore.com/checkout/step/payment/'},None)):
+            verdict=self.plugin._guard_errand('browser_exec',{'code':'click_at_xy(30,50)'},session_id=entry['session_id'])
+        self.assertEqual(verdict['action'],'block')
+
     def test_an_errand_step_is_the_comment_on_the_browser_code(self):
         entry = self.errand()
         self.plugin._errand_step("browser_exec", {"code": "# Abrir la ficha de la creatina\ngoto_url('x')"},
@@ -135,7 +210,7 @@ class ErrandHookTests(unittest.TestCase):
     def test_the_checkout_tool_only_works_inside_an_errand(self):
         registered = self.tools()
         self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options",
-                                           "catalog_search", "catalog_product"})
+                                           "catalog_search", "catalog_product", "login_request", "login_fill", "purchase_check_cart", "purchase_discover", "purchase_verify"})
         handler = registered["checkout_request"]["handler"]
         with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):
             self.assertFalse(json.loads(handler({"merchant": "HSN"}))["ok"])
@@ -175,6 +250,8 @@ class ErrandHookTests(unittest.TestCase):
         # Shown but not chosen: words alone still do not start it.
         self.assertFalse(self.call(handler, {"task": "La creatina de HSN", "title": "Creatina"})["ok"])
         self.assertFalse(self.call(handler, {"option_id": first}, session="chat-other")["ok"])
+        self.assertFalse(self.call(handler, {"option_id": second})["ok"], "The model cannot choose a format")
+        self.flow.choose(self.home, "chat-9", second)
         out = self.call(handler, {"option_id": second})
         self.assertTrue(out["ok"])
         entry = self.errands.get(self.home, out["errand_id"])
@@ -219,8 +296,8 @@ class ErrandHookTests(unittest.TestCase):
                 mock.patch.dict(sys.modules, {"hermes_constants": types.SimpleNamespace(get_hermes_home=lambda: self.home)}):
             out = self.call(handler, options)
             inside = self.call(handler, options, session="errand-1")
-        self.assertEqual([o["title"] for o in out["options"]], ["A"])
-        self.assertIn("EUR", out["discarded"][0]["why"])
+        self.assertFalse(out["ok"], "Unverified model prices must not become product cards")
+        self.assertIn("formatos", out["error"])
         self.assertFalse(inside["ok"])
 
     def test_only_an_errands_browser_code_is_put_in_its_own_context(self):
@@ -229,6 +306,12 @@ class ErrandHookTests(unittest.TestCase):
                                                   session_id=entry["session_id"])
         self.assertEqual(out["action"], "modify")
         self.assertTrue(out["args"]["code"].endswith("# Abrir HSN\ngoto_url('x')"))
+        self.assertEqual(out["args"]["session"], entry["session_id"])
+        preserved = self.plugin._isolate_errand_browser(
+            "browser_exec", {"code": "# Abrir HSN", "timeout_s": 45, "session": "wrong"},
+            session_id=entry["session_id"])
+        self.assertEqual(preserved["args"]["timeout_s"], 45)
+        self.assertEqual(preserved["args"]["session"], entry["session_id"])
         self.assertIsNone(self.plugin._isolate_errand_browser("browser_exec", {"code": "x"}, session_id="chat-1"))
         self.assertIsNone(self.plugin._isolate_errand_browser("web_search", {"query": "x"},
                                                               session_id=entry["session_id"]))
@@ -300,6 +383,14 @@ class ErrandHookTests(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"hermes_constants": hermes}), \
                 mock.patch.object(self.plugin, "_conversation_key", return_value="chat-2"):
             self.assertTrue(self.call(handler, guessed, session="chat-2")["ok"])
+
+    def test_a_purchase_that_cannot_start_says_so(self):
+        first, _ = self.shown()
+        with mock.patch.object(self.plugin, "_start_purchase", side_effect=RuntimeError("gateway down")):
+            note = self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] Creatina")
+        self.assertIn("No he podido iniciar la compra", note["context"])
+        self.assertIn("sin decir que está en marcha", note["context"])
+        self.assertEqual(self.errands.listing(self.home), [])
 
     def test_the_text_only_repeat_guard_does_not_pause_an_errand(self):
         guard = mock.Mock()

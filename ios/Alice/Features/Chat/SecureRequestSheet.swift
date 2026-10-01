@@ -11,6 +11,7 @@ struct SecureRequestSheet: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var textSize
     @State private var identifier = ""
     @State private var secret = ""
     @State private var working = false
@@ -31,25 +32,38 @@ struct SecureRequestSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    HStack(spacing: 14) {
-                        Image(systemName: symbol)
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(store.accent.primary(scheme))
-                            .frame(width: 44, height: 44)
-                            .background(store.accent.primary(scheme).opacity(0.12), in: .circle)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(title).font(.headline)
-                            Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                    if textSize.isAccessibilitySize {
+                        Text(title).font(.headline)
+                    } else {
+                        HStack(spacing: 14) {
+                            Image(systemName: symbol)
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(store.accent.primary(scheme))
+                                .frame(width: 44, height: 44)
+                                .background(store.accent.primary(scheme).opacity(0.12), in: .circle)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(title).font(.headline)
+                                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
                 .listRowBackground(Color.clear)
+
+                if needsIdentifier {
+                    Section {
+                        accountChoice
+                    }
+                }
 
                 Section {
                     fields
                 } footer: {
-                    Text(footer)
+                    VStack(alignment: .leading, spacing: 8) {
+                        if textSize.isAccessibilitySize { Text(subtitle) }
+                        Text(footer)
+                    }
                 }
 
                 if let keyProblem {
@@ -58,7 +72,7 @@ struct SecureRequestSheet: View {
                         .foregroundStyle(Palette.danger(scheme))
                 }
                 if failed {
-                    Text("Hermes is no longer waiting for this. Ask Alice to try again.")
+                    Text("Could not deliver the secure answer. Check the connection and try again.")
                         .font(.footnote)
                         .foregroundStyle(Palette.danger(scheme))
                 }
@@ -76,7 +90,9 @@ struct SecureRequestSheet: View {
                     }
                 }
             }
-            .onAppear { focus = needsIdentifier ? .identifier : .secret }
+            // Let the person see the account choice before the keyboard takes
+            // space away from it. Codes and single secrets can focus directly.
+            .onAppear { if !needsIdentifier { focus = .secret } }
             .onDisappear {
                 // Swiped away: "not now", so Hermes is not left waiting on it.
                 guard !answered else { return }
@@ -84,13 +100,21 @@ struct SecureRequestSheet: View {
             }
             .interactiveDismissDisabled(working)
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(textSize.isAccessibilitySize ? [.large] : [.medium, .large])
     }
 
     @ViewBuilder
-    private var fields: some View {
-        switch request.kind {
-        case .saveLogin:
+    private var accountChoice: some View {
+        if textSize.isAccessibilitySize {
+            Button { newAccount = false } label: {
+                Label("I have an account", systemImage: newAccount ? "circle" : "checkmark.circle.fill")
+            }
+            .accessibilityAddTraits(newAccount ? [] : .isSelected)
+            Button { newAccount = true } label: {
+                Label("Create one", systemImage: newAccount ? "checkmark.circle.fill" : "circle")
+            }
+            .accessibilityAddTraits(newAccount ? .isSelected : [])
+        } else {
             Picker("Account", selection: $newAccount) {
                 Text("I have an account").tag(false)
                 Text("Create one").tag(true)
@@ -98,6 +122,13 @@ struct SecureRequestSheet: View {
             .pickerStyle(.segmented)
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
+        }
+    }
+
+    @ViewBuilder
+    private var fields: some View {
+        switch request.kind {
+        case .saveLogin:
             TextField(newAccount ? LocalizedStringKey("Email for the new account") : LocalizedStringKey("Email or username"), text: $identifier)
                 .textContentType(.username)
                 .keyboardType(.emailAddress)
@@ -128,7 +159,7 @@ struct SecureRequestSheet: View {
                     .font(.title2.monospacedDigit())
                     .focused($focus, equals: .secret)
             }
-            if site != nil {
+            if site != nil && request.errandID == nil {
                 Button(usingKey ? String(localized: "Type a code instead") : String(localized: "Never ask me for codes here")) {
                     withAnimation { usingKey.toggle() }
                     focus = .secret
@@ -268,18 +299,22 @@ struct SecureRequestSheet: View {
         }
         guard !answered else { return }
         answered = true
+        failed = false
         working = true
-        let delivered = await store.answerSecureRequest(request, value: value)
+        let delivered = await store.answerSecureRequest(request, value: value, accountAction: newAccount ? "create" : "login")
         // Nothing typed stays in memory longer than it must.
         secret = ""
         identifier = ""
         working = false
-        if !delivered && !value.isEmpty { failed = true }
+        if !delivered {
+            answered = false
+            if !value.isEmpty { failed = true }
+        }
         // Declining (an empty answer) is not an outcome worth a touch.
         if !value.isEmpty { (delivered ? Haptic.success : Haptic.error).play() }
         // The vault answer is the same for both; only this says it is a new
         // account. No secret in it: the site, and what to do.
-        if delivered, !value.isEmpty, newAccount, case .saveLogin = request.kind {
+        if delivered, !value.isEmpty, newAccount, request.errandID == nil, case .saveLogin = request.kind {
             store.sendAppNote("The person has no account on \(host): create it with the email and password they just gave. Ask only for what the form needs and they have not given.")
         }
     }

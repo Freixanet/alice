@@ -141,6 +141,7 @@ extension Errand.Status {
         case .working: language.pick("Working", "Trabajando")
         case .needsApproval: language.pick("Needs approval", "Necesita tu aprobación")
         case .needsInput: language.pick("Waiting for your answer", "Espera tu respuesta")
+        case .needsLogin: language.pick("Needs shop access", "Necesita acceso a la tienda")
         case .needsCard: language.pick("Needs a card", "Necesita una tarjeta")
         case .done: language.pick("Completed", "Completado")
         case .stuck: language.pick("Stuck", "Atascado")
@@ -151,7 +152,7 @@ extension Errand.Status {
 
     func tint(_ scheme: ColorScheme) -> Color? {
         switch self {
-        case .needsApproval, .needsInput, .needsCard: Palette.warning(scheme)
+        case .needsApproval, .needsInput, .needsCard, .needsLogin: Palette.warning(scheme)
         case .done: Palette.success(scheme)
         case .stuck: Palette.danger(scheme)
         case .working, .stopped, .denied: nil
@@ -367,7 +368,7 @@ struct ErrandProgressCard: View {
             ProgressView()
         case .done:
             Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(store.accent.control(scheme))
-        case .needsApproval, .needsInput, .needsCard:
+        case .needsApproval, .needsInput, .needsCard, .needsLogin:
             Image(systemName: "hourglass").font(.title3).foregroundStyle(Palette.warning(scheme))
         case .stuck:
             Image(systemName: "exclamationmark.triangle.fill").font(.title3).foregroundStyle(Palette.danger(scheme))
@@ -391,6 +392,7 @@ struct ErrandProgressCard: View {
                                                 : errand.summary.nonEmpty(or: language.pick("Done", "Hecho"))
         case .needsApproval: return language.pick("Waiting for your approval", "Esperando tu aprobación")
         case .needsInput: return language.pick("Waiting for your answer", "Esperando tu respuesta")
+        case .needsLogin: return language.pick("Waiting for secure shop access", "Esperando acceso seguro a la tienda")
         case .needsCard: return language.pick("Waiting for a card to pay with", "Esperando una tarjeta para pagar")
         case .stuck: return errand.reason.nonEmpty(or: language.pick("It got stuck", "Se ha atascado"))
         case .stopped: return language.pick("The errand was stopped", "El recado se ha detenido")
@@ -978,7 +980,11 @@ struct PurchaseProductSheet: View {
     var language: ChatLanguage = .english
     var options: [String] = []
     let onBuy: () -> Void
+    var onBuyQuantity: ((Int) -> Void)? = nil
+    var shipping: String = ""
+    var condition: String = ""
 
+    @State private var quantity = 1
     @State private var chosen = 0
     /// The sheet is as tall as what it holds: at full height, half the screen was empty under the buttons.
     @State private var contentHeight: CGFloat = 620
@@ -1010,10 +1016,20 @@ struct PurchaseProductSheet: View {
                                 .strikethrough().foregroundStyle(.secondary)
                         }
                     }
+                    if !shipping.isEmpty {
+                        Text(language.pick("Shipping: \(shipping)", "Envío: \(shipping)"))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if !condition.isEmpty { Text(condition).font(.footnote).foregroundStyle(.secondary) }
                     if !options.isEmpty { optionPicker.padding(.top, 10) }
+                    if onBuyQuantity != nil {
+                        Stepper(language.pick("Units: \(quantity)", "Unidades: \(quantity)"), value: $quantity, in: 1...20)
+                            .accessibilityIdentifier("purchase.quantity")
+                            .padding(.top, 12)
+                    }
                     PurchaseCapsuleButton(title: language.pick("Buy with Alice", "Comprar con Alice"), prominent: true) {
                         dismiss()
-                        onBuy()
+                        if let onBuyQuantity { onBuyQuantity(quantity) } else { onBuy() }
                     }
                     .padding(.top, 10)
                     PurchaseCapsuleButton(title: language.pick("Visit website", "Visitar la web")) { dismiss() }

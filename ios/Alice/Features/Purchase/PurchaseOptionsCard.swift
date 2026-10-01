@@ -16,6 +16,7 @@ struct PurchaseOptionsCard: View {
     var replyProfile: String? = nil
     /// The walkthrough answers here instead of sending a message.
     var onChoose: ((PurchaseOption) -> Void)? = nil
+    var onChooseQuantity: ((PurchaseOption, Int) -> Void)? = nil
     /// The set to draw when there is no call to read it from (a stopped purchase's «Ver otras opciones»).
     var key: String? = nil
     /// Offered again after the chosen option could not be bought: that one is left out and the
@@ -24,14 +25,17 @@ struct PurchaseOptionsCard: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var loaded: PurchaseOptionSet?
     @State private var state = LoadState.loading
     @State private var open: PurchaseOption?
     @State private var submitted: String?
+    @State private var page = 0
 
     private enum LoadState: Equatable { case loading, shown, gone, failed(String) }
 
     private var set: PurchaseOptionSet? { preview ?? loaded }
+    private var cardWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 320 : 176 }
 
     var body: some View {
         Group {
@@ -64,14 +68,14 @@ struct PurchaseOptionsCard: View {
         .sheet(item: $open) { option in
             PurchaseProductSheet(image: option.image, seller: option.merchant, title: option.title,
                                  price: option.price, oldPrice: nil, language: language,
-                                 options: option.variant.isEmpty ? [] : [option.variant]) {
+                                 options: option.variant.isEmpty ? [] : [option.variant], onBuy: {}, onBuyQuantity: { quantity in
                 open = nil
-                if let onChoose { onChoose(option) } else {
+                if let onChooseQuantity { onChooseQuantity(option, quantity) } else if let onChoose { onChoose(option) } else {
                     guard store.isConnected, !store.isSending, submitted == nil else { return }
                     submitted = option.id
-                    store.sendQuickReply(option.choice, replyProfile: replyProfile, followsLatestAgent: false)
+                    store.sendQuickReply(option.choice + " [cantidad:\(quantity)]", replyProfile: replyProfile, followsLatestAgent: false)
                 }
-            }
+            }, shipping: option.shipping, condition: option.condition)
         }
     }
 
@@ -89,7 +93,7 @@ struct PurchaseOptionsCard: View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 12) {
-                    ForEach(set.options.filter { $0.id != reopenExcluding }) { option in
+                    ForEach(Array(set.options.filter { $0.id != reopenExcluding }.dropFirst(page * 6).prefix(6))) { option in
                         card(option, chosen: reopenExcluding == nil ? (set.chosen ?? submitted) : submitted)
                     }
                 }
@@ -98,6 +102,22 @@ struct PurchaseOptionsCard: View {
             }
             .scrollTargetBehavior(.viewAligned)
             .scrollIndicators(.hidden)
+            if set.options.count > 6 {
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        previousPage
+                        Spacer()
+                        pageNumber(set)
+                        Spacer()
+                        nextPage(set)
+                    }
+                    VStack(spacing: 8) {
+                        pageNumber(set)
+                        previousPage
+                        nextPage(set)
+                    }
+                }
+            }
             if set.chosen == nil, submitted == nil, let best = set.options.first(where: \.recommended), !best.why.isEmpty {
                 Label(best.why, systemImage: "star.fill")
                     .font(.footnote)
@@ -109,6 +129,21 @@ struct PurchaseOptionsCard: View {
         .accessibilityLabel(Text(language.pick("Options to buy", "Opciones para comprar")))
     }
 
+    private var previousPage: some View {
+        Button(language.pick("Previous", "Anterior")) { page -= 1 }.disabled(page == 0)
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
+    private func nextPage(_ set: PurchaseOptionSet) -> some View {
+        Button(language.pick("Next", "Siguiente")) { page += 1 }.disabled((page + 1) * 6 >= set.options.count)
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
+    private func pageNumber(_ set: PurchaseOptionSet) -> some View {
+        Text("\(page + 1) / \((set.options.count + 5) / 6)").font(.caption)
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
     private func card(_ option: PurchaseOption, chosen: String?) -> some View {
         let picked = chosen == option.id
         let decided = chosen != nil
@@ -117,7 +152,7 @@ struct PurchaseOptionsCard: View {
                 ZStack(alignment: .topLeading) {
                     CardImage(image: option.image, page: option.url, symbol: "bag", fits: true)
                         .background(Color.white)
-                        .frame(width: 176, height: 150)
+                        .frame(width: cardWidth, height: 150)
                         .clipped()
                     if picked {
                         ComponentPill(text: language.pick("Chosen", "Elegida"), tint: Palette.success(scheme)).padding(8)
@@ -127,15 +162,17 @@ struct PurchaseOptionsCard: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(option.title).font(.subheadline.weight(.medium)).lineLimit(2)
+                    Text(option.title).font(.subheadline.weight(.medium)).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
                     Text([option.merchant, option.variant, option.qty > 1 ? "× \(option.qty)" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(option.price.pricesKeptTogether).font(.subheadline.weight(.semibold).monospacedDigit())
                         .padding(.top, 2)
                 }
                 .padding(12)
-                .frame(width: 176, alignment: .leading)
+                .frame(width: cardWidth, alignment: .leading)
             }
             .background(Palette.card(scheme))
             .clipShape(.rect(cornerRadius: 20))
@@ -148,7 +185,7 @@ struct PurchaseOptionsCard: View {
             .opacity(decided && !picked ? 0.5 : 1)
         }
         .buttonStyle(PressableCardStyle())
-        .disabled(decided || (onChoose == nil && (!store.isConnected || store.isSending)))
+        .disabled(decided || (onChoose == nil && onChooseQuantity == nil && (!store.isConnected || store.isSending)))
         .accessibilityLabel(Text("\(option.title), \(option.merchant), \(option.price)"))
         .accessibilityHint(decided ? "" : language.pick("Opens the product to buy it with Alice.",
                                                          "Abre el producto para comprarlo con Alice."))

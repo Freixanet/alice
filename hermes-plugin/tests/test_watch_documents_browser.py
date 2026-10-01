@@ -234,7 +234,10 @@ class BrowserSwitchTests(unittest.TestCase):
         self.temp.cleanup()
 
     def set_cdp(self, home, value):
-        import yaml
+        try:
+            import hermes_yaml as yaml
+        except ImportError:  # Hermes versions before the YAML facade
+            import yaml
         path = home / "config.yaml"
         config = yaml.safe_load(path.read_text()) or {}
         previous = (config.get("browser") or {}).get("cdp_url")

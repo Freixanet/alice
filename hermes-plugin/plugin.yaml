@@ -28,8 +28,18 @@ provides_tools:
   - pdf_form_read
   - pdf_form_fill
   - spending_summary
+  - purchase_discover
+  - purchase_verify
+  - purchase_options
+  - purchase_check_cart
+  - login_request
+  - login_fill
+  - errand_start
+  - checkout_request
+  - card_request
 provides_hooks:
   - pre_tool_call
   - post_tool_call
+  - transform_tool_result
 author: Freixanet
 kind: standalone

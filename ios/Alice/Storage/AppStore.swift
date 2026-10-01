@@ -6730,11 +6730,17 @@ final class AppStore {
 
     /// Sends what the person typed straight to Hermes; `""` declines. The value
     /// is never kept, logged or put in a message.
-    func answerSecureRequest(_ request: SecureRequest, value: String) async -> Bool {
-        defer { if secureRequest?.id == request.id { secureRequest = nil } }
-        guard let source = await botChatSource() else { return false }
+    func answerSecureRequest(_ request: SecureRequest, value: String, accountAction: String = "login") async -> Bool {
         do {
+            if let errandID = request.errandID {
+                _ = try await dashboard.answerErrandAccess(errandID, requestID: request.id, value: value, accountAction: accountAction)
+                if secureRequest?.id == request.id { secureRequest = nil }
+                await errandBoard.refresh()
+                return true
+            }
+            guard let source = await botChatSource() else { return false }
             try await source.answerSecureRequest(request.id, value: value)
+            if secureRequest?.id == request.id { secureRequest = nil }
             return true
         } catch {
             return false

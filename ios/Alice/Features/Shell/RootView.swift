@@ -38,6 +38,18 @@ struct RootView: View {
     private let drawerWidth: CGFloat = 300
 
     var body: some View {
+        Group {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-purchaseReview") {
+                PurchaseReviewScreen()
+            } else { appBody }
+            #else
+            appBody
+            #endif
+        }
+    }
+
+    private var appBody: some View {
         // Reads the window's insets before they are given up below, so the
         // drawer can be handed them back. The conversation does not need this:
         // its `NavigationStack` takes its own insets from the window.
