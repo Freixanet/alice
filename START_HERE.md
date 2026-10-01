@@ -24,7 +24,7 @@ ios/                 SwiftUI app (iOS 26) — the primary product
   Alice/             App, design system, features, models, networking, storage
   AliceTests/        Unit tests
   AliceUITests/      UI tests
-  AlicePerformance/  Performance measurements
+  AlicePerformanceTests/  Performance measurements
   AliceActivities/   Live activities
   AliceShare/        Share extension
   project.yml        XcodeGen spec (generates Alice.xcodeproj)
@@ -82,12 +82,12 @@ Read: [docs/architecture.md](docs/architecture.md)
 | Release operations | [docs/release-operations.md](docs/release-operations.md) |
 | Pairing protocol | [docs/pairing.md](docs/pairing.md) |
 | Purchases | [docs/purchases.md](docs/purchases.md) |
-| Persistence/migrations | [docs/MIGRATIONS.md](docs/MIGRATIONS.md) |
-| Data integrity | [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md) |
-| Observability | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
-| Diagnostic bundle | [docs/DIAGNOSTIC_BUNDLE.md](docs/DIAGNOSTIC_BUNDLE.md) |
-| SPOF audit | [docs/SINGLE_POINTS_OF_FAILURE.md](docs/SINGLE_POINTS_OF_FAILURE.md) |
-| Architectural decisions | [docs/adr/](docs/adr/) |
+| Persistence/migrations | [docs/MIGRATIONS.md](docs/MIGRATIONS.md) (PR #41) |
+| Data integrity | [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md) (PR #41) |
+| Observability | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) (PR #42) |
+| Diagnostic bundle | [docs/DIAGNOSTIC_BUNDLE.md](docs/DIAGNOSTIC_BUNDLE.md) (PR #42) |
+| SPOF audit | [docs/SINGLE_POINTS_OF_FAILURE.md](docs/SINGLE_POINTS_OF_FAILURE.md) (PR #44) |
+| Architectural decisions | [docs/adr/](docs/adr/) (PR #53) |
 
 ## 6. Engineering rules
 
