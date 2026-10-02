@@ -42,6 +42,8 @@ struct RootView: View {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-purchaseReview") {
                 PurchaseReviewScreen()
+            } else if ProcessInfo.processInfo.arguments.contains("-qaDashboard") {
+                QAJourneyScreen()
             } else { appBody }
             #else
             appBody

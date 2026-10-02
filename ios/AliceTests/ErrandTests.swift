@@ -77,6 +77,10 @@ final class ErrandTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(Errand.parse(row)).paymentUnconfirmed)
         approved["receipt"] = ["outcome": "unknown", "total": "27,98 €"]
         XCTAssertFalse(try XCTUnwrap(Errand.parse(approved)).paymentUnconfirmed)
+        // «Ya pagada» stops the card fill itself: nothing was paid in this errand, and it is not said otherwise.
+        approved["receipt"] = NSNull()
+        approved["blocked"] = ["kind": "paid_before", "shop": "hsnstore.com"]
+        XCTAssertFalse(try XCTUnwrap(Errand.parse(approved)).paymentUnconfirmed)
     }
 
     func testCachedErrandsWithoutTheNewFieldsStillDecode() throws {

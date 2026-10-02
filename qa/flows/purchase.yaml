@@ -67,6 +67,7 @@ faults:
   login_required:             {at: "tienda que exige cuenta", covered: ["gap: el simulador aún no tiene tienda con login (siguiente ampliación)"]}
   otp:                        {at: "código de verificación", covered: ["gap: idem"]}
   browser_taken_over:         {at: "la persona toma el navegador", covered: [hermes-plugin/tests/test_errands.py::RecoveryTests]}
+  bought_here_earlier_today:  {at: "otro pedido pagado en la misma tienda hace una hora", covered: [sim:bought_here_earlier_today]}
   service_restart:            {at: "reinicio del gateway a mitad", covered: [hermes-plugin/tests/test_errands.py::RestartTests]}
 
 shops:

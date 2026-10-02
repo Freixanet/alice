@@ -54,6 +54,7 @@ FAULTS = (
     "price_changed", "sold_out_after_choice", "total_changed_before_paying", "denied", "double_approval", "declined",
     "outcome_never_written", "judge_down_after_approval", "chrome_crash_before_paying", "pay_twice",
     "no_delivery_details", "no_saved_card", "ledger_unwritable", "agent_pays_without_approval",
+    "bought_here_earlier_today",
 )
 # What each scenario must end as, besides every invariant holding.
 EXPECTED = {
@@ -72,6 +73,7 @@ EXPECTED = {
     ("no_saved_card",): ("done", "paid"),
     ("ledger_unwritable",): (None, None),
     ("agent_pays_without_approval",): ("done", "paid"),
+    ("bought_here_earlier_today",): ("done", "paid"),  # stopped as «Ya pagada»; the person says it is another order
 }
 
 
@@ -264,6 +266,10 @@ class Sim:
         for name in ("discover", "verify", "present", "resolve", "verify_remaining"):
             original = getattr(self.prices, name)
             patch(self.prices, name, lambda *a, _fn=original, **kw: _fn(*a, **{**kw, "factory": self.probe}))
+        if "bought_here_earlier_today" in self.faults:
+            # An order paid at this shop an hour ago, from another conversation.
+            self.purchases.record(self.home, self.case["host"], "errand-earlier", now=time.time() - 3600)
+            self.purchases.settle(self.home, self.case["host"], "paid", order="ANTES-1", now=time.time() - 3500)
         if "ledger_unwritable" in self.faults:
             patch(self.purchases, "record", lambda *a, **k: (_ for _ in ()).throw(OSError("disco lleno")))
         if "no_delivery_details" not in self.faults:
@@ -475,7 +481,7 @@ class Sim:
 
     def errand(self) -> Optional[Dict[str, Any]]:
         found = [e for e in self.errands.listing(self.home) if e.get("origin_session") == CHAT]
-        return found[-1] if found else None
+        return max(found, key=lambda e: float(e.get("started_at") or 0)) if found else None
 
 
 class Robot:
@@ -658,6 +664,7 @@ class Person:
         self.sim = sim
         self.expect: Dict[str, str] = {}
         self.accepted_price = False
+        self.said_another_order = False
 
     def heard(self, session: str, text: str) -> None:
         """I4: the next turn of an errand the person answered carries that answer."""
@@ -732,6 +739,13 @@ class Person:
             return response.status_code == 200
         if status == "stuck":
             blocked = entry.get("blocked") or {}
+            if blocked.get("kind") == "paid_before" and not self.said_another_order:
+                # «Es otro pedido: pagarlo».
+                self.said_another_order = True
+                response = self.post(entry, "/continue", {"accept_price": False})
+                if response.status_code == 200:
+                    self.expect[entry["session_id"]] = "[pagar otra vez]"
+                return response.status_code == 200
             if blocked.get("kind") == "price" and not self.accepted_price:
                 self.accepted_price = True
                 response = self.post(entry, "/continue", {"accept_price": True})
@@ -747,6 +761,16 @@ def run(shop: str = "tienda-tres.example", faults: Sequence[str] = (), seed: int
     ``mutate`` changes the plugin before it runs (used by tests/test_qa.py to put an old bug back and
     prove the oracle sees it); it patches through ``sim.stack`` so nothing outlives the run."""
     started = time.monotonic()
+    try:
+        return _run(shop, faults, seed, mutate, started)
+    except Exception as exc:  # noqa: BLE001 — the simulator failing to even start is said, never raised
+        return {"shop": shop, "faults": list(faults), "seed": seed, "status": None, "outcome": None, "pays": 0,
+                "findings": [{"invariant": "SIM", "event": "setup",
+                              "detail": "".join(traceback.format_exception(exc))[-800:]}],
+                "events": [], "seconds": round(time.monotonic() - started, 1), "snapshots": [], "states": {}}
+
+
+def _run(shop, faults, seed, mutate, started) -> Dict[str, Any]:
     with Sim(shop, faults, seed) as sim:
         if mutate is not None:
             mutate(sim)

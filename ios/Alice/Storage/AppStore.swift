@@ -3682,6 +3682,19 @@ final class AppStore {
     var hasActivityHistory: Bool { activity.contains { !$0.isActionable } }
 
     #if DEBUG
+    /// UI tests only (`-qaDashboard <url>`): connects to the purchase simulator's dashboard
+    /// (hermes-plugin/qa/serve.py) on the CI Mac, so PurchaseJourneyTests drives real errands
+    /// through the real routes. The fixture server accepts any password.
+    func connectForQA() async {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-qaDashboard"), index + 1 < arguments.count else { return }
+        dashboardURL = arguments[index + 1]
+        dashboardUser = "qa"
+        try? KeyStore.save("qa", account: Self.dashboardAccount)
+        await restoreDashboard()
+        await errandBoard.refresh()
+    }
+
     /// UI tests only: puts one channel alert in Needs attention so the fix
     /// flow can be driven without a Hermes. Its fix goes to the real client,
     /// which, unconnected, fails and must say so.

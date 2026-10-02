@@ -32,6 +32,11 @@ enum Biometrics {
 
     /// True once the owner has proved it's them.
     static func authenticate(reason: String) async -> Bool {
+        #if DEBUG
+        // The QA journey on a CI simulator (`-qaDashboard`, PurchaseJourneyTests) has no enrolled face;
+        // Face ID itself is not what it tests, the errand's states and routes are.
+        if ProcessInfo.processInfo.arguments.contains("-qaDashboard") { return true }
+        #endif
         let context = LAContext()
         context.localizedCancelTitle = "Cancel"
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { return false }

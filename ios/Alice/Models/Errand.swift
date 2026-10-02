@@ -126,7 +126,9 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     var stoppedOnEarlierPayment: Bool { status == .stuck && blockedKind == "paid_before" }
     /// Money may be out: the person approved the checkout and nothing says how the payment ended.
     /// The card must never claim nothing was paid.
-    var paymentUnconfirmed: Bool { checkout?.status == .approved && receipt == nil }
+    /// Not when it stopped as «Ya pagada»: that stop is the card fill itself refused, before anything
+    /// was paid in this errand (qa sim: bought_here_earlier_today).
+    var paymentUnconfirmed: Bool { checkout?.status == .approved && receipt == nil && blockedKind != "paid_before" }
     var access: Access? = nil
 
     var accessRequest: SecureRequest? {

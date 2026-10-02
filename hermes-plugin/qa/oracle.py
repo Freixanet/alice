@@ -97,7 +97,9 @@ class Oracle:
         if status == "stuck":
             if not str(public.get("reason") or "").strip():
                 self.fail("I5", event, f"recado {entry['id']} parado sin motivo")
-            if approved and not receipt.get("outcome"):
+            stopped_before_paying = (public.get("blocked") or {}).get("kind") == "paid_before"
+            if approved and not receipt.get("outcome") and not stopped_before_paying:
+                # «Ya pagada» stops on the card fill itself, before anything is paid: no outcome to read.
                 self.fail("I5", event, f"recado {entry['id']} parado tras aprobar sin resultado del pago (ni «unknown»)")
             if approved and NOTHING_PAID.search(str(public.get("reason") or "")):
                 self.fail("I5", event, f"recado {entry['id']} dice que no se pagó tras una aprobación")

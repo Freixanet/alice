@@ -1,0 +1,148 @@
+name: QA
+
+# The QA system (docs/qa-protocol.md), run on GitHub's machines so nothing heavy runs on the
+# development Mac. The repository is public, so these runners (macOS included) are free.
+#
+#   qa-linux  coverage, static rules, every fault on every fixture shop, fuzz, real Chrome
+#   qa-ios    the app in the iOS simulator against the purchase simulator's dashboard
+#
+# An agent pushes its branch (this runs) or dispatches it, then reads the `qa-reports` artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: Fuzz seeds to run
+        default: "20"
+      fresh:
+        description: Start from seeds nobody ran yet
+        type: boolean
+        default: false
+      ios:
+        description: Run the iOS journey too
+        type: boolean
+        default: true
+  push:
+    branches: ["claude/**", "codex/**", "qa/**"]
+    paths:
+      - "hermes-plugin/**"
+      - "ios/**"
+      - "qa/**"
+      - "scripts/qa*.py"
+      - "scripts/verify-shops.py"
+      - ".github/workflows/qa.yml"
+  pull_request:
+    paths:
+      - "hermes-plugin/**"
+      - "ios/**"
+      - "qa/**"
+      - "scripts/qa*.py"
+  schedule:
+    # Nightly: a fuzz round from seeds nobody ran yet.
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: qa-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+jobs:
+  qa-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm install --global npm@11.19.0
+      # jsdom, for the pages' own JavaScript in the simulator.
+      - run: npm ci
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Simulator dependencies
+        run: python -m pip install -q pyyaml fastapi httpx uvicorn websockets
+      - name: Coverage, static rules, every fault on every shop, fuzz
+        env:
+          SEEDS: ${{ github.event_name == 'schedule' && '200' || inputs.seeds || '20' }}
+        run: python scripts/qa.py all --seeds "$SEEDS"
+      - name: Fresh fuzz seeds (nightly or on request)
+        if: ${{ github.event_name == 'schedule' || inputs.fresh }}
+        run: python scripts/qa.py fuzz purchase --seeds 200 --fresh
+      - name: Shop engine and money gates in a real Chrome
+        if: ${{ always() }}
+        run: CHROME="$(command -v google-chrome || command -v chromium)" python scripts/qa.py run purchase --level 2
+      - name: The oracle sees old bugs put back
+        if: ${{ always() }}
+        run: python -m unittest discover -s hermes-plugin/tests -p test_qa.py
+      - uses: actions/upload-artifact@v5
+        if: ${{ always() }}
+        with:
+          name: qa-reports
+          path: |
+            qa/reports
+            hermes-plugin/tests/test_qa_regressions.py
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Open an issue for a nightly finding
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "QA nocturno: hallazgos en $(date +%F)" \
+            --body "El fuzz nocturno encontró algo. Informe y test de regresión en los artefactos de ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} (qa-reports). Sigue docs/qa-protocol.md."
+
+  qa-ios:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.ios }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm install --global npm@11.19.0
+      - run: npm ci
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -q pyyaml fastapi httpx uvicorn websockets
+      - name: Select Xcode 26
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+      - name: Start the purchase simulator's dashboard
+        run: |
+          mkdir -p qa/reports
+          python hermes-plugin/qa/serve.py --port 8765 --report qa/reports/ios-journey.json > qa/reports/ios-server.log 2>&1 &
+          echo $! > qa/reports/server.pid
+          for i in $(seq 1 120); do curl -sf http://127.0.0.1:8765/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:8765/health
+      - name: The purchase journey in the app
+        env:
+          ALICE_UI_TEST_TARGET: AliceUITests/PurchaseJourneyTests
+          TEST_RUNNER_ALICE_QA_DASHBOARD: http://localhost:8765
+        run: bash scripts/verify-ios.sh ui
+      - name: Contract tests against the plugin's real errand states
+        if: ${{ always() }}
+        run: bash scripts/verify-ios.sh unit
+      - name: Stop the server and read its oracle
+        if: ${{ always() }}
+        run: |
+          kill -TERM "$(cat qa/reports/server.pid)" 2>/dev/null || true
+          for i in $(seq 1 30); do [ -f qa/reports/ios-journey.json ] && break; sleep 1; done
+          tail -20 qa/reports/ios-server.log || true
+          python -c "import json,sys; r=json.load(open('qa/reports/ios-journey.json')); print(json.dumps(r['findings'], ensure_ascii=False, indent=1)); sys.exit(1 if r['findings'] else 0)"
+      - uses: actions/upload-artifact@v5
+        if: ${{ always() }}
+        with:
+          name: qa-ios
+          path: |
+            qa/reports
+            ios/.build/DerivedData/Logs/Test
+          if-no-files-found: ignore
+          retention-days: 14
