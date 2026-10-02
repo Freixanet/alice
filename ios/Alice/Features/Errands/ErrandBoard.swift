@@ -197,24 +197,34 @@ struct ErrandStack: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ErrandProgressCard(errand: errand, logoID: logoID, logo: logo)
-            // The browser only while it is being used: not before it starts, and gone once the
-            // errand waits for the person or ends (a still page left there read as broken). Under
-            // the errand's card, which is on screen first: above it, it pushed that card down.
-            if errand.status == .working && !errand.steps.isEmpty {
+            // The browser from its first step until the errand ends: also while it waits for the
+            // person (a login, a code, the approval), so the page it waits on can be seen and taken
+            // over. Gone and back again read as broken. Under the errand's card, which is on screen
+            // first: above it, it pushed that card down.
+            if errand.status.isOpen && !errand.steps.isEmpty {
                 ErrandBrowserCard(errand: errand, snapshot: snapshot, onOpen: onOpenBrowser)
             }
-            if errand.status == .needsLogin, let request = errand.accessRequest {
+            if errand.status == .needsLogin, let request = errand.accessRequest, let access = errand.access {
+                // Says what it asks: a code the shop just sent is not «sign in again».
+                let site = access.site.nonEmpty(or: errand.site.nonEmpty(or: errand.language.pick("the shop", "la tienda")))
                 VStack(alignment: .leading, spacing: 12) {
-                    Label(errand.language.pick("Shop access", "Acceso a la tienda"), systemImage: "lock.shield")
+                    Label(access.isCode ? errand.language.pick("Verification code", "Código de verificación")
+                                        : errand.language.pick("Sign in to \(site)", "Iniciar sesión en \(site)"),
+                          systemImage: access.isCode ? "number.circle" : "lock.shield")
                         .font(.headline)
-                    Text(errand.language.pick("Sign in securely to continue this order. Nothing has been paid.",
-                                              "Inicia sesión de forma segura para continuar este pedido. No se ha pagado nada."))
-                    Button(errand.language.pick("Continue securely", "Continuar de forma segura")) {
+                    Text(access.isCode
+                         ? errand.language.pick("\(site) sent you a code (email or SMS). Type it here and the order goes on. Nothing has been paid.",
+                                                "\(site) te ha enviado un código (correo o SMS). Escríbelo aquí y el pedido sigue. No se ha pagado nada.")
+                         : errand.language.pick("Sign in or create an account at \(site), securely; the order goes on by itself. Nothing has been paid.",
+                                                "Inicia sesión o crea una cuenta en \(site) de forma segura; el pedido sigue solo. No se ha pagado nada."))
+                    Button(access.isCode ? errand.language.pick("Enter the code", "Introducir el código")
+                                         : errand.language.pick("Continue securely", "Continuar de forma segura")) {
                         store.secureRequest = request
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(sending)
-                    Button(errand.language.pick("Later", "Ahora no")) {
+                    Button(access.isCode ? errand.language.pick("I have no code", "No tengo el código")
+                                         : errand.language.pick("Buy as a guest", "Comprar sin cuenta")) {
                         Task { _ = await store.answerSecureRequest(request, value: "") }
                     }
                     .disabled(sending)

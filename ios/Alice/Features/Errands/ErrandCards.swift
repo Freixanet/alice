@@ -331,11 +331,10 @@ struct ErrandProgressCard: View {
 
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    let stages = errand.milestones
-                    ForEach(Array(stages.enumerated()), id: \.offset) { index, stage in
+                    let stages = errand.earlierStages
+                    ForEach(Array(stages.enumerated()), id: \.offset) { _, stage in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Image(systemName: index == stages.count - 1 && errand.status == .working
-                                  ? "circle.dotted" : "checkmark.circle")
+                            Image(systemName: "checkmark.circle")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Text(stage).font(.subheadline).foregroundStyle(.secondary)
@@ -392,7 +391,10 @@ struct ErrandProgressCard: View {
                                                 : errand.summary.nonEmpty(or: language.pick("Done", "Hecho"))
         case .needsApproval: return language.pick("Waiting for your approval", "Esperando tu aprobación")
         case .needsInput: return language.pick("Waiting for your answer", "Esperando tu respuesta")
-        case .needsLogin: return language.pick("Waiting for secure shop access", "Esperando acceso seguro a la tienda")
+        case .needsLogin:
+            return errand.access?.isCode == true
+                ? language.pick("Waiting for the verification code", "Esperando el código de verificación")
+                : language.pick("Waiting for you to sign in to the shop", "Esperando que inicies sesión en la tienda")
         case .needsCard: return language.pick("Waiting for a card to pay with", "Esperando una tarjeta para pagar")
         case .stuck: return errand.reason.nonEmpty(or: language.pick("It got stuck", "Se ha atascado"))
         case .stopped: return language.pick("The errand was stopped", "El recado se ha detenido")

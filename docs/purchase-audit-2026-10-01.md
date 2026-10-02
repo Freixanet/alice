@@ -23,6 +23,15 @@ Sigue pendiente de E: `purchase_outcome: unknown` deja el recado al juez (correc
 comprobar el pedido) y la comprobación en serie de formatos tiene ahora un presupuesto de 90 s
 en vez de ser asíncrona.
 
+### Capturas del 2 oct (02:23–02:26), con el plugin anterior a esta rama
+
+| Visto | Causa | Cambio |
+|---|---|---|
+| El paso «Abrir la ficha…» aparece dos veces en la tarjeta del recado | La lista desplegada incluía la etapa en curso, que ya es la línea de estado con su spinner | `Errand.earlierStages`; test `testTheStageUnderWayIsNotListedTwice` |
+| La tarjeta del recado apareció antes que «La compra … ya está en marcha» | El plugin arranca el recado antes de que el modelo conteste; la tarjeta esperaba la respuesta solo 15 s y un modelo que piensa tarda más | `ErrandTranscript.replyWait` 15 → 45 s |
+| El navegador a veces se muestra y a veces no | Solo se mostraba con el recado `working`; desaparecía al pedir login, código o aprobación y volvía después | Se muestra desde el primer paso hasta que el recado termina |
+| «Me pidió iniciar sesión dos veces después de crear la cuenta» | La segunda petición era el **código de verificación** que Prozis envía al crear la cuenta (`vault.code`); la tarjeta decía «Acceso a la tienda» en ambos casos, y «Ahora no» paraba la compra | La tarjeta distingue «Iniciar sesión en …» de «Código de verificación» con su texto y botones; «Ahora no» ya no para: sigue como invitado (plugin, A/C1) |
+
 ### Los 18 problemas históricos y qué test los sujeta
 
 | # | Problema | Test |

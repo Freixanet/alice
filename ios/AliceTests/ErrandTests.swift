@@ -99,6 +99,37 @@ final class ErrandTests: XCTestCase {
         XCTAssertEqual(errand.milestones, ["Abrir la ficha", "Cesta", "Datos de envío", "Pago"])
     }
 
+    func testTheStageUnderWayIsNotListedTwice() throws {
+        var working = row
+        working["status"] = "working"
+        working["steps"] = [
+            ["text": "Abrir la ficha de Prozis y revisar la variante elegida", "url": "https://www.prozis.com/es/es/prozis/creatina", "at": 1.0],
+        ]
+        let errand = try XCTUnwrap(Errand.parse(working))
+        XCTAssertEqual(errand.currentStage, "Abrir la ficha de Prozis y revisar la variante elegida")
+        XCTAssertEqual(errand.earlierStages, [])
+        working["steps"] = [
+            ["text": "Abrir la ficha", "url": "https://www.prozis.com/es/es/prozis/creatina", "at": 1.0],
+            ["text": "Ver la cesta", "url": "https://www.prozis.com/es/es/checkout/index", "at": 2.0],
+        ]
+        let later = try XCTUnwrap(Errand.parse(working))
+        XCTAssertEqual(later.earlierStages, ["Abrir la ficha"])
+        // Waiting for the person, every stage is history and listed.
+        working["status"] = "needs_login"
+        XCTAssertEqual(try XCTUnwrap(Errand.parse(working)).earlierStages, ["Abrir la ficha", "Cesta"])
+    }
+
+    func testAVerificationCodeIsNotASecondSignIn() throws {
+        var pending = row
+        pending["status"] = "needs_login"
+        pending["secure_request"] = ["request_id": "srq-c", "kind": "vault.code", "origin": "https://www.prozis.com", "site": "www.prozis.com"]
+        let errand = try XCTUnwrap(Errand.parse(pending))
+        XCTAssertTrue(try XCTUnwrap(errand.access).isCode)
+        if case .code = try XCTUnwrap(errand.accessRequest).kind {} else { XCTFail("a code request") }
+        pending["secure_request"] = ["request_id": "srq-l", "kind": "vault.save_login", "origin": "https://www.prozis.com", "site": "www.prozis.com"]
+        XCTAssertFalse(try XCTUnwrap(try XCTUnwrap(Errand.parse(pending)).access).isCode)
+    }
+
     func testPendingShopAccessSurvivesOldAndNewCachedArchives() throws {
         var pending = row
         pending["status"] = "needs_login"

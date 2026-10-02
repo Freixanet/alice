@@ -74,6 +74,9 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
         let kind: String
         let origin: String
         let site: String
+        /// A one-time code the shop sent (after creating an account, say), not a login: shown as
+        /// such, so a second «Acceso a la tienda» card does not read as being asked to sign in again.
+        var isCode: Bool { kind == "vault.code" }
         var request: SecureRequest? {
             SecureRequest.parse(["request_id": requestID, "kind": kind, "origin": origin, "site": site])
         }
@@ -118,6 +121,17 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
 
     var language: ChatLanguage { ChatLanguage.of(request) }
     var lastStep: Step? { steps.last }
+
+    /// The stages before the one under way: while it works, the current stage is the status line
+    /// with its spinner, and listing it again above read as a duplicated step.
+    var earlierStages: [String] {
+        let stages = milestones
+        guard status == .working, let last = stages.last, last == currentStage else { return stages }
+        return Array(stages.dropLast())
+    }
+
+    /// What the errand is doing now, as the status line says it.
+    var currentStage: String? { status == .working ? milestones.last : nil }
 
     /// Where it is in the purchase, a line per stage rather than per click: the steps grouped by
     /// the page they were on, each group named by what that page is for.

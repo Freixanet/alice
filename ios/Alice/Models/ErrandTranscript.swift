@@ -73,7 +73,9 @@ enum ErrandTranscript {
     }
 
     /// How long a chosen purchase's card waits for the reply to the choice before showing anyway.
-    static let replyWait: TimeInterval = 15
+    /// The plugin starts the errand before the model answers, and a thinking model took longer
+    /// than 15 s: the card then showed first and the reply landed above it.
+    static let replyWait: TimeInterval = 45
 
     /// A running errand is the live thing in the chat and stays last, its browser and cards where
     /// the person is reading; a finished one stays after the last turn before it ended. A message's
