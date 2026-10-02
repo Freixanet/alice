@@ -945,12 +945,18 @@ class StuckContextTests(Base):
             def run(self, message=None):
                 outcomes["n"] += 1
                 return "stuck" if outcomes["n"] == 1 else "done"
+        import time as clock
+
+        def finished(n):  # the engine thread may be gone before launch even returns
+            deadline = clock.time() + 5
+            while clock.time() < deadline and (outcomes["n"] < n or entry["id"] in errands._threads):
+                clock.sleep(0.02)
         with mock.patch.object(errands, "release_context") as released:
             self.assertTrue(errands.launch(self.home, entry["id"], engine_factory=Fake))
-            errands._threads[entry["id"]].join(5)
+            finished(1)
             self.assertFalse(released.called)
             self.assertTrue(errands.launch(self.home, entry["id"], engine_factory=Fake))
-            errands._threads[entry["id"]].join(5)
+            finished(2)
             self.assertTrue(released.called)
 
     def test_stale_stuck_pages_are_released_later(self):
