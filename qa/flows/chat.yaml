@@ -1,0 +1,16 @@
+# Conversar con el agente. Mapped for scripts/qa.py; no simulator yet (docs/qa-protocol.md: add one where a failure costs money, a secret or trust).
+id: chat
+title: "Conversar con el agente"
+states:
+  streaming: {covered: ["ios/AliceTests/StreamingTextTests.swift::StreamingTextTests"]}
+  interrupted: {covered: ["ios/AliceTests/EventResumeTests.swift::EventResumeTests"]}
+  approval_pending: {covered: ["ios/AliceTests/RunApprovalTruthTests.swift::RunApprovalTruthTests"]}
+  persisted: {covered: ["ios/AliceTests/ConversationPersistenceTests.swift::ConversationPersistenceTests"]}
+steps:
+  - {n: "1", what: "enviar y recibir en directo", covered: ["ios/AliceTests/HermesRunProtocolTests.swift::HermesRunProtocolTests"]}
+  - {n: "2", what: "recuperar tras suspensión", covered: ["ios/AliceTests/RecoveredHistoryBehaviorTests.swift::RecoveredHistoryBehaviorTests"]}
+  - {n: "3", what: "aprobaciones y preguntas del agente", covered: ["ios/AliceTests/RequestResolutionTests.swift"]}
+faults:
+  unknown_events: {covered: ["ios/AliceTests/HermesUnknownEventsTests.swift::HermesUnknownEventsTests"]}
+  archive_unreadable: {covered: ["ios/AliceTests/ConversationMigrationTests.swift::ConversationMigrationTests"]}
+  gateway_restart: {covered: ["gap: sin simulador del gateway para el chat"]}

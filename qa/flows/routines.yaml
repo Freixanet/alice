@@ -1,0 +1,13 @@
+# Rutinas programadas. Mapped for scripts/qa.py; no simulator yet (docs/qa-protocol.md: add one where a failure costs money, a secret or trust).
+id: routines
+title: "Rutinas programadas"
+states:
+  scheduled: {covered: ["ios/AliceTests/RoutineStateTests.swift::RoutineStateTests"]}
+  failed: {covered: ["ios/AliceTests/RoutineRetryTests.swift::RoutineRetryTests"]}
+  quiet: {covered: ["ios/AliceTests/RoutineQuietRunsTests.swift::RoutineQuietRunsTests"]}
+steps:
+  - {n: "1", what: "crear desde el chat", covered: ["ios/AliceTests/RoutineBriefTests.swift::RoutineBriefTests"]}
+  - {n: "2", what: "informar del resultado", covered: ["ios/AliceTests/RoutineReportTests.swift::RoutineReportTests"]}
+faults:
+  adversarial_prompt: {covered: ["ios/AliceTests/RoutineAdversarialTests.swift::RoutineAdversarialTests"]}
+  cron_parse: {covered: ["ios/AliceTests/CronParsingTests.swift::CronParsingTests"]}

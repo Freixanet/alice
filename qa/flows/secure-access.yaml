@@ -1,0 +1,13 @@
+# Acceso seguro a una tienda y códigos. Mapped for scripts/qa.py; no simulator yet (docs/qa-protocol.md: add one where a failure costs money, a secret or trust).
+id: secure-access
+title: "Acceso seguro a una tienda y códigos"
+states:
+  needs_login: {covered: ["hermes-plugin/tests/test_purchase_evidence.py::AccessTests"]}
+  code: {covered: ["ios/AliceTests/SecureRequestTests.swift::SecureRequestTests"]}
+steps:
+  - {n: "1", what: "pedir acceso del origen exacto", covered: ["hermes-plugin/tests/test_purchase_evidence.py::AccessTests"]}
+  - {n: "2", what: "guardar en la bóveda y rellenar", covered: ["hermes-plugin/tests/test_vault_otp.py", "hermes-plugin/tests/test_vault_cards.py"]}
+faults:
+  origin_changed: {covered: ["hermes-plugin/tests/test_purchase_evidence.py::test_changed_origin_or_context_cannot_receive_access"]}
+  declined: {covered: ["hermes-plugin/tests/test_purchase_evidence.py::test_a_declined_login_goes_on_as_a_guest_not_to_a_stop"]}
+  simulated_end_to_end: {covered: ["gap: el simulador de la compra aún no tiene tienda con login"]}
