@@ -162,6 +162,26 @@ class ErrandHookTests(unittest.TestCase):
             note = self.plugin._errand_turn(session_id="chat-9", user_message="Compra la creatina creapure de prozis")
         self.assertIn("purchase_discover", note["context"])
 
+    def test_the_verify_tool_names_the_cards_set_at_the_top_of_its_answer(self):
+        # The app reads the cards' key from the call's result; nested only, it found nothing (03:35).
+        handler = self.tools()["purchase_verify"]["handler"]
+        prices = self.plugin._module("purchase_prices.py", "alice_purchase_prices")
+        with mock.patch.object(prices, "verify", return_value={"id": "pq-1", "price": "34,99 €"}), \
+                mock.patch.object(prices, "verify_remaining", return_value={"other_formats": [], "unverified": []}), \
+                mock.patch.object(prices, "auto_present", return_value={"ok": True, "set": "0a1b2c3d", "options": [{"id": "0a1b2c3d-1"}]}), \
+                mock.patch.object(self.plugin, "_purchase_locale", return_value=("ES", "EUR")):
+            out = self.call(handler, {"search_id": "s", "candidate_id": "c", "currency": "EUR"})
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["set"], "0a1b2c3d")
+        self.assertEqual(out["result"]["set"], "0a1b2c3d")
+        self.assertIn("YA VE", out["result"]["next"])
+        with mock.patch.object(prices, "verify", return_value={"id": "pq-1"}), \
+                mock.patch.object(prices, "verify_remaining", return_value={"other_formats": [], "unverified": []}), \
+                mock.patch.object(prices, "auto_present", return_value=None), \
+                mock.patch.object(self.plugin, "_purchase_locale", return_value=("ES", "EUR")):
+            out = self.call(handler, {"search_id": "s", "candidate_id": "c", "currency": "EUR"})
+        self.assertNotIn("set", out)
+
     def test_an_appointment_asked_with_pide_is_an_errand_not_a_purchase(self):
         handler = self.tools()["errand_start"]["handler"]
         hermes = types.SimpleNamespace(get_hermes_home=lambda: self.home)

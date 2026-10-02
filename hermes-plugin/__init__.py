@@ -1991,7 +1991,11 @@ def _register_task_tools(ctx) -> None:
                     result['next'] = ('La persona YA VE las tarjetas de todos los formatos comprobados (set ' + shown['set']
                                       + '). Llama a purchase_options con search_id y todos los quote_refs marcando tu '
                                       'recomendada y por qué; después, una o dos líneas y termina el turno.')
-            return _agent_json({"ok": True, "result": result})
+            # The set at the top too: the app reads the cards' key from the call's result.
+            out = {"ok": True, "result": result}
+            if isinstance(result, dict) and result.get('set'):
+                out["set"] = result['set']
+            return _agent_json(out)
         except Exception as exc:
             return _agent_json({"ok": False, "error": str(exc) if isinstance(exc, ValueError) else "La comprobación de la cesta temporal no está disponible."})
 

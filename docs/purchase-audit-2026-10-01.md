@@ -52,6 +52,14 @@ repetida de lo mismo vuelve a mostrar el conjunto anterior en ese turno sin busc
 `test_asking_again_shows_the_same_cards_again_instead_of_a_new_search`,
 `test_asking_again_brings_the_cards_back_without_a_search`, iOS `testEachTurnHasOneWindowOnItsLastReply`.
 
+**Confirmado con la rama instalada (56d05c3, app v7):** la captura de las 03:35 era con la rama. Causa
+encontrada: `purchase_verify` devolvía `{"ok": true, "result": {…, "set": K}}` y la app leía `set`
+solo en el nivel de arriba, así que las tarjetas desde la verificación no podían salir nunca.
+Corregido por los dos lados (el plugin pone `set` también arriba; la app lo lee donde esté, y
+acepta resultados que lleguen como texto JSON). Test: `test_the_verify_tool_names_the_cards_set_at_the_top_of_its_answer`,
+iOS `testTheVerificationCallsSetIsReadWhereverTheToolPutIt`. Las tarjetas por ventana de turno (72c8c21)
+son la segunda red, independiente de esto.
+
 ### Los 18 problemas históricos y qué test los sujeta
 
 | # | Problema | Test |

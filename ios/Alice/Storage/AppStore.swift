@@ -8397,10 +8397,12 @@ final class AppStore {
             guard let data = try? JSONSerialization.data(withJSONObject: call) else { return nil }
             return String(data: data, encoding: .utf8)
         }
-        // A verification whose result already shows the cards: only the set it named.
+        // A verification whose result already shows the cards: only the set it named (at the top of
+        // the tool's answer, or inside its `result`).
         if let name = payload["name"] as? String, name == PurchaseOptionSet.verifyToolName {
-            guard let result = dictionary(payload["result"]), let set = result["set"] as? String, !set.isEmpty,
-                  let data = try? JSONSerialization.data(withJSONObject: ["result": ["set": set]])
+            guard let result = dictionary(payload["result"]) else { return nil }
+            let set = (result["set"] as? String) ?? (dictionary(result["result"])?["set"] as? String) ?? ""
+            guard !set.isEmpty, let data = try? JSONSerialization.data(withJSONObject: ["result": ["set": set]])
             else { return nil }
             return String(data: data, encoding: .utf8)
         }
@@ -8428,9 +8430,12 @@ final class AppStore {
         return nil
     }
 
-    private nonisolated static func dictionary(_ value: Any?) -> [String: Any]? {
+    nonisolated static func dictionary(_ value: Any?) -> [String: Any]? {
         if let bag = value as? [String: Any] { return bag }
         if let bag = value as? [String: String] { return bag }
+        // A tool's answer is JSON text; some events carry it unparsed.
+        if let text = value as? String, text.first == "{", let data = text.data(using: .utf8),
+           let bag = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { return bag }
         if let bag = value as? NSDictionary {
             var mapped: [String: Any] = [:]
             for (key, item) in bag {

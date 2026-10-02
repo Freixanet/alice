@@ -28,6 +28,18 @@ final class PurchaseFlowTests: XCTestCase {
         XCTAssertFalse(PurchaseOptionSet.isTool("purchase_verify"))
     }
 
+    func testTheVerificationCallsSetIsReadWhereverTheToolPutIt() throws {
+        // The tool answers {"ok": true, "result": {…, "set": K}}; the first build read only the top.
+        let nested: [String: Any] = ["name": "purchase_verify", "result": ["ok": true, "result": ["id": "pq-1", "set": "0a1b2c3d"]]]
+        XCTAssertEqual(PurchaseOptionSet.key(fromDetail: AppStore.toolDetail(from: nested)), "0a1b2c3d")
+        let top: [String: Any] = ["name": "purchase_verify", "result": ["ok": true, "set": "0a1b2c3d", "result": ["id": "pq-1"]]]
+        XCTAssertEqual(PurchaseOptionSet.key(fromDetail: AppStore.toolDetail(from: top)), "0a1b2c3d")
+        let text: [String: Any] = ["name": "purchase_verify", "result": #"{"ok": true, "set": "0a1b2c3d", "result": {}}"#]
+        XCTAssertEqual(PurchaseOptionSet.key(fromDetail: AppStore.toolDetail(from: text)), "0a1b2c3d")
+        let none: [String: Any] = ["name": "purchase_verify", "result": ["ok": true, "result": ["id": "pq-1"]]]
+        XCTAssertNil(AppStore.toolDetail(from: none))
+    }
+
     func testEachTurnHasOneWindowOnItsLastReply() {
         let t0 = Date(timeIntervalSince1970: 1_800_000_000)
         let messages = [
