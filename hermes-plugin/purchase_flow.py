@@ -288,6 +288,8 @@ def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]]
             "channel": channel, "catalog_id": _clean(option.get("catalog_id"), 120),
             "checkout_url": checkout_url if checkout_url.startswith("https://") else "",
             "recommended": bool(option.get("recommended")), "why": _clean(option.get("why"), 200),
+            # The public code the checked price rests on; the errand applies it before its own check.
+            "coupon": _clean(option.get("coupon"), 40),
         })
     # One recommendation exactly: the first the model marked, or the first card.
     marked = False
@@ -496,7 +498,7 @@ def is_cart_action(tool_name: str, args: Any) -> bool:
 
 def offer(chosen: Dict[str, Any]) -> Dict[str, Any]:
     """The chosen option as the errand keeps it: exactly what to buy, where and for how much."""
-    keys = ("title", "merchant", "variant", "qty", "price", "currency", "url", "checkout_url", "channel", "catalog_id", "quote_ref", "verified_at", "shipping", "condition")
+    keys = ("title", "merchant", "variant", "qty", "price", "currency", "url", "checkout_url", "channel", "catalog_id", "quote_ref", "verified_at", "shipping", "condition", "coupon")
     return {"option_id": chosen["id"], **{k: chosen.get(k) for k in keys}}
 
 

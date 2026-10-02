@@ -5,6 +5,7 @@
 import importlib.util
 import concurrent.futures
 import json
+import time
 import sys
 import tempfile
 import threading
@@ -1116,3 +1117,160 @@ class BasketUnitsTests(unittest.TestCase):
         self.assertEqual(errands.blocked_by("precio 59,98 €", offer)["kind"], "other")
         self.assertEqual(errands.blocked_by("precio 34,99 € — subió", offer),
                          {"kind": "price", "price": "34,99 €"})
+
+
+class PaymentMethodTests(Base):
+    """P0: a shop paid by PayPal, Bizum or a card it keeps needs no card in the vault, and the
+    approval says how it is paid."""
+
+    def test_paying_without_a_saved_card_needs_none_when_the_shop_is_paid_another_way(self):
+        entry = self.errand()
+        out = errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "card_label": "", "payment_method": "paypal"},
+                                       now=NOW, saved_cards=lambda: [])
+        self.assertEqual(out["status"], "needs_approval")
+        checkout = errands.get(self.home, entry["id"])["checkout"]
+        self.assertEqual((checkout["payment_method"], checkout["card_label"]), ("paypal", ""))
+        message = errands.approved_message(errands.decide_checkout(self.home, entry["id"], True, now=NOW + 1)["checkout"])
+        self.assertIn("PayPal", message)
+        self.assertIn("unknown", message)
+        self.assertNotIn("tarjeta guardada", message)
+
+    def test_a_card_payment_still_asks_for_a_card_first(self):
+        entry = self.errand()
+        for method in ("card", "", "something_else"):
+            with self.subTest(method=method):
+                out = errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "payment_method": method},
+                                               now=NOW, saved_cards=lambda: [])
+                self.assertEqual(out["status"], "needs_card")
+
+    def test_a_press_that_pays_by_itself_is_strong_a_continue_is_not(self):
+        banks = {"sis.redsys.es"}
+        self.assertTrue(errands.is_strong_pay_action("browser_click", {"text": "Pagar ahora"}, "https://shop.es/checkout", banks))
+        self.assertTrue(errands.is_strong_pay_action("browser_exec", {"code": "click('#pay')"},
+                                                     "https://sis.redsys.es/sis/realizarPago", banks))
+        self.assertFalse(errands.is_strong_pay_action("browser_click", {"text": "Continuar"},
+                                                      "https://shop.es/checkout/payment", banks))
+        self.assertFalse(errands.is_strong_pay_action("browser_exec", {"code": "print(page_info())"},
+                                                      "https://sis.redsys.es/sis/realizarPago", banks))
+
+    def test_the_pay_gate_names_the_one_approval_window(self):
+        entry = self.errand()
+        verdict = errands.pay_gate(self.home, entry["session_id"], tool_name="browser_click", args={"text": "Pagar ahora"})
+        self.assertIn(f"{errands.APPROVAL_TTL // 60} minutos", verdict["message"])
+        self.assertNotIn("10 minutos", verdict["message"])
+
+    def test_the_offer_lines_carry_the_coupon_the_price_rests_on(self):
+        lines = errands._offer_lines({"title": "Creapure", "url": "https://shop.es/p", "price": "31,49 €", "coupon": "PUBLIC10"})
+        self.assertIn("«PUBLIC10»", lines)
+        self.assertIn("purchase_check_cart", lines)
+        self.assertNotIn("cupón", errands._offer_lines({"title": "Creapure", "url": "https://shop.es/p", "price": "31,49 €"}))
+
+
+class OutcomeEngineTests(Base):
+    """P0: once money may be out, «done» needs its outcome; whatever stops the errand first writes
+    that outcome as unknown, in the ledger and on the card."""
+
+    def approved(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT)
+        errands.decide_checkout(self.home, entry["id"], True)
+        return entry
+
+    def test_done_with_a_payment_out_is_asked_twice_then_ends_unknown(self):
+        entry = self.approved()
+        gateway = FakeGateway([done("Pagado."), done("Pagado, ya está."), done("Hecho.")])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"}, sleep=lambda s: None)
+        self.assertEqual(engine.run(), "stuck")
+        self.assertEqual(len(gateway.started), 3)
+        self.assertIn("purchase_outcome", gateway.started[1][1])
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual(saved["receipt"]["outcome"], "unknown")
+        self.assertIn("No se pudo confirmar", saved["reason"])
+        ledger = errands._purchases()
+        self.assertEqual(ledger._read(ledger._ledger(self.home))[-1]["status"], "unknown")
+
+    def test_done_after_the_outcome_was_written_is_done(self):
+        entry = self.approved()
+
+        def on_start(n):
+            errands.record_receipt(self.home, entry["session_id"], {"site": "hsnstore.com", "outcome": "paid", "order": "1"})
+
+        gateway = FakeGateway([done("Pagado.")], on_start=on_start)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"}, sleep=lambda s: None)
+        self.assertEqual(engine.run(), "done")
+
+    def test_done_without_any_payment_is_done(self):
+        entry = self.errand()
+        gateway = FakeGateway([done("No se encontró.")])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"}, sleep=lambda s: None)
+        self.assertEqual(engine.run(), "done")
+
+    def test_a_failure_after_approval_closes_the_payment_as_unknown(self):
+        entry = self.approved()
+        gateway = FakeGateway([[{"status": "failed", "error": "Model timeout"}]])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"}, sleep=lambda s: None)
+        self.assertEqual(engine.run(), "stuck")
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual(saved["receipt"]["outcome"], "unknown")
+        self.assertIn("Model timeout", saved["reason"])
+        self.assertTrue(saved["reason"].startswith("No se pudo confirmar"))
+
+    def test_a_failure_before_approval_says_nothing_about_payments(self):
+        entry = self.errand()
+        gateway = FakeGateway([[{"status": "failed", "error": "Model timeout"}]])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"}, sleep=lambda s: None)
+        self.assertEqual(engine.run(), "stuck")
+        saved = errands.get(self.home, entry["id"])
+        self.assertIsNone(saved.get("receipt"))
+        self.assertEqual(saved["reason"], "Model timeout")
+
+    def test_an_unknown_receipt_stops_the_errand_on_it(self):
+        entry = self.approved()
+
+        def on_start(n):
+            errands.record_receipt(self.home, entry["session_id"], {"site": "hsnstore.com", "outcome": "unknown"})
+
+        gateway = FakeGateway([done("No sé si se cobró.")], on_start=on_start)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"}, sleep=lambda s: None)
+        self.assertEqual(engine.run(), "stuck")
+        self.assertIn("No se pudo confirmar", errands.get(self.home, entry["id"])["reason"])
+
+    def test_a_judge_that_fails_twice_leaves_it_stuck_not_running_blind(self):
+        entry = self.errand()
+        gateway = FakeGateway([done("a"), done("b"), done("c")])
+
+        def judge(session_id, reply):
+            raise RuntimeError("judge down")
+
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=judge, sleep=lambda s: None)
+        self.assertEqual(engine.run(), "stuck")
+        self.assertEqual(len(gateway.started), 2)
+        self.assertIn("juzgar", errands.get(self.home, entry["id"])["reason"])
+
+
+class PayAgainTests(Base):
+    """P0: a shop paid before stops the errand; only the person's word lets one more payment through."""
+
+    def test_seguir_on_a_paid_before_stop_allows_one_payment_within_the_window(self):
+        entry = self.errand()
+        errands.update(self.home, entry["id"], status="stuck", reason="Ya se pagó un pedido en hsnstore.com hace 5 min.",
+                       blocked={"kind": "paid_before", "shop": "hsnstore.com"})
+        with mock.patch.object(errands, "launch", return_value=True):
+            resumed = errands.go_on(self.home, entry["id"])
+        self.assertEqual(resumed["status"], "working")
+        self.assertIsNone(resumed.get("blocked"))
+        self.assertGreater(float(resumed["pay_again_until"]), time.time())
+        self.assertLessEqual(float(resumed["pay_again_until"]), time.time() + errands.APPROVAL_TTL + 1)
+        self.assertIn("[pagar otra vez]", resumed["resume_message"])
+        self.assertNotIn("pay_again_until", errands.public(resumed))
+
+    def test_seguir_on_an_unknown_payment_checks_and_never_pays(self):
+        entry = self.errand()
+        errands.record_receipt(self.home, entry["session_id"], {"site": "hsnstore.com", "outcome": "unknown"})
+        errands.update(self.home, entry["id"], status="stuck", reason=errands.UNKNOWN_REASON)
+        with mock.patch.object(errands, "launch", return_value=True):
+            resumed = errands.go_on(self.home, entry["id"])
+        self.assertEqual(resumed["status"], "working")
+        self.assertIn("[comprobar pago]", resumed["resume_message"])
+        self.assertIn("No vuelvas a pagar", resumed["resume_message"])
+        self.assertIsNone(resumed.get("receipt"))

@@ -27,7 +27,11 @@ struct ErrandStoppedCard: View {
                 Spacer(minLength: 0)
             }
             Text(headline).font(.body).fixedSize(horizontal: false, vertical: true)
-            Text(language.pick("Nothing was paid.", "No se ha pagado nada."))
+            // «Nothing was paid» is a claim: made only when no payment could have gone out.
+            Text(errand.paymentUnconfirmed
+                 ? language.pick("Whether the payment went through is not confirmed; check the order before paying again.",
+                                 "No está confirmado si el pago se hizo; comprueba el pedido antes de volver a pagar.")
+                 : language.pick("Nothing was paid.", "No se ha pagado nada."))
                 .font(.subheadline).foregroundStyle(.secondary)
 
             if errand.status == .stuck, let price = errand.blockedPrice {
@@ -35,6 +39,9 @@ struct ErrandStoppedCard: View {
                                                            "Comprarla a \(price.pricesKeptTogether)"),
                                       prominent: true, disabled: sending, busy: sending, tint: .approve,
                                       action: onAcceptPrice)
+            } else if errand.stoppedOnEarlierPayment {
+                PurchaseCapsuleButton(title: language.pick("It is another order: pay it", "Es otro pedido: pagarlo"),
+                                      prominent: true, disabled: sending, busy: sending, tint: .approve, action: onRetry)
             } else if errand.status == .stuck {
                 PurchaseCapsuleButton(title: language.pick("Carry on from here", "Seguir desde aquí"), prominent: true,
                                       disabled: sending, busy: sending, tint: .approve, action: onRetry)
@@ -64,7 +71,8 @@ struct ErrandStoppedCard: View {
         case .denied: language.pick("Cancelled", "Cancelada")
         case .stopped: language.pick("Stopped", "Detenida")
         default: errand.blockedPrice != nil ? language.pick("Price changed", "Precio distinto")
-                                             : language.pick("Stopped", "Parada")
+            : errand.stoppedOnEarlierPayment ? language.pick("Paid before", "Ya pagada")
+            : language.pick("Stopped", "Parada")
         }
     }
 

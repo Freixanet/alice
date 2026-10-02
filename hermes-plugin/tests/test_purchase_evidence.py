@@ -128,6 +128,16 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(rejected['coupon_results'][0]['applied'])
         accepted = self.quote(coupons=['PUBLIC10','BAD'])
         self.assertEqual(accepted['price'],'31,49 €')
+    def test_the_applied_coupon_travels_with_the_quote_the_option_and_the_offer(self):
+        accepted = self.quote(coupons=['PUBLIC10','BAD'])
+        self.assertEqual(accepted['coupon'],'PUBLIC10')
+        self.assertEqual(self.quote(index=1)['coupon'],'')
+        shown = prices.present(self.home,'chat',self.options([accepted]),factory=Shop)
+        self.assertTrue(shown['ok'], shown)
+        flow = prices.module('purchase_flow')
+        chosen = flow.choose(self.home,'chat',shown['options'][0]['id'])
+        self.assertEqual(chosen['coupon'],'PUBLIC10')
+        self.assertEqual(flow.offer(chosen)['coupon'],'PUBLIC10')
     def test_existing_inline_cart_is_not_lost_to_an_unneeded_url(self):
         q = self.quote(recipe={**self.recipe,'cart_url':'https://example.com/80 cápsulas'})
         self.assertEqual(q['variant'],'300 g')

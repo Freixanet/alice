@@ -45,6 +45,54 @@ final class ErrandTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(Errand.parse(bot)).vaultProfile, "default")
     }
 
+    func testHowTheShopIsPaidAndAnEarlierPaymentRead() throws {
+        // A saved card pays unless the checkout says otherwise; older rows have no method.
+        XCTAssertTrue(try XCTUnwrap(Errand.parse(row)).checkout?.paysWithSavedCard == true)
+        var paypal = row
+        var checkout = try XCTUnwrap(row["checkout"] as? [String: Any])
+        checkout["payment_method"] = "paypal"
+        checkout["card_label"] = ""
+        paypal["checkout"] = checkout
+        let parsed = try XCTUnwrap(Errand.parse(paypal))
+        XCTAssertEqual(parsed.checkout?.paymentMethod, "paypal")
+        XCTAssertFalse(parsed.checkout?.paysWithSavedCard ?? true)
+        // Stopped because the shop was paid before: «Seguir» means «another order».
+        var stopped = row
+        stopped["status"] = "stuck"
+        stopped["blocked"] = ["kind": "paid_before", "shop": "hsnstore.com"]
+        let earlier = try XCTUnwrap(Errand.parse(stopped))
+        XCTAssertTrue(earlier.stoppedOnEarlierPayment)
+        XCTAssertNil(earlier.blockedPrice)
+        XCTAssertFalse(try XCTUnwrap(Errand.parse(row)).stoppedOnEarlierPayment)
+    }
+
+    func testAStopAfterApprovalNeverClaimsNothingWasPaid() throws {
+        var approved = row
+        approved["status"] = "stuck"
+        var checkout = try XCTUnwrap(row["checkout"] as? [String: Any])
+        checkout["status"] = "approved"
+        approved["checkout"] = checkout
+        XCTAssertTrue(try XCTUnwrap(Errand.parse(approved)).paymentUnconfirmed)
+        // Before approval nothing could have gone out; with a receipt the receipt says it.
+        XCTAssertFalse(try XCTUnwrap(Errand.parse(row)).paymentUnconfirmed)
+        approved["receipt"] = ["outcome": "unknown", "total": "27,98 €"]
+        XCTAssertFalse(try XCTUnwrap(Errand.parse(approved)).paymentUnconfirmed)
+    }
+
+    func testCachedErrandsWithoutTheNewFieldsStillDecode() throws {
+        let errand = try XCTUnwrap(Errand.parse(row))
+        let data = try JSONEncoder().encode(errand)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "blockedKind")
+        var checkout = try XCTUnwrap(object["checkout"] as? [String: Any])
+        checkout.removeValue(forKey: "paymentMethod")
+        object["checkout"] = checkout
+        let restored = try JSONDecoder().decode(Errand.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(restored.blockedKind)
+        XCTAssertNil(restored.checkout?.paymentMethod)
+        XCTAssertTrue(restored.checkout?.paysWithSavedCard == true)
+    }
+
     func testAnUnknownStatusIsReadAsWorkingAndARowWithoutIdIsDropped() {
         var odd = row
         odd["status"] = "something_new"

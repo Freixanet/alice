@@ -36,6 +36,12 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
         var cardLabel: String
         var total: String
         var currency: String
+        /// How the shop is paid (`card`, `saved_on_shop`, `paypal`, `bizum`, `apple_pay`, `transfer`,
+        /// `cod`). Optional so older cached errands still decode; nil reads as a saved card.
+        var paymentMethod: String? = nil
+
+        /// Whether a saved card of the vault pays: the only method that needs one chosen here.
+        var paysWithSavedCard: Bool { (paymentMethod ?? "card") == "card" }
     }
 
     struct Receipt: Hashable, Sendable, Codable {
@@ -109,8 +115,18 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     /// Stopped because the shop charges another price for the chosen option: that price, which the
     /// person may accept (`go_on`). Optional so older cached errands still decode.
     var blockedPrice: String? = nil
+    /// Why it stopped, as the plugin classifies it (`price`, `gone`, `datum`, `paid_before`, `other`).
+    /// Optional so older cached errands still decode.
+    var blockedKind: String? = nil
     /// The price the chosen option was shown at.
     var offerPrice: String? = nil
+
+    /// Stopped because this shop was already paid recently: «Seguir desde aquí» means «this is
+    /// another order, pay it».
+    var stoppedOnEarlierPayment: Bool { status == .stuck && blockedKind == "paid_before" }
+    /// Money may be out: the person approved the checkout and nothing says how the payment ended.
+    /// The card must never claim nothing was paid.
+    var paymentUnconfirmed: Bool { checkout?.status == .approved && receipt == nil }
     var access: Access? = nil
 
     var accessRequest: SecureRequest? {
@@ -197,7 +213,8 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
                 id: id, status: Checkout.Status(rawValue: text(raw["status"])) ?? .pending,
                 merchant: text(raw["merchant"]), site: text(raw["site"]), items: items(raw["items"]),
                 delivery: text(raw["delivery"]), address: text(raw["address"]), email: text(raw["email"]),
-                cardLabel: text(raw["card_label"]), total: text(raw["total"]), currency: text(raw["currency"]))
+                cardLabel: text(raw["card_label"]), total: text(raw["total"]), currency: text(raw["currency"]),
+                paymentMethod: (raw["payment_method"] as? String).flatMap { $0.isEmpty ? nil : $0 })
         }
         let receipt = (row["receipt"] as? [String: Any]).map { raw in
             Receipt(outcome: text(raw["outcome"]), order: text(raw["order"]), total: text(raw["total"]),
@@ -228,6 +245,7 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
             reason: text(row["reason"]), summary: text(row["summary"]), steps: steps,
             startedAt: date(row["started_at"]) ?? Date(), updatedAt: date(row["updated_at"]) ?? Date(),
             blockedPrice: (row["blocked"] as? [String: Any]).flatMap { $0["kind"] as? String == "price" ? $0["price"] as? String : nil },
+            blockedKind: (row["blocked"] as? [String: Any]).flatMap { $0["kind"] as? String },
             offerPrice: (row["offer"] as? [String: Any])?["price"] as? String,
             access: (row["secure_request"] as? [String: Any]).flatMap { raw in
                 guard let requestID = raw["request_id"] as? String else { return nil }

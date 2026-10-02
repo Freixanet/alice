@@ -296,6 +296,107 @@ class ErrandHookTests(unittest.TestCase):
             verdict=self.plugin._guard_errand('browser_exec',{'code':'click_at_xy(30,50)'},session_id=entry['session_id'])
         self.assertEqual(verdict['action'],'block')
 
+    # ── P0: every payment leaves a trace; the guards fail closed ──────────────────
+
+    def approved_purchase(self):
+        entry = self.errand(offer={'option_id': 'chosen', 'quote_ref': 'pq-test', 'url': 'https://www.hsnstore.com/p'})
+        self.errands.request_checkout(self.home, entry['id'], {'merchant': 'HSN', 'site': 'hsnstore.com',
+                                                               'items': [{'name': 'Creatina'}], 'total': '27,98 €'})
+        self.errands.decide_checkout(self.home, entry['id'], True)
+        return self.errands.get(self.home, entry['id'])
+
+    def test_a_press_that_pays_leaves_its_entry_in_the_ledger_before_it_happens(self):
+        entry = self.approved_purchase()
+        prices = self.plugin._module('purchase_prices.py', 'alice_purchase_prices')
+        access = self.plugin._module('errand_access.py', 'alice_errand_access')
+        page = ('https://www.hsnstore.com', {'url': 'https://www.hsnstore.com/checkout/step/payment/'}, None)
+        with mock.patch.object(access, 'target', return_value=page), mock.patch.object(prices, 'payment_ready', return_value=True):
+            # «Continuar» on the payment step is let through and writes nothing.
+            self.assertIsNone(self.plugin._guard_errand('browser_click', {'text': 'Continuar'}, session_id=entry['session_id']))
+            self.assertIsNone(self.plugin._purchases().open_payment(self.home, entry['session_id']))
+            # The button that pays is let through and written down first.
+            self.assertIsNone(self.plugin._guard_errand('browser_click', {'text': 'Pagar ahora'}, session_id=entry['session_id']))
+        pending = self.plugin._purchases().open_payment(self.home, entry['session_id'])
+        self.assertEqual((pending['shop'], pending['status']), ('hsnstore.com', 'pending'))
+        # Written once, however many presses it takes.
+        with mock.patch.object(access, 'target', return_value=page), mock.patch.object(prices, 'payment_ready', return_value=True):
+            self.plugin._guard_errand('browser_click', {'text': 'Pagar ahora'}, session_id=entry['session_id'])
+        ledger = self.plugin._purchases()
+        self.assertEqual(len(ledger._read(ledger._ledger(self.home))), 1)
+        # And settling it afterwards works without any card fill.
+        self.assertTrue(ledger.settle(self.home, 'hsnstore.com', 'paid', order='A1')['ok'])
+
+    def test_a_press_that_pays_is_refused_when_the_ledger_cannot_take_it(self):
+        entry = self.approved_purchase()
+        prices = self.plugin._module('purchase_prices.py', 'alice_purchase_prices')
+        access = self.plugin._module('errand_access.py', 'alice_errand_access')
+        page = ('https://www.hsnstore.com', {'url': 'https://www.hsnstore.com/checkout/step/payment/'}, None)
+        with mock.patch.object(access, 'target', return_value=page), mock.patch.object(prices, 'payment_ready', return_value=True), \
+                mock.patch.object(self.plugin._purchases(), 'record', side_effect=OSError('disk full')):
+            verdict = self.plugin._guard_errand('browser_click', {'text': 'Pagar ahora'}, session_id=entry['session_id'])
+        self.assertEqual(verdict['action'], 'block')
+        self.assertIn('libro de pagos', verdict['message'])
+
+    def test_the_repeat_guard_blocks_when_it_cannot_check(self):
+        entry = self.approved_purchase()
+        with mock.patch.object(self.plugin._purchases(), 'guard', side_effect=OSError('unreadable')):
+            verdict = self.plugin._guard_repeat_payment('browser_vault_fill', {'handle': 'card'}, session_id=entry['session_id'])
+        self.assertEqual(verdict['action'], 'block')
+        with mock.patch.object(self.plugin, '_card_fill', side_effect=RuntimeError('vault locked')):
+            verdict = self.plugin._guard_repeat_payment('browser_vault_fill', {'handle': 'card'}, session_id=entry['session_id'])
+        self.assertEqual(verdict['action'], 'block')
+        # A login fill is none of the ledger's business.
+        self.assertIsNone(self.plugin._guard_repeat_payment('browser_vault_fill', {'handle': 'login'}, session_id=entry['session_id']))
+
+    def test_a_payment_the_ledger_missed_blocks_every_fill_until_its_outcome(self):
+        entry = self.approved_purchase()
+        result = json.dumps({'success': True, 'kind': 'payment', 'origin': 'https://www.hsnstore.com'})
+        with mock.patch.object(self.plugin._purchases(), 'record', side_effect=OSError('disk full')):
+            self.plugin._record_payment('browser_vault_fill', {'handle': 'card'}, result, entry['session_id'])
+        verdict = self.plugin._guard_repeat_payment('browser_vault_fill', {'handle': 'card'}, session_id=entry['session_id'])
+        self.assertEqual(verdict['action'], 'block')
+        self.assertIn('purchase_outcome', verdict['message'])
+        # purchase_outcome from that errand clears it (the entry is made since none was written).
+        registered = {}
+        ctx = types.SimpleNamespace(register_tool=lambda **kw: registered.__setitem__(kw['name'], kw))
+        self.plugin._register_purchase_tools(ctx)
+        with mock.patch.object(self.plugin, '_session_id', return_value=entry['session_id']):
+            out = json.loads(registered['purchase_outcome']['handler']({'site': 'hsnstore.com', 'outcome': 'paid', 'order': 'A1'}))
+        self.assertTrue(out['ok'], out)
+        self.assertEqual(self.errands.get(self.home, entry['id'])['receipt']['outcome'], 'paid')
+        # The flag is gone: what stands in the way now is the ordinary «paid before», for the person.
+        verdict = self.plugin._guard_repeat_payment('browser_vault_fill', {'handle': 'card'}, session_id=entry['session_id'])
+        self.assertEqual(verdict['kind'], 'paid_before')
+        self.assertNotIn('libro de pagos', verdict['message'])
+
+    def test_a_chat_cannot_record_an_outcome_nobody_paid(self):
+        registered = {}
+        ctx = types.SimpleNamespace(register_tool=lambda **kw: registered.__setitem__(kw['name'], kw))
+        self.plugin._register_purchase_tools(ctx)
+        with mock.patch.object(self.plugin, '_session_id', return_value='20260922_155237_281345'):
+            out = json.loads(registered['purchase_outcome']['handler']({'site': 'hsnstore.com', 'outcome': 'paid'}))
+        self.assertFalse(out['ok'])
+
+    def test_a_shop_paid_before_stops_the_errand_and_seguir_lets_one_payment_through(self):
+        earlier = self.approved_purchase()
+        ledger = self.plugin._purchases()
+        ledger.record(self.home, 'hsnstore.com', earlier['session_id'])
+        ledger.settle(self.home, 'hsnstore.com', 'paid', order='A1')
+        entry = self.approved_purchase()
+        verdict = self.plugin._guard_repeat_payment('browser_vault_fill', {'handle': 'card'}, session_id=entry['session_id'])
+        self.assertEqual((verdict['action'], verdict['kind']), ('block', 'paid_before'))
+        stopped = self.errands.get(self.home, entry['id'])
+        self.assertEqual((stopped['status'], stopped['blocked']['kind']), ('stuck', 'paid_before'))
+        self.assertIn('pedido A1', stopped['reason'])
+        # The person: «it is another order».
+        self.errands.go_on(self.home, entry['id'])
+        self.assertIsNone(self.plugin._guard_repeat_payment('browser_vault_fill', {'handle': 'card'}, session_id=entry['session_id']))
+        # The fill that goes through spends the allowance.
+        result = json.dumps({'success': True, 'kind': 'payment', 'origin': 'https://www.hsnstore.com'})
+        self.plugin._record_payment('browser_vault_fill', {'handle': 'card'}, result, entry['session_id'])
+        self.assertIsNone(self.errands.get(self.home, entry['id']).get('pay_again_until'))
+        self.assertEqual(ledger.open_payment(self.home, entry['session_id'])['status'], 'pending')
+
     def test_an_errand_step_is_the_comment_on_the_browser_code(self):
         entry = self.errand()
         self.plugin._errand_step("browser_exec", {"code": "# Abrir la ficha de la creatina\ngoto_url('x')"},

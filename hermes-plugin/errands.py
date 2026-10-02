@@ -108,6 +108,55 @@ def _money():
     return _sys.modules[name]
 
 
+def _purchases():
+    """purchases.py beside this file: the ledger of payments sent, one entry per order."""
+    import importlib.util
+    import sys as _sys
+
+    name = "alice_purchases"
+    if name not in _sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "purchases.py")
+        module = importlib.util.module_from_spec(spec)
+        _sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return _sys.modules[name]
+
+
+def payment_pending(home: Path, entry: Dict[str, Any], now: Optional[float] = None) -> bool:
+    """Whether money may be out without a known outcome: a payment this errand sent is still open
+    in the ledger, or the person approved its checkout and nothing says how that ended."""
+    if not entry or isinstance(entry.get("receipt"), dict) and entry["receipt"].get("outcome"):
+        return False
+    try:
+        if _purchases().open_payment(home, str(entry.get("session_id") or ""), now=now) is not None:
+            return True
+    except Exception:  # noqa: BLE001 — an unreadable ledger is not "nothing was paid"
+        return True
+    checkout = entry.get("checkout") if isinstance(entry.get("checkout"), dict) else {}
+    return checkout.get("status") == "approved"
+
+
+def close_unknown(home: Path, errand_id: str, now: Optional[float] = None) -> bool:
+    """A payment that may have gone out and whose outcome nobody read ends as «unknown»: written in
+    the ledger (so the shop is not paid again without the person) and on the errand's receipt (so
+    the card says it is not known, never «nothing was paid»). False when nothing was pending."""
+    entry = get(home, errand_id)
+    if entry is None or not payment_pending(home, entry, now):
+        return False
+    site = ((entry.get("checkout") or {}).get("site") if isinstance(entry.get("checkout"), dict) else "") \
+        or entry.get("site") or shop(((entry.get("offer") or {}).get("url") or ""))
+    try:
+        _purchases().settle(home, site, "unknown", now=now, ensure_session=str(entry.get("session_id") or ""))
+    except Exception:  # noqa: BLE001 — the receipt still says unknown
+        pass
+    record_receipt(home, str(entry.get("session_id") or ""), {"site": site, "outcome": "unknown"}, now=now)
+    return True
+
+
+UNKNOWN_REASON = ("No se pudo confirmar si el pago se hizo. Comprueba «Mis pedidos» en la tienda o el correo "
+                  "del pedido antes de volver a pagar; no se volverá a pagar sin ti.")
+
+
 # ── Store ───────────────────────────────────────────────────────────────────────
 
 
@@ -267,6 +316,14 @@ def of_session(home: Path, session_id: str) -> Optional[Dict[str, Any]]:
 
 # ── Checkout ────────────────────────────────────────────────────────────────────
 
+# How a shop gets paid. Only «card» needs a saved card in the vault: the others are finished on the
+# shop's or the provider's page, by the agent or by the person taking the browser, and the plugin
+# writes them down all the same (purchases.py) so an order is never paid twice.
+PAYMENT_METHODS = {
+    "card": "tarjeta guardada", "saved_on_shop": "la tarjeta guardada en la tienda", "paypal": "PayPal",
+    "bizum": "Bizum", "apple_pay": "Apple Pay", "transfer": "transferencia", "cod": "contra reembolso",
+}
+
 CHECKOUT_SCHEMA: Dict[str, Any] = {
     "name": "checkout_request",
     "description": (
@@ -295,6 +352,10 @@ CHECKOUT_SCHEMA: Dict[str, Any] = {
             "email": {"type": "string"},
             "card_label": {"type": "string", "description": "The saved card that will pay, e.g. 'Visa ···4242', "
                                                          "or empty: the person chooses it when approving"},
+            "payment_method": {"type": "string", "enum": list(PAYMENT_METHODS),
+                               "description": "How the shop will be paid, as chosen on its page: card (a saved "
+                                              "card Alice fills; the default), saved_on_shop (a card the shop "
+                                              "keeps), paypal, bizum, apple_pay, transfer or cod"},
             "total": {"type": "string", "description": "The total to pay as the page shows it, e.g. '27,98 €'"},
             "currency": {"type": "string", "description": "ISO code, e.g. EUR"},
         },
@@ -424,7 +485,10 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
     # Step 8: a way to pay before the person sees the total. With no saved card the person is asked
     # for one first; the errand resumes with «[tarjeta lista]» and calls checkout_request again.
     labels: List[str] = []
-    if saved_cards is not None:
+    method = str(args.get("payment_method") or "card").strip().lower()
+    if method not in PAYMENT_METHODS:
+        method = "card"
+    if saved_cards is not None and method == "card":
         try:
             labels = [str(c.get("label") or "") for c in saved_cards()]
         except Exception:  # noqa: BLE001 — the vault unreadable is not "no card": the person chooses
@@ -439,8 +503,9 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
         "id": secrets.token_hex(4), "status": "pending", "merchant": _clean(args.get("merchant"), 60) or site,
         "site": site, "items": items, "delivery": _clean(args.get("delivery"), 120),
         "address": _clean(args.get("address"), 160), "email": _clean(args.get("email"), 120),
-        "card_label": paying_card(home, site, [label for label in labels if label != "?"],
-                                  _clean(args.get("card_label"), 60)),
+        "card_label": (paying_card(home, site, [label for label in labels if label != "?"],
+                                   _clean(args.get("card_label"), 60)) if method == "card" else ""),
+        "payment_method": method,
         "total": total, "total_cents": total_cents, "currency": currency, "requested_at": now,
     }
     update(home, errand_id, now=now, status="needs_approval", checkout=checkout, site=entry.get("site") or site)
@@ -495,15 +560,22 @@ def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float
 
 
 def approved_message(checkout: Dict[str, Any]) -> str:
-    """How the errand goes on after «Permitir»: pay that total, with that card, and nothing else."""
+    """How the errand goes on after «Permitir»: pay that total, that way, and nothing else."""
     total = checkout.get("approved_total") or checkout.get("total") or ""
     card = f" ({checkout['card_label']})" if checkout.get("card_label") else ""
+    method = str(checkout.get("payment_method") or "card")
+    if method == "card":
+        how = f"paga con la tarjeta guardada{card}"
+    else:
+        how = (f"paga con {PAYMENT_METHODS.get(method, method)}: pulsa el botón que paga y, si la tienda te lleva a "
+               "una página o app donde haga falta la persona (PayPal, Bizum, el banco), dilo en una línea y espera "
+               "mirando la página (lee cada 20 s, hasta unos 3 minutos) a que termine ahí")
     return (
         f"{APPROVED_PREFIX} La persona ha aprobado pagar {total} en {checkout.get('merchant') or checkout.get('site')}. "
-        f"Justo antes de pulsar pagar, mira el total de la página: si es exactamente {total}, paga con la "
-        f"tarjeta guardada{card}; si es otro, NO pagues y vuelve a llamar a `checkout_request` con lo que "
+        f"Justo antes de pulsar pagar, mira el total de la página: si es exactamente {total}, {how}; si es otro, "
+        "NO pagues y vuelve a llamar a `checkout_request` con lo que "
         "muestra ahora. Después de pagar, registra `purchase_outcome` con el número de pedido, el total, "
-        "los artículos, la tarjeta y la entrega prevista.")
+        "los artículos, la tarjeta y la entrega prevista; si no ves cómo acabó, `unknown`, nunca otro intento.")
 
 
 def same_amount(a: Any, b: Any) -> bool:
@@ -552,6 +624,22 @@ def is_pay_action(tool_name: str, args: Any, active_url: str = "", payment_step:
     return bool(STEP_WORDS.search(text)) and payment_step is None
 
 
+def is_strong_pay_action(tool_name: str, args: Any, active_url: str = "", gateways: Iterable[str] = ()) -> bool:
+    """A press that pays by itself, worth writing in the ledger before it happens: it names the pay
+    button, or it presses anything on a bank's own payment page. A «Continuar» on the payment step
+    is not one (it may only move on), so it leaves no entry."""
+    if tool_name not in BROWSER_ACTIONS:
+        return False
+    text = _text_of(args)
+    presses = tool_name in ("browser_click", "browser_press") or bool(CLICKS.search(text))
+    if not presses:
+        return False
+    if PAY_WORDS.search(text):
+        return True
+    host = (urlsplit(str(active_url or "")).hostname or "").lower()
+    return bool(host) and host in {str(g).lower() for g in gateways}
+
+
 def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = None, tool_name: str = "",
              args: Any = None, active_url: str = "", gateways: Iterable[str] = (),
              merchant_site: str = "", now: Optional[float] = None,
@@ -582,7 +670,7 @@ def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = Non
         "No se paga sin la aprobación de la persona. Con el checkout listo en el paso de pago, llama a "
         "`checkout_request` con lo que muestra la página (tienda, artículos, entrega, tarjeta, total) y "
         f"termina tu turno; el recado sigue con «{APPROVED_PREFIX}» cuando la persona lo apruebe. "
-        "Si ya se aprobó hace más de 10 minutos o en otra tienda, pide la aprobación otra vez.")}
+        f"Si ya se aprobó hace más de {APPROVAL_TTL // 60} minutos o en otra tienda, pide la aprobación otra vez.")}
 
 
 def login_gate(home: Path, session_id: str) -> Optional[Dict[str, str]]:
@@ -857,10 +945,31 @@ def go_on(home: Path, errand_id: str, accept_price: bool = False) -> Optional[Di
         return None
     blocked = entry.get("blocked") if isinstance(entry.get("blocked"), dict) else {}
     offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else None
+    receipt = entry.get("receipt") if isinstance(entry.get("receipt"), dict) else {}
     datum = missing_datum(str(entry.get("reason") or "")) if not accept_price else None
     if datum:
         # «Seguir desde aquí» on a stop about a datum: the datum is the way on, not another try.
         return ask_datum(home, errand_id, datum)
+    if receipt.get("outcome") == "unknown":
+        # Stopped with money possibly out: going on means finding out, never paying again.
+        update(home, errand_id, blocked=None, reason="", receipt=None)
+        message = ("[comprobar pago] La persona quiere saber cómo acabó el pago que se envió. Mira la página de "
+                   "confirmación, «Mis pedidos» en la tienda o el correo del pedido y registra `purchase_outcome` "
+                   "con lo que veas (paid con el número de pedido, declined, not_charged o unknown si sigue sin "
+                   "estar claro). No vuelvas a pagar.")
+        resume(home, errand_id, message)
+        return get(home, errand_id)
+    if blocked.get("kind") == "paid_before" and not accept_price:
+        # The person says this is another order: exactly one payment may go through, within the
+        # approval window; the approved total is still read from the page before anything is paid.
+        now = time.time()
+        update(home, errand_id, blocked=None, reason="", pay_again_until=now + APPROVAL_TTL)
+        message = ("[pagar otra vez] La persona confirma que este es un pedido distinto del que ya se pagó en esta "
+                   "tienda. Sigue desde el paso de pago: comprueba que el total de la página es el aprobado (si la "
+                   "aprobación caducó, llama a `checkout_request` otra vez) y paga una sola vez. Después, "
+                   "`purchase_outcome`.")
+        resume(home, errand_id, message)
+        return get(home, errand_id)
     if accept_price:
         if blocked.get("kind") != "price" or not blocked.get("price"):
             return None
@@ -900,6 +1009,9 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
         "bloqueo: pregúntalo con `ask_person` con su `field` y termina el turno; sigue cuando llegue. "
         "Si hay un error de código o una página vacía, corrígelo y vuelve a inspeccionar; no concluyas que faltan "
         "controles a partir de una consulta fallida. La persona decide si sigue."
+        + (f" El precio elegido lleva el cupón «{offer['coupon']}», que la cesta aceptó al comprobarlo: aplícalo en "
+           "la cesta antes de `purchase_check_cart`; si la tienda ya no lo acepta, el precio es otro: «BLOQUEADO: "
+           "precio … — el cupón ya no se aplica»." if offer.get("coupon") else "")
     )
 
 
@@ -1288,6 +1400,14 @@ class Engine:
         except Exception:
             return False
 
+    def _stuck(self, reason: str, **fields: Any) -> str:
+        """Leaves the errand stuck. If a payment may be out with no known outcome, that comes first:
+        the ledger and the receipt say «unknown», the card never says nothing was paid."""
+        if close_unknown(self.home, self.errand_id):
+            reason = _clean(UNKNOWN_REASON + " (" + str(reason).rstrip(".") + ")", 400)
+        update(self.home, self.errand_id, status="stuck", reason=reason, **fields)
+        return "stuck"
+
     def _answer_approval(self, run_id: str, approval: Dict[str, Any]) -> None:
         entry = self._entry()
         request_id = str(approval.get("request_id") or approval.get("id") or "")
@@ -1348,6 +1468,8 @@ class Engine:
         repeat_recoveries = 0
         self_fixed = False
         stalls = 0
+        judge_failures = 0
+        outcome_asked = 0
         # Restarted while its last run still goes on in the gateway: that run finishes first,
         # never a second one beside it in the same session.
         if entry.get("run_id") and message:
@@ -1366,23 +1488,18 @@ class Engine:
             if entry.get("status") != "working":
                 return entry.get("status", "missing")
             if int(entry.get("runs") or 0) >= MAX_RUNS:
-                update(self.home, self.errand_id, status="stuck", reason="Ha usado todos sus intentos sin terminar.")
-                return "stuck"
+                return self._stuck("Ha usado todos sus intentos sin terminar.")
             try:
                 if not prepare_browser(self.home):
                     raise RuntimeError("Browser not ready")
             except Exception:
-                update(self.home, self.errand_id, status="stuck",
-                       reason="El navegador de Alice no pudo arrancar; no se ha ejecutado el recado. Puedes reintentarlo.")
-                return "stuck"
+                return self._stuck("El navegador de Alice no pudo arrancar; no se ha ejecutado el recado. Puedes reintentarlo.")
             try:
                 steps_before = entry.get("steps") or []
                 run_id = self.gateway.start(entry["session_id"], text,
                                             model=entry["model"], provider=entry["provider"])
             except Exception as exc:  # noqa: BLE001
-                update(self.home, self.errand_id, status="stuck",
-                       reason=f"No se pudo hablar con Hermes: {type(exc).__name__}.")
-                return "stuck"
+                return self._stuck(f"No se pudo hablar con Hermes: {type(exc).__name__}.")
             update(self.home, self.errand_id, run_id=run_id, runs=int(entry.get("runs") or 0) + 1)
             state = self._wait_run(run_id)
             reply = _clean(state.get("output") or "", 2000)
@@ -1420,23 +1537,18 @@ class Engine:
                             + "). Si la tienda rechaza algo, lee su mensaje de error antes de volver a intentarlo; "
                             "si estás avanzando (dirección, envío, pago en una misma página), sigue y di en qué paso estás.")
                     continue
-                update(self.home, self.errand_id, status="stuck", reason=(
+                return self._stuck(
                     "Lleva varios minutos en la misma página sin poder avanzar (" + str(state.get("page"))[:80]
-                    + "). Ábrela en el navegador para ver qué pide la tienda."))
-                return "stuck"
+                    + "). Ábrela en el navegador para ver qué pide la tienda.")
             if state.get("status") == "stalled":
                 stalls += 1
                 if stalls >= 2:
-                    update(self.home, self.errand_id, status="stuck",
-                           reason="El modelo dejó de responder dos veces seguidas.")
-                    return "stuck"
+                    return self._stuck("El modelo dejó de responder dos veces seguidas.")
                 text = (CONTINUATION + " El paso anterior se quedó colgado: mira en qué punto está la "
                         "página y sigue desde ahí.")
                 continue
             if state.get("status") == "failed":
-                update(self.home, self.errand_id, status="stuck",
-                       reason=_clean(state.get("error") or "El agente falló.", 200))
-                return "stuck"
+                return self._stuck(_clean(state.get("error") or "El agente falló.", 200))
             # The chosen option cannot be bought as chosen (gone, another price): it stops here
             # and says why, instead of buying something else.
             if BLOCKED.match(reply):
@@ -1460,22 +1572,24 @@ class Engine:
                             "el mismo precio. Luego sigue hasta el paso de pago y llama a `checkout_request`. Solo si la tienda ya "
                             "no vende esa opción o cobra otro precio, termina con «BLOQUEADO: …».")
                     continue
-                update(self.home, self.errand_id, status="stuck", reason=said, blocked=blocked)
-                return "stuck"
+                return self._stuck(said, blocked=blocked)
             receipt = entry.get("receipt") or {}
             if receipt.get("outcome") in ("paid", "declined", "not_charged"):
                 # Known how it ended: the person reads the result. A declined payment is not a
                 # reason to try again on its own.
                 update(self.home, self.errand_id, status="done")
                 return "done"
+            if receipt.get("outcome") == "unknown":
+                # Said as unknown: the errand stops on it and the person checks before anything
+                # is paid again (the ledger refuses it meanwhile).
+                return self._stuck(UNKNOWN_REASON)
             # Similar summaries are not a loop when the browser has recorded
             # new steps. Give a real no-progress loop one bounded recovery.
             if previous and repeats(previous, reply) and (entry.get("steps") or []) == steps_before:
                 if repeat_recoveries >= 1:
                     last = (entry.get("steps") or [{}])[-1].get("text") or "sin pasos registrados"
-                    update(self.home, self.errand_id, status="stuck", reason=(
-                        "No ha podido avanzar tras un intento de recuperación. Último paso: " + str(last)[:140] + "."))
-                    return "stuck"
+                    return self._stuck(
+                        "No ha podido avanzar tras un intento de recuperación. Último paso: " + str(last)[:140] + ".")
                 repeat_recoveries += 1
                 text = (CONTINUATION + " Has repetido la respuesta sin registrar pasos nuevos. "
                         "Inspecciona el estado actual de la página y lee el error de la tienda antes de "
@@ -1489,9 +1603,24 @@ class Engine:
             previous = reply
             try:
                 decision = self.judge(entry["session_id"], reply)
+                judge_failures = 0
             except Exception:  # noqa: BLE001 — a judge that cannot answer lets the agent go on once
+                judge_failures += 1
+                if judge_failures >= 2:
+                    return self._stuck("Hermes no pudo juzgar el recado dos veces seguidas.")
                 decision = {"should_continue": True, "continuation_prompt": CONTINUATION}
             if decision.get("status") == "done":
+                if payment_pending(self.home, entry):
+                    # Money may be out: «done» is not accepted without the outcome written down.
+                    # Asked twice; then it ends as unknown, which the person reads as such.
+                    outcome_asked += 1
+                    if outcome_asked <= 2:
+                        text = (CONTINUATION + " Se envió un pago, o la persona aprobó pagar, y no has registrado "
+                                "cómo acabó. Mira la página de confirmación, «Mis pedidos» en la tienda o el correo "
+                                "del pedido y llama a `purchase_outcome` (paid con el número de pedido, declined, "
+                                "not_charged, o unknown si no lo ves). No vuelvas a pagar.")
+                        continue
+                    return self._stuck(UNKNOWN_REASON)
                 update(self.home, self.errand_id, status="done")
                 return "done"
             if decision.get("should_continue"):
@@ -1504,9 +1633,7 @@ class Engine:
                     self.sleep(15)
                 text = CONTINUATION
                 continue
-            update(self.home, self.errand_id, status="stuck",
-                   reason=_clean(decision.get("reason") or decision.get("message") or "Se ha atascado.", 200))
-            return "stuck"
+            return self._stuck(_clean(decision.get("reason") or decision.get("message") or "Se ha atascado.", 200))
 
 
 _threads: Dict[str, threading.Thread] = {}
@@ -1557,7 +1684,13 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
             if final in ("done", "denied", "stopped", "missing"):
                 release_context(errand_id)
         except Exception as exc:  # noqa: BLE001 — never raised in a thread; the errand says what happened
-            update(home, errand_id, status="stuck", reason=f"Error interno: {type(exc).__name__}.")
+            reason = f"Error interno: {type(exc).__name__}."
+            try:
+                if close_unknown(home, errand_id):
+                    reason = UNKNOWN_REASON + " (" + reason.rstrip(".") + ")"
+            except Exception:  # noqa: BLE001
+                pass
+            update(home, errand_id, status="stuck", reason=reason)
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
             lock.close()
@@ -1719,7 +1852,7 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
     # The chat it came from stays: Alice finds an errand's cards by it when the chat's reply
     # never called errand_start (the plugin starts it anyway).
     hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence", "checkout_evidence", "circle_from",
-              "circle_page", "circle_hash"}
+              "circle_page", "circle_hash", "pay_again_until"}
     out = {k: v for k, v in entry.items() if k not in hidden}
     if isinstance(out.get("approval"), dict):
         out["approval"] = {k: v for k, v in out["approval"].items() if k != "run_id"}

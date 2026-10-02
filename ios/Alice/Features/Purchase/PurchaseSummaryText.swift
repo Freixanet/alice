@@ -23,11 +23,31 @@ enum PurchaseSummaryText {
         if !checkout.email.isEmpty {
             lines.append("- Email: " + escaped(checkout.email))
         }
-        lines.append("- " + language.pick("Pay with: ", "Pago: ")
-                     + (card.isEmpty ? language.pick("choose a card below", "elige una tarjeta abajo") : escaped(card)))
+        lines.append("- " + language.pick("Pay with: ", "Pago: ") + payment(checkout, card: card, language: language))
         lines += ["", language.pick("Nothing is paid until you approve this total below.",
                                     "No se paga nada hasta que apruebes este total abajo.")]
         return lines.joined(separator: "\n")
+    }
+
+    /// How it is paid: the saved card (or the choice of one), or the method chosen on the shop's
+    /// page, which the shop or its provider completes.
+    static func payment(_ checkout: Errand.Checkout, card: String, language: ChatLanguage) -> String {
+        guard checkout.paysWithSavedCard else {
+            return paymentMethodName(checkout.paymentMethod ?? "", language: language)
+        }
+        return card.isEmpty ? language.pick("choose a card below", "elige una tarjeta abajo") : escaped(card)
+    }
+
+    static func paymentMethodName(_ method: String, language: ChatLanguage) -> String {
+        switch method {
+        case "saved_on_shop": return language.pick("the card the shop keeps", "la tarjeta guardada en la tienda")
+        case "paypal": return "PayPal"
+        case "bizum": return "Bizum"
+        case "apple_pay": return "Apple Pay"
+        case "transfer": return language.pick("bank transfer", "transferencia")
+        case "cod": return language.pick("cash on delivery", "contra reembolso")
+        default: return language.pick("a saved card", "tarjeta guardada")
+        }
     }
 
     /// Step 12: the order, its number, what was paid and what to expect of the delivery.

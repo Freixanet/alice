@@ -185,19 +185,48 @@ def _card_fill(tool_name, args):
     return meta if meta is not None and meta.kind == "payment" else None
 
 
+# Sessions whose last payment could not be written in the ledger: no card goes in for them until
+# `purchase_outcome` says how that payment ended. In memory on purpose — a ledger that cannot be
+# written cannot hold the flag either.
+_LEDGER_ERRORS: set = set()
+_LEDGER_ERROR_MESSAGE = ("El pago anterior de esta conversación no pudo anotarse en el libro de pagos. No rellenes "
+                         "ninguna tarjeta: comprueba cómo acabó ese pago y regístralo con `purchase_outcome`.")
+
+
 def _guard_repeat_payment(tool_name=None, args=None, session_id="", **_):
     """One payment per order (purchases.py): an unsettled payment on the same shop blocks the fill;
-    a paid or unknown one sends it through Hermes' approval card. If the ledger cannot be read, the
-    fill still needs Hermes' own payment confirmation, so nothing is spent without a yes."""
+    a paid or unknown one asks the person (in a chat through Hermes' card; in an errand the errand
+    stops on it and only «Seguir desde aquí» lets one fill through). Any doubt — the vault or the
+    ledger unreadable — blocks: a card is never filled on a guess."""
+    if tool_name != "browser_vault_fill" or not isinstance(args, dict) or not args.get("handle"):
+        return None
     try:
         meta = _card_fill(tool_name, args)
-        if meta is None:
-            return None
-        cards = _cards_module()
-        site = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
-        return _purchases().guard(_hermes_root(), site, session_id or "")
     except Exception:
+        return {"action": "block", "message": "No se pudo leer la bóveda para comprobar este pago; no rellenes la tarjeta."}
+    if meta is None:
         return None
+    session = _session_id(session_id)
+    if session in _LEDGER_ERRORS:
+        return {"action": "block", "message": _LEDGER_ERROR_MESSAGE}
+    try:
+        cards = _cards_module()
+        root = _hermes_root()
+        site = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
+        errands = _errands()
+        entry = errands.of_session(root, session) if session.startswith(errands.SESSION_PREFIX) else None
+        if entry is None:
+            return _purchases().guard(root, site, session)
+        if float(entry.get("pay_again_until") or 0) > __import__("time").time():
+            # The person said this is another order (errands.go_on): one payment may go through.
+            return None
+        verdict = _purchases().guard(root, site, session, in_errand=True)
+        if verdict and verdict.get("kind") == "paid_before":
+            errands.update(root, entry["id"], status="stuck", reason=verdict.get("reason") or verdict["message"],
+                           blocked={"kind": "paid_before", "shop": _purchases().shop(site)})
+        return verdict
+    except Exception:
+        return {"action": "block", "message": "No se pudo comprobar el libro de pagos; no pagues."}
 
 
 def _errands():
@@ -423,6 +452,14 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
             if not _module("purchase_prices.py", "alice_purchase_prices").payment_ready(
                     root, entry, gateways=_cards_module().PAYMENT_GATEWAYS):
                 return {"action":"block", "message":"El total o la sesión cambiaron, o falta evidencia del resumen aprobado. Comprueba la cesta y llama a checkout_request para mostrar el total actual antes de pagar."}
+        if (meta is None and entry is not None
+                and errands.is_strong_pay_action(name, args, active_url, _cards_module().PAYMENT_GATEWAYS)):
+            # A press that pays by itself (PayPal, Bizum, a card the shop keeps, the bank's own
+            # button) leaves its entry in the ledger before it happens: a second one on the same
+            # shop is refused until `purchase_outcome` says how this one ended. A card fill is
+            # written when it actually succeeds (_record_payment).
+            if not _note_payment(root, entry, session):
+                return {"action": "block", "message": "No se pudo anotar este pago en el libro de pagos; no pagues."}
         return None
     except Exception:
         if name == "browser_vault_fill" or _errands().is_pay_action(name,args,_active_url()):
@@ -446,17 +483,51 @@ def _errand_step(tool_name, args, session_id) -> None:
         errands.add_step(_hermes_root(), session[len(errands.SESSION_PREFIX):], text, _active_url())
 
 
-def _record_payment(tool_name, args, result, session_id) -> None:
-    """A card Hermes actually wrote into a checkout is a payment attempt until it is settled."""
+def _note_payment(root, entry, session: str) -> bool:
+    """Writes the payment an errand is about to send in the ledger; False when that failed."""
     try:
-        if tool_name != "browser_vault_fill":
-            return
+        checkout = entry.get("checkout") if isinstance(entry.get("checkout"), dict) else {}
+        site = checkout.get("site") or entry.get("site") or str((entry.get("offer") or {}).get("url") or "")
+        written = _purchases().record(root, site, session)
+    except Exception:
+        return False
+    try:
+        _schedule_payment_check(written)
+    except Exception:
+        pass  # the check is a courtesy; the entry is what refuses a second payment
+    return True
+
+
+def _record_payment(tool_name, args, result, session_id) -> None:
+    """A card Hermes actually wrote into a checkout is a payment attempt until it is settled. If the
+    ledger could not take it, the session is flagged and no card goes in until purchase_outcome."""
+    if tool_name != "browser_vault_fill":
+        return
+    session = _session_id(session_id)
+    try:
         out = json.loads(result) if isinstance(result, str) else (result or {})
         if not (isinstance(out, dict) and out.get("success") and out.get("kind") == "payment"):
             return
+    except Exception:
+        return
+    try:
         site = _purchases().merchant(_open_tabs(), str(out.get("origin") or ""),
                                      _cards_module().PAYMENT_GATEWAYS)
-        entry = _purchases().record(_hermes_root(), site, session_id or "")
+        entry = _purchases().record(_hermes_root(), site, session)
+    except Exception:
+        if session:
+            _LEDGER_ERRORS.add(session)
+        return
+    try:
+        errands = _errands()
+        if session.startswith(errands.SESSION_PREFIX):
+            # The one payment the person allowed after «paid before» has been used.
+            found = errands.of_session(_hermes_root(), session)
+            if found and found.get("pay_again_until"):
+                errands.update(_hermes_root(), found["id"], pay_again_until=None)
+    except Exception:
+        pass
+    try:
         _schedule_payment_check(entry)
     except Exception:
         pass
@@ -510,10 +581,23 @@ def _register_purchase_tools(ctx) -> None:
         "properties": {**module.SCHEMA["parameters"]["properties"], **_errands().outcome_properties()}}}
 
     def handler(args, **_):
-        out = module.run_tool(_hermes_root(), args or {})
+        session = _session_id()
+        ensure = ""
+        try:
+            # In an errand whose checkout the person approved, the payment may have gone by a way no
+            # hook wrote down (PayPal, Bizum, the person on the bank's page): its outcome is still kept.
+            errands = _errands()
+            entry = errands.of_session(_hermes_root(), session) if session.startswith(errands.SESSION_PREFIX) else None
+            checkout = (entry or {}).get("checkout") if isinstance((entry or {}).get("checkout"), dict) else {}
+            if checkout.get("status") in ("approved", "pending"):
+                ensure = session
+        except Exception:
+            ensure = ""
+        out = module.run_tool(_hermes_root(), args or {}, ensure_session=ensure)
         try:
             if isinstance(out, dict) and out.get("ok"):
-                _errands().record_receipt(_hermes_root(), _session_id(), args or {})
+                _LEDGER_ERRORS.discard(session)
+                _errands().record_receipt(_hermes_root(), session, args or {})
         except Exception:
             pass
         return _agent_json(out)

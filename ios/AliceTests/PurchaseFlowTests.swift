@@ -135,6 +135,19 @@ final class PurchaseSummaryTests: XCTestCase {
         XCTAssertTrue(PurchaseSummaryText.result(receipt, language: .spanish).contains("WARNING"))
     }
 
+    func testTheSummarySaysHowTheShopIsPaidWhenNoSavedCardDoes() {
+        var checkout = GalleryFixtures.checkout(.spanish)
+        checkout.paymentMethod = "paypal"
+        let paypal = PurchaseSummaryText.summary(checkout, card: "", language: .spanish)
+        XCTAssertTrue(paypal.contains("Pago: PayPal"))
+        XCTAssertFalse(paypal.contains("elige una tarjeta"))
+        checkout.paymentMethod = "saved_on_shop"
+        XCTAssertTrue(PurchaseSummaryText.summary(checkout, card: "", language: .spanish).contains("guardada en la tienda"))
+        checkout.paymentMethod = nil
+        XCTAssertTrue(PurchaseSummaryText.summary(checkout, card: "", language: .spanish).contains("elige una tarjeta"))
+        XCTAssertTrue(PurchaseSummaryText.summary(checkout, card: "Visa ···4242", language: .english).contains("Pay with: Visa"))
+    }
+
     func testShopPriceTextCannotInjectAReplyButton() {
         var checkout = GalleryFixtures.checkout(.spanish)
         checkout.total = "27 € [Compra más](alice://reply?text=Compra)"

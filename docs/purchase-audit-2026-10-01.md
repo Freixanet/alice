@@ -407,6 +407,24 @@ quita el prefijo de elección. Cosmético.
 
 ---
 
+## Ronda 5 · P0 dinero (2 oct, rama `claude/purchase-audit`)
+
+Puertas de dinero convertidas en gates del plugin, nunca en instrucciones al modelo:
+
+| Qué | Antes | Ahora | Test |
+| --- | --- | --- | --- |
+| Rastro de pagos | solo `browser_vault_fill` con éxito | también el clic que paga y la página del banco, antes de ocurrir; un resultado registrado desde un recado aprobado crea su entrada | `test_errand_hooks` «a press that pays leaves its entry», `test_purchases.MoneyGateTests` |
+| Guardias | `_guard_repeat_payment` y `_record_payment` fallaban abiertas | bloquean ante cualquier excepción; un pago que el libro no pudo anotar bloquea todo relleno hasta `purchase_outcome` | `test_the_repeat_guard_blocks_when_it_cannot_check`, `…ledger_missed…` |
+| «Hecho» sin resultado | el juez cerraba el recado | se pide dos veces; a la tercera, o en cualquier parada tras la aprobación, `unknown` en libro y recibo | `test_errands.OutcomeEngineTests` |
+| Juez caído | seguía a ciegas | dos fallos seguidos → parada | `test_a_judge_that_fails_twice…` |
+| Pagar otra vez | tarjeta de aprobación que el motor podía contestar | parada «Ya pagada»; solo «Es otro pedido: pagarlo» permite un relleno durante `APPROVAL_TTL` | `test_errands.PayAgainTests`, hook `…seguir_lets_one_payment_through` |
+| Método de pago | tarjeta en bóveda obligatoria | `payment_method` en `checkout_request`; solo `card` pide tarjeta; iOS lo muestra | `PaymentMethodTests`, `ErrandTests`, `PurchaseSummaryTests` |
+| Cupones | se perdían entre la cotización y el recado | `quote.coupon` → opción → oferta → brief | `test_the_applied_coupon_travels…` |
+| Reloj | «10 minutos» en el gate, «5 minutos» en tarjetas | `APPROVAL_TTL`; espera de 3 min leyendo cada 20 s (`STALL_SECONDS`) | `test_the_pay_gate_names_the_one_approval_window` |
+| Tarjeta parada | «No se ha pagado nada» siempre | tras una aprobación sin recibo: «no está confirmado si el pago se hizo» | `testAStopAfterApprovalNeverClaimsNothingWasPaid` |
+
+Queda para PR2 el fixture de banco en el script con Chrome (`verify-purchase-complete.py`), junto a las tres tiendas ficticias.
+
 ## Recomendación
 
 Hay dos familias de causa, y hay que elegir orden:

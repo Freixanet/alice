@@ -71,8 +71,10 @@ side of that work:
   tells you whether the payment went through, was declined or failed. An approval sent
   while the phone was locked comes back into the chat when you open it. Before paying she
   tries the shop's discount codes and keeps the one that lowers the total most. The plugin
-  keeps a ledger of payments: a second payment on the same shop is refused until the first
-  one's outcome is known, and then needs your explicit approval. Real
+  keeps a ledger of every payment, whatever the method (a saved card, PayPal, Bizum, a card
+  the shop keeps): a second payment on the same shop is refused until the first one's outcome
+  is known, and then only you can say it is another order. An errand that stops after your
+  approval without a known outcome says so, and never claims nothing was paid. Real
   purchases have exposed bugs that have since been fixed. It is not yet reliable enough to
   leave unattended.
 - **Tasks that keep going until they are done.** For a task with several steps, the agent

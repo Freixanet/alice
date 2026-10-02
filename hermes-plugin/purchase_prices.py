@@ -369,6 +369,9 @@ def _verify(home, session, args, *, factory=Probe, now=None):
             if cart_amount(browser.read(recipe['price']),args['currency'],qty,recipe) != best:
                 raise ValueError('El descuento público ya no se aplica.')
         parsed = best
+        # The public code the quoted price rests on, if any: the errand applies it in its own basket.
+        applied_code = next((r['code'] for r in coupon_results if r['applied']
+                             and module('money').parse(r['price'], args['currency']) == best), '')
         shipping = browser.read(recipe['shipping']) if recipe.get('shipping') else None
         condition = browser.read(recipe['condition']) if recipe.get('condition') else None
         if (adapted and recipe.get('public_codes') and not any(r['applied'] for r in coupon_results)
@@ -378,7 +381,7 @@ def _verify(home, session, args, *, factory=Probe, now=None):
                  'session': session, 'url': candidate['url'], 'title': title, 'variant': variant,
                  'qty': qty, 'price_cents': parsed[0], 'currency': parsed[1],
                  'price': module('money').text(*parsed), 'shipping': shipping, 'condition': condition,
-                 'coupons':codes, 'coupon_results':coupon_results,
+                 'coupons':codes, 'coupon_results':coupon_results, 'coupon': applied_code,
                  'origin': module('errand_access').origin(candidate['url']), 'at': now or time.time(), 'recipe': recipe}
     with module('purchase_flow')._locked(home):
         data = _load(home)
@@ -438,7 +441,7 @@ def _row(quote):
     return {**{k: quote[k] for k in ('title','variant','qty','url','price','currency')},
             'merchant': host.split('.')[0].capitalize() if host else '', 'in_stock': True, 'channel': 'browser',
             'quote_ref': quote['id'], 'verified_at': quote['at'], 'shipping': quote['shipping'],
-            'condition': quote['condition']}
+            'condition': quote['condition'], 'coupon': quote.get('coupon') or ''}
 
 
 def auto_present(home, session, search_id, *, currency="", picture=None, request="", now=None):
@@ -557,7 +560,8 @@ def present(home, session, args, *, currency="", picture=None, request="", now=N
             candidates.add(quote['candidate_id'])
             options.append({**row, **{k: quote[k] for k in ('title','variant','qty','url','price','currency')},
                             'in_stock': True, 'channel':'browser', 'quote_ref': quote['id'],
-                            'verified_at': quote['at'], 'shipping': quote['shipping'], 'condition': quote['condition']})
+                            'verified_at': quote['at'], 'shipping': quote['shipping'], 'condition': quote['condition'],
+                            'coupon': quote.get('coupon') or ''})
         try:
             known = module('errands').basket_prices(home, now=now)
         except Exception:  # noqa: BLE001 — a nicety, never a reason not to show the options
@@ -573,7 +577,7 @@ def present(home, session, args, *, currency="", picture=None, request="", now=N
                 found = next(s for s in sets if s['key']==result['set'] and s['session']==session)
                 for option in found['options']:
                     source = options[int(option['id'].rsplit('-',1)[1])-1]
-                    option.update({k:source[k] for k in ('quote_ref','verified_at','shipping','condition')})
+                    option.update({k:source.get(k) for k in ('quote_ref','verified_at','shipping','condition','coupon')})
                 original_key = flow.set_key(raw[:flow.MAX_OPTIONS])
                 for option in found['options']:
                     option['id'] = original_key + '-' + option['id'].rsplit('-',1)[1]

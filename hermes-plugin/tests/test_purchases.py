@@ -140,3 +140,40 @@ class LedgerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MoneyGateTests(unittest.TestCase):
+    """P0: a known outcome is never lost, and a shop paid before stops an errand instead of being
+    left to an approval card."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp())
+
+    def test_an_errands_outcome_is_kept_even_when_no_hook_saw_the_payment(self):
+        # PayPal, Bizum, a card the shop keeps, the person on the bank's page: no fill, no click
+        # the plugin wrote down. In a chat the refusal stands.
+        self.assertFalse(purchases.settle(self.home, "shop.es", "paid", order="A1", now=NOW)["ok"])
+        out = purchases.settle(self.home, "shop.es", "paid", order="A1", now=NOW, ensure_session="errand-x")
+        self.assertTrue(out["ok"])
+        entries = json.loads((self.home / ".alice" / "purchases.json").read_text())
+        self.assertEqual([(e["shop"], e["status"], e["order"], e["session"]) for e in entries],
+                         [("shop.es", "paid", "A1", "errand-x")])
+        # And that payment now protects the shop like any other.
+        self.assertEqual(purchases.guard(self.home, "shop.es", "errand-y", now=NOW + 60)["action"], "approve")
+
+    def test_in_an_errand_a_shop_paid_before_blocks_with_its_reason(self):
+        purchases.record(self.home, "shop.es", "errand-a", now=NOW)
+        purchases.settle(self.home, "shop.es", "paid", order="A1", now=NOW + 10)
+        verdict = purchases.guard(self.home, "shop.es", "errand-b", now=NOW + 600, in_errand=True)
+        self.assertEqual((verdict["action"], verdict["kind"]), ("block", "paid_before"))
+        self.assertIn("pedido A1", verdict["reason"])
+        self.assertTrue(verdict["reason"][0].isupper())
+        # An unknown outcome is treated the same: the person decides, never the engine.
+        purchases.record(self.home, "other.es", "errand-a", now=NOW)
+        purchases.settle(self.home, "other.es", "unknown", now=NOW + 10)
+        self.assertEqual(purchases.guard(self.home, "other.es", "errand-b", now=NOW + 600, in_errand=True)["kind"],
+                         "paid_before")
+        # A declined one stands in nobody's way.
+        purchases.record(self.home, "fine.es", "errand-a", now=NOW)
+        purchases.settle(self.home, "fine.es", "declined", now=NOW + 10)
+        self.assertIsNone(purchases.guard(self.home, "fine.es", "errand-b", now=NOW + 600, in_errand=True))
