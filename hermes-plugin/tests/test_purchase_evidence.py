@@ -70,7 +70,7 @@ class EvidenceTests(unittest.TestCase):
         # Withholding the cards until every format was accounted for left the person with none.
         result = prices.present(self.home,'chat',self.options([self.quote()]),factory=Shop)
         self.assertTrue(result['ok'], result); self.assertEqual(len(result['options']),1)
-        self.assertIn('80 cápsulas',result['unchecked']); self.assertIn('Sin comprobar',result['next'])
+        self.assertIn('Prozis Creapure 80 cápsulas',result['unchecked']); self.assertIn('Sin comprobar',result['next'])
         for candidate in self.search['candidates'][1:]:
             prices.verify(self.home,'chat',{'search_id':self.search['id'],'candidate_id':candidate['id'],'reject_reason':'Sin stock','recipe':{'unavailable':'#unavailable'}},factory=Shop)
         result = prices.present(self.home,'chat',self.options([self.quote()]),factory=Shop)
