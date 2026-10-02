@@ -1315,6 +1315,9 @@ extension View {
 struct RichMessageView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .body) private var blockSpacing: CGFloat = 16
+    @ScaledMetric(relativeTo: .body) private var proseLineSpacing: CGFloat = 4
+    @ScaledMetric(relativeTo: .headline) private var headingLineSpacing: CGFloat = 2
     let content: String
     var failed = false
     var onTap: (@MainActor () -> Void)? = nil
@@ -1358,7 +1361,7 @@ struct RichMessageView: View {
                 ForEach(Array(groups(blocks).enumerated()), id: \.offset) { _, group in
                     if group.prose {
                         ReplyBubble {
-                            VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: blockSpacing) {
                                 ForEach(group.blocks, id: \.0) { view(for: $0.1) }
                             }
                         }
@@ -1378,7 +1381,7 @@ struct RichMessageView: View {
     }
 
     private var plainBody: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: blockSpacing) {
             ForEach(Array((cachesParse ? RichMarkdown.cached(shown) : RichMarkdown.blocks(shown)).enumerated()),
                     id: \.offset) { index, block in
                 if separatesEntries, index > 0, Self.startsEntry(block) {
@@ -1419,11 +1422,11 @@ struct RichMessageView: View {
     private func view(for block: RichBlock) -> some View {
         switch block {
         case let .heading(level, text):
-            replyText(inline(text), font: Self.headingUIFont(level), spacing: 2)
-                .padding(.top, level <= 2 ? 4 : 0)
+            replyText(inline(text), font: Self.headingUIFont(level), spacing: headingLineSpacing)
+                .padding(.top, level <= 2 ? 8 : 4)
                 .accessibilityAddTraits(.isHeader)
         case let .paragraph(text):
-            replyText(inline(text), font: .preferredFont(forTextStyle: .body), spacing: 4)
+            replyText(inline(text), font: .preferredFont(forTextStyle: .body), spacing: proseLineSpacing)
         case let .list(items):
             RichListView(onTap: onTap, items: items, inline: inline)
         case let .callout(kind, body):
@@ -1477,20 +1480,22 @@ struct RichMessageView: View {
 
     static func headingFont(_ level: Int) -> Font {
         switch level {
-        case 1: .title3.weight(.bold)
-        case 2: .headline
+        case 1: .title2.weight(.semibold)
+        case 2: .title3.weight(.semibold)
+        case 3: .headline
         default: .subheadline.weight(.semibold)
         }
     }
 
     static func headingUIFont(_ level: Int) -> UIFont {
         let style: UIFont.TextStyle = switch level {
-        case 1: .title3
-        case 2: .headline
+        case 1: .title2
+        case 2: .title3
+        case 3: .headline
         default: .subheadline
         }
         let size = UIFont.preferredFont(forTextStyle: style).pointSize
-        return .systemFont(ofSize: size, weight: level == 1 ? .bold : .semibold)
+        return .systemFont(ofSize: size, weight: .semibold)
     }
 
     static var mathUIFont: UIFont {
@@ -1549,7 +1554,9 @@ private struct SelectableReplyText: UIViewRepresentable {
             }
         }
         let next = Self.rendered(attributed, font: font, lineSpacing: lineSpacing)
-        if view.attributedText.string != next.string {
+        // A Dynamic Type change can keep the words identical while changing
+        // their font and paragraph spacing. Compare the complete rendering.
+        if !view.attributedText.isEqual(to: next) {
             view.attributedText = next
         }
     }
@@ -1608,12 +1615,14 @@ private struct SelectableReplyText: UIViewRepresentable {
 private struct RichListView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .body) private var itemSpacing: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var proseLineSpacing: CGFloat = 4
     var onTap: (@MainActor () -> Void)? = nil
     let items: [RichListItem]
     let inline: (String) -> AttributedString
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: itemSpacing) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     marker(item)
@@ -1621,7 +1630,7 @@ private struct RichListView: View {
                     SelectableReplyText(
                         attributed: inline(item.text),
                         font: .preferredFont(forTextStyle: .body),
-                        lineSpacing: 4,
+                        lineSpacing: proseLineSpacing,
                         link: UIColor(Palette.link(scheme)),
                         onTap: onTap
                     )

@@ -158,7 +158,7 @@ struct PrivacySettingsView: View {
 struct AppearanceSettingsView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
-    @ScaledMetric(relativeTo: .caption) private var colourChoiceWidth: CGFloat = 84
+    @ScaledMetric(relativeTo: .footnote) private var colourChoiceWidth: CGFloat = 84
 
     var body: some View {
         @Bindable var store = store
@@ -206,7 +206,8 @@ struct AppearanceSettingsView: View {
                         Circle().strokeBorder(selected ? Color.primary : .clear, lineWidth: 2)
                     }
                 Text(accent.label)
-                    .font(.caption)
+                    .font(.footnote)
+                    .fontWeight(selected ? .medium : .regular)
                     .foregroundStyle(selected ? .primary : .secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -424,9 +425,9 @@ private struct SettingsMenuLabel: View {
 
     private var labels: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.body).foregroundStyle(.primary)
+            Text(title).font(.body.weight(.medium)).foregroundStyle(.primary)
             if let subtitle {
-                Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
             }
         }
     }
