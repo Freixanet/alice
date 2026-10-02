@@ -361,6 +361,23 @@ def _errand_context_lost(tool_name=None, result=None, session_id="", **_):
         return None
 
 
+def _transform_tool_result(tool_name=None, args=None, result=None, session_id="", **kw):
+    """The plugin's rewrites of a tool's result, applied one after another (Hermes uses only the
+    first string any transform_tool_result hook returns: qa sim, hermes_cli/plugins.py). Order: the
+    vault list is filtered to the errand's shop; a payment error on the page is flagged; a lost
+    browser context is said; a feed run's sources get their ids. Returns None when none applied."""
+    current, changed = result, False
+    for step in (_filter_errand_access, _payment_error_note, _errand_context_lost, _feed_sources):
+        try:
+            out = step(tool_name=tool_name, args=args, result=current, session_id=session_id, **kw)
+        except Exception:
+            logging.getLogger(__name__).debug("alice: a result rewrite failed", exc_info=True)
+            out = None
+        if isinstance(out, str):
+            current, changed = out, True
+    return current if changed else None
+
+
 def _filter_errand_access(tool_name="", result=None, session_id="", **_):
     if tool_name != 'browser_vault_list':
         return None
@@ -486,8 +503,9 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
             # button) leaves its entry in the ledger before it happens: a second one on the same
             # shop is refused until `purchase_outcome` says how this one ended. A card fill is
             # written when it actually succeeds (_record_payment).
-            if not _note_payment(root, entry, session):
-                return {"action": "block", "message": "No se pudo anotar este pago en el libro de pagos; no pagues."}
+            refused = _note_payment(root, entry, session)
+            if refused:
+                return {"action": "block", "message": refused}
         return None
     except Exception:
         if name == "browser_vault_fill" or _errands().is_pay_action(name,args,_active_url()):
@@ -511,19 +529,31 @@ def _errand_step(tool_name, args, session_id) -> None:
         errands.add_step(_hermes_root(), session[len(errands.SESSION_PREFIX):], text, _active_url())
 
 
-def _note_payment(root, entry, session: str) -> bool:
-    """Writes the payment an errand is about to send in the ledger; False when that failed."""
+_PRESSED_MESSAGE = ("Ya se pulsó el botón que paga en este recado y nadie ha registrado cómo acabó. No lo pulses "
+                    "otra vez: lee la página (confirmación, error del banco) y llama a `purchase_outcome`; un segundo "
+                    "clic puede cobrar dos veces.")
+
+
+def _note_payment(root, entry, session: str):
+    """Writes the payment an errand is about to send in the ledger. Returns None when written, or why
+    the press must not happen: the ledger could not take it, or this payment's button was already
+    pressed and its outcome is still unknown (a second press can charge twice; qa sim: pay_twice)."""
     try:
+        ledger = _purchases()
+        open_entry = ledger.open_payment(root, session)
+        if open_entry is not None and open_entry.get("pressed"):
+            return _PRESSED_MESSAGE
         checkout = entry.get("checkout") if isinstance(entry.get("checkout"), dict) else {}
         site = checkout.get("site") or entry.get("site") or str((entry.get("offer") or {}).get("url") or "")
-        written = _purchases().record(root, site, session)
+        written = ledger.record(root, site, session)
+        ledger.mark(root, written["id"], pressed=True)
     except Exception:
-        return False
+        return "No se pudo anotar este pago en el libro de pagos; no pagues."
     try:
         _schedule_payment_check(written)
     except Exception:
         pass  # the check is a courtesy; the entry is what refuses a second payment
-    return True
+    return None
 
 
 def _record_payment(tool_name, args, result, session_id) -> None:
@@ -2246,9 +2276,6 @@ def register(ctx) -> None:
     # And each errand browses in its own context of it, never another errand's basket.
     ctx.register_hook("pre_tool_call", _isolate_errand_browser)
     ctx.register_hook("pre_tool_call", _guard_errand_access)
-    ctx.register_hook("transform_tool_result", _filter_errand_access)
-    # A browser context made again after Chrome closed: what was read in the old one is dropped.
-    ctx.register_hook("transform_tool_result", _errand_context_lost)
     # Checkouts expire, forgotten pages close and restarted errands go on without anyone looking.
     try:
         _errands().start_sweeper(_hermes_root())
@@ -2266,9 +2293,10 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _guard_repeat_payment)
     ctx.register_hook("pre_tool_call", _route_card_fill)
     # A payment error on the page reaches the agent, and through it the person (purchases.py).
-    ctx.register_hook("transform_tool_result", _payment_error_note)
     # In a feed run, every source research surfaces gets a citable id (feed.py).
-    ctx.register_hook("transform_tool_result", _feed_sources)
+    # Every result rewrite of this plugin, chained in one hook: Hermes keeps only the first string a
+    # transform_tool_result hook returns, so two separate ones silently dropped each other's note.
+    ctx.register_hook("transform_tool_result", _transform_tool_result)
     ctx.register_hook("pre_tool_call", _guard_feed_publish)
     # What each agent did with consequences, for Alice's Activity.
     ctx.register_hook("post_tool_call", _post_tool_call)

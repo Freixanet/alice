@@ -39,3 +39,5 @@ hermes-plugin/vendor/
 .freebuff/
 # A builder's own Apple team and bundle identifiers (ios/Config/Signing.xcconfig).
 ios/Config/Signing.local.xcconfig
+# QA run reports (scripts/qa.py); CI keeps them as artifacts.
+qa/reports/

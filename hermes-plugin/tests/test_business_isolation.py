@@ -149,7 +149,10 @@ class BusinessIsolationTests(unittest.TestCase):
         # And the same order is never paid twice (purchases.py), checked before the fill is routed.
         hooks = [c.args[1] for c in ctx.register_hook.call_args_list]
         self.assertLess(hooks.index(self.plugin._guard_repeat_payment), hooks.index(self.plugin._route_card_fill))
-        ctx.register_hook.assert_any_call("transform_tool_result", self.plugin._payment_error_note)
+        # One rewrite hook: Hermes keeps only the first string a transform_tool_result hook returns.
+        ctx.register_hook.assert_any_call("transform_tool_result", self.plugin._transform_tool_result)
+        self.assertEqual([c for c in ctx.register_hook.call_args_list if c.args[0] == "transform_tool_result"],
+                         [mock.call("transform_tool_result", self.plugin._transform_tool_result)])
         # And the answers to ask_person close their questions and release a parked goal.
         ctx.register_hook.assert_any_call("post_llm_call", self.plugin._absorb_answers)
         # No goal is opened on a chat any more: errands run apart (errands.py).
@@ -157,7 +160,7 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_hook.assert_any_call("post_llm_call", self.plugin._repeat_guard)
         # And nothing is paid without the approved checkout, checked before the repeat guard.
         self.assertLess(hooks.index(self.plugin._guard_errand), hooks.index(self.plugin._guard_repeat_payment))
-        self.assertEqual(ctx.register_hook.call_count, 21)
+        self.assertEqual(ctx.register_hook.call_count, 18)
         ctx.register_hook.assert_any_call("pre_llm_call", self.plugin._errand_turn)
         ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._guard_chat_errand)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)

@@ -122,7 +122,8 @@ def record(home: Path, site: str, session: str = "", now: Optional[float] = None
                       and e.get("session") == session and e.get("status") in ("pending", "unknown")
                       and now - float(e.get("at") or 0) < REFILL), None)
         if again is not None:
-            # A refill of the same payment: one entry, still waiting for its outcome.
+            # A refill of the same payment: one entry, still waiting for its outcome. Whether its
+            # pay button was pressed (`pressed`) stays as it was: a refill does not undo a press.
             again.update({"at": now, "status": "pending"})
             _write(path, entries)
             return again

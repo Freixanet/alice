@@ -1,0 +1,82 @@
+# The purchase, from «cómprame…» to the receipt. Read by scripts/qa.py; kept true by `qa.py coverage`.
+#
+# Every state, step, invariant and fault names what proves it: a test (file::name), the simulator
+# (sim:<scenario>), a script, or `gap: <why>`. A name that no longer exists in the code is drift.
+id: purchase
+title: Comprar algo en cualquier tienda
+surfaces: [plugin, dashboard, ios, mac-notifier]
+simulator: hermes-plugin/qa/sim.py
+
+states:
+  # The errand's own states (errands.STATUSES) and what the app must show for each.
+  working:        {app: "línea de estado con el paso en curso", covered: [sim:happy]}
+  needs_approval: {app: "resumen + Permitir/Denegar con Face ID", covered: [sim:happy, ios/AliceTests/ErrandTests.swift::testAnErrandWaitingForApprovalReadsWithItsCheckout]}
+  needs_input:    {app: "preguntas del recado", covered: [sim:no_delivery_details]}
+  needs_card:     {app: "añadir tarjeta", covered: [sim:no_saved_card]}
+  needs_login:    {app: "acceso seguro a la tienda o código", covered: [hermes-plugin/tests/test_purchase_evidence.py::test_visible_empty_login_recovers_a_prose_only_agent_turn]}
+  done:           {app: "recibo: pagado, rechazado o no cobrado", covered: [sim:happy, sim:declined]}
+  stuck:          {app: "motivo + salida (Seguir, otra opción, cancelar); nunca «no se ha pagado» tras aprobar", covered: [sim:price_changed, sim:judge_down_after_approval]}
+  stopped:        {app: "detenida, sin aviso", covered: [hermes-plugin/tests/test_errands_api.py::test_stop_marks_it_stopped]}
+  denied:         {app: "cancelada, no se ha pagado", covered: [sim:denied]}
+
+steps:
+  - {n: 1, what: "aclarar sin inventar opciones", implemented_by: [hook:_errand_turn, skill:comprar], covered: [sim:happy]}
+  - {n: 2, what: "contexto de la persona (país, moneda, tarjetas)", implemented_by: [purchase_flow.context_block], covered: [sim:happy]}
+  - {n: 3, what: "buscar en la tienda", implemented_by: [tool:purchase_discover, shop_engine.search], covered: [sim:happy, hermes-plugin/tests/test_shop_engine.py::SearchTests]}
+  - {n: 4, what: "comprobar precio en cesta desechable", implemented_by: [tool:purchase_verify, shop_engine.quote], covered: [sim:happy, hermes-plugin/tests/test_shop_engine.py::QuoteTests]}
+  - {n: 5, what: "tarjetas desde la evidencia", implemented_by: [purchase_prices.auto_present, tool:purchase_options], covered: [sim:happy]}
+  - {n: 6, what: "la persona toca una tarjeta", implemented_by: [hook:_errand_turn, purchase_flow.chosen_id], covered: [sim:happy]}
+  - {n: 7, what: "el recado arranca con la opción elegida", implemented_by: [hook:_errand_turn, tool:errand_start, errands.start, errands.Engine], covered: [sim:happy, hermes-plugin/tests/test_errand_hooks.py::test_a_tapped_option_starts_its_errand_before_the_model_runs]}
+  - {n: 7b, what: "datos de envío que faltan, preguntados antes de la tienda", implemented_by: [errands.delivery_questions, tool:ask_person, "route:/errands/{id}/answer"], covered: [sim:no_delivery_details]}
+  - {n: 7c, what: "acceso a la tienda o código, en la hoja segura", implemented_by: [tool:login_request, tool:login_fill, "route:/errands/{id}/access"], covered: [hermes-plugin/tests/test_purchase_evidence.py::test_a_login_the_vault_already_holds_is_used_not_asked_again, "gap: el simulador aún no tiene tienda con login"]}
+  - {n: 9b, what: "una tarjeta con la que pagar", implemented_by: [tool:card_request, errands.request_checkout, "route:/errands/{id}/card"], covered: [sim:no_saved_card]}
+  - {n: 8, what: "cesta del recado comprobada", implemented_by: [tool:purchase_check_cart], covered: [sim:happy, sim:price_changed]}
+  - {n: 9, what: "resumen y total leídos de la página", implemented_by: [tool:checkout_request, purchase_prices.checkout_amount], covered: [sim:happy]}
+  - {n: 10, what: "aprobación del total exacto", implemented_by: ["route:/errands/{id}/checkout"], covered: [sim:happy, sim:denied]}
+  - {n: 11, what: "pago con las puertas", implemented_by: [hook:_guard_errand, hook:_guard_repeat_payment, purchase_prices.payment_ready], covered: [sim:happy, sim:total_changed_before_paying]}
+  - {n: 12, what: "resultado registrado y dicho", implemented_by: [tool:purchase_outcome, errands.record_receipt], covered: [sim:happy, sim:declined, sim:outcome_never_written]}
+
+invariants:
+  I1: "Nunca se paga sin aprobación explícita de ese total exacto, leído de la página."
+  I2: "Nunca se paga dos veces un pedido; un resultado desconocido bloquea otro pago."
+  I3: "Ninguna credencial ni número de tarjeta en archivos, resultados ni mensajes."
+  I4: "Toda respuesta de la persona llega al recado."
+  I5: "Toda parada tiene salida y nunca afirma «no se ha cobrado» sin comprobarlo."
+  I6: "Hay tarjetas siempre que haya un producto con precio comprobado."
+  I7: "Ninguna evidencia sobrevive al contexto de navegador en que se leyó."
+  I8: "Nada depende de una tienda concreta ni de los datos de una sola persona."
+  P1: "El recado termina: ningún bucle sin progreso ni espera sin motivo visible."
+
+faults:
+  # name: where it is injected and which scenario proves the plugin copes.
+  price_changed:              {at: "cesta del recado", covered: [sim:price_changed]}
+  sold_out_after_choice:      {at: "ficha durante el recado", covered: [sim:sold_out_after_choice]}
+  total_changed_before_paying: {at: "resumen tras la aprobación", covered: [sim:total_changed_before_paying]}
+  denied:                     {at: "aprobación", covered: [sim:denied]}
+  double_approval:            {at: "ruta /checkout dos veces", covered: [sim:double_approval]}
+  declined:                   {at: "resultado del pago", covered: [sim:declined]}
+  outcome_never_written:      {at: "el agente no llama a purchase_outcome", covered: [sim:outcome_never_written]}
+  judge_down_after_approval:  {at: "juez de Hermes caído tras pagar", covered: [sim:judge_down_after_approval]}
+  chrome_crash_before_paying: {at: "contexto del navegador perdido tras aprobar", covered: [sim:chrome_crash_before_paying]}
+  pay_twice:                  {at: "el agente intenta pagar otra vez", covered: [sim:pay_twice]}
+  no_delivery_details:        {at: "inicio del recado", covered: [sim:no_delivery_details]}
+  no_saved_card:              {at: "checkout_request", covered: [sim:no_saved_card]}
+  ledger_unwritable:          {at: "libro de pagos", covered: [sim:ledger_unwritable]}
+  agent_pays_without_approval: {at: "el agente pulsa pagar antes de pedir aprobación", covered: [sim:agent_pays_without_approval]}
+  corrupt_errands_file:       {at: "errands.json ilegible", covered: [hermes-plugin/tests/test_errands.py::RecoveryTests]}
+  login_required:             {at: "tienda que exige cuenta", covered: ["gap: el simulador aún no tiene tienda con login (siguiente ampliación)"]}
+  otp:                        {at: "código de verificación", covered: ["gap: idem"]}
+  browser_taken_over:         {at: "la persona toma el navegador", covered: [hermes-plugin/tests/test_errands.py::RecoveryTests]}
+  service_restart:            {at: "reinicio del gateway a mitad", covered: [hermes-plugin/tests/test_errands.py::RestartTests]}
+
+shops:
+  # Every scenario runs on each of these (I8): three platforms, no adapter written for any.
+  - tienda-uno.example   # Shopify-like
+  - tienda-dos.example   # WooCommerce-like
+  - tienda-tres.example  # no platform
+
+levels:
+  1: "simulador hermético en jsdom (qa.py run purchase)"
+  2: "el mismo con Chrome real interceptado (scripts/verify-shops.py)"
+  3: "manual: modelo real con tiendas ficticias (scripts/verify-purchase-complete.py --agent)"
+  4: "manual: tienda real hasta el paso de pago, sin aprobar, con la persona presente"

@@ -1,0 +1,3 @@
+# Findings accepted on purpose. Each needs: invariant, match (text in the finding's detail), reason,
+# date and who decided. An agent never adds one to make a run green (docs/qa-protocol.md).
+known: []

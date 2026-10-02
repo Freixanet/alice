@@ -114,9 +114,17 @@ class ShopifyLike(Shop):
             first = p["variants"][0]
             options = "".join(f"<option value='{v['id']}'>{escape(v['title'])}</option>" for v in p["variants"])
             picker = "" if len(p["variants"]) == 1 else f"<select name=id>{options}</select>"
+            # An AJAX theme, as most are: the form posts to /cart/add.js and opens no new page.
+            script = (f"<script>async function addToCart(f){{const pick=f.querySelector('[name=id]');const id=Number(pick?pick.value:{first['id']});"
+                      "const quantity=Number(f.querySelector('[name=quantity]').value);"
+                      "const r=await fetch('/cart/add.js',{method:'POST',body:JSON.stringify({items:[{id,quantity}]})});"
+                      "document.querySelector('#notice').textContent=r.ok?'Añadido al carrito':'Agotado';"
+                      "document.querySelector('#notice').hidden=false}</script>")
             return html(f"<a href='/cart'>Carrito</a><h1>{escape(p['title'])}</h1><span class=price>{euros(first['price'])}</span>"
-                        f"<form action='/cart/add' method=post>{picker}<input type=number name=quantity value=1>"
-                        "<button type=submit name=add>Añadir al carrito</button></form>", head=self.head())
+                        f"<form action='/cart/add' method=post onsubmit='event.preventDefault();addToCart(this)'>{picker}"
+                        "<input type=number name=quantity value=1>"
+                        "<button type=submit name=add>Añadir al carrito</button></form><p id=notice hidden></p>" + script,
+                        head=self.head())
         if path == "/cart/add.js" and method == "POST":
             items = json.loads(body or "{}").get("items") or []
             for item in items:
@@ -208,14 +216,28 @@ class WooLike(Shop):
         if path == "/producto/" + self.PRODUCT["slug"] + "/":
             options = "".join(f"<option value='{escape(v['label'])}'>{escape(v['label'])}</option>" for v in self.VARIATIONS)
             return html(f"<h1 class=product_title>{escape(self.PRODUCT['name'])}</h1><p class=price>{euros(3290)} – {euros(3490)}</p>"
-                        f"<form class=variations_form><select name=attribute_sabor><option value=''>Elige una opción</option>{options}</select>"
-                        "<input type=number name=quantity value=1><button type=submit class=single_add_to_cart_button>Añadir al carrito</button></form>",
+                        f"<form class=variations_form onsubmit='event.preventDefault();addVariation(this)'>"
+                        f"<select name=attribute_sabor><option value=''>Elige una opción</option>{options}</select>"
+                        "<input type=number name=quantity value=1><button type=submit class=single_add_to_cart_button>Añadir al carrito</button></form>"
+                        "<a href='/carrito/'>Ver carrito</a><p id=notice hidden></p>"
+                        f"<script>const ids={json.dumps({v['label']: v['id'] for v in self.VARIATIONS})};"
+                        "async function addVariation(f){const id=ids[f.querySelector('[name=attribute_sabor]').value];if(!id)return;"
+                        "const r=await fetch('/wp-json/wc/store/v1/cart/add-item',{method:'POST',body:JSON.stringify({id,quantity:Number(f.querySelector('[name=quantity]').value)})});"
+                        "document.querySelector('#notice').textContent=r.ok?'Añadido al carrito':'Sin existencias';"
+                        "document.querySelector('#notice').hidden=false}</script>",
                         head=head, body_class=woo + " single-product")
+        if path == "/carrito/":
+            rows = "".join(f"<tr class=cart_item><td class=product-name>{escape(self.PRODUCT['name'])} - {escape(self.by_id(l['id'])['label'])}</td>"
+                           f"<td class=product-quantity><input type=number class=qty value={l['quantity']}></td>"
+                           f"<td class=product-price>{euros(self.by_id(l['id'])['price'])}</td></tr>" for l in self.cart)
+            return html(f"<h1>Carrito</h1><table class=shop_table>{rows}</table><a href='/finalizar-compra/'>Finalizar compra</a>",
+                        head=head, body_class=woo)
         if path == "/finalizar-compra/":
             subtotal = sum(self.by_id(l["id"])["price"] * l["quantity"] for l in self.cart)
             return html(f"<table class=shop_table><tr class=cart-subtotal><th>Subtotal</th><td>{euros(subtotal)}</td></tr>"
                         f"<tr class=shipping><th>Envío</th><td>Envío gratuito</td></tr>"
-                        f"<tr class=order-total><th>Total</th><td><strong>{euros(subtotal)}</strong></td></tr></table>",
+                        f"<tr class=order-total><th>Total</th><td><strong>{euros(subtotal)}</strong></td></tr></table>"
+                        "<button id=place_order onclick='window.paid=true'>Realizar el pedido</button>",
                         head=head, body_class=woo)
         return NOT_FOUND
 
@@ -351,8 +373,9 @@ class JsPage:
     def __init__(self, router: Router):
         self.router = router
         self.requests: List[Tuple[str, str]] = []
+        # The page's own console errors go to a log, not the terminal: the oracle reads outcomes, not noise.
         self.proc = subprocess.Popen(["node", str(HARNESS)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     text=True, cwd=str(HARNESS.parents[3]), env=os.environ.copy())
+                                     stderr=subprocess.DEVNULL, text=True, cwd=str(HARNESS.parents[3]), env=os.environ.copy())
         self.current = "about:blank"
 
     def _send(self, msg: Dict[str, Any]) -> Any:

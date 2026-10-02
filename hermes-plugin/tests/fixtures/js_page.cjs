@@ -27,7 +27,15 @@ function layout(window) {
   // jsdom has no layout: an element is "on screen" unless it or an ancestor is hidden.
   const hidden = (e) => { for (let n = e; n && n.nodeType === 1; n = n.parentElement) { if (n.hidden || n.getAttribute('aria-hidden') === 'true' || /display:\s*none/.test(n.getAttribute('style') || '')) return true; } return false; };
   window.Element.prototype.getClientRects = function () { return hidden(this) ? [] : [{ top: 0, left: 0, width: 10, height: 10 }]; };
-  Object.defineProperty(window.HTMLElement.prototype, 'innerText', { get() { return hidden(this) ? '' : this.textContent; }, set(v) { this.textContent = v; } });
+  // As a browser: the rendered text, without scripts, styles or hidden parts.
+  const rendered = (node) => {
+    if (node.nodeType === 3) return node.nodeValue;
+    if (node.nodeType !== 1 || /^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT)$/.test(node.tagName) || hidden(node)) return '';
+    let out = '';
+    for (const child of node.childNodes) out += rendered(child);
+    return /^(P|DIV|LI|TR|H[1-6]|SECTION|ARTICLE|HEADER|FOOTER|UL|OL|TABLE|FORM|BR|DL|DT|DD)$/.test(node.tagName) ? '\n' + out + '\n' : out;
+  };
+  Object.defineProperty(window.HTMLElement.prototype, 'innerText', { get() { return hidden(this) ? '' : rendered(this).replace(/\n{2,}/g, '\n').trim(); }, set(v) { this.textContent = v; } });
   window.fetch = async (url, init = {}) => {
     const target = new window.URL(url, window.location.href).href;
     const res = await ask({ op: 'request', method: (init.method || 'GET').toUpperCase(), url: target, body: init.body || '' });

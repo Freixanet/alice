@@ -350,6 +350,20 @@ class ErrandHookTests(unittest.TestCase):
         self.assertEqual(self.plugin._delivery_details("../../etc")["city"], "Madrid")
         self.assertEqual(self.plugin._delivery_details("nadie")["city"], "Madrid")
 
+    def test_every_result_note_reaches_the_agent_even_when_two_apply(self):
+        # Hermes keeps only the first string a transform_tool_result hook returns; the plugin's notes
+        # are chained in one hook so a lost context and a payment error are both said.
+        entry = self.errand(offer={'url': 'https://www.hsnstore.com/p', 'quote_ref': 'pq-1'})
+        ledger = self.plugin._purchases()
+        ledger.record(self.home, 'hsnstore.com', entry['session_id'])
+        self.errands.context_file(entry['id'], self.home).write_text(json.dumps({'context': 'n', 'lost': True}))
+        out = self.plugin._transform_tool_result(tool_name='browser_exec', args={}, result='Pago denegado por el banco',
+                                                 session_id=entry['session_id'])
+        self.assertIn('parece haber fallado', out)
+        self.assertIn('se perdió', out)
+        self.assertIsNone(self.plugin._transform_tool_result(tool_name='browser_exec', args={}, result='nada',
+                                                             session_id=entry['session_id']))
+
     # ── P0: every payment leaves a trace; the guards fail closed ──────────────────
 
     def approved_purchase(self):
