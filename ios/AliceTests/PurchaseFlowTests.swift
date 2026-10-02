@@ -20,7 +20,7 @@ final class PurchaseFlowTests: XCTestCase {
                                          detail: #"{"args":{"options":[{"url":"https://www.prozis.com/c"}]},"result":{"set":"0a1b2c3d"}}"#)
         let other = Message.ToolCall(id: "p", name: "purchase_options", status: .done,
                                      detail: #"{"options":[{"url":"https://www.hsnstore.com/creatina"},{"url":"https://www.prozis.com/c"}]}"#)
-        let running = Message.ToolCall(id: "r", name: "purchase_verify", status: .running, detail: nil)
+        let running = Message.ToolCall(id: "r", name: "purchase_verify", status: .start, detail: nil)
         XCTAssertEqual(PurchaseOptionSet.key(fromDetail: verified.detail), "0a1b2c3d")
         XCTAssertEqual(PurchaseOptionSet.key(fromDetail: decorated.detail), "0a1b2c3d")
         XCTAssertEqual(PurchaseOptionSet.cardCalls([running, verified, decorated, other]).map(\.id), ["v", "p"])
