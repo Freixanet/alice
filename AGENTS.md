@@ -147,6 +147,13 @@ defined but not run is still pending.
 The question that matters most at the end: _what evidence shows this change does
 what was asked and keeps what already worked?_
 
+## QA of a process
+
+To test, audit or harden any process (the purchase first), follow
+[docs/qa-protocol.md](docs/qa-protocol.md): `python scripts/qa.py all`, fix findings at their
+cause with a failing test first, and run heavy checks (iOS journey, fuzz) on GitHub through
+`.github/workflows/qa.yml`, never on the development Mac.
+
 ## Keep the project maintainable
 
 New behavior belongs in a focused service, model or feature module. Avoid further
