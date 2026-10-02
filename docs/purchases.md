@@ -75,6 +75,14 @@ provisional (sin recomendar antes de que existan las tarjetas). Lo que Muse hace
 monedero (tarjetas virtuales de un uso, Shop Pay, Link) o con el catálogo de Meta no tiene
 equivalente en Hermes y no se copia.
 
+Del playbook del navegador que Muse escribió para Alice (2 oct) se toman además: los datos
+de envío que faltan se piden una sola vez, todos juntos y antes de abrir la tienda, y se
+guardan (`errands.delivery_questions`); el brief del recado lleva esos datos y lo elegido, de
+modo que no depende de la conversación; el vigilante de vueltas mide el estado de la página
+(título y texto visible), no su dirección, porque en Prozis login, dirección y pago comparten
+`checkout/index`; y un recado parado conserva su página dos horas, para que «Abrir
+navegador» muestre lo que la tienda pide y «Seguir desde aquí» continúe con esa cesta.
+
 ## Límites y pruebas
 
 Las instrucciones del agente están en `hermes-plugin/skills/comprar/SKILL.md`.

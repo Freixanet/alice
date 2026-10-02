@@ -129,7 +129,9 @@ class ErrandHookTests(unittest.TestCase):
             note = self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] Creatina")
         started = self.errands.listing(self.home)
         self.assertEqual(len(started), 1)
-        self.assertEqual((started[0]["status"], started[0]["offer"]["price"]), ("working", "27,98 €"))
+        # No delivery details are kept in this fixture: they are asked before the shop opens.
+        self.assertEqual((started[0]["status"], started[0]["offer"]["price"]), ("needs_input", "27,98 €"))
+        self.assertTrue(started[0]["questions"]["fields"])
         self.assertIn(started[0]["id"], note["context"])
 
     def test_tapping_a_changed_price_twice_shows_one_stopped_errand(self):

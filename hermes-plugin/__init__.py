@@ -1800,6 +1800,16 @@ def ask_prompt(_session_info=None) -> str:
     return _ask_person().prompt(Path(get_hermes_home()))
 
 
+def _delivery_details(profile: str):
+    """The person's saved delivery details for an errand's brief, or None when unreadable."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        return _ask_person().load_details(Path(get_hermes_home()))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _card_rules(profile: str) -> str:
     try:
         return _cards_module().prompt(profile or "default")
@@ -1812,6 +1822,7 @@ def _register_task_tools(ctx) -> None:
     later turn of that chat, and an old purchase resumed in the middle of an unrelated question."""
     errands = _errands()
     errands.card_rules = _card_rules
+    errands.details_block = _delivery_details
     _keep_errand_tools_visible()
 
     def start(args, **_):

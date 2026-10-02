@@ -201,7 +201,7 @@ struct ErrandStack: View {
             // person (a login, a code, the approval), so the page it waits on can be seen and taken
             // over. Gone and back again read as broken. Under the errand's card, which is on screen
             // first: above it, it pushed that card down.
-            if errand.status.isOpen && !errand.steps.isEmpty {
+            if (errand.status.isOpen || errand.status == .stuck) && !errand.steps.isEmpty {
                 ErrandBrowserCard(errand: errand, snapshot: snapshot, onOpen: onOpenBrowser)
             }
             if errand.status == .needsLogin, let request = errand.accessRequest, let access = errand.access {

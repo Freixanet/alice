@@ -698,7 +698,7 @@ class RestartTests(Base):
     def test_a_restarted_engine_still_delivers_the_persons_answer(self):
         # The service restarted while the agent's run went on; meanwhile the person approved.
         entry = self.errand()
-        errands.update(self.home, entry["id"], run_id="run_old")
+        errands.update(self.home, entry["id"], run_id="run_old", runs=3)
         gateway = FakeGateway([done("Pagado")])
         polls = [{"status": "running"}, {"status": "completed", "output": "Esperando"}]
         original = gateway.status
@@ -707,6 +707,53 @@ class RestartTests(Base):
                                 sleep=lambda s: None)
         self.assertEqual(engine.run("[checkout aprobado] paga 27,98 €"), "done")
         self.assertEqual(gateway.started[0][1], "[checkout aprobado] paga 27,98 €")
+
+
+class DeliveryTests(Base):
+    """The delivery details are asked once, all together, before the shop (Muse's playbook, §11.2)."""
+    OFFER = {"option_id": "a1b2c3d4-1", "title": "Creatina", "merchant": "Prozis", "qty": 1, "price": "24,49 €",
+             "currency": "EUR", "url": "https://www.prozis.com/c", "channel": "browser"}
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(setattr, errands, "details_block", errands.details_block)
+
+    def start(self, details, session="chat-1"):
+        errands.details_block = lambda profile: details
+        with mock.patch.object(errands, "launch", return_value=True) as launched, mock.patch.object(errands, "open_goal"):
+            out = errands.start(self.home, {"task": "Comprar creatina"}, origin_session=session, offer=self.OFFER)
+        return errands.get(self.home, out["errand_id"]), launched
+
+    def test_missing_delivery_details_are_asked_before_a_single_page_opens(self):
+        entry, launched = self.start({"name": "Marc", "postcode": "08260"})
+        self.assertEqual(entry["status"], "needs_input")
+        self.assertFalse(launched.called)
+        asked = entry["questions"]
+        self.assertTrue(asked["fields"])
+        self.assertEqual([q["id"] for q in asked["items"]], ["surname", "address", "city", "phone", "email"])
+        self.assertIn("Datos de envío", asked["title"])
+
+    def test_complete_or_unreadable_details_ask_nothing(self):
+        full = {field: "x" for field, _ in errands.DELIVERY_FIELDS}
+        entry, launched = self.start(full)
+        self.assertEqual((entry["status"], launched.called), ("working", True))
+        entry, launched = self.start(None, session="chat-2")
+        self.assertEqual((entry["status"], launched.called), ("working", True))
+
+    def test_the_first_run_reads_the_brief_with_the_answers_and_the_kept_details(self):
+        errands.details_block = lambda profile: {"name": "Marc", "address": "Carrer Major 1", "postcode": "08260",
+                                                  "city": "Súria", "phone": "600000000", "email": "m@example.com",
+                                                  "surname": "F."}
+        entry = errands.create(self.home, "Comprar creatina", now=NOW, offer=self.OFFER)
+        gateway = FakeGateway([done("Pedido 1 realizado")])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None)
+        self.assertEqual(engine.run("[respuesta:phone] 600000000"), "done")
+        first = gateway.started[0][1]
+        self.assertTrue(first.startswith("[Recado de Alice]"))
+        self.assertIn("Carrer Major 1", first)
+        self.assertIn("sin preguntarlos", first)
+        self.assertTrue(first.endswith("[respuesta:phone] 600000000"))
 
 
 class CirclingTests(Base):
@@ -746,6 +793,29 @@ class CirclingTests(Base):
         self.assertIn("misma página", gateway.started[1][1])
         self.assertIn("error", gateway.started[1][1])
         self.assertIn("misma página", errands.get(self.home, entry["id"])["reason"])
+
+    def test_a_page_that_changed_since_the_warning_is_not_going_round(self):
+        # Prozis keeps login, address and payment at checkout/index: the state of the page, not
+        # its address, says whether the errand moves on.
+        entry = self.errand()
+        self.steps(entry, errands.CIRCLE_STEPS, "https://www.prozis.com/es/es/checkout/index")
+        signatures = iter(["login-form", "address-form", "payment-form"])
+
+        def on_start(n):
+            self.steps(entry, errands.CIRCLE_STEPS, "https://www.prozis.com/es/es/checkout/index", start=NOW + 5000 * n)
+        gateway = FakeGateway([[{"status": "running"}], [{"status": "running"}], done("Pedido listo")], on_start=on_start)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None, page_signature=lambda e: next(signatures))
+        self.assertEqual(engine.run(), "done")
+        self.assertEqual(len(gateway.started), 3)
+        same = iter(["login-form", "login-form"])
+        other = self.errand()
+        self.steps(other, errands.CIRCLE_STEPS, "https://www.prozis.com/es/es/checkout/index")
+        gateway = FakeGateway([[{"status": "running"}], [{"status": "running"}]],
+                              on_start=lambda n: self.steps(other, errands.CIRCLE_STEPS, "https://www.prozis.com/es/es/checkout/index", start=NOW + 5000 * n))
+        engine = errands.Engine(self.home, other["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None, page_signature=lambda e: next(same))
+        self.assertEqual(engine.run(), "stuck")
 
     def test_moving_on_after_the_warning_is_not_going_round(self):
         entry = self.errand()
@@ -861,6 +931,36 @@ class ExpiryTests(Base):
         errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
         self.assertIsNone(errands.decide_checkout(self.home, entry["id"], True, now=NOW + 3 * 3600))
         self.assertIn("checkout_request", errands.refresh_message(errands.get(self.home, entry["id"])["checkout"]))
+
+
+class StuckContextTests(Base):
+    def test_a_stuck_errand_keeps_its_page_until_it_is_stale(self):
+        # Its card says «open the browser to see what the shop asks» and «Seguir desde aquí» goes
+        # on from that basket: closing the page on stuck contradicted both.
+        entry = self.errand()
+        outcomes = {"n": 0}
+
+        class Fake:
+            def __init__(self, home, errand_id, **kw): self.errand_id = errand_id
+            def run(self, message=None):
+                outcomes["n"] += 1
+                return "stuck" if outcomes["n"] == 1 else "done"
+        with mock.patch.object(errands, "release_context") as released:
+            self.assertTrue(errands.launch(self.home, entry["id"], engine_factory=Fake))
+            errands._threads[entry["id"]].join(5)
+            self.assertFalse(released.called)
+            self.assertTrue(errands.launch(self.home, entry["id"], engine_factory=Fake))
+            errands._threads[entry["id"]].join(5)
+            self.assertTrue(released.called)
+
+    def test_stale_stuck_pages_are_released_later(self):
+        entry = self.errand()
+        errands.update(self.home, entry["id"], now=NOW, status="stuck", reason="x")
+        with mock.patch.object(errands, "release_context") as released:
+            self.assertEqual(errands.release_stale(self.home, now=NOW + 3600), [])
+            self.assertEqual(errands.release_stale(self.home, now=NOW + 3 * 3600), [entry["id"]])
+            self.assertEqual(errands.release_stale(self.home, now=NOW + 4 * 3600), [])
+        released.assert_called_once_with(entry["id"])
 
 
 class ContextTests(Base):

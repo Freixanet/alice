@@ -2624,6 +2624,7 @@ async def errands_list() -> JSONResponse:
     def read():
         module, root = _errands_module(), _hermes_root()
         module.expire_checkouts(root)
+        module.release_stale(root)
         module.ensure_running(root)
         return [module.public(e) for e in module.listing(root)]
 
@@ -2733,9 +2734,23 @@ async def errands_answer(errand_id: str, body: _ErrandAnswers) -> JSONResponse:
         entry = _errand_or_404(errand_id)
         if entry.get("status") != "needs_input":
             raise HTTPException(status_code=409, detail="Ese recado no está esperando respuestas.")
-        text = module.answer_text({k: v for k, v in body.answers.items() if str(v).strip()})
+        answers = {k: v for k, v in body.answers.items() if str(v).strip()}
+        text = module.answer_text(answers)
         if not text:
             raise HTTPException(status_code=400, detail="Faltan las respuestas.")
+        if (entry.get("questions") or {}).get("fields"):
+            # Delivery details asked before the shop: kept, so no errand asks them again.
+            try:
+                ask = _ask_person()
+                with _profile_scope(_known_profile(entry.get("profile") or "default")):
+                    from hermes_constants import get_hermes_home
+
+                    home = Path(get_hermes_home())
+                    kept = ask.load_details(home)
+                    kept.update({k: str(v) for k, v in answers.items() if k in ask.FIELDS})
+                    ask.save_details(home, kept)
+            except Exception:  # noqa: BLE001 — the errand still gets the answers in its message
+                logging.getLogger(__name__).warning("errands: could not keep the delivery details", exc_info=True)
         module.resume(root, errand_id, text)
         return module.public(module.get(root, errand_id) or entry)
 

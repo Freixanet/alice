@@ -851,6 +851,32 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
 # How a saved card is filled, given by the plugin (vault_cards.prompt) so it reaches the errand,
 # the only place that pays, instead of every chat's prompt.
 card_rules: Callable[[str], str] = lambda profile: ""
+# The person's saved delivery details (ask_person.load_details), by profile: None when the plugin
+# cannot read them (then nothing is asked up front and the agent asks from the shop, as before).
+details_block: Callable[[str], Optional[Dict[str, str]]] = lambda profile: None
+
+# What a shop's checkout needs to deliver: asked once, all together, BEFORE the shop, and kept.
+# An empty delivery form used to end as a generic «stuck» from inside the checkout.
+DELIVERY_FIELDS = (
+    ("name", "Nombre"), ("surname", "Apellidos"), ("address", "Dirección (calle y número)"),
+    ("postcode", "Código postal"), ("city", "Localidad"), ("phone", "Teléfono"), ("email", "Email"),
+)
+
+
+def delivery_questions(details: Optional[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """The delivery details still missing, as one card of questions; empty when all are kept or
+    when the details cannot be read."""
+    if details is None:
+        return []
+    return [{"id": field, "question": label, "field": field, "choices": []}
+            for field, label in DELIVERY_FIELDS if not str(details.get(field) or "").strip()]
+
+
+def delivery_lines(details: Optional[Dict[str, str]]) -> str:
+    known = [(label, str((details or {}).get(field) or "").strip()) for field, label in DELIVERY_FIELDS]
+    known = [f"{label.split(' (')[0].lower()}: {value}" for label, value in known if value]
+    return ("Datos de envío de la persona (úsalos tal cual, sin preguntarlos): " + "; ".join(known) + ". "
+            if known else "")
 
 
 def brief(entry: Dict[str, Any]) -> str:
@@ -860,7 +886,11 @@ def brief(entry: Dict[str, Any]) -> str:
              "Si la web pide iniciar sesión y hay un login guardado en el vault para ella, entra con "
              "`login_fill` sin preguntar. Si no hay un acceso de ESTE origen, llama a `login_request` y termina el turno. Nunca uses accesos de otras tiendas. Para un código de verificación usa `login_request` con kind vault.code; se pide en el iPhone y el mismo recado continúa.")
     offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else None
-    what = (_offer_lines(offer) + " " if offer else
+    try:
+        delivery = delivery_lines(details_block(str(entry.get("profile") or "default")))
+    except Exception:  # noqa: BLE001 — unreadable details: the agent asks from the shop
+        delivery = ""
+    what = (_offer_lines(offer) + " " + delivery if offer else
             "Pregunta con `ask_person` solo lo que cambia qué se hace o cuánto cuesta, todo en una sola vez "
             "y al principio. ")
     return (
@@ -1171,9 +1201,11 @@ class Engine:
 
     def __init__(self, home: Path, errand_id: str, *, gateway: Optional[Gateway] = None,
                  judge: Optional[Callable[[str, str], Dict[str, Any]]] = None,
-                 sleep: Callable[[float], None] = time.sleep):
+                 sleep: Callable[[float], None] = time.sleep,
+                 page_signature: Optional[Callable[[Dict[str, Any]], Optional[str]]] = None):
         self.home = Path(home)
         self.errand_id = errand_id
+        self.page_signature = page_signature or _page_signature
         entry = get(self.home, errand_id) or {}
         # Older errands predate the fixed model. Save the selected route before their next
         # run, so answers, approvals and service restarts keep using that same selection.
@@ -1252,7 +1284,10 @@ class Engine:
         entry = self._entry()
         if not entry:
             return "missing"
-        text = message or brief(entry)
+        # The first run reads the brief; an answer to the questions asked before the shop (the
+        # delivery details) comes with it, never instead of it.
+        text = (brief(entry) + "\n\n" + message) if message and not int(entry.get("runs") or 0) \
+            and not message.startswith(CONTINUATION) else (message or brief(entry))
         previous = ""
         repeat_recoveries = 0
         self_fixed = False
@@ -1317,10 +1352,14 @@ class Engine:
             except Exception:
                 pass  # Unreadable DOM is handled by the ordinary recovery/judge path.
             if state.get("status") == "circling":
-                if entry.get("circle_page") != state.get("page"):
+                # The page's state, not its address: on Prozis, login, address and payment all
+                # live at checkout/index. Only the same page saying the same thing twice is a loop.
+                signature = self.page_signature(entry)
+                if entry.get("circle_page") != state.get("page") or (signature and signature != entry.get("circle_hash")):
                     # One-page checkouts take many steps on one path while moving on: the first
                     # round on a page is a word to the agent, not a stop.
-                    update(self.home, self.errand_id, circle_from=time.time(), circle_page=state.get("page"))
+                    update(self.home, self.errand_id, circle_from=time.time(), circle_page=state.get("page"),
+                           circle_hash=signature)
                     text = (CONTINUATION + " Llevas muchos pasos en la misma página (" + str(state.get("page"))[:80]
                             + "). Si la tienda rechaza algo, lee su mensaje de error antes de volver a intentarlo; "
                             "si estás avanzando (dirección, envío, pago en una misma página), sigue y di en qué paso estás.")
@@ -1452,7 +1491,9 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
             if pending:
                 update(home, errand_id, resume_message=None)
             final = (engine_factory or Engine)(home, errand_id).run(pending or message)
-            if final in ("done", "stuck", "denied", "stopped", "missing"):
+            # A stuck errand keeps its page: its card says «open the browser to see what the shop
+            # asks», and «Seguir desde aquí» goes on from that basket. release_stale sweeps it later.
+            if final in ("done", "denied", "stopped", "missing"):
                 release_context(errand_id)
         except Exception as exc:  # noqa: BLE001 — never raised in a thread; the errand says what happened
             update(home, errand_id, status="stuck", reason=f"Error interno: {type(exc).__name__}.")
@@ -1467,6 +1508,42 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
         _threads[errand_id] = thread
     thread.start()
     return True
+
+
+STALE_CONTEXT = 2 * 3600
+
+
+def release_stale(home: Path, now: Optional[float] = None) -> List[str]:
+    """The browser pages of errands stuck for hours are closed; the person has moved on."""
+    now = now or time.time()
+    released = []
+    for entry in listing(home):
+        if (entry.get("status") == "stuck" and not entry.get("context_released")
+                and now - float(entry.get("updated_at") or 0) > STALE_CONTEXT):
+            release_context(entry["id"])
+            update(home, entry["id"], now=entry.get("updated_at"), context_released=True)
+            released.append(entry["id"])
+    return released
+
+
+def _page_signature(entry: Dict[str, Any]) -> Optional[str]:
+    """What the errand's page says now (title and visible text), hashed; None when unreadable."""
+    try:
+        import hashlib
+        import importlib.util
+        import sys
+
+        name = "alice_errand_access"
+        if name not in sys.modules:
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("errand_access.py"))
+            sys.modules[name] = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(sys.modules[name])
+        access = sys.modules[name]
+        _origin, context, _ = access.target(entry)
+        text = access.page_evaluate(context, "document.title + '\\n' + (document.body ? document.body.innerText : '').slice(0, 6000)")
+        return hashlib.sha256(" ".join(str(text or "").split()).encode("utf-8")).hexdigest()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def ensure_running(home: Path) -> List[str]:
@@ -1516,7 +1593,14 @@ def start(home: Path, args: Dict[str, Any], *, origin_session: str = "", profile
         _write(path, entries)
     try:
         open_goal(entry)
-        launch(home, entry["id"])
+        missing = delivery_questions(details_block(profile or "default")) if offer else []
+        if missing:
+            # Asked once, all together, before a single page is opened: the shop will need them,
+            # and an empty address form inside the checkout ended as a generic stop.
+            entry = update(home, entry["id"], status="needs_input",
+                           questions={"title": "Datos de envío", "items": missing, "fields": True})
+        else:
+            launch(home, entry["id"])
     except Exception as exc:
         # A retry must not rediscover a supposedly working errand that never started.
         update(home, entry["id"], status="stuck", reason=f"No pudo iniciarse: {type(exc).__name__}.")
@@ -1573,7 +1657,8 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
     """What Alice shows: everything but the internal session wiring."""
     # The chat it came from stays: Alice finds an errand's cards by it when the chat's reply
     # never called errand_start (the plugin starts it anyway).
-    hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence", "checkout_evidence", "circle_from", "circle_page"}
+    hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence", "checkout_evidence", "circle_from",
+              "circle_page", "circle_hash"}
     out = {k: v for k, v in entry.items() if k not in hidden}
     if isinstance(out.get("approval"), dict):
         out["approval"] = {k: v for k, v in out["approval"].items() if k != "run_id"}
