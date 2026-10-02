@@ -26,6 +26,7 @@ struct PurchaseReviewScreen: View {
                 PurchaseOptionsCard(detail: nil, language: .spanish, preview: options,
                                     onChooseQuantity: { option, qty in selection = "\(option.variant) · \(qty) unidades" })
                 Text(selection).accessibilityIdentifier("purchase.selection")
+                // qa: allow inert-action — fixture screens for UI review; nothing to act on
                 ErrandStack(errand: pending, onOpenBrowser: {}, onDecide: { _,_ in }, onAnswer: { _ in }, onConfirm: { _ in })
             }.padding()
         }

@@ -44,6 +44,9 @@ class Journey:
         s = self.sim
         # Nothing restarts errands behind the driver's back, and the app is the person.
         s.stack.enter_context(sim.mock.patch.object(s.errands, "ensure_running", lambda home: []))
+        # The app also reads cards and notes; with no Hermes here, one default profile.
+        s.stack.enter_context(sim.mock.patch.object(s.api, "_list_profiles",
+                                                    lambda: [sim.types.SimpleNamespace(name="default")]))
         threading.Thread(target=self.drive, name="qa-driver", daemon=True).start()
         return self
 

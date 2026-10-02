@@ -12,6 +12,7 @@ of the code review, never a way to make a run green.
     contract-drift   a key the app reads from an errand that the plugin never sends
     nothing-paid     «no se ha pagado/cobrado» written where an approved payment is not ruled out
     secret-log       a log or print that names a password, code or card number
+    inert-action     a screen shows a view whose action defaults to `{}` without passing it: the button does nothing
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ PLUGIN_SOURCES = ("hermes-plugin/*.py", "hermes-plugin/dashboard/*.py")
 
 def _allowed(lines: List[str], index: int, rule: str) -> bool:
     for line in lines[max(0, index - 1): index + 1]:
-        if re.search(r"#\s*qa:\s*allow\s+" + re.escape(rule) + r"\b", line):
+        if re.search(r"(?:#|//)\s*qa:\s*allow\s+" + re.escape(rule) + r"\b", line):
             return True
     return False
 
@@ -177,7 +178,44 @@ def secret_log(root: Path) -> List[Dict[str, Any]]:
     return findings
 
 
-RULES = (fail_open, fixed_port, temp_state, route_untested, tool_undeclared, contract_drift, nothing_paid, secret_log)
+def inert_action(root: Path) -> List[Dict[str, Any]]:
+    """Views with `var onX: () -> Void = {}` (a button that does nothing unless given an action):
+    every call site outside previews and the gallery must pass each one."""
+    sources = {p: p.read_text(encoding="utf-8") for p in (root / "ios" / "Alice").rglob("*.swift")}
+    views: Dict[str, List[str]] = {}
+    for text in sources.values():
+        for name, body in re.findall(r"struct (\w+): View \{(.*?)\n    var body", text, re.S):
+            # Hooks told after something happened (a chat opened, a sheet done) are not buttons.
+            actions = [a for a in re.findall(r"\n    var (on\w+): \([^)]*\) -> Void = \{\}", body)
+                       if a not in ("onOpenedChat", "onDone", "onClose")]
+            if actions:
+                views[name] = actions
+    findings = []
+    for path, text in sources.items():
+        if "Gallery" in path.name or "Preview" in path.name:
+            continue
+        lines = text.splitlines()
+        for name, actions in views.items():
+            for match in re.finditer(r"\b" + name + r"\(", text):
+                depth, i = 0, match.end() - 1
+                while i < len(text):
+                    depth += {"(": 1, ")": -1}.get(text[i], 0)
+                    if depth == 0:
+                        break
+                    i += 1
+                call = text[match.start():i]
+                index = text.count("\n", 0, match.start())
+                missing = [a for a in actions if a + ":" not in call]
+                # A trailing closure is the last action.
+                if missing and re.match(r"\)\s*\{", text[i:i + 8]) and missing[-1] == actions[-1]:
+                    missing.pop()
+                if missing and not _allowed(lines, index, "inert-action"):
+                    findings.append(_finding(root, path, index, "inert-action",
+                                             f"{name} sin {', '.join(missing)}: esos botones no harían nada"))
+    return findings
+
+
+RULES = (fail_open, fixed_port, temp_state, route_untested, tool_undeclared, contract_drift, nothing_paid, secret_log, inert_action)
 
 
 def scan(root: Path) -> List[Dict[str, Any]]:

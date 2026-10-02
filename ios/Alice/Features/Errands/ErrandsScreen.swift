@@ -162,7 +162,13 @@ struct ErrandDetailScreen: View {
                         onConfirm: { allow in if preview == nil { Task { await board.confirm(errand, allow: allow) } } },
                         onCardReady: { label in if preview == nil { Task { await board.cardReady(errand, label: label) } } },
                         onRefreshCheckout: { if preview == nil { Task { await board.refreshCheckout(errand) } } },
-                        onStop: { if preview == nil { Task { await board.stop(errand) } } })
+                        onStop: { if preview == nil { Task { await board.stop(errand) } } },
+                        // Without these, «Comprarla a …», «Seguir desde aquí» and «Cancelar» on a
+                        // stopped purchase did nothing on this screen (found by PurchaseJourneyTests).
+                        onAcceptPrice: { if preview == nil { Task { await board.goOn(errand, acceptPrice: true) } } },
+                        onRetry: { if preview == nil { Task { await board.goOn(errand, acceptPrice: false) } } },
+                        onCancel: { if preview == nil { Task { await board.stop(errand) } } },
+                        session: errand.originSession)
                     if errand.status.isOpen, preview == nil {
                         Button(role: .destructive) { confirmingStop = true } label: {
                             Text(errand.language.pick("Stop this errand", "Parar este recado"))

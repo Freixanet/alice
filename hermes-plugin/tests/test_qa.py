@@ -85,3 +85,22 @@ class OracleSeesOldBugs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaticRulesSeeOldBugs(unittest.TestCase):
+    def test_a_stopped_purchase_whose_buttons_do_nothing_is_seen(self):
+        """The Errands screen once showed «Comprarla a …» wired to nothing (found by the iOS journey)."""
+        import shutil
+        import tempfile
+        root = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(root / "scripts"))
+        import qa_static
+        with tempfile.TemporaryDirectory() as folder:
+            copy = Path(folder)
+            shutil.copytree(root / "ios" / "Alice", copy / "ios" / "Alice")
+            screen = copy / "ios" / "Alice" / "Features" / "Errands" / "ErrandsScreen.swift"
+            text = screen.read_text(encoding="utf-8")
+            self.assertIn("onAcceptPrice:", text)
+            screen.write_text("\n".join(l for l in text.splitlines() if "onAcceptPrice:" not in l), encoding="utf-8")
+            found = [f for f in qa_static.inert_action(copy) if "ErrandsScreen.swift" in f["where"]]
+            self.assertTrue(any("onAcceptPrice" in f["detail"] for f in found), found)

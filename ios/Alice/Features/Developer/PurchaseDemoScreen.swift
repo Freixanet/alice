@@ -68,6 +68,7 @@ private struct PurchaseWalkthrough: View {
                     }
                     if let selected, active {
                         userBubble(PurchaseChoice.display(selected.choice))
+                        // qa: allow inert-action — a demo of the cards; nothing to act on
                         ErrandStack(errand: errand, snapshot: .still(GalleryFixtures.pageURL),
                             onOpenBrowser: { showingBrowser = true },
                             onDecide: { allow, _ in decide(allow) }, onAnswer: { _ in }, onConfirm: { _ in },

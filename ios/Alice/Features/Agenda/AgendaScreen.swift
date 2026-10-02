@@ -502,7 +502,7 @@ struct AgendaSearch: View {
     var body: some View {
         NavigationStack {
             List(found) { item in
-                AgendaItemRow(item: item, now: Date(), showsTime: false, showsDate: true)
+                AgendaItemRow(item: item, now: Date(), showsTime: false, showsDate: true, onTick: { onPick(item) })
                     .contentShape(.rect)
                     .onTapGesture { onPick(item) }
                     .listRowBackground(Palette.card(scheme))

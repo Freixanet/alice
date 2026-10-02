@@ -653,15 +653,15 @@ struct NotesScreen: View {
         case .noStore:
             NotesUnavailableView(access: .noStore) { store.requestInboxAgent() }
         case .offline:
-            NotesUnavailableView(access: .offline)
+            NotesUnavailableView(access: .offline) // qa: allow inert-action — its button shows only for .noStore
         case .unauthorized:
-            NotesUnavailableView(access: .unauthorized)
+            NotesUnavailableView(access: .unauthorized) // qa: allow inert-action — its button shows only for .noStore
         case .notConfigured:
-            NotesUnavailableView(access: .notConfigured)
+            NotesUnavailableView(access: .notConfigured) // qa: allow inert-action — its button shows only for .noStore
         case .pluginMissing:
-            NotesUnavailableView(access: .pluginMissing)
+            NotesUnavailableView(access: .pluginMissing) // qa: allow inert-action — its button shows only for .noStore
         case let .failed(reason):
-            NotesUnavailableView(access: .failed(reason))
+            NotesUnavailableView(access: .failed(reason)) // qa: allow inert-action — its button shows only for .noStore
         case .loading:
             ProgressView().frame(maxWidth: .infinity)
         case .nothingYet:
