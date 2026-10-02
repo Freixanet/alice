@@ -65,6 +65,16 @@ las acciones que pueden enviarlo y el relleno de la tarjeta siguen protegidos.
     se detiene después de aprobarla, no se afirma que no hubo cargo: primero hay
     que comprobar el pedido.
 
+## Reglas tomadas de otros agentes de compra
+
+De la guía de compras y pagos de Muse (compartida por la persona, octubre de 2026) se adoptan
+tres reglas de comportamiento, en la skill y en el brief del recado: una sola pregunta por
+turno, la que más cambia el resultado, con opciones solo si el conjunto es finito; apagar
+suscripciones, pruebas y extras no pedidos antes del resumen; y decir cuándo una respuesta es
+provisional (sin recomendar antes de que existan las tarjetas). Lo que Muse hace con su
+monedero (tarjetas virtuales de un uso, Shop Pay, Link) o con el catálogo de Meta no tiene
+equivalente en Hermes y no se copia.
+
 ## Límites y pruebas
 
 Las instrucciones del agente están en `hermes-plugin/skills/comprar/SKILL.md`.
