@@ -458,6 +458,15 @@ No comprobado: tiendas reales (anti-bot, precios tras login, checkout en iframe)
 - Corregido en el plan: `stopped`/`denied` no se avisan (los hizo la persona; el test existente lo fija) y la variante de la hoja de producto no viaja porque la hoja solo muestra la de la propia opción.
 - No comprobado aquí: compilación iOS (sin Xcode en este contenedor).
 
+## Ronda 9 · P4 otros usuarios (2 oct)
+
+- Persona y rutinas sin el nombre del autor: `{{name}}` rellenado al instalar desde `--nombre` o los datos guardados en Alice; si no hay nombre, el instalador no toca nada y lo dice. Pronombres neutros. La regla de inicio de sesión ya no contradice al recado (`login_fill`, `login_request`, nunca cuenta nueva con acceso guardado). `test_persona.py`.
+- Datos de envío leídos del perfil del recado (`_profile_home`), nunca fuera de la home de Hermes.
+- Firma: equipo y prefijo de bundle en `ios/Config/Signing.xcconfig`, sobrescribibles en `Signing.local.xcconfig` (ignorado). El identificador de la tarea en segundo plano sale del bundle. `AGENTS.md` usa `$ALICE_DEVICE`.
+- `plugin.yaml` declara las herramientas de compra que faltaban.
+- Moneda por zona horaria ampliada a zonas reales (no «todo Europe/* es euro», que sería falso en Reino Unido, Suiza o Polonia).
+- No comprobado aquí: `xcodegen` y la compilación iOS con el nuevo xcconfig.
+
 ## Recomendación
 
 Hay dos familias de causa, y hay que elegir orden:

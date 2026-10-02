@@ -338,6 +338,18 @@ class ErrandHookTests(unittest.TestCase):
         self.assertIn('NO pagues', out)
         self.assertIn('purchase_outcome', out)
 
+    def test_delivery_details_are_read_from_the_errands_own_profile(self):
+        ask = self.plugin._ask_person()
+        ask.save_details(self.home, {"name": "Principal", "city": "Madrid"})
+        work = self.home / "profiles" / "compras"
+        work.mkdir(parents=True)
+        ask.save_details(work, {"name": "Compras", "city": "Valencia"})
+        self.assertEqual(self.plugin._delivery_details("default")["city"], "Madrid")
+        self.assertEqual(self.plugin._delivery_details("compras")["city"], "Valencia")
+        # An unknown or unsafe name never reads outside the Hermes home.
+        self.assertEqual(self.plugin._delivery_details("../../etc")["city"], "Madrid")
+        self.assertEqual(self.plugin._delivery_details("nadie")["city"], "Madrid")
+
     # ── P0: every payment leaves a trace; the guards fail closed ──────────────────
 
     def approved_purchase(self):

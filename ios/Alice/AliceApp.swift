@@ -7,7 +7,9 @@ import UserNotifications
 struct AliceApp: App {
     /// iOS runs this when it feels like it — which is the honest limit of
     /// background delivery here, and what the notification copy says.
-    static let refreshTaskID = "com.freixanet.alice.refresh"
+    /// Derived from the bundle so a build under another team's identifiers keeps matching the
+    /// `BGTaskSchedulerPermittedIdentifiers` entry (`$(ALICE_BUNDLE_PREFIX).alice.refresh`).
+    static let refreshTaskID = (Bundle.main.bundleIdentifier ?? "com.freixanet.alice") + ".refresh"
 
     @Environment(\.scenePhase) private var scenePhase
     @UIApplicationDelegateAdaptor(NotificationApplicationDelegate.self) private var notificationDelegate

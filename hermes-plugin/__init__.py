@@ -1935,12 +1935,22 @@ def _vault_logins(origin: str) -> list:
         return []
 
 
-def _delivery_details(profile: str):
-    """The person's saved delivery details for an errand's brief, or None when unreadable."""
-    try:
-        from hermes_constants import get_hermes_home
+def _profile_home(profile: str) -> Path:
+    """The home of a Hermes profile: the root for the main one, ``profiles/<name>`` otherwise."""
+    root = _hermes_root()
+    name = str(profile or "").strip()
+    if name and name != "default" and "/" not in name and name not in (".", ".."):
+        candidate = root / "profiles" / name
+        if candidate.is_dir():
+            return candidate
+    return root
 
-        return _ask_person().load_details(Path(get_hermes_home()))
+
+def _delivery_details(profile: str):
+    """The saved delivery details of the errand's own profile, or None when unreadable. Read by
+    profile, not from whichever home the calling process has (the dashboard's is the main one)."""
+    try:
+        return _ask_person().load_details(_profile_home(profile))
     except Exception:  # noqa: BLE001
         return None
 

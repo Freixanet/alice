@@ -8,6 +8,12 @@ options:
   createIntermediateGroups: true
   generateEmptyDirectories: false
 
+# Team and bundle identifiers come from Config/Signing.xcconfig, which a builder overrides in
+# Config/Signing.local.xcconfig (see that file).
+configFiles:
+  Debug: Config/Signing.xcconfig
+  Release: Config/Signing.xcconfig
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -15,7 +21,7 @@ settings:
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
     CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: 2DYYWXP5XL
+    DEVELOPMENT_TEAM: $(ALICE_TEAM)
 
 schemes:
   Alice:
@@ -56,7 +62,7 @@ targets:
         # The pairing QR is an alice:// deep link; the scheme is what lets the
         # iPhone's own Camera app open Alice at the moment of pairing.
         CFBundleURLTypes:
-          - CFBundleURLName: com.freixanet.alice.pairing
+          - CFBundleURLName: $(ALICE_BUNDLE_PREFIX).alice.pairing
             CFBundleURLSchemes:
               - alice
         # Alice sends a window of upcoming events to the person's
@@ -82,7 +88,7 @@ targets:
         UIBackgroundModes:
           - fetch
         BGTaskSchedulerPermittedIdentifiers:
-          - com.freixanet.alice.refresh
+          - $(ALICE_BUNDLE_PREFIX).alice.refresh
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
@@ -122,7 +128,7 @@ targets:
         embed: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice
+        PRODUCT_BUNDLE_IDENTIFIER: $(ALICE_BUNDLE_PREFIX).alice
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "2"
         ALICE_SOURCE_REVISION: development
@@ -151,7 +157,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.activities
+        PRODUCT_BUNDLE_IDENTIFIER: $(ALICE_BUNDLE_PREFIX).alice.activities
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -183,7 +189,7 @@ targets:
               NSExtensionActivationSupportsWebURLWithMaxCount: 1
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.share
+        PRODUCT_BUNDLE_IDENTIFIER: $(ALICE_BUNDLE_PREFIX).alice.share
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -208,7 +214,7 @@ targets:
         # could never actually be built — which is why two sets of tests were
         # written against it and neither had ever run.
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.tests
+        PRODUCT_BUNDLE_IDENTIFIER: $(ALICE_BUNDLE_PREFIX).alice.tests
 
   # Unit tests cover contracts; they cannot tell you whether a destination is
   # still reachable. The navigation these exercise was rearranged, so it needs
@@ -223,7 +229,7 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: $(ALICE_BUNDLE_PREFIX).alice.uitests
         TEST_TARGET_NAME: Alice
 
   AlicePerformanceTests:
@@ -236,5 +242,5 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.freixanet.alice.performance-tests
+        PRODUCT_BUNDLE_IDENTIFIER: $(ALICE_BUNDLE_PREFIX).alice.performance-tests
         TEST_TARGET_NAME: Alice

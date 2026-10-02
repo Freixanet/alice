@@ -1,0 +1,14 @@
+// Who signs Alice and under which bundle identifiers.
+//
+// These are the project author's. To build Alice for your own iPhone, create
+// ios/Config/Signing.local.xcconfig (ignored by git) with your own values:
+//
+//     ALICE_TEAM = ABCDE12345
+//     ALICE_BUNDLE_PREFIX = com.yourname
+//
+// Your Apple team id is in Xcode › Settings › Accounts, or developer.apple.com › Membership.
+// Then run `xcodegen` in ios/ and build. Nothing else in the project names a team.
+ALICE_TEAM = 2DYYWXP5XL
+ALICE_BUNDLE_PREFIX = com.freixanet
+
+#include? "Signing.local.xcconfig"

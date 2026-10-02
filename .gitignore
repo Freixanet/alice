@@ -37,3 +37,5 @@ ios/build/
 # Installed by hermes-plugin/install.sh
 hermes-plugin/vendor/
 .freebuff/
+# A builder's own Apple team and bundle identifiers (ios/Config/Signing.xcconfig).
+ios/Config/Signing.local.xcconfig

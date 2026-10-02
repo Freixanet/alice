@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hace que Alice tome la iniciativa en este Hermes.
 
-    python3 instalar.py [--hora 07:30] [--comprobar]
+    python3 instalar.py [--hora 07:30] [--nombre NOMBRE] [--comprobar]
 
 1. Copia los scripts de las rutinas a ``~/.hermes/scripts/``, donde Hermes
    permite scripts de rutina.
@@ -33,7 +33,7 @@ HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 START = "<!-- alice:proactiva inicio -->"
 END = "<!-- alice:proactiva fin -->"
 
-PROMPT = """Escribe el «Buenos días» de Marcos a partir de los hechos de abajo, que su Hermes reunió esta mañana, y de lo que sepas de él por tu memoria. No es un resumen de noticias: es su tablero de mando, lo que necesita su atención antes de empezar el día.
+PROMPT = """Escribe el «Buenos días» de {{name}} a partir de los hechos de abajo, que su Hermes reunió esta mañana, y de lo que sepas de esa persona por tu memoria. No es un resumen de noticias: es su tablero de mando, lo que necesita su atención antes de empezar el día.
 
 Formato, en este orden, y omite cualquier sección sin nada que decir:
 1. Una línea de saludo con el día de la semana.
@@ -53,7 +53,7 @@ Menos de 200 palabras. No inventes nada que no esté en los hechos o en tu memor
 Hechos:"""
 
 
-PROMPT_CITA = """Una cita de Marcos empieza en torno a una hora: está en las líneas nuevas del cambio que ves arriba. Si no hay ninguna cita nueva (la lista quedó vacía o solo desapareció una), responde solo [SILENT].
+PROMPT_CITA = """Una cita de {{name}} empieza en torno a una hora: está en las líneas nuevas del cambio que ves arriba. Si no hay ninguna cita nueva (la lista quedó vacía o solo desapareció una), responde solo [SILENT].
 
 Si la hay, escríbele un aviso breve, de menos de 60 palabras:
 - qué y a qué hora, en una línea;
@@ -62,7 +62,7 @@ Si la hay, escríbele un aviso breve, de menos de 60 palabras:
 
 Entrégalo así: una frase tuya para él, cercana (qué viene y lo principal); una línea con solo `---`; debajo, el aviso. Sin relleno. No inventes nada que no esté en la cita o en tu memoria."""
 
-PROMPT_CIERRE = """Escribe el resumen de la noche de Marcos a partir de los hechos de abajo. Todo lo que necesitas está aquí: no cargues skills ni uses herramientas (su protocolo INICIO/CIERRE es otra cosa y no aplica). Sale todas las noches: corto, cálido y útil, nunca más de 90 palabras. En este orden:
+PROMPT_CIERRE = """Escribe el resumen de la noche de {{name}} a partir de los hechos de abajo. Todo lo que necesitas está aquí: no cargues skills ni uses herramientas (su protocolo INICIO/CIERRE es otra cosa y no aplica). Sale todas las noches: corto, cálido y útil, nunca más de 90 palabras. En este orden:
 
 1. **Quedó abierto** (solo si hay algo): como mucho tres cosas que él dijo que haría, prometió a alguien o dejó sin cerrar hoy, una viñeta corta cada una, sin botones en las viñetas. Nada resuelto, nada que solo fuera una pregunta o una prueba. Debajo de la lista, un único botón para todas: `[Recuérdamelo mañana](alice://reply?text=Recu%C3%A9rdame%20ma%C3%B1ana%20a%20las%209%20lo%20que%20qued%C3%B3%20abierto)`, en una sola línea, sin partir.
 2. **Mañana:** en la misma línea que el título, sin repetir la palabra: su agenda —el calendario y lo que él te dijo hoy que tiene mañana— o simplemente «libre». Si algo que te dijo no está en el calendario, debajo, sola: `[Añadir a tu calendario](alice://calendar/add?title=…&date=AAAA-MM-DD)` (con `time` si lo sabes).
@@ -115,14 +115,27 @@ def with_block(text: str, block: str) -> str:
     return text.rstrip() + "\n\n" + block + "\n"
 
 
+def saved_name() -> str:
+    """The name Alice keeps among the person's details (ask_person.py), if any."""
+    try:
+        name = str(json.loads((HOME / "alice" / "details.json").read_text(encoding="utf-8")).get("name") or "").strip()
+    except (OSError, ValueError, AttributeError):
+        return ""
+    return name.split()[0] if name else ""
+
+
 def main(argv) -> int:
     check = "--comprobar" in argv
     hour = argv[argv.index("--hora") + 1] if "--hora" in argv else "07:30"
+    person = argv[argv.index("--nombre") + 1].strip() if "--nombre" in argv and argv.index("--nombre") + 1 < len(argv) else saved_name()
+    if not person:
+        print(json.dumps({"ok": False, "error": "Falta el nombre de la persona: pásalo con --nombre o guárdalo en Alice (Ajustes › Datos personales)."}))
+        return 2
     cron = schedule(hour)
     done = {"ok": True, "comprobacion": check}
 
     scripts = {}
-    for name, when, prompt, source_name, installed, monitor in JOBS:
+    for name, when, prompt, source_name, installed, monitor in [(j[0], j[1], j[2].replace("{{name}}", person)) + tuple(j[3:]) for j in JOBS]:
         target = HOME / "scripts" / installed
         source = (HERE / source_name).read_text(encoding="utf-8")
         current = target.read_text(encoding="utf-8") if target.is_file() else None
@@ -134,7 +147,7 @@ def main(argv) -> int:
 
     existing = existing_jobs()
     routines = {}
-    for name, when, prompt, source_name, installed, monitor in JOBS:
+    for name, when, prompt, source_name, installed, monitor in [(j[0], j[1], j[2].replace("{{name}}", person)) + tuple(j[3:]) for j in JOBS]:
         found = next((job for job in existing if job.get("name") == name), None)
         if found:
             # A routine is the person's once made: only its prompt follows this
@@ -156,7 +169,7 @@ def main(argv) -> int:
     done["rutinas"] = routines
 
     soul = HOME / "SOUL.md"
-    block = (HERE / "alice-proactiva.md").read_text(encoding="utf-8").strip()
+    block = (HERE / "alice-proactiva.md").read_text(encoding="utf-8").strip().replace("{{name}}", person)
     text = soul.read_text(encoding="utf-8") if soul.is_file() else ""
     updated = with_block(text, block)
     done["instrucciones"] = "sin cambios" if updated == text else "actualiza"

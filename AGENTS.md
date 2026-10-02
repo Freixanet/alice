@@ -67,9 +67,12 @@ here; it depends on a simulator. To ship a change to the user's iPhone:
 xcodebuild -project ios/Alice.xcodeproj -scheme Alice -configuration Debug \
   -destination 'generic/platform=iOS' -derivedDataPath ios/.build/DeviceData \
   -allowProvisioningUpdates build
-xcrun devicectl device install app --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B \
+xcrun devicectl device install app --device "$ALICE_DEVICE" \
   ios/.build/DeviceData/Build/Products/Debug-iphoneos/Alice.app
 ```
+
+`ALICE_DEVICE` is the iPhone's identifier, from `xcrun devicectl list devices` (set it in
+your shell profile on the Mac that builds).
 
 A successful device build is the local iOS check. Report that simulator unit/UI
 tests were not run; never run UI tests on the user's real iPhone (real data).

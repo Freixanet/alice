@@ -202,9 +202,22 @@ ZONE_COUNTRY = {
     "Europe/Madrid": "ES", "Atlantic/Canary": "ES", "Africa/Ceuta": "ES", "Europe/Lisbon": "PT",
     "Europe/Paris": "FR", "Europe/Rome": "IT", "Europe/Berlin": "DE", "Europe/Andorra": "AD",
     "Europe/London": "GB", "America/Mexico_City": "MX",
+    "Europe/Dublin": "IE", "Europe/Amsterdam": "NL", "Europe/Brussels": "BE", "Europe/Vienna": "AT",
+    "Europe/Helsinki": "FI", "Europe/Athens": "GR", "Europe/Luxembourg": "LU", "Europe/Bratislava": "SK",
+    "Europe/Ljubljana": "SI", "Europe/Tallinn": "EE", "Europe/Riga": "LV", "Europe/Vilnius": "LT",
+    "Europe/Zagreb": "HR", "Asia/Nicosia": "CY", "Europe/Malta": "MT", "Atlantic/Madeira": "PT",
+    "Atlantic/Azores": "PT", "Europe/Monaco": "MC", "Europe/Zurich": "CH", "Europe/Warsaw": "PL",
+    "Europe/Prague": "CZ", "Europe/Stockholm": "SE", "Europe/Copenhagen": "DK", "Europe/Oslo": "NO",
+    "Europe/Budapest": "HU", "Europe/Bucharest": "RO", "America/New_York": "US", "America/Chicago": "US",
+    "America/Denver": "US", "America/Los_Angeles": "US", "America/Phoenix": "US", "America/Toronto": "CA",
+    "America/Vancouver": "CA", "America/Bogota": "CO", "America/Argentina/Buenos_Aires": "AR",
+    "America/Santiago": "CL", "America/Lima": "PE", "America/Sao_Paulo": "BR",
 }
-EURO = {"ES", "PT", "FR", "IT", "DE", "AD", "IE", "NL", "BE", "AT", "FI", "GR", "LU"}
-COUNTRY_CURRENCY = {"GB": "GBP", "US": "USD", "MX": "MXN", "CH": "CHF"}
+EURO = {"ES", "PT", "FR", "IT", "DE", "AD", "IE", "NL", "BE", "AT", "FI", "GR", "LU", "SK", "SI", "EE", "LV",
+        "LT", "HR", "CY", "MT", "MC"}
+COUNTRY_CURRENCY = {"GB": "GBP", "US": "USD", "MX": "MXN", "CH": "CHF", "PL": "PLN", "CZ": "CZK", "SE": "SEK",
+                    "DK": "DKK", "NO": "NOK", "HU": "HUF", "RO": "RON", "CA": "CAD", "CO": "COP", "AR": "ARS",
+                    "CL": "CLP", "PE": "PEN", "BR": "BRL"}
 
 
 def iso_country(value: Any) -> str:

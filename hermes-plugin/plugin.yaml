@@ -37,6 +37,10 @@ provides_tools:
   - errand_start
   - checkout_request
   - card_request
+  - purchase_outcome
+  - catalog_search
+  - catalog_product
+  - ask_person
 provides_hooks:
   - pre_tool_call
   - post_tool_call

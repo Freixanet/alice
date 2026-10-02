@@ -312,3 +312,16 @@ class SharedKeyVectorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class LocaleTests(unittest.TestCase):
+    def test_the_time_zone_gives_country_and_currency_and_an_unknown_one_gives_neither(self):
+        for zone, expected in (("Europe/Madrid", ("ES", "EUR")), ("Europe/Dublin", ("IE", "EUR")),
+                               ("Europe/Zurich", ("CH", "CHF")), ("Europe/Warsaw", ("PL", "PLN")),
+                               ("America/New_York", ("US", "USD")), ("Europe/London", ("GB", "GBP")),
+                               ("Pacific/Nowhere", ("", ""))):
+            with self.subTest(zone=zone):
+                self.assertEqual(flow.locale({}, zone), expected)
+        # What the person kept wins over the zone.
+        self.assertEqual(flow.locale({"country": "ES", "currency": "EUR"}, "Europe/London"), ("ES", "EUR"))

@@ -230,7 +230,8 @@ class NotesToolsTests(unittest.TestCase):
                 + [t[0] for t in self.plugin.CALENDAR_TOOLS]
                 + [t[0] for t in self.plugin.WATCH_TOOLS]
                 + [t[0] for t in self.plugin.DOCUMENT_TOOLS]
-                + ["errand_start", "checkout_request", "card_request", "purchase_discover", "purchase_verify", "purchase_check_cart", "login_request", "login_fill", "purchase_options"]
+                + ["errand_start", "checkout_request", "card_request", "purchase_discover", "purchase_verify", "purchase_check_cart", "login_request", "login_fill", "purchase_options",
+                   "purchase_outcome", "catalog_search", "catalog_product", "ask_person"]
             ),
         )
 

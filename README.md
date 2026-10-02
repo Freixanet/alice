@@ -127,7 +127,21 @@ cd ios && xcodegen generate  # writes Alice.xcodeproj from project.yml
 open Alice.xcodeproj
 ```
 
-In Xcode, choose your team under Signing, select your iPhone and press Run.
+Before generating, put your own Apple team and bundle prefix in
+`ios/Config/Signing.local.xcconfig` (git ignores it; the defaults in
+`ios/Config/Signing.xcconfig` belong to the author and will not sign for you):
+
+```
+ALICE_TEAM = ABCDE12345
+ALICE_BUNDLE_PREFIX = com.yourname
+```
+
+Then select your iPhone in Xcode and press Run. Back on the Hermes machine, give Alice your
+name for her personality and routines (or save it first in the app's personal details):
+
+```bash
+python3 hermes-agents/alice/instalar.py --nombre "Tu nombre"
+```
 
 ### 3. Pair
 
@@ -185,8 +199,12 @@ More detail: [architecture](docs/architecture.md), [pairing protocol](docs/pairi
 - **Not on the App Store.** You need Xcode and an Apple developer account to install it.
 - **Not a hosted service.** It needs a Hermes you run yourself and a model provider you
   pay for.
-- **Agents depend on the model.** Long web tasks, buying in particular, succeed or fail
-  with the model's ability. Smaller models skip steps that larger ones follow.
+- **Agents depend on the model.** Long web tasks succeed or fail with the model's ability.
+  For buying, the plugin itself reads products, baskets and totals (Shopify and WooCommerce
+  through their own endpoints, other shops through structured data and the page) and holds
+  every payment to your approval of the exact total, so a weaker model may stop or ask you to
+  take the browser, but cannot pay something you did not approve. Shops with anti-bot pages,
+  prices shown only after signing in or checkouts in opaque frames can still need you.
 - **Not all checks run on the development Mac.** It is an Intel machine with no iOS
   simulator, so UI tests there do not run. The app is checked by building and installing
   it on a real iPhone, and CI runs the simulator suites.
