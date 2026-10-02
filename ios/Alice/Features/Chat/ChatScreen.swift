@@ -626,8 +626,8 @@ private struct TranscriptView: View {
             showsAuthor: position?.isFirst ?? true,
             actionsContent: position?.text,
             errandRefs: errandRefs,
-            modelChange: modelChange,
-            optionsWindow: optionsWindow
+            optionsWindow: optionsWindow,
+            modelChange: modelChange
         )
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
