@@ -66,16 +66,27 @@ final class PurchaseJourneyTests: XCTestCase {
 
     private func tap(_ label: String, within seconds: TimeInterval) {
         let button = app.buttons[label]
-        XCTAssertTrue(button.waitForExistence(timeout: seconds), "no «\(label)» button")
+        XCTAssertTrue(reach(button, within: seconds), "no «\(label)» button")
         for _ in 0..<4 where !button.isHittable { app.swipeUp() }
         button.tap()
     }
 
     private func tapContaining(_ text: String, within seconds: TimeInterval) {
         let button = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
-        XCTAssertTrue(button.waitForExistence(timeout: seconds), "no button containing «\(text)»")
+        XCTAssertTrue(reach(button, within: seconds), "no button containing «\(text)»")
         for _ in 0..<4 where !button.isHittable { app.swipeUp() }
         button.tap()
+    }
+
+    /// The card lists the order before its buttons, so «Permitir» can be below the fold, where
+    /// SwiftUI has not built it yet: scroll while waiting.
+    private func reach(_ element: XCUIElement, within seconds: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if element.waitForExistence(timeout: 2) { return true }
+            app.swipeUp()
+        }
+        return element.exists
     }
 
     private func waitFor(_ texts: [String], within seconds: TimeInterval) {

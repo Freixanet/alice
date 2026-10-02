@@ -84,12 +84,17 @@ def main() -> None:
                                    "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--no-sandbox",
                                    "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
-            for _ in range(100):
+            # A cold CI runner can take well over ten seconds to start Chrome; say so if it never does.
+            for _ in range(600):
                 try:
                     urllib.request.urlopen(endpoint + "/json/version", timeout=1).close()
                     break
                 except OSError:
+                    if chrome.poll() is not None:
+                        sys.exit(f"Chrome salió con el código {chrome.returncode} antes de abrir su puerto")
                     time.sleep(0.1)
+            else:
+                sys.exit("Chrome no abrió su puerto de depuración en 60 s")
 
             class FixtureProbe(prices.Probe):
                 def __init__(self, root):
