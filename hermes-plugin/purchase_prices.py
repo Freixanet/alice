@@ -212,13 +212,39 @@ def _save(home, data):
 
 def discover(home, session, args, *, factory=Probe, now=None):
     prozis = module('purchase_prozis')
-    selector = args['selector']
-    if prozis.supports(args['url']) and 'creapure' in selector.lower():
+    selector = str(args.get('selector') or '')
+    source = str(args.get('url') or '')
+    if not selector or not source:
+        # The engine: the shop's own search (platform endpoint, search form, usual addresses) or the
+        # listing page given, read for product links without a selector from the model.
+        engine = module('shop_engine')
+        shop, query = str(args.get('shop') or source or ''), str(args.get('query') or '')
+        if not shop:
+            raise ValueError('Di la tienda (dominio o dirección) y qué buscar.')
+        with probe(home, factory) as browser:
+            page = engine.Page.of(browser)
+            if query:
+                found = engine.search(page, shop, query)
+                rows, source = found['links'], found['url']
+            else:
+                browser.goto(shop)
+                engine.dismiss_cookies(page)
+                rows, source = engine.product_links(page), shop
+                if not rows and engine.product(page):
+                    rows = [{'url': page.url or shop, 'title': (engine.product(page) or {}).get('name') or ''}]
+        args = {**args, 'url': source}
+        rows = [{'url': r['url'], 'title': r['title']} for r in rows if r.get('url') and r.get('title')]
+        return _record_search(home, session, args, rows, now)
+    if prozis.supports(source) and 'creapure' in selector.lower():
         # A narrower second query must not silently drop the 320-caps format.
         selector = 'a[href*="creapure"]'
     with probe(home, factory) as browser:
-        browser.goto(args['url'])
+        browser.goto(source)
         rows = browser.evaluate('''Array.from(document.querySelectorAll(%s)).map(e=>{const a=e.matches('a')?e:e.querySelector('a[href]');return {url:a?.href||(e.matches('h1')?location.href:null),title:e.innerText.trim()}}).filter(r=>r.url&&r.title)''' % json.dumps(selector))
+    return _record_search(home, session, args, rows, now)
+
+
+def _record_search(home, session, args, rows, now):
     candidates = []
     seen = set()
     stems = [str(w).casefold()[:6] for w in args.get('keywords') or [] if str(w).strip()]
@@ -241,6 +267,8 @@ def discover(home, session, args, *, factory=Probe, now=None):
         raise ValueError('No se encontraron formatos en esa página.')
     search = {'id': secrets.token_hex(8), 'session': session, 'at': now or time.time(),
               'source': args['url'], 'candidates': candidates, 'rejected': {}}
+    if args.get('query'):
+        search['query'] = str(args['query'])[:120]
     with module('purchase_flow')._locked(home):
         data = _load(home)
         data['searches'][search['id']] = search
@@ -298,6 +326,8 @@ def _verify(home, session, args, *, factory=Probe, now=None):
     recipe = dict(args.get('recipe') or {})
     prozis = module('purchase_prozis')
     adapted = prozis.supports(candidate['url'])
+    if not adapted and (recipe.get('engine') or not all(recipe.get(k) for k in ('title', 'add', 'line', 'price', 'cart_quantity'))):
+        return _verify_engine(home, session, args, search, candidate, qty, factory=factory, now=now)
     with probe(home, factory) as browser:
         browser.goto(candidate['url'])
         if adapted:
@@ -388,6 +418,44 @@ def _verify(home, session, args, *, factory=Probe, now=None):
         data['quotes'][quote['id']] = quote
         _save(home, data)
     return {k:v for k,v in quote.items() if k != 'recipe'}
+
+
+PAGE_BASIS = ('Precio de la ficha: la cesta de prueba no se pudo leer en esta tienda. El recado lo confirma en '
+              'su cesta antes de pedirte aprobación.')
+
+
+def _verify_engine(home, session, args, search, candidate, qty, *, factory=Probe, now=None):
+    """Any shop: the engine opens the product, picks the variant, puts the units in a disposable
+    basket and reads the line (shop_engine.quote). When no basket can be read, the page's own price
+    is the quote, said as such; the errand confirms it in its basket before any approval."""
+    engine = module('shop_engine')
+    money = module('money')
+    variant = str(args.get('variant') or '')
+    with probe(home, factory) as browser:
+        read = engine.quote(engine.Page.of(browser), candidate['url'], variant=variant, qty=qty,
+                            currency=str(args.get('currency') or ''), coupons=list(args.get('coupons') or []),
+                            title_hint=candidate.get('title') or '')
+    currency = (read.get('currency') or str(args.get('currency') or '')).upper()
+    if read.get('price_cents') is None or not currency:
+        raise ValueError('No se pudo leer un precio en su moneda: ' + str(read.get('unverified') or candidate['title']))
+    if args.get('currency') and currency != str(args['currency']).upper():
+        raise ValueError('La tienda cobra en ' + currency + ', no en ' + str(args['currency']).upper() + '.')
+    basis = read.get('basis') or 'page'
+    quote = {'id': 'pq-' + secrets.token_hex(16), 'search_id': search['id'], 'candidate_id': candidate['id'],
+             'session': session, 'url': candidate['url'], 'title': read['title'], 'variant': read.get('variant') or '',
+             'qty': qty, 'price_cents': int(read['price_cents']), 'currency': currency,
+             'price': money.text(int(read['price_cents']), currency), 'shipping': None,
+             'condition': PAGE_BASIS if basis == 'page' else None, 'basis': basis,
+             'coupons': [r['code'] for r in read.get('coupon_results') or []],
+             'coupon_results': read.get('coupon_results') or [], 'coupon': read.get('coupon') or '',
+             'origin': module('errand_access').origin(candidate['url']), 'at': now or time.time(),
+             'recipe': {'engine': read.get('how') or {}, 'platform': read.get('platform') or ''},
+             'image': read.get('image') or ''}
+    with module('purchase_flow')._locked(home):
+        data = _load(home)
+        data['quotes'][quote['id']] = quote
+        _save(home, data)
+    return {k: v for k, v in quote.items() if k != 'recipe'}
 
 
 def cart_amount(text, currency, qty, recipe):
@@ -609,6 +677,8 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     ev = evaluate or access.page_evaluate
     if module('purchase_prozis').supports(offer['url']):
         recipe = module('purchase_prozis').cart_recipe(lambda code: ev(context, code))
+    elif not all((recipe or {}).get(k) for k in ('line', 'price', 'cart_quantity')):
+        return _check_cart_engine(home, errand_id, entry, offer, page_origin, context, command, ev, now)
     else:
         recipe = {k:v for k,v in recipe.items() if k != 'price_basis'}
     def read(selector):
@@ -626,6 +696,11 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     amount = cart_amount(read(recipe['price']),offer['currency'],offer.get('qty',1),recipe)
     if not amount:
         raise ValueError('La cesta no tiene un precio verificable.')
+    return _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, amount, recipe, now)
+
+
+def _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, amount, recipe, now):
+    errands = module('errands')
     real = module('money').text(*amount)
     note = 'El precio sigue coincidiendo. Prepara el envío y el resumen final sin volver a pedir aceptar el mismo precio.'
     old_price = module('money').parse(offer['price'], offer['currency'])
@@ -653,6 +728,21 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':note}
 
 
+def _check_cart_engine(home, errand_id, entry, offer, page_origin, context, command, ev, now):
+    """The errand's basket read by the engine: the line naming the chosen product, its units and
+    unit price, on the page the errand has open (its cart page or drawer)."""
+    errands, money = module('errands'), module('money')
+    expected = money.parse(offer['price'], offer['currency'])
+    read = module('shop_engine').errand_cart(lambda code: ev(context, code), offer['title'], offer.get('variant') or '',
+                                             int(offer.get('qty', 1)), offer['currency'], expected[0] if expected else None)
+    if str(read['qty']) != str(offer.get('qty', 1)):
+        raise ValueError('La cesta tiene ' + str(read['qty']) + ' unidades, no ' + str(offer.get('qty', 1))
+                         + '. Corrígela antes de pedir aprobación.')
+    amount = (read['price_cents'], read['currency'])
+    return _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, amount,
+                         {'engine': read.get('how') or 'dom'}, now)
+
+
 def fresh_cart(home, entry, *, inspect=None, now=None):
     """The errand's cart was checked recently, in this same browser context, for the offer as it
     stands (units and price). The page it is on now does not matter: between the basket and the pay
@@ -670,11 +760,20 @@ def fresh_cart(home, entry, *, inspect=None, now=None):
 
 
 def checkout_amount(entry, selector, *, inspect=None, evaluate=None):
+    """The final total on the errand's checkout page: at ``selector`` when the agent gave one, else
+    the amount the engine finds next to «Total» (shop_engine.order_total)."""
     access = module('errand_access')
     page_origin, context, _ = (inspect or access.target)(entry)
     if not same_site(page_origin, entry['offer']['url']):
         raise ValueError('El resumen no pertenece a la tienda elegida.')
-    result = (evaluate or access.page_evaluate)(context,
+    ev = evaluate or access.page_evaluate
+    if not selector:
+        found = module('shop_engine').errand_total(lambda code: ev(context, code))
+        if not found or not found.get('text'):
+            raise ValueError('No se encontró el total del pedido en esta página: llega al resumen final (donde dice «Total») y vuelve a llamar.')
+        result = found['text']
+    else:
+        result = ev(context,
         '(()=>{const e=document.querySelector(' + json.dumps(selector) + ');if(!e||!e.getClientRects().length||getComputedStyle(e).visibility==="hidden"||e.closest("del,s,strike"))return null;return e.innerText.trim()})()')
     amount = module('money').parse(result,entry['offer']['currency'])
     if not amount or amount[0] < module('money').parse(entry['offer']['price'],entry['offer']['currency'])[0] * entry['offer'].get('qty',1):
@@ -690,13 +789,13 @@ def payment_ready(home, entry, *, inspect=None, evaluate=None, gateways=None):
     errands, access = module('errands'), module('errand_access')
     approved = errands.approved_checkout(entry)
     evidence = entry.get('checkout_evidence') or {}
-    if not approved or evidence.get('checkout_id') != approved['id'] or not evidence.get('selector'):
+    if not approved or evidence.get('checkout_id') != approved['id'] or not (evidence.get('selector') or evidence.get('engine')):
         return False
     if not fresh_cart(home,entry,inspect=inspect):
         return False
     page_origin, context, _ = (inspect or access.target)(entry)
     if same_site(page_origin, entry['offer']['url']):
-        actual = checkout_amount(entry,evidence['selector'],inspect=inspect,evaluate=evaluate)
+        actual = checkout_amount(entry,evidence.get('selector') or '',inspect=inspect,evaluate=evaluate)
         return module('money').same(actual,approved['total'],approved['currency'])
     host = (urlsplit(page_origin).hostname or '').lower()
     if gateways is None:
@@ -730,7 +829,8 @@ def verify_remaining(home, session, args, *, factory=Probe, budget=REMAINING_BUD
             failures.append({'candidate_id':candidate['id'],'title':candidate['title'],'why':why})
             continue
         try:
-            quote = verify(home,session,{**args,'candidate_id':candidate['id'],'qty':1},factory=factory)
+            others = {k: v for k, v in args.items() if k != 'variant'}  # another format: its own default variant
+            quote = verify(home,session,{**others,'candidate_id':candidate['id'],'qty':1},factory=factory)
             quotes.append(quote)
         except Exception as exc:
             failures.append({'candidate_id':candidate['id'],'title':candidate['title'],

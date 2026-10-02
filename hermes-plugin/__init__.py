@@ -1773,9 +1773,10 @@ def _errand_turn(session_id="", user_message=None, **_):
             words = _module('purchase_prozis.py', 'alice_purchase_prozis').keywords(str(user_message or ''))
             if not search and words:
                 # Any shop: its own search, every format that names the asked words, nothing guessed.
-                note += (' [Búsqueda] Busca en el buscador o la categoría de la tienda pedida (o en varias si no '
-                         'nombra ninguna), nunca en una URL de ficha adivinada, y registra los formatos con '
-                         'purchase_discover y keywords=' + json.dumps(words, ensure_ascii=False) + '. No digas que '
+                note += (' [Búsqueda] Llama a purchase_discover con shop (la tienda pedida, o varias si no nombra '
+                         'ninguna: una llamada por tienda) y query con lo que pidió, y keywords=' + json.dumps(words, ensure_ascii=False)
+                         + '. El plugin encuentra el buscador y los productos; no escribas selectores ni URLs de ficha. Después, '
+                         'purchase_verify del formato que mejor encaje (variant si la persona la dijo). No digas que '
                          'algo no existe sin haber buscado ahí.')
             if search:
                 note += (' [Contrato de búsqueda Prozis] Empieza por purchase_discover con ' + json.dumps(search, ensure_ascii=False)
@@ -1980,19 +1981,21 @@ def _register_task_tools(ctx) -> None:
                 prices = _module("purchase_prices.py", "alice_purchase_prices")
                 if not prices.fresh_cart(_hermes_root(),entry):
                     return _agent_json({"ok":False,"error":"Comprueba primero la cesta de este recado con purchase_check_cart. Cambió la sesión o la oferta carece de evidencia vigente."})
-                selector = (args or {}).get('total_selector')
-                if not selector:
-                    return _agent_json({"ok":False,"error":"Incluye total_selector, el selector del importe final visible del checkout. No basta un total declarado por el modelo."})
+                # The total is read from the page by the plugin: at the agent's selector if it gave
+                # one, else next to «Total» (shop_engine). A total the model writes is never used.
+                selector = str((args or {}).get('total_selector') or '')
                 total = prices.checkout_amount(entry,selector)
                 offer = entry['offer']
                 args = {**(args or {}), 'total':total, 'currency':offer['currency'],
                         'items':[{'name':offer['title'],'variant':offer.get('variant',''),'qty':offer.get('qty',1),'price':offer['price']}]}
+            except ValueError as exc:
+                return _agent_json({"ok":False,"error":str(exc)})
             except Exception:
                 return _agent_json({"ok":False,"error":"No se pudo verificar la cesta y el total de este recado. Comprueba el resumen final antes de pedir aprobación."})
         result = errands.request_checkout(_hermes_root(), entry["id"], args or {}, saved_cards=_cards_module().cards)
         if entry.get('offer') and result.get('ok') and result.get('status') == 'needs_approval':
             pending = errands.get(_hermes_root(),entry['id'])['checkout']
-            errands.update(_hermes_root(),entry['id'],checkout_evidence={'checkout_id':pending['id'],'selector':selector})
+            errands.update(_hermes_root(),entry['id'],checkout_evidence={'checkout_id':pending['id'],'selector':selector,'engine':not selector})
         return _agent_json(result)
 
     def check_cart(args, **_):
@@ -2004,8 +2007,8 @@ def _register_task_tools(ctx) -> None:
         except Exception as exc:
             return _agent_json({"ok":False,"error":str(exc) if isinstance(exc,ValueError) else "No se pudo leer la cesta del recado."})
     ctx.register_tool(name="purchase_check_cart", toolset="alice_tasks", handler=check_cart,
-        schema={"name":"purchase_check_cart","description":"Read and revalidate the chosen format, units and current price in this errand's cart, after login or a shop session change. No cart mutation or payment.",
-                "parameters":{"type":"object","properties":{name:{'type':'string','description':desc} for name,desc in (('line','CSS selector for the cart product line/container, e.g. #line. Never product text.'),('price','CSS selector for the current unit price inside that line, e.g. #price. Never an amount.'),('cart_quantity','CSS selector for the cart quantity input/text, e.g. #cart-qty. Never a number.'))},"required":['line','price','cart_quantity']}},
+        schema={"name":"purchase_check_cart","description":"With the errand's cart open (the cart page or drawer showing the chosen product), read and revalidate the chosen format, units and current price. Call it with no arguments: the plugin finds the line itself. No cart mutation or payment.",
+                "parameters":{"type":"object","properties":{name:{'type':'string','description':desc} for name,desc in (('line','Optional, only if the plugin could not find the line: CSS selector of the cart line. Never product text.'),('price','Optional: CSS selector of the unit price inside that line. Never an amount.'),('cart_quantity','Optional: CSS selector of the line quantity. Never a number.'))},"required":[]}},
         check_fn=_always, description="Revalidate this errand's cart after login", emoji="🛒")
 
     def login_fill(args, **_):
@@ -2097,11 +2100,11 @@ def _register_task_tools(ctx) -> None:
             return _agent_json({"ok": False, "error": str(exc) if isinstance(exc, ValueError) else "La comprobación de la cesta temporal no está disponible."})
 
     for tool_name, method, properties, required in (
-        ('purchase_discover','discover', {'url':{'type':'string','description':"The shop's own search results or category page for what was asked, never a guessed product URL"},'selector':{'type':'string','description':'CSS selector for ALL matching product/format links on the shop page'},'keywords':{'type':'array','items':{'type':'string'},'description':'Product words every candidate must name (url or title), e.g. ["creapure"]'}}, ['url','selector']),
-        ('purchase_verify','verify', {'search_id':{'type':'string'},'candidate_id':{'type':'string'},'currency':{'type':'string'},'qty':{'type':'integer','minimum':1,'maximum':20},'reject_reason':{'type':'string'},'coupons':{'type':'array','maxItems':5,'items':{'type':'string'}},
-         'recipe':{'type':'object','properties':{name:{'type':'string','description':('Optional observed cart URL; leave empty if add opens the cart on this page. Never guess a /cart URL.' if name=='cart_url' else 'CSS selector for '+name+' in the shop DOM. Never literal product text, amount or number; omit optional selectors that were not observed.')} for name in ('title','variant','quantity','add','cart_url','line','price','cart_quantity','shipping','condition','coupon','apply','unavailable')},'required':['title','add','line','price','cart_quantity']}},['search_id','candidate_id','currency'])):
-        description = ('Register every discovered format from the shop DOM before recommending. Search the category, not just the homepage or a different product page.' if method=='discover' else
-                       'Verify a format price in a disposable isolated cart without login or payment. For Prozis omit recipe: its observed DOM adapter handles variant selection, counters and public coupons. For other shops provide observed DOM locators for product and cart. After one successful recipe the service checks the remaining formats too; include all other_formats quote ids in purchase_options. Discard only with an unavailable DOM selector proving no stock. Returns trusted quote_ref.')
+        ('purchase_discover','discover', {'shop':{'type':'string','description':"The shop's domain or address, e.g. tienda.com. The plugin finds its search and the product links itself."},'query':{'type':'string','description':'What to search for, in the words a shop would use, e.g. "creatina creapure"'},'url':{'type':'string','description':"Instead of shop+query: the shop's own results or category page. Never a guessed product URL."},'selector':{'type':'string','description':'Optional and rarely needed: CSS selector for the product links on that page'},'keywords':{'type':'array','items':{'type':'string'},'description':'Product words every candidate must name (url or title), e.g. ["creapure"]'}}, []),
+        ('purchase_verify','verify', {'search_id':{'type':'string'},'candidate_id':{'type':'string'},'currency':{'type':'string'},'variant':{'type':'string','description':'The variant to check (size, flavour…) as the page names it; omit for the page default'},'qty':{'type':'integer','minimum':1,'maximum':20},'reject_reason':{'type':'string'},'coupons':{'type':'array','maxItems':5,'items':{'type':'string'}},
+         'recipe':{'type':'object','description':'Optional and rarely needed: observed DOM selectors, only if the plugin said it could not read this shop.','properties':{name:{'type':'string'} for name in ('title','variant','quantity','add','cart_url','line','price','cart_quantity','shipping','condition','coupon','apply','unavailable')}}},['search_id','candidate_id','currency'])):
+        description = ('Find the formats of a product in a shop: give shop and query (or the shop\'s results page). The plugin uses the shop\'s own search and lists the product pages; never guess selectors or product URLs.' if method=='discover' else
+                       'Check one format\'s real price in a disposable basket (no login, no payment): the plugin opens the product, picks the variant, adds it and reads the basket itself. Give search_id, candidate_id, currency and, if it matters, variant. The remaining formats are checked too; the cards appear from the evidence. A quote with basis «page» is the product page\'s price, confirmed later in the errand\'s basket. Returns trusted quote_ref.')
         ctx.register_tool(name=tool_name, toolset='alice_tasks', handler=lambda args,_method=method,**_:price_tool(_method,args),
             schema={'name':tool_name,'description':description,'parameters':{'type':'object','properties':properties,'required':required}},
             check_fn=_always, description=description, emoji='🛒')
@@ -2145,7 +2148,7 @@ def _register_task_tools(ctx) -> None:
 
     ctx.register_tool(name="card_request", toolset="alice_tasks", schema=errands.CARD_SCHEMA, handler=card,
                       check_fn=_always, description=errands.CARD_SCHEMA["description"], emoji="💳")
-    ctx.register_tool(name="checkout_request", toolset="alice_tasks", schema={**errands.CHECKOUT_SCHEMA, "parameters": {**errands.CHECKOUT_SCHEMA["parameters"], "properties": {**errands.CHECKOUT_SCHEMA["parameters"]["properties"], "total_selector": {"type":"string","description":"CSS selector of the final total visible in the chosen shop checkout; server reads the amount directly."}}}},
+    ctx.register_tool(name="checkout_request", toolset="alice_tasks", schema={**errands.CHECKOUT_SCHEMA, "parameters": {**errands.CHECKOUT_SCHEMA["parameters"], "properties": {**errands.CHECKOUT_SCHEMA["parameters"]["properties"], "total_selector": {"type":"string","description":"Optional: CSS selector of the final total, only if the plugin could not find «Total» on the page. The plugin reads the amount from the page; a total you write is never used."}}}},
                       handler=checkout, check_fn=_always, description=errands.CHECKOUT_SCHEMA["description"],
                       emoji="🧾")
 

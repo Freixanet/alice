@@ -82,6 +82,13 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s hermes-plugin/tests
           python -m unittest discover -s mac/notifier
+      # The shop engine and the money gates in a real headless Chrome, on three fictional shops
+      # and a bank page; every request is intercepted (no real shop, account or payment).
+      - name: Verify purchases on fixture shops in Chrome
+        run: |
+          set -euo pipefail
+          python -m pip install -q websockets
+          CHROME="$(command -v google-chrome || command -v chromium)" python scripts/verify-shops.py
 
   browser:
     if: ${{ !inputs.backend_only }}

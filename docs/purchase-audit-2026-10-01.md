@@ -425,6 +425,17 @@ Puertas de dinero convertidas en gates del plugin, nunca en instrucciones al mod
 
 Queda para PR2 el fixture de banco en el script con Chrome (`verify-purchase-complete.py`), junto a las tres tiendas ficticias.
 
+## Ronda 6 · P1 cualquier tienda (2 oct)
+
+`shop_engine.py`: plataforma detectada por la página (Shopify, WooCommerce, Magento, PrestaShop, Prozis, genérica) y tres niveles: endpoints de la plataforma, datos estructurados, heurísticas DOM; si no hay cesta legible, precio de la ficha marcado `basis: page` y confirmado en la cesta del recado. Las herramientas ya no piden selectores: `purchase_discover(shop, query)`, `purchase_verify(…, variant)`, `purchase_check_cart()` y `checkout_request` sin `total_selector`.
+
+| Comprobado | Dónde |
+| --- | --- |
+| Búsqueda, variante, cesta, cupón, agotados, botón de pagar nunca pulsado, total sin subtotal/envío/ahorro, unidades erróneas, en tres tiendas ficticias | `tests/test_shop_engine.py` (jsdom, 20 tests) |
+| Lo mismo en Chrome real con todo el tráfico interceptado, y la puerta de pago en la página del banco ficticia | `scripts/verify-shops.py` (CI) |
+
+No comprobado: tiendas reales (anti-bot, precios tras login, checkout en iframe).
+
 ## Recomendación
 
 Hay dos familias de causa, y hay que elegir orden:

@@ -106,6 +106,18 @@ arranque en frío, las cestas aisladas y la apertura de nuevas pestañas. El res
 la aprobación exacta y el recibo se ejercitan con fixtures; no se visita ninguna
 tienda ni se paga. Véase [verificación](verification.md#purchase-browser-integration).
 
+## Any shop: the shop engine
+
+`hermes-plugin/shop_engine.py` reads a shop without selectors from the model. It detects the platform from the page, not the domain, and answers in three tiers, each reporting how (`how`):
+
+1. **Platform endpoints.** Shopify (`/products/<handle>.js`, `/cart/add.js`, `/cart.js`, `/search/suggest.json`) and WooCommerce (Store API `/wp-json/wc/store/v1/`): prices in minor units, stock and variants, no DOM.
+2. **Structured data.** JSON-LD `Product`/`Offer` (each variant's own offer), microdata, `og:price`.
+3. **DOM heuristics.** The shop's own search form or the usual search addresses, product links that carry a price, the variant by its words (select, radio, chip), the add button by its words (never one that says pay, buy now or checkout), the cart link, the cart line that names the product with its units and unit price, the amount next to «Total» that is not a subtotal, shipping or saving, and cookie banners (Cookiebot, OneTrust, Didomi, Usercentrics, generic).
+
+When no basket can be read, the quote is the product page's price with `basis: "page"`; the card says it, and the errand confirms the price in its own basket (`purchase_check_cart`) before any approval. The total the person approves is always read from the checkout page by the plugin. Prozis keeps its observed adapter behind the same tools. `purchase_discover` takes `shop` and `query`; `purchase_verify`, `purchase_check_cart` and `checkout_request` need no selector (the old ones remain optional).
+
+Tests: `tests/test_shop_engine.py` runs the engine in jsdom against three fictional shops (Shopify-like, WooCommerce-like, a shop on no platform with JSON-LD, a cookie banner, a size select, a cart page, a coupon and a checkout summary); `scripts/verify-shops.py` runs the same shops and a bank page in a real headless Chrome with every request intercepted, in CI. Neither proves a real shop: anti-bot pages, logins required to see prices and checkouts in opaque frames still fall back to the page price or to the person taking the browser.
+
 ## Trusted cart evidence and secure errands
 
 The chat records formats from the shop DOM with `purchase_discover`. `purchase_verify` uses disposable browser contexts with no personal cookies, vault access or payment operation. A successful recipe also probes the remaining formats. Every found format must have a cart quote or a DOM-backed unavailability reason before `purchase_options` can show cards. Quotes bind product URL, variant, units, currency, origin and time; the server ignores model-written prices. Public coupons count only if the cart applies them, and shipping/remaining conditions stay separate. Cards paginate six per page.
