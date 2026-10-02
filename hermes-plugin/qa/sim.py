@@ -674,6 +674,29 @@ class Person:
         self.sim.oracle.after("persona " + path)
         return response
 
+    def cards(self) -> Optional[Dict[str, Any]]:
+        """What the app draws under the reply, read as the iPhone reads it (GET /purchase/sets, then
+        /purchase/options/{key}): the recommended card, or nothing when the app would show none (I6)."""
+        sim = self.sim
+        prefix = sim.api.PLUGIN_PREFIX
+        listed = sim.client.get(f"{prefix}/purchase/sets", params={"session": CHAT, "since": 0})
+        sets = listed.json().get("sets") if listed.status_code == 200 else None
+        if not sets:
+            sim.oracle.fail("I6", "app", f"la app no recibe tarjetas (GET /purchase/sets → {listed.status_code})")
+            return None
+        key = sets[-1]["key"]
+        shown = sim.client.get(f"{prefix}/purchase/options/{key}", params={"session": CHAT})
+        options = shown.json().get("options") if shown.status_code == 200 else None
+        if not options:
+            sim.oracle.fail("I6", "app", f"la app no puede abrir las tarjetas {key} (→ {shown.status_code})")
+            return None
+        if len([o for o in options if o.get("recommended")]) != 1:
+            sim.oracle.fail("I6", "app", "las tarjetas no llevan exactamente una recomendada")
+        if any(not str(o.get("id", "")).startswith(key + "-") for o in options):
+            sim.oracle.fail("I6", "app", "un id de tarjeta no lleva la clave de su conjunto: el toque no la encontraría")
+        sim.events.append(f"app: {len(options)} tarjeta(s) {key}")
+        return next((o for o in options if o.get("recommended")), options[0])
+
     def act(self) -> bool:
         sim = self.sim
         entry = sim.errand()
@@ -729,9 +752,8 @@ def run(shop: str = "tienda-tres.example", faults: Sequence[str] = (), seed: int
             mutate(sim)
         try:
             sim.robot.shop_for()
-            sets = [s for s in sim.flow._read(sim.flow._path(sim.home)) if s.get("session") == CHAT]
-            if sets:
-                option = next((o for o in sets[-1]["options"] if o.get("recommended")), sets[-1]["options"][0])
+            option = sim.person.cards()
+            if option:
                 qty = int(sim.case.get("qty") or 1)
                 if sim.fault("price_changed"):
                     sim.world.price_delta = 500
@@ -753,7 +775,8 @@ def run(shop: str = "tienda-tres.example", faults: Sequence[str] = (), seed: int
         return {"shop": shop, "faults": list(faults), "seed": seed, "status": status, "outcome": outcome,
                 "pays": sum(sim.oracle.pays.values()), "findings": sim.oracle.findings, "events": sim.events[-80:],
                 "seconds": round(time.monotonic() - started, 1),
-                "snapshots": [sim.errands.public(e) for e in sim.errands.listing(sim.home)]}
+                "snapshots": [sim.errands.public(e) for e in sim.errands.listing(sim.home)],
+                "states": sim.oracle.states}
 
 
 if __name__ == "__main__":

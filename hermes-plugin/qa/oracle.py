@@ -24,6 +24,8 @@ class Oracle:
         self.findings: List[Dict[str, Any]] = []
         self.pays: Dict[str, int] = {}
         self.texts: List[str] = []
+        # Every distinct state an errand passed through, as the app receives it (for the iOS contract).
+        self.states: Dict[str, Dict[str, Any]] = {}
 
     def fail(self, invariant: str, event: str, detail: str) -> None:
         finding = {"invariant": invariant, "event": event, "detail": detail[:600]}
@@ -65,6 +67,13 @@ class Oracle:
         self._secrets_on_disk(event)
         for entry in self.errands.listing(self.home):
             self._exit_and_honesty(entry, event)
+            public = self.errands.public(entry)
+            checkout = public.get("checkout") if isinstance(public.get("checkout"), dict) else {}
+            receipt = public.get("receipt") if isinstance(public.get("receipt"), dict) else {}
+            blocked = public.get("blocked") if isinstance(public.get("blocked"), dict) else {}
+            key = "/".join(str(x or "-") for x in (public.get("status"), checkout.get("status"), receipt.get("outcome"),
+                                                   blocked.get("kind"), "questions" if public.get("questions") else ""))
+            self.states.setdefault(key, json.loads(json.dumps(public, default=str)))
         self._ledger(event)
 
     def _secrets_on_disk(self, event: str) -> None:

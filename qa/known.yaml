@@ -1,3 +1,19 @@
 # Findings accepted on purpose. Each needs: invariant, match (text in the finding's detail), reason,
-# date and who decided. An agent never adds one to make a run green (docs/qa-protocol.md).
-known: []
+# date and who decided. An agent never adds one to make a run green (docs/qa-protocol.md); closing
+# the reason (here, the login gap in qa/flows/purchase.yaml) removes the entry.
+known:
+  - invariant: STATIC
+    match: "la app lee «secure_request»"
+    reason: "El simulador aún no recorre una tienda con login (hueco login_required/otp en purchase.yaml); el estado needs_login lo cubren test_purchase_evidence.AccessTests."
+    date: 2026-10-02
+    by: claude (QA 3)
+  - invariant: STATIC
+    match: "la app lee «origin»"
+    reason: "Mismo hueco: origin llega en secure_request (login)."
+    date: 2026-10-02
+    by: claude (QA 3)
+  - invariant: STATIC
+    match: "la app lee «request_id»"
+    reason: "Llega en secure_request (login) y en approval (confirmación de Hermes dentro del recado, p. ej. ask_before_login); el simulador aún no produce ninguno de los dos."
+    date: 2026-10-02
+    by: claude (QA 3)

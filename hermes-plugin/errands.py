@@ -1129,6 +1129,7 @@ def _default_home() -> Path:
 def legacy_context_file(errand_id: str) -> Path:
     import tempfile
 
+    # qa: allow temp-state — read once to move an older version's note to the Hermes home
     return Path(tempfile.gettempdir()) / CONTEXT_FILE.format(id=re.sub(r"[^a-f0-9]", "", errand_id))
 
 
@@ -1284,7 +1285,7 @@ def _cdp_root(home: Optional[Path]) -> str:
             return f"http://{parts.netloc}"
     except Exception:  # noqa: BLE001
         pass
-    return "http://127.0.0.1:9222"
+    return "http://127.0.0.1:9222"  # qa: allow fixed-port — Chrome's own default when Alice configured none
 
 
 def release_context(errand_id: str, browser_ws: Optional[str] = None, home: Optional[Path] = None) -> bool:

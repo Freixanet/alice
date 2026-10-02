@@ -142,6 +142,10 @@ def _guard_egress(tool_name=None, args=None, session_id="", **_):
     try:
         return _egress_guard().check(tool_name or "", args, session_id or "")
     except Exception:
+        # The check itself failed: a command that runs code is not let through unseen (qa static).
+        if str(tool_name or "") in {"terminal", "execute_code", "shell", "bash", "run_command"}:
+            return {"action": "approve", "message": "No se pudo comprobar si este comando es seguro: apruébalo solo si lo has pedido tú.",
+                    "rule_key": "alice-egress-unchecked:" + __import__("secrets").token_hex(8)}
         return None
 
 
@@ -155,7 +159,7 @@ def _route_card_fill(tool_name=None, args=None, **_):
         live = _browser()
         urls = [str(tab.get("url") or "") for tab in live.pages(live.configured_url(_hermes_root()))]
         handle = _cards_module().route_fill(str(args["handle"]), urls)
-    except Exception:
+    except Exception:  # qa: allow fail-open — routing only; _guard_errand and the repeat guard still decide
         return None
     return {"action": "modify", "args": {"handle": handle}} if handle else None
 

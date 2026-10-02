@@ -263,11 +263,17 @@ struct ErrandStack: View {
                                         : errand.language.pick("Sign in to \(site)", "Iniciar sesión en \(site)"),
                           systemImage: access.isCode ? "number.circle" : "lock.shield")
                         .font(.headline)
+                    // A code can be the bank's, after the approval (3-D Secure): then a payment is
+                    // under way and «nothing has been paid» would be false (qa static: nothing-paid).
+                    let paidState = errand.paymentUnconfirmed
+                        ? errand.language.pick("The payment is under way and not confirmed yet.",
+                                               "El pago está en curso y aún no está confirmado.")
+                        : errand.language.pick("Nothing has been paid.", "No se ha pagado nada.")
                     Text(access.isCode
-                         ? errand.language.pick("\(site) sent you a code (email or SMS). Type it here and the order goes on. Nothing has been paid.",
-                                                "\(site) te ha enviado un código (correo o SMS). Escríbelo aquí y el pedido sigue. No se ha pagado nada.")
-                         : errand.language.pick("Sign in or create an account at \(site), securely; the order goes on by itself. Nothing has been paid.",
-                                                "Inicia sesión o crea una cuenta en \(site) de forma segura; el pedido sigue solo. No se ha pagado nada."))
+                         ? errand.language.pick("\(site) sent you a code (email or SMS). Type it here and the order goes on. ",
+                                                "\(site) te ha enviado un código (correo o SMS). Escríbelo aquí y el pedido sigue. ") + paidState
+                         : errand.language.pick("Sign in or create an account at \(site), securely; the order goes on by itself. ",
+                                                "Inicia sesión o crea una cuenta en \(site) de forma segura; el pedido sigue solo. ") + paidState)
                     Button(access.isCode ? errand.language.pick("Enter the code", "Introducir el código")
                                          : errand.language.pick("Continue securely", "Continuar de forma segura")) {
                         store.secureRequest = request

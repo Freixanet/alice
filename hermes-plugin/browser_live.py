@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
-PORT = 9222
+PORT = 9222  # qa: allow fixed-port — the one definition
 MANAGED_URL = f"http://127.0.0.1:{PORT}"
 STATE = Path(".alice") / "browser.json"
 # Who drives the shared browser: the agents, or the person who took over for a login, a

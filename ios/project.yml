@@ -204,6 +204,9 @@ targets:
       - path: AliceTests
       - path: ../hermes-plugin/tests/fixtures/option_keys.json
         buildPhase: resources
+      # Every errand state the purchase simulator produced (scripts/qa.py snapshots).
+      - path: ../hermes-plugin/tests/fixtures/errand_states.json
+        buildPhase: resources
     dependencies:
       - target: Alice
     settings:
