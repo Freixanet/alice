@@ -1812,6 +1812,16 @@ def ask_prompt(_session_info=None) -> str:
     return _ask_person().prompt(Path(get_hermes_home()))
 
 
+def _vault_logins(origin: str) -> list:
+    """The logins Hermes' vault holds for an origin (handle and origin only, never values)."""
+    try:
+        store = _cards_module()._store()
+        return [{"handle": m.id, "origin": m.origin} for m in store.list_items()
+                if m.kind == "login" and str(m.origin or "").rstrip("/").lower() == str(origin or "").rstrip("/").lower()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _delivery_details(profile: str):
     """The person's saved delivery details for an errand's brief, or None when unreadable."""
     try:
@@ -1835,6 +1845,7 @@ def _register_task_tools(ctx) -> None:
     errands = _errands()
     errands.card_rules = _card_rules
     errands.details_block = _delivery_details
+    _module("errand_access.py", "alice_errand_access").vault_logins = _vault_logins
     _keep_errand_tools_visible()
 
     def start(args, **_):
@@ -1938,7 +1949,8 @@ def _register_task_tools(ctx) -> None:
             return _agent_json({"ok": False, "error": "Solo dentro de un recado."})
         try:
             access = _module("errand_access.py", "alice_errand_access")
-            result = access.request(_hermes_root(), entry['id'], (args or {}).get('kind', 'vault.save_login'))
+            result = access.request(_hermes_root(), entry['id'], (args or {}).get('kind', 'vault.save_login'),
+                                    replace=bool((args or {}).get('replace')))
             return _agent_json({"ok": True, "request": access.public(result), "next": "Termina el turno. Espera el acceso seguro del iPhone; el mismo recado continúa."})
         except ValueError as exc:
             return _agent_json({"ok": False, "error": str(exc)})
@@ -1947,7 +1959,8 @@ def _register_task_tools(ctx) -> None:
 
     ctx.register_tool(name="login_request", toolset="alice_tasks", handler=login_request,
         schema={"name": "login_request", "description": "Ask securely on the iPhone for this errand's exact shop login or OTP. Never ask for secrets in chat.",
-                "parameters": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["vault.save_login", "vault.code"]}}}},
+                "parameters": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["vault.save_login", "vault.code"]},
+                                                                 "replace": {"type": "boolean", "description": "Only after login_fill failed with the saved access of this shop."}}}},
         check_fn=_always, description="Request this shop's login or OTP securely on iPhone", emoji="🔐")
 
     def options(args, **_):

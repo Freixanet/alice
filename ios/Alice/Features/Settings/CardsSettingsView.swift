@@ -142,6 +142,7 @@ struct DeliveryDetailsView: View {
         ("name", "Name", .default, .givenName),
         ("surname", "Surname", .default, .familyName),
         ("id", "ID (NIF/NIE)", .asciiCapable, nil),
+        ("birthdate", "Date of birth (dd/mm/yyyy)", .numbersAndPunctuation, .birthdate),
         ("address", "Address", .default, .fullStreetAddress),
         ("postcode", "Postcode", .numberPad, .postalCode),
         ("city", "City", .default, .addressCity),

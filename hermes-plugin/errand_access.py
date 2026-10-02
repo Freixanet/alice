@@ -123,12 +123,16 @@ def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluat
             'next':'Solo se han rellenado los campos: todavía no has iniciado sesión. Envía el formulario de acceso, comprueba el resultado y solicita el código seguro si la tienda lo pide.'}
 
 
-def request(home, errand_id, kind='vault.save_login', *, inspect=target):
+# The logins the vault already holds for an origin: [{'handle', 'origin'}]. Set by the plugin.
+vault_logins = lambda origin: []
+
+
+def request(home, errand_id, kind='vault.save_login', *, inspect=target, replace=False):
     with module('purchase_flow')._locked(home):
-        return _request(home,errand_id,kind,inspect=inspect)
+        return _request(home,errand_id,kind,inspect=inspect,replace=replace)
 
 
-def _request(home, errand_id, kind='vault.save_login', *, inspect=target):
+def _request(home, errand_id, kind='vault.save_login', *, inspect=target, replace=False):
     errands = module('errands')
     entry = errands.get(home, errand_id)
     if not entry or entry['status'] not in ('working', 'needs_login'):
@@ -140,6 +144,18 @@ def _request(home, errand_id, kind='vault.save_login', *, inspect=target):
     if kind not in ('vault.save_login', 'vault.code'):
         raise ValueError('Solicitud de acceso desconocida.')
     saved = entry.get('saved_login') or {}
+    if kind == 'vault.save_login' and not saved and not replace:
+        # The vault already has this shop's login (given in an earlier errand): it is used, not
+        # asked again, and no account is created beside it. «replace» only after login_fill failed.
+        try:
+            existing = [l for l in vault_logins(page_origin) if origin(l.get('origin') or '') == page_origin]
+        except Exception:  # noqa: BLE001
+            existing = []
+        if existing:
+            handles = ', '.join(str(l.get('handle')) for l in existing)
+            raise ValueError(f"La tienda ya tiene un acceso guardado ({handles}): inicia sesión con login_fill y ese "
+                             "handle, y no crees una cuenta nueva. Solo si login_fill falla con ese acceso, vuelve a "
+                             "llamar login_request con replace=true.")
     if kind == 'vault.save_login' and saved.get('origin') == page_origin:
         raise ValueError(f"La persona ya dio el acceso de esta tienda ({saved['handle']}); no se lo pidas otra vez. "
                          "Usa login_fill con ese acceso: abre antes el formulario de iniciar sesión, o el de crear "

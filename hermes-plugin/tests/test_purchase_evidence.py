@@ -347,6 +347,18 @@ class AccessTests(unittest.TestCase):
         pending = access.detect_pending(self.home,self.entry['id'],inspect=self.inspect,evaluate=evaluate)
         self.assertEqual(pending['kind'],'vault.code')
 
+    def test_a_login_the_vault_already_holds_is_used_not_asked_again(self):
+        # The account was created in an earlier errand; the next one went to «Crear cuenta» again.
+        self.addCleanup(setattr, access, 'vault_logins', access.vault_logins)
+        access.vault_logins = lambda origin: [{'handle': 'login-prozis', 'origin': 'https://example.com'}]
+        with self.assertRaisesRegex(ValueError, 'login-prozis'):
+            self.pending()
+        self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
+        # A code is still the person's, and a replacement after a failed fill is allowed.
+        self.assertEqual(self.pending('vault.code')['kind'],'vault.code')
+        errands.update(self.home,self.entry['id'],status='working',secure_request=None)
+        self.assertEqual(access.request(self.home,self.entry['id'],inspect=self.inspect,replace=True)['kind'],'vault.save_login')
+
     def test_a_login_already_given_is_not_asked_again(self):
         p = self.pending(); self.respond(p, account_action='create')
         with self.assertRaisesRegex(ValueError, 'no se lo pidas otra vez'):

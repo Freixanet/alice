@@ -765,9 +765,39 @@ def _multiple(price: str, offer: Dict[str, Any]) -> bool:
     return times >= 2 and abs(times - round(times)) < 1e-9
 
 
+# A shop asking for something only the person has: a question of one line, never a stop.
+# «Prozis exige una fecha de nacimiento para crear la cuenta» ended the purchase.
+DATA = (
+    (r"fecha de nacimiento|birth ?date|date of birth|cumplea[nñ]os|nacimiento", "birthdate", "Fecha de nacimiento (dd/mm/aaaa)"),
+    (r"\b(dni|nif|nie|documento de identidad|pasaporte|passport|id number)\b", "id", "DNI / NIF"),
+    (r"tel[eé]fono|m[oó]vil|phone", "phone", "Teléfono"),
+    (r"c[oó]digo postal|postcode|zip", "postcode", "Código postal"),
+    (r"direcci[oó]n|address|calle", "address", "Dirección (calle y número)"),
+    (r"localidad|ciudad|city|poblaci[oó]n", "city", "Localidad"),
+    (r"provincia|province", "province", "Provincia"),
+    (r"apellidos?|surname|last name", "surname", "Apellidos"),
+    (r"\bnombre\b|first name", "name", "Nombre"),
+    (r"e-?mail|correo", "email", "Email"),
+)
+NEEDS = re.compile(r"(exige|requiere|pide|necesita|falta|obligatori|required|requires|needs|missing|no permite continuar sin)", re.I)
+
+
+def missing_datum(said: str) -> Optional[Dict[str, str]]:
+    """The personal datum a shop demands, read from the agent's stop, or None."""
+    if not NEEDS.search(said):
+        return None
+    for pattern, field, label in DATA:
+        if re.search(pattern, said, re.I):
+            return {"field": field, "label": label}
+    return None
+
+
 def blocked_by(said: str, offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """What stopped the chosen option: another price (the person may accept it), the option gone, or
-    anything else — which is the agent's to fix, not the person's."""
+    """What stopped the chosen option: another price (the person may accept it), the option gone,
+    a datum only the person has (asked, not a stop), or anything else — the agent's to fix."""
+    datum = missing_datum(said)
+    if datum:
+        return {"kind": "datum", **datum}
     if UNITS.search(said):
         # Extra units in the basket (left from another try, a double click) are the agent's to
         # remove, never a price for the person to accept.
@@ -843,6 +873,8 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
         "sigas: termina tu turno con una sola línea «BLOQUEADO: precio 34,99 € — por qué» (con el precio que "
         "cobra la cesta, solo si difiere del elegido) o «BLOQUEADO: qué ha cambiado». Un precio anterior "
         "tachado no es un cambio: selecciona la variante, añade el producto y verifica el precio en la cesta. "
+        "Si la tienda pide un dato de la persona que no tienes (fecha de nacimiento, DNI, teléfono…), no es un "
+        "bloqueo: pregúntalo con `ask_person` con su `field` y termina el turno; sigue cuando llegue. "
         "Si hay un error de código o una página vacía, corrígelo y vuelve a inspeccionar; no concluyas que faltan "
         "controles a partir de una consulta fallida. La persona decide si sigue."
     )
@@ -884,7 +916,8 @@ def brief(entry: Dict[str, Any]) -> str:
     login = ("Antes de iniciar sesión, la persona quiere que se le pregunte: Hermes se lo pedirá."
              if entry.get("ask_before_login") else
              "Si la web pide iniciar sesión y hay un login guardado en el vault para ella, entra con "
-             "`login_fill` sin preguntar. Si no hay un acceso de ESTE origen, llama a `login_request` y termina el turno. Nunca uses accesos de otras tiendas. Para un código de verificación usa `login_request` con kind vault.code; se pide en el iPhone y el mismo recado continúa.")
+             "`login_fill` sin preguntar y NUNCA crees una cuenta nueva teniendo ese acceso. Si no hay un acceso de ESTE origen, "
+             "llama a `login_request` y termina el turno. Nunca uses accesos de otras tiendas. Para un código de verificación usa `login_request` con kind vault.code; se pide en el iPhone y el mismo recado continúa.")
     offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else None
     try:
         delivery = delivery_lines(details_block(str(entry.get("profile") or "default")))
@@ -1386,6 +1419,13 @@ class Engine:
             if BLOCKED.match(reply):
                 said = _clean(BLOCKED.sub("", reply, count=1), 300) or "La opción elegida ya no se puede comprar."
                 blocked = blocked_by(said, entry.get("offer"))
+                if blocked["kind"] == "datum":
+                    # A datum only the person has (date of birth, ID number): one question in the
+                    # errand's card, kept for every later purchase; the errand goes on with it.
+                    update(self.home, self.errand_id, status="needs_input", blocked=None, reason="",
+                           questions={"title": "La tienda pide un dato", "fields": True, "items": [
+                               {"id": blocked["field"], "question": blocked["label"], "field": blocked["field"], "choices": []}]})
+                    return "needs_input"
                 # Only what the person must decide stops the errand: another price, or the option gone.
                 # A basket with something else in it, a wrong variant, a page error is the agent's to
                 # fix: one checkout stopped on «contains another product» left over from an earlier try.

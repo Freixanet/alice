@@ -60,6 +60,19 @@ acepta resultados que lleguen como texto JSON). Test: `test_the_verify_tool_name
 iOS `testTheVerificationCallsSetIsReadWhereverTheToolPutIt`. Las tarjetas por ventana de turno (72c8c21)
 son la segunda red, independiente de esto.
 
+### Capturas del 2 oct (04:16), rama instalada: parada por «Prozis exige una fecha de nacimiento»
+
+Primera prueba con tarjetas, elección, recado y tienda funcionando. Dos causas, las dos del plugin:
+(1) un dato que la tienda pide y el agente no tiene se trataba como bloqueo final; ahora
+`errands.missing_datum` lo convierte en una pregunta de la tarjeta del recado (fecha de nacimiento,
+DNI, teléfono…), la respuesta se guarda en los datos de la persona (`birthdate` nuevo en
+`ask_person.FIELDS` y en Ajustes) y el recado sigue. (2) El agente fue a «Crear cuenta» aunque la
+bóveda ya tenía el acceso de Prozis de las 02:25; ahora `login_request` se rechaza cuando la bóveda
+tiene un acceso de ese origen (salvo `replace=true` tras un `login_fill` fallido) y el brief lo dice.
+Además la tarjeta del recado ya no repite el motivo de la parada que la tarjeta «Parada» muestra
+debajo. Tests: `test_a_datum_the_shop_demands_is_asked_and_kept_not_a_stop`,
+`test_a_login_the_vault_already_holds_is_used_not_asked_again`.
+
 ### Los 18 problemas históricos y qué test los sujeta
 
 | # | Problema | Test |

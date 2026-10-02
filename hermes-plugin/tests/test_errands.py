@@ -655,6 +655,21 @@ class AuditFixTests(Base):
         # The option gone, or another price, reaches the person at once.
         self.assertEqual(errands.blocked_by("la variante ya no está disponible"), {"kind": "gone"})
 
+    def test_a_datum_the_shop_demands_is_asked_and_kept_not_a_stop(self):
+        self.assertEqual(errands.blocked_by("Prozis exige una fecha de nacimiento para crear la cuenta y no permite continuar sin ella.")["kind"], "datum")
+        self.assertEqual(errands.missing_datum("La tienda requiere el DNI para facturar")["field"], "id")
+        self.assertIsNone(errands.missing_datum("La cesta tiene otro producto"))
+        offer = {"option_id": "a1b2c3d4-1", "title": "Creatina", "price": "24,49 €", "currency": "EUR", "url": "https://www.prozis.com/c"}
+        entry = errands.create(self.home, "Comprar Creatina", now=NOW, offer=offer)
+        gateway = FakeGateway([done("BLOQUEADO: Prozis exige una fecha de nacimiento para crear la cuenta.")])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"}, sleep=lambda s: None)
+        self.assertEqual(engine.run(), "needs_input")
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual(saved["status"], "needs_input")
+        self.assertEqual([q["id"] for q in saved["questions"]["items"]], ["birthdate"])
+        self.assertTrue(saved["questions"]["fields"])
+        self.assertIsNone(saved["blocked"])
+
     def test_anything_else_that_stops_it_is_not_a_price(self):
         self.assertEqual(errands.blocked_by("la variante sin sabor ya no está disponible"), {"kind": "gone"})
         self.assertEqual(errands.blocked_by("la página da error al pagar"), {"kind": "other"})

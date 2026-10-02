@@ -396,7 +396,8 @@ struct ErrandProgressCard: View {
                 ? language.pick("Waiting for the verification code", "Esperando el código de verificación")
                 : language.pick("Waiting for you to sign in to the shop", "Esperando que inicies sesión en la tienda")
         case .needsCard: return language.pick("Waiting for a card to pay with", "Esperando una tarjeta para pagar")
-        case .stuck: return errand.reason.nonEmpty(or: language.pick("It got stuck", "Se ha atascado"))
+        // The reason is the stopped card's, right under this one: said twice, it read as two stops.
+        case .stuck: return language.pick("Stopped: it needs you", "Parada: te necesita")
         case .stopped: return language.pick("The errand was stopped", "El recado se ha detenido")
         case .denied: return language.pick("You denied the purchase. Nothing was paid.",
                                            "Denegaste la compra. No se ha pagado nada.")
