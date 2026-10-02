@@ -792,6 +792,25 @@ def missing_datum(said: str) -> Optional[Dict[str, str]]:
     return None
 
 
+def ask_datum(home: Path, errand_id: str, datum: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    """The errand waits for that one datum on its card; the answer is kept and it goes on."""
+    return update(home, errand_id, status="needs_input", blocked=None, reason="",
+                  questions={"title": "La tienda pide un dato", "fields": True, "items": [
+                      {"id": datum["field"], "question": datum["label"], "field": datum["field"], "choices": []}]})
+
+
+def convert_datum_stops(home: Path) -> List[str]:
+    """Errands stopped on a datum before this rule existed (or by a run this engine did not drive)
+    become the question they should have been. Run with every listing."""
+    converted = []
+    for entry in listing(home):
+        datum = missing_datum(str(entry.get("reason") or "")) if entry.get("status") == "stuck" else None
+        if datum:
+            ask_datum(home, entry["id"], datum)
+            converted.append(entry["id"])
+    return converted
+
+
 def blocked_by(said: str, offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """What stopped the chosen option: another price (the person may accept it), the option gone,
     a datum only the person has (asked, not a stop), or anything else — the agent's to fix."""
@@ -838,6 +857,10 @@ def go_on(home: Path, errand_id: str, accept_price: bool = False) -> Optional[Di
         return None
     blocked = entry.get("blocked") if isinstance(entry.get("blocked"), dict) else {}
     offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else None
+    datum = missing_datum(str(entry.get("reason") or "")) if not accept_price else None
+    if datum:
+        # «Seguir desde aquí» on a stop about a datum: the datum is the way on, not another try.
+        return ask_datum(home, errand_id, datum)
     if accept_price:
         if blocked.get("kind") != "price" or not blocked.get("price"):
             return None
@@ -1422,9 +1445,7 @@ class Engine:
                 if blocked["kind"] == "datum":
                     # A datum only the person has (date of birth, ID number): one question in the
                     # errand's card, kept for every later purchase; the errand goes on with it.
-                    update(self.home, self.errand_id, status="needs_input", blocked=None, reason="",
-                           questions={"title": "La tienda pide un dato", "fields": True, "items": [
-                               {"id": blocked["field"], "question": blocked["label"], "field": blocked["field"], "choices": []}]})
+                    ask_datum(self.home, self.errand_id, blocked)
                     return "needs_input"
                 # Only what the person must decide stops the errand: another price, or the option gone.
                 # A basket with something else in it, a wrong variant, a page error is the agent's to

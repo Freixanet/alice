@@ -670,6 +670,22 @@ class AuditFixTests(Base):
         self.assertTrue(saved["questions"]["fields"])
         self.assertIsNone(saved["blocked"])
 
+    def test_an_errand_already_stopped_on_a_datum_becomes_the_question(self):
+        # Stopped before the rule existed: the next listing, or «Seguir desde aquí», asks the datum.
+        entry = self.errand()
+        errands.update(self.home, entry["id"], status="stuck", blocked={"kind": "other"},
+                       reason="Prozis exige una fecha de nacimiento para crear la cuenta y no permite continuar sin ella.")
+        self.assertEqual(errands.convert_datum_stops(self.home), [entry["id"]])
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual((saved["status"], saved["questions"]["items"][0]["id"]), ("needs_input", "birthdate"))
+        self.assertEqual(errands.convert_datum_stops(self.home), [])
+        other = self.errand()
+        errands.update(self.home, other["id"], status="stuck", reason="Hace falta el DNI para la factura.")
+        with mock.patch.object(errands, "launch") as launched, mock.patch.object(errands, "_goal_manager"):
+            went = errands.go_on(self.home, other["id"])
+        self.assertEqual((went["status"], went["questions"]["items"][0]["id"]), ("needs_input", "id"))
+        self.assertFalse(launched.called)
+
     def test_anything_else_that_stops_it_is_not_a_price(self):
         self.assertEqual(errands.blocked_by("la variante sin sabor ya no está disponible"), {"kind": "gone"})
         self.assertEqual(errands.blocked_by("la página da error al pagar"), {"kind": "other"})

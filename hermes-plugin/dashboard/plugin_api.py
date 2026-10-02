@@ -2639,6 +2639,7 @@ async def errands_list() -> JSONResponse:
         module, root = _errands_module(), _hermes_root()
         module.expire_checkouts(root)
         module.release_stale(root)
+        module.convert_datum_stops(root)
         module.ensure_running(root)
         return [module.public(e) for e in module.listing(root)]
 
