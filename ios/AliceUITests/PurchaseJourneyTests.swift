@@ -4,7 +4,7 @@ import XCTest
 /// (`hermes-plugin/qa/serve.py`, started by the `qa-ios` job of `.github/workflows/qa.yml`).
 ///
 /// The server does the chat part (search, verified cards, the tap) and runs the errand; this test
-/// is the person: it opens the errand in the app, approves the exact total, accepts a new price,
+/// is the person: it opens the errand in the app, pays the exact total («Pagar …»), accepts a new price,
 /// and confirms the order arrives — each answer travelling through the plugin's real routes. The
 /// server's oracle checks the invariants after every event; the job fails on any finding.
 /// Skipped when no QA server answers (an ordinary UI run).
@@ -31,7 +31,7 @@ final class PurchaseJourneyTests: XCTestCase {
         app.launch()
         open(row: "Zapatillas")
         capture("1-checkout-to-approve")
-        tapContaining("Permitir", within: 30)
+        tapContaining("Pagar ", within: 30)
         waitFor(["Pedido realizado", "Pedido hecho"], within: 60)
         capture("2-order-placed")
         close()
@@ -44,7 +44,7 @@ final class PurchaseJourneyTests: XCTestCase {
         waitFor(["Comprarla a"], within: 60)
         capture("3-new-price")
         tapContaining("Comprarla a", within: 10)
-        tapContaining("Permitir", within: 60)
+        tapContaining("Pagar ", within: 60)
         capture("4-new-total-to-approve")
         waitFor(["Pedido realizado", "Pedido hecho"], within: 60)
         capture("5-order-placed")
