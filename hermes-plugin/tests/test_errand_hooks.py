@@ -92,6 +92,68 @@ class ErrandHookTests(unittest.TestCase):
         result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":"print(page_info()); click(3)"}, session_id=entry["session_id"])
         self.assertEqual(result["action"], "modify")
 
+    def test_the_imports_every_model_writes_are_not_a_bypass(self):
+        entry = self.errand(offer={"option_id":"chosen", "price":"34,99 €"})
+        for code in ("import time\ntime.sleep(2)\nprint(page_info())", "import json, re\nprint(json.dumps(re.findall('\\d+', page_info())))",
+                     "from datetime import date\nprint(date.today())"):
+            with self.subTest(code=code):
+                result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":code}, session_id=entry["session_id"])
+                self.assertEqual(result["action"], "modify")
+        for code in ("import time, requests", "from urllib import request", "import os.path"):
+            with self.subTest(code=code):
+                result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":code}, session_id=entry["session_id"])
+                self.assertEqual(result["action"], "block")
+
+    def test_the_card_chosen_at_approval_is_the_only_one_filled(self):
+        entry = self.errand()
+        self.metas["other"] = Meta(kind="payment", origin="https://www.hsnstore.com", label="Empresa · Mastercard ···1111")
+        cards = self.plugin._cards_module()
+        cards.identity = lambda label: str(label).rsplit(" · ", 1)[-1]
+        self.errands.request_checkout(self.home, entry["id"], {"merchant": "HSN", "site": "hsnstore.com",
+                                                               "items": [{"name": "Creatina"}], "total": "27,98 €"})
+        self.errands.decide_checkout(self.home, entry["id"], True, card_label="Visa ···4242")
+        self.assertIsNone(self.plugin._guard_errand("browser_vault_fill", {"handle": "card"}, session_id=entry["session_id"]))
+        verdict = self.plugin._guard_errand("browser_vault_fill", {"handle": "other"}, session_id=entry["session_id"])
+        self.assertEqual(verdict["action"], "block")
+        self.assertIn("Visa ···4242", verdict["message"])
+
+    def test_a_tap_whose_recheck_fails_still_starts_the_purchase(self):
+        # The disposable re-check of the chosen format failed (the shop was slow, the browser was
+        # down). The person tapped: the errand starts from the price they saw and checks the real
+        # basket itself; before, the chat said «vuelve a tocar la opción» and the next tap failed too.
+        first, _ = self.shown()
+        prices = self.plugin._module("purchase_prices.py", "alice_purchase_prices")
+        hermes = types.SimpleNamespace(get_hermes_home=lambda: self.home)
+        with mock.patch.dict(sys.modules, {"hermes_constants": hermes}), \
+                mock.patch.object(prices, "resolve", side_effect=ValueError("La tienda no terminó de cargar.")):
+            note = self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] Creatina")
+        started = self.errands.listing(self.home)
+        self.assertEqual(len(started), 1)
+        self.assertEqual((started[0]["status"], started[0]["offer"]["price"]), ("working", "27,98 €"))
+        self.assertIn(started[0]["id"], note["context"])
+
+    def test_tapping_a_changed_price_twice_shows_one_stopped_errand(self):
+        first, _ = self.shown()
+        prices = self.plugin._module("purchase_prices.py", "alice_purchase_prices")
+        hermes = types.SimpleNamespace(get_hermes_home=lambda: self.home)
+        quote = {"id": "pq-new", "title": "Creatina Excell 500 g", "variant": "Sin sabor", "qty": 1, "currency": "EUR",
+                 "url": "https://www.hsnstore.com/creatina", "price": "29,98 €", "at": 1.0}
+        with mock.patch.dict(sys.modules, {"hermes_constants": hermes}), \
+                mock.patch.object(prices, "resolve", return_value=quote):
+            self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] Creatina")
+            self.plugin._errand_turn(session_id="chat-9", user_message=f"[elección:{first}] Creatina")
+        started = self.errands.listing(self.home)
+        self.assertEqual(len(started), 1)
+        self.assertEqual((started[0]["status"], started[0]["blocked"]["price"]), ("stuck", "29,98 €"))
+
+    def test_an_appointment_asked_with_pide_is_an_errand_not_a_purchase(self):
+        handler = self.tools()["errand_start"]["handler"]
+        hermes = types.SimpleNamespace(get_hermes_home=lambda: self.home)
+        with mock.patch.dict(sys.modules, {"hermes_constants": hermes}):
+            out = self.call(handler, {"task": "Pídeme cita en el dentista para el jueves", "title": "Cita dentista"}, session="chat-3")
+        self.assertTrue(out["ok"], out)
+        self.assertIsNone(self.errands.get(self.home, out["errand_id"])["offer"])
+
     def test_resumed_purchase_protects_all_browser_outputs_and_fails_closed(self):
         entry = self.errand(offer={'url':'https://example.com/product'})
         self.errands.update(self.home,entry['id'],secure_answered='request-done')

@@ -169,71 +169,96 @@ def answer(home, errand_id, request_id, value, *, account_action='login', inspec
         if not entry or entry['status'] != 'needs_login' or pending.get('request_id') != request_id:
             raise ValueError('La solicitud ya no está pendiente.')
         if not value:
-            return errands.update(home, errand_id, status='stopped', secure_request=None,
-                                  secure_answered=request_id, reason='Has pospuesto el acceso a la tienda.')
-        page_origin, context, command = inspect(entry)
-        if page_origin != pending['origin'] or context['context'] != pending['context'] or context['target'] != pending['target']:
-            raise ValueError('La página de acceso ha cambiado. Vuelve a solicitar el acceso.')
-        if pending['kind'] == 'vault.save_login':
-            if account_action not in ('login', 'create'):
-                raise ValueError('Elige iniciar sesión o crear una cuenta.')
-            data = json.loads(value)
-            identifier, password = str(data.get('identifier') or '').strip(), str(data.get('password') or '')
-            if not identifier or not password:
-                raise ValueError('Faltan los datos de acceso.')
-            from agent.redact import register_vault_redaction_value
-            register_vault_redaction_value(password)
-            register_vault_redaction_value(identifier)
-            if save is None:
-                from agent.vault_store import VaultStore
-                profile = pending['profile']
-                if profile != 'default' and (not profile or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in profile)):
-                    raise ValueError('Perfil de acceso inválido.')
-                base = Path(home) if profile == 'default' else Path(home) / 'profiles' / profile
-                save = lambda payload, site: VaultStore(base / 'vault').add_item('login', pending['site'], payload, origin=site)
-            meta = save({'identifier_type': 'email' if '@' in identifier else 'username',
-                         'identifier': identifier, 'password': password}, page_origin)
-            handle = meta if isinstance(meta, str) else meta.id
-            saved_login = {'handle': handle, 'origin': page_origin}
-            message = f'[acceso listo] La persona eligió {account_action}. Usa login_fill con el acceso {handle} de esta tienda. No uses accesos de otros sitios.'
-            data.clear()
-            password = ''
+            # «Ahora no»: the person does not want to sign in here. The errand goes on as a guest if
+            # the shop allows it; stopping the whole purchase for a login nobody wanted was worse.
+            message = ('[sin acceso] La persona no quiere iniciar sesión ni crear cuenta en esta tienda. Sigue '
+                       'como invitado si la tienda lo permite (busca «comprar sin cuenta», «invitado», «guest»). '
+                       'Si la tienda exige cuenta, termina con «BLOQUEADO: la tienda exige iniciar sesión».')
+            result = errands.update(home, errand_id, status='working', secure_request=None, secure_answered=request_id,
+                                    login_declined=True, resume_message=message, reason='')
+            declined = message
         else:
-            account_action = entry.get('account_action') or 'login'
-            from agent.redact import register_vault_redaction_value
-            register_vault_redaction_value(value)
-            if fill_code is None:
-                from agent.vault_login_classifier import LoginControl, build_inspection_js, classify_otp_controls, build_otp_fills, build_fill_js
-                evaluate = lambda expression: page_evaluate(context, expression)
-                nonce = secrets.token_hex(8)
-                raw = evaluate(build_inspection_js(nonce))
-                if isinstance(raw, str):
-                    raw = json.loads(raw)
-                controls = classify_otp_controls([LoginControl.from_dict(r) for r in (raw or []) if isinstance(r, dict)])
-                fills = build_otp_fills(controls, value)
-                if not fills:
-                    raise ValueError('La página no tiene un campo de código verificable.')
-                filled = evaluate(build_fill_js(fills, page_origin, nonce))
-                fills.clear()
-                if isinstance(filled, str):
-                    filled = json.loads(filled)
-                if not isinstance(filled, dict) or not filled.get('filled'):
-                    raise ValueError('La página cambió durante la introducción del código.')
-            else:
-                fill_code(entry, value)
-            message = '[código listo] El código se ha introducido directamente en esta página. Envía el formulario de verificación y comprueba que la tienda haya iniciado la sesión. No pidas ni repitas el código.'
-        result = errands.update(home, errand_id, secure_request=None, secure_answered=request_id,
-                                account_action=account_action, status='working', resume_message=message, cart_evidence=None,
-                                **({'saved_login': saved_login} if pending['kind'] == 'vault.save_login' else {}))
-    (resume or errands.resume)(home, errand_id, message)
+            declined = None
+            result = _answer_locked(home, errand_id, request_id, value, entry, pending, account_action, inspect, save, fill_code)
+    (resume or errands.resume)(home, errand_id, declined or result['resume_message'])
     return result
+
+
+def _answer_locked(home, errand_id, request_id, value, entry, pending, account_action, inspect, save, fill_code):
+    errands = module('errands')
+    page_origin, context, command = inspect(entry)
+    # The same shop in the same browser context: the tab may have been reloaded or replaced
+    # while the person typed (the agent did not end its turn at once), and that is no reason to
+    # make them type it again.
+    if page_origin != pending['origin'] or context['context'] != pending['context']:
+        raise ValueError('La página de acceso ha cambiado. Vuelve a solicitar el acceso.')
+    if pending['kind'] == 'vault.save_login':
+        if account_action not in ('login', 'create'):
+            raise ValueError('Elige iniciar sesión o crear una cuenta.')
+        data = json.loads(value)
+        identifier, password = str(data.get('identifier') or '').strip(), str(data.get('password') or '')
+        if not identifier or not password:
+            raise ValueError('Faltan los datos de acceso.')
+        from agent.redact import register_vault_redaction_value
+        register_vault_redaction_value(password)
+        register_vault_redaction_value(identifier)
+        if save is None:
+            from agent.vault_store import VaultStore
+            profile = pending['profile']
+            if profile != 'default' and (not profile or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in profile)):
+                raise ValueError('Perfil de acceso inválido.')
+            base = Path(home) if profile == 'default' else Path(home) / 'profiles' / profile
+            save = lambda payload, site: VaultStore(base / 'vault').add_item('login', pending['site'], payload, origin=site)
+        meta = save({'identifier_type': 'email' if '@' in identifier else 'username',
+                     'identifier': identifier, 'password': password}, page_origin)
+        handle = meta if isinstance(meta, str) else meta.id
+        saved_login = {'handle': handle, 'origin': page_origin}
+        message = f'[acceso listo] La persona eligió {account_action}. Usa login_fill con el acceso {handle} de esta tienda. No uses accesos de otros sitios.'
+        data.clear()
+        password = ''
+    else:
+        account_action = entry.get('account_action') or 'login'
+        from agent.redact import register_vault_redaction_value
+        register_vault_redaction_value(value)
+        if fill_code is None:
+            from agent.vault_login_classifier import LoginControl, build_inspection_js, classify_otp_controls, build_otp_fills, build_fill_js
+            evaluate = lambda expression: page_evaluate(context, expression)
+            nonce = secrets.token_hex(8)
+            raw = evaluate(build_inspection_js(nonce))
+            if isinstance(raw, str):
+                raw = json.loads(raw)
+            controls = classify_otp_controls([LoginControl.from_dict(r) for r in (raw or []) if isinstance(r, dict)])
+            fills = build_otp_fills(controls, value)
+            if not fills:
+                raise ValueError('La página no tiene un campo de código verificable.')
+            filled = evaluate(build_fill_js(fills, page_origin, nonce))
+            fills.clear()
+            if isinstance(filled, str):
+                filled = json.loads(filled)
+            if not isinstance(filled, dict) or not filled.get('filled'):
+                raise ValueError('La página cambió durante la introducción del código.')
+        else:
+            fill_code(entry, value)
+        message = '[código listo] El código se ha introducido directamente en esta página. Envía el formulario de verificación y comprueba que la tienda haya iniciado la sesión. No pidas ni repitas el código.'
+    result = errands.update(home, errand_id, secure_request=None, secure_answered=request_id,
+                            account_action=account_action, status='working', resume_message=message, cart_evidence=None,
+                            **({'saved_login': saved_login} if pending['kind'] == 'vault.save_login' else {}))
+    return result
+
+
+# A way past the login without an account, on the page: the errand prefers it to asking.
+GUEST_JS = ('Array.from(document.querySelectorAll("a, button, label, input[type=submit], input[type=button], [role=button]"))'
+        '.some(e=>e.getClientRects().length>0 && /invitado|sin (crear )?cuenta|sin registr|guest|without (an )?account|'
+        'continue as guest|comprar sin|skip login/i.test((e.innerText||e.value||"")))')
 
 
 def detect_pending(home, errand_id, *, inspect=target, evaluate=page_evaluate):
     """Convert an empty visible login/OTP form into a phone action after an agent turn.
 
     This keeps a model's prose-only login request from stranding an API errand.
-    Inspection returns descriptors and booleans, never field contents.
+    Inspection returns descriptors and booleans, never field contents. A password field next to
+    a «continuar como invitado» is not a login the person must give; nor is one the person
+    already declined for this errand.
     """
     entry = module('errands').get(home,errand_id)
     if not entry or entry['status'] != 'working':
@@ -250,6 +275,8 @@ def detect_pending(home, errand_id, *, inspect=target, evaluate=page_evaluate):
     passwords = [c for c in controls if (classified := classify_login_control(c)) and classified.token == 'current-password']
     chosen = [c.control for c in otp] if otp else passwords
     if not chosen:return None
+    if not otp and (entry.get('login_declined') or evaluate(context, GUEST_JS)):
+        return None
     slots = [nonce + ':' + str(c.index) for c in chosen]
     empty = evaluate(context,'Array.from(document.querySelectorAll("input, select")).some(e=>' + json.dumps(slots) + '.includes(e.getAttribute("data-hermes-vault-slot")) && !e.value)')
     if not empty:return None

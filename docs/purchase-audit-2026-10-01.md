@@ -1,5 +1,48 @@
 # Auditoría del proceso de compra — 1 oct 2026
 
+## Estado (misma fecha, rama `claude/purchase-audit`)
+
+Todo lo de A a D está corregido en esta rama, atacando la causa y no el síntoma. Las causas
+eran tres: (1) las puertas del pago exigían que el navegador no cambiara (cookies, origen,
+pestaña, selector) cuando cambia en cada paso; (2) el motor perdía o mataba recados por
+señales que no distinguen «atascado» de «avanzando»; (3) heurísticas de texto que convertían
+peticiones normales en errores. Cada corrección lleva su test; los nombres están en la
+sección correspondiente y abajo, en el mapa de los 18 problemas históricos.
+
+| Causa | Qué cambia | Dónde |
+|---|---|---|
+| Evidencia atada al estado del navegador (A1, A2, A3, C7) | La cesta comprobada vale una hora y se ata **solo al contexto del navegador** y a la oferta; el total se relee en la tienda, y en la página del banco o del proveedor (pasarela conocida o página con paso de pago) se acepta porque el total de la tienda ya no está. Aprobación 20 min, checkout 45 min. | `purchase_prices.fresh_cart`, `payment_ready`, `errands.APPROVAL_TTL/CHECKOUT_TTL` |
+| Señales de bucle que no distinguen avanzar de girar (A4) | La primera vuelta en una página avisa al agente y sigue; solo la segunda para. | `errands.circling`, `Engine.run` |
+| Respuestas de la persona perdidas (A5) | Toda respuesta se guarda en el recado (`resume_message`) y el motor en marcha la envía como siguiente mensaje, también tras un reinicio. | `errands.resume`, `Engine.run` |
+| Texto literal como prueba (B2, B5, B3, B4) | Comparación por palabras normalizadas (acentos, espacios, «500 g»/«500g»); identidad nunca es una cantidad; «pídeme cita» no es compra; cupones sin campo no rompen; el error nombra el selector. | `purchase_prices.names`, `purchase_flow.requested_identity`, `NOT_A_PURCHASE`, `purchase_prozis.plain` |
+| Interacción extra (C1–C6) | Login opcional junto a «invitado» no se pide; «Ahora no» sigue como invitado; una pestaña recargada no invalida el login; la tarjeta elegida es vinculante; un toque cuya recomprobación falla arranca igual; aceptar un precio no exige otra comprobación; elegir método de pago no es pagar; `import time/json/re` permitidos. | `errand_access`, `__init__._guard_errand`, `_start_purchase`, `errands.is_pay_action` |
+| Promesas falsas (A6, B1) | Skill, docs y descripciones dicen lo que el código hace: se elige tocando; el catálogo solo dice dónde se vende. | `SKILL.md`, `docs/purchases.md`, `README.md` |
+| iOS (D1–D3) | Ids 7+, marcador de unidades oculto, perfil del recado para la tarjeta. | `PurchaseChoice.swift`, `Errand.swift`, `ErrandBoard.swift` |
+
+Sigue pendiente de E: `purchase_outcome: unknown` deja el recado al juez (correcto: hay que
+comprobar el pedido) y la comprobación en serie de formatos tiene ahora un presupuesto de 90 s
+en vez de ser asíncrona.
+
+### Los 18 problemas históricos y qué test los sujeta
+
+| # | Problema | Test |
+|---|---|---|
+| 1 | Creapure «no hay» y otra marca | `test_purchase_flow` · `test_requested_brand_is_kept_without_padding_with_another_brand`, `test_purchase_evidence` · `test_all_found_formats_must_be_accounted_for` |
+| 2 | Sin navegador en la primera búsqueda | `test_errands` · `test_the_preamble_makes_and_then_keeps_one_context_and_tab`; visual, pendiente en iPhone |
+| 3 | «La comprobación de Prozis falla» y ninguna opción | `test_purchase_evidence` · `test_a_format_the_service_could_not_check_does_not_lock_the_others`, `test_a_failed_check_names_its_selector`, `test_checking_the_remaining_formats_stops_within_the_tool_calls_time` |
+| 4 | Texto recomienda uno y la etiqueta otro | `test_purchase_flow` · `test_the_reply_is_told_which_card_is_recommended` (depende del modelo: la etiqueta la pone el plugin, el texto no) |
+| 5 | La tarea se paraba antes de tiempo | `test_errands` · `test_what_the_agent_can_fix_is_not_the_persons_to_hear`, `test_the_engine_warns_once_about_a_page_and_stops_the_second_round`, `test_moving_on_after_the_warning_is_not_going_round` |
+| 6 | Sin navegador en un intento | `test_errands` · `test_no_gateway_leaves_it_stuck`; `Engine.run` → `prepare_browser` |
+| 7 | Pidió login dos veces | `test_purchase_evidence` · `test_a_login_already_given_is_not_asked_again` |
+| 8 | Tras pedir acceso, paró a los segundos | `test_errands` · `test_an_answer_given_while_the_run_still_goes_on_is_not_lost`, `test_purchase_evidence` · `test_secrets_only_go_to_vault_and_resume_same_errand_once` |
+| 9 | Alerta que no se cerraba | `test_errands` · `test_an_alert_is_closed_before_the_step`, `test_a_confirm_that_orders_is_never_accepted` |
+| 10 | Dos unidades en la cesta | `test_errands` · `test_extra_units_are_the_agents_to_fix_not_a_price` |
+| 11 | Precio de tarjeta ≠ cesta | `test_purchase_evidence` · `test_a_lower_basket_price_goes_on_without_asking`, `test_real_price_change_exposes_both_amounts` |
+| 12 | Sin «comprar igualmente» ni cancelar | `test_errands` · `test_a_new_price_is_the_persons_to_accept_and_the_errand_goes_on`, `test_purchase_evidence` · `test_a_stuck_purchase_can_be_cancelled`, `test_an_accepted_new_price_needs_no_second_cart_check` |
+| 13 | «Reintentar» sin sentido | Mismos que 12; el reintento solo existe para paradas que no son de precio |
+| 14–17 | Orden de tarjeta, mensaje y navegador en el chat | iOS `ErrandTranscriptTests`, `PurchaseFlowTests` · `testChosenPurchaseIsUnderTheUserTurnAndNeverAnotherSession`; visual, pendiente en iPhone |
+| 18 | Compra completa con mínima intervención | `test_purchase_evidence` · `test_the_banks_payment_page_is_where_the_approved_order_is_paid`, `test_the_cart_check_survives_new_cookies_and_other_pages_but_not_another_context`; `scripts/verify-purchase-complete.py --agent`; **una compra real sigue pendiente** |
+
 Alcance: `main` en ea068dc (PR #58). Leído entero el camino chat → recado → pago en
 `hermes-plugin/` (`purchase_flow.py`, `purchase_prices.py`, `purchase_prozis.py`,
 `errands.py`, `errand_access.py`, `purchases.py`, `vault_cards.py`, `money.py`, los hooks de

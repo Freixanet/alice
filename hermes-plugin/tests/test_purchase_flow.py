@@ -168,8 +168,17 @@ class WordsTests(unittest.TestCase):
                      "añádelo al carrito"):
             self.assertTrue(flow.is_purchase_request(text), text)
         for text in ("abre news.ycombinator.com y dame 3 titulares", "[respuesta:size] 256 GB",
-                     "[elección:a1b2c3d4-1] Creatina", "Resérvame la ITV"):
+                     "[elección:a1b2c3d4-1] Creatina", "Resérvame la ITV",
+                     # An errand that buys nothing in a shop starts from words: it is not a purchase.
+                     "Pídeme cita en el dentista", "Pide hora en la ITV", "order me a taxi", "pide mesa para dos"):
             self.assertFalse(flow.is_purchase_request(text), text)
+
+    def test_a_size_or_an_amount_after_de_is_not_a_brand(self):
+        self.assertEqual(flow.requested_identity("Cómprame una botella de agua de 1 litro"), ("", False))
+        self.assertEqual(flow.requested_identity("Quiero la creatina de HSN de 500 g"), ("", False))
+        self.assertEqual(flow.requested_identity("compra pilas de color azul"), ("", False))
+        self.assertEqual(flow.requested_identity("compra creatina creapure de prozis"), ("prozis", False))
+        self.assertEqual(flow.requested_identity("compra pilas AA en Amazon"), ("amazon", True))
 
     def test_a_tapped_choice(self):
         self.assertEqual(flow.chosen_id("[elección:a1b2c3d4-2] Creatina · HSN · 27,98 €"), "a1b2c3d4-2")

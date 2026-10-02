@@ -23,9 +23,10 @@ las acciones que pueden enviarlo y el relleno de la tarjeta siguen protegidos.
    cantidad. Las respuestas cerradas aparecen como botones punteados o rellenos.
 2. **Contexto.** Usa país, moneda, dirección, tiendas anteriores y etiquetas de
    tarjetas guardadas. Los números de tarjeta nunca pasan por el chat.
-3. **Buscar.** Consulta el catálogo Shop (`catalog_search`, `catalog_product`) y
-   la tienda real. El catálogo se consulta sin instalar herramientas ni iniciar
-   sesión; no puede comprar. Si falla, Alice puede buscar en la tienda.
+3. **Buscar.** Busca en la tienda real: su buscador o categoría, registrado con
+   `purchase_discover`. El catálogo Shop (`catalog_search`, `catalog_product`) solo
+   dice en qué tiendas se vende algo cuando no se nombra ninguna; sus resultados no
+   tienen comprobación de cesta y no se convierten en tarjetas.
 4. **Verificar.** El agente comprueba la página, el stock y el precio en la moneda
    de la persona. `purchase_options` valida esos datos y descarta opciones sin
    nombre, URL HTTPS, precio, moneda o stock declarado. Esa validación de campos
@@ -37,8 +38,9 @@ las acciones que pueden enviarlo y el relleno de la tarjeta siguen protegidos.
    filtra las identidades explícitas que reconoce en la petición (por ejemplo
    «de Prozis»); las peticiones complejas también requieren que el modelo respete
    las instrucciones. La petición se conserva por chat durante tres días.
-6. **Elegir.** Abre una tarjeta y toca «Comprar con Alice», o indica tu elección
-   con palabras. La elección envía un identificador que el chat oculta. Las
+6. **Elegir.** Abre una tarjeta y toca «Comprar con Alice». Una respuesta con
+   palabras no elige: el agente pide que se toque la tarjeta. La elección envía
+   un identificador que el chat oculta. Las
    opciones pertenecen a su sesión, caducan a los tres días y una selección no
    altera las mismas opciones de otro chat. El turno interno de selección no ocupa
    una fila vacía, pero se conserva para separar los turnos y alojar el recado
@@ -96,7 +98,9 @@ The person chooses a format in its detail and edits units there, initially one. 
 
 After login, `purchase_check_cart` reads the errand's real units and current price and binds them to its store session. `checkout_request` refuses absent/stale evidence and reads the final amount using `total_selector`; checkout items come from the chosen offer. Approval and the existing payment gates remain mandatory. The fixture script `scripts/verify-purchase-complete.py --agent` exercises GPT-6 Luna with a synthetic intercepted shop on an isolated Chrome port, fictional accounts and no payment operation. Native visual fixtures are behind the debug-only `-purchaseReview` argument and run in the Purchase review CI workflow.
 
-Antes de rellenar una tarjeta o ejecutar una acción de pago, el servidor vuelve a leer el total visible del resumen vinculado a la aprobación. Un cambio de importe, sesión o contexto bloquea el pago hasta una nueva comprobación y aprobación; un fallo al comprobarlo también bloquea el pago.
+Antes de rellenar una tarjeta o ejecutar una acción de pago, el servidor comprueba que la cesta del recado se comprobó en la última hora en ese mismo contexto de navegador y, si la página es la de la tienda, vuelve a leer el total visible del resumen vinculado a la aprobación. Si la tienda envió al recado a la página del banco o del proveedor de pago (Redsys, Stripe, Adyen…), el total de la tienda ya no está en pantalla: se acepta esa página porque muestra el paso de pago, y el registro de pagos impide pagar dos veces. Un cambio de importe o de contexto bloquea el pago hasta una nueva comprobación y aprobación; un fallo al comprobarlo también bloquea el pago. Las cookies no forman parte de la evidencia: cambian en cada página.
+
+La elección de tarjeta al aprobar es vinculante: un relleno con otra tarjeta se bloquea. Las aprobaciones valen 20 minutos y un checkout espera 45 antes de caducar. Un recado que da muchos pasos en una misma página recibe primero un aviso para leer el error de la tienda; solo una segunda vuelta lo para. Una respuesta de la persona (aprobación, tarjeta, pregunta) se guarda en el recado y la lee el motor aunque el modelo todavía no hubiera terminado su turno.
 
 # Correcciones de búsqueda y comprobación en Prozis
 

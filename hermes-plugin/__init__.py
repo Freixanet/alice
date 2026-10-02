@@ -288,7 +288,14 @@ def _isolate_errand_browser(tool_name=None, args=None, session_id="", **_):
             nodes = list(ast.walk(ast.parse(args["code"])))
             denied = {"open", "exec", "eval", "compile", "getattr", "setattr", "globals", "locals", "vars",
                       "os", "sys", "requests", "urllib", "httpx", "aiohttp", "socket", "websockets", "subprocess", "pathlib", "builtins", "cdp"}
-            bypass = any(isinstance(n, (ast.Import, ast.ImportFrom)) or
+            # `import time` for a wait, `json`/`re` to read what the page gave: what every model
+            # writes, and none of it reaches the network, the disk or the CDP socket.
+            harmless = {"time", "json", "re", "math", "random", "string", "datetime", "unicodedata", "textwrap"}
+            def imports_more(node):
+                if isinstance(node, ast.Import):
+                    return any(alias.name.split(".")[0] not in harmless for alias in node.names)
+                return isinstance(node, ast.ImportFrom) and str(node.module or "").split(".")[0] not in harmless
+            bypass = any(imports_more(n) or
                          (isinstance(n, ast.Name) and (n.id in denied or n.id.startswith("_"))) or
                          (isinstance(n, ast.Attribute) and (n.attr.startswith("_") or n.attr in {"send_cdp", "execute_cdp", "request"}))
                          for n in nodes)
@@ -399,6 +406,12 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
             merchant = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
             verdict = errands.pay_gate(root, session, card_fill_site=meta.origin or "", merchant_site=merchant,
                                        gateways=cards.PAYMENT_GATEWAYS)
+            chosen = str(((entry or {}).get("checkout") or {}).get("card_label") or "")
+            identity = getattr(cards, "identity", lambda label: label)
+            if not verdict and chosen and identity(chosen) != identity(str(getattr(meta, "label", "") or "")):
+                verdict = {"action": "block", "message": (
+                    f"La persona eligió pagar con «{chosen}». Rellena esa tarjeta (búscala en `browser_vault_list` "
+                    "por su etiqueta), no otra.")}
         else:
             verdict = errands.pay_gate(root, session, tool_name=name, args=args, active_url=active_url,
                                        payment_step=payment_step)
@@ -407,7 +420,8 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
         paying = meta is not None or errands.is_pay_action(name,args,active_url,payment_step)
         entry = errands.of_session(root,session)
         if paying and (entry or {}).get('offer'):
-            if not _module("purchase_prices.py", "alice_purchase_prices").payment_ready(root,entry):
+            if not _module("purchase_prices.py", "alice_purchase_prices").payment_ready(
+                    root, entry, gateways=_cards_module().PAYMENT_GATEWAYS):
                 return {"action":"block", "message":"El total o la sesión cambiaron, o falta evidencia del resumen aprobado. Comprueba la cesta y llama a checkout_request para mostrar el total actual antes de pagar."}
         return None
     except Exception:
@@ -1595,22 +1609,36 @@ def _start_purchase(session: str, chosen: dict) -> dict:
     flow = _purchase_flow()
     _root, profile = _root_and_sender(Path(get_hermes_home()))
     prices = _module("purchase_prices.py", "alice_purchase_prices")
-    quote = prices.resolve(_hermes_root(), session, chosen.get("quote_ref"), qty=chosen.get("qty",1))
+    errands = _errands()
     previous_price = chosen.get('price')
-    price_changed = not _module('money.py','alice_money').same(previous_price,quote['price'],quote['currency'])
-    chosen.update({k:quote[k] for k in ('title','variant','qty','currency','url')})
-    if not price_changed:
-        chosen['price'] = quote['price']
-    chosen['quote_ref'] = quote['id']
-    chosen['verified_at'] = quote['at']
-    if price_changed:
-        errands = _errands()
-        entry = errands.create(_hermes_root(),flow.task(chosen),title=flow.title(chosen),site=chosen['url'],origin_session=session,profile=profile,offer=flow.offer(chosen))
-        errands.open_goal(entry)
-        entry = errands.update(_hermes_root(),entry['id'],status='stuck',blocked={'kind':'price','price':quote['price']},reason='El precio comprobado cambió de ' + str(previous_price) + ' a ' + quote['price'] + '.')
-        return errands.started_result(entry)
-    return _errands().start(_hermes_root(), {"task": flow.task(chosen), "title": flow.title(chosen)},
-                            origin_session=session, profile=profile, offer=flow.offer(chosen))
+    try:
+        quote = prices.resolve(_hermes_root(), session, chosen.get("quote_ref"), qty=chosen.get("qty",1))
+    except Exception:  # noqa: BLE001
+        # The disposable re-check failed (the shop was slow, the browser was down): the tap still
+        # counts. The errand checks the real basket itself (purchase_check_cart) before anything
+        # is approved, so nothing is lost by starting from the price the person saw.
+        logging.getLogger(__name__).warning("purchases: could not revalidate the chosen option", exc_info=True)
+        quote = None
+    if quote is not None:
+        price_changed = not _module('money.py','alice_money').same(previous_price,quote['price'],quote['currency'])
+        chosen.update({k:quote[k] for k in ('title','variant','qty','currency','url')})
+        if not price_changed:
+            chosen['price'] = quote['price']
+        chosen['quote_ref'] = quote['id']
+        chosen['verified_at'] = quote['at']
+        if price_changed:
+            # One stopped errand per option and chat: tapping again shows that one, not a twin.
+            for other in errands.listing(_hermes_root()):
+                if (other.get("origin_session") == session and other.get("status") == "stuck"
+                        and (other.get("offer") or {}).get("option_id") == chosen["id"]
+                        and (other.get("blocked") or {}).get("price") == quote["price"]):
+                    return errands.started_result(other)
+            entry = errands.create(_hermes_root(),flow.task(chosen),title=flow.title(chosen),site=chosen['url'],origin_session=session,profile=profile,offer=flow.offer(chosen))
+            errands.open_goal(entry)
+            entry = errands.update(_hermes_root(),entry['id'],status='stuck',blocked={'kind':'price','price':quote['price']},reason='El precio comprobado cambió de ' + str(previous_price) + ' a ' + quote['price'] + '.')
+            return errands.started_result(entry)
+    return errands.start(_hermes_root(), {"task": flow.task(chosen), "title": flow.title(chosen)},
+                         origin_session=session, profile=profile, offer=flow.offer(chosen))
 
 
 def _errand_turn(session_id="", user_message=None, **_):

@@ -224,7 +224,7 @@ struct ErrandStack: View {
                 .background(Palette.card(scheme), in: .rect(cornerRadius: 24))
             }
             if errand.status == .needsCard, !errand.cardOrigin.isEmpty {
-                PaymentCardOfferCard(offer: PaymentCardOffer(origin: errand.cardOrigin, profile: "default"),
+                PaymentCardOfferCard(offer: PaymentCardOffer(origin: errand.cardOrigin, profile: errand.vaultProfile),
                                      language: errand.language,
                                      onReady: { card in onCardReady(card.label) })
             }
@@ -256,7 +256,7 @@ struct ErrandStack: View {
                                      onDeny: { phase == .expired ? onStop() : onDecide(false, "") })
                     .task(id: checkout.id) { await loadCards(for: checkout) }
                     .sheet(isPresented: $addingCard) {
-                        PaymentCardSheet(offer: PaymentCardOffer(origin: "https://" + checkout.site, profile: "default"),
+                        PaymentCardSheet(offer: PaymentCardOffer(origin: "https://" + checkout.site, profile: errand.vaultProfile),
                                          language: errand.language, demo: demoCards != nil) { card in
                             cards.append(card)
                             chosen = card
@@ -285,7 +285,7 @@ extension ErrandStack {
         if let demoCards {
             found = demoCards
         } else {
-            let all = (try? await store.savedCards(profile: "default")) ?? []
+            let all = (try? await store.savedCards(profile: errand.vaultProfile)) ?? []
             // The same card saved for several sites is one choice.
             var seen = Set<String>()
             found = all.filter { seen.insert($0.card).inserted }

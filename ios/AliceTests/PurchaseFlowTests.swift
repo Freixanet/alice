@@ -23,6 +23,20 @@ final class PurchaseFlowTests: XCTestCase {
         XCTAssertNil(PurchaseChoice.id(in: "[elección:wrong] Producto"))
     }
 
+    func testTheSeventhOptionAndTheUnitsAreAChoiceLikeAnyOther() {
+        // The plugin numbers options without an upper bound and the cards page them six at a
+        // time; the units travel at the end of the same message and are not words to show.
+        let choice = "[elección:a1b2c3d4-7] Creatina · Prozis · 19,99 € [cantidad:2]"
+        XCTAssertEqual(PurchaseChoice.id(in: choice), "a1b2c3d4-7")
+        XCTAssertEqual(PurchaseChoice.id(in: "[elección:a1b2c3d4-12] x"), "a1b2c3d4-12")
+        XCTAssertEqual(PurchaseChoice.quantity(in: choice), 2)
+        XCTAssertEqual(PurchaseChoice.display(choice), "Creatina · Prozis · 19,99 €")
+        XCTAssertEqual(PurchaseChoice.display("[elección:a1b2c3d4-1] Creatina"), "Creatina")
+        XCTAssertNil(PurchaseChoice.id(in: "[elección:a1b2c3d4-0] x"))
+        // Outside a choice, the words are the person's own.
+        XCTAssertEqual(PurchaseChoice.display("Quiero 2 [cantidad:2]"), "Quiero 2 [cantidad:2]")
+    }
+
     func testChosenPurchaseIsUnderTheUserTurnAndNeverAnotherSession() throws {
         let date = Date(timeIntervalSince1970: 1_800_000_000)
         let choice = Message(id: "choice", role: .user, content: "[elección:a1b2c3d4-1] Creatina", createdAt: date)

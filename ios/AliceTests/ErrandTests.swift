@@ -35,6 +35,16 @@ final class ErrandTests: XCTestCase {
         XCTAssertNil(errand.approval)
     }
 
+    func testTheErrandsOwnProfileNamesTheVaultForItsCards() throws {
+        // A card added from an errand of another profile went to the default vault.
+        var bot = row
+        bot["profile"] = "compras"
+        XCTAssertEqual(try XCTUnwrap(Errand.parse(bot)).vaultProfile, "compras")
+        XCTAssertEqual(try XCTUnwrap(Errand.parse(row)).vaultProfile, "default")
+        bot["profile"] = ""
+        XCTAssertEqual(try XCTUnwrap(Errand.parse(bot)).vaultProfile, "default")
+    }
+
     func testAnUnknownStatusIsReadAsWorkingAndARowWithoutIdIsDropped() {
         var odd = row
         odd["status"] = "something_new"

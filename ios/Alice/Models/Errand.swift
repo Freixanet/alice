@@ -86,6 +86,9 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     var originSession: String = ""
     /// Optional so the cached errands from older builds still decode.
     var optionID: String? = nil
+    /// The Hermes profile whose vault holds its logins and cards; `default` when unknown.
+    var profile: String? = nil
+    var vaultProfile: String { profile.flatMap { $0.isEmpty ? nil : $0 } ?? "default" }
     /// The payment page's origin a card is wanted for (`needs_card`).
     var cardOrigin: String = ""
     var site: String
@@ -203,7 +206,8 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
         }
         return Errand(
             id: id, title: title, request: text(row["request"]), originSession: text(row["origin_session"]),
-            optionID: (row["offer"] as? [String: Any])?["option_id"] as? String, cardOrigin: text(row["card_origin"]),
+            optionID: (row["offer"] as? [String: Any])?["option_id"] as? String,
+            profile: (row["profile"] as? String).flatMap { $0.isEmpty ? nil : $0 }, cardOrigin: text(row["card_origin"]),
             site: text(row["site"]),
             status: Status(rawValue: text(row["status"])) ?? .working, checkout: checkout, receipt: receipt,
             questionsTitle: text(asked?["title"]), questions: questions, approval: approval,

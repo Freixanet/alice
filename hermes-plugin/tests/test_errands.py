@@ -221,6 +221,15 @@ class GateTests(Base):
         self.assertIsNotNone(errands.pay_gate(self.home, session, card_fill_site="https://www.hsnstore.com",
                                               now=NOW + errands.APPROVAL_TTL + 5))
 
+    def test_choosing_how_to_pay_on_the_payment_page_is_not_paying(self):
+        page = "https://www.hsnstore.com/checkout/index/index/step/payment/"
+        for args in ({"text": "Tarjeta de crédito"}, {"code": "click('Acepto las condiciones')"},
+                     {"code": "click('PayPal')"}, {"code": "# Elegir método\nclick('Forma de pago: tarjeta')"}):
+            self.assertFalse(errands.is_pay_action("browser_click", args, page), args)
+        for args in ({"text": "Pagar"}, {"code": "click('Realizar pedido')"}, {"code": "click_at_xy(400,508)"},
+                     {"code": "click('Continuar')"}):
+            self.assertTrue(errands.is_pay_action("browser_click", args, page), args)
+
     def test_a_click_that_pays_is_refused_until_approved(self):
         entry = self.errand()
         session = entry["session_id"]
@@ -686,6 +695,19 @@ class RestartTests(Base):
         self.assertEqual(len(gateway.started), 1)
         self.assertEqual(gateway.started[0][1], errands.CONTINUATION)
 
+    def test_a_restarted_engine_still_delivers_the_persons_answer(self):
+        # The service restarted while the agent's run went on; meanwhile the person approved.
+        entry = self.errand()
+        errands.update(self.home, entry["id"], run_id="run_old")
+        gateway = FakeGateway([done("Pagado")])
+        polls = [{"status": "running"}, {"status": "completed", "output": "Esperando"}]
+        original = gateway.status
+        gateway.status = lambda run_id: polls.pop(0) if run_id == "run_old" and polls else original(run_id)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None)
+        self.assertEqual(engine.run("[checkout aprobado] paga 27,98 €"), "done")
+        self.assertEqual(gateway.started[0][1], "[checkout aprobado] paga 27,98 €")
+
 
 class CirclingTests(Base):
     def steps(self, entry, n, url, start=NOW, gap=30):
@@ -706,15 +728,72 @@ class CirclingTests(Base):
         errands.add_step(self.home, other["id"], "Pago", "https://shop.es/pago", now=NOW + 999)
         self.assertIsNone(errands.circling(errands.get(self.home, other["id"])))
 
-    def test_the_engine_stops_a_run_going_round_and_says_why(self):
+    def test_the_engine_warns_once_about_a_page_and_stops_the_second_round(self):
+        # A one-page checkout (basket, address, delivery and payment on one path) takes many
+        # steps there while moving on: the first round is a word to the agent, not a stop.
         entry = self.errand()
         self.steps(entry, errands.CIRCLE_STEPS, "https://shop.es/checkout")
-        gateway = FakeGateway([[{"status": "running"}]])
+        more = {"n": 0}
+
+        def on_start(n):
+            if n == 2:  # the agent goes round again on the same page after the warning
+                self.steps(entry, errands.CIRCLE_STEPS, "https://shop.es/checkout", start=NOW + 5000)
+        gateway = FakeGateway([[{"status": "running"}], [{"status": "running"}]], on_start=on_start)
         engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
                                 sleep=lambda s: None)
         self.assertEqual(engine.run(), "stuck")
-        self.assertEqual(gateway.stopped, ["run_1"])
+        self.assertEqual(gateway.stopped, ["run_1", "run_2"])
+        self.assertIn("misma página", gateway.started[1][1])
+        self.assertIn("error", gateway.started[1][1])
         self.assertIn("misma página", errands.get(self.home, entry["id"])["reason"])
+
+    def test_moving_on_after_the_warning_is_not_going_round(self):
+        entry = self.errand()
+        self.steps(entry, errands.CIRCLE_STEPS, "https://shop.es/checkout")
+        gateway = FakeGateway([[{"status": "running"}], done("Pedido listo")])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None)
+        self.assertEqual(engine.run(), "done")
+        self.assertEqual(gateway.stopped, ["run_1"])
+
+
+class ResumeTests(Base):
+    def test_an_answer_given_while_the_run_still_goes_on_is_not_lost(self):
+        # The agent called checkout_request but had not ended its turn; the person approved at
+        # once. launch cannot start a second engine, so the running one must read the message.
+        entry = self.errand()
+        lock = errands._engine_lock(self.home, entry["id"])
+        self.addCleanup(lock.close)
+        with mock.patch.object(errands, "_goal_manager"):
+            self.assertFalse(errands.resume(self.home, entry["id"], "[checkout aprobado] paga 27,98 €"))
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual((saved["status"], saved["resume_message"]), ("working", "[checkout aprobado] paga 27,98 €"))
+        self.assertNotIn("resume_message", errands.public(saved))
+
+    def test_the_running_engine_sends_the_answer_as_its_next_message(self):
+        entry = self.errand()
+
+        def approve_meanwhile(n):
+            if n == 1:
+                errands.update(self.home, entry["id"], resume_message="[checkout aprobado] paga 27,98 €")
+        gateway = FakeGateway([done("Esperando la aprobación"), done("Pagado. Pedido 1.")], on_start=approve_meanwhile)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=lambda s: None)
+        self.assertEqual(engine.run(), "done")
+        self.assertEqual(gateway.started[1][1], "[checkout aprobado] paga 27,98 €")
+
+    def test_a_declined_payment_ends_the_errand_with_its_receipt(self):
+        entry = self.errand()
+
+        def decline(n):
+            errands.record_receipt(self.home, entry["session_id"], {"site": "hsnstore.com", "outcome": "declined"})
+        gateway = FakeGateway([done("El banco rechazó el pago.")], on_start=decline)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway,
+                                judge=lambda s, r: {"should_continue": True, "continuation_prompt": "sigue"},
+                                sleep=lambda s: None)
+        self.assertEqual(engine.run(), "done")
+        self.assertEqual(errands.get(self.home, entry["id"])["receipt"]["outcome"], "declined")
+        self.assertEqual(len(gateway.started), 1)
 
 
 class QuestionVettingTests(Base):

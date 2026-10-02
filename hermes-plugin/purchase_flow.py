@@ -37,6 +37,11 @@ CHOICE = re.compile(r"^\s*(?:@[\w-]+\s+)?\[elecci[oó]n:([0-9a-f]{8}-[1-9][0-9]*
 PURCHASE_REQUEST = re.compile(
     r"\b(c[oó]mpra(me|lo|la|los|las)?|comprar|p[ií]de(me|lo|la)?|pedir|carrito|cesta|a[nñ]ade\w*\s+al\s+carrito"
     r"|buy|order|purchase)\b", re.I)
+# «Pídeme cita», «order a taxi», «pide hora»: an errand, not a purchase (nothing is bought in a
+# shop), so it must be able to start from words.
+NOT_A_PURCHASE = re.compile(
+    r"\b(cita|hora|turno|mesa|taxi|cabify|uber|reserva\w*|appointment|booking|table|ride|cab|"
+    r"consulta|visita|entrada|billete|ticket|vuelo|hotel|m[eé]dico|dentista)\b", re.I)
 # What a button that fills a cart or goes to checkout says (the paying ones are errands.PAY_WORDS).
 CART_WORDS = re.compile(
     r"(a[nñ]adir (a la cesta|al carrito)|add to (cart|bag|basket)|agregar al carrito|a la cesta|al carrito"
@@ -134,7 +139,14 @@ def requested_identity(request: str) -> Tuple[str, bool]:
     found = re.search(r'\b(marca|brand|de|en|from|by)\s+[«"\']?([\w&+.-]+(?:\s+[\w&+.-]+){0,2})[»"\']?[.!?]*\s*$', request, re.I)
     if not found:
         return "", False
-    return _normalized(found.group(2).rstrip(".")), found.group(1).casefold() == "en"
+    identity = _normalized(found.group(2).rstrip("."))
+    # «de 1 litro», «de 500 g», «de color azul»: a size, an amount or a feature, never a brand or
+    # a shop. Taking it for one once discarded every option as «no corresponde a 1 litro».
+    if re.search(r"\d", identity) or re.search(
+            r"^(color|talla|tama[nñ]o|sabor|size|flavou?r|colou?r|kilo|kilos|gramo|gramos|litro|litros|ml|cm|mm|"
+            r"unidad|unidades|pack|caja|cajas|bote|botes|siempre|casa|regalo|hoy|ma[nñ]ana)\b", identity):
+        return "", False
+    return identity, found.group(1).casefold() == "en"
 
 
 def matches_identity(option: Dict[str, Any], identity: str, store_only: bool) -> bool:
@@ -422,7 +434,7 @@ def chosen_id(text: Any) -> Optional[str]:
 def is_purchase_request(text: Any) -> bool:
     text = " ".join(str(text or "").split())
     return bool(text) and not text.startswith(("[respuesta:", "[elecci", "[Continuing")) \
-        and bool(PURCHASE_REQUEST.search(text))
+        and bool(PURCHASE_REQUEST.search(text)) and not NOT_A_PURCHASE.search(text)
 
 
 def is_cart_action(tool_name: str, args: Any) -> bool:
@@ -481,7 +493,8 @@ def context_block(details: Dict[str, str], cards: List[Dict[str, Any]], recent: 
 
 def turn_note(block: str) -> str:
     return (block + " Sigue «Comprar»: nunca ofrezcas una opción que no hayas visto; si lo que falta depende de lo que "
-            "vende la tienda (formato, talla, sabor), mira primero la tienda y el catálogo (`catalog_search`) y "
+            "vende la tienda (formato, talla, sabor), mira primero la tienda (`catalog_search` solo dice dónde se "
+            "vende; sus resultados no se pueden enseñar como tarjetas) y "
             "enseña lo comprable como tarjetas con `purchase_options`, no como preguntas. En el chat no se llena "
             "ningún carrito ni se paga. Una portada o una ficha de otro producto no demuestra que el solicitado no exista. "
             "No declares falta de disponibilidad ni propongas sustituciones desde una búsqueda parcial: revisa la "
@@ -538,8 +551,8 @@ OPTIONS_SCHEMA: Dict[str, Any] = {
         "Step 5 of buying, in the chat: show the person, as product cards, the options you verified — a real "
         "product page (https), in stock, priced in their currency — with your recommendation marked. 1 to 6 "
         "options, once per search. Nothing is bought. Options the plugin cannot verify are left out and "
-        "listed in `discarded`. Then end your turn: the person taps one or says which, and the purchase "
-        "starts with `errand_start` and that `option_id`."
+        "listed in `discarded`. Then end your turn: the person taps one and the purchase starts by itself "
+        "(words such as «la segunda» do not choose; if they answer in words, ask them to tap the card)."
     ),
     "parameters": {"type": "object", "properties": {
         "search_id": {"type": "string", "description": "Inventory returned by purchase_discover; all formats must be quoted or discarded"},

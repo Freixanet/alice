@@ -131,16 +131,66 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(q['variant'],'300 g')
         self.assertTrue(Shop.instances[-1].url.endswith('300 g'))
 
+    def test_cart_lines_are_matched_by_words_not_letter_by_letter(self):
+        self.assertTrue(prices.names('CREATINA MONOHIDRATO 500G x1  24,99 €','Creatina Monohidrato 500 g'))
+        self.assertTrue(prices.names('Creatina Creapure® - 300 g - Neutro','Creatina Creapure','300 g'))
+        self.assertTrue(prices.names('Pienso Acana Adult Dog 2kg','Acana Adult Dog','2 kg'))
+        self.assertFalse(prices.names('Creatina Creapure 80 cápsulas','Creatina Creapure','300 g'))
+        self.assertFalse(prices.names('Whey Protein 1 kg','Creatina Creapure'))
+        # A listing title longer than the cart line is not a second product to spell out.
+        original = Shop.read
+        def shop_words(shop, selector):
+            value = original(shop, selector)
+            return value.upper().replace(' G','G') if selector == '#line' and value else value
+        with mock.patch.object(Shop,'read',shop_words):
+            q = self.quote(recipe={k:v for k,v in self.recipe.items() if k != 'variant'})
+        self.assertEqual(q['price_cents'],3499)
+    def test_coupons_without_a_coupon_field_are_reported_not_a_crash(self):
+        q = self.quote(coupons=['PUBLIC10'], recipe={k:v for k,v in self.recipe.items() if k not in ('coupon','apply')})
+        self.assertEqual(q['price'],'34,99 €')
+        self.assertFalse(q['coupon_results'][0]['applied']); self.assertIn('sin campo',q['coupon_results'][0]['why'])
+    def test_a_failed_check_names_its_selector(self):
+        with mock.patch.object(Shop,'read',lambda shop,selector: None if selector == '#line' else Shop.read.__wrapped__(shop,selector) if hasattr(Shop.read,'__wrapped__') else {'h1':'Prozis Creapure','#variant':'300 g','#cart-qty':'1','#price':'34,99 €'}.get(selector)):
+            with self.assertRaisesRegex(ValueError,'#line'):
+                self.quote()
+    def test_checking_the_remaining_formats_stops_within_the_tool_calls_time(self):
+        first = self.quote()
+        ticks = iter([0, 0, 1000, 1000, 1000])
+        remaining = prices.verify_remaining(self.home,'chat',{'search_id':self.search['id'],'candidate_id':first['candidate_id'],
+            'recipe':self.recipe,'currency':'EUR'},factory=Shop,budget=90,clock=lambda: next(ticks))
+        self.assertEqual(len(remaining['other_formats']),1)
+        self.assertEqual(len(remaining['unverified']),1); self.assertIn('sin tiempo',remaining['unverified'][0]['why'])
+        # Said as unchecked, the cards can still be shown; the agent may check it on its own.
+        result = prices.present(self.home,'chat',self.options([first]+remaining['other_formats']),factory=Shop)
+        self.assertTrue(result['ok'], result)
+    def test_a_www_redirect_is_the_same_shop(self):
+        self.assertTrue(prices.same_site('https://www.prozis.com/es/es/p','https://prozis.com/es/es/p'))
+        self.assertFalse(prices.same_site('https://www.prozis.com/p','https://sis.redsys.es/p'))
     def test_no_quantity_question_before_format_selection(self):
         self.assertIsNotNone(flow.ask_refusal([{'question':'¿Cuántos botes de 300 g quieres?','choices':['1','2']}],True))
     def test_same_amount_is_never_a_price_change(self):
         self.assertNotEqual(errands.blocked_by('cuesta 24,49 € en vez de 24,49 €',{'price':'24,49 €','currency':'EUR'})['kind'],'price')
 
 
+def classifier_stub():
+    """Hermes' `agent.vault_login_classifier`, reduced to what detect_pending needs: a password
+    field is a current-password control, a one-time-code field is an OTP control."""
+    control = lambda raw: types.SimpleNamespace(index=raw.get('index',0), type=raw.get('type',''), autocomplete=raw.get('autocomplete',''))
+    module = types.SimpleNamespace(
+        LoginControl=types.SimpleNamespace(from_dict=control),
+        build_inspection_js=lambda nonce: 'flatMap ' + nonce,
+        classify_login_control=lambda c: types.SimpleNamespace(token='current-password', control=c) if c.type == 'password' else None,
+        classify_otp_controls=lambda controls: [types.SimpleNamespace(control=c) for c in controls if 'one-time-code' in c.autocomplete])
+    # Only the submodule: tests that need the whole runtime still see `import agent` fail and skip.
+    return {'agent.vault_login_classifier': module}
+
+
 class AccessTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
+        if 'agent.vault_login_classifier' not in sys.modules:
+            stub = mock.patch.dict(sys.modules, classifier_stub()); stub.start(); self.addCleanup(stub.stop)
         self.entry = errands.create(self.home,'Comprar creatina',profile='test',offer={'url':'https://example.com/p'})
         self.context = {'context':'context-test','target':'target-test'}
         self.inspect = lambda entry:('https://example.com',self.context,None)
@@ -171,13 +221,21 @@ class AccessTests(unittest.TestCase):
         p = self.pending(); out = self.respond(p,account_action='create')
         self.assertEqual(out['account_action'],'create')
         self.assertIn('create',self.resumed[0][1])
-    def test_cancel_preserves_offer_without_any_payment_or_vault_write(self):
+    def test_a_declined_login_goes_on_as_a_guest_not_to_a_stop(self):
+        # «Ahora no» used to stop the whole purchase; most shops sell to guests.
         p = self.pending()
         out = access.answer(self.home,self.entry['id'],p['request_id'],'',inspect=self.inspect,save=self.save,resume=self.resume)
-        self.assertEqual(out['status'],'stopped'); self.assertEqual(out['offer']['url'],'https://example.com/p')
-        self.assertFalse(self.saved); self.assertFalse(self.resumed)
+        self.assertEqual(out['status'],'working'); self.assertEqual(out['offer']['url'],'https://example.com/p')
+        self.assertTrue(out['login_declined']); self.assertIsNone(out['secure_request'])
+        self.assertFalse(self.saved); self.assertIn('invitado',self.resumed[0][1])
+        # And the empty password field on that page is not asked about again.
+        descriptors = [{'index':0,'name':'password','type':'password','autocomplete':'current-password'}]
+        evaluate = lambda ctx,script: json.dumps(descriptors) if 'flatMap' in script else True
+        self.assertIsNone(access.detect_pending(self.home,self.entry['id'],inspect=self.inspect,evaluate=evaluate))
     def test_changed_origin_or_context_cannot_receive_access(self):
-        p = self.pending(); self.context['target'] = 'different'
+        # The tab may be reloaded or replaced while the person types (the agent did not end its
+        # turn at once): only another shop or another browser context refuses the answer.
+        p = self.pending(); self.context['context'] = 'different'
         with self.assertRaises(ValueError):self.respond(p)
         self.assertFalse(self.saved)
         with self.assertRaises(ValueError):access.request(self.home,self.entry['id'],inspect=lambda e:('https://other.example',self.context,None))
@@ -239,11 +297,22 @@ class AccessTests(unittest.TestCase):
 
     def test_visible_empty_login_recovers_a_prose_only_agent_turn(self):
         descriptors = [{'index':0,'name':'password','type':'password','autocomplete':'current-password'}]
-        evaluate = lambda ctx,script: json.dumps(descriptors) if 'flatMap' in script else True
+        evaluate = lambda ctx,script: json.dumps(descriptors) if 'flatMap' in script else 'invitado' not in script
         pending = access.detect_pending(self.home,self.entry['id'],inspect=self.inspect,evaluate=evaluate)
         self.assertEqual(pending['kind'],'vault.save_login')
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'needs_login')
         self.assertFalse(self.saved)
+    def test_a_guest_checkout_with_an_optional_login_asks_for_nothing(self):
+        descriptors = [{'index':0,'name':'password','type':'password','autocomplete':'current-password'}]
+        # The page offers «Continuar como invitado» beside the login: the errand takes that way.
+        evaluate = lambda ctx,script: json.dumps(descriptors) if 'flatMap' in script else True
+        self.assertIsNone(access.detect_pending(self.home,self.entry['id'],inspect=self.inspect,evaluate=evaluate))
+        self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
+        # An OTP field is always the person's, guest button or not.
+        otp = [{'index':0,'name':'otp','type':'text','autocomplete':'one-time-code'}]
+        evaluate = lambda ctx,script: json.dumps(otp) if 'flatMap' in script else True
+        pending = access.detect_pending(self.home,self.entry['id'],inspect=self.inspect,evaluate=evaluate)
+        self.assertEqual(pending['kind'],'vault.code')
 
     def test_a_login_already_given_is_not_asked_again(self):
         p = self.pending(); self.respond(p, account_action='create')
@@ -300,12 +369,28 @@ class CartRevalidationTests(unittest.TestCase):
         self.evaluate = evaluate
     def check(self):
         return prices.check_cart(self.home,self.entry['id'],self.recipe,inspect=self.inspect,evaluate=self.evaluate)
-    def test_same_price_after_session_change_needs_no_acceptance(self):
+    def test_the_cart_check_survives_new_cookies_and_other_pages_but_not_another_context(self):
+        # Shops rewrite cookies on every page (session expiry, bot checks, analytics) and the errand
+        # moves from the basket to login, address and the bank: none of that is another cart.
         self.assertTrue(self.check()['ok'])
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
         self.cookies.append({'domain':'example.com','name':'session','value':'fictional-new-session'})
-        self.assertFalse(prices.fresh_cart(self.home,errands.get(self.home,self.entry['id']),inspect=self.inspect))
-        self.assertTrue(self.check()['ok'])
+        entry = errands.get(self.home,self.entry['id'])
+        self.assertTrue(prices.fresh_cart(self.home,entry,inspect=self.inspect))
+        elsewhere = lambda e:('https://sis.redsys.es',self.context,lambda *a:{'cookies':[]})
+        self.assertTrue(prices.fresh_cart(self.home,entry,inspect=elsewhere))
+        other = lambda e:('https://example.com',{**self.context,'context':'other-context'},lambda *a:{'cookies':[]})
+        self.assertFalse(prices.fresh_cart(self.home,entry,inspect=other))
+        self.assertFalse(prices.fresh_cart(self.home,entry,inspect=self.inspect,now=time.time()+prices.CART_TTL+1))
+        self.assertTrue(prices.fresh_cart(self.home,entry,inspect=self.inspect,now=time.time()+prices.TTL+60))
+    def test_an_accepted_new_price_needs_no_second_cart_check(self):
+        self.amount='39,99 €'
+        self.assertTrue(self.check()['price_changed'])
+        with mock.patch.object(errands,'launch'), mock.patch.object(errands,'_goal_manager'):
+            went = errands.go_on(self.home,self.entry['id'],accept_price=True)
+        self.assertEqual(went['offer']['price'],'39,99 €')
+        self.assertTrue(prices.fresh_cart(self.home,went,inspect=self.inspect))
+        self.assertIn('purchase_check_cart',went['resume_message'])
     def test_real_price_change_exposes_both_amounts(self):
         self.amount='39,99 €'
         changed=self.check()
@@ -337,3 +422,25 @@ class CartRevalidationTests(unittest.TestCase):
         changed=lambda ctx,script:'79,97 €'
         self.assertFalse(prices.payment_ready(self.home,entry,inspect=self.inspect,evaluate=changed))
         self.assertFalse(prices.payment_ready(self.home,{**entry,'checkout_evidence':None},inspect=self.inspect,evaluate=self.evaluate))
+
+    def test_the_banks_payment_page_is_where_the_approved_order_is_paid(self):
+        # The shop sent the errand to Redsys: its own total is no longer on screen. With the
+        # approval fresh and the cart checked in this context, the card goes in there.
+        self.check()
+        checkout={'id':'ck-test','status':'approved','total':'73,97 €','currency':'EUR','decided_at':time.time(),'site':'example.com'}
+        errands.update(self.home,self.entry['id'],checkout=checkout,checkout_evidence={'checkout_id':'ck-test','selector':'#total'})
+        entry=errands.get(self.home,self.entry['id'])
+        bank = lambda e:('https://sis.redsys.es',self.context,lambda *a:{'cookies':[]})
+        nothing = lambda ctx,script: None
+        self.assertTrue(prices.payment_ready(self.home,entry,inspect=bank,evaluate=nothing,gateways={'sis.redsys.es'}))
+        # The shop's www twin is the shop: its total is read again there.
+        twin = lambda e:('https://www.example.com',self.context,lambda *a:{'cookies':[]})
+        self.assertTrue(prices.payment_ready(self.home,entry,inspect=twin,evaluate=self.evaluate,gateways=set()))
+        self.assertFalse(prices.payment_ready(self.home,entry,inspect=twin,evaluate=lambda c,s:'79,97 €',gateways=set()))
+        # An unknown origin counts only when it shows a payment step (card fields, a provider's frame).
+        unknown = lambda e:('https://pay.unknown-provider.example',self.context,lambda *a:{'cookies':[]})
+        self.assertTrue(prices.payment_ready(self.home,entry,inspect=unknown,evaluate=lambda c,s:True,gateways=set()))
+        self.assertFalse(prices.payment_ready(self.home,entry,inspect=unknown,evaluate=lambda c,s:False,gateways=set()))
+        # Another browser context is never this errand's payment, bank or not.
+        other = lambda e:('https://sis.redsys.es',{**self.context,'context':'other'},lambda *a:{'cookies':[]})
+        self.assertFalse(prices.payment_ready(self.home,entry,inspect=other,evaluate=nothing,gateways={'sis.redsys.es'}))

@@ -39,11 +39,14 @@ from urllib.parse import urlsplit
 SESSION_PREFIX = "errand-"
 STATUSES = ("working", "needs_approval", "needs_input", "needs_card", "needs_login", "done", "stuck", "stopped", "denied")
 ACTIVE = ("working", "needs_approval", "needs_input", "needs_card", "needs_login")
-# An approved checkout pays within this window; later, the agent asks again.
-APPROVAL_TTL = 10 * 60
+# An approved checkout pays within this window; later, the agent asks again. Long enough for a
+# bank's 3-D Secure step and the person's answer in their bank app; the amount on the shop's
+# page is re-read before the card goes in anyway.
+APPROVAL_TTL = 20 * 60
 # A checkout waiting longer than this is stale (shops close their checkout sessions; prices
-# and delivery move): it can no longer be approved, only prepared again.
-CHECKOUT_TTL = 15 * 60
+# and delivery move): it can no longer be approved, only prepared again. An approval that comes
+# late within the window is still paid only after the total is read again on the page.
+CHECKOUT_TTL = 45 * 60
 KEEP = 30 * 24 * 3600
 MAX_STEPS = 40
 POLL_SECONDS = 1.5
@@ -53,7 +56,9 @@ MAX_RUNS = 14
 # stopped and the errand goes on once; a second stall leaves it stuck.
 STALL_SECONDS = 240
 # Going round in circles on one page (a form the shop keeps rejecting): this many steps on
-# the same page over this long, and the errand stops and says so instead of trying forever.
+# the same page over this long. One-page checkouts (Prozis, Shopify, Magento keep basket,
+# address, delivery and payment on one path) take many steps there while moving on, so the first
+# time the errand is only told to read the page's error; a second round stops it and says so.
 CIRCLE_STEPS = 12
 CIRCLE_SECONDS = 240
 
@@ -79,6 +84,11 @@ return Array.from(document.querySelectorAll('input[type=radio]')).some(e=>{const
 PAY_PAGE = re.compile(
     r"(/step/payment|/payment\b|/pago\b|/pay\b|/checkout/(review|confirm|payment|pago)|/confirmacion|/confirm\b"
     r"|onepage|/order-review|/revisar)", re.I)
+# On that page, picking how to pay (the card radio, PayPal, Bizum) or accepting the terms is not
+# paying: the agent must be able to reach the final total before it asks for the approval.
+METHOD_WORDS = re.compile(
+    r"(tarjeta|credit|debit|\bcard\b|paypal|bizum|klarna|apple pay|google pay|transferencia|contra ?reembolso"
+    r"|m[eé]todo|method|forma de pago|acepto|condiciones|terms|privacidad|privacy|newsletter|radio|checkbox)", re.I)
 # Browser actions that can press something on the page (Browser Use code or built-in tools).
 CLICKS = re.compile(r"(click|submit|press|dispatchMouseEvent|dispatchKeyEvent|Enter|\.requestSubmit)", re.I)
 BROWSER_ACTIONS = ("browser_exec", "browser_click", "browser_press", "browser_type")
@@ -535,8 +545,10 @@ def is_pay_action(tool_name: str, args: Any, active_url: str = "", payment_step:
     if not presses:
         # Reading a page or searching for pay controls does not submit an order.
         return False
-    if PAY_WORDS.search(text) or PAY_PAGE.search(str(active_url or "")) or payment_step:
+    if PAY_WORDS.search(text) or payment_step:
         return True
+    if PAY_PAGE.search(str(active_url or "")):
+        return not METHOD_WORDS.search(text)
     return bool(STEP_WORDS.search(text)) and payment_step is None
 
 
@@ -709,8 +721,9 @@ START_SCHEMA: Dict[str, Any] = {
     "description": (
         "Start an errand in the background, apart from this chat; Alice shows it as a card, asks the "
         "person to approve before anything is paid and tells them how it ended. A PURCHASE starts only "
-        "from the option the person chose among those shown with `purchase_options`: pass its "
-        "`option_id` (the plugin carries its page, variant, quantity and price). Anything else — a "
+        "from the option the person TAPPED among those shown with `purchase_options` (the plugin starts "
+        "it from the tap and carries its page, variant, quantity and price; words such as «la segunda» "
+        "do not choose: ask them to tap the card). Anything else — a "
         "booking, a form on a website — passes `task` and `title`. Call it once, then answer in one "
         "short line. Do not do the errand here."
     ),
@@ -802,7 +815,8 @@ def go_on(home: Path, errand_id: str, accept_price: bool = False) -> Optional[Di
         if offer:
             offer = {**offer, "price": price}
         update(home, errand_id, offer=offer, blocked=None, reason="")
-        message = (f"[precio aceptado] La persona acepta la misma opción a {price}. Sigue con el carrito hasta "
+        message = (f"[precio aceptado] La persona acepta la misma opción a {price}. Llama a `purchase_check_cart` "
+                   "(la cesta ya está comprobada a ese precio: confirmará sin preguntar), sigue con el carrito hasta "
                    "el paso de pago y llama a `checkout_request` con el total exacto; ese total es el que aprobará. "
                    "No pagues antes.")
     else:
@@ -1085,8 +1099,10 @@ def page_of(url: str) -> str:
 
 
 def circling(entry: Dict[str, Any]) -> Optional[str]:
-    """The page an errand keeps going round on without getting past, or None."""
-    steps = [s for s in entry.get("steps") or [] if s.get("url")]
+    """The page an errand keeps going round on without getting past, or None. Steps before the
+    last warning (``circle_from``) do not count again."""
+    since = float(entry.get("circle_from") or 0)
+    steps = [s for s in entry.get("steps") or [] if s.get("url") and float(s.get("at") or 0) > since]
     if len(steps) < CIRCLE_STEPS:
         return None
     last = steps[-CIRCLE_STEPS:]
@@ -1246,8 +1262,11 @@ class Engine:
             except Exception:  # noqa: BLE001 — gone or unreachable: nothing to wait for
                 still = ""
             if still in ("running", "waiting_for_approval", "queued"):
+                # The person's answer (an approval, a card) is what the agent must hear next, not a
+                # bare «continue»; only a restart's own note gives way to it.
                 self._wait_run(entry["run_id"])
-                text = CONTINUATION
+                if message.startswith(CONTINUATION):
+                    text = CONTINUATION
         while True:
             entry = self._entry()
             if entry.get("status") != "working":
@@ -1295,6 +1314,14 @@ class Engine:
             except Exception:
                 pass  # Unreadable DOM is handled by the ordinary recovery/judge path.
             if state.get("status") == "circling":
+                if entry.get("circle_page") != state.get("page"):
+                    # One-page checkouts take many steps on one path while moving on: the first
+                    # round on a page is a word to the agent, not a stop.
+                    update(self.home, self.errand_id, circle_from=time.time(), circle_page=state.get("page"))
+                    text = (CONTINUATION + " Llevas muchos pasos en la misma página (" + str(state.get("page"))[:80]
+                            + "). Si la tienda rechaza algo, lee su mensaje de error antes de volver a intentarlo; "
+                            "si estás avanzando (dirección, envío, pago en una misma página), sigue y di en qué paso estás.")
+                    continue
                 update(self.home, self.errand_id, status="stuck", reason=(
                     "Lleva varios minutos en la misma página sin poder avanzar (" + str(state.get("page"))[:80]
                     + "). Ábrela en el navegador para ver qué pide la tienda."))
@@ -1333,7 +1360,9 @@ class Engine:
                 update(self.home, self.errand_id, status="stuck", reason=said, blocked=blocked)
                 return "stuck"
             receipt = entry.get("receipt") or {}
-            if receipt.get("outcome") == "paid":
+            if receipt.get("outcome") in ("paid", "declined", "not_charged"):
+                # Known how it ended: the person reads the result. A declined payment is not a
+                # reason to try again on its own.
                 update(self.home, self.errand_id, status="done")
                 return "done"
             # Similar summaries are not a loop when the browser has recorded
@@ -1500,8 +1529,13 @@ def started_result(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def resume(home: Path, errand_id: str, message: str) -> bool:
-    """The person answered (approval, a question): the goal leaves its wait and the errand goes on."""
-    entry = update(home, errand_id, status="working", questions=None, approval=None)
+    """The person answered (approval, a question): the goal leaves its wait and the errand goes on.
+
+    The message is kept on the errand too: when its engine is still driving the run in which the
+    agent asked (the model had not ended its turn yet), ``launch`` cannot start another and the
+    running engine reads ``resume_message`` as the next thing to send. An approval given quickly
+    once arrived nowhere and the agent asked for it again."""
+    entry = update(home, errand_id, status="working", questions=None, approval=None, resume_message=message)
     if entry is None:
         return False
     try:
@@ -1536,7 +1570,7 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
     """What Alice shows: everything but the internal session wiring."""
     # The chat it came from stays: Alice finds an errand's cards by it when the chat's reply
     # never called errand_start (the plugin starts it anyway).
-    hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence", "checkout_evidence"}
+    hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence", "checkout_evidence", "circle_from", "circle_page"}
     out = {k: v for k, v in entry.items() if k not in hidden}
     if isinstance(out.get("approval"), dict):
         out["approval"] = {k: v for k, v in out["approval"].items() if k != "run_id"}

@@ -26,13 +26,47 @@ def module(name):
     return sys.modules[key]
 
 TTL = 15 * 60
+# The errand's own cart check is good for this long: every later step re-reads the amount on the
+# page (checkout_request, the pay click), so the cart evidence only has to be recent, not fresh.
+CART_TTL = 60 * 60
 # More formats than this on one search page is a broad search, not one product's formats.
 BROAD = 8
+# Checking the remaining formats inside one tool call stops after this long; the rest is said.
+REMAINING_BUDGET = 90
 
 def fingerprint(cookies, origin):
+    """The shop's own session cookie(s), not every cookie: analytics, CSRF and bot cookies change on
+    every page and made the cart look like another session between the basket and the pay step."""
     host = urlsplit(origin).hostname
     cookies = [c for c in cookies if host == c.get('domain','').lstrip('.') or host.endswith('.' + c.get('domain','').lstrip('.'))]
-    return hashlib.sha256(json.dumps(cookies,sort_keys=True).encode()).hexdigest()
+    names = sorted(c.get('name','') for c in cookies if re.search(r'sess|sid|cart|basket|customer|token', c.get('name',''), re.I))
+    return hashlib.sha256(json.dumps(names).encode()).hexdigest()
+
+
+def _norm(text):
+    """Shop text as it compares: no accents, one case, no punctuation, «500 g» and «500g» alike."""
+    import unicodedata
+    text = unicodedata.normalize('NFKD', str(text or ''))
+    text = ''.join(c for c in text if not unicodedata.combining(c)).casefold()
+    text = re.sub(r'(\d)\s+(?=(g|gr|kg|ml|l|cl|caps|capsulas|cápsulas|comprimidos|tabs|uds?|unidades)\b)', r'\1', text)
+    return re.sub(r'[^0-9a-z]+', ' ', text).strip()
+
+
+def names(line, *parts):
+    """Whether a cart line names the product (and variant): every significant word of each part, in
+    any order, after normalising. Listing titles and cart lines rarely match character for character."""
+    line = _norm(line)
+    for part in parts:
+        words = [w for w in _norm(part).split() if len(w) > 1 or w.isdigit()]
+        if words and not all(w in line.split() or w in line for w in words):
+            return False
+    return True
+
+
+def same_site(a, b):
+    """One shop with or without «www.»."""
+    host = lambda u: (urlsplit(u).hostname or '').lower().removeprefix('www.')
+    return host(a) == host(b)
 
 
 def https(url):
@@ -87,7 +121,7 @@ class Probe:
             time.sleep(.1)
             if self.evaluate('document.readyState') == 'complete':
                 current = self.evaluate('location.href')
-                if urlsplit(current).netloc != urlsplit(url).netloc:
+                if not same_site(current, url):
                     raise ValueError('La tienda redirigió a otro origen.')
                 return
         raise ValueError('La tienda no terminó de cargar.')
@@ -273,11 +307,14 @@ def _verify(home, session, args, *, factory=Probe, now=None):
         if not recipe.get('cart_quantity'):
             raise ValueError('Falta el selector de unidades comprobadas en la cesta.')
         title = browser.read(recipe['title'])
-        variant = browser.read(recipe['variant']) if recipe.get('variant') else candidate['title']
+        # Without a variant control the page has one format: the listing's own words are not a
+        # second thing the cart line must spell out letter by letter.
+        variant = browser.read(recipe['variant']) if recipe.get('variant') else ''
         if adapted and recipe.get('package_variant') and variant:
             variant = re.sub(r'^.*?(?=\d)', '', variant)
-        if not title or not variant:
-            raise ValueError('El producto y la variante no son verificables.')
+        if not title or (recipe.get('variant') and not variant):
+            raise ValueError('El producto y la variante no son verificables (selectores ' + recipe['title'] + ' / ' + str(recipe.get('variant')) + ').')
+        variant = variant or ''
         if recipe.get('quantity'):
             browser.units(recipe['quantity'], qty)
         elif qty != 1:
@@ -286,7 +323,7 @@ def _verify(home, session, args, *, factory=Probe, now=None):
         if adapted:
             prozis.wait_added(browser, title, variant, qty)
         inline_line = browser.read(recipe['line'])
-        inline_cart = (inline_line and title.casefold() in inline_line.casefold() and variant.casefold() in inline_line.casefold()
+        inline_cart = (inline_line and names(inline_line, title, variant if recipe.get('variant') else '')
             and browser.read(recipe['cart_quantity']) == str(qty)
             and browser.evaluate('(()=>{const e=document.querySelector(' + json.dumps(recipe['price']) + ');return !!e && e.getClientRects().length>0 && getComputedStyle(e).visibility!=="hidden"})()'))
         if recipe.get('cart_url') and (adapted or not inline_cart):
@@ -296,8 +333,8 @@ def _verify(home, session, args, *, factory=Probe, now=None):
         if adapted:
             prozis.wait_read(browser, recipe['line'])
         line = browser.read(recipe['line'])
-        if not line or title.casefold() not in line.casefold() or variant.casefold() not in line.casefold():
-            raise ValueError('El producto no aparece en la cesta temporal: ' + title + ' / ' + variant + '. Línea observada: ' + str(line or '')[:300])
+        if not line or not names(line, title, variant if recipe.get('variant') else ''):
+            raise ValueError('El producto no aparece en la cesta temporal (selector ' + recipe['line'] + '): ' + title + ' / ' + variant + '. Línea observada: ' + str(line or '')[:300])
         if not browser.evaluate('(()=>{const line=document.querySelector(' + json.dumps(recipe['line']) + ');const e=document.querySelector(' + json.dumps(recipe['price']) + ');return !!e && !!line && line.contains(e) && e.getClientRects().length>0 && getComputedStyle(e).visibility!=="hidden" && !e.closest("del,s,strike") && getComputedStyle(e).textDecorationLine!=="line-through"})()'):
             raise ValueError('El precio de la línea de cesta debe ser actual y visible; no sirve un importe oculto o tachado.')
         actual_qty = browser.read(recipe['cart_quantity'])
@@ -308,8 +345,12 @@ def _verify(home, session, args, *, factory=Probe, now=None):
         if not parsed:
             raise ValueError('La cesta no muestra un precio verificable en su moneda.')
         coupon_results = []
-        best = parsed
+        best = current = parsed
         codes = list(dict.fromkeys((args.get('coupons') or []) + recipe.get('public_codes', [])))[:5]
+        if codes and not (recipe.get('coupon') and recipe.get('apply')):
+            coupon_results = [{'code': str(c), 'applied': False, 'price': module('money').text(*parsed),
+                               'why': 'sin campo de descuento observado en la cesta'} for c in codes]
+            codes = []
         for code in codes:
             browser.coupon(recipe['coupon'], str(code))
             browser.click(recipe['apply'], action='coupon')
@@ -330,7 +371,8 @@ def _verify(home, session, args, *, factory=Probe, now=None):
         parsed = best
         shipping = browser.read(recipe['shipping']) if recipe.get('shipping') else None
         condition = browser.read(recipe['condition']) if recipe.get('condition') else None
-        if adapted and browser.evaluate('Array.from(document.querySelectorAll("input[type=email]")).some(e=>e.getClientRects().length>0)'):
+        if (adapted and recipe.get('public_codes') and not any(r['applied'] for r in coupon_results)
+                and browser.evaluate('Array.from(document.querySelectorAll("input[type=email]")).some(e=>e.getClientRects().length>0)')):
             condition = 'El descuento anunciado requiere iniciar sesión; no se ha aplicado a esta cesta. El precio mostrado es el comprobado sin ese descuento.'
         quote = {'id': 'pq-' + secrets.token_hex(16), 'search_id': search['id'], 'candidate_id': candidate['id'],
                  'session': session, 'url': candidate['url'], 'title': title, 'variant': variant,
@@ -394,8 +436,13 @@ def present(home, session, args, *, currency="", picture=None, request="", now=N
             options.append({**row, **{k: quote[k] for k in ('title','variant','qty','url','price','currency')},
                             'in_stock': True, 'channel':'browser', 'quote_ref': quote['id'],
                             'verified_at': quote['at'], 'shipping': quote['shipping'], 'condition': quote['condition']})
+        try:
+            known = module('errands').basket_prices(home, now=now)
+        except Exception:  # noqa: BLE001 — a nicety, never a reason not to show the options
+            known = {}
         result = module('purchase_flow').present(home, session, {'options':options}, currency=currency,
-                                               picture=picture, request=request, now=now, exact_item=True)
+                                               picture=picture, request=request, now=now, exact_item=True,
+                                               known_prices=known)
         if result.get('ok'):
             # The quote, rather than any model-supplied price, remains the offer's authority.
             flow = module('purchase_flow')
@@ -441,8 +488,8 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
             raise ValueError('Usa selectores CSS de la página para line, price y cart_quantity, no nombres de producto, importes o cantidades. Lee los controles y vuelve a comprobar la cesta.')
         return result
     line = read(recipe['line'])
-    if not line or offer['title'].casefold() not in line.casefold() or str(offer.get('variant') or '').casefold() not in line.casefold():
-        raise ValueError('La cesta no contiene el formato elegido.')
+    if not line or not names(line, offer['title'], offer.get('variant') or ''):
+        raise ValueError('La cesta no contiene el formato elegido (selector ' + recipe['line'] + '; línea: ' + str(line or '')[:200] + ').')
     if read(recipe['cart_quantity']) != str(offer.get('qty',1)):
         raise ValueError('La cesta tiene otra cantidad. Corrígela antes de pedir aprobación.')
     if not ev(context,'(()=>{const line=document.querySelector(' + json.dumps(recipe['line']) + ');const e=document.querySelector(' + json.dumps(recipe['price']) + ');return !!line && !!e && line.contains(e) && e.getClientRects().length>0 && getComputedStyle(e).visibility!=="hidden" && !e.closest("del,s,strike") && getComputedStyle(e).textDecorationLine!=="line-through"})()'):
@@ -453,40 +500,50 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     real = module('money').text(*amount)
     note = 'El precio sigue coincidiendo. Prepara el envío y el resumen final sin volver a pedir aceptar el mismo precio.'
     old_price = module('money').parse(offer['price'], offer['currency'])
+    try:
+        cookies = command('Storage.getCookies',{'browserContextId':context['context']}).get('cookies',[])
+    except Exception:  # noqa: BLE001 — the session cookie is a hint, the context is the binding
+        cookies = []
+    evidence = {'origin':page_origin,'context':context['context'],'recipe':recipe,
+        'qty':offer.get('qty',1),'price_cents':amount[0],'currency':amount[1], 'at':now or time.time(),
+        'session':fingerprint(cookies,page_origin)}
     if old_price and amount[0] < old_price[0]:
         # Cheaper in the basket (a member discount after login): the person's choice only got
         # better, and the final total is approved before paying anyway.
-        errands.update(home, errand_id, offer={**offer, 'price': real})
+        errands.update(home, errand_id, offer={**offer, 'price': real}, cart_evidence=evidence)
         note = ('La cesta cobra ' + real + ', menos que los ' + offer['price'] + ' elegidos: sigue con ese precio '
                 'sin preguntar y menciónalo en el resumen final.')
-    elif not module('money').same(real,offer['price'],offer['currency']):
-        errands.update(home,errand_id,status='stuck',blocked={'kind':'price','price':real},
+        return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':note}
+    if not module('money').same(real,offer['price'],offer['currency']):
+        # The evidence is kept with the real price: when the person accepts it, this cart is
+        # already checked and the errand goes straight on to the checkout.
+        errands.update(home,errand_id,status='stuck',blocked={'kind':'price','price':real},cart_evidence=evidence,
                        reason='La cesta cobra ' + real + ' por el formato elegido, frente a ' + offer['price'] + '.')
         return {'ok':False,'price_changed':True,'old':offer['price'],'price':real,'next':'Termina el turno. La persona puede aceptar el cambio real desde su tarjeta.'}
-    cookies = command('Storage.getCookies',{'browserContextId':context['context']}).get('cookies',[])
-    session_hash = fingerprint(cookies,page_origin)
-    errands.update(home,errand_id,cart_evidence={'origin':page_origin,'context':context['context'],'recipe':recipe,
-        'qty':offer.get('qty',1),'price_cents':amount[0],'currency':amount[1], 'at':now or time.time(),'session':session_hash})
+    errands.update(home,errand_id,cart_evidence=evidence)
     return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':note}
 
 
 def fresh_cart(home, entry, *, inspect=None, now=None):
+    """The errand's cart was checked recently, in this same browser context, for the offer as it
+    stands (units and price). The page it is on now does not matter: between the basket and the pay
+    step the errand goes through login, address, delivery and the bank, and the amount is read
+    again on each of those that counts (checkout_request, the pay click)."""
     evidence = entry.get('cart_evidence') or {}
-    if not evidence or (now or time.time())-evidence.get('at',0) > TTL:
+    if not evidence or (now or time.time())-float(evidence.get('at') or 0) > CART_TTL:
         return False
     access = module('errand_access')
-    page_origin, context, command = (inspect or access.target)(entry)
-    cookies = command('Storage.getCookies',{'browserContextId':context['context']}).get('cookies',[])
-    session_hash = fingerprint(cookies,page_origin)
-    return (context['context']==evidence['context'] and page_origin==evidence['origin'] and session_hash==evidence['session']
-            and evidence['qty']==(entry.get('offer') or {}).get('qty',1)
-            and module('money').parse((entry.get('offer') or {}).get('price'),evidence['currency']) == (evidence['price_cents'],evidence['currency']))
+    _page_origin, context, _command = (inspect or access.target)(entry)
+    offer = entry.get('offer') or {}
+    return (context['context']==evidence['context']
+            and evidence['qty']==offer.get('qty',1)
+            and module('money').parse(offer.get('price'),evidence['currency']) == (evidence['price_cents'],evidence['currency']))
 
 
 def checkout_amount(entry, selector, *, inspect=None, evaluate=None):
     access = module('errand_access')
     page_origin, context, _ = (inspect or access.target)(entry)
-    if page_origin != access.origin(entry['offer']['url']):
+    if not same_site(page_origin, entry['offer']['url']):
         raise ValueError('El resumen no pertenece a la tienda elegida.')
     result = (evaluate or access.page_evaluate)(context,
         '(()=>{const e=document.querySelector(' + json.dumps(selector) + ');if(!e||!e.getClientRects().length||getComputedStyle(e).visibility==="hidden"||e.closest("del,s,strike"))return null;return e.innerText.trim()})()')
@@ -496,25 +553,52 @@ def checkout_amount(entry, selector, *, inspect=None, evaluate=None):
     return module('money').text(*amount)
 
 
-def payment_ready(home, entry, *, inspect=None, evaluate=None):
-    approved = module('errands').approved_checkout(entry)
+def payment_ready(home, entry, *, inspect=None, evaluate=None, gateways=None):
+    """Whether the card may be filled or the pay button pressed now: the person approved this
+    checkout, the cart it came from is the one checked, and the page is either the shop's own
+    summary still showing that exact total, or the payment page the shop sent the errand to (a
+    bank or provider: Redsys, Stripe, Adyen…), where the shop's total is no longer on screen."""
+    errands, access = module('errands'), module('errand_access')
+    approved = errands.approved_checkout(entry)
     evidence = entry.get('checkout_evidence') or {}
     if not approved or evidence.get('checkout_id') != approved['id'] or not evidence.get('selector'):
         return False
     if not fresh_cart(home,entry,inspect=inspect):
         return False
-    actual = checkout_amount(entry,evidence['selector'],inspect=inspect,evaluate=evaluate)
-    return module('money').same(actual,approved['total'],approved['currency'])
+    page_origin, context, _ = (inspect or access.target)(entry)
+    if same_site(page_origin, entry['offer']['url']):
+        actual = checkout_amount(entry,evidence['selector'],inspect=inspect,evaluate=evaluate)
+        return module('money').same(actual,approved['total'],approved['currency'])
+    host = (urlsplit(page_origin).hostname or '').lower()
+    if gateways is None:
+        gateways = module('vault_cards').PAYMENT_GATEWAYS
+    if host in set(gateways):
+        return True
+    # An unknown origin: it is the payment page only if it shows one (card fields, a provider's frame
+    # or a choice of payment method). Anything else is not where the approved order is paid.
+    try:
+        return bool((evaluate or access.page_evaluate)(context, errands.PAYMENT_STEP_JS))
+    except Exception:  # noqa: BLE001 — unreadable: not a payment page we can vouch for
+        return False
 
 
-def verify_remaining(home, session, args, *, factory=Probe):
+def verify_remaining(home, session, args, *, factory=Probe, budget=REMAINING_BUDGET, clock=time.monotonic):
+    """The other formats of the same search, checked the same way, inside the time one tool call can
+    take. Formats left unchecked for lack of time are said as such (and noted, so the cards can be
+    shown) — the agent checks them one by one if it wants them on the cards."""
     data = _load(home)
     search = data['searches'][args['search_id']]
     done = {q['candidate_id'] for q in data['quotes'].values() if q['search_id']==search['id']}
     done.update(search['rejected'])
     quotes, failures = [], []
+    started = clock()
     for candidate in search['candidates']:
         if candidate['id'] in done:
+            continue
+        if clock() - started > budget:
+            why = 'sin tiempo en esta llamada: llama a purchase_verify con este candidate_id para incluirlo'
+            _note_failure(home, session, {'search_id': search['id'], 'candidate_id': candidate['id']}, why)
+            failures.append({'candidate_id':candidate['id'],'title':candidate['title'],'why':why})
             continue
         try:
             quote = verify(home,session,{**args,'candidate_id':candidate['id'],'qty':1},factory=factory)

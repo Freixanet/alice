@@ -85,3 +85,12 @@ class ProzisTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class AccentTests(unittest.TestCase):
+    def test_comprame_with_an_accent_is_filler_not_a_product_word(self):
+        self.assertEqual(prozis.keywords('cómprame creatina creapure de prozis'), ['creati', 'creapu'])
+        search = prozis.search_request('Cómprame creatina creapure de Prozis', 'ES')
+        self.assertEqual(search['url'], 'https://www.prozis.com/es/es/search?text=creatina%20creapure')
+        self.assertEqual(search['keywords'], ['creati', 'creapu'])
+

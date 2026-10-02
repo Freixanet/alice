@@ -62,7 +62,8 @@ side of that work:
 ### Built, still being proven in daily use
 
 - **Buying online up to the payment.** Alice first clarifies the product, searches
-  the Shop catalog and the shop, and shows verified product options. Your choice
+  the shop (the Shop catalog only says where something is sold) and shows product
+  options whose price was checked in a disposable basket. Your tap on one
   starts an errand; the chat itself does not prepare a basket. A checkout summary
   and compact approval name the exact total, and payment outcomes distinguish a
   confirmed order from a declined or unconfirmed payment. See [the twelve steps](docs/purchases.md). Alice fills the basket, address and delivery, stops
