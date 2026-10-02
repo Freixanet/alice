@@ -2,10 +2,25 @@
 id: notes
 title: "Notas"
 states:
-  saved: {covered: ["ios/AliceTests/NoteSaveStateTests.swift::NoteSaveStateTests"]}
-  foldered: {covered: ["ios/AliceTests/NoteFolderTreeTests.swift::NoteFolderTreeTests"]}
+  saved:
+    { covered: ["ios/AliceTests/NoteSaveStateTests.swift::NoteSaveStateTests"] }
+  foldered:
+    {
+      covered:
+        ["ios/AliceTests/NoteFolderTreeTests.swift::NoteFolderTreeTests"],
+    }
 steps:
-  - {n: "1", what: "capturar con herramientas", covered: ["hermes-plugin/tests/test_notes_tools.py"]}
-  - {n: "2", what: "editar en la app", covered: ["ios/AliceTests/NoteInlineInsertTests.swift::NoteInlineInsertTests"]}
+  - {
+      n: "1",
+      what: "capturar con herramientas",
+      covered: ["hermes-plugin/tests/test_notes_tools.py"],
+    }
+  - {
+      n: "2",
+      what: "editar en la app",
+      covered:
+        ["ios/AliceTests/NoteInlineInsertTests.swift::NoteInlineInsertTests"],
+    }
 faults:
-  concurrent_edit: {covered: ["gap: sin prueba de edición simultánea Mac/iPhone"]}
+  concurrent_edit:
+    { covered: ["gap: sin prueba de edición simultánea Mac/iPhone"] }

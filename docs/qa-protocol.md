@@ -4,16 +4,16 @@ For Claude Code, Codex, Cursor or a person. One loop, one entry point, the same 
 
 ## What exists
 
-| Piece | Where | What it does |
-| --- | --- | --- |
-| Process maps | `qa/flows/*.yaml` | States, steps, invariants and faults of each process, and what proves each one (a test, a simulator scenario, or `gap: why`). |
-| Simulator + oracle | `hermes-plugin/qa/sim.py`, `oracle.py` | The whole purchase with the real plugin, engine, routes and shop JavaScript; a scripted agent and person; every invariant checked after every event. |
-| Fault catalogue + fuzz | `sim.FAULTS`, `hermes-plugin/qa/fuzz.py` | Each fault on each fixture shop; random combinations from replayable seeds, shrunk to the minimum, written as a regression test. |
-| Static rules | `scripts/qa_static.py` | Fail-open guards, fixed ports, temp state, untested routes, undeclared tools, app↔plugin contract drift, false «nothing was paid», secrets in logs. |
-| iOS contract | `hermes-plugin/tests/fixtures/errand_states.json` → `ios/AliceTests/ErrandContractTests.swift` | The errand states the simulator really produced, read by the app's tests. |
-| iOS journey | `hermes-plugin/qa/serve.py` + `ios/AliceUITests/PurchaseJourneyTests.swift` | The app in the iOS simulator approves, accepts a new price and gets the order, against the simulator's dashboard. |
-| Self-test | `hermes-plugin/tests/test_qa.py` | Old bugs put back must be caught; if not, the oracle is blind. |
-| CI | `.github/workflows/qa.yml` | All of it on GitHub's free runners (public repo). Nothing heavy runs on the development Mac. |
+| Piece                  | Where                                                                                          | What it does                                                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Process maps           | `qa/flows/*.yaml`                                                                              | States, steps, invariants and faults of each process, and what proves each one (a test, a simulator scenario, or `gap: why`).                        |
+| Simulator + oracle     | `hermes-plugin/qa/sim.py`, `oracle.py`                                                         | The whole purchase with the real plugin, engine, routes and shop JavaScript; a scripted agent and person; every invariant checked after every event. |
+| Fault catalogue + fuzz | `sim.FAULTS`, `hermes-plugin/qa/fuzz.py`                                                       | Each fault on each fixture shop; random combinations from replayable seeds, shrunk to the minimum, written as a regression test.                     |
+| Static rules           | `scripts/qa_static.py`                                                                         | Fail-open guards, fixed ports, temp state, untested routes, undeclared tools, app↔plugin contract drift, false «nothing was paid», secrets in logs.  |
+| iOS contract           | `hermes-plugin/tests/fixtures/errand_states.json` → `ios/AliceTests/ErrandContractTests.swift` | The errand states the simulator really produced, read by the app's tests.                                                                            |
+| iOS journey            | `hermes-plugin/qa/serve.py` + `ios/AliceUITests/PurchaseJourneyTests.swift`                    | The app in the iOS simulator approves, accepts a new price and gets the order, against the simulator's dashboard.                                    |
+| Self-test              | `hermes-plugin/tests/test_qa.py`                                                               | Old bugs put back must be caught; if not, the oracle is blind.                                                                                       |
+| CI                     | `.github/workflows/qa.yml`                                                                     | All of it on GitHub's free runners (public repo). Nothing heavy runs on the development Mac.                                                         |
 
 ## The loop
 

@@ -2,11 +2,32 @@
 id: notifications
 title: "Avisos al iPhone"
 states:
-  errand_needs_person: {covered: ["ios/AliceTests/ErrandTests.swift::testErrandAlertsStayQuietOnTheFirstReadingAndSayEachChangeOnce"]}
-  routine_finished: {covered: ["ios/AliceTests/NotificationTruthTests.swift"]}
-  mac_relay: {covered: ["mac/notifier/test_alice_notifier.py::poll_errands"]}
+  errand_needs_person:
+    {
+      covered:
+        [
+          "ios/AliceTests/ErrandTests.swift::testErrandAlertsStayQuietOnTheFirstReadingAndSayEachChangeOnce",
+        ],
+    }
+  routine_finished: { covered: ["ios/AliceTests/NotificationTruthTests.swift"] }
+  mac_relay: { covered: ["mac/notifier/test_alice_notifier.py::poll_errands"] }
 steps:
-  - {n: "1", what: "leer y comparar con lo visto", covered: ["ios/AliceTests/NotificationTruthTests.swift"]}
-  - {n: "2", what: "abrir lo tocado", covered: ["ios/AliceTests/NotificationLinkTests.swift::NotificationLinkTests"]}
+  - {
+      n: "1",
+      what: "leer y comparar con lo visto",
+      covered: ["ios/AliceTests/NotificationTruthTests.swift"],
+    }
+  - {
+      n: "2",
+      what: "abrir lo tocado",
+      covered:
+        ["ios/AliceTests/NotificationLinkTests.swift::NotificationLinkTests"],
+    }
 faults:
-  force_quit: {covered: ["gap: iOS no despierta una app cerrada a la fuerza; no se puede probar"]}
+  force_quit:
+    {
+      covered:
+        [
+          "gap: iOS no despierta una app cerrada a la fuerza; no se puede probar",
+        ],
+    }

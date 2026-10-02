@@ -5,3 +5,4 @@ hermes-plugin/dashboard/dist
 ios/.build
 ios/Alice.xcodeproj
 hermes-agents
+hermes-plugin/tests/fixtures/errand_states.json

@@ -2,12 +2,33 @@
 id: routines
 title: "Rutinas programadas"
 states:
-  scheduled: {covered: ["ios/AliceTests/RoutineStateTests.swift::RoutineStateTests"]}
-  failed: {covered: ["ios/AliceTests/RoutineRetryTests.swift::RoutineRetryTests"]}
-  quiet: {covered: ["ios/AliceTests/RoutineQuietRunsTests.swift::RoutineQuietRunsTests"]}
+  scheduled:
+    { covered: ["ios/AliceTests/RoutineStateTests.swift::RoutineStateTests"] }
+  failed:
+    { covered: ["ios/AliceTests/RoutineRetryTests.swift::RoutineRetryTests"] }
+  quiet:
+    {
+      covered:
+        ["ios/AliceTests/RoutineQuietRunsTests.swift::RoutineQuietRunsTests"],
+    }
 steps:
-  - {n: "1", what: "crear desde el chat", covered: ["ios/AliceTests/RoutineBriefTests.swift::RoutineBriefTests"]}
-  - {n: "2", what: "informar del resultado", covered: ["ios/AliceTests/RoutineReportTests.swift::RoutineReportTests"]}
+  - {
+      n: "1",
+      what: "crear desde el chat",
+      covered: ["ios/AliceTests/RoutineBriefTests.swift::RoutineBriefTests"],
+    }
+  - {
+      n: "2",
+      what: "informar del resultado",
+      covered: ["ios/AliceTests/RoutineReportTests.swift::RoutineReportTests"],
+    }
 faults:
-  adversarial_prompt: {covered: ["ios/AliceTests/RoutineAdversarialTests.swift::RoutineAdversarialTests"]}
-  cron_parse: {covered: ["ios/AliceTests/CronParsingTests.swift::CronParsingTests"]}
+  adversarial_prompt:
+    {
+      covered:
+        [
+          "ios/AliceTests/RoutineAdversarialTests.swift::RoutineAdversarialTests",
+        ],
+    }
+  cron_parse:
+    { covered: ["ios/AliceTests/CronParsingTests.swift::CronParsingTests"] }

@@ -2,14 +2,51 @@
 id: pairing
 title: "Vincular el iPhone con un Hermes"
 states:
-  unpaired: {covered: ["ios/AliceTests/PairingPayloadTests.swift::PairingPayloadTests"]}
-  paired: {covered: ["ios/AliceTests/PairingClientTests.swift::PairingClientTests"]}
-  dashboard_unreachable: {covered: ["ios/AliceTests/DashboardRestorePolicyTests.swift::DashboardRestorePolicyTests"]}
+  unpaired:
+    {
+      covered:
+        ["ios/AliceTests/PairingPayloadTests.swift::PairingPayloadTests"],
+    }
+  paired:
+    { covered: ["ios/AliceTests/PairingClientTests.swift::PairingClientTests"] }
+  dashboard_unreachable:
+    {
+      covered:
+        [
+          "ios/AliceTests/DashboardRestorePolicyTests.swift::DashboardRestorePolicyTests",
+        ],
+    }
 steps:
-  - {n: "1", what: "leer el QR o el enlace alice://pair", covered: ["ios/AliceTests/PairingPayloadTests.swift::PairingPayloadTests"]}
-  - {n: "2", what: "reclamar el código y guardar credenciales en Keychain", covered: ["ios/AliceTests/PairingClientTests.swift::PairingClientTests", "hermes-plugin/tests/test_plugin_api.py"]}
-  - {n: "3", what: "comprobar la conexión al volver", covered: ["ios/AliceTests/DashboardRestorePolicyTests.swift::DashboardRestorePolicyTests"]}
+  - {
+      n: "1",
+      what: "leer el QR o el enlace alice://pair",
+      covered:
+        ["ios/AliceTests/PairingPayloadTests.swift::PairingPayloadTests"],
+    }
+  - {
+      n: "2",
+      what: "reclamar el código y guardar credenciales en Keychain",
+      covered:
+        [
+          "ios/AliceTests/PairingClientTests.swift::PairingClientTests",
+          "hermes-plugin/tests/test_plugin_api.py",
+        ],
+    }
+  - {
+      n: "3",
+      what: "comprobar la conexión al volver",
+      covered:
+        [
+          "ios/AliceTests/DashboardRestorePolicyTests.swift::DashboardRestorePolicyTests",
+        ],
+    }
 faults:
-  expired_code: {covered: ["hermes-plugin/tests/test_plugin_api.py"]}
-  insecure_address: {covered: ["ios/AliceTests/ConnectionAddressSecurityTests.swift::ConnectionAddressSecurityTests"]}
-  other_installation: {covered: ["gap: sin simulador de dos instalaciones"]}
+  expired_code: { covered: ["hermes-plugin/tests/test_plugin_api.py"] }
+  insecure_address:
+    {
+      covered:
+        [
+          "ios/AliceTests/ConnectionAddressSecurityTests.swift::ConnectionAddressSecurityTests",
+        ],
+    }
+  other_installation: { covered: ["gap: sin simulador de dos instalaciones"] }
