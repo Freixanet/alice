@@ -75,7 +75,14 @@ def _locked(home: Path):
 def _read(path: Path) -> List[Dict[str, Any]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError:
+        return []
+    except ValueError:
+        # Kept aside, never overwritten by the next write: it may hold a payment's only trace.
+        try:
+            path.rename(Path(str(path) + f".corrupt-{int(time.time())}"))
+        except OSError:
+            pass
         return []
     return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
 

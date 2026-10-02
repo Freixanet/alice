@@ -2088,6 +2088,13 @@ async def browser_control(body: _BrowserControl) -> JSONResponse:
     module = _browser_module()
     work = module.take_over if body.holder == "human" else module.hand_back
     await asyncio.to_thread(work, _hermes_root())
+    if body.holder == "agent":
+        # Errands under way read the page again; one whose checkout was approved may have been paid
+        # by the person, which the ledger now holds until its outcome is read.
+        try:
+            await asyncio.to_thread(_errands_module().handed_back, _hermes_root())
+        except Exception:
+            _log.warning("errands: hand-back note failed", exc_info=True)
     return await asyncio.to_thread(lambda: _browser_call(lambda: module.status(_hermes_root())))
 
 
@@ -2637,10 +2644,8 @@ async def errands_list() -> JSONResponse:
     """Every errand, newest first. An errand left working by a restart goes on from here."""
     def read():
         module, root = _errands_module(), _hermes_root()
-        module.expire_checkouts(root)
-        module.release_stale(root)
-        module.convert_datum_stops(root)
-        module.ensure_running(root)
+        # Each upkeep step on its own: one failing never hides the person's errands.
+        module.sweep(root)
         return [module.public(e) for e in module.listing(root)]
 
     return JSONResponse({"errands": await asyncio.to_thread(read)}, headers=_NO_STORE)

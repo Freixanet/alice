@@ -193,6 +193,7 @@ class ErrandHookTests(unittest.TestCase):
     def test_resumed_purchase_protects_all_browser_outputs_and_fails_closed(self):
         entry = self.errand(offer={'url':'https://example.com/product'})
         self.errands.update(self.home,entry['id'],secure_answered='request-done')
+        self.errands.context_file(entry['id'], self.home).write_text('{"context":"c","target":"t"}')
         access = self.plugin._module('errand_access.py','alice_errand_access')
         with mock.patch.object(access,'protect_browser_secrets') as protect:
             for name in ('browser_exec','browser_get_state','browser_screenshot'):
@@ -295,6 +296,47 @@ class ErrandHookTests(unittest.TestCase):
         with mock.patch.object(self.plugin,'_active_url',return_value='https://other.example/home'), mock.patch.object(access,'target',return_value=('https://www.hsnstore.com',{'url':'https://www.hsnstore.com/checkout/step/payment/'},None)):
             verdict=self.plugin._guard_errand('browser_exec',{'code':'click_at_xy(30,50)'},session_id=entry['session_id'])
         self.assertEqual(verdict['action'],'block')
+
+    def test_a_secure_answer_whose_page_is_gone_never_blocks_the_errand(self):
+        # Chrome closed after the person typed their login: with the context gone there is
+        # nothing left to shield, and blocking every step left the errand unable to go on.
+        entry = self.errand(offer={'url': 'https://example.com/product'})
+        self.errands.update(self.home, entry['id'], secure_answered='request-done', cart_evidence={'context': 'old'})
+        access = self.plugin._module('errand_access.py', 'alice_errand_access')
+        with mock.patch.object(access, 'protect_browser_secrets', side_effect=ValueError('no page')) as protect:
+            self.assertIsNone(self.plugin._guard_errand_access('browser_exec', {}, session_id=entry['session_id']))
+        protect.assert_not_called()
+        saved = self.errands.get(self.home, entry['id'])
+        self.assertIsNone(saved.get('secure_answered'))
+        self.assertIsNone(saved.get('cart_evidence'))
+
+    def test_a_context_made_again_drops_what_was_read_in_the_old_one(self):
+        entry = self.errand(offer={'url': 'https://www.hsnstore.com/p', 'quote_ref': 'pq-1'})
+        self.errands.request_checkout(self.home, entry['id'], {'merchant': 'HSN', 'site': 'hsnstore.com',
+                                                               'items': [{'name': 'Creatina'}], 'total': '27,98 €'})
+        self.errands.update(self.home, entry['id'], cart_evidence={'context': 'old'}, checkout_evidence={'checkout_id': 'x'})
+        path = self.errands.context_file(entry['id'], self.home)
+        path.write_text(json.dumps({'context': 'new', 'target': 't', 'lost': True}))
+        out = self.plugin._errand_context_lost('browser_exec', 'page text', session_id=entry['session_id'])
+        self.assertIn('se perdió', out)
+        self.assertIn('checkout_request', out)
+        saved = self.errands.get(self.home, entry['id'])
+        self.assertIsNone(saved.get('cart_evidence'))
+        self.assertIsNone(saved.get('checkout_evidence'))
+        self.assertEqual((saved['status'], saved['checkout']['status']), ('working', 'replaced'))
+        self.assertNotIn('lost', json.loads(path.read_text()))
+        # Said once.
+        self.assertIsNone(self.plugin._errand_context_lost('browser_exec', 'page text', session_id=entry['session_id']))
+
+    def test_a_context_lost_after_approval_says_not_to_pay_again(self):
+        entry = self.errand(offer={'url': 'https://www.hsnstore.com/p', 'quote_ref': 'pq-1'})
+        self.errands.request_checkout(self.home, entry['id'], {'merchant': 'HSN', 'site': 'hsnstore.com',
+                                                               'items': [{'name': 'Creatina'}], 'total': '27,98 €'})
+        self.errands.decide_checkout(self.home, entry['id'], True)
+        self.errands.context_file(entry['id'], self.home).write_text(json.dumps({'context': 'n', 'lost': True}))
+        out = self.plugin._errand_context_lost('browser_exec', 'x', session_id=entry['session_id'])
+        self.assertIn('NO pagues', out)
+        self.assertIn('purchase_outcome', out)
 
     # ── P0: every payment leaves a trace; the guards fail closed ──────────────────
 

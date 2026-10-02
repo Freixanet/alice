@@ -436,6 +436,20 @@ Queda para PR2 el fixture de banco en el script con Chrome (`verify-purchase-com
 
 No comprobado: tiendas reales (anti-bot, precios tras login, checkout en iframe).
 
+## Ronda 7 · P2 recuperación (2 oct)
+
+| Antes | Ahora | Test |
+| --- | --- | --- |
+| Nota de contexto en la carpeta temporal del sistema | bajo `<home>/.alice/errands/`, privada; la antigua se mueve sola | `RecoveryTests` |
+| Chrome caído: contexto nuevo vacío sin decirlo | el preámbulo lo marca; el plugin borra cesta, resumen y login comprobados y se lo dice al agente (sin pagar si ya hubo aprobación) | hooks «context made again» |
+| Login tecleado + contexto perdido = todo `browser_*` bloqueado | sin contexto no hay nada que proteger: se limpia y sigue | hooks «secure answer whose page is gone» |
+| Puerto 9222 fijo al liberar | el configurado | — |
+| Denegar no cerraba la página | se cierra; también la de recados esperando más de 12 h (salvo con aprobación) | `RecoveryTests` |
+| La persona toma el navegador y el recado sigue | el motor espera; al devolverlo se avisa al recado y, si había aprobación, el pago queda anotado hasta saber el resultado | `RecoveryTests` |
+| Mantenimiento solo al abrir la lista | barredor cada minuto; cada parte aislada | `test_the_sweep_runs_every_part…` |
+| Archivo ilegible = lista vacía que se sobrescribe | se aparta como `.corrupt-<hora>` | `test_an_unreadable_store…` |
+| Instalación copiaba encima | copia previa en `backups/`, intercambio y restauración si falla | — (zsh no disponible aquí) |
+
 ## Recomendación
 
 Hay dos familias de causa, y hay que elegir orden:

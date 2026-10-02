@@ -198,7 +198,19 @@ def _path(home):
 
 def _load(home):
     path = _path(home)
-    return json.loads(path.read_text()) if path.exists() else {'searches': {}, 'quotes': {}}
+    try:
+        data = json.loads(path.read_text()) if path.exists() else {}
+    except (OSError, ValueError):
+        # An unreadable file is set aside, not trusted and not overwritten: prices are checked again.
+        try:
+            path.rename(path.with_name(path.name + f'.corrupt-{int(time.time())}'))
+        except OSError:
+            pass
+        data = {}
+    if not isinstance(data, dict) or not isinstance(data.get('searches'), dict) or not isinstance(data.get('quotes'), dict):
+        data = {'searches': {}, 'quotes': {}}
+    data.setdefault('schema', 1)
+    return data
 
 
 def _save(home, data):

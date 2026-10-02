@@ -998,7 +998,7 @@ class StuckContextTests(Base):
             self.assertEqual(errands.release_stale(self.home, now=NOW + 3600), [])
             self.assertEqual(errands.release_stale(self.home, now=NOW + 3 * 3600), [entry["id"]])
             self.assertEqual(errands.release_stale(self.home, now=NOW + 4 * 3600), [])
-        released.assert_called_once_with(entry["id"])
+        released.assert_called_once_with(entry["id"], home=self.home)
 
 
 class ContextTests(Base):
@@ -1274,3 +1274,87 @@ class PayAgainTests(Base):
         self.assertIn("[comprobar pago]", resumed["resume_message"])
         self.assertIn("No vuelvas a pagar", resumed["resume_message"])
         self.assertIsNone(resumed.get("receipt"))
+
+
+class RecoveryTests(Base):
+    """P2: state that survives a restart, a closed Chrome, a forgotten page and a broken file."""
+
+    def test_the_context_note_lives_under_the_hermes_home_and_an_old_one_moves_there(self):
+        legacy = errands.legacy_context_file("0a0b0c0d0e")
+        legacy.write_text('{"context": "c", "target": "t"}')
+        self.addCleanup(lambda: legacy.unlink(missing_ok=True))
+        path = errands.context_file("0a0b0c0d0e", self.home)
+        self.assertEqual(path.parent, self.home / ".alice" / "errands")
+        self.assertEqual(json.loads(path.read_text())["context"], "c")
+        self.assertFalse(legacy.exists())
+
+    def test_the_preamble_notes_a_context_that_had_to_be_made_again(self):
+        code = errands.context_preamble("0a0b0c0d0e")
+        self.assertIn('_saved["lost"] = True', code)
+        compile(code, "preamble", "exec")
+
+    def test_denying_closes_the_errands_page(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT)
+        with mock.patch.object(errands, "release_context") as released:
+            errands.decide_checkout(self.home, entry["id"], False)
+        released.assert_called_once_with(entry["id"], home=self.home)
+
+    def test_a_page_waiting_for_the_person_for_half_a_day_is_closed_but_an_approved_one_is_kept(self):
+        waiting = self.errand()
+        errands.update(self.home, waiting["id"], now=NOW, status="needs_input")
+        approved = self.errand()
+        errands.request_checkout(self.home, approved["id"], CHECKOUT, now=NOW)
+        errands.decide_checkout(self.home, approved["id"], True, now=NOW)
+        errands.update(self.home, approved["id"], now=NOW, status="needs_input")
+        with mock.patch.object(errands, "release_context") as released:
+            self.assertEqual(errands.release_stale(self.home, now=NOW + 3600), [])
+            self.assertEqual(errands.release_stale(self.home, now=NOW + errands.STALE_WAITING + 1), [waiting["id"]])
+        released.assert_called_once_with(waiting["id"], home=self.home)
+
+    def test_the_engine_waits_while_the_person_holds_the_browser(self):
+        entry = self.errand()
+        held = [True, True, False]
+        gateway = FakeGateway([done("Hecho")])
+        naps = []
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
+                                sleep=naps.append)
+        with mock.patch.object(errands, "_browser_held", side_effect=lambda home: held.pop(0) if held else False):
+            self.assertEqual(engine.run(), "done")
+        self.assertEqual(naps[:2], [5, 5])
+        self.assertEqual(len(gateway.started), 1)
+
+    def test_handing_the_browser_back_tells_running_errands_and_holds_an_approved_payment(self):
+        running = self.errand()
+        errands.update(self.home, running["id"], status="working")
+        approved = self.errand()
+        errands.request_checkout(self.home, approved["id"], CHECKOUT)
+        errands.decide_checkout(self.home, approved["id"], True)
+        waiting = self.errand()
+        errands.update(self.home, waiting["id"], status="needs_input")
+        told = errands.handed_back(self.home)
+        self.assertEqual(set(told), {running["id"], approved["id"]})
+        self.assertIn("relee la página", errands.get(self.home, running["id"])["resume_message"])
+        self.assertIn("No vuelvas a pagar", errands.get(self.home, approved["id"])["resume_message"])
+        self.assertIsNone(errands.get(self.home, waiting["id"]).get("resume_message"))
+        ledger = errands._purchases()
+        self.assertEqual(ledger.open_payment(self.home, approved["session_id"])["shop"], "hsnstore.com")
+        self.assertIsNone(ledger.open_payment(self.home, running["session_id"]))
+
+    def test_the_sweep_runs_every_part_even_when_one_fails(self):
+        with mock.patch.object(errands, "expire_checkouts", side_effect=RuntimeError("x")), \
+                mock.patch.object(errands, "release_stale", return_value=["a"]) as stale, \
+                mock.patch.object(errands, "convert_datum_stops", return_value=[]), \
+                mock.patch.object(errands, "ensure_running", return_value=["b"]):
+            done = errands.sweep(self.home)
+        self.assertEqual(done, {"expired": [], "released": ["a"], "asked": [], "resumed": ["b"]})
+        stale.assert_called_once()
+
+    def test_an_unreadable_store_is_set_aside_never_overwritten(self):
+        path = errands._path(self.home)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json")
+        self.assertEqual(errands.listing(self.home), [])
+        kept = list(path.parent.glob(path.name + ".corrupt-*"))
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0].read_text(), "{not json")

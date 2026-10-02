@@ -176,10 +176,22 @@ def _locked(home: Path):
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
+def set_aside(path: Path) -> None:
+    """An unreadable store is moved beside itself (``.corrupt-<time>``), never overwritten: the
+    next write would otherwise replace the person's errands with an empty list."""
+    try:
+        Path(path).rename(Path(str(path) + f".corrupt-{int(time.time())}"))
+    except OSError:
+        pass
+
+
 def _read(path: Path) -> List[Dict[str, Any]]:
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError:
+        return []
+    except ValueError:
+        set_aside(path)
         return []
     return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
 
@@ -555,8 +567,15 @@ def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float
     if allow and _clean(card_label, 60):
         checkout["card_label"] = _clean(card_label, 60)
     status = "working" if allow else "denied"
-    return update(home, errand_id, now=now, checkout=checkout, status=status,
-                  reason="" if allow else "Has denegado la compra.")
+    decided = update(home, errand_id, now=now, checkout=checkout, status=status,
+                     reason="" if allow else "Has denegado la compra.")
+    if not allow:
+        # Denied while parked: no engine is left to close its page, so it is closed here.
+        try:
+            release_context(errand_id, home=home)
+        except Exception:  # noqa: BLE001
+            pass
+    return decided
 
 
 def approved_message(checkout: Dict[str, Any]) -> str:
@@ -1096,10 +1115,59 @@ def brief(entry: Dict[str, Any]) -> str:
 CONTEXT_FILE = "alice-errand-ctx-{id}.json"
 
 
-def context_file(errand_id: str) -> Path:
+def _default_home() -> Path:
+    """The Hermes home (the root, not a profile's): where Alice keeps her files."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        home = Path(get_hermes_home())
+    except Exception:  # noqa: BLE001
+        home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    return home.parent.parent if home.parent.name == "profiles" else home
+
+
+def legacy_context_file(errand_id: str) -> Path:
     import tempfile
 
     return Path(tempfile.gettempdir()) / CONTEXT_FILE.format(id=re.sub(r"[^a-f0-9]", "", errand_id))
+
+
+def context_file(errand_id: str, home: Optional[Path] = None) -> Path:
+    """Where an errand's browser context and tab are noted: under the Hermes home, private, so a
+    reboot or a temp cleaner never takes it (it was in the system's temp folder). A note left in the
+    old place by an earlier version is moved here the first time it is looked for."""
+    folder = Path(home or _default_home()) / ".alice" / "errands"
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = folder / (re.sub(r"[^a-f0-9]", "", errand_id) + ".ctx.json")
+    legacy = legacy_context_file(errand_id)
+    if not path.exists() and legacy.exists():
+        try:
+            os.replace(legacy, path)
+        except OSError:
+            pass
+    return path
+
+
+def context_lost(home: Path, errand_id: str) -> Optional[str]:
+    """The browser context the errand was using is gone (Chrome closed or crashed, the note lost):
+    a new one was made, empty. Nothing read in the old one stands — not the basket check, not the
+    checkout evidence, not a login — so nothing can be paid on it. Returns the agent's note."""
+    entry = get(home, errand_id)
+    if entry is None:
+        return None
+    checkout = entry.get("checkout") if isinstance(entry.get("checkout"), dict) else None
+    fields: Dict[str, Any] = {"cart_evidence": None, "checkout_evidence": None, "secure_answered": None}
+    if checkout and checkout.get("status") == "pending":
+        fields["checkout"] = {**checkout, "status": "replaced"}
+        fields["status"] = "working" if entry.get("status") == "needs_approval" else entry.get("status")
+    update(home, errand_id, **fields)
+    paid = payment_pending(home, get(home, errand_id) or {})
+    return ("\n\n[Alice] El navegador se reinició y la página de este recado se perdió: la cesta, el inicio de "
+            "sesión y el resumen anteriores ya no valen. "
+            + ("Ya se envió un pago o la persona lo aprobó: NO pagues; busca la confirmación en «Mis pedidos» o el "
+               "correo y registra `purchase_outcome`." if paid else
+               "Vuelve a la ficha del producto, añádelo, inicia sesión si hace falta, `purchase_check_cart` y "
+               "`checkout_request` otra vez. No pagues hasta tener la nueva aprobación."))
 
 
 def context_preamble(errand_id: str) -> str:
@@ -1121,6 +1189,7 @@ def _alice_own_context():
             _saved = _j.load(_file)
     except Exception:
         _saved = {{}}
+    _lost = bool(_saved.get("context")) or bool(_saved.get("lost"))
     try:
         _targets = {{t.get("targetId") for t in cdp("Target.getTargets").get("targetInfos", [])}}
         if _saved.get("daemon") == _dpid and _saved.get("target") in _targets:
@@ -1128,6 +1197,8 @@ def _alice_own_context():
             return _saved
         _contexts = set(cdp("Target.getBrowserContexts").get("browserContextIds", []))
         _ctx = _saved.get("context") if _saved.get("context") in _contexts else None
+        if _ctx is not None:
+            _lost = bool(_saved.get("lost"))
         if _ctx is None:
             _ctx = cdp("Target.createBrowserContext").get("browserContextId")
         _tid = _saved.get("target") if (_saved.get("target") in _targets and _saved.get("context") == _ctx) else None
@@ -1135,6 +1206,9 @@ def _alice_own_context():
             _tid = cdp("Target.createTarget", url="about:blank", browserContextId=_ctx).get("targetId")
         switch_tab(_tid)
         _saved = {{"context": _ctx, "target": _tid, "daemon": _dpid}}
+        if _lost:
+            # alice: the context noted before is gone; the plugin tells the agent nothing read there stands.
+            _saved["lost"] = True
         with open(_path, "w") as _file:
             _j.dump(_saved, _file)
         return _saved
@@ -1193,9 +1267,29 @@ except Exception:
 """
 
 
-def release_context(errand_id: str, browser_ws: Optional[str] = None) -> bool:
+def _cdp_root(home: Optional[Path]) -> str:
+    """Alice's browser as configured (any port), else Chrome's usual debugging port."""
+    try:
+        import importlib.util
+        import sys as _sys
+
+        name = "alice_browser_live"
+        if name not in _sys.modules:
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("browser_live.py"))
+            _sys.modules[name] = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_sys.modules[name])
+        configured = _sys.modules[name].configured_url(Path(home or _default_home()))
+        if configured:
+            parts = urlsplit(configured if "://" in configured else "http://" + configured)
+            return f"http://{parts.netloc}"
+    except Exception:  # noqa: BLE001
+        pass
+    return "http://127.0.0.1:9222"
+
+
+def release_context(errand_id: str, browser_ws: Optional[str] = None, home: Optional[Path] = None) -> bool:
     """The errand is over: its browser context (and its pages) is closed, its note removed."""
-    path = context_file(errand_id)
+    path = context_file(errand_id, home)
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -1209,7 +1303,7 @@ def release_context(errand_id: str, browser_ws: Optional[str] = None) -> bool:
         return False
     try:
         if browser_ws is None:
-            with urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2) as response:  # noqa: S310
+            with urllib.request.urlopen(_cdp_root(home) + "/json/version", timeout=2) as response:  # noqa: S310
                 browser_ws = json.loads(response.read().decode("utf-8"))["webSocketDebuggerUrl"]
         from websockets.sync.client import connect
 
@@ -1408,6 +1502,17 @@ class Engine:
         update(self.home, self.errand_id, status="stuck", reason=reason, **fields)
         return "stuck"
 
+    def _wait_for_browser(self) -> bool:
+        """While the person holds the shared browser, the errand does not start another run: two
+        hands on one page paid twice once. The lease lapses on its own when forgotten."""
+        waited = False
+        while _browser_held(self.home):
+            if self._entry().get("status") != "working":
+                break
+            waited = True
+            self.sleep(5)
+        return waited
+
     def _answer_approval(self, run_id: str, approval: Dict[str, Any]) -> None:
         entry = self._entry()
         request_id = str(approval.get("request_id") or approval.get("id") or "")
@@ -1489,6 +1594,14 @@ class Engine:
                 return entry.get("status", "missing")
             if int(entry.get("runs") or 0) >= MAX_RUNS:
                 return self._stuck("Ha usado todos sus intentos sin terminar.")
+            waited = self._wait_for_browser()
+            if waited:
+                entry = self._entry()
+                if entry.get("status") != "working":
+                    return entry.get("status", "missing")
+                if entry.get("resume_message"):
+                    text = entry["resume_message"]
+                    update(self.home, self.errand_id, resume_message=None)
             try:
                 if not prepare_browser(self.home):
                     raise RuntimeError("Browser not ready")
@@ -1636,6 +1749,87 @@ class Engine:
             return self._stuck(_clean(decision.get("reason") or decision.get("message") or "Se ha atascado.", 200))
 
 
+def _browser_held(home: Path) -> bool:
+    try:
+        import importlib.util
+        import sys as _sys
+
+        name = "alice_browser_live"
+        if name not in _sys.modules:
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("browser_live.py"))
+            _sys.modules[name] = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_sys.modules[name])
+        live = _sys.modules[name]
+        return bool(live.managed(home)) and live.control(home)["holder"] == "human"
+    except Exception:  # noqa: BLE001 — unknown is not held: the browser tool's own gate still waits
+        return False
+
+
+def handed_back(home: Path, now: Optional[float] = None) -> List[str]:
+    """The person gives the browser back. What they did there is not known: on an errand whose
+    checkout they approved they may have paid, so that is written in the ledger first (a second
+    payment is then refused until its outcome is read), and every errand under way is told to read
+    the page again before doing anything. Returns the errands told."""
+    told = []
+    for entry in listing(home):
+        if entry.get("status") not in ACTIVE:
+            continue
+        approved = (isinstance(entry.get("checkout"), dict) and entry["checkout"].get("status") == "approved"
+                    and not isinstance(entry.get("receipt"), dict))
+        if approved:
+            try:
+                _purchases().record(home, entry["checkout"].get("site") or entry.get("site") or "", entry.get("session_id") or "",
+                                    now=now)
+            except Exception:  # noqa: BLE001
+                pass
+            message = (CONTINUATION + " La persona tuvo el navegador y te lo devuelve. Puede haber pagado ella: relee la "
+                       "página; si ves una confirmación de pedido, registra `purchase_outcome`; si no, mira «Mis pedidos» "
+                       "o el correo antes de nada. No vuelvas a pagar sin saberlo.")
+        else:
+            message = (CONTINUATION + " La persona tuvo el navegador y te lo devuelve: relee la página (puede haber "
+                       "cambiado algo) y sigue desde ahí.")
+        if entry.get("status") == "working":
+            # A waiting errand hears the person's own answer next; this note is for one under way.
+            update(home, entry["id"], resume_message=message)
+            told.append(entry["id"])
+    return told
+
+
+def sweep(home: Path, now: Optional[float] = None) -> Dict[str, List[str]]:
+    """What keeps errands honest when nobody is looking: stale checkouts expire, forgotten pages
+    close, stops about a datum become the question, and errands left working by a restart go on.
+    Each part runs on its own: one failing never stops the others."""
+    done: Dict[str, List[str]] = {}
+    for name, work in (("expired", lambda: expire_checkouts(home, now)), ("released", lambda: release_stale(home, now)),
+                       ("asked", lambda: convert_datum_stops(home)), ("resumed", lambda: ensure_running(home))):
+        try:
+            done[name] = work() or []
+        except Exception:  # noqa: BLE001
+            done[name] = []
+    return done
+
+
+_sweeper: Dict[str, threading.Thread] = {}
+
+
+def start_sweeper(home: Path, every: float = 60.0) -> bool:
+    """Runs ``sweep`` every minute in this process, once per home."""
+    key = str(Path(home).resolve())
+    with _threads_lock:
+        if key in _sweeper and _sweeper[key].is_alive():
+            return False
+
+        def loop():
+            while True:
+                time.sleep(every)
+                sweep(Path(home))
+
+        thread = threading.Thread(target=loop, name="alice-errand-sweeper", daemon=True)
+        _sweeper[key] = thread
+    thread.start()
+    return True
+
+
 _threads: Dict[str, threading.Thread] = {}
 _threads_lock = threading.Lock()
 
@@ -1682,7 +1876,7 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
             # A stuck errand keeps its page: its card says «open the browser to see what the shop
             # asks», and «Seguir desde aquí» goes on from that basket. release_stale sweeps it later.
             if final in ("done", "denied", "stopped", "missing"):
-                release_context(errand_id)
+                release_context(errand_id, home=home)
         except Exception as exc:  # noqa: BLE001 — never raised in a thread; the errand says what happened
             reason = f"Error interno: {type(exc).__name__}."
             try:
@@ -1705,16 +1899,22 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
 
 
 STALE_CONTEXT = 2 * 3600
+# An errand waiting for the person this long has its page closed too; when they answer, the
+# errand starts its basket again (context_lost) rather than keeping a tab open for days.
+STALE_WAITING = 12 * 3600
 
 
 def release_stale(home: Path, now: Optional[float] = None) -> List[str]:
-    """The browser pages of errands stuck for hours are closed; the person has moved on."""
+    """The browser pages of errands stuck (or waiting) for hours are closed; the person has moved on."""
     now = now or time.time()
     released = []
     for entry in listing(home):
-        if (entry.get("status") == "stuck" and not entry.get("context_released")
-                and now - float(entry.get("updated_at") or 0) > STALE_CONTEXT):
-            release_context(entry["id"])
+        age = now - float(entry.get("updated_at") or 0)
+        waiting = entry.get("status") in ("needs_approval", "needs_input", "needs_card", "needs_login")
+        if (not entry.get("context_released")
+                and ((entry.get("status") == "stuck" and age > STALE_CONTEXT) or (waiting and age > STALE_WAITING))
+                and not (waiting and isinstance(entry.get("checkout"), dict) and entry["checkout"].get("status") == "approved")):
+            release_context(entry["id"], home=home)
             update(home, entry["id"], now=entry.get("updated_at"), context_released=True)
             released.append(entry["id"])
     return released
@@ -1843,7 +2043,7 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
         pass
     if entry.get("run_id"):
         Gateway(home, entry.get("profile") or "").stop(entry["run_id"])
-    release_context(errand_id)
+    release_context(errand_id, home=home)
     return entry
 
 

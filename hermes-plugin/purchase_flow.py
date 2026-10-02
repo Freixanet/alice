@@ -87,7 +87,13 @@ def _read(path: Path) -> List[Dict[str, Any]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return data if isinstance(data, list) else []
-    except (OSError, ValueError):
+    except OSError:
+        return []
+    except ValueError:
+        try:
+            path.rename(Path(str(path) + f".corrupt-{int(time.time())}"))
+        except OSError:
+            pass
         return []
 
 

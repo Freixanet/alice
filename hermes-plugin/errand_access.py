@@ -29,12 +29,14 @@ def origin(url):
 def target(entry):
     """Use only this errand's pinned target, never the shared browser's busiest tab."""
     errands = module('errands')
-    state = json.loads(errands.context_file(entry['id']).read_text())
     import urllib.request
-    from hermes_constants import get_hermes_home
-    profile_home = Path(get_hermes_home())
-    root = profile_home.parent.parent if profile_home.parent.name == 'profiles' else profile_home
-    endpoint = module('browser_live').configured_url(root)
+    root = errands._default_home()
+    path = errands.context_file(entry['id'], root)
+    try:
+        state = json.loads(path.read_text())
+    except (OSError, ValueError):
+        raise ValueError('El recado todavía no tiene su página abierta en el navegador.') from None
+    endpoint = errands._cdp_root(root)
     state['cdp'] = endpoint
     with urllib.request.urlopen(endpoint.rstrip('/') + '/json/version', timeout=3) as response:
         ws = json.load(response)['webSocketDebuggerUrl']
@@ -58,7 +60,7 @@ def target(entry):
 def page_evaluate(context, expression):
     import urllib.request
     from websockets.sync.client import connect
-    with urllib.request.urlopen(context.get('cdp', 'http://127.0.0.1:9222').rstrip('/') + '/json', timeout=3) as response:
+    with urllib.request.urlopen((context.get('cdp') or module('errands')._cdp_root(None)).rstrip('/') + '/json', timeout=3) as response:
         pages = json.load(response)
     page = next(p for p in pages if p['id'] == context['target'])
     with connect(page['webSocketDebuggerUrl'], open_timeout=3) as sock:

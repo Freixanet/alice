@@ -338,6 +338,29 @@ def _isolate_errand_browser(tool_name=None, args=None, session_id="", **_):
                      "code": errands.context_preamble(session[len(errands.SESSION_PREFIX):]) + args["code"]}}
 
 
+def _errand_context_lost(tool_name=None, result=None, session_id="", **_):
+    """After a browser step in an errand whose browser context had to be made again (Chrome
+    closed or crashed): nothing read in the old one stands, and the agent hears it in this result."""
+    if tool_name != "browser_exec" or not isinstance(result, str):
+        return None
+    try:
+        errands = _errands()
+        session = _session_id(session_id)
+        if not session.startswith(errands.SESSION_PREFIX):
+            return None
+        errand_id = session[len(errands.SESSION_PREFIX):]
+        path = errands.context_file(errand_id, _hermes_root())
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if not saved.get("lost"):
+            return None
+        saved.pop("lost", None)
+        path.write_text(json.dumps(saved), encoding="utf-8")
+        note = errands.context_lost(_hermes_root(), errand_id)
+        return result + note if note else None
+    except Exception:
+        return None
+
+
 def _filter_errand_access(tool_name="", result=None, session_id="", **_):
     if tool_name != 'browser_vault_list':
         return None
@@ -383,6 +406,11 @@ def _guard_errand_access(tool_name=None, args=None, session_id="", **_):
         except Exception:
             return {"action": "block", "message": "No se pudo comprobar el origen del acceso. No lo rellenes."}
     if str(tool_name or "").startswith("browser_") and (entry or {}).get("offer") and (entry or {}).get("secure_answered"):
+        if not errands.context_file(entry["id"], _hermes_root()).exists():
+            # The page that held the typed secret is gone with its context: nothing to shield, and
+            # blocking every browser step here left the errand unable to make a new one.
+            errands.update(_hermes_root(), entry["id"], secure_answered=None, cart_evidence=None)
+            return None
         try:
             _module("errand_access.py", "alice_errand_access").protect_browser_secrets(entry)
         except Exception:
@@ -2209,6 +2237,13 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _isolate_errand_browser)
     ctx.register_hook("pre_tool_call", _guard_errand_access)
     ctx.register_hook("transform_tool_result", _filter_errand_access)
+    # A browser context made again after Chrome closed: what was read in the old one is dropped.
+    ctx.register_hook("transform_tool_result", _errand_context_lost)
+    # Checkouts expire, forgotten pages close and restarted errands go on without anyone looking.
+    try:
+        _errands().start_sweeper(_hermes_root())
+    except Exception:
+        logging.getLogger(__name__).warning("errands: the sweeper could not start", exc_info=True)
     # After reading the web, sending data out or reading secrets needs the person (egress_guard.py).
     ctx.register_hook("pre_tool_call", _guard_egress)
     # A card is filled with the copy for the page open, or bound to the bank's payment page.
