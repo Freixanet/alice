@@ -180,8 +180,9 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
             (["payment", "billing", "/pago", "pay?", "redsys", "stripe", "adyen"], "Payment", "Pago"),
             (["shipping", "delivery", "fulfillment", "envio", "entrega", "address"], "Delivery details", "Datos de envío"),
             (["signin", "login", "account/login", "iniciar"], "Signing in", "Inicio de sesión"),
+            // A basket first: some shops keep it under /checkout (Prozis: /checkout/index).
+            (["/bag", "/cart", "carrito", "cesta", "basket", "checkout/index"], "Basket", "Cesta"),
             (["checkout"], "Checkout", "Checkout"),
-            (["/bag", "/cart", "carrito", "cesta", "basket"], "Basket", "Cesta"),
             (["search", "buscar", "?q=", "?s="], "Searching", "Buscando"),
         ]
         for (keys, english, spanish) in stages where keys.contains(where: address.contains) {

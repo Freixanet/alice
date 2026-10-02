@@ -3690,8 +3690,11 @@ final class AppStore {
         guard let index = arguments.firstIndex(of: "-qaDashboard"), index + 1 < arguments.count else { return }
         dashboardURL = arguments[index + 1]
         dashboardUser = "qa"
-        try? KeyStore.save("qa", account: Self.dashboardAccount)
-        await restoreDashboard()
+        // Straight to the client: an unsigned CI simulator may refuse the keychain write that
+        // restoreDashboard() reads back, and the journey then saw «Add your Hermes dashboard».
+        guard let url = HermesAddress.normalize(dashboardURL) else { return }
+        await dashboard.use(.init(url: url, username: "qa", password: "qa"))
+        dashboardReady = (try? await dashboard.memory()) != nil
         await errandBoard.refresh()
     }
 
