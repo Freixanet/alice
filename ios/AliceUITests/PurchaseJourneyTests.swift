@@ -86,7 +86,13 @@ final class PurchaseJourneyTests: XCTestCase {
             if element.waitForExistence(timeout: 2) { return true }
             (app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app).swipeUp()
         }
-        return element.exists
+        if element.exists { return true }
+        // What the screen offered instead, so a failure names the real label.
+        let tree = XCTAttachment(string: app.debugDescription)
+        tree.name = "accessibility-tree"
+        tree.lifetime = .keepAlways
+        add(tree)
+        return false
     }
 
     private func waitFor(_ texts: [String], within seconds: TimeInterval) {
