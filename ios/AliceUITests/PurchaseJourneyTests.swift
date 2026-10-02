@@ -31,7 +31,7 @@ final class PurchaseJourneyTests: XCTestCase {
         app.launch()
         open(row: "Zapatillas")
         capture("1-checkout-to-approve")
-        tap("Permitir", within: 30)
+        tapContaining("Permitir", within: 30)
         waitFor(["Pedido realizado", "Pedido hecho"], within: 60)
         capture("2-order-placed")
         close()
@@ -44,7 +44,7 @@ final class PurchaseJourneyTests: XCTestCase {
         waitFor(["Comprarla a"], within: 60)
         capture("3-new-price")
         tapContaining("Comprarla a", within: 10)
-        tap("Permitir", within: 60)
+        tapContaining("Permitir", within: 60)
         capture("4-new-total-to-approve")
         waitFor(["Pedido realizado", "Pedido hecho"], within: 60)
         capture("5-order-placed")
@@ -67,14 +67,14 @@ final class PurchaseJourneyTests: XCTestCase {
     private func tap(_ label: String, within seconds: TimeInterval) {
         let button = app.buttons[label]
         XCTAssertTrue(reach(button, within: seconds), "no «\(label)» button")
-        for _ in 0..<4 where !button.isHittable { app.swipeUp() }
+        for _ in 0..<4 where !button.isHittable { app.scrollViews.firstMatch.swipeUp() }
         button.tap()
     }
 
     private func tapContaining(_ text: String, within seconds: TimeInterval) {
         let button = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
         XCTAssertTrue(reach(button, within: seconds), "no button containing «\(text)»")
-        for _ in 0..<4 where !button.isHittable { app.swipeUp() }
+        for _ in 0..<4 where !button.isHittable { app.scrollViews.firstMatch.swipeUp() }
         button.tap()
     }
 
@@ -84,7 +84,7 @@ final class PurchaseJourneyTests: XCTestCase {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             if element.waitForExistence(timeout: 2) { return true }
-            app.swipeUp()
+            (app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app).swipeUp()
         }
         return element.exists
     }
