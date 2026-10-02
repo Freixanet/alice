@@ -24,6 +24,9 @@ struct MessageRow: View {
     var actionsContent: String? = nil
     /// Resolved once for the whole conversation, never independently per reply.
     var errandRefs: [ErrandRef] = []
+    /// The turn this reply closes: the cards the plugin showed in it are drawn here, whatever the
+    /// model called.
+    var optionsWindow: ClosedRange<Date>? = nil
     /// This reply was written by another model than the reply before it (`ModelChange`).
     var modelChange: ModelChange? = nil
     @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
@@ -279,10 +282,16 @@ struct MessageRow: View {
                     // In the order they happened: the model shows the options (or asks) and then writes
                     // its words about them. Drawn under the words, the text arrived afterwards above a
                     // card already on screen, and the chat read out of order.
-                    ForEach(PurchaseOptionSet.cardCalls(message.tools)) { call in
+                    let cardCalls = PurchaseOptionSet.cardCalls(message.tools)
+                    ForEach(cardCalls) { call in
                         PurchaseOptionsCard(detail: call.detail, language: ChatLanguage.of(message.content),
                                             session: message.mentionSessionID ?? store.shownConversation?.hermesSessionID,
                                             replyProfile: message.mentionProfile)
+                    }
+                    if let optionsWindow, let session = message.mentionSessionID ?? store.shownConversation?.hermesSessionID, !session.isEmpty {
+                        PurchaseTurnSets(session: session, window: optionsWindow, pending: message.pending,
+                                         excluding: Set(cardCalls.compactMap { PurchaseOptionSet.key(fromDetail: $0.detail) }),
+                                         language: ChatLanguage.of(message.content), replyProfile: message.mentionProfile)
                     }
                     ForEach(message.tools.filter { AskPerson.isTool($0.name) }) { call in
                         if let ask = AskPerson.parse(call.detail),

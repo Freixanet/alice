@@ -1671,6 +1671,18 @@ def _errand_turn(session_id="", user_message=None, **_):
             _PURCHASE_REQUESTS[session] = str(user_message or "")
             flow.remember_request(_hermes_root(), session, str(user_message or ""))
             _LOOKED.discard(session)
+            again = flow.reshow(_hermes_root(), session, str(user_message or ""))
+            if again:
+                # Asked again for what was already searched here: the same cards are back on
+                # screen (the app draws them under this reply). No new search, no answer from
+                # memory with nothing to tap.
+                best = next((o for o in again["options"] if o.get("recommended")), again["options"][0])
+                return {"context": (
+                    "[Alice · compra] La persona vuelve a pedir lo mismo. Las tarjetas de esa búsqueda ya se "
+                    f"muestran otra vez bajo tu respuesta ({len(again['options'])} formatos comprobados; la marcada "
+                    f"«Recomendada» es «{best.get('title')} · {best.get('variant') or ''} · {best.get('price')}»). "
+                    "No busques ni compruebes nada de nuevo salvo que pida otra cosa: recomienda esa en una o dos "
+                    "líneas, di que toque su tarjeta, y termina el turno.")}
             note = flow.turn_note(_purchase_context())
             search = _module('purchase_prozis.py', 'alice_purchase_prozis').search_request(
                 str(user_message or ''), _purchase_locale()[0])

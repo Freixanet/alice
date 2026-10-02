@@ -104,7 +104,62 @@ struct PurchaseOptionSet: Hashable, Sendable {
 
 }
 
+/// An option set the plugin showed in a chat, by when it showed it (`purchase_flow.sets_between`).
+struct PurchaseSetSummary: Hashable, Sendable {
+    let key: String
+    let at: Date
+    let chosen: String?
+    /// Other keys the same set answers to (the one the app computes from the model's arguments).
+    var aliases: [String] = []
+
+    /// Whether a card already drawn under `keys` is this set.
+    func isAmong(_ keys: Set<String>) -> Bool { keys.contains(key) || aliases.contains(where: keys.contains) }
+
+    static func parse(_ row: [String: Any]) -> PurchaseSetSummary? {
+        guard let key = row["key"] as? String, let at = row["at"] as? Double else { return nil }
+        return PurchaseSetSummary(key: key, at: Date(timeIntervalSince1970: at), chosen: row["chosen"] as? String,
+                                  aliases: row["aliases"] as? [String] ?? [])
+    }
+}
+
+/// The turn each reply answers, as the span between the request before it and the request after
+/// it: the cards the plugin showed in that span belong under that reply, whether or not the
+/// model's call for them is in the transcript (the plugin showed them itself at verification, or
+/// the model answered from memory and called nothing). One window per turn, on its last reply.
+enum PurchaseTurnWindows {
+    static func windows(messages: [Message]) -> [String: ClosedRange<Date>] {
+        var result: [String: ClosedRange<Date>] = [:]
+        var since: Date?
+        var lastReply: Message?
+        func close(at end: Date) {
+            if let reply = lastReply, let since {
+                result[reply.id] = since...end
+            }
+            lastReply = nil
+        }
+        for message in messages {
+            if message.role == .user {
+                close(at: message.createdAt)
+                since = message.createdAt
+            } else if message.role == .assistant, since != nil {
+                lastReply = message
+            }
+        }
+        close(at: .distantFuture)
+        return result
+    }
+}
+
 extension DashboardClient {
+    /// The sets shown in `session` during `window`, oldest first.
+    func purchaseSets(session: String, window: ClosedRange<Date>) async throws -> [PurchaseSetSummary] {
+        let encoded = session.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        var path = "api/plugins/alice/purchase/sets?session=\(encoded)&since=\(window.lowerBound.timeIntervalSince1970)"
+        if window.upperBound != .distantFuture { path += "&until=\(window.upperBound.timeIntervalSince1970)" }
+        let object = try await get(path)
+        return (object["sets"] as? [[String: Any]] ?? []).compactMap(PurchaseSetSummary.parse)
+    }
+
     /// The verified options for `key`; nil when the plugin no longer has them.
     func purchaseOptions(_ key: String, session: String) async throws -> PurchaseOptionSet? {
         do {

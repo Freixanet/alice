@@ -4941,6 +4941,9 @@ final class AppStore {
     }
     func errandIcon(_ id: String) async throws -> Data? { try await dashboard.errandIcon(id) }
     func purchaseOptions(_ key: String, session: String) async throws -> PurchaseOptionSet? { try await dashboard.purchaseOptions(key, session: session) }
+    func purchaseSets(session: String, window: ClosedRange<Date>) async throws -> [PurchaseSetSummary] {
+        try await dashboard.purchaseSets(session: session, window: window)
+    }
     func refreshCheckout(_ id: String) async throws -> Errand? { try await dashboard.refreshCheckout(id) }
     func errandCardReady(_ id: String, label: String) async throws -> Errand? {
         try await dashboard.errandCardReady(id, label: label)

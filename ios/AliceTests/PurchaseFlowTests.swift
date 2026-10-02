@@ -28,6 +28,27 @@ final class PurchaseFlowTests: XCTestCase {
         XCTAssertFalse(PurchaseOptionSet.isTool("purchase_verify"))
     }
 
+    func testEachTurnHasOneWindowOnItsLastReply() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let messages = [
+            Message(id: "u1", role: .user, content: "Compra creatina", createdAt: t0),
+            Message(id: "a1", role: .assistant, content: "Buscando", createdAt: t0.addingTimeInterval(1)),
+            Message(id: "a2", role: .assistant, content: "La recomendada es…", createdAt: t0.addingTimeInterval(40)),
+            Message(id: "u2", role: .user, content: "[elección:a1b2c3d4-1] Creatina", createdAt: t0.addingTimeInterval(100)),
+            Message(id: "a3", role: .assistant, content: "La estoy preparando", createdAt: t0.addingTimeInterval(110)),
+        ]
+        let windows = PurchaseTurnWindows.windows(messages: messages)
+        XCTAssertEqual(Set(windows.keys), ["a2", "a3"])
+        XCTAssertEqual(windows["a2"], t0...t0.addingTimeInterval(100))
+        XCTAssertEqual(windows["a3"]?.lowerBound, t0.addingTimeInterval(100))
+        XCTAssertEqual(windows["a3"]?.upperBound, .distantFuture)
+        XCTAssertEqual(PurchaseSetSummary.parse(["key": "0a1b2c3d", "at": 1_800_000_050.0])?.key, "0a1b2c3d")
+        let aliased = PurchaseSetSummary.parse(["key": "0a1b2c3d", "at": 1_800_000_050.0, "aliases": ["c41bf2d0"]])
+        XCTAssertTrue(aliased?.isAmong(["c41bf2d0"]) == true)
+        XCTAssertFalse(aliased?.isAmong(["ffffffff"]) == true)
+        XCTAssertNil(PurchaseSetSummary.parse(["key": "0a1b2c3d"]))
+    }
+
     func testChoiceTokenIsHiddenWithoutChangingWhatIsSubmitted() {
         let choice = "[elección:a1b2c3d4-1] Creatina · HSN · 27,98 €"
         XCTAssertEqual(PurchaseChoice.id(in: choice), "a1b2c3d4-1")

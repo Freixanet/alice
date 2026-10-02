@@ -162,6 +162,37 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(len(flow._read(flow._path(self.home))), 1)
 
 
+class TurnSetsTests(unittest.TestCase):
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp())
+
+    def shown(self, now, request="quiero comprar creatina monohidrato", pages=("https://a.example/p", "https://b.example/p")):
+        flow.remember_request(self.home, "chat-1", request, now=now)
+        out = flow.present(self.home, "chat-1", {"options": [option(url=page) for page in pages]},
+                           now=now, exact_item=True)
+        return out["set"]
+
+    def test_the_sets_of_a_turn_are_found_by_when_they_were_shown(self):
+        first = self.shown(NOW)
+        second = self.shown(NOW + 100, pages=("https://c.example/p", "https://d.example/p"))
+        between = flow.sets_between(self.home, "chat-1", NOW + 50, NOW + 200, now=NOW + 300)
+        self.assertEqual([s["key"] for s in between], [second])
+        self.assertEqual([s["key"] for s in flow.sets_between(self.home, "chat-1", 0, now=NOW + 300)], [first, second])
+        self.assertEqual(flow.sets_between(self.home, "chat-2", 0, now=NOW + 300), [])
+
+    def test_asking_again_shows_the_same_cards_again_instead_of_a_new_search(self):
+        key = self.shown(NOW)
+        again = flow.reshow(self.home, "chat-1", "Cómprame la creatina monohidrato", now=NOW + 2400)
+        self.assertEqual(again["key"], key)
+        # Stamped with this moment, so the app draws it under this turn's reply.
+        self.assertEqual([s["key"] for s in flow.sets_between(self.home, "chat-1", NOW + 2000, now=NOW + 3000)], [key])
+        # Another product, another shop, or a set already chosen: a new search.
+        self.assertIsNone(flow.reshow(self.home, "chat-1", "compra pienso para el perro", now=NOW + 2500))
+        self.assertIsNone(flow.reshow(self.home, "chat-1", "compra creatina creapure de hsn", now=NOW + 2500))
+        flow.choose(self.home, "chat-1", key + "-1", now=NOW + 2500)
+        self.assertIsNone(flow.reshow(self.home, "chat-1", "quiero comprar creatina monohidrato", now=NOW + 2600))
+
+
 class WordsTests(unittest.TestCase):
     def test_a_purchase_request(self):
         for text in ("compra un iphone 18 pro max", "Pídeme el pienso de siempre", "buy a lamp",

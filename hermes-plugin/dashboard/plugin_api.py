@@ -2611,6 +2611,20 @@ async def purchase_options(key: str, session: str = "") -> JSONResponse:
     return JSONResponse(await asyncio.to_thread(read), headers=_NO_STORE)
 
 
+@router.get("/purchase/sets")
+async def purchase_sets(session: str = "", since: float = 0, until: Optional[float] = None) -> JSONResponse:
+    """The option sets shown in a chat between two moments (one turn): the app draws their cards
+    under that turn's reply, whatever the model called or did not call."""
+    if not session:
+        raise HTTPException(status_code=400, detail="session is required")
+
+    def read():
+        flow = _sibling("purchase_flow.py", "alice_purchase_flow")
+        return {"sets": flow.sets_between(_hermes_root(), session, since, until)}
+
+    return JSONResponse(await asyncio.to_thread(read), headers=_NO_STORE)
+
+
 def _errand_or_404(errand_id: str) -> Dict[str, Any]:
     entry = _errands_module().get(_hermes_root(), errand_id)
     if entry is None:

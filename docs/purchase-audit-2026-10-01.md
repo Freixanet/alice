@@ -39,6 +39,19 @@ en vez de ser asíncrona.
 | Las tarjetas solo existían si el modelo llamaba a `purchase_options` con los argumentos correctos y la llamada acababa bien. Aquí verificó la cesta, escribió el texto y no hubo tarjeta que tocar. Además `purchase_options` fallaba entero por un `search_id` equivocado, un formato omitido o una recotización lenta. | El plugin enseña las tarjetas él mismo en cuanto termina la verificación (`purchase_prices.auto_present`, desde `purchase_verify`); el resultado de esa llamada lleva el `set` y la app lo pinta desde ahí (`PurchaseOptionSet.cardCalls`). La llamada del modelo solo añade su recomendación sobre las mismas tarjetas (`_adopt`, con alias de clave para la relectura del transcript). `search_id` erróneo, formatos omitidos y recotizaciones fallidas ya no impiden mostrar; lo no comprobado se dice. Tests: `test_the_cards_go_up_from_the_evidence_and_the_models_call_only_decorates_them`, `test_a_models_call_with_a_wrong_search_id_or_a_missing_format_still_shows_cards`, iOS `testTheCardsComeFromTheVerificationAndTheOptionsCallIsTheSameCards`. |
 | El precio de las 80 cápsulas salió a 59,98 € (anoche 29,99 €) | No comprobable desde aquí (Prozis devuelve 429 al contenedor). El importe sale del elemento `.item-price-info .price` de la cesta; si Prozis muestra el precio sin descuento en otro nodo sin tachar, se lee ese. Pendiente: mirar `~/.alice/purchase-evidence.json` (campo `price` y `coupon_results` de la cotización de las 02:55). |
 
+### Captura del 2 oct (03:35): otra vez texto sin tarjetas
+
+Compatible con un modelo que contesta de memoria con las cotizaciones del turno anterior, sin
+llamar a ninguna herramienta («Thought for a moment» y respuesta directa). Dos cambios que no
+dependen del modelo: (1) la app pinta las tarjetas de cualquier conjunto que el plugin haya
+mostrado durante la ventana del turno (`GET /purchase/sets`, `PurchaseTurnWindows`,
+`PurchaseTurnSets`), haya o no llamada de herramienta en el transcript; (2) una petición
+repetida de lo mismo vuelve a mostrar el conjunto anterior en ese turno sin buscar
+(`purchase_flow.reshow`), y el modelo recibe solo la orden de recomendar. Tests:
+`test_the_sets_of_a_turn_are_found_by_when_they_were_shown`,
+`test_asking_again_shows_the_same_cards_again_instead_of_a_new_search`,
+`test_asking_again_brings_the_cards_back_without_a_search`, iOS `testEachTurnHasOneWindowOnItsLastReply`.
+
 ### Los 18 problemas históricos y qué test los sujeta
 
 | # | Problema | Test |

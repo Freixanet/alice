@@ -366,7 +366,8 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
     key = kept[0]["id"].split("-")[0]
     with _locked(home) as path:
         sets = [s for s in _read(path) if now - float(s.get("at") or 0) < KEEP and not (s.get("key") == key and s.get("session") == _clean(session, 160))]
-        sets.append({"key": key, "session": _clean(session, 160), "options": kept, "chosen": None, "at": now})
+        sets.append({"key": key, "session": _clean(session, 160), "options": kept, "chosen": None, "at": now,
+                     "request": _clean(requested, 300)})
         _write(path, sets)
     return {"ok": True, "set": key, "options": [{"id": o["id"], "title": o["title"], "price": o["price"]}
                                                 for o in kept],
@@ -379,6 +380,51 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
                      + (" Precios corregidos al que la tienda cobra en la cesta (ya lo vio un recado): "
                         + "; ".join(f"{a['title']} {a['real']}" for a in adjusted) + ". Usa esos."
                         if adjusted else ""))}
+
+
+def sets_between(home: Path, session: str, since: float, until: Optional[float] = None,
+                 now: Optional[float] = None) -> List[Dict[str, Any]]:
+    """The option sets shown in a chat during one turn (by when they were shown), newest last: the
+    app draws their cards under that turn's reply whether or not the model's call for them is in
+    the transcript (it showed them itself, or it answered without calling anything)."""
+    now = now or time.time()
+    found = [s for s in _read(_path(home)) if s.get("session") == session and s.get("options")
+             and now - float(s.get("at") or 0) < KEEP
+             and float(s.get("at") or 0) >= float(since or 0)
+             and (until is None or float(s.get("at") or 0) < float(until))]
+    found.sort(key=lambda s: float(s.get("at") or 0))
+    return [{"key": s["key"], "at": s["at"], "chosen": s.get("chosen"), "count": len(s["options"]),
+             "aliases": list(s.get("aliases") or [])} for s in found]
+
+
+def _words(text: Any) -> set:
+    """The product words of a request, as six-letter stems: not the asking («compra», «quiero»)."""
+    return {w[:6] for w in _normalized(text).split()
+            if len(w) > 3 and not PURCHASE_REQUEST.search(w) and w not in ("quiero", "necesito", "puedes", "podrias", "porfa")}
+
+
+def reshow(home: Path, session: str, request: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """The person asks again for what was already searched and shown in this chat (nothing chosen):
+    the same cards are shown again, now, instead of a new search or an answer from memory with no
+    cards under it. The set is stamped with this moment so it lands under this turn's reply."""
+    now = now or time.time()
+    asked = _words(request)
+    identity = requested_identity(request)
+    if not asked:
+        return None
+    with _locked(home) as path:
+        sets = _read(path)
+        for found in sorted(sets, key=lambda s: -float(s.get("at") or 0)):
+            if (found.get("session") != session or found.get("chosen") or not found.get("options")
+                    or now - float(found.get("at") or 0) >= KEEP):
+                continue
+            words = _words(found.get("request") or "") or {w for o in found["options"] for w in _words(o.get("title"))}
+            same_identity = not found.get("request") or requested_identity(found["request"]) == identity
+            if asked & words and same_identity:
+                found["at"] = now
+                _write(path, sets)
+                return found
+    return None
 
 
 def options_set(home: Path, key: str, session: Optional[str] = None,

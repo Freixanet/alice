@@ -191,3 +191,37 @@ struct PurchaseOptionsCard: View {
                                                          "Abre el producto para comprarlo con Alice."))
     }
 }
+
+/// The cards of the sets the plugin showed during one turn, found by when they were shown rather
+/// than by a tool call in the transcript: the plugin shows them itself once the formats are
+/// checked, and a reply that answers from memory («toca su tarjeta») still gets its cards.
+struct PurchaseTurnSets: View {
+    let session: String
+    let window: ClosedRange<Date>
+    var pending = false
+    var excluding: Set<String> = []
+    var language: ChatLanguage = .spanish
+    var replyProfile: String? = nil
+
+    @Environment(AppStore.self) private var store
+    @State private var sets: [PurchaseSetSummary] = []
+
+    var body: some View {
+        // A real container: a modifier on a bare ForEach lands on each card, and with no card yet
+        // the fetch would never run.
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(sets.filter { !$0.isAmong(excluding) }, id: \.key) { set in
+                PurchaseOptionsCard(detail: nil, language: language, session: session, replyProfile: replyProfile, key: set.key)
+            }
+        }
+        .task(id: "\(session)|\(window.lowerBound.timeIntervalSince1970)|\(pending)") {
+            // While the reply is still being written the sets may not exist yet: look a few times.
+            for attempt in 0..<(pending || window.upperBound == .distantFuture ? 12 : 1) {
+                if let found = try? await store.purchaseSets(session: session, window: window) { sets = found }
+                guard sets.isEmpty, attempt < 11, !Task.isCancelled else { return }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+}
+

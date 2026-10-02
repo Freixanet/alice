@@ -148,6 +148,20 @@ class ErrandHookTests(unittest.TestCase):
         self.assertEqual(len(started), 1)
         self.assertEqual((started[0]["status"], started[0]["blocked"]["price"]), ("stuck", "29,98 €"))
 
+    def test_asking_again_brings_the_cards_back_without_a_search(self):
+        first, _ = self.shown()
+        self.flow.remember_request(self.home, "chat-9", "Compra la creatina creapure de prozis")
+        note = self.plugin._errand_turn(session_id="chat-9", user_message="Compra la creatina creapure de prozis")
+        self.assertIn("ya se muestran otra vez", note["context"])
+        self.assertIn("Creatina", note["context"])
+        self.assertNotIn("purchase_discover", note["context"])
+        # Chosen: the next request is a new purchase and searches again.
+        self.flow.choose(self.home, "chat-9", first)
+        hermes = types.SimpleNamespace(get_hermes_home=lambda: self.home)
+        with mock.patch.dict(sys.modules, {"hermes_constants": hermes}):
+            note = self.plugin._errand_turn(session_id="chat-9", user_message="Compra la creatina creapure de prozis")
+        self.assertIn("purchase_discover", note["context"])
+
     def test_an_appointment_asked_with_pide_is_an_errand_not_a_purchase(self):
         handler = self.tools()["errand_start"]["handler"]
         hermes = types.SimpleNamespace(get_hermes_home=lambda: self.home)
