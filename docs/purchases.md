@@ -106,6 +106,10 @@ arranque en frío, las cestas aisladas y la apertura de nuevas pestañas. El res
 la aprobación exacta y el recibo se ejercitan con fixtures; no se visita ninguna
 tienda ni se paga. Véase [verificación](verification.md#purchase-browser-integration).
 
+## Telling the person
+
+Hermes has no push channel to the phone. Alice says an errand needs the person (an approval, a question, a card, a shop login or code) or ended when iOS wakes her in the background and when she comes back to the foreground, comparing each errand's state with the last one read; the icon's badge counts the errands waiting. That is opportunistic: iOS decides when, and never after a force-quit. With the Mac's notifier (Bark) the same moments arrive at once, including a stop where the payment is not confirmed; the phone then stays quiet so nothing arrives twice. Under an errand's buttons Alice says why they wait (sending, checking with the Mac, Mac unreachable); a failed answer reads as one short sentence with «Reintentar», a cancelled Face ID says nothing was paid, and an answer the Mac took despite a timeout is not shown as an error. The routes are idempotent: the same «Permitir», answers or «Seguir» sent twice stand once; answers to questions nobody asked and confirmations without their id are refused.
+
 ## Any shop: the shop engine
 
 `hermes-plugin/shop_engine.py` reads a shop without selectors from the model. It detects the platform from the page, not the domain, and answers in three tiers, each reporting how (`how`):

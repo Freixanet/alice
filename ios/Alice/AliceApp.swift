@@ -162,6 +162,10 @@ struct AliceApp: App {
                         // it comes back, and it is idempotent.
                         store.startWatchingLiveEvents()
                         await notifier.post(store.syncEvents())
+                        // Errands that need the person or ended while Alice was away.
+                        let errands = await store.errandEvents()
+                        await notifier.post(errands.events)
+                        if let waiting = errands.waiting { await notifier.setBadge(waiting) }
                         await store.pushDiagnostics()
                         drainPendingRoute()
                     }
@@ -260,6 +264,11 @@ struct AliceApp: App {
         await store.feed.sync()
         guard notifier.permission.canDeliver else { return }
         await notifier.post(store.syncEvents())
+        // An errand waiting for an approval, a code or an answer is said here, the one moment
+        // Alice gets while closed; and the badge counts them.
+        let errands = await store.errandEvents()
+        await notifier.post(errands.events)
+        if let waiting = errands.waiting { await notifier.setBadge(waiting) }
     }
 
     /// A share extension (or another app) handed Alice a paragraph or a link.

@@ -450,6 +450,14 @@ No comprobado: tiendas reales (anti-bot, precios tras login, checkout en iframe)
 | Archivo ilegible = lista vacía que se sobrescribe | se aparta como `.corrupt-<hora>` | `test_an_unreadable_store…` |
 | Instalación copiaba encima | copia previa en `backups/`, intercambio y restauración si falla | — (zsh no disponible aquí) |
 
+## Ronda 8 · P3 la persona (2 oct)
+
+- Avisos de recados en el iPhone sin APNs (`ErrandAlerts`, segundo plano y primer plano), insignia con los que esperan; el notificador del Mac suma `needs_login` y la parada con pago sin confirmar.
+- Razón de espera bajo los botones, «Reintentar», Face ID cancelado dicho, errores en una frase, y una respuesta que el Mac sí tomó no se muestra como error.
+- Rutas idempotentes (`/checkout`, `/answer`, `/continue`) y validación (`/answer` solo ids preguntados, `/approval` exige su `request_id`): `test_errands_api` 14/14.
+- Corregido en el plan: `stopped`/`denied` no se avisan (los hizo la persona; el test existente lo fija) y la variante de la hoja de producto no viaja porque la hoja solo muestra la de la propia opción.
+- No comprobado aquí: compilación iOS (sin Xcode en este contenedor).
+
 ## Recomendación
 
 Hay dos familias de causa, y hay que elegir orden:

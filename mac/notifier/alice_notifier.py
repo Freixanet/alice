@@ -212,6 +212,7 @@ ERRAND_SENTENCES = {
     'needs_approval': ('Un recado necesita tu aprobación', 'timeSensitive'),
     'needs_input': ('Un recado tiene una pregunta para ti', 'timeSensitive'),
     'needs_card': ('Un recado necesita una tarjeta para pagar', 'timeSensitive'),
+    'needs_login': ('Un recado necesita que inicies sesión en la tienda', 'timeSensitive'),
     'done': ('Un recado ha terminado', 'active'),
     'stuck': ('Un recado se ha atascado', 'active'),
 }
@@ -241,6 +242,10 @@ def poll_errands(state, home, send, now=None):
         if now - float(entry.get('updated_at') or now) > FRESH_SECONDS:
             continue
         body, level = ERRAND_SENTENCES[status]
+        receipt = entry.get('receipt') if isinstance(entry.get('receipt'), dict) else {}
+        if status == 'stuck' and receipt.get('outcome') == 'unknown':
+            # Money may be out: said as such, and at once.
+            body, level = 'Un recado se ha parado y no está confirmado si el pago se hizo', 'timeSensitive'
         message = ('Alice', body, 'alice://errand?' + urllib.parse.urlencode({'id': errand_id}))
         send(*message, level=level)
         sent.append(message)

@@ -4926,6 +4926,21 @@ final class AppStore {
     }
     func deleteGoal(_ id: String) async throws { try await dashboard.deleteGoal(id) }
     func listErrands() async throws -> [Errand] { try await dashboard.errands() }
+
+    /// Errands that now need the person, or ended, since they were last read (`ErrandAlerts`).
+    /// Quiet when the Mac's notifier already relays them through Bark, and on the first reading.
+    /// Also returns how many wait for the person, for the icon's badge (nil when unread).
+    func errandEvents() async -> (events: [AliceEvent], waiting: Int?) {
+        guard dashboardReady, let errands = try? await listErrands() else { return ([], nil) }
+        let key = "alice.errands.seen"
+        let fingerprint = currentInstallationFingerprint ?? Self.installationFingerprint(dashboardURL)
+        // Kept per installation: another Mac's errands are never compared with these.
+        let stored = defaults.data(forKey: key)
+            .flatMap { try? JSONDecoder().decode([String: [String: String]].self, from: $0) }
+        let result = ErrandAlerts.digest(previous: stored?[fingerprint], current: errands, installation: fingerprint)
+        if let data = try? JSONEncoder().encode([fingerprint: result.seen]) { defaults.set(data, forKey: key) }
+        return (barkRelays ? [] : result.events, ErrandAlerts.waiting(errands))
+    }
     func decideCheckout(_ id: String, checkoutID: String, allow: Bool, card: String = "") async throws -> Errand? {
         try await dashboard.decideCheckout(id, checkoutID: checkoutID, allow: allow, card: card)
     }

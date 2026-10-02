@@ -271,6 +271,17 @@ class ErrandNotifierTests(unittest.TestCase):
         self.poll()
         self.assertEqual([m[1] for m, _ in self.sent], ['Un recado ha terminado', 'Un recado se ha atascado'])
 
+    def test_a_shop_login_and_an_unconfirmed_payment_ring_at_once(self):
+        self.errands({'id': 'a', 'status': 'working'}, {'id': 'b', 'status': 'working'})
+        self.poll()
+        now = time.time()
+        self.errands({'id': 'a', 'status': 'needs_login', 'updated_at': now},
+                     {'id': 'b', 'status': 'stuck', 'updated_at': now, 'receipt': {'outcome': 'unknown'}})
+        self.poll()
+        self.assertEqual([(m[1], kw['level']) for m, kw in self.sent],
+                         [('Un recado necesita que inicies sesión en la tienda', 'timeSensitive'),
+                          ('Un recado se ha parado y no está confirmado si el pago se hizo', 'timeSensitive')])
+
     def test_nothing_is_announced_when_watching_starts(self):
         self.errands({'id': 'abc', 'status': 'needs_approval', 'updated_at': time.time()})
         self.poll()

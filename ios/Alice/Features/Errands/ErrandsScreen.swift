@@ -154,6 +154,8 @@ struct ErrandDetailScreen: View {
                         errand: errand, snapshot: preview == nil ? .live : .none,
                         logoID: preview == nil ? errand.id : nil,
                         sending: board.sending.contains(errand.id), problem: board.problems[errand.id],
+                        waiting: preview == nil ? board.waitingReason(errand) : nil,
+                        onRetryLast: preview == nil && board.canRetry(errand) ? { Task { await board.retry(errand) } } : nil,
                         onOpenBrowser: { if preview == nil { browsing = true } },
                         onDecide: { allow, card in if preview == nil { Task { await board.decide(errand, allow: allow, card: card) } } },
                         onAnswer: { answers in if preview == nil { Task { await board.answerQuestions(errand, answers) } } },

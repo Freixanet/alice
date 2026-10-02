@@ -98,10 +98,14 @@ class ErrandRoutesTests(unittest.TestCase):
         self.assertEqual(len(self.resumed), 1)
         self.assertTrue(self.resumed[0][1].startswith(self.errands.APPROVED_PREFIX))
         self.assertIn("27,98 €", self.resumed[0][1])
-        # A second tap, or a stale card, changes nothing.
+        # A second tap, or a retry after a timeout, changes nothing and says it stands.
         again = self.client.post(self.url(f"/{entry['id']}/checkout"),
                                  json={"decision": "allow", "checkout_id": checkout_id})
-        self.assertEqual(again.status_code, 409)
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(len(self.resumed), 1)
+        # The opposite answer to a decided checkout is refused.
+        self.assertEqual(self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                          json={"decision": "deny", "checkout_id": checkout_id}).status_code, 409)
 
     def test_an_approval_for_another_checkout_is_refused(self):
         entry = self.waiting()
@@ -125,9 +129,39 @@ class ErrandRoutesTests(unittest.TestCase):
         self.assertEqual(self.client.post(self.url(f"/{entry['id']}/answer"),
                                           json={"answers": {"size": "500 g"}}).status_code, 409)
         self.errands.ask(self.home, entry["id"], "Tamaño", [{"id": "size", "question": "¿Qué tamaño?"}])
+        # An answer to a question nobody asked is refused, never passed to the agent.
+        self.assertEqual(self.client.post(self.url(f"/{entry['id']}/answer"),
+                                          json={"answers": {"card_number": "4242"}}).status_code, 400)
         answer = self.client.post(self.url(f"/{entry['id']}/answer"), json={"answers": {"size": "500 g"}})
         self.assertEqual(answer.status_code, 200)
         self.assertEqual(self.resumed, [(entry["id"], "[respuesta:size] 500 g")])
+
+    def test_answers_sent_twice_stand_once(self):
+        entry = self.errands.create(self.home, "Compra la creatina", title="Comprar Creapure")
+        self.errands.ask(self.home, entry["id"], "Tamaño", [{"id": "size", "question": "¿Qué tamaño?"}])
+        first = self.client.post(self.url(f"/{entry['id']}/answer"), json={"answers": {"size": "500 g"}})
+        self.assertEqual(first.status_code, 200)
+        self.errands.update(self.home, entry["id"], status="working", questions=None)  # what resume does
+        again = self.client.post(self.url(f"/{entry['id']}/answer"), json={"answers": {"size": "500 g"}})
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(len(self.resumed), 1)
+        other = self.client.post(self.url(f"/{entry['id']}/answer"), json={"answers": {"size": "1 kg"}})
+        self.assertEqual(other.status_code, 409)
+
+    def test_a_confirmation_is_answered_only_by_its_own_id(self):
+        entry = self.errands.create(self.home, "Compra", title="Comprar")
+        self.errands.update(self.home, entry["id"], status="needs_approval",
+                            approval={"run_id": "r", "request_id": "req-1", "title": "Login"})
+        self.assertEqual(self.client.post(self.url(f"/{entry['id']}/approval"), json={"choice": "once"}).status_code, 400)
+        self.assertEqual(self.client.post(self.url(f"/{entry['id']}/approval"),
+                                          json={"choice": "once", "request_id": "req-2"}).status_code, 409)
+
+    def test_continue_pressed_twice_stands_once(self):
+        entry = self.errands.create(self.home, "Compra", title="Comprar", offer={"quote_ref": "pq-1", "option_id": "k-1"})
+        self.errands.update(self.home, entry["id"], status="working")
+        answer = self.client.post(self.url(f"/{entry['id']}/continue"), json={"accept_price": False})
+        self.assertEqual(answer.status_code, 200)
+        self.assertEqual(self.resumed, [])
 
     def test_stop_marks_it_stopped(self):
         entry = self.errands.create(self.home, "Compra la creatina", title="Comprar Creapure")

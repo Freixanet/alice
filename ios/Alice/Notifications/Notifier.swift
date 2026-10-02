@@ -118,6 +118,12 @@ final class Notifier {
         for event in events { await post(event) }
     }
 
+    /// The icon's badge: how many errands wait for the person. Cleared at zero.
+    func setBadge(_ count: Int) async {
+        guard permission.canDeliver else { return }
+        try? await UNUserNotificationCenter.current().setBadgeCount(max(0, count))
+    }
+
     /// Takes back a notification whose subject is over.
     ///
     /// A banner still offering to answer a question that has been answered is

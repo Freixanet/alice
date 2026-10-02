@@ -19,6 +19,8 @@ final class ErrandBoard {
     /// The shop's logo, by errand; an errand looked up and without one is left out for good.
     private(set) var logos: [String: UIImage] = [:]
     @ObservationIgnored private var lookedUp: Set<String> = []
+    /// The last answer sent to each errand, so «Reintentar» sends the same one again.
+    @ObservationIgnored private var lastAction: [String: () async throws -> Errand?] = [:]
 
     @ObservationIgnored private weak var store: AppStore?
     @ObservationIgnored private var watchers = 0
@@ -33,6 +35,24 @@ final class ErrandBoard {
     }
 
     var needingPerson: [Errand] { errands.filter { $0.status.needsPerson } }
+
+    /// Why an errand's buttons wait, in a few words; nil when they do not.
+    func waitingReason(_ errand: Errand) -> String? {
+        let language = errand.language
+        if sending.contains(errand.id) { return language.pick("Sending to your Mac…", "Enviando a tu Mac…") }
+        guard !fresh else { return nil }
+        return failure == nil
+            ? language.pick("Checking with your Mac…", "Comprobando con tu Mac…")
+            : language.pick("Your Mac cannot be reached; trying again.", "No se puede contactar con tu Mac; reintentando.")
+    }
+
+    /// Whether the last answer to this errand failed and can be sent again.
+    func canRetry(_ errand: Errand) -> Bool { problems[errand.id] != nil && lastAction[errand.id] != nil }
+
+    func retry(_ errand: Errand) async {
+        guard let work = lastAction[errand.id] else { return }
+        await answer(errand, work)
+    }
 
     func errand(id: String) -> Errand? { errands.first { $0.id == id } }
 
@@ -86,7 +106,11 @@ final class ErrandBoard {
             let language = errand.language
             let merchant = checkout.merchant.nonEmpty(or: checkout.site)
             let reason = language.pick("Pay \(checkout.total) at \(merchant)", "Pagar \(checkout.total) en \(merchant)")
-            guard await Biometrics.authenticate(reason: reason) else { return }
+            guard await Biometrics.authenticate(reason: reason) else {
+                problems[errand.id] = language.pick("Not confirmed with Face ID: nothing was paid.",
+                                                    "No se ha confirmado con Face ID: no se ha pagado nada.")
+                return
+            }
         }
         await answer(errand) {
             try await store.decideCheckout(errand.id, checkoutID: checkout.id, allow: allow, card: card)
@@ -123,21 +147,44 @@ final class ErrandBoard {
         await answer(errand) { try await store.stopErrand(errand.id) }
     }
 
-    private func answer(_ errand: Errand, _ work: () async throws -> Errand?) async {
+    private func answer(_ errand: Errand, _ work: @escaping () async throws -> Errand?) async {
         guard !sending.contains(errand.id) else { return }
         sending.insert(errand.id)
         problems[errand.id] = nil
+        lastAction[errand.id] = work
         defer { sending.remove(errand.id) }
         do {
             if let updated = try await work() { replace(updated) }
             // The Mac took the answer: approved, denied, answered, stopped.
             Haptic.success.play()
+            lastAction[errand.id] = nil
             await refresh()
         } catch {
-            Haptic.error.play()
-            problems[errand.id] = error.localizedDescription
+            let before = ErrandAlerts.signature(errand)
             await refresh()
+            // A timeout whose answer the Mac did take: the errand moved on, so it is not an error.
+            if let now = self.errand(id: errand.id), ErrandAlerts.signature(now) != before {
+                Haptic.success.play()
+                lastAction[errand.id] = nil
+                return
+            }
+            Haptic.error.play()
+            problems[errand.id] = Self.readable(error, language: errand.language)
         }
+    }
+
+    /// One short sentence in the errand's language, never a raw transport error.
+    static func readable(_ error: Error, language: ChatLanguage) -> String {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut: return language.pick("Your Mac took too long to answer.", "Tu Mac ha tardado demasiado en responder.")
+            case .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost:
+                return language.pick("Your Mac cannot be reached right now.", "Ahora mismo no se puede contactar con tu Mac.")
+            default: break
+            }
+        }
+        let text = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty || text.count > 160 ? language.pick("It could not be sent.", "No se ha podido enviar.") : text
     }
 
     private func replace(_ updated: Errand) {
@@ -162,6 +209,10 @@ struct ErrandStack: View {
     var logo: URL? = nil
     var sending = false
     var problem: String? = nil
+    /// Why the buttons wait (sending, checking with the Mac), shown under them.
+    var waiting: String? = nil
+    /// Sends the last answer again after it failed; nil when there is nothing to retry.
+    var onRetryLast: (() -> Void)? = nil
     let onOpenBrowser: () -> Void
     /// Allowed or not, and with which card.
     let onDecide: (Bool, String) -> Void
@@ -284,6 +335,13 @@ struct ErrandStack: View {
             if let problem, checkoutPhase == nil {
                 Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
             }
+            if problem != nil, let onRetryLast {
+                PurchaseCapsuleButton(title: errand.language.pick("Try again", "Reintentar"), disabled: sending, action: onRetryLast)
+            }
+            if let waiting, problem == nil {
+                Text(waiting).font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityLabel(waiting)
+            }
         }
     }
 }
@@ -324,6 +382,8 @@ struct ErrandChatBlock: View {
                     errand: errand, logoID: errand.id,
                     // A saved errand's buttons wait for the Mac's own word on it.
                     sending: board.sending.contains(errand.id) || !board.fresh, problem: board.problems[errand.id],
+                    waiting: board.waitingReason(errand),
+                    onRetryLast: board.canRetry(errand) ? { Task { await board.retry(errand) } } : nil,
                     onOpenBrowser: { browsing = true },
                     onDecide: { allow, card in Task { await board.decide(errand, allow: allow, card: card) } },
                     onAnswer: { answers in Task { await board.answerQuestions(errand, answers) } },

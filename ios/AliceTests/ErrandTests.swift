@@ -93,6 +93,57 @@ final class ErrandTests: XCTestCase {
         XCTAssertTrue(restored.checkout?.paysWithSavedCard == true)
     }
 
+    func testErrandAlertsStayQuietOnTheFirstReadingAndSayEachChangeOnce() throws {
+        var working = row
+        working["status"] = "working"
+        working["origin_session"] = "chat-1"
+        let first = ErrandAlerts.digest(previous: nil, current: [try XCTUnwrap(Errand.parse(working))], installation: "mac")
+        XCTAssertTrue(first.events.isEmpty)
+        var waiting = working
+        waiting["status"] = "needs_approval"
+        let now = ErrandAlerts.digest(previous: first.seen, current: [try XCTUnwrap(Errand.parse(waiting))], installation: "mac")
+        XCTAssertEqual(now.events.count, 1)
+        let event = try XCTUnwrap(now.events.first)
+        XCTAssertEqual(event.kind, .needsInput)
+        XCTAssertEqual(event.reference.sessionID, "chat-1")
+        XCTAssertEqual(event.reference.installation, "mac")
+        XCTAssertFalse(event.summary.contains("27,98"))
+        // Read again unchanged: nothing new.
+        XCTAssertTrue(ErrandAlerts.digest(previous: now.seen, current: [try XCTUnwrap(Errand.parse(waiting))], installation: "mac").events.isEmpty)
+        // The same change always has the same id, so it is notified once across launches.
+        XCTAssertEqual(ErrandAlerts.stableHash("a|b"), ErrandAlerts.stableHash("a|b"))
+        XCTAssertEqual(ErrandAlerts.waiting([try XCTUnwrap(Errand.parse(waiting)), try XCTUnwrap(Errand.parse(working))]), 1)
+    }
+
+    func testErrandAlertsSayHowItEndedAndNeverThatNothingWasPaidAfterAnApproval() throws {
+        var working = row
+        working["status"] = "working"
+        let seen = ErrandAlerts.digest(previous: nil, current: [try XCTUnwrap(Errand.parse(working))], installation: nil).seen
+        var paid = working
+        paid["status"] = "done"
+        paid["receipt"] = ["outcome": "paid", "order": "1", "total": "27,98 €"]
+        XCTAssertEqual(ErrandAlerts.digest(previous: seen, current: [try XCTUnwrap(Errand.parse(paid))], installation: nil)
+            .events.first?.summary, "Pedido hecho.")
+        var stuck = working
+        stuck["status"] = "stuck"
+        var checkout = try XCTUnwrap(row["checkout"] as? [String: Any])
+        checkout["status"] = "approved"
+        stuck["checkout"] = checkout
+        let said = try XCTUnwrap(ErrandAlerts.digest(previous: seen, current: [try XCTUnwrap(Errand.parse(stuck))], installation: nil).events.first)
+        XCTAssertTrue(said.summary.contains("no está confirmado"))
+        XCTAssertEqual(said.severity, .failure)
+        // What the person did themselves is not news to them.
+        var stopped = working
+        stopped["status"] = "stopped"
+        XCTAssertTrue(ErrandAlerts.digest(previous: seen, current: [try XCTUnwrap(Errand.parse(stopped))], installation: nil).events.isEmpty)
+    }
+
+    @MainActor
+    func testAFailedAnswerReadsAsOneShortSentence() {
+        XCTAssertEqual(ErrandBoard.readable(URLError(.timedOut), language: .spanish), "Tu Mac ha tardado demasiado en responder.")
+        XCTAssertEqual(ErrandBoard.readable(URLError(.cannotConnectToHost), language: .english), "Your Mac cannot be reached right now.")
+    }
+
     func testAnUnknownStatusIsReadAsWorkingAndARowWithoutIdIsDropped() {
         var odd = row
         odd["status"] = "something_new"
