@@ -19,63 +19,64 @@ struct SettingsView: View {
                 }
             }
 
-            // Layer one: a handful of rows, each opening its own detail.
-            // Like the account at the top of iOS Settings: what everything
-            // else depends on, alone.
-            Section {
+            Section("Connection") {
                 NavigationLink { ConnectView(pushed: true) } label: {
-                    LabeledContent {
-                        Text(store.isConnected ? "Connected" : "Not connected")
-                    } label: {
-                        Label("Hermes", systemImage: "antenna.radiowaves.left.and.right")
-                    }
+                    SettingsMenuLabel(
+                        "Hermes", systemImage: "antenna.radiowaves.left.and.right",
+                        subtitle: "Your agent connection",
+                        value: Text(store.isConnected ? "Connected" : "Not connected"),
+                        valueTint: store.isConnected ? Palette.success(scheme) : .secondary
+                    )
                 }
+                .accessibilityIdentifier("settings.hermes")
             }
+            .listRowBackground(Palette.card(scheme))
 
-            // What Alice does for you.
-            Section {
+            Section("Preferences") {
+                NavigationLink { AppearanceSettingsView() } label: {
+                    SettingsMenuLabel(
+                        "Appearance", systemImage: "circle.lefthalf.filled",
+                        value: Text(store.theme.label), swatch: store.accent.swatch
+                    )
+                }
+                .accessibilityIdentifier("settings.appearance")
+                NavigationLink { PrivacySettingsView() } label: {
+                    SettingsMenuLabel(
+                        "Privacy", systemImage: "hand.raised",
+                        value: Text(store.requireUnlock ? Biometrics.name : String(localized: "Off"))
+                    )
+                }
+                .accessibilityIdentifier("settings.privacy")
+                NavigationLink { GeneralSettingsView() } label: {
+                    SettingsMenuLabel("General", systemImage: "gearshape")
+                }
+                .accessibilityIdentifier("settings.general")
+            }
+            .listRowBackground(Palette.card(scheme))
+
+            Section("Alice") {
                 NavigationLink { ActivityScreen() } label: {
-                    LabeledContent {
-                        if store.unreadActivity > 0 {
-                            Text("\(store.unreadActivity)")
-                                .monospacedDigit()
-                                .accessibilityLabel("\(store.unreadActivity) unread")
-                        }
-                    } label: {
-                        Label("Activity", systemImage: "bell")
-                    }
+                    SettingsMenuLabel(
+                        "Activity", systemImage: "bell",
+                        value: store.unreadActivity > 0 ? Text("\(store.unreadActivity)") : nil
+                    )
                 }
                 .accessibilityIdentifier("settings.activity")
+                .accessibilityValue(store.unreadActivity > 0 ? Text("\(store.unreadActivity) unread") : Text(""))
                 if store.dashboardReady {
                     NavigationLink { MemoryScreen() } label: {
-                        Label("Memory", systemImage: "person.text.rectangle")
+                        SettingsMenuLabel("Memory", systemImage: "person.text.rectangle")
                     }
                     NavigationLink { ConnectionsScreen() } label: {
-                        Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
+                        SettingsMenuLabel("Connections", systemImage: "point.3.connected.trianglepath.dotted")
                     }
                     .accessibilityIdentifier("settings.connections")
                     NavigationLink { AgentWorkScreen() } label: {
-                        Label("Agent work", systemImage: "square.stack.3d.up")
+                        SettingsMenuLabel("Agent work", systemImage: "square.stack.3d.up")
                     }
                 }
             }
-
-            // How the app itself behaves: each one a page of its own.
-            Section {
-                NavigationLink { PrivacySettingsView() } label: {
-                    LabeledContent {
-                        Text(store.requireUnlock ? Biometrics.name : String(localized: "Off"))
-                    } label: {
-                        Label("Privacy", systemImage: "hand.raised")
-                    }
-                }
-                NavigationLink { AppearanceSettingsView() } label: {
-                    Label("Appearance", systemImage: "circle.lefthalf.filled")
-                }
-                NavigationLink { GeneralSettingsView() } label: {
-                    Label("General", systemImage: "gearshape")
-                }
-            }
+            .listRowBackground(Palette.card(scheme))
         }
         .navigationTitle("Settings")
         .toolbar {
@@ -157,6 +158,7 @@ struct PrivacySettingsView: View {
 struct AppearanceSettingsView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .caption) private var colourChoiceWidth: CGFloat = 84
 
     var body: some View {
         @Bindable var store = store
@@ -171,29 +173,51 @@ struct AppearanceSettingsView: View {
                 .labelsHidden()
             }
             Section("Colour") {
-                HStack(spacing: 12) {
+                // Named choices reflow rather than squeezing six circles into
+                // one row on small phones or with larger text.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: colourChoiceWidth), spacing: 12)], spacing: 16) {
                     ForEach(Accent.allCases) { accent in
-                        Button {
-                            store.accent = accent
-                        } label: {
-                            Circle()
-                                .fill(accent.swatch)
-                                .frame(width: 30, height: 30)
-                                .overlay {
-                                    Circle().strokeBorder(Color.primary, lineWidth: store.accent == accent ? 2 : 0)
-                                }
-                                .frame(width: 44, height: 44)
-                                .contentShape(.circle)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(accent.label)
+                        colourChoice(accent)
                     }
                 }
+                .padding(.vertical, 8)
             }
+            .listRowBackground(Palette.card(scheme))
         }
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
         .aliceFormPaper(scheme)
+    }
+
+    private func colourChoice(_ accent: Accent) -> some View {
+        let selected = store.accent == accent
+        return Button {
+            store.accent = accent
+        } label: {
+            VStack(spacing: 8) {
+                Circle()
+                    .fill(accent.swatch)
+                    .frame(width: 36, height: 36)
+                    .overlay {
+                        Circle().strokeBorder(Palette.border(scheme), lineWidth: 0.5)
+                    }
+                    .padding(4)
+                    .overlay {
+                        Circle().strokeBorder(selected ? Color.primary : .clear, lineWidth: 2)
+                    }
+                Text(accent.label)
+                    .font(.caption)
+                    .foregroundStyle(selected ? .primary : .secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 72)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accent.label)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("appearance.colour.\(accent.rawValue)")
     }
 }
 
@@ -350,5 +374,74 @@ struct HermesVersionRow: View {
                 let released = status.releaseDate.isEmpty ? "" : " (\(status.releaseDate))"
                 version = status.version + released
             }
+    }
+}
+
+/// Shared alignment for the settings menu; navigation and disclosure remain
+/// native, and large text puts the current value below its label.
+private struct SettingsMenuLabel: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let title: LocalizedStringKey
+    let systemImage: String
+    var subtitle: LocalizedStringKey?
+    var value: Text?
+    var valueTint: Color = .secondary
+    var swatch: Color?
+
+    init(_ title: LocalizedStringKey, systemImage: String,
+         subtitle: LocalizedStringKey? = nil, value: Text? = nil,
+         valueTint: Color = .secondary, swatch: Color? = nil) {
+        self.title = title
+        self.systemImage = systemImage
+        self.subtitle = subtitle
+        self.value = value
+        self.valueTint = valueTint
+        self.swatch = swatch
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(width: 26)
+                .accessibilityHidden(true)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 6) {
+                    labels
+                    currentValue
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                labels
+                Spacer(minLength: 8)
+                currentValue
+            }
+        }
+        .padding(.vertical, subtitle == nil ? 6 : 10)
+        .frame(minHeight: 44)
+    }
+
+    private var labels: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.body).foregroundStyle(.primary)
+            if let subtitle {
+                Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var currentValue: some View {
+        HStack(spacing: 6) {
+            if let swatch {
+                Circle().fill(swatch).frame(width: 10, height: 10)
+                    .accessibilityHidden(true)
+            }
+            if let value {
+                value.font(.subheadline).foregroundStyle(valueTint)
+                    .monospacedDigit()
+                    .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
+            }
+        }
     }
 }
