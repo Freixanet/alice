@@ -279,7 +279,7 @@ struct MessageRow: View {
                     // In the order they happened: the model shows the options (or asks) and then writes
                     // its words about them. Drawn under the words, the text arrived afterwards above a
                     // card already on screen, and the chat read out of order.
-                    ForEach(message.tools.filter { PurchaseOptionSet.isTool($0.name) && $0.status == .done }) { call in
+                    ForEach(PurchaseOptionSet.cardCalls(message.tools)) { call in
                         PurchaseOptionsCard(detail: call.detail, language: ChatLanguage.of(message.content),
                                             session: message.mentionSessionID ?? store.shownConversation?.hermesSessionID,
                                             replyProfile: message.mentionProfile)

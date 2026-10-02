@@ -66,13 +66,15 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(q['shipping'],'3,99 €')
         self.assertIn('no aplicado',q['condition'])
         self.assertTrue(all(p.closed for p in Shop.instances))
-    def test_all_found_formats_must_be_accounted_for(self):
+    def test_unchecked_formats_are_said_never_a_reason_to_show_nothing(self):
+        # Withholding the cards until every format was accounted for left the person with none.
         result = prices.present(self.home,'chat',self.options([self.quote()]),factory=Shop)
-        self.assertFalse(result['ok']); self.assertIn('80 cápsulas',result['error'])
+        self.assertTrue(result['ok'], result); self.assertEqual(len(result['options']),1)
+        self.assertIn('80 cápsulas',result['unchecked']); self.assertIn('Sin comprobar',result['next'])
         for candidate in self.search['candidates'][1:]:
             prices.verify(self.home,'chat',{'search_id':self.search['id'],'candidate_id':candidate['id'],'reject_reason':'Sin stock','recipe':{'unavailable':'#unavailable'}},factory=Shop)
         result = prices.present(self.home,'chat',self.options([self.quote()]),factory=Shop)
-        self.assertTrue(result['ok'])
+        self.assertTrue(result['ok']); self.assertNotIn('unchecked',result)
     def test_a_format_the_service_could_not_check_does_not_lock_the_others(self):
         original = Shop.read
         def flaky(shop, selector):
@@ -166,6 +168,37 @@ class EvidenceTests(unittest.TestCase):
     def test_a_www_redirect_is_the_same_shop(self):
         self.assertTrue(prices.same_site('https://www.prozis.com/es/es/p','https://prozis.com/es/es/p'))
         self.assertFalse(prices.same_site('https://www.prozis.com/p','https://sis.redsys.es/p'))
+    def test_the_cards_go_up_from_the_evidence_and_the_models_call_only_decorates_them(self):
+        # The model verified every format and then wrote «toca su tarjeta» without calling
+        # purchase_options: the person saw no cards. Now the plugin shows them itself.
+        self.assertIsNone(prices.auto_present(self.home,'chat',self.search['id'],now=self.now), 'formats still unchecked')
+        quotes = [self.quote(i) for i in range(3)]
+        shown = prices.auto_present(self.home,'chat',self.search['id'],now=self.now)
+        self.assertTrue(shown['ok'], shown)
+        stored = flow.options_set(self.home,shown['set'],session='chat')
+        self.assertTrue(stored['auto']); self.assertEqual(len(stored['options']),3)
+        self.assertEqual([o['recommended'] for o in stored['options']].count(True),1)
+        # Shown once: asking again names the same set.
+        self.assertEqual(prices.auto_present(self.home,'chat',self.search['id'],now=self.now)['set'],shown['set'])
+        # The model's purchase_options (another search_id, a subset, its own recommendation) lands on
+        # the same cards: its recommendation, and the key the app computes from its arguments.
+        args = {'search_id':'wrong','options':[{**o,'recommended':i==2,'why':'Más cápsulas por euro'} for i,o in enumerate(self.options(quotes)['options'])]}
+        out = prices.present(self.home,'chat',args,now=self.now,factory=Shop)
+        self.assertTrue(out['ok'], out); self.assertEqual(out['set'],shown['set'])
+        self.assertEqual(out['alias'],flow.set_key(args['options']))
+        stored = flow.options_set(self.home,flow.set_key(args['options']),session='chat')
+        self.assertEqual(stored['key'],shown['set'])
+        self.assertEqual([o['recommended'] for o in stored['options']],[False,False,True])
+        self.assertEqual(stored['options'][2]['why'],'Más cápsulas por euro')
+        self.assertIn('ya ve las tarjetas',out['next'])
+        # A tap on a card named by either key chooses the same option.
+        chosen = flow.choose(self.home,'chat',shown['set']+'-3')
+        self.assertEqual(chosen['quote_ref'],quotes[2]['id'])
+    def test_a_models_call_with_a_wrong_search_id_or_a_missing_format_still_shows_cards(self):
+        quotes = [self.quote(i) for i in range(3)]
+        # Only one format named, the search id of another discover: every verified format is shown.
+        out = prices.present(self.home,'chat',{'search_id':'stale','options':self.options(quotes[:1])['options']},now=self.now,factory=Shop)
+        self.assertTrue(out['ok'], out); self.assertEqual(len(out['options']),3)
     def test_no_quantity_question_before_format_selection(self):
         self.assertIsNotNone(flow.ask_refusal([{'question':'¿Cuántos botes de 300 g quieres?','choices':['1','2']}],True))
     def test_same_amount_is_never_a_price_change(self):

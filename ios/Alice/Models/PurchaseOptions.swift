@@ -50,8 +50,22 @@ struct PurchaseOptionSet: Hashable, Sendable {
     let chosen: String?
 
     static let toolName = "purchase_options"
+    /// The plugin shows the cards as soon as the formats are checked: that call's result names
+    /// the set (`set`), so the cards do not wait for the model to call `purchase_options`.
+    static let verifyToolName = "purchase_verify"
 
     static func isTool(_ name: String) -> Bool { name == toolName }
+    static func isCardTool(_ name: String) -> Bool { name == toolName || name == verifyToolName }
+
+    /// The calls of a reply that carry cards, one per set: a verification that showed them and the
+    /// model's own `purchase_options` for the same set are the same cards.
+    static func cardCalls(_ tools: [Message.ToolCall]) -> [Message.ToolCall] {
+        var seen = Set<String>()
+        return tools.filter { call in
+            guard isCardTool(call.name), call.status == .done, let key = key(fromDetail: call.detail) else { return false }
+            return seen.insert(key).inserted
+        }
+    }
 
     static func parse(_ object: [String: Any]) -> PurchaseOptionSet? {
         guard let key = object["key"] as? String else { return nil }

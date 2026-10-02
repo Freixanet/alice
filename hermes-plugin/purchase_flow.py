@@ -384,7 +384,7 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
 def options_set(home: Path, key: str, session: Optional[str] = None,
                 now: Optional[float] = None) -> Optional[Dict[str, Any]]:
     now = now or time.time()
-    matches = [s for s in _read(_path(home)) if s.get("key") == key
+    matches = [s for s in _read(_path(home)) if (s.get("key") == key or key in (s.get("aliases") or []))
                and now - float(s.get("at") or 0) < KEEP
                and (session is None or s.get("session") == session)]
     # Older callers without a session must never receive another chat's ambiguous set.
@@ -410,7 +410,7 @@ def choose(home: Path, session: str, option_id: str, now: Optional[float] = None
     key = str(option_id or "").split("-")[0]
     with _locked(home) as path:
         sets = _read(path)
-        found = next((s for s in sets if s.get("key") == key and s.get("session") == session
+        found = next((s for s in sets if (s.get("key") == key or key in (s.get("aliases") or [])) and s.get("session") == session
                       and now - float(s.get("at") or 0) < KEEP), None)
         picked = next((o for o in (found or {}).get("options") or [] if o.get("id") == option_id), None)
         if picked is None:

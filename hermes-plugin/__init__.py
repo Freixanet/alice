@@ -1951,6 +1951,23 @@ def _register_task_tools(ctx) -> None:
             result = getattr(prices, method)(_hermes_root(), session, args)
             if method == 'verify' and result.get('id'):
                 result.update(prices.verify_remaining(_hermes_root(),session,args))
+                # The cards go up from the evidence itself: the person can tap one whether or
+                # not the model goes on to call purchase_options (it writes about them; it does
+                # not have to make them appear).
+                try:
+                    shown = prices.auto_present(_hermes_root(), session, args.get('search_id'),
+                                                currency=_purchase_locale()[1],
+                                                picture=lambda page: errands.page_picture(page),
+                                                request=_PURCHASE_REQUESTS.get(session, ""))
+                except Exception:  # noqa: BLE001
+                    logging.getLogger(__name__).warning("purchases: could not show the cards from the evidence", exc_info=True)
+                    shown = None
+                if shown and shown.get('ok'):
+                    result['set'] = shown['set']
+                    result['cards'] = shown['options']
+                    result['next'] = ('La persona YA VE las tarjetas de todos los formatos comprobados (set ' + shown['set']
+                                      + '). Llama a purchase_options con search_id y todos los quote_refs marcando tu '
+                                      'recomendada y por qué; después, una o dos líneas y termina el turno.')
             return _agent_json({"ok": True, "result": result})
         except Exception as exc:
             return _agent_json({"ok": False, "error": str(exc) if isinstance(exc, ValueError) else "La comprobación de la cesta temporal no está disponible."})

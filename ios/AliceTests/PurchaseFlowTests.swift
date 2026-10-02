@@ -14,6 +14,20 @@ final class PurchaseFlowTests: XCTestCase {
         XCTAssertNil(PurchaseOptionSet.key(fromDetail: "not JSON"))
     }
 
+    func testTheCardsComeFromTheVerificationAndTheOptionsCallIsTheSameCards() throws {
+        let verified = Message.ToolCall(id: "v", name: "purchase_verify", status: .done, detail: #"{"result":{"set":"0a1b2c3d"}}"#)
+        let decorated = Message.ToolCall(id: "o", name: "purchase_options", status: .done,
+                                         detail: #"{"args":{"options":[{"url":"https://www.prozis.com/c"}]},"result":{"set":"0a1b2c3d"}}"#)
+        let other = Message.ToolCall(id: "p", name: "purchase_options", status: .done,
+                                     detail: #"{"options":[{"url":"https://www.hsnstore.com/creatina"},{"url":"https://www.prozis.com/c"}]}"#)
+        let running = Message.ToolCall(id: "r", name: "purchase_verify", status: .running, detail: nil)
+        XCTAssertEqual(PurchaseOptionSet.key(fromDetail: verified.detail), "0a1b2c3d")
+        XCTAssertEqual(PurchaseOptionSet.key(fromDetail: decorated.detail), "0a1b2c3d")
+        XCTAssertEqual(PurchaseOptionSet.cardCalls([running, verified, decorated, other]).map(\.id), ["v", "p"])
+        XCTAssertTrue(PurchaseOptionSet.isCardTool("purchase_verify"))
+        XCTAssertFalse(PurchaseOptionSet.isTool("purchase_verify"))
+    }
+
     func testChoiceTokenIsHiddenWithoutChangingWhatIsSubmitted() {
         let choice = "[elección:a1b2c3d4-1] Creatina · HSN · 27,98 €"
         XCTAssertEqual(PurchaseChoice.id(in: choice), "a1b2c3d4-1")

@@ -8385,8 +8385,24 @@ final class AppStore {
             guard !call.isEmpty, let data = try? JSONSerialization.data(withJSONObject: call) else { return nil }
             return String(data: data, encoding: .utf8)
         }
-        // A question for the person, or purchase options: the whole call, to draw the card from.
-        if let name = payload["name"] as? String, AskPerson.isTool(name) || PurchaseOptionSet.isTool(name) {
+        // Purchase options: the arguments (the app computes the set's key from them when a saved
+        // transcript has nothing else) and, once done, the result with the set the plugin kept.
+        if let name = payload["name"] as? String, PurchaseOptionSet.isTool(name) {
+            guard let args = dictionary(payload["args"]) else { return nil }
+            var call: [String: Any] = ["args": args]
+            if let result = dictionary(payload["result"]), result["set"] != nil { call["result"] = result }
+            guard let data = try? JSONSerialization.data(withJSONObject: call) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+        // A verification whose result already shows the cards: only the set it named.
+        if let name = payload["name"] as? String, name == PurchaseOptionSet.verifyToolName {
+            guard let result = dictionary(payload["result"]), let set = result["set"] as? String, !set.isEmpty,
+                  let data = try? JSONSerialization.data(withJSONObject: ["result": ["set": set]])
+            else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+        // A question for the person: the whole call, to draw the card from.
+        if let name = payload["name"] as? String, AskPerson.isTool(name) {
             guard let args = dictionary(payload["args"]),
                   let data = try? JSONSerialization.data(withJSONObject: args)
             else { return nil }

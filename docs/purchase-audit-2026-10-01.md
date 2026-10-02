@@ -32,6 +32,13 @@ en vez de ser asíncrona.
 | El navegador a veces se muestra y a veces no | Solo se mostraba con el recado `working`; desaparecía al pedir login, código o aprobación y volvía después | Se muestra desde el primer paso hasta que el recado termina |
 | «Me pidió iniciar sesión dos veces después de crear la cuenta» | La segunda petición era el **código de verificación** que Prozis envía al crear la cuenta (`vault.code`); la tarjeta decía «Acceso a la tienda» en ambos casos, y «Ahora no» paraba la compra | La tarjeta distingue «Iniciar sesión en …» de «Código de verificación» con su texto y botones; «Ahora no» ya no para: sigue como invitado (plugin, A/C1) |
 
+### Captura del 2 oct (02:55): texto que dice «toca su tarjeta» y ninguna tarjeta
+
+| Causa | Cambio |
+|---|---|
+| Las tarjetas solo existían si el modelo llamaba a `purchase_options` con los argumentos correctos y la llamada acababa bien. Aquí verificó la cesta, escribió el texto y no hubo tarjeta que tocar. Además `purchase_options` fallaba entero por un `search_id` equivocado, un formato omitido o una recotización lenta. | El plugin enseña las tarjetas él mismo en cuanto termina la verificación (`purchase_prices.auto_present`, desde `purchase_verify`); el resultado de esa llamada lleva el `set` y la app lo pinta desde ahí (`PurchaseOptionSet.cardCalls`). La llamada del modelo solo añade su recomendación sobre las mismas tarjetas (`_adopt`, con alias de clave para la relectura del transcript). `search_id` erróneo, formatos omitidos y recotizaciones fallidas ya no impiden mostrar; lo no comprobado se dice. Tests: `test_the_cards_go_up_from_the_evidence_and_the_models_call_only_decorates_them`, `test_a_models_call_with_a_wrong_search_id_or_a_missing_format_still_shows_cards`, iOS `testTheCardsComeFromTheVerificationAndTheOptionsCallIsTheSameCards`. |
+| El precio de las 80 cápsulas salió a 59,98 € (anoche 29,99 €) | No comprobable desde aquí (Prozis devuelve 429 al contenedor). El importe sale del elemento `.item-price-info .price` de la cesta; si Prozis muestra el precio sin descuento en otro nodo sin tachar, se lee ese. Pendiente: mirar `~/.alice/purchase-evidence.json` (campo `price` y `coupon_results` de la cotización de las 02:55). |
+
 ### Los 18 problemas históricos y qué test los sujeta
 
 | # | Problema | Test |

@@ -420,18 +420,140 @@ def coverage(home, session, search_id, refs):
     return search
 
 
+def _quotes_of(data, session, search_id):
+    """The newest quote per format of a search, in the order the shop listed them."""
+    search = data['searches'].get(search_id)
+    if not search or search['session'] != session:
+        return None, []
+    newest = {}
+    for quote in data['quotes'].values():
+        if quote['search_id'] == search_id and quote['session'] == session:
+            if quote['candidate_id'] not in newest or quote['at'] > newest[quote['candidate_id']]['at']:
+                newest[quote['candidate_id']] = quote
+    return search, [newest[c['id']] for c in search['candidates'] if c['id'] in newest]
+
+
+def _row(quote):
+    host = (urlsplit(quote['url']).hostname or '').removeprefix('www.')
+    return {**{k: quote[k] for k in ('title','variant','qty','url','price','currency')},
+            'merchant': host.split('.')[0].capitalize() if host else '', 'in_stock': True, 'channel': 'browser',
+            'quote_ref': quote['id'], 'verified_at': quote['at'], 'shipping': quote['shipping'],
+            'condition': quote['condition']}
+
+
+def auto_present(home, session, search_id, *, currency="", picture=None, request="", now=None):
+    """The cards, from the evidence alone: once every format of a search is quoted, rejected or
+    noted as uncheckable, the plugin shows them itself. Whether the model then calls
+    `purchase_options` (to mark its recommendation) or only writes about them, the person has
+    cards to tap. Shown once per search; None while formats are still unchecked."""
+    data = _load(home)
+    search, quotes = _quotes_of(data, session, search_id)
+    if not search or not quotes:
+        return None
+    done = {q['candidate_id'] for q in quotes} | set(search['rejected']) | set(search.get('failed', {}))
+    if len(search['candidates']) <= BROAD and any(c['id'] not in done for c in search['candidates']):
+        return None
+    flow = module('purchase_flow')
+    for existing in flow._read(flow._path(home)):
+        if (existing.get('session') == session and existing.get('search_id') == search_id and existing.get('auto')
+                and (now or time.time()) - float(existing.get('at') or 0) < flow.KEEP
+                and {o.get('quote_ref') for o in existing.get('options') or []} == {q['id'] for q in quotes}):
+            return {'ok': True, 'set': existing['key'], 'key': existing['key'], 'already': True,
+                    'options': [{'id':o['id'],'title':o['title'],'price':o['price']} for o in existing['options']]}
+    rows = [_row(q) for q in quotes]
+    cheapest = min(rows, key=lambda r: module('money').parse(r['price'], r['currency'])[0] if module('money').parse(r['price'], r['currency']) else 10**12)
+    cheapest['recommended'] = True
+    cheapest['why'] = 'El precio más bajo comprobado en la cesta.'
+    result = present(home, session, {'search_id': search_id, 'options': rows}, currency=currency, picture=picture,
+                     request=request, now=now)
+    if result.get('ok'):
+        with flow._locked(home) as path:
+            sets = flow._read(path)
+            for found in sets:
+                if found.get('key') == result['set'] and found.get('session') == session:
+                    found['auto'] = True
+            flow._write(path, sets)
+    return result
+
+
+def _adopt(home, session, args, raw, now):
+    """The model's `purchase_options` for a search whose cards the plugin already shows: its
+    recommendation and words go onto those cards, and the key it will be read back under (the one
+    the app computes from these arguments) becomes an alias of the set. One set, never two."""
+    flow = module('purchase_flow')
+    refs = [o.get('quote_ref') for o in raw]
+    with flow._locked(home) as path:
+        sets = flow._read(path)
+        for found in sets:
+            if (found.get('session') != session or not found.get('auto') or found.get('chosen')
+                    or (now or time.time()) - float(found.get('at') or 0) >= flow.KEEP):
+                continue
+            shown = {o.get('quote_ref'): o for o in found.get('options') or []}
+            if not refs or not all(r in shown for r in refs):
+                continue
+            if any(bool(o.get('recommended')) for o in raw):
+                for option in found['options']:
+                    option['recommended'] = False
+                    option['why'] = ''
+                for row in raw:
+                    option = shown[row['quote_ref']]
+                    if row.get('recommended') and not any(o['recommended'] for o in found['options']):
+                        option['recommended'] = True
+                    if row.get('why'):
+                        option['why'] = flow._clean(row.get('why'), 200)
+                if not any(o['recommended'] for o in found['options']):
+                    found['options'][0]['recommended'] = True
+            alias = flow.set_key(raw[:flow.MAX_OPTIONS])
+            if alias != found['key'] and alias not in found.setdefault('aliases', []):
+                found['aliases'].append(alias)
+            flow._write(path, sets)
+            best = next(o for o in found['options'] if o['recommended'])
+            return {'ok': True, 'set': found['key'], 'key': found['key'], 'alias': alias,
+                    'options': [{'id':o['id'],'title':o['title'],'price':o['price']} for o in found['options']],
+                    'next': ('La persona ya ve las tarjetas (las enseñó el plugin al comprobar). La marcada «Recomendada» es «'
+                             + f"{best['title']} · {best['variant']} · {best['price']}".replace(' ·  · ', ' · ')
+                             + '»; recomienda esa y ninguna otra, en una o dos líneas, y no prepares nada hasta que elija.')}
+    return None
+
+
 def present(home, session, args, *, currency="", picture=None, request="", now=None, factory=Probe):
-    raw = [o for o in args.get('options', []) if isinstance(o, dict)]
+    raw = [o for o in args.get('options', []) if isinstance(o, dict) and o.get('quote_ref')]
+    data = _load(home)
+    # The search these quotes belong to, whatever search_id the model wrote (a second, narrower
+    # discover once left the first search's quotes orphaned and the cards never appeared).
+    search_ids = [data['quotes'][o['quote_ref']]['search_id'] for o in raw if o['quote_ref'] in data['quotes']]
+    search_id = args.get('search_id') if args.get('search_id') in data['searches'] else (search_ids[0] if search_ids else None)
+    if not raw and search_id:
+        _search, quotes = _quotes_of(data, session, search_id)
+        raw = [{'quote_ref': q['id']} for q in quotes]
     if not raw:
-        return {'ok': False, 'error': 'Busca y comprueba los formatos antes de mostrarlos.'}
+        return {'ok': False, 'error': 'Busca y comprueba los formatos antes de mostrarlos (purchase_discover, purchase_verify).'}
+    adopted = _adopt(home, session, args, raw, now)
+    if adopted:
+        return adopted
     try:
-        search = coverage(home, session, args.get('search_id'), [o.get('quote_ref') for o in raw])
+        search, shown_quotes = _quotes_of(data, session, search_id)
+        if not search:
+            raise ValueError('Falta el registro de formatos encontrados.')
+        # Every verified format of the search is shown, the ones the model left out included; an
+        # unchecked one is said as such, never a reason to show nothing.
+        given = {o['quote_ref'] for o in raw}
+        raw = raw + [{'quote_ref': q['id']} for q in shown_quotes if q['id'] not in given
+                     and q['candidate_id'] not in {data['quotes'][r]['candidate_id'] for r in given if r in data['quotes']}]
+        unchecked = [c['title'] for c in search['candidates'] if c['id'] not in {q['candidate_id'] for q in shown_quotes}
+                     and c['id'] not in search['rejected'] and c['id'] not in search.get('failed', {})]
         options = []
         candidates = set()
         for row in raw:
-            quote = resolve(home, session, row.get('quote_ref'), now=now, factory=factory)
+            try:
+                quote = resolve(home, session, row.get('quote_ref'), now=now, factory=factory)
+            except ValueError:
+                stale = data['quotes'].get(row.get('quote_ref'))
+                if not stale or stale['session'] != session:
+                    raise
+                quote = stale  # the re-check failed (a slow shop): the errand checks its own basket anyway
             if quote['candidate_id'] in candidates:
-                raise ValueError('No repitas el mismo formato para completar las tarjetas.')
+                continue
             candidates.add(quote['candidate_id'])
             options.append({**row, **{k: quote[k] for k in ('title','variant','qty','url','price','currency')},
                             'in_stock': True, 'channel':'browser', 'quote_ref': quote['id'],
@@ -462,6 +584,9 @@ def present(home, session, args, *, currency="", picture=None, request="", now=N
                 found['phase'] = 'verified_options'
                 flow._write(path, sets)
             result['key'] = result['set']
+            if unchecked:
+                result['unchecked'] = unchecked
+                result['next'] = result.get('next', '') + ' Sin comprobar (dilo en una línea): ' + '; '.join(unchecked) + '.'
         return result
     except (ValueError, KeyError, TypeError) as exc:
         return {'ok':False,'error':str(exc)}
