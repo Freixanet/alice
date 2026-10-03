@@ -202,6 +202,11 @@ private struct ChatScreenContent: View, Equatable {
             // They are laid out here instead, with the same 44pt disc and
             // the same glass the composer's controls use.
             .toolbar(.hidden, for: .navigationBar)
+            // Register both native bars outside the painted chat surface,
+            // at matching levels, so neither has a separate background layer.
+            .modifier(ChatBottomChrome(usesScrollEdges: hasTranscript) {
+                composerArea
+            })
             .modifier(ChatTopChrome(usesScrollEdges: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
@@ -293,17 +298,6 @@ private struct ChatScreenContent: View, Equatable {
         if let conversation = store.shownConversation, !conversation.messages.isEmpty {
             transcript
                 .simultaneousGesture(dismissKeyboard)
-                // A real conversation reserves the live composer height so the
-                // last message still follows attachments, extra lines, and the
-                // keyboard.
-                .safeAreaBar(edge: .bottom, spacing: 0) {
-                    composerArea
-                        .background {
-                            ComposerScrollEdge()
-                                .padding(.top, -ComposerScrollEdge.transitionHeight)
-                                .ignoresSafeArea(.container, edges: .bottom)
-                        }
-                }
         } else {
             // Home is centred in the room between the header and the composer,
             // in both states: its space shrinks with the keyboard exactly as
@@ -941,6 +935,27 @@ private struct ChatTopChrome<Header: View>: ViewModifier {
             content.safeAreaBar(edge: .top, spacing: 0) { header }
         } else {
             content.safeAreaInset(edge: .top, spacing: 0) { header }
+        }
+    }
+}
+
+/// Attach the composer at the same level as the header, after the chat's
+/// background. Empty chats already place their own composer in chatContent.
+private struct ChatBottomChrome<ComposerContent: View>: ViewModifier {
+    let usesScrollEdges: Bool
+    var composer: ComposerContent
+
+    init(usesScrollEdges: Bool, @ViewBuilder composer: () -> ComposerContent) {
+        self.usesScrollEdges = usesScrollEdges
+        self.composer = composer()
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if usesScrollEdges {
+            content.safeAreaBar(edge: .bottom, spacing: 0) { composer }
+        } else {
+            content
         }
     }
 }
