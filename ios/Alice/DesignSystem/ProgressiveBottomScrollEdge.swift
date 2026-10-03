@@ -31,7 +31,7 @@ struct ProgressiveBottomScrollEdge: UIViewRepresentable {
         let band = Band()
         var enabled = false
         private weak var host: UIView?
-        private var constraints: [NSLayoutConstraint] = []
+        private var bandConstraints: [NSLayoutConstraint] = []
         private var previousKeyboardSafeArea = true
 
         override func didMoveToWindow() {
@@ -53,13 +53,13 @@ struct ProgressiveBottomScrollEdge: UIViewRepresentable {
                     let keyboard = parent.keyboardLayoutGuide
                     previousKeyboardSafeArea = keyboard.usesBottomSafeArea
                     keyboard.usesBottomSafeArea = false
-                    constraints = [
+                    bandConstraints = [
                         band.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor),
                         band.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor),
                         band.bottomAnchor.constraint(equalTo: keyboard.topAnchor),
                         band.heightAnchor.constraint(equalToConstant: ProgressiveBottomScrollEdge.height)
                     ]
-                    NSLayoutConstraint.activate(constraints)
+                    NSLayoutConstraint.activate(bandConstraints)
                     #if DEBUG
                     ChatScrollEdgeCapture.schedule(scroll: scroll, band: band)
                     #endif
@@ -70,8 +70,8 @@ struct ProgressiveBottomScrollEdge: UIViewRepresentable {
         }
 
         func detach() {
-            NSLayoutConstraint.deactivate(constraints)
-            constraints = []
+            NSLayoutConstraint.deactivate(bandConstraints)
+            bandConstraints = []
             host?.keyboardLayoutGuide.usesBottomSafeArea = previousKeyboardSafeArea
             band.removeFromSuperview()
             host = nil
