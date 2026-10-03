@@ -172,18 +172,21 @@ struct PurchaseOptionsCard: View {
                     Text([option.merchant, option.variant, option.qty > 1 ? "× \(option.qty)" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(option.displayPrice.pricesKeptTogether).font(.subheadline.weight(.semibold).monospacedDigit())
-                        .padding(.top, 2)
-                    if let previous = option.previousPrice {
-                        Text(previous.pricesKeptTogether).font(.footnote.monospacedDigit())
-                            .strikethrough().foregroundStyle(.secondary)
-                    }
-                    if let label = option.couponLabel(language) {
-                        Text(label).font(.footnote.weight(.medium)).lineLimit(2)
-                        if option.hasPromotion {
-                            Text(language.pick("Subject to coupon terms", "Sujeto a las condiciones del cupón"))
-                                .font(.caption).foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(option.displayPrice.pricesKeptTogether)
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                        if let previous = option.previousPrice {
+                            Text(previous.pricesKeptTogether).font(.footnote.monospacedDigit())
+                                .strikethrough().foregroundStyle(.secondary)
                         }
+                    }
+                    .padding(.top, 2)
+                    if let label = option.couponLabel(language) {
+                        Text(label + (option.hasPromotion ? "*" : ""))
+                            .font(.caption.weight(.medium))
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                            .accessibilityLabel(label + (option.hasPromotion
+                                ? language.pick(", subject to coupon terms", ", sujeto a las condiciones del cupón") : ""))
                     }
                 }
                 .padding(12)
