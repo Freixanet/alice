@@ -298,6 +298,11 @@ private struct ChatScreenContent: View, Equatable {
                 // keyboard.
                 .safeAreaBar(edge: .bottom, spacing: 0) {
                     composerArea
+                        .background {
+                            ComposerScrollEdge()
+                                .padding(.top, -ComposerScrollEdge.transitionHeight)
+                                .ignoresSafeArea(.container, edges: .bottom)
+                        }
                 }
         } else {
             // Home is centred in the room between the header and the composer,
