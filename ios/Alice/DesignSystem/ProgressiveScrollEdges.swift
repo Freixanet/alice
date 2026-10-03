@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Both bars wrap the same chat surface. iOS supplies the matching native
-/// blur/fade at each edge, including the safe area beneath the composer.
+/// iOS 27 fails to render soft beneath custom bottom bars. Retain the native
+/// top edge and use a fixed public-material fallback only for that bottom edge.
 struct ProgressiveScrollEdges: ViewModifier {
-    var bottomStyle: ScrollEdgeEffectStyle = .soft
     func body(content: Content) -> some View {
         content
             .scrollEdgeEffectStyle(.soft, for: .top)
-            .scrollEdgeEffectStyle(bottomStyle, for: .bottom)
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .scrollEdgeEffectHidden(ProgressiveBottomScrollEdge.usesFallback, for: .bottom)
     }
 }

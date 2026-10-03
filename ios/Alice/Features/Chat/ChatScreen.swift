@@ -47,7 +47,6 @@ private struct ChatScreenContent: View, Equatable {
     @Namespace private var avatarZoom
     /// Today's own menu: asking before its history is thrown away.
     @State private var homeComposerHeight: CGFloat = 120
-    @State private var composerScrollEdge = ComposerScrollEdgeLink()
     /// Extra room under the empty home while the keyboard is closed. The block
     /// centres in what is left, so it sits half of this higher.
     private static let restingLift: CGFloat = 56
@@ -206,12 +205,7 @@ private struct ChatScreenContent: View, Equatable {
             // Register both native bars outside the painted chat surface,
             // at matching levels, so neither has a separate background layer.
             .modifier(ChatBottomChrome(usesScrollEdges: hasTranscript) {
-                NativeComposerScrollEdge(
-                    link: composerScrollEdge,
-                    composer: composerArea
-                        .environment(store)
-                        .environment(\.colorScheme, scheme)
-                )
+                composerArea
             })
             .modifier(ChatTopChrome(usesScrollEdges: hasTranscript) {
                 VStack(spacing: 8) {
@@ -505,8 +499,7 @@ private struct ChatScreenContent: View, Equatable {
             TranscriptView(
                 conversation: conversation,
                 quietRuns: conversation.isAgentTask ? [] : store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? [],
-                keyboardShown: keyboardShown,
-                composerScrollEdge: composerScrollEdge
+                keyboardShown: keyboardShown
             )
                 .id(conversation.id)
         } else {
@@ -585,8 +578,6 @@ private struct TranscriptView: View {
     /// This bot's routine runs that found nothing, shown as cards.
     var quietRuns: [QuietRoutineRun] = []
     var keyboardShown = false
-    let composerScrollEdge: ComposerScrollEdgeLink
-    @State private var diagnosticBottomEdgeStyle: ScrollEdgeEffectStyle = .soft
 
     @State private var position = ScrollPosition(edge: .bottom)
     /// Whether the transcript keeps to its live edge as it grows. Only the
@@ -800,7 +791,7 @@ private struct TranscriptView: View {
                 // conversation is not pinned to the foot of the view.
                 .frame(minHeight: area.size.height, alignment: .top)
                 .background {
-                    TranscriptScrollEdgeAnchor(link: composerScrollEdge)
+                    ProgressiveBottomScrollEdge()
                         .allowsHitTesting(false)
                 }
             }
@@ -828,19 +819,7 @@ private struct TranscriptView: View {
             .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
             // A soft edge below the header as earlier replies leave the viewport.
-            .modifier(ProgressiveScrollEdges(bottomStyle: diagnosticBottomEdgeStyle))
-            .task {
-                #if DEBUG
-                guard ProcessInfo.processInfo.arguments.contains("--alice-edge-diagnose") else { return }
-                following = false
-                do {
-                    try await Task.sleep(for: .seconds(4))
-                    diagnosticBottomEdgeStyle = .hard
-                    try await Task.sleep(for: .seconds(4))
-                    diagnosticBottomEdgeStyle = .soft
-                } catch { diagnosticBottomEdgeStyle = .soft }
-                #endif
-            }
+            .modifier(ProgressiveScrollEdges())
             .background { ReplySelectionDismiss() }
             .onScrollPhaseChange { oldPhase, phase in
                 readerScrolling = Self.isReader(phase)
@@ -867,7 +846,7 @@ private struct TranscriptView: View {
             } action: { old, tail in
                 lastTail = tail
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--alice-edge-diagnose") { return }
+                if ProcessInfo.processInfo.arguments.contains("--alice-edge-capture") { return }
                 #endif
                 // Past the end with nobody holding it: a lazy stack opens at
                 // the end of the height it estimated for rows it had not
