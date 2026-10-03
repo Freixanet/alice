@@ -912,14 +912,14 @@ private struct TranscriptView: View {
                         .accessibilityLabel("Jump to latest message")
                         .accessibilityIdentifier("chat.scrollToBottom")
                         .padding(.bottom, 2)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
                     }
                 }
                 // Animates the button only. On the scroll view, every crossing
                 // of the near-bottom line — which is the moment a reader starts
                 // scrolling up — animated whatever the transcript's layout was
                 // doing in that instant, and the conversation lurched.
-                .animation(.snappy(duration: 0.2), value: settled && !following)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: settled && !following)
             }
         }
     }

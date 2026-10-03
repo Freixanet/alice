@@ -625,13 +625,13 @@ private struct MessageActions: View {
     @Environment(ReadAloud.self) private var speech
     @Environment(\.colorScheme) private var scheme
     @Environment(\.givenReaction) private var given
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let message: Message
     @State private var copied = false
+    @State private var copyFeedbackID = 0
 
     var body: some View {
-        // Every slot carries its own half of the gap, so spacing here is 0
-        // and the leading inset pulls the first glyph's ink back onto the
-        // paragraph's left edge rather than onto its slot's edge.
+        // Adjacent targets never overlap; the first glyph aligns with the text.
         HStack(spacing: 0) {
             // First, because they answer: a yes or a no to what the reply
             // proposed, sent as his turn. The one given stays filled.
@@ -644,11 +644,8 @@ private struct MessageActions: View {
             Button {
                 UIPasteboard.general.string = message.content
                 Haptic.success.play()
-                withAnimation(.snappy(duration: 0.2)) { copied = true }
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    withAnimation(.snappy(duration: 0.2)) { copied = false }
-                }
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { copied = true }
+                copyFeedbackID &+= 1
             } label: {
                 ActionIcon(copied ? "checkmark" : "square.on.square", slot: 16.67)
             }
@@ -684,15 +681,22 @@ private struct MessageActions: View {
                 .accessibilityLabel("Try again")
             }
         }
-        // Slots carry half a gap each, so the first glyph's ink would sit
-        // half a gap in from the paragraph. Pull it back out, less the
-        // 0.67pt of left side bearing the text above already carries, so the
-        // copy square lines up with the letters instead of overhanging them.
-        .padding(.leading, -ActionIcon.gap / 2 + 0.67)
+        // Align the first glyph with the paragraph while retaining its hit area.
+        .padding(.leading, -(ActionIcon.targetSize - 16.67) / 2 + 0.67)
         .foregroundStyle(.secondary)
         // Each icon gives a little under the finger, as the chat's cards do.
         .buttonStyle(.pressable)
         .padding(.top, 2)
+        .task(id: copyFeedbackID) {
+            guard copyFeedbackID > 0 else { return }
+            do { try await Task.sleep(for: .seconds(1.5)) }
+            catch { return }
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { copied = false }
+        }
+        .onChange(of: message.id) {
+            copied = false
+            copyFeedbackID = 0
+        }
     }
 }
 
@@ -708,7 +712,7 @@ extension MessageActions {
             // squares do (`scripts/measure-symbol-ink.swift`).
             ActionIcon(chosen ? reaction.symbol + ".fill" : reaction.symbol, slot: 16.67)
                 .foregroundStyle(chosen ? AnyShapeStyle(store.accent.primary(scheme)) : AnyShapeStyle(.secondary))
-                .symbolEffect(.bounce, value: chosen)
+                .symbolEffect(.bounce, value: reduceMotion ? false : chosen)
         }
         .disabled(store.isSending && !chosen)
         .sensoryFeedback(.selection, trigger: chosen) { _, now in now }
@@ -760,29 +764,11 @@ private struct ReactionBubble: View {
     }
 }
 
-/// One action glyph, laid out by the pixels it actually paints.
-///
-/// SF Symbols share neither a layout box nor an ink size. At 16pt the share
-/// tray paints 14x17.75pt inside an 18x21 box while the refresh cycle paints
-/// 19.75x16 inside 20x18, so spacing them by their boxes — or on a fixed
-/// pitch — leaves uneven whitespace: the gap before the refresh glyph
-/// measured 2pt tighter than the others, which is what made the row read as
-/// ragged.
-///
-/// Each glyph gets a slot as wide as its own ink plus one shared gap. Two
-/// neighbours then contribute half a gap each, so the whitespace between any
-/// two glyphs is exactly `gap` whatever their widths. `slot` is the widest
-/// ink among the states one button can show, so the row does not reflow when
-/// a glyph swaps.
-///
-/// Slot widths are the ink the device actually paints, which runs a little
-/// under what `scripts/measure-symbol-ink.swift` reports — the renderer
-/// drops the faintest antialiased edge, 1.4pt of it on the speaker's outer
-/// wave. Take the script's numbers as the starting point and settle them
-/// against a screenshot; re-derive both if the symbol set, weight or point
-/// size changes.
+/// Keep the existing 16pt glyphs, with a full native touch target. The fixed
+/// footprint also keeps the row stable when copy becomes a checkmark.
 private struct ActionIcon: View {
-    static let gap: CGFloat = 12
+    static let targetSize: CGFloat = 44
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let pointSize: CGFloat = 16
 
     private let symbol: String
@@ -796,9 +782,10 @@ private struct ActionIcon: View {
     var body: some View {
         Image(systemName: symbol)
             .font(.system(size: Self.pointSize))
-            .contentTransition(.symbolEffect(.replace))
+            .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
             .offset(y: -Self.inkDropBelowCentre(symbol))
-            .frame(width: slot + Self.gap, height: 30)
+            .frame(width: slot)
+            .frame(width: Self.targetSize, height: Self.targetSize)
             .contentShape(.rect)
     }
 

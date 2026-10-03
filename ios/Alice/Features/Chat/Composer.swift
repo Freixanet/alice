@@ -176,8 +176,8 @@ struct Composer: View {
         .onChange(of: store.editingMessageID) { _, editing in
             if editing != nil { focused.wrappedValue = true }
         }
-        .animation(.snappy(duration: 0.2), value: store.editingMessageID)
-        .animation(.snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: store.editingMessageID)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
         .task(id: store.dashboardReady) {
             _ = try? await store.bots()
         }
@@ -367,7 +367,7 @@ struct Composer: View {
                     if value.translation.height > 40 { commandsDismissed = true }
                 }
         )
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
     private var commandList: some View {
@@ -421,7 +421,7 @@ struct Composer: View {
                     if value.translation.height > 40 { commandsDismissed = true }
                 }
         )
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
     /// Says that sending replaces the message being edited, and lets go of it.
@@ -447,7 +447,7 @@ struct Composer: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
         .glassEffect(.regular, in: .capsule)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
     /// Hermes queued or folded this send into a busy turn. Stop clears that
@@ -468,7 +468,7 @@ struct Composer: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .glassEffect(.regular, in: .rect(cornerRadius: 14))
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
     private var aliceComposer: some View {
@@ -748,7 +748,7 @@ struct Composer: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(listening ? store.accent.primary(scheme) : Color.secondary)
                 .frame(width: 32, height: 32)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                 .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
         .buttonStyle(.plain)
@@ -780,22 +780,22 @@ struct Composer: View {
                     .foregroundStyle(scheme == .dark ? Color.black : Color.white)
                     .frame(width: 32, height: 32)
                     // Send turns into Stop in place, as the main composer's does.
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                     .background { Circle().fill(botSendFill) }
-                    .transition(.scale.combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             } else {
                 Image(systemName: "waveform.circle.fill")
                     .font(.system(size: 30))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(voiceAvailable ? store.accent.primary(scheme) : Color.secondary)
                     .frame(width: 32, height: 32)
-                    .transition(.scale.combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
         }
         .buttonStyle(.plain)
         // The transitions above need a change to animate: voice ⇄ send ⇄ stop.
-        .animation(.snappy(duration: 0.2), value: sending)
-        .animation(.snappy(duration: 0.2), value: stopping)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: sending)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: stopping)
         .disabled(!sending && !voiceAvailable)
         .accessibilityLabel(stopping ? "Stop" : (hasDraft ? "Send" : "Voice conversation"))
         .accessibilityIdentifier("composer.action")
@@ -896,7 +896,7 @@ struct Composer: View {
             Image(systemName: listening ? "waveform" : "mic")
                 .font(.system(size: 16, weight: listening ? .semibold : .medium))
                 .frame(width: controlHeight, height: controlHeight)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                 .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
         .buttonStyle(.plain)
@@ -930,7 +930,7 @@ struct Composer: View {
             Image(systemName: stopping ? "stop.fill" : (hasDraft ? "arrow.up" : "waveform"))
                 .font(.system(size: 16, weight: .semibold))
                 .frame(width: controlHeight, height: controlHeight)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
         }
         // `.glassProminent` sizes itself, adding about 10pt of its own padding
         // around the label — measured at 44pt tall next to a 34pt chip. Applying
