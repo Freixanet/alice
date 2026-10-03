@@ -52,10 +52,6 @@ the web to the measurable ones.
   streaming text uses the same block rhythm as completed replies.
 - Native task steps use subheadline; settings labels use body medium, with
   subheadline descriptions and values. Colour names use footnote.
-- Native drawer rows use body, section labels footnote semibold and session
-  status footnote. Titles allow two lines; the selected session uses medium
-  weight as well as the existing accent fill. Navigation and history scroll
-  together, with search and the footer fixed.
 - Color: one accent at a time; neutral surfaces carry structure. Meet WCAG AA.
 - Motion: 150–300ms only to clarify continuity or state. Respect reduced motion.
 

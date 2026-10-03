@@ -24,11 +24,20 @@ struct Sidebar: View, Equatable {
     var body: some View {
         VStack(spacing: 0) {
             header
+            destinations
 
-            // Navigation and history share the scroll area so larger text never
-            // squeezes sessions out. Search and the footer remain within reach.
+            // The conversations run underneath the footer rather than stopping
+            // above it. Glass has to have something behind it to be glass: with
+            // the list ending where the buttons begin, those two discs sat over
+            // flat card colour and refracted nothing. Now a row slides beneath
+            // them and, at the very bottom, fades out instead of being cut off.
+            //
+            // The same at the top, where the list passes under the fixed rows —
+            // Bots, Routines, Library — so a conversation scrolling up dissolves
+            // rather than vanishing at a hard line.
             ZStack(alignment: .bottom) {
-                SidebarList(width: width, onDismiss: onDismiss) { destinations }
+                SidebarList(width: width, onDismiss: onDismiss)
+                    .equatable()
                 footer
             }
         }
@@ -124,7 +133,7 @@ struct Sidebar: View, Equatable {
         // The same 11pt the conversation's controls take, so the search button
         // and the drawer button line up while both are on screen.
         .padding(.top, 11)
-        .padding(.bottom, 8)
+        .padding(.bottom, 20)
     }
 
     /// Every destination gets a way out. A sheet whose only exit is a swipe
@@ -159,13 +168,12 @@ struct Sidebar: View, Equatable {
             .prefix(Self.agentRowLimit)
         return VStack(spacing: 2) {
             Text("Agents")
-                .accessibilityAddTraits(.isHeader)
-                .font(.footnote.weight(.semibold))
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
-                .padding(.top, 4)
-                .padding(.bottom, 8)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
             ForEach(Array(shown)) { bot in
                 Button {
                     store.markNoticesSeen(.agents)
@@ -177,21 +185,18 @@ struct Sidebar: View, Equatable {
                         BotMarkView(mark: store.mark(for: bot.name), size: 30)
                             .frame(width: 30, height: 30)
                         Text(store.botCurrentName(for: bot))
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
                         Spacer(minLength: 0)
                         if store.isBotUnread(bot.name) {
                             Circle().fill(store.accent.primary(scheme)).frame(width: 8, height: 8)
                                 .accessibilityLabel("Unread")
                         }
                     }
-                    .font(.body)
+                    .font(.subheadline)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: 40)
                     .contentShape(.rect)
                 }
-                .buttonStyle(.pressableRow(cornerRadius: 10))
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("sidebar.agent.\(bot.name)")
             }
             row("All Agents", systemImage: "square.grid.2x2", weight: .medium, iconWidth: 30,
@@ -225,7 +230,6 @@ struct Sidebar: View, Equatable {
                 // Then Notes: a note is written in the moment or
                 // not at all, so it is the shortest way in the drawer.
                 row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
-                    .padding(.top, 12)
                 row("Routines", systemImage: "clock", weight: .medium,
                     badge: store.unreadNotices(in: .routines), destination: .routines) {
                     store.markNoticesSeen(.routines)
@@ -235,7 +239,10 @@ struct Sidebar: View, Equatable {
                 row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
             }
         }
-        .padding(.bottom, 20)
+        .padding(.horizontal, 12)
+        // Most of the gap to Pinned is the list's own top inset, which has to
+        // clear the fade; this adds only a little on top of it.
+        .padding(.bottom, 6)
     }
 
     static let topFadeHeight: CGFloat = 22
@@ -445,17 +452,15 @@ struct Sidebar: View, Equatable {
         let button = Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: systemImage)
-                    .font(.body.weight(weight))
+                    .font(.system(size: 15, weight: weight))
                     .foregroundStyle(store.accent.primary(scheme))
                     .frame(width: iconWidth, alignment: .center)
                 Text(title)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
                 if badge > 0 {
                     Text("\(badge)")
                         .contentTransition(.numericText(value: Double(badge)))
-                        .font(.footnote.weight(.semibold))
+                        .font(.caption2.weight(.semibold))
                         .monospacedDigit()
                         .foregroundStyle(store.accent.primary(scheme))
                         .padding(.horizontal, 6)
@@ -464,7 +469,7 @@ struct Sidebar: View, Equatable {
                         .accessibilityLabel("\(badge) unread")
                 }
             }
-            .font(.body.weight(weight))
+            .font(.subheadline.weight(weight))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(minHeight: 44)
@@ -490,16 +495,14 @@ struct Sidebar: View, Equatable {
     }
 }
 
-/// Scrollable navigation and conversation history; the drawer gesture stays in RootView.
-private struct SidebarList<Destinations: View>: View {
+/// Conversation rows only: nothing here reads the drawer gesture.
+private struct SidebarList: View, Equatable {
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.width == rhs.width }
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     let width: CGFloat
     let onDismiss: () -> Void
-    @ViewBuilder let destinations: () -> Destinations
-    @ScaledMetric(relativeTo: .body) private var rowSpacing: CGFloat = 4
-    @ScaledMetric(relativeTo: .body) private var sectionSpacing: CGFloat = 20
 
     @State private var renaming: Conversation?
     @State private var newTitle = ""
@@ -510,14 +513,13 @@ private struct SidebarList<Destinations: View>: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: rowSpacing) {
-                destinations()
+            LazyVStack(alignment: .leading, spacing: 2) {
                 if !store.pinnedConversations.isEmpty {
                     sectionLabel("Pinned")
                     ForEach(store.pinnedConversations) { conversation in
                         chatRow(conversation)
                     }
-                    Color.clear.frame(height: sectionSpacing).accessibilityHidden(true)
+                    Spacer(minLength: 14)
                 }
 
                 // Alice's other chats, off to one side of her main one, and what `/new` put away.
@@ -528,8 +530,6 @@ private struct SidebarList<Destinations: View>: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, Sidebar.topFadeHeight)
-            // The last row can scroll completely above the fixed footer and fade.
-            .padding(.bottom, 150)
         }
         .scrollIndicators(.hidden)
         .mask(edgeFade)
@@ -617,12 +617,11 @@ private struct SidebarList<Destinations: View>: View {
 
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
-            .font(.footnote.weight(.semibold))
+            .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
-            .accessibilityAddTraits(.isHeader)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+            .padding(.bottom, 6)
     }
 
     @ViewBuilder
@@ -642,13 +641,10 @@ private struct SidebarList<Destinations: View>: View {
                     }
                 }
                 .frame(width: 2, height: 22)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(store.titleStyled(for: conversation))
-                        .font(.body)
-                        .fontWeight(attention == .newReply || attention == .needsYou
-                            ? .semibold : conversation.id == store.activeID ? .medium : .regular)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                        .fontWeight(attention == .newReply || attention == .needsYou ? .semibold : nil)
+                        .lineLimit(1)
                         .truncationMode(.tail)
                     if let attention {
                         ChatAttentionLine(
@@ -663,10 +659,9 @@ private struct SidebarList<Destinations: View>: View {
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: width - 48, alignment: .leading)
             .padding(.horizontal, 12)
-            .padding(.vertical, 12)
-            .frame(minHeight: 44)
+            .padding(.vertical, 10)
             .background(
                 conversation.id == store.activeID
                     ? store.accent.primary(scheme).opacity(scheme == .dark ? 0.22 : 0.16)
@@ -676,7 +671,6 @@ private struct SidebarList<Destinations: View>: View {
             .contentShape(.rect(cornerRadius: 10))
             .contentShape(.contextMenuPreview, .rect(cornerRadius: 10))
         }
-        .accessibilityAddTraits(conversation.id == store.activeID ? .isSelected : [])
         .accessibilityIdentifier("sidebar.chat.\(conversation.id)")
         .buttonStyle(.pressableRow(cornerRadius: 10))
         // A new reply or a question marks the row as it arrives, not in a jump.
@@ -767,10 +761,9 @@ private struct ChatAttentionLine: View {
 
     var body: some View {
         Text(words)
-            .font(.footnote.weight(attention == .needsYou ? .semibold : .regular))
+            .font(.caption.weight(attention == .needsYou ? .semibold : .regular))
             .foregroundStyle(tint)
-            .lineLimit(2)
-            .multilineTextAlignment(.leading)
+            .lineLimit(1)
             .truncationMode(.tail)
     }
 
