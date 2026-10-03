@@ -10,6 +10,7 @@ final class ComposerScrollEdgeLink {
     private let interaction = UIScrollEdgeElementContainerInteraction()
     private var reportedConnection = false
     private var reportedLayout = false
+    private var diagnosisScheduled = false
 
     func attachScrollView(_ scrollView: UIScrollView) {
         if self.scrollView !== scrollView { reportedConnection = false; reportedLayout = false }
@@ -43,12 +44,69 @@ final class ComposerScrollEdgeLink {
         DiagnosticsLog.write("chat.bottomEdge.geometry scrollBottom=\(Int(viewport.maxY)) composerTop=\(Int(controls.minY)) composerBottom=\(Int(controls.maxY)) bottomInset=\(Int(scrollView.adjustedContentInset.bottom))")
     }
 
+    private func scheduleDiagnosisIfRequested() {
+        #if DEBUG
+        guard !diagnosisScheduled,
+              ProcessInfo.processInfo.arguments.contains("--alice-edge-diagnose") else { return }
+        diagnosisScheduled = true
+        for delay in [1.0, 3.0, 8.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.recordDiagnosis(delay: delay)
+            }
+        }
+        #endif
+    }
+
+    #if DEBUG
+    private func recordDiagnosis(delay: Double) {
+        guard let scrollView, let container, let window = container.window,
+              scrollView.window === window else {
+            DiagnosticsLog.write("chat.edgeDiagnostic missingWindow delay=\(delay)")
+            return
+        }
+        DiagnosticsLog.write("chat.edgeDiagnostic state delay=\(delay) bottomHidden=\(scrollView.bottomEdgeEffect.isHidden) bottomSoft=\(scrollView.bottomEdgeEffect.style == .soft) topHidden=\(scrollView.topEdgeEffect.isHidden) topSoft=\(scrollView.topEdgeEffect.style == .soft) attached=\(interaction.scrollView === scrollView) installed=\(container.interactions.contains { $0 === interaction }) reduceTransparency=\(UIAccessibility.isReduceTransparencyEnabled)")
+        let frame = scrollView.convert(scrollView.bounds, to: window)
+        DiagnosticsLog.write("chat.edgeDiagnostic scroll rect=\(frame) offset=\(scrollView.contentOffset) contentSize=\(scrollView.contentSize) inset=\(scrollView.adjustedContentInset) safe=\(scrollView.safeAreaInsets) clipped=\(scrollView.clipsToBounds)")
+        guard delay == 3 else { return }
+        func describe(_ view: UIView, depth: Int) {
+            guard depth < 12 else { return }
+            let rect = view.convert(view.bounds, to: window)
+            DiagnosticsLog.write("chat.edgeDiagnostic node depth=\(depth) type=\(String(describing: type(of: view))) rect=\(rect) hidden=\(view.isHidden) alpha=\(view.alpha) clipped=\(view.clipsToBounds) mask=\(view.layer.mask != nil) control=\(view is UIControl) image=\(view is UIImageView) label=\(view is UILabel) visualEffect=\(view is UIVisualEffectView)")
+            for child in view.subviews { describe(child, depth: depth + 1) }
+        }
+        describe(container, depth: 0)
+        var ancestor: UIView? = scrollView.superview
+        while let view = ancestor {
+            DiagnosticsLog.write("chat.edgeDiagnostic ancestor type=\(String(describing: type(of: view))) rect=\(view.convert(view.bounds, to: window)) clipped=\(view.clipsToBounds) mask=\(view.layer.mask != nil)")
+            ancestor = view.superview
+        }
+        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+        let image = renderer.image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let cgImage = image.cgImage else { return }
+        for (name, rect) in [
+            ("top", CGRect(x: 0, y: 0, width: window.bounds.width, height: 230)),
+            ("bottom", CGRect(x: 0, y: max(0, window.bounds.height - 300), width: window.bounds.width, height: 300))
+        ] {
+            let pixels = CGRect(x: rect.minX * image.scale, y: rect.minY * image.scale,
+                                width: rect.width * image.scale, height: rect.height * image.scale)
+            if let cropped = cgImage.cropping(to: pixels), let data = UIImage(cgImage: cropped).pngData() {
+                try? data.write(to: directory.appendingPathComponent("edge-diagnostic-\(name).png"))
+            }
+        }
+        DiagnosticsLog.write("chat.edgeDiagnostic snapshots saved")
+    }
+    #endif
+
     private func connect() {
         guard let scrollView, container != nil else { return }
         interaction.edge = .bottom
         interaction.scrollView = scrollView
         scrollView.bottomEdgeEffect.style = .soft
         scrollView.bottomEdgeEffect.isHidden = false
+        scheduleDiagnosisIfRequested()
         if !reportedConnection {
             reportedConnection = true
             DiagnosticsLog.write("chat.bottomEdge.attached style=soft hidden=false")
