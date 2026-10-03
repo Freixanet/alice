@@ -202,7 +202,7 @@ private struct ChatScreenContent: View, Equatable {
             // They are laid out here instead, with the same 44pt disc and
             // the same glass the composer's controls use.
             .toolbar(.hidden, for: .navigationBar)
-            .modifier(ChatTopChrome {
+            .modifier(ChatTopChrome(overlaysTranscript: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
                     // In the page, not floating over it: a popover tip is
@@ -572,6 +572,7 @@ private struct DrawerGlyph: Shape {
 }
 
 private struct TranscriptView: View {
+    @Environment(\.aliceChatHeaderHeight) private var headerHeight
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -780,10 +781,9 @@ private struct TranscriptView: View {
                 // The composer's own side inset, so the conversation and the
                 // field it is written in share one column.
                 .padding(.horizontal, store.activeBotProfileForModelSelection != nil ? 20 : 18)
-                // Air under the header, so the first message does not start
-                // against the agent's portrait and name, in the space below
-                // the header rather than underneath its floating controls.
-                .padding(.top, 28)
+                // Start below the floating portrait; this space scrolls away
+                // with the messages instead of becoming an opaque header.
+                .padding(.top, headerHeight + 28)
                 // Air between the last reply and the composer, so the
                 // conversation ends rather than stopping against the glass.
                 // At rest the field sits on the home indicator and needs a
@@ -921,20 +921,43 @@ private struct TranscriptView: View {
     }
 }
 
-/// The portrait has its own space. Scrolled text must not remain readable
-/// through the gap around the floating portrait and name.
+/// The transcript passes behind the floating controls. Empty chats still reserve
+/// the portrait's height so their centred welcome content keeps its placement.
 private struct ChatTopChrome<Header: View>: ViewModifier {
-    @Environment(\.colorScheme) private var scheme
+    let overlaysTranscript: Bool
     var header: Header
+    @State private var headerHeight: CGFloat = 0
 
-    init(@ViewBuilder header: () -> Header) {
+    init(overlaysTranscript: Bool, @ViewBuilder header: () -> Header) {
+        self.overlaysTranscript = overlaysTranscript
         self.header = header()
     }
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .top, spacing: 0) {
-            header.background(Palette.background(scheme))
+        if overlaysTranscript {
+            content
+                .environment(\.aliceChatHeaderHeight, headerHeight)
+                .overlay(alignment: .top) {
+                    header
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                            if abs(headerHeight - height) > 0.5 { headerHeight = height }
+                        }
+                }
+        } else {
+            content.safeAreaInset(edge: .top, spacing: 0) { header }
         }
+    }
+}
+
+private struct ChatHeaderHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+private extension EnvironmentValues {
+    var aliceChatHeaderHeight: CGFloat {
+        get { self[ChatHeaderHeightKey.self] }
+        set { self[ChatHeaderHeightKey.self] = newValue }
     }
 }
 
