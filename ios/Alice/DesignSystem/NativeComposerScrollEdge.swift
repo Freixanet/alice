@@ -49,7 +49,7 @@ final class ComposerScrollEdgeLink {
         guard !diagnosisScheduled,
               ProcessInfo.processInfo.arguments.contains("--alice-edge-diagnose") else { return }
         diagnosisScheduled = true
-        for delay in [1.0, 3.0, 8.0] {
+        for delay in [1.0, 3.0, 6.0, 10.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.recordDiagnosis(delay: delay)
             }
@@ -67,7 +67,7 @@ final class ComposerScrollEdgeLink {
         DiagnosticsLog.write("chat.edgeDiagnostic state delay=\(delay) bottomHidden=\(scrollView.bottomEdgeEffect.isHidden) bottomSoft=\(scrollView.bottomEdgeEffect.style == .soft) topHidden=\(scrollView.topEdgeEffect.isHidden) topSoft=\(scrollView.topEdgeEffect.style == .soft) attached=\(interaction.scrollView === scrollView) installed=\(container.interactions.contains { $0 === interaction }) reduceTransparency=\(UIAccessibility.isReduceTransparencyEnabled)")
         let frame = scrollView.convert(scrollView.bounds, to: window)
         DiagnosticsLog.write("chat.edgeDiagnostic scroll rect=\(frame) offset=\(scrollView.contentOffset) contentSize=\(scrollView.contentSize) inset=\(scrollView.adjustedContentInset) safe=\(scrollView.safeAreaInsets) clipped=\(scrollView.clipsToBounds)")
-        guard delay == 3 else { return }
+        guard delay == 3 || delay == 6 || delay == 10 else { return }
         func describe(_ view: UIView, depth: Int) {
             guard depth < 12 else { return }
             let rect = view.convert(view.bounds, to: window)
@@ -93,7 +93,7 @@ final class ComposerScrollEdgeLink {
             let pixels = CGRect(x: rect.minX * image.scale, y: rect.minY * image.scale,
                                 width: rect.width * image.scale, height: rect.height * image.scale)
             if let cropped = cgImage.cropping(to: pixels), let data = UIImage(cgImage: cropped).pngData() {
-                try? data.write(to: directory.appendingPathComponent("edge-diagnostic-\(name).png"))
+                try? data.write(to: directory.appendingPathComponent("edge-diagnostic-\(name)-\(Int(delay)).png"))
             }
         }
         DiagnosticsLog.write("chat.edgeDiagnostic snapshots saved")

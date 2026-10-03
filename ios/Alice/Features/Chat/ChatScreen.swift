@@ -586,6 +586,7 @@ private struct TranscriptView: View {
     var quietRuns: [QuietRoutineRun] = []
     var keyboardShown = false
     let composerScrollEdge: ComposerScrollEdgeLink
+    @State private var diagnosticBottomEdgeStyle: ScrollEdgeEffectStyle = .soft
 
     @State private var position = ScrollPosition(edge: .bottom)
     /// Whether the transcript keeps to its live edge as it grows. Only the
@@ -827,7 +828,18 @@ private struct TranscriptView: View {
             .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
             // A soft edge below the header as earlier replies leave the viewport.
-            .modifier(ProgressiveScrollEdges())
+            .modifier(ProgressiveScrollEdges(bottomStyle: diagnosticBottomEdgeStyle))
+            .task {
+                #if DEBUG
+                guard ProcessInfo.processInfo.arguments.contains("--alice-edge-diagnose") else { return }
+                do {
+                    try await Task.sleep(for: .seconds(4))
+                    diagnosticBottomEdgeStyle = .hard
+                    try await Task.sleep(for: .seconds(4))
+                    diagnosticBottomEdgeStyle = .soft
+                } catch { diagnosticBottomEdgeStyle = .soft }
+                #endif
+            }
             .background { ReplySelectionDismiss() }
             .onScrollPhaseChange { oldPhase, phase in
                 readerScrolling = Self.isReader(phase)
