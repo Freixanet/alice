@@ -846,7 +846,8 @@ private struct TranscriptView: View {
             } action: { old, tail in
                 lastTail = tail
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--alice-edge-capture") { return }
+                if ProcessInfo.processInfo.arguments.contains("--alice-edge-capture")
+                    || ProcessInfo.processInfo.arguments.contains("--alice-top-edge-capture") { return }
                 #endif
                 // Past the end with nobody holding it: a lazy stack opens at
                 // the end of the height it estimated for rows it had not
