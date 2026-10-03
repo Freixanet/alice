@@ -16,6 +16,7 @@ struct PurchaseOptionsCard: View {
     var replyProfile: String? = nil
     /// The walkthrough answers here instead of sending a message.
     var onChoose: ((PurchaseOption) -> Void)? = nil
+    var onLoaded: ((PurchaseOptionSet) -> Void)? = nil
     var onChooseQuantity: ((PurchaseOption, Int) -> Void)? = nil
     /// The set to draw when there is no call to read it from (a stopped purchase's «Ver otras opciones»).
     var key: String? = nil
@@ -64,10 +65,13 @@ struct PurchaseOptionsCard: View {
                 }
             }
         }
+        .onChange(of: set, initial: true) { _, value in
+            if let value { onLoaded?(value) }
+        }
         .task(id: (detail ?? key ?? "") + (session ?? "")) { if preview == nil { await load() } }
         .sheet(item: $open) { option in
             PurchaseProductSheet(image: option.image, seller: option.merchant, title: option.title,
-                                 price: option.price, oldPrice: nil, language: language,
+                                 price: option.displayPrice, oldPrice: option.previousPrice, language: language,
                                  options: option.variant.isEmpty ? [] : [option.variant], onBuy: {}, onBuyQuantity: { quantity in
                 open = nil
                 if let onChooseQuantity { onChooseQuantity(option, quantity) } else if let onChoose { onChoose(option) } else {
@@ -75,7 +79,8 @@ struct PurchaseOptionsCard: View {
                     submitted = option.id
                     store.sendQuickReply(option.choice + " [cantidad:\(quantity)]", replyProfile: replyProfile, followsLatestAgent: false)
                 }
-            }, shipping: option.shipping, condition: option.condition)
+            }, shipping: option.shipping, condition: option.hasPromotion ? "" : option.condition,
+               couponLabel: option.couponLabel(language), conditionalPromotion: option.hasPromotion, productURL: option.url)
         }
     }
 
@@ -151,7 +156,6 @@ struct PurchaseOptionsCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
                     CardImage(image: option.image, page: option.url, symbol: "bag", fits: true)
-                        .background(Color.white)
                         .frame(width: cardWidth, height: 150)
                         .clipped()
                     if picked {
@@ -168,8 +172,19 @@ struct PurchaseOptionsCard: View {
                     Text([option.merchant, option.variant, option.qty > 1 ? "× \(option.qty)" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(option.price.pricesKeptTogether).font(.subheadline.weight(.semibold).monospacedDigit())
+                    Text(option.displayPrice.pricesKeptTogether).font(.subheadline.weight(.semibold).monospacedDigit())
                         .padding(.top, 2)
+                    if let previous = option.previousPrice {
+                        Text(previous.pricesKeptTogether).font(.footnote.monospacedDigit())
+                            .strikethrough().foregroundStyle(.secondary)
+                    }
+                    if let label = option.couponLabel(language) {
+                        Text(label).font(.footnote.weight(.medium)).lineLimit(2)
+                        if option.hasPromotion {
+                            Text(language.pick("Subject to coupon terms", "Sujeto a las condiciones del cupón"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .padding(12)
                 .frame(width: cardWidth, alignment: .leading)
@@ -177,16 +192,17 @@ struct PurchaseOptionsCard: View {
             .background(Palette.card(scheme))
             .clipShape(.rect(cornerRadius: 20))
             .overlay {
-                RoundedRectangle(cornerRadius: 20)
-                    .strokeBorder(picked ? Palette.success(scheme) : Palette.border(scheme).opacity(0.5),
-                                  lineWidth: picked ? 1.5 : 0.5)
+                if picked {
+                    RoundedRectangle(cornerRadius: 20)
+                        .strokeBorder(Palette.success(scheme), lineWidth: 1.5)
+                }
             }
             .contentShape(.rect(cornerRadius: 20))
             .opacity(decided && !picked ? 0.5 : 1)
         }
         .buttonStyle(PressableCardStyle())
         .disabled(decided || (onChoose == nil && onChooseQuantity == nil && (!store.isConnected || store.isSending)))
-        .accessibilityLabel(Text("\(option.title), \(option.merchant), \(option.price)"))
+        .accessibilityLabel(Text("\(option.title), \(option.merchant), \(option.displayPrice)"))
         .accessibilityHint(decided ? "" : language.pick("Opens the product to buy it with Alice.",
                                                          "Abre el producto para comprarlo con Alice."))
     }

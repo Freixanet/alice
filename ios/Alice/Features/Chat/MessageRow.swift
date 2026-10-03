@@ -33,6 +33,7 @@ struct MessageRow: View {
     @AppStorage("alice.modelChoices") private var modelChoices: String = "{}"
     /// Copy, share, speak, retry and developer usage stay off until the reply is tapped.
     @State private var showingExtras = false
+    @State private var purchaseSets: [String: PurchaseOptionSet] = [:]
 
     /// The agent this reply is from when it was asked by name in a chat that
     /// is not its own.
@@ -282,7 +283,8 @@ struct MessageRow: View {
                     ForEach(message.tools.filter { PurchaseOptionSet.isTool($0.name) && $0.status == .done }) { call in
                         PurchaseOptionsCard(detail: call.detail, language: ChatLanguage.of(message.content),
                                             session: message.mentionSessionID ?? store.shownConversation?.hermesSessionID,
-                                            replyProfile: message.mentionProfile)
+                                            replyProfile: message.mentionProfile,
+                                            onLoaded: { purchaseSets[call.id] = $0 })
                     }
                     ForEach(message.tools.filter { AskPerson.isTool($0.name) }) { call in
                         if let ask = AskPerson.parse(call.detail),
@@ -311,6 +313,9 @@ struct MessageRow: View {
                         }
                     } else if store.pendingHomeModelConfirmation?.replyID == message.id {
                         ModelConfirmationCard()
+                    } else if let set = message.tools.reversed().compactMap({ purchaseSets[$0.id] }).first,
+                              let recommendation = set.recommendation(ChatLanguage.of(message.content)) {
+                        replyBody(recommendation, bubbled: bubblesReplies)
                     } else if !message.content.isEmpty {
                         // Markdown as blocks — headings, lists, tables, code,
                         // callouts, formulas and reply buttons — the way

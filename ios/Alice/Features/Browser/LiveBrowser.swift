@@ -27,6 +27,7 @@ final class LiveBrowser {
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var sequence = 0
     @ObservationIgnored private var previewing = false
+    @ObservationIgnored private var pinnedTarget: String?
 
     func attach(_ store: AppStore) { self.store = store }
 
@@ -69,7 +70,7 @@ final class LiveBrowser {
                 // Long-polls up to a second and a half for a newer frame.
                 // Follow the tab the agent is working in; hold still on this one
                 // while the person has control, so the page does not jump away.
-                let shot = try await store.sharedBrowserFrame(after: sequence, target: humanInControl ? target : nil)
+                let shot = try await store.sharedBrowserFrame(after: sequence, target: pinnedTarget ?? (humanInControl ? target : nil))
                 if !shot.target.isEmpty, shot.target != target {
                     // Another tab: its frames count from its own start.
                     sequence = 0
@@ -107,6 +108,17 @@ final class LiveBrowser {
             failure = nil
         } catch {
             failure = PlainWords.describe(error, doing: "start the browser")
+        }
+    }
+
+    func pin(_ target: String?) {
+        pinnedTarget = target
+        if let target, target != self.target {
+            self.target = target
+            image = nil
+            title = ""
+            url = ""
+            sequence = 0
         }
     }
 
@@ -222,10 +234,9 @@ struct LiveBrowserCard: View {
         let language = ChatLanguage.of(caption ?? live.title)
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Image(systemName: "globe")
-                    .font(.title3)
-                    .frame(width: 44, height: 44)
-                    .background(Palette.muted(scheme), in: .rect(cornerRadius: 12))
+                BrowserStatusIcon(state: live.failure != nil ? .failed
+                    : live.humanInControl || store.activeAwaitsAnswers ? .needsUser
+                    : working && browsing ? .browsing : .idle)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(language.pick("Browser", "Navegador")).font(.body.weight(.medium))
                     Text(working && browsing
@@ -236,7 +247,6 @@ struct LiveBrowserCard: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if working && browsing { LivePulse(color: Palette.success(scheme)) }
             }
             if BrowserDestination.reached(live.url) {
             Button { open = true } label: {
@@ -256,10 +266,6 @@ struct LiveBrowserCard: View {
                 .frame(height: 190)
                 .frame(maxWidth: .infinity)
                 .clipShape(.rect(cornerRadius: 18))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18)
-                        .strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5)
-                }
                 .contentShape(.rect(cornerRadius: 18))
             }
             .buttonStyle(.plain)
@@ -280,6 +286,32 @@ struct LiveBrowserCard: View {
             LiveBrowserScreen(agentWorking: working && browsing, caption: caption)
                 .navigationTransition(.zoom(sourceID: "live-browser", in: zoom))
         }
+    }
+}
+
+/// State lives on the browser's own tile, without a second status dot.
+struct BrowserStatusIcon: View {
+    enum State { case idle, browsing, needsUser, failed, complete }
+    let state: State
+    @Environment(\.colorScheme) private var scheme
+
+    private var tint: Color {
+        switch state {
+        case .browsing, .complete: Palette.success(scheme)
+        case .needsUser: Palette.warning(scheme)
+        case .failed: Palette.danger(scheme)
+        case .idle: .secondary
+        }
+    }
+
+    var body: some View {
+        Image(systemName: "globe")
+            .font(.title3)
+            .foregroundStyle(tint)
+            .frame(width: 44, height: 44)
+            .background(state == .idle ? Palette.muted(scheme) : tint.opacity(0.14),
+                        in: .rect(cornerRadius: 12))
+            .accessibilityHidden(true)
     }
 }
 
@@ -308,6 +340,7 @@ struct LivePulse: View {
 struct LiveBrowserScreen: View {
     var agentWorking = false
     var caption: String?
+    var pinnedTarget: String? = nil
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -338,9 +371,10 @@ struct LiveBrowserScreen: View {
             bottomBar
         }
         .background(Palette.background(scheme).ignoresSafeArea())
-        .onAppear { live.watch() }
+        .onAppear { live.pin(pinnedTarget); live.watch() }
         .onDisappear {
             live.unwatch()
+            live.pin(nil)
             // Leaving the browser hands it back: an agent is never left waiting on a closed screen.
             Task { await live.handBack() }
         }
