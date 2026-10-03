@@ -910,6 +910,7 @@ def _alice_own_context():
         _targets = {{t.get("targetId") for t in cdp("Target.getTargets").get("targetInfos", [])}}
         if _saved.get("daemon") == _dpid and _saved.get("target") in _targets:
             switch_tab(_saved["target"])
+            cdp("Emulation.setFocusEmulationEnabled", enabled=True)
             return _saved
         _contexts = set(cdp("Target.getBrowserContexts").get("browserContextIds", []))
         _ctx = _saved.get("context") if _saved.get("context") in _contexts else None
@@ -917,8 +918,9 @@ def _alice_own_context():
             _ctx = cdp("Target.createBrowserContext").get("browserContextId")
         _tid = _saved.get("target") if (_saved.get("target") in _targets and _saved.get("context") == _ctx) else None
         if _tid is None:
-            _tid = cdp("Target.createTarget", url="about:blank", browserContextId=_ctx).get("targetId")
+            _tid = cdp("Target.createTarget", url="about:blank", browserContextId=_ctx, background=True).get("targetId")
         switch_tab(_tid)
+        cdp("Emulation.setFocusEmulationEnabled", enabled=True)
         _saved = {{"context": _ctx, "target": _tid, "daemon": _dpid}}
         with open(_path, "w") as _file:
             _j.dump(_saved, _file)
@@ -935,7 +937,9 @@ def switch_tab(target, activate=False):
     _info = cdp("Target.getTargetInfo", targetId=_tid).get("targetInfo") or {{}}
     if _info.get("browserContextId") != _alice_context["context"]:
         raise RuntimeError("Esa pestaña no pertenece a este recado.")
-    _result = _alice_original_switch_tab(_tid, activate=activate)
+    # Attaching the agent must never restore the desktop browser window.
+    _result = _alice_original_switch_tab(_tid, activate=False)
+    cdp("Emulation.setFocusEmulationEnabled", enabled=True)
     _alice_context["target"] = _tid
     with open({path!r}, "w") as _file:
         _j.dump(_alice_context, _file)

@@ -58,9 +58,10 @@ class Probe:
         self.socket = connect(ws, open_timeout=3)
         self.sequence = 0
         self.context = self.call('Target.createBrowserContext', {'disposeOnDetach': True})['browserContextId']
-        self.target = self.call('Target.createTarget', {'url': 'about:blank', 'browserContextId': self.context})['targetId']
+        self.target = self.call('Target.createTarget', {'url': 'about:blank', 'browserContextId': self.context, 'background': True})['targetId']
         self.session = self.call('Target.attachToTarget', {'targetId': self.target, 'flatten': True})['sessionId']
         self.call('Page.enable', page=True)
+        self.call('Emulation.setFocusEmulationEnabled', {'enabled': True}, page=True)
 
     def call(self, method, params=None, page=False):
         self.sequence += 1

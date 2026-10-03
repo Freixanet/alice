@@ -202,7 +202,7 @@ private struct ChatScreenContent: View, Equatable {
             // They are laid out here instead, with the same 44pt disc and
             // the same glass the composer's controls use.
             .toolbar(.hidden, for: .navigationBar)
-            .modifier(ChatTopChrome(overlaysTranscript: hasTranscript) {
+            .modifier(ChatTopChrome(usesScrollEdges: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
                     // In the page, not floating over it: a popover tip is
@@ -296,7 +296,7 @@ private struct ChatScreenContent: View, Equatable {
                 // A real conversation reserves the live composer height so the
                 // last message still follows attachments, extra lines, and the
                 // keyboard.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
+                .safeAreaBar(edge: .bottom, spacing: 0) {
                     composerArea
                 }
         } else {
@@ -572,7 +572,6 @@ private struct DrawerGlyph: Shape {
 }
 
 private struct TranscriptView: View {
-    @Environment(\.aliceChatHeaderHeight) private var headerHeight
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -781,9 +780,9 @@ private struct TranscriptView: View {
                 // The composer's own side inset, so the conversation and the
                 // field it is written in share one column.
                 .padding(.horizontal, store.activeBotProfileForModelSelection != nil ? 20 : 18)
-                // Start below the floating portrait; this space scrolls away
-                // with the messages instead of becoming an opaque header.
-                .padding(.top, headerHeight + 28)
+                // The registered header already reserves its height. This extra
+                // breathing room scrolls with the messages.
+                .padding(.top, 28)
                 // Air between the last reply and the composer, so the
                 // conversation ends rather than stopping against the glass.
                 // At rest the field sits on the home indicator and needs a
@@ -817,8 +816,7 @@ private struct TranscriptView: View {
             .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
             // A soft edge below the header as earlier replies leave the viewport.
-            .scrollEdgeEffectStyle(.soft, for: .top)
-            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .modifier(ProgressiveScrollEdges())
             .background { ReplySelectionDismiss() }
             .onScrollPhaseChange { oldPhase, phase in
                 readerScrolling = Self.isReader(phase)
@@ -921,43 +919,24 @@ private struct TranscriptView: View {
     }
 }
 
-/// The transcript passes behind the floating controls. Empty chats still reserve
-/// the portrait's height so their centred welcome content keeps its placement.
+/// Register the floating header with the native scroll-edge renderer. Empty
+/// chats retain their existing safe-area layout and centred welcome content.
 private struct ChatTopChrome<Header: View>: ViewModifier {
-    let overlaysTranscript: Bool
+    let usesScrollEdges: Bool
     var header: Header
-    @State private var headerHeight: CGFloat = 0
 
-    init(overlaysTranscript: Bool, @ViewBuilder header: () -> Header) {
-        self.overlaysTranscript = overlaysTranscript
+    init(usesScrollEdges: Bool, @ViewBuilder header: () -> Header) {
+        self.usesScrollEdges = usesScrollEdges
         self.header = header()
     }
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if overlaysTranscript {
-            content
-                .environment(\.aliceChatHeaderHeight, headerHeight)
-                .overlay(alignment: .top) {
-                    header
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                            if abs(headerHeight - height) > 0.5 { headerHeight = height }
-                        }
-                }
+        if usesScrollEdges {
+            content.safeAreaBar(edge: .top, spacing: 0) { header }
         } else {
             content.safeAreaInset(edge: .top, spacing: 0) { header }
         }
-    }
-}
-
-private struct ChatHeaderHeightKey: EnvironmentKey {
-    static let defaultValue: CGFloat = 0
-}
-
-private extension EnvironmentValues {
-    var aliceChatHeaderHeight: CGFloat {
-        get { self[ChatHeaderHeightKey.self] }
-        set { self[ChatHeaderHeightKey.self] = newValue }
     }
 }
 
