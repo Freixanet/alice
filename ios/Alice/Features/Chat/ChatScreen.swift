@@ -832,6 +832,7 @@ private struct TranscriptView: View {
             .task {
                 #if DEBUG
                 guard ProcessInfo.processInfo.arguments.contains("--alice-edge-diagnose") else { return }
+                following = false
                 do {
                     try await Task.sleep(for: .seconds(4))
                     diagnosticBottomEdgeStyle = .hard
@@ -865,6 +866,9 @@ private struct TranscriptView: View {
                 )
             } action: { old, tail in
                 lastTail = tail
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--alice-edge-diagnose") { return }
+                #endif
                 // Past the end with nobody holding it: a lazy stack opens at
                 // the end of the height it estimated for rows it had not
                 // drawn, then shrinks as they draw, and the chat sat on empty

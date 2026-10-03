@@ -11,6 +11,8 @@ final class ComposerScrollEdgeLink {
     private var reportedConnection = false
     private var reportedLayout = false
     private var diagnosisScheduled = false
+    private var originalDiagnosticOffset: CGPoint?
+    private var fixedDiagnosticOffset: CGPoint?
 
     func attachScrollView(_ scrollView: UIScrollView) {
         if self.scrollView !== scrollView { reportedConnection = false; reportedLayout = false }
@@ -64,6 +66,16 @@ final class ComposerScrollEdgeLink {
             DiagnosticsLog.write("chat.edgeDiagnostic missingWindow delay=\(delay)")
             return
         }
+        if delay == 1 {
+            originalDiagnosticOffset = scrollView.contentOffset
+            fixedDiagnosticOffset = CGPoint(x: scrollView.contentOffset.x,
+                y: max(-scrollView.adjustedContentInset.top,
+                       scrollView.contentSize.height - scrollView.bounds.height - 160))
+        }
+        if let offset = fixedDiagnosticOffset {
+            scrollView.setContentOffset(offset, animated: false)
+            window.layoutIfNeeded()
+        }
         DiagnosticsLog.write("chat.edgeDiagnostic state delay=\(delay) bottomHidden=\(scrollView.bottomEdgeEffect.isHidden) bottomSoft=\(scrollView.bottomEdgeEffect.style == .soft) topHidden=\(scrollView.topEdgeEffect.isHidden) topSoft=\(scrollView.topEdgeEffect.style == .soft) attached=\(interaction.scrollView === scrollView) installed=\(container.interactions.contains { $0 === interaction }) reduceTransparency=\(UIAccessibility.isReduceTransparencyEnabled)")
         let frame = scrollView.convert(scrollView.bounds, to: window)
         DiagnosticsLog.write("chat.edgeDiagnostic scroll rect=\(frame) offset=\(scrollView.contentOffset) contentSize=\(scrollView.contentSize) inset=\(scrollView.adjustedContentInset) safe=\(scrollView.safeAreaInsets) clipped=\(scrollView.clipsToBounds)")
@@ -97,6 +109,11 @@ final class ComposerScrollEdgeLink {
             }
         }
         DiagnosticsLog.write("chat.edgeDiagnostic snapshots saved")
+        if delay == 10, let offset = originalDiagnosticOffset {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak scrollView] in
+                scrollView?.setContentOffset(offset, animated: false)
+            }
+        }
     }
     #endif
 
