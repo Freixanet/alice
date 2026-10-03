@@ -9,9 +9,10 @@ final class ComposerScrollEdgeLink {
     private weak var container: UIView?
     private let interaction = UIScrollEdgeElementContainerInteraction()
     private var reportedConnection = false
+    private var reportedLayout = false
 
     func attachScrollView(_ scrollView: UIScrollView) {
-        if self.scrollView !== scrollView { reportedConnection = false }
+        if self.scrollView !== scrollView { reportedConnection = false; reportedLayout = false }
         self.scrollView = scrollView
         connect()
     }
@@ -30,6 +31,16 @@ final class ComposerScrollEdgeLink {
         container.removeInteraction(interaction)
         self.container = nil
         interaction.scrollView = nil
+    }
+
+    func reportLayout() {
+        guard !reportedLayout, let scrollView, let container,
+              let window = container.window, scrollView.window === window,
+              scrollView.bounds.height > 0, container.bounds.height > 0 else { return }
+        reportedLayout = true
+        let viewport = scrollView.convert(scrollView.bounds, to: window)
+        let controls = container.convert(container.bounds, to: window)
+        DiagnosticsLog.write("chat.bottomEdge.geometry scrollBottom=\(Int(viewport.maxY)) composerTop=\(Int(controls.minY)) composerBottom=\(Int(controls.maxY)) bottomInset=\(Int(scrollView.adjustedContentInset.bottom))")
     }
 
     private func connect() {
@@ -83,8 +94,9 @@ struct NativeComposerScrollEdge<ComposerContent: View>: UIViewControllerRepresen
     let link: ComposerScrollEdgeLink
     let composer: ComposerContent
 
-    func makeUIViewController(context: Context) -> UIHostingController<ComposerContent> {
-        let controller = UIHostingController(rootView: composer)
+    func makeUIViewController(context: Context) -> ComposerEdgeHostingController<ComposerContent> {
+        let controller = ComposerEdgeHostingController(rootView: composer)
+        controller.edgeLink = link
         controller.view.backgroundColor = .clear
         controller.safeAreaRegions = []
         controller.sizingOptions = .intrinsicContentSize
@@ -92,7 +104,7 @@ struct NativeComposerScrollEdge<ComposerContent: View>: UIViewControllerRepresen
         return controller
     }
 
-    func updateUIViewController(_ controller: UIHostingController<ComposerContent>, context: Context) {
+    func updateUIViewController(_ controller: ComposerEdgeHostingController<ComposerContent>, context: Context) {
         controller.rootView = composer
         link.attachContainer(controller.view)
         controller.view.invalidateIntrinsicContentSize()
@@ -100,7 +112,7 @@ struct NativeComposerScrollEdge<ComposerContent: View>: UIViewControllerRepresen
 
     func sizeThatFits(
         _ proposal: ProposedViewSize,
-        uiViewController: UIHostingController<ComposerContent>,
+        uiViewController: ComposerEdgeHostingController<ComposerContent>,
         context: Context
     ) -> CGSize? {
         guard let width = proposal.width, width > 0 else { return nil }
@@ -110,8 +122,18 @@ struct NativeComposerScrollEdge<ComposerContent: View>: UIViewControllerRepresen
     func makeCoordinator() -> ComposerScrollEdgeLink { link }
 
     static func dismantleUIViewController(
-        _ controller: UIHostingController<ComposerContent>, coordinator: ComposerScrollEdgeLink
+        _ controller: ComposerEdgeHostingController<ComposerContent>, coordinator: ComposerScrollEdgeLink
     ) {
         coordinator.detachContainer(controller.view)
+    }
+}
+
+@MainActor
+final class ComposerEdgeHostingController<Content: View>: UIHostingController<Content> {
+    weak var edgeLink: ComposerScrollEdgeLink?
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        edgeLink?.reportLayout()
     }
 }
