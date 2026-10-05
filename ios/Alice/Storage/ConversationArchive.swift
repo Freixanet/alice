@@ -70,18 +70,27 @@ enum ConversationArchive {
     }
 
     static func load(from defaults: ConversationStorage) -> Load {
-        if let indexData = defaults.data(forKey: indexKey), !indexData.isEmpty {
-            switch loadSplit(indexData, from: defaults) {
-            case .empty:
-                break
-            case let .available(loaded):
-                return .available(loaded)
-            case let .unreadable(reason, bytes):
-                if let blob = loadBlob(from: defaults) { return blob }
-                return .unreadable(reason: reason, bytes: bytes)
+        do {
+            if let indexData = try defaults.readData(forKey: indexKey) {
+                guard !indexData.isEmpty else {
+                    return .unreadable(reason: "emptyIndex", bytes: indexData)
+                }
+                switch try loadSplit(indexData, from: defaults) {
+                case .empty:
+                    break
+                case let .available(loaded):
+                    return .available(loaded)
+                case let .unreadable(reason, bytes):
+                    if let blob = try loadBlob(from: defaults) { return blob }
+                    return .unreadable(reason: reason, bytes: bytes)
+                }
             }
+            return try loadBlob(from: defaults) ?? .empty
+        } catch {
+            // Keep the archive untouched when the read failed. The error type
+            // identifies the failure without exposing paths or conversation data.
+            return .unreadable(reason: "storageReadFailed (\(type(of: error)))", bytes: Data())
         }
-        return loadBlob(from: defaults) ?? .empty
     }
 
     static func prepare(_ snapshot: Snapshot) throws -> PreparedWrite {
@@ -155,7 +164,7 @@ enum ConversationArchive {
         }
     }
 
-    private static func loadSplit(_ indexData: Data, from defaults: ConversationStorage) -> Load {
+    private static func loadSplit(_ indexData: Data, from defaults: ConversationStorage) throws -> Load {
         let ids: [String]
         do {
             ids = try JSONDecoder().decode([String].self, from: indexData)
@@ -168,7 +177,8 @@ enum ConversationArchive {
         var skipped: [Skipped] = []
         conversations.reserveCapacity(ids.count)
         for id in ids {
-            guard let data = defaults.data(forKey: recordKey(for: id)), !data.isEmpty else {
+            guard let data = try defaults.readData(forKey: recordKey(for: id)) else {
+                skipped.append(Skipped(id: id, reason: "indexed record is missing", bytes: Data()))
                 continue
             }
             do {
@@ -179,6 +189,11 @@ enum ConversationArchive {
         }
         if conversations.isEmpty, skipped.isEmpty { return .empty }
         if conversations.isEmpty {
+            // The index is readable and names records that are genuinely absent;
+            // do not roll back to a potentially stale legacy blob in that case.
+            if skipped.contains(where: { $0.reason == "indexed record is missing" }) {
+                return .available(Available(conversations: [], source: .split, skipped: skipped))
+            }
             let first = skipped[0]
             return .unreadable(reason: first.reason, bytes: first.bytes)
         }
@@ -187,8 +202,8 @@ enum ConversationArchive {
         )
     }
 
-    private static func loadBlob(from defaults: ConversationStorage) -> Load? {
-        guard let data = defaults.data(forKey: blobKey), !data.isEmpty else { return nil }
+    private static func loadBlob(from defaults: ConversationStorage) throws -> Load? {
+        guard let data = try defaults.readData(forKey: blobKey) else { return nil }
         do {
             let saved = try JSONDecoder().decode([Conversation].self, from: data)
             if saved.isEmpty { return .empty }

@@ -106,9 +106,24 @@ enum CalendarSync {
         let editable: Bool
     }
 
+    /// Chooses only a unique candidate. Without a supplied time, more than
+    /// one title match is ambiguous; with a time, tied nearest matches are too.
+    static func uniqueMatch<T>(
+        from matches: [T], around time: Date?, start: (T) -> Date
+    ) -> T? {
+        guard !matches.isEmpty else { return nil }
+        guard let time else { return matches.count == 1 ? matches[0] : nil }
+
+        let ranked = matches.map {
+            (item: $0, distance: abs(start($0).timeIntervalSince(time)))
+        }.sorted { $0.distance < $1.distance }
+        guard ranked.count == 1 || ranked[0].distance < ranked[1].distance else { return nil }
+        return ranked[0].item
+    }
+
     /// The event an agent means: on that day, whose title matches (either
     /// contains the other, case and accents aside), nearest the time given.
-    /// Nil when there is none — a card never acts on a guess.
+    /// Nil when there is none or the match is ambiguous — a card never acts on a guess.
     @MainActor
     static func find(title: String, day: Date, time: Date?) -> Found? {
         guard hasAccess else { return nil }
@@ -122,9 +137,9 @@ enum CalendarSync {
                 let have = ($0.title ?? "").folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
                 return !have.isEmpty && (have.contains(wanted) || wanted.contains(have))
             }
-        let best = time.map { t in matches.min { abs($0.startDate.timeIntervalSince(t)) < abs($1.startDate.timeIntervalSince(t)) } }
-            ?? matches.first
-        guard let event = best ?? matches.first else { return nil }
+        guard let event = Self.uniqueMatch(from: matches, around: time, start: { $0.startDate }) else {
+            return nil
+        }
         return Found(
             identifier: event.eventIdentifier ?? "", title: event.title ?? title,
             start: event.startDate, end: event.endDate, allDay: event.isAllDay,

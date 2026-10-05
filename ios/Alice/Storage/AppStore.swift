@@ -10349,7 +10349,7 @@ final class AppStore {
         case .available(let loaded):
             rememberLoaded(loaded)
         case .unreadable(let reason, let bytes):
-            if defaults.data(forKey: Self.salvageKey) == nil {
+            if !bytes.isEmpty, defaults.data(forKey: Self.salvageKey) == nil {
                 defaults.set(bytes, forKey: Self.salvageKey)
             }
             conversationsUnreadable = reason
@@ -10370,7 +10370,7 @@ final class AppStore {
         for item in loaded.skipped {
             protectedConversationIDs.insert(item.id)
             persistedConversationIDs.insert(item.id)
-            if defaults.data(forKey: Self.salvageKey) == nil {
+            if !item.bytes.isEmpty, defaults.data(forKey: Self.salvageKey) == nil {
                 defaults.set(item.bytes, forKey: Self.salvageKey)
             }
         }

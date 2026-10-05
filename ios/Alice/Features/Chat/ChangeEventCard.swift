@@ -127,7 +127,10 @@ struct ChangeEventCard: View {
                 }
                 .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(accent)
             } else if looked, found == nil {
-                Text(language.pick("I can't find it in your calendar that day.", "No la encuentro en tu calendario ese día."))
+                Text(language.pick(
+                    "I can't identify a unique event in your calendar that day.",
+                    "No puedo identificar una cita única en tu calendario ese día."
+                ))
                     .font(.footnote).foregroundStyle(.secondary)
             } else if let found, !found.editable {
                 Text(language.pick("That calendar can't be changed from here.", "Ese calendario no se puede cambiar desde aquí."))

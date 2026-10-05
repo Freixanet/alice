@@ -23,4 +23,31 @@ final class CalendarChangeTests: XCTestCase {
         XCTAssertNil(RichCalendarChange(link: "alice://calendar/move?title=Dentista&date=2026-09-25"))
         XCTAssertNil(RichCalendarChange(link: "alice://calendar/delete?title=X&date=2026-09-25"))
     }
+
+    func testEventSelectionRequiresAnUnambiguousCalendarMatch() {
+        struct Candidate {
+            let id: String
+            let start: Date
+        }
+        let morning = Date(timeIntervalSince1970: 1_800_000_000)
+        let candidates = [
+            Candidate(id: "first", start: morning),
+            Candidate(id: "second", start: morning.addingTimeInterval(3_600))
+        ]
+
+        XCTAssertNil(CalendarSync.uniqueMatch(from: candidates, around: nil, start: \.start))
+        XCTAssertEqual(
+            CalendarSync.uniqueMatch(from: [candidates[0]], around: nil, start: \.start)?.id,
+            "first"
+        )
+        XCTAssertNil(CalendarSync.uniqueMatch(
+            from: candidates, around: morning.addingTimeInterval(1_800), start: \.start
+        ))
+        XCTAssertEqual(
+            CalendarSync.uniqueMatch(
+                from: candidates, around: morning.addingTimeInterval(60), start: \.start
+            )?.id,
+            "first"
+        )
+    }
 }
