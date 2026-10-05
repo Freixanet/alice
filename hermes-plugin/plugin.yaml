@@ -32,6 +32,7 @@ provides_tools:
   - purchase_verify
   - purchase_options
   - purchase_check_cart
+  - purchase_browser
   - login_request
   - login_fill
   - errand_start
