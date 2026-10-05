@@ -111,6 +111,24 @@ final class ConversationPersistenceTests: XCTestCase {
         XCTAssertNil(storage.data(forKey: ConversationArchive.recordKey(for: "current")))
         XCTAssertEqual(defaults.data(forKey: AppStore.salvageKey), salvage)
     }
+
+    func testUnreadableMigrationMarkerKeepsTheCurrentStoreAndBlocksWrites() throws {
+        let suite = "alice.persistence-test.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let index = try JSONEncoder().encode(["current"])
+        let storage = RecoveryStorage(values: [ConversationArchive.indexKey: index], failsRead: true)
+        let selected = ConversationArchive.storageAfterAdoption(of: storage, from: defaults)
+        XCTAssertTrue(selected === storage)
+
+        let store = AppStore(defaults: defaults, conversationStorage: selected)
+        XCTAssertNotNil(store.conversationsUnreadable)
+        store.persistConversationsImmediately()
+        XCTAssertEqual(storage.writes, 0)
+        XCTAssertEqual(storage.removals, 0)
+        XCTAssertEqual(storage.data(forKey: ConversationArchive.indexKey), index)
+        XCTAssertNil(defaults.data(forKey: ConversationArchive.indexKey))
+    }
 }
 
 private final class RecoveryStorage: ConversationStorage {

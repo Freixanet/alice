@@ -96,6 +96,20 @@ extension ConversationArchive {
     /// there, the old storage is the one read.
     static let movedKey = "alice.conversations.moved"
 
+    /// A destination whose migration marker cannot be read may already hold
+    /// the current archive. Keep using it so load reports the I/O failure;
+    /// never remigrate an older source or silently treat it as a fresh store.
+    static func storageAfterAdoption(
+        of target: ConversationStorage, from source: ConversationStorage
+    ) -> ConversationStorage {
+        do {
+            _ = try target.readData(forKey: movedKey)
+        } catch {
+            return target
+        }
+        return adopt(target, from: source) ? target : source
+    }
+
     /// Makes `target` the conversations' storage, moving what `source` holds.
     ///
     /// The move copies the stored bytes as they are — records, index and any

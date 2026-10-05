@@ -10246,7 +10246,7 @@ final class AppStore {
               let directory = FileConversationStorage.standardDirectory
         else { return defaults }
         let files = FileConversationStorage(directory: directory)
-        return ConversationArchive.adopt(files, from: defaults) ? files : defaults
+        return ConversationArchive.storageAfterAdoption(of: files, from: defaults)
     }
 
     private func archiveSnapshot(_ conversations: [Conversation]) -> ConversationArchive.Snapshot {
