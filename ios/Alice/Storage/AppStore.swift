@@ -10397,10 +10397,16 @@ final class AppStore {
             return
         }
         let live: [Conversation]
-        if case let .available(loaded) = ConversationArchive.load(from: conversationStorage) {
+        switch ConversationArchive.load(from: conversationStorage) {
+        case let .available(loaded):
+            // A read failure or missing indexed record cannot establish that
+            // the older salvage contains more history than the current store.
+            guard loaded.skipped.isEmpty else { return }
             live = loaded.conversations
-        } else {
+        case .empty:
             live = []
+        case .unreadable:
+            return
         }
         let liveMessages = live.reduce(0) { $0 + $1.messages.count }
         let salvagedMessages = saved.reduce(0) { $0 + $1.messages.count }
