@@ -849,6 +849,13 @@ def brief(entry: Dict[str, Any]) -> str:
     what = (_offer_lines(offer) + " " if offer else
             "Pregunta con `ask_person` solo lo que cambia qué se hace o cuánto cuesta, todo en una sola vez "
             "y al principio. ")
+    execution = (" En la página de la opción usa `purchase_browser` action=observe. Para preparar la cesta y "
+           "el envío, una acción por vez con control_id y observation_id de la observación devuelta. "
+           "Cada acción devuelve el estado real posterior: comprueba variante, unidades, errores y "
+           "campos pendientes. No inventes selectores ni repitas un clic con resultado unchanged, stale "
+           "o unknown. Si aún no hay pestaña propia, abre la URL de la opción con browser_exec y vuelve "
+           "a observe. En controles especiales que no aparezcan, usa screenshot para observar antes "
+           "del helper de navegador y verifica después. purchase_browser no introduce secretos ni paga. " if offer else "")
     return (
         f"[Recado de Alice] {entry['request']}\n\n"
         "Trabajas en segundo plano, fuera de cualquier chat: la persona no lee tus respuestas, ve la "
@@ -856,7 +863,7 @@ def brief(entry: Dict[str, Any]) -> str:
         "entrar, usa el login del vault. Hazlo de principio a fin tú: nunca llames a `errand_start` (ya estás en el "
         "recado). El comentario `#` con que empieza cada paso del navegador es lo que la persona ve: "
         "escríbelo en su idioma y en pocas palabras («Añadir al carrito», «Elegir envío»). "
-        f"{login} {what}"
+        f"{login} {what}{execution}"
         "Decide tú lo que tenga una opción razonable (tratamiento, envío estándar, sin extras, sin cuenta "
         "nueva si se puede comprar como invitado) y usa los datos de envío guardados. Nunca preguntes por "
         "tarjetas: si una página de pago pide una y `browser_vault_list` no tiene ninguna para ella, llama "
@@ -1086,6 +1093,16 @@ def page_of(url: str) -> str:
 
 def circling(entry: Dict[str, Any]) -> Optional[str]:
     """The page an errand keeps going round on without getting past, or None."""
+    observed = entry.get("browser_observation")
+    if isinstance(observed, dict):
+        # A one-page checkout changes fields, delivery, errors and totals without
+        # changing its URL. DOM progress, not the agent's comments, is decisive.
+        if time.time() - float(observed.get("progress_at") or 0) < CIRCLE_SECONDS:
+            return None
+        if int(observed.get("unchanged") or 0) < CIRCLE_STEPS:
+            return None
+        if observed.get("url"):
+            return page_of(observed["url"])
     steps = [s for s in entry.get("steps") or [] if s.get("url")]
     if len(steps) < CIRCLE_STEPS:
         return None
@@ -1536,7 +1553,7 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
     """What Alice shows: everything but the internal session wiring."""
     # The chat it came from stays: Alice finds an errand's cards by it when the chat's reply
     # never called errand_start (the plugin starts it anyway).
-    hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence", "checkout_evidence"}
+    hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence", "checkout_evidence", "browser_observation"}
     out = {k: v for k, v in entry.items() if k not in hidden}
     if isinstance(out.get("approval"), dict):
         out["approval"] = {k: v for k, v in out["approval"].items() if k != "run_id"}
