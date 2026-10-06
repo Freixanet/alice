@@ -85,8 +85,8 @@ final class ConversationPersistenceTests: XCTestCase {
         XCTAssertNotNil(store.conversationsUnreadable)
         XCTAssertFalse(store.conversations.contains { $0.id == older.id })
         store.persistConversationsImmediately()
-        XCTAssertEqual(storage.writes, 0)
-        XCTAssertEqual(storage.removals, 0)
+        XCTAssertEqual(storage.archiveWrites, 0)
+        XCTAssertEqual(storage.archiveRemovals, 0)
         XCTAssertEqual(storage.data(forKey: ConversationArchive.indexKey), index)
         XCTAssertEqual(defaults.data(forKey: AppStore.salvageKey), salvage)
     }
@@ -124,8 +124,8 @@ final class ConversationPersistenceTests: XCTestCase {
         let store = AppStore(defaults: defaults, conversationStorage: selected)
         XCTAssertNotNil(store.conversationsUnreadable)
         store.persistConversationsImmediately()
-        XCTAssertEqual(storage.writes, 0)
-        XCTAssertEqual(storage.removals, 0)
+        XCTAssertEqual(storage.archiveWrites, 0)
+        XCTAssertEqual(storage.archiveRemovals, 0)
         XCTAssertEqual(storage.data(forKey: ConversationArchive.indexKey), index)
         XCTAssertNil(defaults.data(forKey: ConversationArchive.indexKey))
     }
@@ -135,12 +135,20 @@ private final class RecoveryStorage: ConversationStorage {
     enum ReadError: Error { case inaccessible }
     private var values: [String: Data]
     private let failsRead: Bool
-    private(set) var writes = 0
-    private(set) var removals = 0
+    private(set) var archiveWrites = 0
+    private(set) var archiveRemovals = 0
 
     init(values: [String: Data], failsRead: Bool = false) {
         self.values = values
         self.failsRead = failsRead
+    }
+
+    // Drafts share this store and may be saved when the app backgrounds.
+    // Count every history mutation, independently of those draft writes.
+    private func isArchiveKey(_ key: String) -> Bool {
+        key == ConversationArchive.indexKey || key == ConversationArchive.blobKey
+            || key == ConversationArchive.movedKey
+            || (key.hasPrefix("alice.conversation.") && !key.contains(".draft"))
     }
 
     func data(forKey key: String) -> Data? { values[key] }
@@ -149,11 +157,11 @@ private final class RecoveryStorage: ConversationStorage {
         return values[key]
     }
     func set(_ value: Any?, forKey key: String) {
-        writes += 1
+        if isArchiveKey(key) { archiveWrites += 1 }
         values[key] = value as? Data
     }
     func removeObject(forKey key: String) {
-        removals += 1
+        if isArchiveKey(key) { archiveRemovals += 1 }
         values.removeValue(forKey: key)
     }
 }
