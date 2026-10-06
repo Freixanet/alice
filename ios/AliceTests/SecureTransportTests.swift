@@ -13,6 +13,14 @@ final class SecureTransportTests: XCTestCase {
         XCTAssertTrue(DashboardClient.carriesSecrets("api/plugins/alice/secret"))
         XCTAssertTrue(DashboardClient.carriesSecrets("api/plugins/alice/errands/e1/access"))
         XCTAssertFalse(DashboardClient.carriesSecrets("api/plugins/alice/notes"))
+        // Credentials on other routes: by route, or by what the body holds.
+        XCTAssertTrue(DashboardClient.carriesSecrets("api/env?profile=default"))
+        XCTAssertTrue(DashboardClient.carriesSecrets("api/providers/validate"))
+        XCTAssertTrue(DashboardClient.carriesSecrets("api/memory/providers/honcho/config?profile=default"))
+        XCTAssertTrue(DashboardClient.carriesSecrets("api/mcp/servers", body: ["name": "x", "env": ["TOKEN": "abc"]]))
+        XCTAssertTrue(DashboardClient.carriesSecrets("api/mcp/servers", body: ["name": "x", "bearer_token": "abc"]))
+        XCTAssertFalse(DashboardClient.carriesSecrets("api/mcp/servers", body: ["name": "x", "env": [String: String]()]))
+        XCTAssertFalse(DashboardClient.carriesSecrets("api/plugins/alice/notes", body: ["text": "hola"]))
     }
 
     func testRepliesCannotPairOrTypeForYou() {

@@ -6427,7 +6427,14 @@ final class AppStore {
     private var usesFiles: Bool { defaults === UserDefaults.standard }
 
     private func keepRecord(_ data: Data, _ key: String) {
-        guard usesFiles, PrivateFiles.write(data, key) else { defaults.set(data, forKey: key); return }
+        guard usesFiles else { defaults.set(data, forKey: key); return }
+        guard PrivateFiles.write(data, key) else {
+            // The preferences become the record: a file left from an earlier write would be read
+            // first on the next launch and bring back an older value (an older note edit).
+            PrivateFiles.remove(key)
+            defaults.set(data, forKey: key)
+            return
+        }
         defaults.removeObject(forKey: key)
     }
 

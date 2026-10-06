@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 LOG = Path(".alice") / "actions.jsonl"
+TEXT_CHARS = 2500
 # Bounded: a phone shows the recent weeks, and the file must not grow forever.
 MAX_BYTES = 1_000_000
 KEEP_LINES = 2000
@@ -192,6 +193,9 @@ def classify(tool: str, args: Optional[Dict[str, Any]], result: Any = None,
             kind = "skill.changed"
         else:
             return None
+        if _parsed_result(result).get("staged"):
+            # Staged for review, not yet written: skill_keeper.py says whether it was kept or held.
+            kind = "skill.proposed"
         return {"kind": kind, "target": ", ".join(dict.fromkeys(names))}
     if tool in ("write_file", "patch"):
         path = args.get("path") or args.get("file_path") or ""
@@ -236,10 +240,15 @@ def _log_path(root: Path) -> Path:
 
 
 def record(root: Path, *, profile: str, session: str, tool: str, kind: str, target: Any,
-           ok: bool, now: Optional[float] = None) -> Dict[str, Any]:
+           ok: bool, now: Optional[float] = None, summary: str = "", text: str = "") -> Dict[str, Any]:
     entry = {"v": 1, "id": uuid.uuid4().hex[:16], "at": round(now or time.time(), 3),
              "profile": profile or "default", "session": session or "", "tool": tool,
              "kind": kind, "target": _clip(target), "ok": bool(ok)}
+    # What a lesson taught, for the person to read when they tap it (skill_keeper.py).
+    if summary:
+        entry["summary"] = summary.strip()[:400]
+    if text:
+        entry["text"] = text.strip()[:TEXT_CHARS]
     path = _log_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(entry, ensure_ascii=False) + "\n"

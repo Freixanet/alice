@@ -192,7 +192,7 @@ actor DashboardClient {
         guard let credentials else { throw Failure.notConfigured }
         // A card number, a password or a key never crosses a network unencrypted: plain HTTP is
         // accepted for the Mac on the home network, but not for these.
-        if Self.carriesSecrets(path), !Self.encrypted(credentials.url) { throw Failure.insecure }
+        if Self.carriesSecrets(path, body: body), !Self.encrypted(credentials.url) { throw Failure.insecure }
         let age = try await authenticate()
         do {
             return try await fetch(path, method: method, body: body)
@@ -202,10 +202,42 @@ actor DashboardClient {
         }
     }
 
-    static func carriesSecrets(_ path: String) -> Bool {
+    /// A request that would carry a card, a password, a key or a token: by its route, or by what its
+    /// body holds, so a new route that sends credentials is covered without being listed here.
+    static func carriesSecrets(_ path: String, body: [String: Any]? = nil) -> Bool {
         let route = path.split(separator: "?").first.map(String.init) ?? path
-        return route.contains("/vault/") || route.hasSuffix("/secret") || route.hasSuffix("/access")
-            || route.hasSuffix("/card")
+        if route.contains("/vault/") || route.hasSuffix("/secret") || route.hasSuffix("/access")
+            || route.hasSuffix("/card") || route == "api/env" || route == "api/providers/validate"
+            || route == "api/webhooks"
+            || (route.hasPrefix("api/memory/providers/") && (route.hasSuffix("/config") || route.hasSuffix("/setup"))) {
+            return true
+        }
+        return body.map(holdsSecrets) ?? false
+    }
+
+    private static let secretFields: Set<String> = [
+        "env", "bearer_token", "token", "secret", "password", "api_key", "apikey", "access_token",
+        "card_number", "cvc", "otp", "values",
+    ]
+
+    private static func holdsSecrets(_ value: Any) -> Bool {
+        if let object = value as? [String: Any] {
+            return object.contains { key, inner in
+                (secretFields.contains(key.lowercased()) && !isEmpty(inner)) || holdsSecrets(inner)
+            }
+        }
+        if let list = value as? [Any] { return list.contains(where: holdsSecrets) }
+        return false
+    }
+
+    private static func isEmpty(_ value: Any) -> Bool {
+        switch value {
+        case let text as String: text.isEmpty
+        case let object as [String: Any]: object.isEmpty
+        case let list as [Any]: list.isEmpty
+        case is NSNull: true
+        default: false
+        }
     }
 
     /// HTTPS, this device, or Tailscale (WireGuard-encrypted end to end).
