@@ -33,7 +33,7 @@ struct LibraryView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            AppSegmentedPicker("Show", selection: $part, options: Part.allCases.map { .init($0, $0.label) })
+            AppSegmentedPicker("Show", selection: $part, options: Part.allCases.map { .init($0, $0.label) }, identifier: "library.part")
             .padding(.horizontal, 16)
             .padding(.top, PageLayout.navigationGap)
             .padding(.bottom, 8)

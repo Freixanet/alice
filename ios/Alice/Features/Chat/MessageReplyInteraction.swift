@@ -152,7 +152,7 @@ private struct MessageReplyPan: UIViewRepresentable {
             }
         }
         nonisolated func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            other.view is UIScrollView
+            MainActor.assumeIsolated { other.view is UIScrollView }
         }
     }
 }

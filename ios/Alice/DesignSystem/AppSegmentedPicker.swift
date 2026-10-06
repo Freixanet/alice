@@ -12,12 +12,14 @@ struct AppSegmentedPicker<Value: Hashable>: UIViewRepresentable {
         }
     }
     let label: String
+    var identifier: String?
     @Binding var selection: Value
     var options: [Option]
     @ScaledMetric(relativeTo: .body) private var height: CGFloat = 44
 
-    init(_ label: String, selection: Binding<Value>, options: [Option]) {
+    init(_ label: String, selection: Binding<Value>, options: [Option], identifier: String? = nil) {
         self.label = label
+        self.identifier = identifier
         self._selection = selection
         self.options = options
     }
@@ -38,6 +40,7 @@ struct AppSegmentedPicker<Value: Hashable>: UIViewRepresentable {
             for (index, title) in titles.enumerated() { control.insertSegment(withTitle: title, at: index, animated: false) }
         }
         control.selectedSegmentIndex = options.firstIndex { $0.value == selection } ?? UISegmentedControl.noSegment
+        control.accessibilityIdentifier = identifier
         control.accessibilityLabel = String(localized: String.LocalizationValue(label))
         let font = UIFont.preferredFont(forTextStyle: .subheadline)
         control.setTitleTextAttributes([.font: font], for: .normal)
