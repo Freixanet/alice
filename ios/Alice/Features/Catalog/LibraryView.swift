@@ -1,18 +1,48 @@
 import SwiftUI
 
-/// Everything the agent can show that is not the conversation.
-///
-/// Split by where it comes from: the first section is served by the gateway
-/// the app is already talking to, the second only by the dashboard, which is
-/// a separate process and an optional connection. A section that is not there
-/// is not a gap — it is an install without that half.
-/// What the agent has made: documents, images, and the links it handed over.
-///
-/// The catalogues that used to live here — skills, tools, jobs — moved to the
-/// drawer, where they are reached in one tap, and the read-only reports moved
-/// into Settings. What is left is the part you browse rather than configure.
+/// What your agents made and what your notes carry, in three parts: Artifacts (files, documents and
+/// links from your chats), Images (the pictures among them) and Notes (photos, files and links in
+/// your notes). The part last open is the one that opens next time.
 struct LibraryView: View {
+    enum Part: String, CaseIterable, Identifiable {
+        case artifacts, images, notes
+        var id: String { rawValue }
+        var title: LocalizedStringKey {
+            switch self {
+            case .artifacts: "Artifacts"
+            case .images: "Images"
+            case .notes: "Notes"
+            }
+        }
+    }
+
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @AppStorage("alice.library.part") private var part: Part = .artifacts
+
     var body: some View {
-        ArtifactsScreen(title: "Library")
+        Group {
+            switch part {
+            case .artifacts: ArtifactsScreen(title: "Library", mode: .artifacts)
+            case .images: ArtifactsScreen(title: "Library", mode: .images)
+            case .notes:
+                NoteAttachmentsScreen(scope: .all, title: "Library")
+                    .scrollContentBackground(.hidden)
+                    .background(Palette.background(scheme))
+                    .task { try? await store.refreshNotes() }
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Show", selection: $part) {
+                ForEach(Part.allCases) { part in
+                    Text(part.title).tag(part)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Palette.background(scheme))
+            .accessibilityIdentifier("library.part")
+        }
     }
 }

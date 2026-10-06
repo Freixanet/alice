@@ -7311,6 +7311,16 @@
         }
       }
     },
+    "Images": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imágenes"
+          }
+        }
+      }
+    },
     "Immediately": {
       "localizations": {
         "es": {
@@ -10747,6 +10757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aquí aparecen las fotos, archivos y enlaces de estas notas."
+          }
+        }
+      }
+    },
+    "Pictures your agents make or share in a chat with Alice appear here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aquí aparecen las imágenes que tus agentes crean o comparten en un chat con Alice."
           }
         }
       }

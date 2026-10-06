@@ -10,6 +10,10 @@ import SwiftUI
 /// links only those it handed over in its own words.
 struct ArtifactsScreen: View {
     var title = "Artifacts"
+    /// Which part of the Library this shows: everything but pictures, or the pictures alone.
+    var mode: Mode = .all
+
+    enum Mode { case all, artifacts, images }
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -50,6 +54,7 @@ struct ArtifactsScreen: View {
 
     private var list: some View {
         List {
+                if mode != .images {
                 Section("Artifacts") {
                     ForEach(LibraryTool.allCases) { tool in
                         // Pushed here, in the Library's own stack. It used to
@@ -90,6 +95,7 @@ struct ArtifactsScreen: View {
                         }
                     }
                 }
+                }
 
                 if loading && found.isEmpty {
                     Section {
@@ -100,15 +106,17 @@ struct ArtifactsScreen: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                } else if let failure, found.isEmpty {
+                } else if let failure, modeItems.isEmpty {
                     Section {
                         Text(failure)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                } else if found.isEmpty {
+                } else if modeItems.isEmpty {
                     Section {
-                        Text("Files and links your agents share in a chat with Alice appear here.")
+                        Text(mode == .images
+                             ? "Pictures your agents make or share in a chat with Alice appear here."
+                             : "Files and links your agents share in a chat with Alice appear here.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -124,6 +132,7 @@ struct ArtifactsScreen: View {
                             .accessibilityElement(children: .combine)
                         }
                     }
+                    if mode != .images {
                     Section {
                         Picker("Show", selection: $kind) {
                             ForEach(Shelf.allCases, id: \.self) { shelf in
@@ -136,6 +145,7 @@ struct ArtifactsScreen: View {
                         Text(kind == .files
                              ? "Files your agents created or changed in your recent chats with Alice. They live on the computer running Hermes; tap one to see it."
                              : "Links your agents gave you in your recent chats with Alice. Tap one to open it.")
+                    }
                     }
 
                     ForEach(groups, id: \.title) { group in
@@ -212,8 +222,22 @@ struct ArtifactsScreen: View {
         return site + path
     }
 
+    /// What this part of the Library holds at all, whichever shelf is chosen.
+    private var modeItems: [Artifact] {
+        found.filter { belongs($0, to: .files) || belongs($0, to: .links) }
+    }
+
     private var shelfItems: [Artifact] {
-        found.filter { kind == .links ? $0.kind == .link : $0.kind != .link }
+        found.filter { belongs($0, to: kind) }
+    }
+
+    /// Images have their own part of the Library; elsewhere a file shelf holds the rest.
+    private func belongs(_ artifact: Artifact, to shelf: Shelf) -> Bool {
+        switch mode {
+        case .images: return artifact.kind == .image
+        case .artifacts: return shelf == .links ? artifact.kind == .link : artifact.kind == .file
+        case .all: return shelf == .links ? artifact.kind == .link : artifact.kind != .link
+        }
     }
 
     /// Files by the chat they came from; links by the site they point to. The
@@ -232,7 +256,7 @@ struct ArtifactsScreen: View {
     }
 
     private func label(_ shelf: Shelf) -> String {
-        let total = found.filter { shelf == .links ? $0.kind == .link : $0.kind != .link }.count
+        let total = found.filter { belongs($0, to: shelf) }.count
         return total == 0 ? shelf.rawValue : "\(shelf.rawValue) \(total)"
     }
 
@@ -250,7 +274,7 @@ struct ArtifactsScreen: View {
             failure = nil
             // Land on whichever shelf actually has something on it.
             if shelfItems.isEmpty, let other = Shelf.allCases.first(where: { shelf in
-                found.contains { shelf == .links ? $0.kind == .link : $0.kind != .link }
+                found.contains { belongs($0, to: shelf) }
             }) {
                 kind = other
             }
