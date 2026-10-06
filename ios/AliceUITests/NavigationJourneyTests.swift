@@ -65,11 +65,12 @@ final class NavigationJourneyTests: XCTestCase {
     /// from search without competing with chats for vertical space.
     func testDrawerKeepsOnlyEverydayDestinations() {
         openDrawer()
-        for title in ["Agents", "Notes", "Routines", "Library"] {
+        for title in ["Agents", "Notes", "Library"] {
             assertDrawerRow(title)
         }
         for title in [
-            "Projects", "Files", "Channels", "Integrations (MCP)", "Skills", "Tools",
+            // Routines moved to Settings › Alice, beside Activity.
+            "Routines", "Projects", "Files", "Channels", "Integrations (MCP)", "Skills", "Tools",
             "Webhooks", "Git", "System",
         ] {
             XCTAssertFalse(
@@ -105,7 +106,7 @@ final class NavigationJourneyTests: XCTestCase {
         XCTAssertTrue(leading.waitForExistence(timeout: 25))
         leading.tap()
 
-        for title in ["Agents", "Notes", "Routines", "Library"] {
+        for title in ["Agents", "Notes", "Library"] {
             let row = app.buttons["sidebar.row.\(title)"]
             XCTAssertTrue(
                 row.waitForExistence(timeout: 10),

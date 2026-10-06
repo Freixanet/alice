@@ -173,10 +173,6 @@ private struct ChatScreenContent: View, Equatable {
         experimentalEnabled && experimentalSection != .chat && experimentalSection != .today
     }
 
-    private var experimentalMenu: some View {
-        ExperimentalHomeMenu(selected: $experimentalSection, onSelect: selectExperimental)
-    }
-
     private func selectExperimental(_ section: ExperimentalHomeMenu.Section) {
         composerFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -343,18 +339,15 @@ private struct ChatScreenContent: View, Equatable {
     @ViewBuilder
     private var composerArea: some View {
         if experimentalEnabled {
-            // The round section button and the composer's own capsule, at the
-            // same 44pt height, bottom-aligned so both grow from the same
-            // baseline as the field takes more lines.
-            HStack(alignment: .bottom, spacing: 10) {
-                experimentalMenu
-                Composer(
-                    focused: $composerFocused,
-                    placeholder: placeholder,
-                    keyboardShown: keyboardShown,
-                    compact: true
-                )
-            }
+            // The composer alone, full width and centred: the round section button beside it is
+            // gone (Notes and Library are in the drawer, Routines in Settings).
+            Composer(
+                focused: $composerFocused,
+                placeholder: placeholder,
+                keyboardShown: keyboardShown,
+                compact: true
+            )
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 20)
             .padding(.bottom, keyboardShown ? 10 : 6)
         } else {

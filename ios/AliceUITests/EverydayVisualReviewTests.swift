@@ -40,15 +40,14 @@ final class EverydayVisualReviewTests: XCTestCase {
         app.navigationBars["Quick Notes"].buttons.firstMatch.tap()
         app.buttons["notes.back"].tap()
         app.buttons["chat.leading"].tap()
-        // Agenda was moved out of the drawer; review its current Routines destination.
-        app.buttons["sidebar.row.Routines"].tap()
-        XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 10))
-        capture(app, "routines-unconnected-\(theme)")
-        app.buttons["Back"].tap()
         XCTAssertTrue(app.buttons["sidebar.settings"].waitForExistence(timeout: 5))
         app.buttons["sidebar.settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
         capture(app, "settings-\(theme)")
+        // Routines left the drawer for Settings › Alice, beside Activity.
+        app.buttons["settings.routines"].tap()
+        XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 10))
+        capture(app, "routines-unconnected-\(theme)")
     }
 
     private func capture(_ app: XCUIApplication, _ name: String) {
