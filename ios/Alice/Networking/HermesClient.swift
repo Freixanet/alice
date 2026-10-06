@@ -488,13 +488,11 @@ actor HermesClient {
 }
 
 
-/// Refuses a redirect that leaves the host the request was addressed to.
+/// Refuses redirects that leave the origin the request was addressed to.
 ///
-/// URLSession follows redirects by default and carries the request's headers
-/// with it, so a 302 from the agent — or from anything answering in its place
-/// — could have walked the gateway key to another origin. A redirect within
-/// the same origin is ordinary and still followed.
-private final class SameOriginRedirects: NSObject, URLSessionTaskDelegate {
+/// URLSession follows redirects by default and carries request credentials with
+/// it. A redirect within the same origin is ordinary and still followed.
+final class SameOriginRedirects: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,

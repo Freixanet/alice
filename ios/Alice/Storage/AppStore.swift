@@ -10246,7 +10246,7 @@ final class AppStore {
               let directory = FileConversationStorage.standardDirectory
         else { return defaults }
         let files = FileConversationStorage(directory: directory)
-        return ConversationArchive.adopt(files, from: defaults) ? files : defaults
+        return ConversationArchive.storageAfterAdoption(of: files, from: defaults)
     }
 
     private func archiveSnapshot(_ conversations: [Conversation]) -> ConversationArchive.Snapshot {
@@ -10349,7 +10349,7 @@ final class AppStore {
         case .available(let loaded):
             rememberLoaded(loaded)
         case .unreadable(let reason, let bytes):
-            if defaults.data(forKey: Self.salvageKey) == nil {
+            if !bytes.isEmpty, defaults.data(forKey: Self.salvageKey) == nil {
                 defaults.set(bytes, forKey: Self.salvageKey)
             }
             conversationsUnreadable = reason
@@ -10370,7 +10370,7 @@ final class AppStore {
         for item in loaded.skipped {
             protectedConversationIDs.insert(item.id)
             persistedConversationIDs.insert(item.id)
-            if defaults.data(forKey: Self.salvageKey) == nil {
+            if !item.bytes.isEmpty, defaults.data(forKey: Self.salvageKey) == nil {
                 defaults.set(item.bytes, forKey: Self.salvageKey)
             }
         }
@@ -10397,10 +10397,16 @@ final class AppStore {
             return
         }
         let live: [Conversation]
-        if case let .available(loaded) = ConversationArchive.load(from: conversationStorage) {
+        switch ConversationArchive.load(from: conversationStorage) {
+        case let .available(loaded):
+            // A read failure or missing indexed record cannot establish that
+            // the older salvage contains more history than the current store.
+            guard loaded.skipped.isEmpty else { return }
             live = loaded.conversations
-        } else {
+        case .empty:
             live = []
+        case .unreadable:
+            return
         }
         let liveMessages = live.reduce(0) { $0 + $1.messages.count }
         let salvagedMessages = saved.reduce(0) { $0 + $1.messages.count }

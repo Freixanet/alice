@@ -12,21 +12,25 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
     struct Reply: Sendable {
         var status: Int
         var body: Data = Data("{}".utf8)
+        var location: String?
     }
 
-    /// `(method, path)` in the order they were sent.
+    /// `(method, path)` and hosts in the order requests were sent.
     nonisolated(unsafe) private static var log: [(String, String)] = []
+    nonisolated(unsafe) private static var hostLog: [String] = []
     nonisolated(unsafe) private static var responder: (@Sendable (String, String) -> Reply)?
     private static let lock = NSLock()
 
     static func install(_ responder: @escaping @Sendable (String, String) -> Reply) {
         lock.withLock {
             log = []
+            hostLog = []
             Self.responder = responder
         }
     }
 
     static var requests: [(String, String)] { lock.withLock { log } }
+    static var requestedHosts: [String] { lock.withLock { hostLog } }
 
     static func count(_ method: String, _ path: String) -> Int {
         requests.filter { $0.0 == method && $0.1 == path }.count
@@ -40,13 +44,23 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
         let path = request.url?.path ?? ""
         let reply = Self.lock.withLock { () -> Reply in
             Self.log.append((method, path))
+            Self.hostLog.append(request.url?.host ?? "")
             return Self.responder?(method, path) ?? Reply(status: 200)
         }
 
+        var headers = ["Content-Type": "application/json"]
+        if let location = reply.location { headers["Location"] = location }
         let response = HTTPURLResponse(
             url: request.url!, statusCode: reply.status,
-            httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"]
+            httpVersion: "HTTP/1.1", headerFields: headers
         )!
+        if let location = reply.location,
+           let target = URL(string: location, relativeTo: request.url)?.absoluteURL {
+            client?.urlProtocol(
+                self, wasRedirectedTo: URLRequest(url: target), redirectResponse: response
+            )
+            return
+        }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         if !reply.body.isEmpty { client?.urlProtocol(self, didLoad: reply.body) }
         client?.urlProtocolDidFinishLoading(self)
@@ -64,10 +78,10 @@ final class Flag: @unchecked Sendable {
     func set(_ newValue: Bool) { lock.withLock { stored = newValue } }
 }
 
-func makeStubbedDashboard() async -> DashboardClient {
+func makeStubbedDashboard(session: URLSession? = nil) async -> DashboardClient {
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [StubProtocol.self]
-    let client = DashboardClient(session: URLSession(configuration: config))
+    let client = DashboardClient(session: session ?? URLSession(configuration: config))
     await client.use(
         .init(
             url: URL(string: "http://dashboard.invalid/")!,
@@ -168,6 +182,30 @@ final class DashboardClientTests: XCTestCase {
             XCTAssertEqual(status, 429)
             XCTAssertNotNil(detail)
         }
+    }
+
+    func testPasswordLoginDoesNotFollowCrossOriginRedirects() async throws {
+        StubProtocol.install { _, path in
+            path == "/auth/password-login"
+                ? .init(status: 307, location: "https://attacker.invalid/collect")
+                : .init(status: 200)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubProtocol.self]
+        let session = URLSession(
+            configuration: configuration,
+            delegate: SameOriginRedirects(),
+            delegateQueue: nil
+        )
+        let client = await makeStubbedDashboard(session: session)
+
+        do {
+            _ = try await client.skillContent("research")
+            XCTFail("the rejected redirect must not create a dashboard session")
+        } catch {}
+
+        XCTAssertEqual(StubProtocol.count("POST", "/auth/password-login"), 1)
+        XCTAssertEqual(StubProtocol.requestedHosts, ["dashboard.invalid"])
     }
 
     /// A rejected password is not retried behind the user's back.

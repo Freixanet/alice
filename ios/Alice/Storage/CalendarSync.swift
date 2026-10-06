@@ -106,9 +106,24 @@ enum CalendarSync {
         let editable: Bool
     }
 
+    /// Chooses only a unique candidate. Without a supplied time, more than
+    /// one title match is ambiguous. A time disambiguates only an actual
+    /// start in that minute, not whichever appointment happens to be nearest.
+    static func uniqueMatch<T>(
+        from matches: [T], around time: Date?, start: (T) -> Date
+    ) -> T? {
+        guard !matches.isEmpty else { return nil }
+        guard matches.count > 1 else { return matches[0] }
+        guard let time else { return nil }
+        let timed = matches.filter {
+            Calendar.current.isDate(start($0), equalTo: time, toGranularity: .minute)
+        }
+        return timed.count == 1 ? timed[0] : nil
+    }
+
     /// The event an agent means: on that day, whose title matches (either
-    /// contains the other, case and accents aside), nearest the time given.
-    /// Nil when there is none — a card never acts on a guess.
+    /// contains the other, case and accents aside), disambiguated by time.
+    /// Nil when there is none or the match is ambiguous — a card never acts on a guess.
     @MainActor
     static func find(title: String, day: Date, time: Date?) -> Found? {
         guard hasAccess else { return nil }
@@ -122,9 +137,9 @@ enum CalendarSync {
                 let have = ($0.title ?? "").folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
                 return !have.isEmpty && (have.contains(wanted) || wanted.contains(have))
             }
-        let best = time.map { t in matches.min { abs($0.startDate.timeIntervalSince(t)) < abs($1.startDate.timeIntervalSince(t)) } }
-            ?? matches.first
-        guard let event = best ?? matches.first else { return nil }
+        guard let event = Self.uniqueMatch(from: matches, around: time, start: { $0.startDate }) else {
+            return nil
+        }
         return Found(
             identifier: event.eventIdentifier ?? "", title: event.title ?? title,
             start: event.startDate, end: event.endDate, allDay: event.isAllDay,

@@ -6,8 +6,15 @@ import Foundation
 /// where conversations live now. Tests keep using a defaults suite.
 protocol ConversationStorage: AnyObject {
     func data(forKey key: String) -> Data?
+    func readData(forKey key: String) throws -> Data?
     func set(_ value: Any?, forKey key: String)
     func removeObject(forKey key: String)
+}
+
+extension ConversationStorage {
+    /// Most stores can distinguish only present from absent; file storage
+    /// overrides this to preserve I/O failures instead of treating them as empty.
+    func readData(forKey key: String) throws -> Data? { data(forKey: key) }
 }
 
 extension UserDefaults: ConversationStorage {}
@@ -50,7 +57,15 @@ final class FileConversationStorage: ConversationStorage, @unchecked Sendable {
     }
 
     func data(forKey key: String) -> Data? {
-        try? Data(contentsOf: url(for: key))
+        try? readData(forKey: key)
+    }
+
+    func readData(forKey key: String) throws -> Data? {
+        do {
+            return try Data(contentsOf: url(for: key))
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return nil
+        }
     }
 
     func set(_ value: Any?, forKey key: String) {
@@ -80,6 +95,20 @@ extension ConversationArchive {
     /// Written last when an archive has moved to a new storage. Until it is
     /// there, the old storage is the one read.
     static let movedKey = "alice.conversations.moved"
+
+    /// A destination whose migration marker cannot be read may already hold
+    /// the current archive. Keep using it so load reports the I/O failure;
+    /// never remigrate an older source or silently treat it as a fresh store.
+    static func storageAfterAdoption(
+        of target: ConversationStorage, from source: ConversationStorage
+    ) -> ConversationStorage {
+        do {
+            _ = try target.readData(forKey: movedKey)
+        } catch {
+            return target
+        }
+        return adopt(target, from: source) ? target : source
+    }
 
     /// Makes `target` the conversations' storage, moving what `source` holds.
     ///

@@ -70,7 +70,13 @@ actor DashboardClient {
             config.httpCookieAcceptPolicy = .always
             config.httpShouldSetCookies = true
             config.timeoutIntervalForRequest = 15
-            return URLSession(configuration: config)
+            // Password login is credentialed too; keep redirects on this
+            // session inside the dashboard's original origin.
+            return URLSession(
+                configuration: config,
+                delegate: SameOriginRedirects(),
+                delegateQueue: nil
+            )
         }()
     }
 

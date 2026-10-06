@@ -172,4 +172,77 @@ final class ConversationArchiveTests: XCTestCase {
             XCTFail("a corrupt blob must block writing, not look empty")
         }
     }
+
+    func testReadFailureDoesNotFallBackToAnOlderBlob() throws {
+        let conversation = chat("c1", title: "Current")
+        let recordKey = ConversationArchive.recordKey(for: conversation.id)
+        let storage = ReadFailingStorage(
+            values: [
+                ConversationArchive.indexKey: try JSONEncoder().encode([conversation.id]),
+                recordKey: try JSONEncoder().encode(conversation),
+                ConversationArchive.blobKey: try JSONEncoder().encode([chat("old", title: "Older")])
+            ],
+            failingReads: [recordKey]
+        )
+
+        switch ConversationArchive.load(from: storage) {
+        case let .unreadable(reason, bytes):
+            XCTAssertTrue(reason.contains("storageReadFailed"))
+            XCTAssertTrue(bytes.isEmpty)
+        default:
+            XCTFail("an I/O error must preserve the current archive instead of loading stale data")
+        }
+    }
+
+    func testMissingIndexedRecordDoesNotFallBackToAnOlderBlob() throws {
+        let storage = ReadFailingStorage(
+            values: [
+                ConversationArchive.indexKey: try JSONEncoder().encode(["missing"]),
+                ConversationArchive.blobKey: try JSONEncoder().encode([chat("old", title: "Older")])
+            ],
+            failingReads: []
+        )
+
+        guard case let .available(loaded) = ConversationArchive.load(from: storage) else {
+            return XCTFail("a missing record must not restore an older conversation")
+        }
+        XCTAssertTrue(loaded.conversations.isEmpty)
+        XCTAssertEqual(loaded.skipped.map(\.id), ["missing"])
+        XCTAssertEqual(loaded.skipped.first?.reason, "indexed record is missing")
+    }
+
+    func testEmptyIndexCannotLookLikeANewInstall() {
+        let storage = ReadFailingStorage(
+            values: [ConversationArchive.indexKey: Data()],
+            failingReads: []
+        )
+
+        guard case let .unreadable(reason, bytes) = ConversationArchive.load(from: storage) else {
+            return XCTFail("an empty index must block replacement")
+        }
+        XCTAssertEqual(reason, "emptyIndex")
+        XCTAssertTrue(bytes.isEmpty)
+    }
+}
+
+private final class ReadFailingStorage: ConversationStorage {
+    enum ReadError: Error { case inaccessible }
+
+    private var values: [String: Data]
+    private let failingReads: Set<String>
+
+    init(values: [String: Data], failingReads: Set<String>) {
+        self.values = values
+        self.failingReads = failingReads
+    }
+
+    func data(forKey key: String) -> Data? { values[key] }
+
+    func readData(forKey key: String) throws -> Data? {
+        if failingReads.contains(key) { throw ReadError.inaccessible }
+        return values[key]
+    }
+
+    func set(_ value: Any?, forKey key: String) { values[key] = value as? Data }
+    func removeObject(forKey key: String) { values[key] = nil }
 }
