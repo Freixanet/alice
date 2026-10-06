@@ -90,6 +90,7 @@ struct AliceApp: App {
                     #if DEBUG
                     store.seedChannelAlertForUITests()
                     store.seedLongBotChatForUITests()
+                    store.seedMessageReplyForUITests()
                     #endif
                     await store.restoreConnection()
                     await store.restoreDashboard()

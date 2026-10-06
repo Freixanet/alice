@@ -41,6 +41,7 @@ struct SessionsScreen: View {
         }
         .navigationTitle("Sessions")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .task { await load() }

@@ -63,6 +63,7 @@ struct LearningScreen: View {
         }
         .navigationTitle("Learning")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .searchable(text: $search, prompt: "Search learned skills & memory")
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
@@ -178,6 +179,7 @@ private struct LearningNodeSheet: View {
             }
             .navigationTitle(node.label)
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
             .toolbar {

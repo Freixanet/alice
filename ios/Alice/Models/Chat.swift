@@ -237,6 +237,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// A feed post the person opened a conversation about (`AppStore.discuss`). Drawn as a
     /// "From your feed" card; its text goes to the model on the person's side, as context they
     /// brought, never as words of Alice's.
+    var quotedReplies: [MessageReply]? = nil
     var feedContext: FeedPost? = nil
 
     enum RoutinePart: String, Hashable, Sendable, Codable {
@@ -294,6 +295,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         routinePart = try box.decodeIfPresent(RoutinePart.self, forKey: .routinePart)
         routineGroup = try box.decodeIfPresent(String.self, forKey: .routineGroup)
         reasoning = try box.decodeIfPresent(String.self, forKey: .reasoning)
+        quotedReplies = try box.decodeIfPresent([MessageReply].self, forKey: .quotedReplies)
         feedContext = try? box.decodeIfPresent(FeedPost.self, forKey: .feedContext)
     }
 

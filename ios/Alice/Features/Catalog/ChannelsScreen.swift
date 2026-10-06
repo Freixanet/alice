@@ -79,6 +79,7 @@ struct ChannelsScreen: View {
         }
         .navigationTitle("Channels")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .task {
@@ -537,6 +538,7 @@ private struct ChannelConfigurationSheet: View {
             .background(Palette.background(scheme))
             .navigationTitle("Configure \(platform.name)")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -699,6 +701,7 @@ private struct TelegramChannelSetup: View {
             .background(Palette.background(scheme))
             .navigationTitle("Telegram setup")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -799,11 +802,7 @@ private struct WhatsAppChannelSetup: View {
         NavigationStack {
             List {
                 Section("Mode") {
-                    Picker("WhatsApp mode", selection: $mode) {
-                        Text("Bot").tag("bot")
-                        Text("Self-chat").tag("self-chat")
-                    }
-                    .pickerStyle(.segmented)
+                    AppSegmentedPicker("WhatsApp mode", selection: $mode, options: [.init("bot", "Bot"), .init("self-chat", "Self-chat")])
                     .listRowBackground(Palette.card(scheme))
                     TextField("Allowed numbers, comma-separated", text: $allowedUsers)
                         .keyboardType(.phonePad)
@@ -866,6 +865,7 @@ private struct WhatsAppChannelSetup: View {
             .background(Palette.background(scheme))
             .navigationTitle("WhatsApp setup")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

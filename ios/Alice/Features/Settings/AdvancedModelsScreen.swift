@@ -44,6 +44,7 @@ struct AdvancedModelsScreen: View {
         }
         .navigationTitle("Advanced Models")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .overlay { if loading && aux == nil { ProgressView() } }
@@ -572,6 +573,7 @@ private struct AdvancedProviderModelPicker: View {
             .searchable(text: $search, prompt: "Model or provider")
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
             .toolbar {
@@ -604,11 +606,7 @@ private struct CustomModelEndpointSheet: View {
         NavigationStack {
             Form {
                 Section("Endpoint") {
-                    Picker("Type", selection: $provider) {
-                        Text("Custom").tag("custom")
-                        Text("Local").tag("local")
-                    }
-                    .pickerStyle(.segmented)
+                    AppSegmentedPicker("Type", selection: $provider, options: [.init("custom", "Custom"), .init("local", "Local")])
                     TextField("http://127.0.0.1:11434/v1", text: $baseURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
@@ -649,6 +647,7 @@ private struct CustomModelEndpointSheet: View {
             }
             .navigationTitle("Custom Endpoint")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
             .onAppear { if task.isEmpty { task = tasks.first?.task ?? "" } }
@@ -779,6 +778,7 @@ private struct MoAConfigurationSheet: View {
             }
             .navigationTitle("Mixture of Agents")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
             .toolbar {

@@ -18,11 +18,7 @@ struct ComponentGallery: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28, pinnedViews: []) {
-                Picker("Language", selection: $language) {
-                    Text("Español").tag(ChatLanguage.spanish)
-                    Text("English").tag(ChatLanguage.english)
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker("Language", selection: $language, options: [.init(ChatLanguage.spanish, "Español"), .init(ChatLanguage.english, "English")])
 
                 if let sandbox {
                     ForEach(GallerySection.allCases) { section in
@@ -57,6 +53,7 @@ struct ComponentGallery: View {
         .background(Palette.background(scheme))
         .navigationTitle(language.pick("Components", "Componentes"))
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .onAppear {
             if sandbox == nil { sandbox = GalleryFixtures.sandbox(like: store) }
         }

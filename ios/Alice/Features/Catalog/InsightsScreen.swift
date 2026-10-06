@@ -38,6 +38,7 @@ struct InsightsScreen: View {
         }
         .navigationTitle("Insights")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .task { await load() }

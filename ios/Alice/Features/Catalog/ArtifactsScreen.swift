@@ -38,6 +38,7 @@ struct ArtifactsScreen: View {
         list
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .task {
@@ -134,12 +135,7 @@ struct ArtifactsScreen: View {
                     }
                     if mode != .images {
                     Section {
-                        Picker("Show", selection: $kind) {
-                            ForEach(Shelf.allCases, id: \.self) { shelf in
-                                Text(label(shelf)).tag(shelf)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        AppSegmentedPicker("Show", selection: $kind, options: Shelf.allCases.map { .init($0, label($0)) })
                         .listRowBackground(Color.clear)
                     } footer: {
                         Text(kind == .files

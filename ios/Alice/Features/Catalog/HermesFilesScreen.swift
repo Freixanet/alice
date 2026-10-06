@@ -97,10 +97,7 @@ struct HermesFilesScreen: View {
     var body: some View {
         List {
             Section {
-                Picker("Files surface", selection: $mode) {
-                    ForEach(HermesFilesMode.allCases) { item in Text(item.rawValue).tag(item) }
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker("Files surface", selection: $mode, options: HermesFilesMode.allCases.map { .init($0, $0.rawValue) })
                 .listRowBackground(Palette.card(scheme))
             }
 
@@ -134,6 +131,7 @@ struct HermesFilesScreen: View {
         }
         .navigationTitle("Hermes Files")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .searchable(text: $searchText, prompt: "Filter this folder")
@@ -687,6 +685,7 @@ struct HermesRemoteFileDetail: View {
             .background(Palette.background(scheme))
             .navigationTitle(selection.name)
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar { detailToolbar }
         }
         .task { await load() }

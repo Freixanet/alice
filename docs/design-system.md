@@ -70,3 +70,5 @@ the web to the measurable ones.
 - Verify light/dark themes, accent selection, keyboard focus, scrolling and reduced motion.
 - A visual change is complete only if it improves hierarchy without hiding information
   or changing behavior.
+
+Segmented selectors use `AppSegmentedPicker`: a native control with a minimum height of 44 points, scaled with Dynamic Type. Pages use `PageLayout.navigationGap` (20 points) below the navigation bar, matching Settings.

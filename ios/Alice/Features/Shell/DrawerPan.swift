@@ -167,6 +167,7 @@ struct DrawerPan: UIViewRepresentable {
                 // and make SwiftUI's Button tap lose on device. XCUI taps are
                 // perfectly still, which is why that failure escaped the test.
                 guard abs(velocity.x) >= 80 else { return false }
+                if velocity.x > 0, MessageReplyRegions.shared.contains(pan.location(in: pan.view), in: pan.view ?? UIView()) { return false }
                 if let startsAt {
                     let at = pan.location(in: nil), moved = pan.translation(in: nil)
                     guard startsAt(CGPoint(x: at.x - moved.x, y: at.y - moved.y)) else { return false }

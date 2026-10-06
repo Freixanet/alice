@@ -116,6 +116,7 @@ struct NotesScreen: View {
         ))
         .navigationTitle(store.name(of: scope))
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollDismissesKeyboard(.interactively)
         .background {
             Palette.background(scheme)
@@ -353,7 +354,7 @@ struct NotesScreen: View {
         }
         .scrollContentBackground(.hidden)
         // Clear of the page's header rather than tucked under its buttons.
-        .contentMargins(.top, 20, for: .scrollContent)
+        .pageNavigationSpacing()
     }
 
     /// `below` is the next note in the section, if any: the line between the
@@ -1315,6 +1316,7 @@ struct NoteDetail: View {
             .background(Palette.background(scheme))
             .navigationTitle("Note")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

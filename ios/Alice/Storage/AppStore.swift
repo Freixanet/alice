@@ -157,8 +157,16 @@ final class AppStore {
             scheduleDraftSave()
         }
     }
-    /// Exact occurrences picked from the `@` menu. The `@` is gone from the
-    /// text, so a slug alone would mark later ordinary uses of the same word.
+    /// Reply context stays with this conversation’s unsent draft.
+    var draftReplies: [MessageReply] = [] { didSet { scheduleDraftSave() } }
+    var draftReply: MessageReply? {
+        get { draftReplies.last }
+        set { draftReplies = newValue.map { [$0] } ?? [] }
+    }
+    var replyFocusRequest = 0
+    var replyGestureMessageID: String?
+
+    /// Exact occurrences picked from the `@` menu; ordinary uses remain plain.
     var draftMentions: [DraftMention] = [] { didSet { scheduleDraftSave() } }
     /// Waiting to go out with the next message.
     var draftAttachments: [Attachment] = [] { didSet { scheduleDraftSave() } }
@@ -409,6 +417,7 @@ final class AppStore {
     /// mentions and attachments, are saved separately in the conversation store.
     private(set) var unsentDrafts: [String: String] = [:]
     private var unsentAttachments: [String: [Attachment]] = [:]
+    @ObservationIgnored private var unsentReplies: [String: [MessageReply]] = [:]
     @ObservationIgnored private var unsentMentions: [String: [DraftMention]] = [:]
     var hiddenBots: Set<String> = [] {
         didSet { defaults.set(Array(hiddenBots), forKey: Keys.hiddenBots) }
@@ -6049,7 +6058,7 @@ final class AppStore {
         draftSaveTask?.cancel()
         guard let activeID, editingMessageID == nil,
               conversations.contains(where: { $0.id == activeID }) else { return }
-        let value = ComposerDraft(text: draft, mentions: draftMentions, attachments: draftAttachments)
+        let value = ComposerDraft(replies: draftReplies, text: draft, mentions: draftMentions, attachments: draftAttachments)
         rememberDraft(value, for: activeID)
         do {
             try draftArchive.save(value, for: activeID)
@@ -6074,6 +6083,7 @@ final class AppStore {
     }
 
     private func rememberDraft(_ value: ComposerDraft, for id: String) {
+        unsentReplies[id] = value.replies.isEmpty ? nil : value.replies
         unsentDrafts[id] = value.text.isEmpty ? nil : value.text
         unsentAttachments[id] = value.attachments.isEmpty ? nil : value.attachments
         unsentMentions[id] = value.mentions.isEmpty ? nil : value.mentions
@@ -6093,13 +6103,15 @@ final class AppStore {
     private func restoreDraft() {
         let id = activeID ?? ""
         applyDraft(ComposerDraft(
-            text: unsentDrafts[id] ?? "", mentions: unsentMentions[id] ?? [],
+            replies: unsentReplies[id] ?? [], text: unsentDrafts[id] ?? "", mentions: unsentMentions[id] ?? [],
             attachments: unsentAttachments[id] ?? []
         ))
     }
 
     private func applyDraft(_ value: ComposerDraft) {
         restoringDraft = true
+        draftReplies = value.replies.filter { $0.conversationID == activeID }
+        replyGestureMessageID = nil
         draft = value.text
         draftMentions = value.mentions.filter { $0.range(in: value.text) != nil }
         draftAttachments = value.attachments
@@ -6116,7 +6128,7 @@ final class AppStore {
             stashDraft()
         } else {
             var value = ComposerDraft(
-                text: unsentDrafts[id] ?? "", mentions: unsentMentions[id] ?? [],
+                replies: unsentReplies[id] ?? [], text: unsentDrafts[id] ?? "", mentions: unsentMentions[id] ?? [],
                 attachments: unsentAttachments[id] ?? []
             )
             value.attachments.append(contentsOf: attachments)
@@ -6160,6 +6172,7 @@ final class AppStore {
     func delete(_ id: String) {
         unsentDrafts[id] = nil
         unsentAttachments[id] = nil
+        unsentReplies[id] = nil
         unsentMentions[id] = nil
         draftArchive.remove(id)
         var legacy = defaults.dictionary(forKey: Keys.unsentDrafts) as? [String: String] ?? [:]
@@ -6203,9 +6216,9 @@ final class AppStore {
         of message: Message, includeAttachments: Bool
     ) -> HermesClient.Turn.Content {
         guard includeAttachments, !message.attachments.isEmpty else {
-            return .text(message.content)
+            return .text(message.outboundContent)
         }
-        var text = [message.content]
+        var text = [message.outboundContent]
         var images: [String] = []
         for attachment in message.attachments {
             if attachment.kind == .image {
@@ -8617,8 +8630,9 @@ final class AppStore {
         let savedDraft = draft
         let savedMentions = draftMentions
         let savedAttachments = draftAttachments
+        let savedReplies = draftReplies
         let keepsDraft = !savedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !savedAttachments.isEmpty
+            || !savedAttachments.isEmpty || !savedReplies.isEmpty
         // Offline, `send` reconnects and then sends whatever is in the
         // composer — which would be the person's own draft by then.
         guard isConnected || !keepsDraft else { return }
@@ -8630,6 +8644,7 @@ final class AppStore {
            mentions(in: reply).isEmpty {
             addressed = "@\(agent) " + reply
         }
+        draftReply = nil
         draft = addressed
         draftMentions = []
         draftAttachments = []
@@ -8638,6 +8653,7 @@ final class AppStore {
             draft = savedDraft
             draftMentions = savedMentions
             draftAttachments = savedAttachments
+            draftReplies = savedReplies
         }
     }
 
@@ -8664,7 +8680,7 @@ final class AppStore {
             editingMessageID = nil
             if sendEdit(of: editing, text: text) { return }
         }
-        if activeAwaitsAnswers, !text.isEmpty, answerWaitingQuestion(with: text) { return }
+        if draftReplies.isEmpty, activeAwaitsAnswers, !text.isEmpty, answerWaitingQuestion(with: text) { return }
         // Hermes stop clears the active turn AND its server-side queue. Do not
         // accept another local send while that destructive RPC is unresolved.
         guard let activeID, botStopsInFlight[activeID] == nil else { return }
@@ -8701,11 +8717,11 @@ final class AppStore {
             $0.id == activeID && ($0.isHomeSessionChat || $0.isAgentSessionChat)
         }
         guard isConnected || overDashboard else {
-            let intendedDraft = ComposerDraft(text: draft, mentions: draftMentions, attachments: draftAttachments)
+            let intendedDraft = ComposerDraft(replies: draftReplies, text: draft, mentions: draftMentions, attachments: draftAttachments)
             Task { [weak self] in
                 await self?.restoreConnection()
                 guard let self, self.activeID == activeID,
-                      ComposerDraft(text: self.draft, mentions: self.draftMentions,
+                      ComposerDraft(replies: self.draftReplies, text: self.draft, mentions: self.draftMentions,
                                     attachments: self.draftAttachments) == intendedDraft else { return }
                 // Reconnection must not send a different chat's draft, or an
                 // edit made while waiting. It stays on screen for the person.
@@ -8809,23 +8825,29 @@ final class AppStore {
             guard mentionText?.isEmpty == false || !draftAttachments.isEmpty else { return }
         }
 
+        let quotedReplies = draftReplies.filter { $0.conversationID == conversationID }
+        let wireText = MessageReply.prompt(for: text, quotes: quotedReplies)
+        let wireMentionText = mentionText.map { MessageReply.prompt(for: $0, quotes: quotedReplies) }
         let attachments = draftAttachments
         let selectedMentionRanges = messageMentions.map(\.utf16Range)
         draft = ""
         draftMentions = []
         draftAttachments = []
+        draftReply = nil
         stashDraft()
         sendingConversations.insert(conversationID)
         latencyStartedAt[conversationID] = Date()
         latencyLogged[conversationID] = []
         markLatency(conversationID, phase: "send")
 
-        let user = Message(
+        var user = Message(
             id: UUID().uuidString, role: .user, content: text, createdAt: Date(),
             attachments: attachments,
             mentionProfile: mentionText == nil ? nil : invokedBot,
             selectedMentionRanges: selectedMentionRanges
         )
+        user.quotedReplies = quotedReplies.isEmpty ? nil : quotedReplies
+        if !quotedReplies.isEmpty { user.remoteMatchContent = wireMentionText ?? wireText }
         let replyID = UUID().uuidString
         conversations[index].messages.append(user)
         conversations[index].messages.append(
@@ -8852,7 +8874,7 @@ final class AppStore {
                     profile: profile,
                     conversationID: conversationID,
                     replyID: replyID,
-                    text: mentionText ?? text,
+                    text: wireMentionText ?? wireText,
                     attachments: attachments,
                     mention: mention
                 )
@@ -8866,7 +8888,7 @@ final class AppStore {
                     profile: nil,
                     conversationID: conversationID,
                     replyID: replyID,
-                    text: text,
+                    text: wireText,
                     attachments: attachments,
                     earlier: earlier
                 )
@@ -9210,9 +9232,11 @@ final class AppStore {
         else { return }
         if editingMessageID == nil {
             stashDraft()
-            draftBeforeEditing = ComposerDraft(text: draft, mentions: draftMentions, attachments: draftAttachments)
+            draftBeforeEditing = ComposerDraft(replies: draftReplies, text: draft, mentions: draftMentions, attachments: draftAttachments)
         }
         editingMessageID = last.id
+        draftReply = nil
+        replyGestureMessageID = nil
         draft = message.content
         draftMentions = []
         draftAttachments = []
@@ -9244,6 +9268,7 @@ final class AppStore {
             .first(where: { $0.role == .assistant })
         else {
             // Never answered: the old words go and the new ones are sent.
+            draftReplies = conversations[chat].messages[index].quotedReplies ?? []
             conversations[chat].messages.remove(at: index)
             persistConversations()
             return false
@@ -9468,6 +9493,7 @@ final class AppStore {
         if let userIndex = conversations[chat].messages.firstIndex(where: { $0.id == priorUser.id }) {
             conversations[chat].messages.remove(at: userIndex)
         }
+        draftReplies = priorUser.quotedReplies ?? []
         draft = text ?? priorUser.content
         draftAttachments = priorUser.attachments
         send()

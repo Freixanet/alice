@@ -75,6 +75,7 @@ struct MemoryProvidersScreen: View {
         .navigationTitle("Memory Providers")
         .aliceFormPaper(scheme)
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .overlay { if loading && hostStatus == nil { ProgressView() } }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -332,6 +333,7 @@ private struct MemoryProviderDetailSheet: View {
             .navigationTitle(provider.name)
             .aliceFormPaper(scheme)
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .overlay { if loading && config == nil { ProgressView() } }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }

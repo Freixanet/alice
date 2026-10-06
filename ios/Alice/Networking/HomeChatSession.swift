@@ -157,7 +157,7 @@ extension WebSocketBotChatSource {
             guard !message.pending, message.error == nil,
                   message.role == .user || message.role == .assistant
             else { return nil }
-            let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let content = message.outboundContent.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !content.isEmpty else { return nil }
             return ["role": message.role.rawValue, "content": content]
         }

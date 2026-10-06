@@ -95,6 +95,7 @@ struct NoteEditor: View {
         page
             .background(Palette.background(scheme).ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar { toolbar }
             .confirmationDialog(
                 currentNote.map { note in

@@ -7,7 +7,7 @@ struct LibraryView: View {
     enum Part: String, CaseIterable, Identifiable {
         case artifacts, images, notes
         var id: String { rawValue }
-        var title: LocalizedStringKey {
+        var label: String {
             switch self {
             case .artifacts: "Artifacts"
             case .images: "Images"
@@ -33,14 +33,10 @@ struct LibraryView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            Picker("Show", selection: $part) {
-                ForEach(Part.allCases) { part in
-                    Text(part.title).tag(part)
-                }
-            }
-            .pickerStyle(.segmented)
+            AppSegmentedPicker("Show", selection: $part, options: Part.allCases.map { .init($0, $0.label) }, identifier: "library.part")
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.top, PageLayout.navigationGap)
+            .padding(.bottom, 8)
             .background(Palette.background(scheme))
             .accessibilityIdentifier("library.part")
         }

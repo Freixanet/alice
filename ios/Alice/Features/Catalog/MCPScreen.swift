@@ -43,10 +43,7 @@ struct MCPScreen: View {
             }
 
             Section {
-                Picker("MCP view", selection: $pane) {
-                    ForEach(MCPPane.allCases) { item in Text(item.rawValue).tag(item) }
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker("MCP view", selection: $pane, options: MCPPane.allCases.map { .init($0, $0.rawValue) })
                 .listRowBackground(Palette.card(scheme))
             }
 
@@ -75,6 +72,7 @@ struct MCPScreen: View {
         }
         .navigationTitle("MCP")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .searchable(text: $query, prompt: pane == .servers ? "Search servers" : "Search catalog")
@@ -618,11 +616,7 @@ private struct AddMCPServerSheet: View {
                     TextField("Name", text: $name)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Picker("Transport", selection: $transport) {
-                        Text("HTTP / SSE").tag("http")
-                        Text("stdio").tag("stdio")
-                    }
-                    .pickerStyle(.segmented)
+                    AppSegmentedPicker("Transport", selection: $transport, options: [.init("http", "HTTP / SSE"), .init("stdio", "stdio")])
                 }
                 .listRowBackground(Palette.card(scheme))
 
@@ -681,6 +675,7 @@ private struct AddMCPServerSheet: View {
             .background(Palette.background(scheme))
             .navigationTitle("Add MCP Server")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -820,6 +815,7 @@ private struct InstallMCPCatalogSheet: View {
             .background(Palette.background(scheme))
             .navigationTitle("Install \(entry.name)")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -911,6 +907,7 @@ private struct MCPOAuthSheet: View {
             .background(Palette.background(scheme))
             .navigationTitle("Authenticate \(server.name)")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(approved ? "Done" : "Cancel") {

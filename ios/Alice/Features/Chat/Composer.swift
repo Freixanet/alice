@@ -76,6 +76,10 @@ struct Composer: View {
             } else {
                 if !commands.isEmpty { commandList }
                 else if !matchingBots.isEmpty { botMentionList }
+                ForEach(Array(store.draftReplies.enumerated()), id: \.offset) { _, reply in
+                    MessageReplyRecipient(reply: reply, cancel: store.cancelReply)
+                        .accessibilityIdentifier("composer.replyQuote")
+                }
                 if store.editingMessageID != nil { editingBanner }
                 if store.queuedSendNote != nil { queueBanner }
                 // Compact (the Experimental Home row) always wins: it is its
@@ -210,6 +214,7 @@ struct Composer: View {
         } message: {
             Text(dictationFailure ?? "")
         }
+        .onChange(of: store.replyFocusRequest) { _, _ in focused.wrappedValue = true }
         .onChange(of: store.editingMessageID) { _, editing in
             if editing != nil { focused.wrappedValue = true }
         }

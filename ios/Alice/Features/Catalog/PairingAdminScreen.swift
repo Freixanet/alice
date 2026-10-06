@@ -72,6 +72,7 @@ struct PairingAdminScreen: View {
         }
         .navigationTitle("Pairing")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .task { await loadProfiles(); await load() }

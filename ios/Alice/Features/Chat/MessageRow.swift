@@ -166,6 +166,9 @@ struct MessageRow: View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
             switch message.role {
             case .user:
+                ForEach(Array((message.quotedReplies ?? []).enumerated()), id: \.offset) { _, reply in
+                    MessageReplyQuote(reply: reply)
+                }
                 if !message.attachments.isEmpty {
                     SentAttachments(attachments: message.attachments)
                         .frame(maxWidth: .infinity, alignment: .trailing)

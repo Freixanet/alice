@@ -44,6 +44,7 @@ struct WebhooksScreen: View {
         }
         .navigationTitle("Webhooks")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .searchable(text: $query, prompt: "Search webhooks")
@@ -501,6 +502,7 @@ private struct CreateWebhookSheet: View {
             .background(Palette.background(scheme))
             .navigationTitle(created == nil ? "New Webhook" : "Webhook Created")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(created == nil ? "Cancel" : "Done") { dismiss() }

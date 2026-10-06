@@ -73,3 +73,5 @@ Native dictation and read-aloud use the iOS speech interfaces. They do not imply
 support for a Hermes realtime-voice service: the checked static manifest marks
 `audio_api` and `realtime_voice` false. Review new advertised features individually
 instead of treating a fixture version as a universal compatibility certificate.
+
+Assistant-message replies on iOS preserve the selected quote with the draft and sent message. Gateway and dashboard transports receive it as quoted text context; this does not require a server reply-thread API. Native gesture, keyboard and visual validation are covered by the isolated CI journey, pending its result.

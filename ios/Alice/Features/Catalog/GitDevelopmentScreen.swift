@@ -113,6 +113,7 @@ struct GitDevelopmentScreen: View {
         }
         .navigationTitle("Git")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .task {
@@ -320,10 +321,7 @@ struct GitDevelopmentScreen: View {
 
     private var reviewSection: some View {
         Section("Review") {
-            Picker("Scope", selection: $reviewScope) {
-                ForEach(GitReviewScope.allCases) { scope in Text(scope.label).tag(scope) }
-            }
-            .pickerStyle(.segmented)
+            AppSegmentedPicker("Scope", selection: $reviewScope, options: GitReviewScope.allCases.map { .init($0, $0.label) })
             .listRowBackground(Palette.card(scheme))
 
             if reviewScope == .sinceRef {
@@ -783,10 +781,7 @@ private struct GitDiffSheet: View {
             List {
                 if allowedModes.count > 1 {
                     Section {
-                        Picker("Diff", selection: $mode) {
-                            ForEach(allowedModes) { Text($0.label).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
+                        AppSegmentedPicker("Diff", selection: $mode, options: allowedModes.map { .init($0, $0.label) })
                     }
                 }
                 Section {
@@ -815,6 +810,7 @@ private struct GitDiffSheet: View {
             }
             .navigationTitle("Diff")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .task { mode = selection.file.staged ? .staged : .working; await load() }
             .onChange(of: mode) { _, _ in Task { await load() } }
@@ -899,6 +895,7 @@ private struct GitCommitSheet: View {
             }
             .navigationTitle(push ? "Commit & Push" : "Commit")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -960,11 +957,7 @@ private struct GitWorktreeAddSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Mode", selection: $existing) {
-                        Text("New branch").tag(false)
-                        Text("Existing branch").tag(true)
-                    }
-                    .pickerStyle(.segmented)
+                    AppSegmentedPicker("Mode", selection: $existing, options: [.init(false, "New branch"), .init(true, "Existing branch")])
                 }
 
                 if existing {
@@ -1007,6 +1000,7 @@ private struct GitWorktreeAddSheet: View {
             }
             .navigationTitle("New Worktree")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
