@@ -89,6 +89,8 @@ struct SettingsView: View {
             }
             .listRowBackground(Palette.card(scheme))
         }
+        // Room between the bar's back button and the first section, «Connection».
+        .contentMargins(.top, 20, for: .scrollContent)
         .navigationTitle("Settings")
         // The system's small centred title, not a large one over the list.
         .navigationBarTitleDisplayMode(.inline)
